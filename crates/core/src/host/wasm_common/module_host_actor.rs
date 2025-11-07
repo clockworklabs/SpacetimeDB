@@ -1,5 +1,7 @@
 use bytes::Bytes;
 use prometheus::{Histogram, IntCounter, IntGauge};
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_datastore::locking_tx_datastore::ViewCall;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_primitives::ProcedureId;
@@ -17,6 +19,7 @@ use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::host::host_controller::ViewOutcome;
 use crate::host::instance_env::InstanceEnv;
+use crate::host::instance_env::TxSlot;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::ViewCallResult;
 use crate::host::module_host::{
@@ -60,11 +63,13 @@ pub trait WasmInstancePre: Send + Sync + 'static {
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError>;
 }
 
-#[async_trait::async_trait]
-pub trait WasmInstance: Send + Sync + 'static {
-    fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError>;
+// TODO: rename and move
+pub trait WasmInstance {
+    fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError>;
 
-    fn instance_env(&self) -> &InstanceEnv;
+    fn replica_ctx(&self) -> &Arc<ReplicaContext>;
+
+    fn tx_slot(&self) -> TxSlot;
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult;
 
@@ -72,9 +77,13 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
 
-    fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error);
+    fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error);
 
-    async fn call_procedure(&mut self, op: ProcedureOp, budget: FunctionBudget) -> ProcedureExecuteResult;
+    fn call_procedure(
+        &mut self,
+        op: ProcedureOp,
+        budget: FunctionBudget,
+    ) -> impl Future<Output = ProcedureExecuteResult>;
 }
 
 pub struct EnergyStats {
@@ -119,18 +128,23 @@ pub struct ExecutionStats {
     pub memory_allocation: usize,
 }
 
+pub enum ExecutionError {
+    Normal(anyhow::Error),
+    Trap(anyhow::Error),
+}
+
 #[derive(derive_more::AsRef)]
 pub struct ReducerExecuteResult {
     #[as_ref]
     pub stats: ExecutionStats,
-    pub call_result: anyhow::Result<ReducerResult>,
+    pub call_result: Result<ReducerResult, ExecutionError>,
 }
 
 #[derive(derive_more::AsRef)]
 pub struct ViewExecuteResult {
     #[as_ref]
     pub stats: ExecutionStats,
-    pub call_result: anyhow::Result<Bytes>,
+    pub call_result: Result<Bytes, ExecutionError>,
 }
 #[derive(derive_more::AsRef)]
 pub struct ProcedureExecuteResult {
@@ -206,7 +220,6 @@ impl<T: WasmModule> WasmModuleHostActor<T> {
         let mut instance = uninit_instance.instantiate(instance_env, &func_names)?;
 
         let desc = instance.extract_descriptions()?;
-        let desc: RawModuleDef = bsatn::from_slice(&desc).map_err(DescribeError::Decode)?;
 
         // Validate and create a common module rom the raw definition.
         let common = build_common_module_from_raw(mcc, desc)?;
@@ -284,7 +297,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = &self.instance.instance_env().replica_ctx;
+        let replica_ctx = self.instance.replica_ctx();
         self.common
             .update_database(replica_ctx, program, old_module_info, policy)
     }
@@ -297,14 +310,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         &mut self,
         params: CallProcedureParams,
     ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let res = self
-            .common
-            .call_procedure(
-                params,
-                |ty, fun, err| T::log_traceback(ty, fun, err),
-                |op, budget| self.instance.call_procedure(op, budget),
-            )
-            .await;
+        let res = self.common.call_procedure(params, &mut self.instance).await;
         if res.is_err() {
             self.trapped = true;
         }
@@ -315,40 +321,13 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
     fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.common.call_reducer_with_tx(
-            &self.instance.instance_env().replica_ctx.clone(),
-            tx,
-            params,
-            |ty, fun, err| T::log_traceback(ty, fun, err),
-            |tx, op, budget| {
-                self.instance
-                    .instance_env()
-                    .tx
-                    .clone()
-                    .set(tx, || self.instance.call_reducer(op, budget))
-            },
-        );
+        let (res, trapped) = self.common.call_reducer_with_tx(tx, params, &mut self.instance);
         self.trapped = trapped;
         res
     }
 
     pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
-        let is_anonymous = params.is_anonymous;
-        let (res, trapped) = self.common.call_view_with_tx(
-            &self.instance.instance_env().replica_ctx.clone(),
-            tx,
-            params,
-            |ty, fun, err| T::log_traceback(ty, fun, err),
-            |tx, op: ViewOp<'_>, budget| {
-                self.instance.instance_env().tx.clone().set(tx, || {
-                    if is_anonymous {
-                        self.instance.call_view_anon(op.into(), budget)
-                    } else {
-                        self.instance.call_view(op, budget)
-                    }
-                })
-            },
-        );
+        let (res, trapped) = self.common.call_view_with_tx(tx, params, &mut self.instance);
 
         self.trapped = trapped;
         res
@@ -434,11 +413,10 @@ impl InstanceCommon {
         }
     }
 
-    async fn call_procedure<F: Future<Output = ProcedureExecuteResult>>(
+    async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
-        log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_procedure: impl FnOnce(ProcedureOp, FunctionBudget) -> F,
+        inst: &mut I,
     ) -> Result<ProcedureCallResult, ProcedureCallError> {
         let CallProcedureParams {
             timestamp,
@@ -476,7 +454,7 @@ impl InstanceCommon {
         // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let result = vm_call_procedure(op, budget).await;
+        let result = inst.call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
             stats:
@@ -496,7 +474,7 @@ impl InstanceCommon {
 
         match call_result {
             Err(err) => {
-                log_traceback("procedure", &procedure_def.name, &err);
+                inst.log_traceback("procedure", &procedure_def.name, &err);
 
                 WORKER_METRICS
                     .wasm_instance_errors
@@ -550,13 +528,11 @@ impl InstanceCommon {
     ///
     /// The `bool` in the return type signifies whether there was an "outer error".
     /// For WASM, this should be interpreted as a trap occurring.
-    pub(crate) fn call_reducer_with_tx(
+    pub(crate) fn call_reducer_with_tx<I: WasmInstance>(
         &mut self,
-        replica_ctx: &ReplicaContext,
         tx: Option<MutTxId>,
         params: CallReducerParams,
-        log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, FunctionBudget) -> (MutTxId, ReducerExecuteResult),
+        inst: &mut I,
     ) -> (ReducerCallResult, bool) {
         let CallReducerParams {
             timestamp,
@@ -570,6 +546,7 @@ impl InstanceCommon {
         } = params;
         let caller_connection_id_opt = (caller_connection_id != ConnectionId::ZERO).then_some(caller_connection_id);
 
+        let replica_ctx = inst.replica_ctx();
         let stdb = &*replica_ctx.relational_db.clone();
         let database_identity = replica_ctx.database_identity;
         let info = self.info.clone();
@@ -592,14 +569,13 @@ impl InstanceCommon {
 
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
+        let mut tx_slot = inst.tx_slot();
         let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
         let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
-        let (tx, result) = self.call_function(caller_identity, reducer_name, |budget| {
-            let (tx, res) = vm_call_reducer(tx, op, budget);
-            (Some(tx), res)
+        let (mut tx, result) = tx_slot.set(tx, || {
+            self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
-        let mut tx = tx.expect("transaction should be present here");
 
         let energy_used = result.stats.energy.used();
         let energy_quanta_used = energy_used.into();
@@ -610,17 +586,17 @@ impl InstanceCommon {
             &result.stats.timings.wasm_instance_env_call_times,
         );
 
-        let mut trapped = false;
+        // An outer error occurred.
+        // This signifies a logic error in the module rather than a properly
+        // handled bad argument from the caller of a reducer.
+        // For WASM, this will be interpreted as a trap
+        // and that the instance must be discarded.
+        // However, that does not necessarily apply to e.g., V8.
+        let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
+
         let status = match result.call_result {
-            Err(err) => {
-                log_traceback("reducer", reducer_name, &err);
-                // An outer error occurred.
-                // This signifies a logic error in the module rather than a properly
-                // handled bad argument from the caller of a reducer.
-                // For WASM, this will be interpreted as a trap
-                // and that the instance must be discarded.
-                // However, that does not necessarily apply to e.g., V8.
-                trapped = true;
+            Err(ExecutionError::Normal(err) | ExecutionError::Trap(err)) => {
+                inst.log_traceback("reducer", reducer_name, &err);
 
                 self.handle_outer_error(
                     &result.stats.energy,
@@ -644,7 +620,7 @@ impl InstanceCommon {
                 Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                 Err(err) => {
                     log::info!("reducer returned error: {err}");
-                    log_reducer_error(replica_ctx, timestamp, reducer_name, &err);
+                    log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
                     EventStatus::Failed(err.into())
                 }
             },
@@ -706,9 +682,9 @@ impl InstanceCommon {
         caller_identity: Identity,
         function_name: &str,
         vm_call_function: F,
-    ) -> (Option<MutTxId>, R)
+    ) -> R
     where
-        F: FnOnce(FunctionBudget) -> (Option<MutTxId>, R),
+        F: FnOnce(FunctionBudget) -> R,
     {
         let energy_fingerprint = FunctionFingerprint {
             module_hash: self.info.module_hash,
@@ -720,7 +696,7 @@ impl InstanceCommon {
 
         let function_span = start_run_function_span(budget);
 
-        let (tx, result) = vm_call_function(budget);
+        let result = vm_call_function(budget);
 
         let stats: &ExecutionStats = result.as_ref();
         let energy_used = stats.energy.used();
@@ -741,7 +717,7 @@ impl InstanceCommon {
             .record("timings.total_duration", tracing::field::debug(timings.total_duration))
             .record("energy.used", tracing::field::debug(energy_used));
 
-        (tx, result)
+        result
     }
 
     /// Execute a view.
@@ -749,13 +725,11 @@ impl InstanceCommon {
     /// Similar to `call_reducer_with_tx`, but for views.
     /// unlike to `call_reducer_with_tx`, It does not handle `tx`creation or commit,
     /// It returns the updated `tx` instead.
-    pub(crate) fn call_view_with_tx(
+    pub(crate) fn call_view_with_tx<I: WasmInstance>(
         &mut self,
-        replica_ctx: &ReplicaContext,
         tx: MutTxId,
         params: CallViewParams,
-        log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_view: impl FnOnce(MutTxId, ViewOp<'_>, FunctionBudget) -> (MutTxId, ViewExecuteResult),
+        inst: &mut I,
     ) -> (ViewCallResult, bool) {
         let CallViewParams {
             caller_identity,
@@ -772,6 +746,8 @@ impl InstanceCommon {
         let view_def = info.module_def.view_by_id(view_id, is_anonymous);
         let view_name = &*view_def.name;
 
+        let mut tx_slot = inst.tx_slot();
+
         let _outer_span = start_call_function_span(view_name, &caller_identity, caller_connection_id);
 
         let op = ViewOp {
@@ -783,23 +759,27 @@ impl InstanceCommon {
             timestamp,
         };
 
-        let (tx, result) = self.call_function(caller_identity, view_name, |budget| {
-            let (tx, res) = vm_call_view(tx, op, budget);
-            (Some(tx), res)
+        let (mut tx, result) = tx_slot.set(tx, || {
+            self.call_function(caller_identity, view_name, |budget| {
+                if is_anonymous {
+                    inst.call_view_anon(op.into(), budget)
+                } else {
+                    inst.call_view(op, budget)
+                }
+            })
         });
-        let mut tx = tx.expect("transaction should be present here");
 
-        let mut trapped = false;
+        let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
+
         let outcome = match result.call_result {
-            Err(err) => {
-                log_traceback("view", view_name, &err);
-                trapped = true;
+            Err(ExecutionError::Normal(err) | ExecutionError::Trap(err)) => {
+                inst.log_traceback("view", view_name, &err);
 
                 self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
                     .into()
             }
             Ok(res) => {
-                let db = &replica_ctx.relational_db.clone();
+                let db = &inst.replica_ctx().relational_db;
                 db.materialize_view(
                     &mut tx,
                     view_name,
@@ -963,6 +943,12 @@ fn commit_and_broadcast_event(
     }
 }
 
+pub trait InstanceOp {
+    fn name(&self) -> &str;
+    fn timestamp(&self) -> Timestamp;
+    fn call_type(&self) -> FuncCallType;
+}
+
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
@@ -974,6 +960,22 @@ pub struct ViewOp<'a> {
     pub timestamp: Timestamp,
 }
 
+impl InstanceOp for ViewOp<'_> {
+    fn name(&self) -> &str {
+        self.name
+    }
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::View(ViewCall::with_identity(
+            *self.caller_identity,
+            self.db_id,
+            self.args.get_bsatn().clone(),
+        ))
+    }
+}
+
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
@@ -982,6 +984,18 @@ pub struct AnonymousViewOp<'a> {
     pub name: &'a str,
     pub args: &'a ArgsTuple,
     pub timestamp: Timestamp,
+}
+
+impl InstanceOp for AnonymousViewOp<'_> {
+    fn name(&self) -> &str {
+        self.name
+    }
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::View(ViewCall::anonymous(self.db_id, self.args.get_bsatn().clone()))
+    }
 }
 
 impl<'a> From<ViewOp<'a>> for AnonymousViewOp<'a> {
@@ -1017,6 +1031,18 @@ pub struct ReducerOp<'a> {
     pub args: &'a ArgsTuple,
 }
 
+impl InstanceOp for ReducerOp<'_> {
+    fn name(&self) -> &str {
+        self.name
+    }
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::Reducer
+    }
+}
+
 impl From<ReducerOp<'_>> for execution_context::ReducerContext {
     fn from(
         ReducerOp {
@@ -1047,4 +1073,16 @@ pub struct ProcedureOp {
     pub caller_connection_id: ConnectionId,
     pub timestamp: Timestamp,
     pub arg_bytes: Bytes,
+}
+
+impl InstanceOp for ProcedureOp {
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn timestamp(&self) -> Timestamp {
+        self.timestamp
+    }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::Procedure
+    }
 }

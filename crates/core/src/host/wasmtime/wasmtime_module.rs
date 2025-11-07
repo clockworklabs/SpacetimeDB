@@ -1,18 +1,21 @@
+use std::sync::Arc;
+
 use self::module_host_actor::ReducerOp;
 
 use super::wasm_instance_env::WasmInstanceEnv;
 use super::{Mem, WasmtimeFuel, EPOCH_TICKS_PER_SECOND};
 use crate::energy::FunctionBudget;
-use crate::host::instance_env::InstanceEnv;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, ExecutionStats, InitializationError, ViewOp,
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, InitializationError, InstanceOp, ViewOp,
 };
 use crate::host::wasm_common::*;
+use crate::replica_context::ReplicaContext;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCall};
-use spacetimedb_lib::{ConnectionId, Identity};
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
 use wasmtime::{
     AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
@@ -330,9 +333,8 @@ pub struct WasmtimeInstance {
     call_view_anon: Option<CallViewAnonType>,
 }
 
-#[async_trait::async_trait]
 impl module_host_actor::WasmInstance for WasmtimeInstance {
-    fn extract_descriptions(&mut self) -> Result<Vec<u8>, DescribeError> {
+    fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
         let describer_func_name = DESCRIBE_MODULE_DUNDER;
 
         let describer = self
@@ -349,11 +351,17 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         // Fetch the bsatn returned by the describer call.
         let bytes = self.store.data_mut().take_standard_bytes_sink();
 
-        Ok(bytes)
+        let desc: RawModuleDef = bsatn::from_slice(&bytes).map_err(DescribeError::Decode)?;
+
+        Ok(desc)
     }
 
-    fn instance_env(&self) -> &InstanceEnv {
-        self.store.data().instance_env()
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        &self.store.data().instance_env().replica_ctx
+    }
+
+    fn tx_slot(&self) -> TxSlot {
+        self.store.data().instance_env().tx.clone()
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -372,7 +380,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::Reducer);
+                .start_funcall(op.name, args_bytes, op.timestamp, op.call_type());
 
         let call_result = call_sync_typed_func(
             &self.call_reducer,
@@ -400,15 +408,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         module_host_actor::ReducerExecuteResult {
             stats: get_execution_stats(store, budget, timings),
-            call_result,
+            call_result: call_result.map_err(ExecutionError::Trap),
         }
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> module_host_actor::ViewExecuteResult {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
-
-        let view = ViewCall::with_identity(*op.caller_identity, op.db_id, op.args.get_bsatn().clone());
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
         let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.caller_identity);
@@ -418,16 +424,16 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::View(view));
+                .start_funcall(op.name, args_bytes, op.timestamp, op.call_type());
 
         let Some(call_view) = self.call_view.as_ref() else {
             return module_host_actor::ViewExecuteResult {
                 stats: zero_execution_stats(store),
-                call_result: Err(anyhow::anyhow!(
+                call_result: Err(ExecutionError::Normal(anyhow::anyhow!(
                     "Module defines view {} but does not export `{}`",
                     op.name,
                     CALL_VIEW_DUNDER,
-                )),
+                ))),
             };
         };
 
@@ -456,7 +462,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         module_host_actor::ViewExecuteResult {
             stats: get_execution_stats(store, budget, timings),
-            call_result,
+            call_result: call_result.map_err(ExecutionError::Trap),
         }
     }
 
@@ -468,23 +474,22 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
-        let view = ViewCall::anonymous(op.db_id, op.args.get_bsatn().clone());
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
         let (args_source, errors_sink) =
             store
                 .data_mut()
-                .start_funcall(op.name, args_bytes, op.timestamp, FuncCallType::View(view));
+                .start_funcall(op.name, args_bytes, op.timestamp, op.call_type());
 
         let Some(call_view_anon) = self.call_view_anon.as_ref() else {
             return module_host_actor::ViewExecuteResult {
                 stats: zero_execution_stats(store),
-                call_result: Err(anyhow::anyhow!(
+                call_result: Err(ExecutionError::Normal(anyhow::anyhow!(
                     "Module defines anonymous view {} but does not export `{}`",
                     op.name,
                     CALL_VIEW_ANON_DUNDER,
-                )),
+                ))),
             };
         };
 
@@ -501,11 +506,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         module_host_actor::ViewExecuteResult {
             stats: get_execution_stats(store, budget, timings),
-            call_result,
+            call_result: call_result.map_err(ExecutionError::Trap),
         }
     }
 
-    fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error) {
+    fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error) {
         log_traceback(func_type, func, trap)
     }
 
