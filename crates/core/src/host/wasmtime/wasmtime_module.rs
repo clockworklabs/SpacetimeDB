@@ -399,15 +399,12 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             ),
         );
 
-        // Signal that this reducer call is finished. This gets us the timings
-        // associated to our reducer call, and clears all of the instance state
-        // associated to the call.
-        let (timings, error) = store.data_mut().finish_funcall();
+        let (stats, error) = finish_opcall(store, budget);
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
         module_host_actor::ReducerExecuteResult {
-            stats: get_execution_stats(store, budget, timings),
+            stats,
             call_result: call_result.map_err(ExecutionError::Trap),
         }
     }
@@ -451,17 +448,14 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             ),
         );
 
-        // Signal that this view call is finished. This gets us the timings
-        // associated to our view call, and clears all of the instance state
-        // associated to the call.
-        let (timings, result_bytes) = store.data_mut().finish_funcall();
+        let (stats, result_bytes) = finish_opcall(store, budget);
 
         let call_result = call_result
             .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
             .map(|r| r.into());
 
         module_host_actor::ViewExecuteResult {
-            stats: get_execution_stats(store, budget, timings),
+            stats,
             call_result: call_result.map_err(ExecutionError::Trap),
         }
     }
@@ -495,17 +489,14 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_sync_typed_func(call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
 
-        // Signal that this view call is finished. This gets us the timings
-        // associated to our view call, and clears all of the instance state
-        // associated to the call.
-        let (timings, result_bytes) = store.data_mut().finish_funcall();
+        let (stats, result_bytes) = finish_opcall(store, budget);
 
         let call_result = call_result
             .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
             .map(|r| r.into());
 
         module_host_actor::ViewExecuteResult {
-            stats: get_execution_stats(store, budget, timings),
+            stats,
             call_result: call_result.map_err(ExecutionError::Trap),
         }
     }
@@ -562,7 +553,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             .await;
 
         // Close the timing span for this procedure and get the BSATN bytes of its result.
-        let (timings, result_bytes) = store.data_mut().finish_funcall();
+        let (stats, result_bytes) = finish_opcall(store, budget);
 
         let call_result = call_result.and_then(|code| {
             (code == 0).then_some(result_bytes.into()).ok_or_else(|| {
@@ -572,10 +563,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             })
         });
 
-        module_host_actor::ProcedureExecuteResult {
-            stats: get_execution_stats(store, budget, timings),
-            call_result,
-        }
+        module_host_actor::ProcedureExecuteResult { stats, call_result }
     }
 }
 
@@ -625,23 +613,26 @@ fn prepare_connection_id_for_call(caller_connection_id: ConnectionId) -> [u64; 2
     bytemuck::must_cast(caller_connection_id.as_le_byte_array())
 }
 
-/// Compute fuel and heap usage for a call and construct the `ExecutionStats`.
-fn get_execution_stats(
-    store: &Store<WasmInstanceEnv>,
-    initial_budget: FunctionBudget,
-    timings: module_host_actor::ExecutionTimings,
-) -> ExecutionStats {
+/// Finish the op call and calculate its [`ExecutionStats`].
+fn finish_opcall(store: &mut Store<WasmInstanceEnv>, initial_budget: FunctionBudget) -> (ExecutionStats, Vec<u8>) {
+    // Signal that this call is finished. This gets us the timings
+    // associated with it, and clears all of the instance state
+    // related to it.
+    let (timings, ret_bytes) = store.data_mut().finish_funcall();
+
     let remaining_fuel = get_store_fuel(store);
     let remaining: FunctionBudget = remaining_fuel.into();
     let energy = module_host_actor::EnergyStats {
         budget: initial_budget,
         remaining,
     };
-    ExecutionStats {
+
+    let stats = ExecutionStats {
         energy,
         timings,
         memory_allocation: get_memory_size(store),
-    }
+    };
+    (stats, ret_bytes)
 }
 
 fn zero_execution_stats(store: &Store<WasmInstanceEnv>) -> ExecutionStats {

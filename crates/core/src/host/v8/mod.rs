@@ -17,8 +17,9 @@ use crate::host::module_host::{CallViewParams, Instance, ViewCallResult};
 use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, ExecutionTimings, InstanceCommon, InstanceOp,
-    ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp, WasmInstance,
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
+    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
+    WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ReducerCallResult, Scheduler};
@@ -630,24 +631,21 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        let (stats, call_result) = common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op)?)
-        });
-        ReducerExecuteResult { stats, call_result }
+        })
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        let (stats, call_result) = common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, budget, op, |scope, op| {
             call_call_view(scope, self.hooks, op)
-        });
-        ViewExecuteResult { stats, call_result }
+        })
     }
 
     fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
-        let (stats, call_result) = common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, budget, op, |scope, op| {
             call_call_view_anon(scope, self.hooks, op)
-        });
-        ViewExecuteResult { stats, call_result }
+        })
     }
 
     fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error) {
@@ -659,13 +657,16 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn common_call<'scope, R, O: InstanceOp>(
+fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
     budget: FunctionBudget,
     op: O,
-    call: impl FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
-) -> (ExecutionStats, Result<R, ExecutionError>) {
+    call: F,
+) -> ExecutionResult<Result<R, ExecutionError>>
+where
+    O: InstanceOp,
+    F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+{
     // TODO(v8): Start the budget timeout and long-running logger.
     let env = env_on_isolate_unwrap(scope);
 
@@ -702,7 +703,7 @@ fn common_call<'scope, R, O: InstanceOp>(
         timings,
         memory_allocation,
     };
-    (stats, call_result)
+    ExecutionResult { stats, call_result }
 }
 
 /// Extracts the raw module def by running the registered `__describe_module__` hook.

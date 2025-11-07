@@ -134,24 +134,17 @@ pub enum ExecutionError {
 }
 
 #[derive(derive_more::AsRef)]
-pub struct ReducerExecuteResult {
+pub struct ExecutionResult<T> {
     #[as_ref]
     pub stats: ExecutionStats,
-    pub call_result: Result<ReducerResult, ExecutionError>,
+    pub call_result: T,
 }
 
-#[derive(derive_more::AsRef)]
-pub struct ViewExecuteResult {
-    #[as_ref]
-    pub stats: ExecutionStats,
-    pub call_result: Result<Bytes, ExecutionError>,
-}
-#[derive(derive_more::AsRef)]
-pub struct ProcedureExecuteResult {
-    #[as_ref]
-    pub stats: ExecutionStats,
-    pub call_result: anyhow::Result<Bytes>,
-}
+pub type ReducerExecuteResult = ExecutionResult<Result<ReducerResult, ExecutionError>>;
+
+pub type ViewExecuteResult = ExecutionResult<Result<Bytes, ExecutionError>>;
+
+pub type ProcedureExecuteResult = ExecutionResult<anyhow::Result<Bytes>>;
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
