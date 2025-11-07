@@ -9,7 +9,7 @@ use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCall};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
@@ -22,6 +22,7 @@ use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Instant;
 use std::vec::IntoIter;
 
 #[derive(Clone)]
@@ -29,9 +30,14 @@ pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
-    /// The timestamp the current reducer began running.
+    /// The timestamp the current function began running.
     pub start_time: Timestamp,
-    pub view: Option<ViewCall>,
+    /// The instant the current function began running.
+    pub start_instant: Instant,
+    /// The type of the last, including current, function to be executed by this environment.
+    pub func_type: FuncCallType,
+    /// The name of the last, including current, function to be executed by this environment.
+    pub func_name: String,
 }
 
 #[derive(Clone, Default)]
@@ -173,7 +179,11 @@ impl InstanceEnv {
             scheduler,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
-            view: None,
+            start_instant: Instant::now(),
+            // arbitrary - change if we need to recognize that an `InstanceEnv` has never
+            // run a function
+            func_type: FuncCallType::Reducer,
+            func_name: String::from("<initializing>"),
         }
     }
 
@@ -182,16 +192,12 @@ impl InstanceEnv {
         &self.replica_ctx.database.database_identity
     }
 
-    /// Signal to this `InstanceEnv` that a reducer, procedure call is beginning.
-    pub fn start_funcall(&mut self, ts: Timestamp) {
+    /// Signal to this `InstanceEnv` that a function call is beginning.
+    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
-        self.view = None;
-    }
-
-    /// Signal to this `InstanceEnv` that a view is starting.
-    pub fn start_view(&mut self, ts: Timestamp, view: ViewCall) {
-        self.start_time = ts;
-        self.view = Some(view);
+        self.start_instant = Instant::now();
+        self.func_type = func_type;
+        name.clone_into(&mut self.func_name);
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
@@ -472,7 +478,7 @@ impl InstanceEnv {
         stdb.table_row_count_mut(tx, table_id)
             .ok_or(NodesError::TableNotFound)
             .inspect(|_| {
-                tx.record_table_scan(self.view.clone(), table_id);
+                tx.record_table_scan(&self.func_type, table_id);
             })
     }
 
@@ -497,7 +503,7 @@ impl InstanceEnv {
             &mut bytes_scanned,
         );
 
-        tx.record_table_scan(self.view.clone(), table_id);
+        tx.record_table_scan(&self.func_type, table_id);
 
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -528,7 +534,7 @@ impl InstanceEnv {
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
 
-        tx.record_index_scan(self.view.clone(), table_id, index_id, lower, upper);
+        tx.record_index_scan(&self.func_type, table_id, index_id, lower, upper);
 
         tx.metrics.index_seeks += 1;
         tx.metrics.rows_scanned += rows_scanned;
@@ -659,16 +665,7 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        Ok((
-            InstanceEnv {
-                replica_ctx: Arc::new(replica_context),
-                scheduler,
-                tx: TxSlot::default(),
-                start_time: Timestamp::now(),
-                view: None,
-            },
-            runtime,
-        ))
+        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
     }
 
     /// An in-memory `RelationalDB` for testing.

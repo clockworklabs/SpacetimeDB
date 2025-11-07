@@ -8,17 +8,19 @@ use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown};
 use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
+use crate::host::v8::syscall::hooks::HookFunctions;
 use crate::host::v8::{
     call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
     TerminationError, Throwable,
 };
 use crate::host::wasm_common::instrumentation::span;
-use crate::host::wasm_common::module_host_actor::{ReducerOp, ReducerResult};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
 use anyhow::Context;
+use bytes::Bytes;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
-use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId};
+use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId, ViewId};
 use spacetimedb_sats::Serialize;
 use v8::{
     callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
@@ -26,7 +28,7 @@ use v8::{
 };
 
 macro_rules! create_synthetic_module {
-    ($scope:expr, $module_name:expr, $(($wrapper:ident, $abi_call:expr, $fun:ident),)*) => {{
+    ($scope:expr, $module_name:expr $(, ($wrapper:ident, $abi_call:expr, $fun:ident))* $(,)?) => {{
         let export_names = &[$(str_from_ident!($fun).string($scope)),*];
         let eval_steps = |context, module| {
             callback_scope!(unsafe scope, context);
@@ -109,6 +111,11 @@ pub(super) fn sys_v1_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         (with_sys_result_ret, AbiCall::Identity, identity),
         (with_sys_result_ret, AbiCall::GetJwt, get_jwt_payload),
     )
+}
+
+pub(super) fn sys_v1_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    use register_hooks_v1_1 as register_hooks;
+    create_synthetic_module!(scope, "spacetime:sys@1.1", (with_nothing, (), register_hooks))
 }
 
 /// Registers a function in `module`
@@ -332,10 +339,55 @@ fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
     Ok(v8::undefined(scope).into())
 }
 
+/// Module ABI that registers the functions called by the host.
+///
+/// # Signature
+///
+/// ```ignore
+/// register_hooks(hooks: {
+///     __call_view__(view_id: u32, sender: u256, args: u8[]): u8[];
+///     __call_view_anon__(view_id: u32, args: u8[]): u8[];
+/// }): void
+/// ```
+///
+/// # Types
+///
+/// - `u8` is `number` in JS restricted to unsigned 8-bit integers.
+/// - `u32` is `bigint` in JS restricted to unsigned 32-bit integers.
+/// - `u256` is `bigint` in JS restricted to unsigned 256-bit integers.
+///
+/// # Returns
+///
+/// Returns nothing.
+///
+/// # Throws
+///
+/// Throws a `TypeError` if:
+/// - `hooks` is not an object that has the correct functions.
+fn register_hooks_v1_1<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
+    // Convert `hooks` to an object.
+    let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
+
+    let call_view = get_hook_function(scope, hooks, str_from_ident!(__call_view__))?;
+    let call_view_anon = get_hook_function(scope, hooks, str_from_ident!(__call_view_anon__))?;
+
+    // Set the hooks.
+    set_hook_slots(
+        scope,
+        AbiVersion::V1,
+        &[
+            (ModuleHookKey::CallView, call_view),
+            (ModuleHookKey::CallAnonymousView, call_view_anon),
+        ],
+    )?;
+
+    Ok(v8::undefined(scope).into())
+}
+
 /// Calls the `__call_reducer__` function `fun`.
 pub(super) fn call_call_reducer(
     scope: &mut PinScope<'_, '_>,
-    fun: Local<'_, Function>,
+    hooks: &HookFunctions<'_>,
     op: ReducerOp<'_>,
 ) -> ExcResult<ReducerResult> {
     let ReducerOp {
@@ -355,7 +407,7 @@ pub(super) fn call_call_reducer(
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Call the function.
-    let ret = call_free_fun(scope, fun, args)?;
+    let ret = call_free_fun(scope, hooks.call_reducer, args)?;
 
     // Deserialize the user result.
     let user_res = deserialize_js(scope, ret)?;
@@ -363,13 +415,76 @@ pub(super) fn call_call_reducer(
     Ok(user_res)
 }
 
+/// Calls the `__call_view__` function `fun`.
+pub(super) fn call_call_view(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: ViewOp<'_>,
+) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+    let fun = hooks.call_view.context("`__call_view__` was never defined")?;
+
+    let ViewOp {
+        id: ViewId(view_id),
+        db_id: _,
+        name: _,
+        caller_identity: sender,
+        timestamp: _,
+        args: view_args,
+    } = op;
+    // Serialize the arguments.
+    let view_id = serialize_to_js(scope, &view_id)?;
+    let sender = serialize_to_js(scope, &sender.to_u256())?;
+    let view_args = serialize_to_js(scope, view_args.get_bsatn())?;
+    let args = &[view_id, sender, view_args];
+
+    // Call the function.
+    let ret = call_free_fun(scope, fun, args)?;
+
+    // Deserialize the user result.
+    let ret = cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view__`").map_err(|e| e.throw(scope))?;
+    let bytes = ret.get_contents(&mut []);
+
+    Ok(Bytes::copy_from_slice(bytes))
+}
+
+/// Calls the `__call_view_anon__` function `fun`.
+pub(super) fn call_call_view_anon(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: AnonymousViewOp<'_>,
+) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+    let fun = hooks.call_view_anon.context("`__call_view__` was never defined")?;
+
+    let AnonymousViewOp {
+        id: ViewId(view_id),
+        db_id: _,
+        name: _,
+        timestamp: _,
+        args: view_args,
+    } = op;
+    // Serialize the arguments.
+    let view_id = serialize_to_js(scope, &view_id)?;
+    let view_args = serialize_to_js(scope, view_args.get_bsatn())?;
+    let args = &[view_id, view_args];
+
+    // Call the function.
+    let ret = call_free_fun(scope, fun, args)?;
+
+    // Deserialize the user result.
+    let ret =
+        cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+    let bytes = ret.get_contents(&mut []);
+
+    Ok(Bytes::copy_from_slice(bytes))
+}
+
 /// Calls the registered `__describe_module__` function hook.
 pub(super) fn call_describe_module(
     scope: &mut PinScope<'_, '_>,
-    fun: Local<'_, Function>,
+    hooks: &HookFunctions<'_>,
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     // Call the function.
-    let raw_mod_js = call_free_fun(scope, fun, &[])?;
+    let raw_mod_js = call_free_fun(scope, hooks.describe_module, &[])?;
 
     // Deserialize the raw module.
     let raw_mod = cast!(

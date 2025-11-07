@@ -2325,7 +2325,7 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
-    use spacetimedb_datastore::locking_tx_datastore::ViewCall;
+    use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCall};
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2978,8 +2978,8 @@ mod tests {
             "view should not be materialized as read set is not recorded yet"
         );
 
-        let view_call = Some(ViewCall::anonymous(view_id, args));
-        tx.record_table_scan(view_call, table_id);
+        let view_call = FuncCallType::View(ViewCall::anonymous(view_id, args));
+        tx.record_table_scan(&view_call, table_id);
         assert!(
             tx.is_materialized(view_name, vec![].into(), sender)?.0,
             "view should be materialized as read set is recorded"
