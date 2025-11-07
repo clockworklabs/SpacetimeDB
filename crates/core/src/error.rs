@@ -263,6 +263,8 @@ pub enum NodesError {
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
     NotInTransaction,
+    #[error("can't perform operation; a transaction already exists")]
+    WouldBlockTransaction,
     #[error("table with name {0:?} already exists")]
     AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
