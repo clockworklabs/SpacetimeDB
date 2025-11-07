@@ -293,6 +293,7 @@ export class DbConnectionImpl<
       const reader = new BinaryReader(buffer);
       const rows: Operation[] = [];
       const rowType = this.#remoteModule.tables[tableName]!.rowType;
+      let previousOffset = 0;
       const primaryKeyInfo =
         this.#remoteModule.tables[tableName]!.primaryKeyInfo;
       while (reader.remaining > 0) {
@@ -305,11 +306,12 @@ export class DbConnectionImpl<
           );
         } else {
           // Get a view of the bytes for this row.
-          const rowBytes = buffer.subarray(0, reader.offset);
+          const rowBytes = buffer.subarray(previousOffset, reader.offset);
           // Convert it to a base64 string, so we can use it as a map key.
           const asBase64 = fromByteArray(rowBytes);
           rowId = asBase64;
         }
+        previousOffset = reader.offset;
 
         rows.push({
           type,
