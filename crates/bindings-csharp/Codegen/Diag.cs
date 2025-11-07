@@ -192,12 +192,23 @@ internal static class ErrorDescriptor
             method => method
         );
 
+    // TODO: Remove once Views support Private: Views must be Public currently
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustBePublic =
         new(
             group,
             "Views must be public",
             method =>
                 $"View '{method.Identifier}' must have Public = true. Views are always public in SpacetimeDB.",
+            method => method
+        );
+
+    // TODO: Remove once Views support arguments: Views must have no arguments beyond the context.
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewArgsUnsupported =
+        new(
+            group,
+            "Views must have no arguments beyond the context.",
+            method =>
+                $"View '{method.Identifier}' must have no arguments beyond the context. This is a temporary limitation.",
             method => method
         );
 }

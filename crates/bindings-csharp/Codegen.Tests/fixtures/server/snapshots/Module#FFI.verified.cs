@@ -1057,8 +1057,6 @@ namespace SpacetimeDB
 
 sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
-    private static readonly SpacetimeDB.Identity.BSATN identityRW = new();
-
     private static readonly SpacetimeDB.BSATN.ValueOption<PublicTable, PublicTable.BSATN> returnRW =
         new();
 
@@ -1067,9 +1065,10 @@ sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Inter
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
             Name: "FindPublicTableByIdentity",
+            Index: 0,
             IsPublic: true,
             IsAnonymous: true,
-            Params: [new("identity", identityRW.GetAlgebraicType(registrar))],
+            Params: [],
             ReturnType: new SpacetimeDB.BSATN.ValueOption<
                 PublicTable,
                 PublicTable.BSATN
@@ -1083,10 +1082,8 @@ sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Inter
     {
         try
         {
-            var identity = identityRW.Read(reader);
             var returnValue = Module.FindPublicTableByIdentity(
-                (SpacetimeDB.AnonymousViewContext)ctx,
-                identity
+                (SpacetimeDB.AnonymousViewContext)ctx
             );
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
@@ -1111,6 +1108,7 @@ sealed class PublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
             Name: "PublicTableByIdentity",
+            Index: 0,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],

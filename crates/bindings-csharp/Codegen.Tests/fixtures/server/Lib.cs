@@ -281,10 +281,7 @@ public class Module
     }
 
     [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true, Anonymous = true)]
-    public static PublicTable? FindPublicTableByIdentity(
-        AnonymousViewContext ctx,
-        Identity identity
-    )
+    public static PublicTable? FindPublicTableByIdentity(AnonymousViewContext ctx)
     {
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
     }

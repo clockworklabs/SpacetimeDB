@@ -16,15 +16,15 @@ public static partial class Module
     }
 
     [SpacetimeDB.View(Name = "GetExampleDataById", Public = true)]
-    public static ExampleData? GetExampleDataById(ViewContext ctx, uint id)
+    public static ExampleData? GetExampleDataById(ViewContext ctx) //, uint id)
     {
-        return ctx.Db.ExampleData.Id.Find(id);
+        return ctx.Db.ExampleData.Id.Find(0);
     }
 
     [SpacetimeDB.View(Name = "GetAnonymousExampleDataById", Public = true, Anonymous = true)]
-    public static ExampleData? GetAnonymousExampleDataById(AnonymousViewContext ctx, uint id)
+    public static ExampleData? GetAnonymousExampleDataById(AnonymousViewContext ctx) //, uint id)
     {
-        return ctx.Db.ExampleData.Id.Find(id);
+        return ctx.Db.ExampleData.Id.Find(0);
     }
 
     [SpacetimeDB.Reducer]
