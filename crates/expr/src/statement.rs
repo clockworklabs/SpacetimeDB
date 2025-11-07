@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use bytes::Bytes;
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
@@ -29,6 +30,13 @@ use super::{
 pub enum Statement {
     Select(ProjectList),
     DML(DML),
+}
+
+impl Statement {
+    pub fn views(&self) -> Vec<(&str, Bytes)> {
+        //TODO: implement view name extraction
+        vec![]
+    }
 }
 
 pub enum DML {
@@ -605,7 +613,7 @@ mod tests {
             let product_type = AlgebraicType::from(columns.into());
             let type_ref = builder.add_algebraic_type([], name, product_type, true);
             let return_type = AlgebraicType::array(AlgebraicType::Ref(type_ref));
-            builder.add_view(name, true, is_anonymous, ProductType::unit(), return_type);
+            builder.add_view(name, 0, true, is_anonymous, ProductType::unit(), return_type);
         }
 
         let mut builder = RawModuleDefV9Builder::new();

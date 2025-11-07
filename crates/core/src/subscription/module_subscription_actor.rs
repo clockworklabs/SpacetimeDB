@@ -15,6 +15,7 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
+use crate::host::{FunctionArgs, ModuleHost};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::{collect_table_update_for_view, execute_plans};
@@ -31,15 +32,16 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
-use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::traits::TxData;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use std::sync::OnceLock;
 use std::{sync::Arc, time::Instant};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
@@ -52,6 +54,7 @@ pub struct ModuleSubscriptions {
     broadcast_queue: BroadcastQueue,
     owner_identity: Identity,
     stats: Arc<SubscriptionGauges>,
+    module_rx: OnceLock<watch::Receiver<ModuleHost>>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,9 +193,38 @@ impl ModuleSubscriptions {
             broadcast_queue,
             owner_identity,
             stats,
+            module_rx: OnceLock::new(),
         }
     }
 
+    /// Should be called once to initialize the `ModuleSubscriptions` with a `ModuleHost` receiver.
+    pub fn init(&self, module_host: watch::Receiver<ModuleHost>) {
+        self.module_rx
+            .set(module_host)
+            .expect("ModuleSubscriptions::init called twice");
+    }
+
+    #[allow(dead_code)]
+    async fn call_view(
+        &self,
+        tx: MutTxId,
+        view_name: &str,
+        args: FunctionArgs,
+        sender: Arc<ClientConnectionSender>,
+    ) -> Result<(), DBError> {
+        let module_host_rx = self
+            .module_rx
+            .get()
+            .expect("ModuleSubscriptions::init not called before call_view");
+        let module_host = module_host_rx.borrow();
+
+        let _result = module_host
+            .call_view(tx, view_name, args, sender.id.identity, Some(sender.id.connection_id))
+            .await;
+
+        // TODO: Handle result
+        Ok(())
+    }
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
     pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
@@ -2130,18 +2162,39 @@ mod tests {
             "INSERT INTO t (x, y) VALUES (0, 1)",
             auth,
             Some(&subs),
+            None,
+            Identity::ZERO,
             &mut vec![],
-        )?;
+        )
+        .await?;
 
         // Client should receive insert
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
-        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "UPDATE t SET y=2 WHERE x=0",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive update
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
 
-        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "DELETE FROM t WHERE x=0",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive delete
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [], [product![0_u8, 2_u8]]).await;
@@ -2987,7 +3040,16 @@ mod tests {
         ));
         // Insert another row, using SQL.
         let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
-        run(&db, "INSERT INTO t (x) VALUES (2)", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "INSERT INTO t (x) VALUES (2)",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Unconfirmed client should have received both rows.
         assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;

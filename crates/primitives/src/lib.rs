@@ -8,7 +8,8 @@ mod ids;
 pub use attr::{AttributeKind, ColumnAttribute, ConstraintKind, Constraints};
 pub use col_list::{ColList, ColOrCols, ColSet};
 pub use ids::{
-    ArgId, ColId, ConstraintId, FunctionId, IndexId, ProcedureId, ReducerId, ScheduleId, SequenceId, TableId, ViewId,
+    ArgId, ColId, ConstraintId, FunctionId, IndexId, ProcedureId, ReducerId, ScheduleId, SequenceId, TableId,
+    ViewDatabaseId, ViewId,
 };
 
 /// The minimum size of a chunk yielded by a wasm abi RowIter.
