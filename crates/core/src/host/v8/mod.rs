@@ -619,7 +619,7 @@ fn common_call<'scope, R>(
     let mut tx_slot = env.instance_env.tx.clone();
 
     // Start the timer.
-    // We'd like this tightly around `__call_reducer__`.
+    // We'd like this tightly around `call`.
     env.start_funcall(name, timestamp, func_type);
 
     // Call the function with `tx` provided.

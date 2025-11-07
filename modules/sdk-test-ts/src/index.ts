@@ -1015,8 +1015,3 @@ spacetimedb.reducer(
     }
   }
 );
-
-const X = t.object('X', { a: t.i32() });
-spacetimedb.view('a', X, () => {
-  return { a: 1 };
-});

@@ -398,18 +398,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result.map(|code| handle_error_sink_code(code, error));
 
-        // Compute fuel and heap usage.
-        let remaining_fuel = get_store_fuel(store);
-        let remaining: FunctionBudget = remaining_fuel.into();
-        let energy = module_host_actor::EnergyStats { budget, remaining };
-        let memory_allocation = store.data().get_mem().memory.data_size(&store);
-
         module_host_actor::ReducerExecuteResult {
-            stats: ExecutionStats {
-                energy,
-                timings,
-                memory_allocation,
-            },
+            stats: get_execution_stats(store, budget, timings),
             call_result,
         }
     }
@@ -432,11 +422,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_view) = self.call_view.as_ref() else {
             return module_host_actor::ViewExecuteResult {
-                stats: ExecutionStats {
-                    energy: module_host_actor::EnergyStats::ZERO,
-                    timings: module_host_actor::ExecutionTimings::zero(),
-                    memory_allocation: get_memory_size(store),
-                },
+                stats: zero_execution_stats(store),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines view {} but does not export `{}`",
                     op.name,
@@ -468,18 +454,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
             .map(|r| r.into());
 
-        // Compute fuel and heap usage.
-        let remaining_fuel = get_store_fuel(store);
-        let remaining: FunctionBudget = remaining_fuel.into();
-        let energy = module_host_actor::EnergyStats { budget, remaining };
-        let memory_allocation = store.data().get_mem().memory.data_size(&store);
-
         module_host_actor::ViewExecuteResult {
-            stats: ExecutionStats {
-                energy,
-                timings,
-                memory_allocation,
-            },
+            stats: get_execution_stats(store, budget, timings),
             call_result,
         }
     }
@@ -503,11 +479,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_view_anon) = self.call_view_anon.as_ref() else {
             return module_host_actor::ViewExecuteResult {
-                stats: ExecutionStats {
-                    energy: module_host_actor::EnergyStats::ZERO,
-                    timings: module_host_actor::ExecutionTimings::zero(),
-                    memory_allocation: get_memory_size(store),
-                },
+                stats: zero_execution_stats(store),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines anonymous view {} but does not export `{}`",
                     op.name,
@@ -526,18 +498,9 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let call_result = call_result
             .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
             .map(|r| r.into());
-        // Compute fuel and heap usage.
-        let remaining_fuel = get_store_fuel(store);
-        let remaining: FunctionBudget = remaining_fuel.into();
-        let energy = module_host_actor::EnergyStats { budget, remaining };
-        let memory_allocation = store.data().get_mem().memory.data_size(&store);
 
         module_host_actor::ViewExecuteResult {
-            stats: ExecutionStats {
-                energy,
-                timings,
-                memory_allocation,
-            },
+            stats: get_execution_stats(store, budget, timings),
             call_result,
         }
     }
@@ -567,11 +530,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
             return module_host_actor::ProcedureExecuteResult {
-                stats: ExecutionStats {
-                    energy: module_host_actor::EnergyStats::ZERO,
-                    timings: module_host_actor::ExecutionTimings::zero(),
-                    memory_allocation: get_memory_size(store),
-                },
+                stats: zero_execution_stats(store),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
                     op.name,
@@ -608,18 +567,8 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             })
         });
 
-        let remaining_fuel = get_store_fuel(store);
-        let remaining = FunctionBudget::from(remaining_fuel);
-
-        let energy = module_host_actor::EnergyStats { budget, remaining };
-        let memory_allocation = get_memory_size(store);
-
         module_host_actor::ProcedureExecuteResult {
-            stats: ExecutionStats {
-                energy,
-                timings,
-                memory_allocation,
-            },
+            stats: get_execution_stats(store, budget, timings),
             call_result,
         }
     }
@@ -669,6 +618,33 @@ fn prepare_identity_for_call(caller_identity: Identity) -> [u64; 4] {
 fn prepare_connection_id_for_call(caller_connection_id: ConnectionId) -> [u64; 2] {
     // Encode this as a LITTLE-ENDIAN byte array
     bytemuck::must_cast(caller_connection_id.as_le_byte_array())
+}
+
+/// Compute fuel and heap usage for a call and construct the `ExecutionStats`.
+fn get_execution_stats(
+    store: &Store<WasmInstanceEnv>,
+    initial_budget: FunctionBudget,
+    timings: module_host_actor::ExecutionTimings,
+) -> ExecutionStats {
+    let remaining_fuel = get_store_fuel(store);
+    let remaining: FunctionBudget = remaining_fuel.into();
+    let energy = module_host_actor::EnergyStats {
+        budget: initial_budget,
+        remaining,
+    };
+    ExecutionStats {
+        energy,
+        timings,
+        memory_allocation: get_memory_size(store),
+    }
+}
+
+fn zero_execution_stats(store: &Store<WasmInstanceEnv>) -> ExecutionStats {
+    ExecutionStats {
+        energy: module_host_actor::EnergyStats::ZERO,
+        timings: module_host_actor::ExecutionTimings::zero(),
+        memory_allocation: get_memory_size(store),
+    }
 }
 
 fn get_memory_size(store: &Store<WasmInstanceEnv>) -> usize {
