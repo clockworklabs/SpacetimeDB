@@ -366,13 +366,9 @@ async fn apply_pre_publish_if_needed(
             }
             PrePublishResult::AutoMigrate(auto) => {
                 println!("{}", auto.migrate_plan);
-                // If the automigration plan will break clients and the user has not selected
-                // ClearMode::Always or ClearMode::OnConflict and the user has not passed the
-                // `--force` flag, then we need to prompt the user to ask if it is ok to break clients.
-                // OnConflict is assumed to be okay to break clients because all manual migrations
-                // are assumed to break clients as well, so it is likely what the user intended.
+                // We only arrive here if you have not specified ClearMode::Always AND there was no
+                // conflict that required manual migration.
                 if auto.break_clients
-                    && matches!(clear_database, ClearMode::Never)
                     && !y_or_n(
                         force_break_clients || force,
                         "The above changes will BREAK existing clients. Do you want to proceed?",

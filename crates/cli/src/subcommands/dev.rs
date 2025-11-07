@@ -347,6 +347,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn generate_build_and_publish(
     config: &Config,
     project_dir: &Path,
