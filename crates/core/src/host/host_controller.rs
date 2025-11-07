@@ -886,7 +886,11 @@ impl Host {
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
         let module = watch::Sender::new(module_host);
-        replica_ctx.subscriptions.init(module.subscribe());
+        //TODO(shub): Below code interfere with `exit_module` code,
+        // I suspect channel internally holds a reference to the module,
+        // even after we drop the sender.
+        //
+        // replica_ctx.subscriptions.init(module.subscribe());
         Ok(Host {
             module,
             replica_ctx,
