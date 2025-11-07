@@ -14,19 +14,13 @@ This document explains how to configure the environment, run the benchmark tool,
 
 ## Quick Checks & Fixes
 
-Run these commands to rerun the rust and C# tests for GPT-5. Understand this is a quick fix to unblock CI and different from running the full benchmark suite.
+Use this single command to quickly unblock CI by regenerating hashes and running only GPT-5 for the minimal Rust + C# passes. This is not the full benchmark suite.
 
-**Rust**
-```bash
-cargo llm run --mode rustdoc_json --lang rust --providers openai --force --models "openai:gpt-5"
-```
-
-**C#**
-```bash
-cargo llm run --mode docs --lang csharp --providers openai --force --models "openai:gpt-5"
-```
-
-If you are really in a time-crunch, you can add `--tasks 0` to both commands to run just task 0, which will regenerate docs/json hash.
+`cargo llm ci-quickfix`
+What this does:
+1. Runs Rust rustdoc_json pass for GPT-5 only.
+2. Runs C# docs pass for GPT-5 only.
+3. Writes updated results & summary.
 
 ---
 
@@ -220,9 +214,6 @@ cargo llm run --goldens-only      # build/check goldens only
 
 # Be aggressive (skip some safety checks)
 cargo llm run --force
-
-# Compare results files
-cargo llm diff results/base.json results/head.json
 
 # CI sanity check per language
 cargo llm ci-check --lang rust

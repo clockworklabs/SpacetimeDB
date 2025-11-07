@@ -21,7 +21,7 @@ use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
 use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_run, write_summary_from_details_file};
-use xtask_llm_benchmark::results::{cmd_llm_benchmark_diff, load_run, BenchmarkRun, ModeRun, ModelRun};
+use xtask_llm_benchmark::results::{load_run, BenchmarkRun, ModeRun, ModelRun};
 
 fn main() -> Result<()> {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
@@ -32,8 +32,8 @@ fn main() -> Result<()> {
 [--providers <openai,anthropic,google,xai,deepseek,meta>] \
 [--models \"openai:gpt-5,gpt-4.1,o4-mini google:gemini-2.5-pro xai:grok-4 anthropic:claude-sonnet-4-5,claude-sonnet-4\"] \
 [--tasks <list>] [--categories <csv>] [--hash-only] [--goldens-only] [--force]
-  llm diff <base.json> <head.json>
   llm ci-check [--lang <rust|csharp>]
+  llm ci-quickfix
 
 Options:
   --categories CSV of benchmark categories to run (e.g. basic,schema). If omitted, all categories are included.
@@ -62,15 +62,8 @@ Notes:
     let sub = args.remove(0);
     match sub.as_str() {
         "run" => cmd_run(&args),
-        "diff" => {
-            if args.len() != 2 {
-                bail!("diff requires: <base.json> <head.json>");
-            }
-            let out = cmd_llm_benchmark_diff(&args[0], &args[1])?;
-            println!("{out}");
-            Ok(())
-        }
         "ci-check" => cmd_ci_check(&args),
+        "ci-quickfix" => cmd_ci_quickfix(&args),
         "summary" => cmd_summary(&args),
         other => bail!("unknown subcommand {other}"),
     }
@@ -555,6 +548,74 @@ fn cmd_ci_check(args: &[String]) -> Result<()> {
         println!("CI check OK: {}/{} hash {}", mode, lang_str, short_hash(&current_hash));
     }
 
+    Ok(())
+}
+
+fn cmd_ci_quickfix(_args: &[String]) -> Result<()> {
+    let mut providers = HashSet::new();
+    providers.insert(Vendor::OpenAi);
+
+    let mut model_set = HashSet::new();
+    model_set.insert("gpt-5".to_string());
+
+    let mut model_filter = HashMap::new();
+    model_filter.insert(Vendor::OpenAi, model_set);
+
+    let mut base = RunConfig {
+        mode_flag: None,
+        hash_only: false,
+        goldens_only: false,
+        lang: Lang::Rust,
+        providers_filter: Some(providers),
+        selectors: None,
+        force: true,
+        categories: None,
+        model_filter: Some(model_filter),
+    };
+
+    let bench_root = find_bench_root();
+    let mut run: BenchmarkRun = load_run(results_path_run()).unwrap_or_default();
+
+    let RuntimeInit {
+        runtime,
+        provider: llm_provider,
+    } = initialize_runtime_and_provider(false, false)?;
+
+    // --- Rust (rustdoc_json) ---
+    base.lang = Lang::Rust;
+    process_mode(
+        "rustdoc_json",
+        Lang::Rust,
+        &base,
+        &mut run,
+        &bench_root,
+        runtime.as_ref(),
+        llm_provider.as_ref(),
+    )?;
+
+    // --- C# (docs) ---
+    base.lang = Lang::CSharp;
+    process_mode(
+        "docs",
+        Lang::CSharp,
+        &base,
+        &mut run,
+        &bench_root,
+        runtime.as_ref(),
+        llm_provider.as_ref(),
+    )?;
+
+    // Persist run + details/summary
+    run.generated_at = chrono::Utc::now().to_rfc3339();
+    fs::create_dir_all(docs_dir().join("llms"))?;
+    write_run(&run)?;
+    update_golden_answers_on_disk(
+        &results_path_details(),
+        &bench_root,
+        /*all=*/ true,
+        /*overwrite=*/ true,
+    )?;
+    write_summary_from_details_file(results_path_details(), results_path_summary())?;
     Ok(())
 }
 

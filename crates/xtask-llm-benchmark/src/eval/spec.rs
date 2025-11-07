@@ -21,7 +21,7 @@ impl BenchmarkSpec {
         let (id, category) = infer_id_and_category(spec_file);
         let make_prompt = {
             Box::new(move |lang: Lang| {
-                make_prompt_from_task(spec_file, id, lang).expect("missing tasks/<lang>.md next to spec")
+                make_prompt_from_task(spec_file, id, lang).expect("missing tasks/<lang>.txt next to spec")
             }) as Box<dyn Fn(Lang) -> PromptBuilder + Send + Sync>
         };
         Self {
