@@ -15,9 +15,10 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
+use crate::host::{FunctionArgs, ModuleHost};
 use crate::messages::websocket::Subscribe;
-use crate::subscription::execute_plans;
 use crate::subscription::query::is_subscribe_to_all_tables;
+use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
 use crate::worker_metrics::WORKER_METRICS;
@@ -31,15 +32,16 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
-use spacetimedb_datastore::locking_tx_datastore::TxId;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::traits::TxData;
 use spacetimedb_durability::TxOffset;
-use spacetimedb_execution::pipelined::PipelinedProject;
+use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
+use std::sync::OnceLock;
 use std::{sync::Arc, time::Instant};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
@@ -52,6 +54,7 @@ pub struct ModuleSubscriptions {
     broadcast_queue: BroadcastQueue,
     owner_identity: Identity,
     stats: Arc<SubscriptionGauges>,
+    module_rx: OnceLock<watch::Receiver<ModuleHost>>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,9 +193,38 @@ impl ModuleSubscriptions {
             broadcast_queue,
             owner_identity,
             stats,
+            module_rx: OnceLock::new(),
         }
     }
 
+    /// Should be called once to initialize the `ModuleSubscriptions` with a `ModuleHost` receiver.
+    pub fn init(&self, module_host: watch::Receiver<ModuleHost>) {
+        self.module_rx
+            .set(module_host)
+            .expect("ModuleSubscriptions::init called twice");
+    }
+
+    #[allow(dead_code)]
+    async fn call_view(
+        &self,
+        tx: MutTxId,
+        view_name: &str,
+        args: FunctionArgs,
+        sender: Arc<ClientConnectionSender>,
+    ) -> Result<(), DBError> {
+        let module_host_rx = self
+            .module_rx
+            .get()
+            .expect("ModuleSubscriptions::init not called before call_view");
+        let module_host = module_host_rx.borrow();
+
+        let _result = module_host
+            .call_view(tx, view_name, args, sender.id.identity, Some(sender.id.connection_id))
+            .await;
+
+        // TODO: Handle result
+        Ok(())
+    }
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
     pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
@@ -253,19 +285,54 @@ impl ModuleSubscriptions {
             .plans_fragments()
             .map(|fragment| fragment.optimized_physical_plan())
             .cloned()
-            .map(|plan| plan.optimize())
-            .collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(PipelinedProject::from)
-            .collect::<Vec<_>>();
+            .map(|plan| plan.optimize(auth))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let view_info = plans
+            .first()
+            .and_then(|plan| plan.return_table())
+            .and_then(|schema| schema.view_info);
+
+        let num_cols = plans
+            .first()
+            .and_then(|plan| plan.return_table())
+            .map(|schema| schema.num_cols())
+            .unwrap_or_default();
 
         let tx = DeltaTx::from(tx);
 
-        Ok(match sender.config.protocol {
-            Protocol::Binary => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics)),
-            Protocol::Text => collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics)),
+        // TODO: See the comment on `collect_table_update_for_view`.
+        // The following view and non-view branches should be merged together,
+        // since the only difference between them is the row type that is returned.
+        Ok(match (sender.config.protocol, view_info) {
+            (Protocol::Binary, Some(view_info)) => {
+                let plans = plans
+                    .into_iter()
+                    .map(PipelinedProject::from)
+                    .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
+                    .collect::<Vec<_>>();
+                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            (Protocol::Binary, None) => {
+                let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
+                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+            }
+            (Protocol::Text, Some(view_info)) => {
+                let plans = plans
+                    .into_iter()
+                    .map(PipelinedProject::from)
+                    .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
+                    .collect::<Vec<_>>();
+                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
+            (Protocol::Text, None) => {
+                let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
+                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
+                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+            }
         }?)
     }
 
@@ -292,11 +359,11 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
+                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
                 Ok((FormatSwitch::Bsatn(update), metrics))
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(queries, &tx, update_type)?;
+                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
                 Ok((FormatSwitch::Json(update), metrics))
             }
         }
@@ -817,9 +884,9 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
                 .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&queries, &tx, TableUpdateType::Subscribe)
+            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
                 .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
         };
 
@@ -2095,18 +2162,39 @@ mod tests {
             "INSERT INTO t (x, y) VALUES (0, 1)",
             auth,
             Some(&subs),
+            None,
+            Identity::ZERO,
             &mut vec![],
-        )?;
+        )
+        .await?;
 
         // Client should receive insert
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
-        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "UPDATE t SET y=2 WHERE x=0",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive update
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
 
-        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "DELETE FROM t WHERE x=0",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive delete
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [], [product![0_u8, 2_u8]]).await;
@@ -2952,7 +3040,16 @@ mod tests {
         ));
         // Insert another row, using SQL.
         let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
-        run(&db, "INSERT INTO t (x) VALUES (2)", auth, Some(&subs), &mut vec![])?;
+        run(
+            &db,
+            "INSERT INTO t (x) VALUES (2)",
+            auth,
+            Some(&subs),
+            None,
+            Identity::ZERO,
+            &mut vec![],
+        )
+        .await?;
 
         // Unconfirmed client should have received both rows.
         assert_tx_update_for_table(rx_for_unconfirmed.recv(), table, &schema, [product![1_u8]], []).await;

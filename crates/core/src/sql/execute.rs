@@ -7,7 +7,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::ArgsTuple;
+use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
@@ -20,8 +20,8 @@ use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_lib::{Identity, Timestamp};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
@@ -186,20 +186,50 @@ pub struct SqlResult {
 }
 
 /// Run the `SQL` string using the `auth` credentials
-pub fn run(
+pub async fn run(
     db: &RelationalDB,
     sql_text: &str,
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
+    module: Option<&ModuleHost>,
+    caller_identity: Identity,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
-    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+    let (mut tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
+
+    for (view_name, args) in stmt.views() {
+        let (is_materialized, args) = tx
+            .is_materialized(view_name, args, caller_identity)
+            .map_err(|e| DBError::Other(anyhow!("Failed to check memoized view: {e}")))?;
+
+        // Skip if already memoized
+        if is_materialized {
+            continue;
+        }
+
+        let module = module
+            .as_ref()
+            .ok_or_else(|| anyhow!("Cannot execute view `{view_name}` without module context"))?;
+
+        let res = module
+            .call_view(
+                tx,
+                view_name,
+                crate::host::FunctionArgs::Bsatn(args),
+                caller_identity,
+                None,
+            )
+            .await
+            .map_err(|e| DBError::Other(anyhow!("Failed to execute view `{view_name}`: {e}")))?;
+
+        tx = res.tx;
+    }
 
     match stmt {
         Statement::Select(stmt) => {
@@ -227,7 +257,7 @@ pub fn run(
             });
 
             // Evaluate the query
-            let rows = execute_select_stmt(stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
+            let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
                 check_row_limit(
                     &[&plan],
                     db,
@@ -254,7 +284,7 @@ pub fn run(
             }
 
             // Evaluate the mutation
-            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(stmt, tx, &mut metrics))?;
+            let (mut tx, _) = db.with_auto_rollback(tx, |tx| execute_dml_stmt(&auth, stmt, tx, &mut metrics))?;
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
@@ -332,7 +362,7 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::db::relational_db::tests_utils::{begin_tx, insert, with_auto_commit, TestDB};
+    use crate::db::relational_db::tests_utils::{self, begin_tx, insert, with_auto_commit, TestDB};
     use crate::vm::tests::create_table_with_rows;
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
@@ -359,8 +389,18 @@ pub(crate) mod tests {
 
     /// Short-cut for simplify test execution
     pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
-        run(db, sql_text, AuthCtx::for_testing(), Some(&subs), &mut vec![]).map(|x| x.rows)
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
+        runtime
+            .block_on(run(
+                db,
+                sql_text,
+                AuthCtx::for_testing(),
+                Some(&subs),
+                None,
+                Identity::ZERO,
+                &mut vec![],
+            ))
+            .map(|x| x.rows)
     }
 
     fn create_data(total_rows: u64) -> ResultTest<(TestDB, MemTable)> {
@@ -503,14 +543,15 @@ pub(crate) mod tests {
     }
 
     /// Assert this query returns the expected rows for this user
-    fn assert_query_results(
+    async fn assert_query_results(
         db: &RelationalDB,
         sql: &str,
         auth: &AuthCtx,
         expected: impl IntoIterator<Item = ProductValue>,
     ) {
         assert_eq!(
-            run(db, sql, *auth, None, &mut vec![])
+            run(db, sql, *auth, None, None, Identity::ZERO, &mut vec![])
+                .await
                 .unwrap()
                 .rows
                 .into_iter()
@@ -522,8 +563,8 @@ pub(crate) mod tests {
     }
 
     /// Test a query that uses a multi-column index
-    #[test]
-    fn test_multi_column_index() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_multi_column_index() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let schema = [
@@ -549,14 +590,15 @@ pub(crate) mod tests {
             "select * from t where c = 1 and b = 2",
             &AuthCtx::for_testing(),
             [product![1_u64, 2_u64, 1_u64]],
-        );
+        )
+        .await;
 
         Ok(())
     }
 
     /// Test querying a table with RLS rules
-    #[test]
-    fn test_rls_rules() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_rls_rules() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let id_for_a = identity_from_u8(1);
@@ -601,42 +643,48 @@ pub(crate) mod tests {
             "select * from users",
             &auth_for_a,
             [product![id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the identity for sender "b"
             "select * from users",
             &auth_for_b,
             [product![id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
             "select * from users where identity = :sender",
             &auth_for_a,
             [product![id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
             "select * from users where identity = :sender",
             &auth_for_b,
             [product![id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
             &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
             &auth_for_a,
             [product![id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
             &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
             &auth_for_b,
             [product![id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
@@ -646,7 +694,8 @@ pub(crate) mod tests {
             ),
             &auth_for_a,
             [product![id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
@@ -656,7 +705,8 @@ pub(crate) mod tests {
             ),
             &auth_for_b,
             [product![id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
@@ -666,7 +716,8 @@ pub(crate) mod tests {
             ),
             &auth_for_a,
             [product![id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
@@ -676,7 +727,8 @@ pub(crate) mod tests {
             ),
             &auth_for_b,
             [product![id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should not return any rows.
@@ -684,7 +736,8 @@ pub(crate) mod tests {
             &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
             &auth_for_a,
             [],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should not return any rows.
@@ -692,7 +745,8 @@ pub(crate) mod tests {
             &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
             &auth_for_b,
             [],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should not return any rows.
@@ -703,7 +757,8 @@ pub(crate) mod tests {
             ),
             &auth_for_a,
             [],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should not return any rows.
@@ -714,56 +769,63 @@ pub(crate) mod tests {
             ),
             &auth_for_b,
             [],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
             "select * from sales",
             &auth_for_a,
             [product![1u64, id_for_a], product![3u64, id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
             "select * from sales",
             &auth_for_b,
             [product![2u64, id_for_b], product![4u64, id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
             "select s.* from users u join sales s on u.identity = s.customer",
             &auth_for_a,
             [product![1u64, id_for_a], product![3u64, id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
             "select s.* from users u join sales s on u.identity = s.customer",
             &auth_for_b,
             [product![2u64, id_for_b], product![4u64, id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "a"
             "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
             &auth_for_a,
             [product![1u64, id_for_a], product![3u64, id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             // Should only return the orders for sender "b"
             "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
             &auth_for_b,
             [product![2u64, id_for_b], product![4u64, id_for_b]],
-        );
+        )
+        .await;
 
         Ok(())
     }
 
     /// Test querying tables with multiple levels of RLS rules
-    #[test]
-    fn test_nested_rls_rules() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_nested_rls_rules() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let id_for_a = identity_from_u8(1);
@@ -814,21 +876,24 @@ pub(crate) mod tests {
             &auth_for_a,
             // Identity "a" is not an admin
             [],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select * from admins",
             &auth_for_b,
             // Identity "b" is not an admin
             [],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select * from admins",
             &auth_for_c,
             // Identity "c" is an admin
             [product![id_for_c]],
-        );
+        )
+        .await;
 
         assert_query_results(
             &db,
@@ -836,21 +901,24 @@ pub(crate) mod tests {
             &auth_for_a,
             // Identity "a" can only see its own user
             vec![product![id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select * from users",
             &auth_for_b,
             // Identity "b" can only see its own user
             vec![product![id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select * from users",
             &auth_for_c,
             // Identity "c" is an admin so it can see everyone's users
             [product![id_for_a], product![id_for_b], product![id_for_c]],
-        );
+        )
+        .await;
 
         assert_query_results(
             &db,
@@ -858,28 +926,31 @@ pub(crate) mod tests {
             &auth_for_a,
             // Identity "a" can only see its own orders
             [product![1u64, 1u64, id_for_a]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select * from sales",
             &auth_for_b,
             // Identity "b" can only see its own orders
             [product![2u64, 2u64, id_for_b]],
-        );
+        )
+        .await;
         assert_query_results(
             &db,
             "select * from sales",
             &auth_for_c,
             // Identity "c" is an admin so it can see everyone's orders
             [product![1u64, 1u64, id_for_a], product![2u64, 2u64, id_for_b]],
-        );
+        )
+        .await;
 
         Ok(())
     }
 
     /// Test projecting columns from both tables in join
-    #[test]
-    fn test_project_join() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn test_project_join() -> anyhow::Result<()> {
         let db = TestDB::in_memory()?;
 
         let t_schema = [("id", AlgebraicType::U8), ("x", AlgebraicType::U8)];
@@ -899,7 +970,170 @@ pub(crate) mod tests {
             "select t.x, s.y from t join s on t.id = s.id",
             &auth,
             [product![2_u8, 3_u8]],
-        );
+        )
+        .await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, false)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(2)), product![0u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(&db, "select * from my_view", &auth, [product![0u8, 2u8]]).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_anonymous_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, true)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(1);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(&db, "select b from my_view", &auth, [product![1u8], product![2u8]]).await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_view_join_table() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+
+        let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
+        let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            db.insert(tx, t_id, &product![0u8, 3u8].to_bsatn_vec().unwrap())?;
+            db.insert(tx, t_id, &product![1u8, 4u8].to_bsatn_vec().unwrap())?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(2)), product![1u8, 2u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            &db,
+            "select t.* from v join t on v.a = t.c",
+            &auth,
+            [product![1u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select v.* from v join t on v.a = t.c",
+            &auth,
+            [product![1u8, 2u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select v.* from v join t where v.a = t.c",
+            &auth,
+            [product![1u8, 2u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select v.b as b, t.d as d from v join t on v.a = t.c",
+            &auth,
+            [product![2u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select v.b as b, t.d as d from v join t where v.a = t.c",
+            &auth,
+            [product![2u8, 4u8]],
+        )
+        .await;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_view_join_view() -> anyhow::Result<()> {
+        let db = TestDB::in_memory()?;
+
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
+        let (_, u_id) = tests_utils::create_view_for_test(&db, "u", &schema, false)?;
+
+        let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
+            tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(2)), product![1u8, 2u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(1)), product![0u8, 3u8])?;
+            tests_utils::insert_into_view(&db, tx, v_id, Some(identity_from_u8(2)), product![1u8, 4u8])?;
+            Ok(())
+        })?;
+
+        let id = identity_from_u8(2);
+        let auth = AuthCtx::new(Identity::ZERO, id);
+
+        assert_query_results(
+            &db,
+            "select u.* from u join v on u.a = v.c",
+            &auth,
+            [product![1u8, 2u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select v.* from u join v on u.a = v.c",
+            &auth,
+            [product![1u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select v.* from u join v where u.a = v.c",
+            &auth,
+            [product![1u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select u.b as b, v.d as d from u join v on u.a = v.c",
+            &auth,
+            [product![2u8, 4u8]],
+        )
+        .await;
+        assert_query_results(
+            &db,
+            "select u.b as b, v.d as d from u join v where u.a = v.c",
+            &auth,
+            [product![2u8, 4u8]],
+        )
+        .await;
 
         Ok(())
     }
@@ -1267,26 +1501,38 @@ pub(crate) mod tests {
         let internal_auth = AuthCtx::new(server, server);
         let external_auth = AuthCtx::new(server, client);
 
-        let run = |db, sql, auth, subs| run(db, sql, auth, subs, &mut vec![]);
+        let tmp_vec = Vec::new();
 
+        let rt = db.runtime().expect("runtime should be there");
+
+        let run = |db, sql, auth, subs, mut tmp_vec| {
+            rt.block_on(run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec))
+        };
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None).is_ok());
+        assert!(run(&db, "SET row_limit = 4", internal_auth, None, tmp_vec.clone()).is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_err());
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_err());
 
         // Increase row limit.
-        assert!(run(&db, "DELETE FROM st_var WHERE name = 'row_limit'", internal_auth, None).is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None).is_ok());
+        assert!(run(
+            &db,
+            "DELETE FROM st_var WHERE name = 'row_limit'",
+            internal_auth,
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth, None, tmp_vec.clone()).is_ok());
 
         // Both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None).is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
 
         Ok(())
     }
@@ -1304,14 +1550,19 @@ pub(crate) mod tests {
             Ok(())
         })?;
 
+        let rt = db.runtime().expect("runtime should be there");
+
         let server = Identity::from_claims("issuer", "server");
 
         let internal_auth = AuthCtx::new(server, server);
 
-        let run = |db, sql, auth, subs| run(db, sql, auth, subs, &mut vec![]);
+        let tmp_vec = Vec::new();
+        let run = |db, sql, auth, subs, mut tmp_vec| async move {
+            run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec).await
+        };
 
         let check = |db, sql, auth, metrics: ExecutionMetrics| {
-            let result = run(db, sql, auth, None)?;
+            let result = rt.block_on(run(db, sql, auth, None, tmp_vec.clone()))?;
             assert_eq!(result.rows, vec![]);
             assert_eq!(result.metrics.rows_inserted, metrics.rows_inserted);
             assert_eq!(result.metrics.rows_deleted, metrics.rows_deleted);
@@ -1336,7 +1587,8 @@ pub(crate) mod tests {
         check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
         check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
         assert_eq!(
-            run(&db, "SELECT * FROM T", internal_auth, None)?.rows,
+            rt.block_on(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()))?
+                .rows,
             vec![product!(2u8)]
         );
         check(&db, "DELETE FROM T", internal_auth, del)?;
