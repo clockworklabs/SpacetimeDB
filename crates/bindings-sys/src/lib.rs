@@ -645,6 +645,7 @@ pub mod raw {
         pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource) -> u16;
     }
 
+    #[cfg(feature = "unstable")]
     #[link(wasm_import_module = "spacetime_10.3")]
     extern "C" {
         /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
@@ -661,8 +662,76 @@ pub mod raw {
         /// - The calling WASM instance is holding open a transaction.
         /// - The calling WASM instance is not executing a procedure.
         // TODO(procedure-sleep-until): remove this
-        #[cfg(feature = "unstable")]
         pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
+
+        /// Starts a mutable transaction,
+        /// suspending execution of this WASM instance until
+        /// a mutable transaction lock is aquired.
+        ///
+        /// Upon resuming, returns `0` on success,
+        /// enabling further calls that require a pending transaction,
+        /// or an error code otherwise.
+        ///
+        /// # Traps
+        ///
+        /// This function does not trap.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
+        pub fn procedure_start_mut_transaction() -> u16;
+
+        /// Commits a mutable transaction,
+        /// suspending execution of this WASM instance until
+        /// the transaction has been committed
+        /// and subscription queries have been run and broadcast.
+        ///
+        /// Upon resuming, returns `0` on success, or an error code otherwise.
+        ///
+        /// # Traps
+        ///
+        /// This function does not trap.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `TRANSACTION_NOT_ANONYMOUS`,
+        ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+        ///   This can happen if this syscall is erroneously called by a reducer.
+        ///   The code `NOT_IN_TRANSACTION` does not happen,
+        ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+        /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+        ///   This currently does not happen as anonymous read transactions
+        ///   are not exposed to modules.
+        pub fn procedure_commit_mut_transaction() -> u16;
+
+        /// Aborts a mutable transaction,
+        /// suspending execution of this WASM instance until
+        /// the transaction has been rolled back.
+        ///
+        /// Upon resuming, returns `0` on success, or an error code otherwise.
+        ///
+        /// # Traps
+        ///
+        /// This function does not trap.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `TRANSACTION_NOT_ANONYMOUS`,
+        ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+        ///   This can happen if this syscall is erroneously called by a reducer.
+        ///   The code `NOT_IN_TRANSACTION` does not happen,
+        ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+        /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+        ///   This currently does not happen as anonymous read transactions
+        ///   are not exposed to modules.
+        pub fn procedure_abort_mut_transaction() -> u16;
+
     }
 
     /// What strategy does the database index use?

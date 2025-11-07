@@ -347,6 +347,7 @@ pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
+        NodesError::WouldBlockTransaction => Some(errno::WOULD_BLOCK_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
@@ -422,6 +423,9 @@ macro_rules! abi_funcs {
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
+            "spacetime_10.3"::procedure_start_mut_transaction,
+            "spacetime_10.3"::procedure_commit_mut_transaction,
+            "spacetime_10.3"::procedure_abort_mut_transaction,
         }
     };
 }
