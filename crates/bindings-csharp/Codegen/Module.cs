@@ -937,6 +937,16 @@ record ViewDeclaration
         var firstParamType = hasContextParam ? method.Parameters[0].Type : null;
         var isAnonymousContext = firstParamType?.Name == "AnonymousViewContext";
 
+        if (string.IsNullOrEmpty(attr.Name))
+        {
+            diag.Report(ErrorDescriptor.ViewMustHaveName, methodSyntax);
+        }
+        // Views must be Public currently.
+        if (!attr.Public)
+        {
+            diag.Report(ErrorDescriptor.ViewMustBePublic, methodSyntax);
+        }
+
         Name = method.Name;
         FullName = SymbolToName(method);
         IsPublic = attr.Public;

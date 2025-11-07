@@ -183,4 +183,21 @@ internal static class ErrorDescriptor
                 $"View method {method.Identifier} must have a first parameter of type ViewContext or AnonymousViewContext.",
             method => method.ParameterList
         );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustHaveName =
+        new(
+            group,
+            "Views must have an explicit name.",
+            method => $"View '{method.Identifier}' must have an explicit name.",
+            method => method
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustBePublic =
+        new(
+            group,
+            "Views must be public",
+            method =>
+                $"View '{method.Identifier}' must have Public = true. Views are always public in SpacetimeDB.",
+            method => method
+        );
 }

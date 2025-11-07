@@ -280,7 +280,7 @@ public class Module
         return (PublicTable?)ctx.Db.PublicTable.Id.Find(0);
     }
 
-    [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true)]
+    [SpacetimeDB.View(Name = "find_public_table__by_identity", Public = true, Anonymous = true)]
     public static PublicTable? FindPublicTableByIdentity(
         AnonymousViewContext ctx,
         Identity identity
