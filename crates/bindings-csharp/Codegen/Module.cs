@@ -928,6 +928,14 @@ record ViewDeclaration
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
 
+    public static uint ViewIndexCounter = 0;
+
+    public static uint GetNextViewIndex() => ViewIndexCounter++;
+
+    public static uint AnonViewIndexCounter = 0;
+
+    public static uint GetNextAnonViewIndex() => AnonViewIndexCounter++;
+
     public ViewDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
@@ -974,10 +982,11 @@ record ViewDeclaration
         );
     }
 
-    public string GenerateViewDef() =>
+    public string GenerateViewDef(uint Index) =>
         $$$"""
             new global::SpacetimeDB.Internal.RawViewDefV9(
                 Name: "{{{Name}}}",
+                Index: {{{Index}}},
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
@@ -1011,7 +1020,7 @@ record ViewDeclaration
 
         var invocationArgs =
             Parameters.Length == 0 ? "" : ", " + string.Join(", ", Parameters.Select(p => p.Name));
-
+        var index = IsAnonymous ? GetNextAnonViewIndex() : GetNextViewIndex();
         return $$$"""
             sealed class {{{Name}}}ViewDispatcher : {{{interfaceName}}} {
                 {{{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Parameters)}}}
@@ -1019,7 +1028,7 @@ record ViewDeclaration
                 private static readonly {{{ReturnType.BSATNName}}} returnRW = new();
                 
                 public SpacetimeDB.Internal.RawViewDefV9 {{{makeViewDefMethod}}}(SpacetimeDB.BSATN.ITypeRegistrar registrar)
-                    => {{{GenerateViewDef()}}}
+                    => {{{GenerateViewDef(index)}}}
 
                 public byte[] Invoke(
                     System.IO.BinaryReader reader,
