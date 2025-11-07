@@ -291,6 +291,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 &database_name,
                 client_language,
                 resolved_server,
+                clear_database,
             )
             .await
             {
