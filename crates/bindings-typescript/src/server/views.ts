@@ -1,9 +1,10 @@
-import type {
+import {
   AlgebraicType,
-  AlgebraicTypeVariants,
-  ProductType,
+  type AlgebraicTypeVariants,
+  type ProductType,
 } from '../lib/algebraic_type';
 import type { Identity } from '../lib/identity';
+import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from './reducers';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { ReadonlyTable } from './table';
@@ -35,11 +36,15 @@ export type AnonymousViewFn<
   Ret extends ViewReturnTypeBuilder,
 > = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
 
-export type ViewReturnTypeBuilder = TypeBuilder<
-  any,
-  | { tag: 'Array'; value: AlgebraicTypeVariants.Product }
-  | AlgebraicTypeVariants.Product
->;
+export type ViewReturnTypeBuilder =
+  | TypeBuilder<
+      readonly object[],
+      { tag: 'Array'; value: AlgebraicTypeVariants.Product }
+    >
+  | TypeBuilder<
+      object | undefined,
+      OptionAlgebraicType<AlgebraicTypeVariants.Product>
+    >;
 
 export function defineView<
   S extends UntypedSchemaDef,
@@ -74,11 +79,23 @@ export function defineView<
     },
   });
 
+  let returnType = ret.algebraicType;
+  if (returnType.tag == 'Sum') {
+    const originalFn = fn;
+    fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {
+      const ret = originalFn(ctx, args);
+      return ret == null ? [] : [ret];
+    }) as any;
+    returnType = AlgebraicType.Array(
+      returnType.value.variants[0].algebraicType
+    );
+  }
+
   (anon ? ANON_VIEWS : VIEWS).push({
     fn,
     params: paramType,
-    returnType: ret.algebraicType,
-    returnTypeBaseSize: bsatnBaseSize(MODULE_DEF.typespace, ret.algebraicType),
+    returnType,
+    returnTypeBaseSize: bsatnBaseSize(MODULE_DEF.typespace, returnType),
   });
 }
 
