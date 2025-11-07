@@ -9,7 +9,7 @@ use crate::util::{
 use crate::{common_args, generate};
 use crate::{publish, tasks};
 use anyhow::Context;
-use clap::{value_parser, Arg, ArgMatches, Command, ValueEnum};
+use clap::{Arg, ArgMatches, Command};
 use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, FuzzySelect};
 use futures::stream::{self, StreamExt};
