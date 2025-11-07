@@ -29,6 +29,7 @@ import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
+import { fakeQueryBuilder } from './query';
 
 const { freeze } = Object;
 
@@ -196,6 +197,7 @@ export const hooks: ModuleHooks = {
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
+      queryBuilder: fakeQueryBuilder(),
       senderAuth: AuthCtxImpl.fromSystemTables(
         ConnectionId.nullIfZero(new ConnectionId(connId)),
         senderIdentity

@@ -4,6 +4,7 @@ import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
+import type { QueryBuilder } from './query';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { Table } from './table';
 import type {
@@ -116,6 +117,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
+  queryBuilder: QueryBuilder<SchemaDef>;
   senderAuth: AuthCtx;
 }>;
 

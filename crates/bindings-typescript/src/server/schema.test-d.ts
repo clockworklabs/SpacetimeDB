@@ -29,6 +29,7 @@ const person = table(
     name2: t.string().unique(),
     married: t.bool(),
     id2: t.identity(),
+    count: t.string().unique(),
     age: t.u32(),
     age2: t.u16(),
   }
@@ -45,4 +46,6 @@ spacetimedb.init(ctx => {
   const _id2 = ctx.db.person.id2;
 
   ctx.db.person.id.find(2);
+  ctx.db.person.count.find('idk');
+  ctx.db.person.count();
 });
