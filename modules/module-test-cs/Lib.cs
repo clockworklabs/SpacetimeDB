@@ -210,7 +210,7 @@ static partial class Module
     // VIEWS
     // ─────────────────────────────────────────────────────────────────────────────
 
-    [View(Public = true)]
+    [View(Name = "my_player", Public = true)]
     public static Player? my_player(ViewContext ctx)
     {
         return (Player?)ctx.Db.player.identity.Find(ctx.Sender);
