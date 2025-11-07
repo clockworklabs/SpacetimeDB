@@ -248,7 +248,7 @@ impl ModuleDef {
     /// Convenience method to look up a view, possibly by a string, returning its id as well.
     pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewId, &ViewDef)> {
         // If the string IS a valid identifier, we can just look it up.
-        self.views.get_full(name).map(|(idx, _, def)| (idx.into(), def))
+        self.views.get(name).map(|def| (def.index, def))
     }
 
     /// Convenience method to look up a reducer, possibly by a string.
@@ -296,8 +296,12 @@ impl ModuleDef {
     }
 
     /// Look up a view by its id, panicking if it doesn't exist.
-    pub fn view_by_id(&self, id: ViewId) -> &ViewDef {
-        &self.views[id.idx()]
+    pub fn view_by_id(&self, id: ViewId, is_anonymoys: bool) -> &ViewDef {
+        self.views
+            .iter()
+            .find(|(_, def)| def.index == id && def.is_anonymous == is_anonymoys)
+            .expect("view id not found")
+            .1
     }
 
     /// Looks up a lifecycle reducer defined in the module.
@@ -1111,6 +1115,11 @@ pub struct ViewDef {
     /// This type does not have access to the `Identity` of the caller.
     pub is_anonymous: bool,
 
+    /// It represents the unique index of this view within the module.
+    /// Module contains separate list for anonymous and non-anonymous views,
+    /// so `is_anonymous` is needed to fully identify the view along with this index.
+    pub index: ViewId,
+
     /// The parameters of the view.
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
@@ -1171,10 +1180,12 @@ impl From<ViewDef> for RawViewDefV9 {
             is_public,
             params,
             return_type,
+            index,
             ..
         } = val;
         RawViewDefV9 {
             name: name.into(),
+            index: index.into(),
             is_anonymous,
             is_public,
             params,

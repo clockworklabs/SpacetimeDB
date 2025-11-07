@@ -613,7 +613,7 @@ mod tests {
             let product_type = AlgebraicType::from(columns.into());
             let type_ref = builder.add_algebraic_type([], name, product_type, true);
             let return_type = AlgebraicType::array(AlgebraicType::Ref(type_ref));
-            builder.add_view(name, true, is_anonymous, ProductType::unit(), return_type);
+            builder.add_view(name, 0, true, is_anonymous, ProductType::unit(), return_type);
         }
 
         let mut builder = RawModuleDefV9Builder::new();
