@@ -29,8 +29,34 @@ pub enum DatastoreError {
     // TODO(cloutiertyler): should this be a TableError? I couldn't get it to compile
     #[error("Error reading a value from a table through BSATN: {0}")]
     ReadViaBsatnError(#[from] ReadViaBsatnError),
+
+    #[error("ViewError: {0}")]
+    View(#[from] ViewError),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum ViewError {
+    #[error("view '{0}' not found")]
+    ViewNotFound(String),
+    #[error("failed to deserialize view arguments from row")]
+    DeserializeArgs,
+    #[error("failed to deserialize view return value: {0}")]
+    DeserializeReturn(String),
+    #[error("failed to serialize row to BSATN")]
+    SerializeRow,
+    #[error("invalid return type: expected Array or Option, got {0:?}")]
+    InvalidReturnType(AlgebraicType),
+    #[error("return type is Array but deserialized value is not Array")]
+    TypeMismatchArray,
+    #[error("return type is Option but deserialized value is not Option")]
+    TypeMismatchOption,
+    #[error("expected ProductValue in view result")]
+    ExpectedProduct,
+    #[error("failed to serialize view arguments")]
+    SerializeArgs,
 }
 
 #[derive(Error, Debug, EnumAsInner)]

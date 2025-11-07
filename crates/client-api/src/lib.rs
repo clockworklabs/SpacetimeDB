@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
-use bytes::Bytes;
 use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
@@ -79,57 +78,52 @@ impl Host {
 
         let (tx_offset, durable_offset, json) = self
             .host_controller
-            .using_database(
-                database,
-                self.replica_id,
-                move |db| -> axum::response::Result<_, (StatusCode, String)> {
-                    tracing::info!(sql = body);
+            .using_database(database, self.replica_id, move |db| async move {
+                tracing::info!(sql = body);
+                let mut header = vec![];
+                let sql_start = std::time::Instant::now();
+                let sql_span = tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,);
+                let _guard = sql_span.enter();
 
-                    // We need a header for query results
-                    let mut header = vec![];
+                let result = sql::execute::run(
+                    &db,
+                    &body,
+                    auth,
+                    Some(&module_host.info.subscriptions),
+                    Some(&module_host),
+                    auth.caller,
+                    &mut header,
+                )
+                .await
+                .map_err(|e| {
+                    log::warn!("{e}");
+                    if let Some(auth_err) = e.get_auth_error() {
+                        (StatusCode::UNAUTHORIZED, auth_err.to_string())
+                    } else {
+                        (StatusCode::BAD_REQUEST, e.to_string())
+                    }
+                })?;
 
-                    let sql_start = std::time::Instant::now();
-                    let sql_span =
-                        tracing::trace_span!("execute_sql", total_duration = tracing::field::Empty,).entered();
+                let total_duration = sql_start.elapsed();
+                drop(_guard);
+                sql_span.record("total_duration", tracing::field::debug(total_duration));
 
-                    let result = sql::execute::run(
-                        // Returns an empty result set for mutations
-                        db,
-                        &body,
-                        auth,
-                        Some(&module_host.info().subscriptions),
-                        &mut header,
-                    )
-                    .map_err(|e| {
-                        log::warn!("{e}");
-                        if let Some(auth_err) = e.get_auth_error() {
-                            (StatusCode::UNAUTHORIZED, auth_err.to_string())
-                        } else {
-                            (StatusCode::BAD_REQUEST, e.to_string())
-                        }
-                    })?;
+                let schema = header
+                    .into_iter()
+                    .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
+                    .collect();
 
-                    let total_duration = sql_start.elapsed();
-                    sql_span.record("total_duration", tracing::field::debug(total_duration));
-
-                    // Turn the header into a `ProductType`
-                    let schema = header
-                        .into_iter()
-                        .map(|(col_name, col_type)| ProductTypeElement::new(col_type, Some(col_name)))
-                        .collect();
-
-                    Ok((
-                        result.tx_offset,
-                        db.durable_tx_offset(),
-                        vec![SqlStmtResult {
-                            schema,
-                            rows: result.rows,
-                            total_duration_micros: total_duration.as_micros() as u64,
-                            stats: SqlStmtStats::from_metrics(&result.metrics),
-                        }],
-                    ))
-                },
-            )
+                Ok::<_, (StatusCode, String)>((
+                    result.tx_offset,
+                    db.durable_tx_offset(),
+                    vec![SqlStmtResult {
+                        schema,
+                        rows: result.rows,
+                        total_duration_micros: total_duration.as_micros() as u64,
+                        stats: SqlStmtStats::from_metrics(&result.metrics),
+                    }],
+                ))
+            })
             .await
             .map_err(log_and_500)??;
 
@@ -155,7 +149,6 @@ impl Host {
             .await
     }
 }
-
 /// Parameters for publishing a database.
 ///
 /// See [`ControlStateDelegate::publish_database`].
@@ -163,21 +156,13 @@ pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
     pub database_identity: Identity,
     /// The compiled program of the database module.
-    pub program_bytes: Bytes,
+    pub program_bytes: Vec<u8>,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
-}
-
-/// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
-pub struct DatabaseResetDef {
-    pub database_identity: Identity,
-    pub program_bytes: Option<Bytes>,
-    pub num_replicas: Option<NonZeroU8>,
-    pub host_type: Option<HostType>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -248,10 +233,6 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
-
-    /// Remove all data from a database, and reset it according to the
-    /// given [DatabaseResetDef].
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -350,10 +331,6 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         (**self).delete_database(caller_identity, database_identity).await
-    }
-
-    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
-        (**self).reset_database(caller_identity, spec).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {

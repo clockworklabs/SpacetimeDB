@@ -52,7 +52,7 @@ pub trait Schema: Sized {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ViewInfo {
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     pub has_args: bool,
     pub is_anonymous: bool,
 }
@@ -740,7 +740,7 @@ impl TableSchema {
         };
 
         let view_info = ViewInfo {
-            view_id: ViewId::SENTINEL,
+            view_id: ViewDatabaseId::SENTINEL,
             has_args: !param_columns.is_empty(),
             is_anonymous: *is_anonymous,
         };
@@ -862,7 +862,7 @@ impl TableSchema {
         };
 
         let view_info = ViewInfo {
-            view_id: ViewId::SENTINEL,
+            view_id: ViewDatabaseId::SENTINEL,
             has_args: !param_columns.is_empty(),
             is_anonymous: *is_anonymous,
         };
