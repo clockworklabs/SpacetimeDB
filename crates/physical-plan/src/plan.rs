@@ -586,6 +586,7 @@ impl PhysicalPlan {
                     lhs_field,
                     rhs_field,
                     unique,
+                    outer,
                 },
                 semi,
             ) => Self::HashJoin(
@@ -595,6 +596,7 @@ impl PhysicalPlan {
                     lhs_field,
                     rhs_field,
                     unique,
+                    outer,
                 },
                 semi,
             ),
