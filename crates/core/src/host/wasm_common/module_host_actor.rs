@@ -66,7 +66,7 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn instance_env(&self) -> &InstanceEnv;
 
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ExecuteResult;
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult;
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
 
@@ -113,60 +113,30 @@ impl ExecutionTimings {
 /// The result that `__call_reducer__` produces during normal non-trap execution.
 pub type ReducerResult = Result<(), Box<str>>;
 
-pub struct ExecuteResult {
+pub struct ExecutionStats {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
+}
+
+#[derive(derive_more::AsRef)]
+pub struct ReducerExecuteResult {
+    #[as_ref]
+    pub stats: ExecutionStats,
     pub call_result: anyhow::Result<ReducerResult>,
 }
 
+#[derive(derive_more::AsRef)]
 pub struct ViewExecuteResult {
-    pub energy: EnergyStats,
-    pub timings: ExecutionTimings,
-    pub memory_allocation: usize,
+    #[as_ref]
+    pub stats: ExecutionStats,
     pub call_result: anyhow::Result<Bytes>,
 }
+#[derive(derive_more::AsRef)]
 pub struct ProcedureExecuteResult {
-    #[allow(unused)]
-    pub energy: EnergyStats,
-    #[allow(unused)]
-    pub timings: ExecutionTimings,
-    pub memory_allocation: usize,
+    #[as_ref]
+    pub stats: ExecutionStats,
     pub call_result: anyhow::Result<Bytes>,
-}
-
-trait FunctionResult {
-    fn energy(&self) -> &EnergyStats;
-    fn timings(&self) -> &ExecutionTimings;
-    fn memory_allocation(&self) -> usize;
-}
-
-impl FunctionResult for ExecuteResult {
-    fn energy(&self) -> &EnergyStats {
-        &self.energy
-    }
-
-    fn timings(&self) -> &ExecutionTimings {
-        &self.timings
-    }
-
-    fn memory_allocation(&self) -> usize {
-        self.memory_allocation
-    }
-}
-
-impl FunctionResult for ViewExecuteResult {
-    fn energy(&self) -> &EnergyStats {
-        &self.energy
-    }
-
-    fn timings(&self) -> &ExecutionTimings {
-        &self.timings
-    }
-
-    fn memory_allocation(&self) -> usize {
-        self.memory_allocation
-    }
 }
 
 pub struct WasmModuleHostActor<T: WasmModule> {
@@ -509,10 +479,13 @@ impl InstanceCommon {
         let result = vm_call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
-            memory_allocation,
+            stats:
+                ExecutionStats {
+                    memory_allocation,
+                    // TODO(procedure-energy): Do something with timing and energy.
+                    ..
+                },
             call_result,
-            // TODO(procedure-energy): Do something with timing and energy.
-            ..
         } = result;
 
         // TODO(shub): deduplicate with reducer and view logic.
@@ -583,7 +556,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, FunctionBudget) -> (MutTxId, ExecuteResult),
+        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, FunctionBudget) -> (MutTxId, ReducerExecuteResult),
     ) -> (ReducerCallResult, bool) {
         let CallReducerParams {
             timestamp,
@@ -628,13 +601,13 @@ impl InstanceCommon {
         });
         let mut tx = tx.expect("transaction should be present here");
 
-        let energy_used = result.energy.used();
+        let energy_used = result.stats.energy.used();
         let energy_quanta_used = energy_used.into();
-        let timings = &result.timings;
+        let timings = &result.stats.timings;
         vm_metrics.report(
             energy_used.get(),
-            result.timings.total_duration,
-            &result.timings.wasm_instance_env_call_times,
+            result.stats.timings.total_duration,
+            &result.stats.timings.wasm_instance_env_call_times,
         );
 
         let mut trapped = false;
@@ -650,7 +623,7 @@ impl InstanceCommon {
                 trapped = true;
 
                 self.handle_outer_error(
-                    &result.energy,
+                    &result.stats.energy,
                     &caller_identity,
                     &Some(caller_connection_id),
                     reducer_name,
@@ -728,7 +701,7 @@ impl InstanceCommon {
     }
 
     /// Calls a function (reducer, view) and performs energy monitoring.
-    fn call_function<F, R: FunctionResult>(
+    fn call_function<F, R: AsRef<ExecutionStats>>(
         &mut self,
         caller_identity: Identity,
         function_name: &str,
@@ -749,10 +722,11 @@ impl InstanceCommon {
 
         let (tx, result) = vm_call_function(budget);
 
-        let energy_used = result.energy().used();
+        let stats: &ExecutionStats = result.as_ref();
+        let energy_used = stats.energy.used();
         let energy_quanta_used = energy_used.into();
-        let timings = &result.timings();
-        let memory_allocation = result.memory_allocation();
+        let timings = &stats.timings;
+        let memory_allocation = stats.memory_allocation;
 
         self.energy_monitor
             .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
@@ -775,7 +749,7 @@ impl InstanceCommon {
     /// Similar to `call_reducer_with_tx`, but for views.
     /// unlike to `call_reducer_with_tx`, It does not handle `tx`creation or commit,
     /// It returns the updated `tx` instead.
-    fn call_view_with_tx(
+    pub(crate) fn call_view_with_tx(
         &mut self,
         replica_ctx: &ReplicaContext,
         tx: MutTxId,
@@ -821,7 +795,7 @@ impl InstanceCommon {
                 log_traceback("view", view_name, &err);
                 trapped = true;
 
-                self.handle_outer_error(&result.energy, &caller_identity, &caller_connection_id, view_name)
+                self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
                     .into()
             }
             Ok(res) => {
@@ -847,8 +821,8 @@ impl InstanceCommon {
         let res = ViewCallResult {
             outcome,
             tx,
-            energy_used: result.energy.used().into(),
-            execution_duration: result.timings.total_duration,
+            energy_used: result.stats.energy.used().into(),
+            execution_duration: result.stats.timings.total_duration,
         };
 
         (res, trapped)

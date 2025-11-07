@@ -408,7 +408,7 @@ impl Instance {
     fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
         match self {
             Instance::Wasm(inst) => inst.call_view(tx, params),
-            Instance::Js(_inst) => unimplemented!("JS views are not implemented yet"),
+            Instance::Js(inst) => inst.call_view(tx, params),
         }
     }
 

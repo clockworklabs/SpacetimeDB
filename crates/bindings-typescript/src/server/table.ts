@@ -5,7 +5,13 @@ import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
-import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
+import type {
+  ColumnIndex,
+  IndexColumns,
+  Indexes,
+  IndexOpts,
+  ReadonlyIndexes,
+} from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
   RowBuilder,
@@ -131,17 +137,25 @@ export type Table<TableDef extends UntypedTableDef> = Prettify<
   TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
 >;
 
-/**
- * A type representing the methods available on a table.
- */
-export type TableMethods<TableDef extends UntypedTableDef> = {
+export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
+  ReadonlyTableMethods<TableDef> &
+    ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+>;
+
+export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   /** Returns the number of rows in the TX state. */
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
   iter(): IterableIterator<RowType<TableDef>>;
   [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+}
 
+/**
+ * A type representing the methods available on a table.
+ */
+export interface TableMethods<TableDef extends UntypedTableDef>
+  extends ReadonlyTableMethods<TableDef> {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *
@@ -153,7 +167,7 @@ export type TableMethods<TableDef extends UntypedTableDef> = {
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
   delete(row: RowType<TableDef>): boolean;
-};
+}
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.
