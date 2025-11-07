@@ -96,11 +96,6 @@
         /// Marks the view as callable by any client. Leave false to restrict to the module owner.
         /// </summary>
         public bool Public { get; init; } = false;
-
-        /// <summary>
-        /// Set true to deny caller identity to the view logic (forces `AnonymousViewContext`).
-        /// </summary>
-        public bool Anonymous { get; init; } = false;
     }
 
     [AttributeUsage(

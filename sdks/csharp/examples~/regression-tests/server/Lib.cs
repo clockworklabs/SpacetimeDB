@@ -21,7 +21,7 @@ public static partial class Module
         return ctx.Db.ExampleData.Id.Find(0);
     }
 
-    [SpacetimeDB.View(Name = "GetAnonymousExampleDataById", Public = true, Anonymous = true)]
+    [SpacetimeDB.View(Name = "GetAnonymousExampleDataById", Public = true)]
     public static ExampleData? GetAnonymousExampleDataById(AnonymousViewContext ctx) //, uint id)
     {
         return ctx.Db.ExampleData.Id.Find(0);

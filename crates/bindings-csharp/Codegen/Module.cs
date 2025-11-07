@@ -963,7 +963,7 @@ record ViewDeclaration
         Name = method.Name;
         FullName = SymbolToName(method);
         IsPublic = attr.Public;
-        IsAnonymous = attr.Anonymous || isAnonymousContext;
+        IsAnonymous = isAnonymousContext;
         ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
         Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
 
