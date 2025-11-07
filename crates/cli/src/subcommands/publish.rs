@@ -68,7 +68,7 @@ pub fn cli() -> clap::Command {
             Arg::new("break_clients")
                 .long("break-clients")
                 .action(SetTrue)
-                .help("Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NEVER delete any data in the database.")
+                .help("Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.")
         )
         .arg(
             common_args::anonymous()
