@@ -262,7 +262,7 @@ impl CollectViews for RelExpr {
     fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
         self.visit(&mut |expr| {
             if let Self::RelVar(Relvar { schema, .. }) = expr {
-                if let Some(info) = schema.view_info {
+                if let Some(info) = &schema.view_info {
                     views.insert(info.view_id);
                 }
             }

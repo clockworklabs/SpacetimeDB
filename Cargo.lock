@@ -7468,7 +7468,6 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
- "spacetimedb-expr",
  "spacetimedb-lib 1.7.0",
  "spacetimedb-metrics",
  "spacetimedb-paths",

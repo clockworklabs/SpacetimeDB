@@ -39,17 +39,19 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{ProcedureId, TableId, ViewDatabaseId, ViewId};
+use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewDatabaseId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
@@ -57,7 +59,7 @@ use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
@@ -1485,6 +1487,29 @@ impl ModuleHost {
             }
         })
         .await?
+    }
+
+    /// Downgrade this mutable `tx` after:
+    /// 1. Collecting view ids from `view_collector` and
+    /// 2. Materializing them if necessary
+    pub async fn materialize_views_and_downgrade_tx(
+        &self,
+        mut tx: MutTxId,
+        view_collector: &impl CollectViews,
+        sender: Identity,
+        workload: Workload,
+    ) -> Result<(TxData, TxMetrics, TxId), ViewCallError> {
+        use FunctionArgs::*;
+        let mut view_ids = HashSet::new();
+        view_collector.collect_views(&mut view_ids);
+        for view_id in view_ids {
+            let name = tx.lookup_st_view(view_id)?.view_name;
+            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, sender)? {
+                tx = self.call_view(tx, &name, Nullary, sender, None).await?.tx;
+            }
+            tx.st_view_sub_update_or_insert_last_called(view_id, ArgId::SENTINEL, sender)?;
+        }
+        Ok(tx.commit_downgrade(workload))
     }
 
     pub async fn call_view(
