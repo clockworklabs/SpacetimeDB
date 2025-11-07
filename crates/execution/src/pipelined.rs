@@ -186,6 +186,7 @@ impl ViewProject {
         let mut n = 0;
         let mut bytes_scanned = 0;
         self.inner.execute(tx, metrics, &mut |row| match row {
+            Row::Null => Ok(()),
             Row::Ptr(ptr) => {
                 n += 1;
                 let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
