@@ -631,9 +631,11 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        common_call(self.scope, budget, op, |scope, op| {
+        let ExecutionResult { stats, call_result } = common_call(self.scope, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op)?)
-        })
+        });
+        let call_result = call_result.and_then(|res| res.map_err(ExecutionError::User));
+        ExecutionResult { stats, call_result }
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
@@ -680,7 +682,7 @@ where
         // that can occur due to terminating long running reducers.
         match can_continue {
             CanContinue::No => ExecutionError::Trap(e.into()),
-            CanContinue::Yes => ExecutionError::Normal(e.into()),
+            CanContinue::Yes => ExecutionError::Recoverable(e.into()),
             CanContinue::YesCancelTermination => {
                 scope.cancel_terminate_execution();
                 ExecutionError::Trap(e.into())

@@ -129,7 +129,8 @@ pub struct ExecutionStats {
 }
 
 pub enum ExecutionError {
-    Normal(anyhow::Error),
+    User(Box<str>),
+    Recoverable(anyhow::Error),
     Trap(anyhow::Error),
 }
 
@@ -140,7 +141,7 @@ pub struct ExecutionResult<T> {
     pub call_result: T,
 }
 
-pub type ReducerExecuteResult = ExecutionResult<Result<ReducerResult, ExecutionError>>;
+pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
 
 pub type ViewExecuteResult = ExecutionResult<Result<Bytes, ExecutionError>>;
 
@@ -588,7 +589,7 @@ impl InstanceCommon {
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
         let status = match result.call_result {
-            Err(ExecutionError::Normal(err) | ExecutionError::Trap(err)) => {
+            Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
                 self.handle_outer_error(
@@ -598,25 +599,30 @@ impl InstanceCommon {
                     reducer_name,
                 )
             }
+            Err(ExecutionError::User(err)) => {
+                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                EventStatus::Failed(err.into())
+            }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
-            Ok(res) => match res.and_then(|()| {
+            Ok(()) => {
                 // If this is an OnDisconnect lifecycle event, remove the client from st_clients.
                 // We handle OnConnect events before running the reducer.
-                match reducer_def.lifecycle {
-                    Some(Lifecycle::OnDisconnect) => tx
-                        .delete_st_client(caller_identity, caller_connection_id, database_identity)
-                        .map_err(|e| e.to_string().into()),
+                let res = match reducer_def.lifecycle {
+                    Some(Lifecycle::OnDisconnect) => {
+                        tx.delete_st_client(caller_identity, caller_connection_id, database_identity)
+                    }
                     _ => Ok(()),
+                };
+                match res {
+                    Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
+                    Err(err) => {
+                        let err = err.to_string();
+                        log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                        EventStatus::Failed(err)
+                    }
                 }
-            }) {
-                Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
-                Err(err) => {
-                    log::info!("reducer returned error: {err}");
-                    log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
-                    EventStatus::Failed(err.into())
-                }
-            },
+            }
         };
 
         let event = ModuleEvent {
@@ -765,8 +771,15 @@ impl InstanceCommon {
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
         let outcome = match result.call_result {
-            Err(ExecutionError::Normal(err) | ExecutionError::Trap(err)) => {
+            Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("view", view_name, &err);
+
+                self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
+                    .into()
+            }
+            // TODO: maybe do something else with user errors?
+            Err(ExecutionError::User(err)) => {
+                inst.log_traceback("view", view_name, &anyhow::anyhow!(err));
 
                 self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
                     .into()
@@ -890,6 +903,8 @@ fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration)
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
 fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
     use database_logger::Record;
+
+    log::info!("reducer returned error: {message}");
 
     let record = Record {
         ts: chrono::DateTime::from_timestamp_micros(timestamp.to_micros_since_unix_epoch()).unwrap(),

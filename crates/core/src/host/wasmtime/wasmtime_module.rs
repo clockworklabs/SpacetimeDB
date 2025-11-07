@@ -93,23 +93,19 @@ impl module_host_actor::WasmModule for WasmtimeModule {
     }
 }
 
-fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), Box<str>> {
-    match code {
-        0 => Ok(()),
-        CALL_FAILURE => Err(string_from_utf8_lossy_owned(error).into()),
-        _ => Err("unknown return code".into()),
-    }
+fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), ExecutionError> {
+    handle_result_sink_code(code, error).map(drop)
 }
 
 /// Handle the return code from a function using a result sink.
 ///
 /// On success, returns the result bytes.
 /// On failure, returns the error message.
-fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Box<str>> {
+fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, ExecutionError> {
     match code {
         0 => Ok(result),
-        CALL_FAILURE => Err(string_from_utf8_lossy_owned(result).into()),
-        _ => Err("unknown return code".into()),
+        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
+        _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
     }
 }
 
@@ -175,14 +171,18 @@ impl module_host_actor::WasmInstancePre for WasmtimeModule {
             let setup_error = store.data_mut().setup_standard_bytes_sink();
             let res = call_sync_typed_func(&init, &mut store, setup_error);
             let error = store.data_mut().take_standard_bytes_sink();
-            match res {
-                // TODO: catch this and return the error message to the http client
-                Ok(code) => handle_error_sink_code(code, error).map_err(InitializationError::Setup)?,
-                Err(err) => {
+
+            let res = res
+                .map_err(ExecutionError::Trap)
+                .and_then(|code| handle_error_sink_code(code, error));
+
+            res.map_err(|e| match e {
+                ExecutionError::User(err) => InitializationError::Setup(err),
+                ExecutionError::Recoverable(err) | ExecutionError::Trap(err) => {
                     let func = SETUP_DUNDER.to_owned();
-                    return Err(InitializationError::RuntimeError { err, func });
+                    InitializationError::RuntimeError { err, func }
                 }
-            }
+            })?
         }
 
         let call_reducer = instance
@@ -401,12 +401,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let (stats, error) = finish_opcall(store, budget);
 
-        let call_result = call_result.map(|code| handle_error_sink_code(code, error));
+        let call_result = call_result
+            .map_err(ExecutionError::Trap)
+            .and_then(|code| handle_error_sink_code(code, error));
 
-        module_host_actor::ReducerExecuteResult {
-            stats,
-            call_result: call_result.map_err(ExecutionError::Trap),
-        }
+        module_host_actor::ReducerExecuteResult { stats, call_result }
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> module_host_actor::ViewExecuteResult {
@@ -426,7 +425,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let Some(call_view) = self.call_view.as_ref() else {
             return module_host_actor::ViewExecuteResult {
                 stats: zero_execution_stats(store),
-                call_result: Err(ExecutionError::Normal(anyhow::anyhow!(
+                call_result: Err(ExecutionError::Recoverable(anyhow::anyhow!(
                     "Module defines view {} but does not export `{}`",
                     op.name,
                     CALL_VIEW_DUNDER,
@@ -451,13 +450,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (stats, result_bytes) = finish_opcall(store, budget);
 
         let call_result = call_result
-            .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
+            .map_err(ExecutionError::Trap)
+            .and_then(|code| handle_result_sink_code(code, result_bytes))
             .map(|r| r.into());
 
-        module_host_actor::ViewExecuteResult {
-            stats,
-            call_result: call_result.map_err(ExecutionError::Trap),
-        }
+        module_host_actor::ViewExecuteResult { stats, call_result }
     }
 
     fn call_view_anon(
@@ -479,7 +476,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let Some(call_view_anon) = self.call_view_anon.as_ref() else {
             return module_host_actor::ViewExecuteResult {
                 stats: zero_execution_stats(store),
-                call_result: Err(ExecutionError::Normal(anyhow::anyhow!(
+                call_result: Err(ExecutionError::Recoverable(anyhow::anyhow!(
                     "Module defines anonymous view {} but does not export `{}`",
                     op.name,
                     CALL_VIEW_ANON_DUNDER,
@@ -492,13 +489,11 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let (stats, result_bytes) = finish_opcall(store, budget);
 
         let call_result = call_result
-            .and_then(|code| handle_result_sink_code(code, result_bytes).map_err(|e| anyhow::anyhow!(e)))
+            .map_err(ExecutionError::Trap)
+            .and_then(|code| handle_result_sink_code(code, result_bytes))
             .map(|r| r.into());
 
-        module_host_actor::ViewExecuteResult {
-            stats,
-            call_result: call_result.map_err(ExecutionError::Trap),
-        }
+        module_host_actor::ViewExecuteResult { stats, call_result }
     }
 
     fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error) {
