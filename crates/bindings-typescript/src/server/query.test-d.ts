@@ -2,7 +2,6 @@ import type { U32 } from '../lib/autogen/algebraic_type_variants';
 import type { Indexes, UniqueIndex } from './indexes';
 import {
   eq,
-  on,
   literal,
   type ColumnExpr,
   type RowExpr,
@@ -50,7 +49,6 @@ const order = table(
   }
 );
 
-
 const spacetimedb = schema([person, order]);
 
 /*
@@ -91,134 +89,15 @@ spacetimedb.init(ctx => {
   // ctx.db.person.id_name_idx.find
 
   // Downside of the string approach for columns is that if I hover, I don't get the type information.
-  
+
   // ctx.queryBuilder.
   // .filter
   // col("age")
-
 
   //ctx.query.from('person')
   ctx.queryBuilder
     .query('person')
     // .query('person')
-    .filter(row => eq(row['age'], literal(20)))
-    // .filter(row => eq(row.age, literal(20)))
-    .join('order', {
-      leftColumns: ['age'],
-      rightColumns: ['person_id'],
-    });
-
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join('order', {
-      leftColumns: ['id'],
-      rightColumns: ['person_id'],
-    });
-
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join4('order', {
-     leftColumns: p => [p.id, p.age] as const,
-     rightColumns: o => [o.person_id] as const,
-    });
-
-  // ctx.queryBuilder
-  //   .query('person')
-  //   .filter(row => eq(row.age, literal(20)))
-  //   .join5('order', {
-  //    leftColumns: p => [p.id],
-  //    rightColumns: o => [o.person_id],
-  //   });
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join5('order', {
-     leftColumns: ["id"] as const,
-     rightColumns: ["person_id", "item_name"] as const
-    });
-
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join7('order', {
-     leftColumns: ["id"] as const,
-     rightColumns: ["person_id", "item_name"] as const
-    });
-
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join8('order', {
-     leftColumns: ["id"] as const,
-     rightColumns: ["person_id"] as const,
-     // rightColumns: ["person_id", "item_name"] as const,
-    });
-
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join9('order', {
-     leftColumns: ["id"] as const,
-     rightColumns: ["person_id", "item_name"] as const,
-    });
-
-  ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)))
-    .join9('order', on(["id", "name"], ["person_id"])
-    );
-
-
-  // const aQuery = ctx.queryBuilder.query('person')
-  //   .filter(row => eq(row.age, literal(20)))
-  // // Get the context from somewhere else.
-
-  // let q = ctx.query["foobar"]
-  //       .join(ctx.orders, row => eq(row.id, ctx.orders.user_id))
-  //       // .join(row => eq(row.id, ctx.orders.user_id))
-  
-  // ctx.query['foobar']
-  //   .filter(row => eq(row.id, literal(5)))
-  //   .join(ctx.query.bar.filter(row => eq(row.id, 20)), (left, right) => eq(left.id, right.id))
-
-  // ctx.queryBuilder.foo
-  // ctx.query['foobar']
-  //   .filter(row => eq(row.id, literal(5)))
-  //   // .join(ts => ts.bar)
-  //   // .join(|x| x.table)
-  //   .join(ctx.)
-  //   // .join(ctx.bar, (left, right) => eq(left.id, right.id))
-
-
-  // ctx.queryBuilder.query('person')
-  //   .filter(row => eq(row.age, literal(20)))
-  //   .join(aQuery);
-  //   //TableName | Query
-  // ctx.queryBuilder.query('person').join(ctx.query.person)
-
-  // ctx.queryBuilder.query('person').join(ts => ts.query, {
-
-  // })
-
-
-  // /*
-  // .join((left, right) => eq(left.id, right.person_id))
-  // ctx.query.myLeftTable.join(ctx.query.myRightTable)
-  // */
-  // // ctx.queryBuilder.query('person').join(_.query)
-  // // ctx.queryBuilder.query('person').join((tables) => tables.query)
-  // // ctx.queryBuilder.query('person').join()
-  // ctx.queryBuilder.query('person').join2('order', {
-  //   leftColumns: p => [p.id],
-  //   rightColumns: o => [o.person_id],
-  // });
-
-  // /*
-  // ctx.queryBuilder.query('person').join3('order', {
-  //   leftColumns: p => [p.id],
-  //   rightColumns: o => [o.person_id, o.item_name],
-  // });
-  // */
- });
+    .filter(row => eq(row['age'], literal(20)));
+  // .filter(row => eq(row.age, literal(20)))
+});

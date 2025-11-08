@@ -22,11 +22,7 @@ export type TableDefByName<
 > = Extract<SchemaDef['tables'][number], { name: Name }>;
 
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
-  // readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl>;
-  query<Name extends TableNames<SchemaDef>>(
-    table: Name
-  ): TableScan<SchemaDef, TableDefByName<SchemaDef, Name>>;
-  //query(table: TableNames<SchemaDef>): TableScan<table>
+  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl>;
 };
 
 export function fakeQueryBuilder<
@@ -35,6 +31,60 @@ export function fakeQueryBuilder<
   throw 'unimplemented';
 }
 
+/**
+ * A runtime reference to a table. This materializes the RowExpr for us.
+ * TODO: Maybe add the full SchemaDef to the type signature depending on how joins will work.
+ */
+export type TableRef<TableDef extends TypedTableDef> = Readonly<{
+  type: 'table';
+  name: TableDef['name'];
+  cols: RowExpr<TableDef>;
+  // Maybe redundant.
+  tableDef: TableDef;
+}>;
+
+function createTableRefFromDef<TableDef extends TypedTableDef>(
+  tableDef: TableDef
+): TableRef<TableDef> {
+  const cols = createRowExpr(tableDef);
+  return {
+    type: 'table',
+    tableDef: tableDef,
+    cols: cols,
+    name: tableDef.name,
+  };
+}
+
+export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
+  schema: SchemaDef
+): QueryBuilder<SchemaDef> {
+  const qb = Object.create(null) as QueryBuilder<SchemaDef>;
+  for (const table of schema.tables) {
+    const ref = createTableRefFromDef(
+      table as TableDefByName<SchemaDef, TableNames<SchemaDef>>
+    );
+    (qb as Record<string, TableRef<any>>)[table.name] = ref;
+  }
+  return qb;
+}
+
+function createRowExpr<TableDef extends TypedTableDef>(
+  tableDef: TableDef
+): RowExpr<TableDef> {
+  const row: Record<string, ColumnExpr<TableDef, any>> = {};
+  for (const columnName of Object.keys(tableDef.columns) as Array<
+    keyof TableDef['columns'] & string
+  >) {
+    const columnBuilder = tableDef.columns[columnName];
+    row[columnName] = Object.freeze({
+      type: 'column',
+      table: tableDef.name,
+      column: columnName,
+      spacetimeType: columnBuilder.typeBuilder.resolveType(),
+    }) as ColumnExpr<TableDef, typeof columnName>;
+  }
+  return Object.freeze(row) as RowExpr<TableDef>;
+}
 // A static list of column names for a table.
 // type ColumnList<
 //   SchemaDef extends UntypedSchemaDef,
@@ -58,158 +108,10 @@ export type JoinCondition<
   rightColumns: ColumnList<SchemaDef, RightTable>;
 };
 
-type EqualLength<
-  A extends readonly any[],
-  B extends readonly any[],
-> = A['length'] extends B['length']
-  ? B['length'] extends A['length']
-    ? A
-    : never
-  : never;
-
-export type JoinCondition7<
-  SchemaDef extends UntypedSchemaDef,
-  LeftTable extends TableNames<SchemaDef>,
-  RightTable extends TableNames<SchemaDef>,
-  LCols extends readonly ColumnNames<
-    TableDefByName<SchemaDef, LeftTable>
-  >[] = readonly ColumnNames<TableDefByName<SchemaDef, LeftTable>>[],
-  RCols extends readonly ColumnNames<
-    TableDefByName<SchemaDef, RightTable>
-  >[] = readonly ColumnNames<TableDefByName<SchemaDef, RightTable>>[],
-> =
-  EqualLength<LCols, RCols> extends never
-    ? never
-    : {
-        leftColumns: LCols;
-        rightColumns: RCols;
-      };
-
-export type JoinCondition5<
-  SchemaDef extends UntypedSchemaDef,
-  LeftTable extends TableNames<SchemaDef>,
-  RightTable extends TableNames<SchemaDef>,
-  LCols extends ColumnList<SchemaDef, LeftTable> = ColumnList<
-    SchemaDef,
-    LeftTable
-  >,
-  RCols extends ColumnList<SchemaDef, RightTable> = ColumnList<
-    SchemaDef,
-    RightTable
-  >,
-> =
-  HasEqualLength<LCols, RCols> extends never
-    ? never
-    : {
-        leftColumns: LCols;
-        rightColumns: RCols;
-      };
-
 type ColumnExprList<
   SchemaDef extends UntypedSchemaDef,
   TableName extends TableNames<SchemaDef>,
 > = readonly AnyColumnExpr<TableDefByName<SchemaDef, TableName>>[];
-
-type ColumnExprListExtractor<
-  SchemaDef extends UntypedSchemaDef,
-  TableName extends TableNames<SchemaDef>,
-> = (
-  row: RowExpr<TableDefByName<SchemaDef, TableName>>
-) => ColumnExprList<SchemaDef, TableName>;
-// type ColumnListExtractor<SchemaDef extends UntypedSchemaDef, TableName extends TableNames<SchemaDef>>> = ReadonlyArray<ColumnExpr<
-export type JoinCondition2<
-  SchemaDef extends UntypedSchemaDef,
-  LeftTable extends TableNames<SchemaDef>,
-  RightTable extends TableNames<SchemaDef>,
-> = {
-  leftColumns: ColumnExprListExtractor<SchemaDef, LeftTable>;
-  rightColumns: ColumnExprListExtractor<SchemaDef, RightTable>;
-};
-
-// type Zip<A extends readonly any[], B extends readonly any[]> =
-//   A extends [infer AH, ...infer AT]
-//     ? B extends [infer BH, ...infer BT]
-//       ? [[AH, BH], ...Zip<AT, BT>]
-//       : never
-//     : B extends [] ? [] : never;
-
-type Zip<
-  A extends readonly any[],
-  B extends readonly any[],
-> = A extends readonly [infer AH, ...infer AT]
-  ? B extends readonly [infer BH, ...infer BT]
-    ? [[AH, BH], ...Zip<AT, BT>]
-    : never
-  : B extends readonly []
-    ? []
-    : never;
-
-export type JoinCondition3<
-  SchemaDef extends UntypedSchemaDef,
-  LeftTable extends TableNames<SchemaDef>,
-  RightTable extends TableNames<SchemaDef>,
-  L extends ColumnExprList<SchemaDef, LeftTable>,
-  R extends ColumnExprList<SchemaDef, RightTable>,
-> =
-  Zip<L, R> extends never
-    ? never
-    : {
-        leftColumns: (row: RowExpr<TableDefByName<SchemaDef, LeftTable>>) => L;
-        rightColumns: (
-          row: RowExpr<TableDefByName<SchemaDef, RightTable>>
-        ) => R;
-      };
-
-/** Helper type to check if two tuples/arrays have equal length */
-type HasEqualLength<
-  T extends readonly any[],
-  U extends readonly any[],
-> = T extends { length: infer L }
-  ? U extends { length: L }
-    ? true
-    : false
-  : false;
-
-export type JoinIsValid<T extends JoinCondition2<any, any, any>> =
-  HasEqualLength<ReturnType<T['leftColumns']>, ReturnType<T['rightColumns']>>;
-export type RestrictedJoin<T extends JoinCondition2<any, any, any>> =
-  HasEqualLength<
-    ReturnType<T['leftColumns']>,
-    ReturnType<T['rightColumns']>
-  > extends true
-    ? T
-    : never;
-
-type SameLen<
-  A extends readonly any[],
-  B extends readonly any[],
-> = A['length'] extends B['length']
-  ? B['length'] extends A['length']
-    ? true
-    : never
-  : never;
-
-// ─────────────────────────────────────────────────────────────
-// Helper that *preserves* tuple literal types and enforces length
-export function on<LC extends readonly any[], RC extends readonly any[]>(
-  leftColumns: LC,
-  rightColumns: RC & (SameLen<LC, RC> extends never ? never : unknown)
-) {
-  return { leftColumns, rightColumns } as const;
-}
-
-// ─────────────────────────────────────────────────────────────
-// JoinCondition type (optional, but nice to export)
-export type JoinCondition9<
-  SD extends UntypedSchemaDef,
-  LeftTable extends TableNames<SD>,
-  RightTable extends TableNames<SD>,
-  LC extends readonly ColumnNames<TableDefByName<SD, LeftTable>>[],
-  RC extends readonly ColumnNames<TableDefByName<SD, RightTable>>[],
-> = {
-  leftColumns: LC;
-  rightColumns: RC;
-};
 
 export class TableScan<
   SchemaDef extends UntypedSchemaDef,
@@ -227,15 +129,6 @@ export class TableScan<
     throw 'unimplemented';
   }
 }
-
-/**
- * A type representing a
- */
-export type TableRef<Table extends TypedTableDef> = {
-  type: 'table';
-  row: RowExpr<Table>;
-  tableName: Table['name'];
-};
 
 // TODO: Just use UntypedTableDef if they end up being the same.
 export type TypedTableDef = {
@@ -261,9 +154,6 @@ export type ColumnExpr<
   table: TableDef['name'];
   // This is here as a phantom type. You can pull it back with NonNullable<>
   tsValueType?: RowType<TableDef>[ColumnName];
-  /**
-   * docs
-   */
   spacetimeType: InferSpacetimeTypeOfColumn<TableDef, ColumnName>;
 }>;
 
@@ -290,9 +180,9 @@ type AnyColumnExpr<Table extends TypedTableDef> = {
 /**
  * Acts as a row when writing filters for queries. It is a way to get column references.
  */
-export type RowExpr<TableDef extends TypedTableDef> = {
+export type RowExpr<TableDef extends TypedTableDef> = Readonly<{
   readonly [C in ColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
-};
+}>;
 
 /**
  * Union of ColumnExprs from Table whose spacetimeType is compatible with Value
