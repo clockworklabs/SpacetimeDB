@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Security.Cryptography.X509Certificates;
 using SpacetimeDB;
 
 public enum LocalEnum { }
@@ -483,6 +484,15 @@ public partial struct TestScheduleIssues
     public static void DummyScheduledReducer(ReducerContext ctx, TestScheduleIssues table) { }
 }
 
+[SpacetimeDB.Table]
+public partial struct Player
+{
+    [Unique]
+    public Identity Identity;
+}
+
+public struct NotSpacetimeType { }
+
 public partial class Module
 {
 #pragma warning disable STDB_UNSTABLE // Enable ClientVisibilityFilter
@@ -506,4 +516,63 @@ public partial class Module
     public static readonly Filter MY_FOURTH_FILTER = new Filter.Sql(
         "SELECT * FROM TestAutoIncNotInteger"
     );
+
+    // Invalid: View definition missing Public=true
+    [SpacetimeDB.View(Name = "view_def_no_public")]
+    public static List<Player> ViewDefNoPublic(ViewContext ctx)
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: View definition with missing context type
+    [SpacetimeDB.View(Name = "view_def_no_context", Public = true)]
+    public static List<Player> ViewDefNoContext()
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: View definition with wrong context type
+    [SpacetimeDB.View(Name = "view_def_wrong_context", Public = true)]
+    public static List<Player> ViewDefWrongContext(ReducerContext ctx)
+    {
+        return new List<Player>();
+    }
+
+    // Invalid: View that performs Insert
+    [SpacetimeDB.View(Name = "view_no_insert", Public = true)]
+    public static Player? ViewNoInsert(ViewContext ctx)
+    {
+        ctx.Db.Player.Insert(new Player { Identity = new() });
+        return new Player { Identity = new() };
+    }
+
+    // Invalid: View that performs Delete
+    [SpacetimeDB.View(Name = "view_no_delete", Public = true)]
+    public static Player? ViewNoDelete(ViewContext ctx)
+    {
+        ctx.Db.Player.Delete(new Player { Identity = new() });
+        return null;
+    }
+
+    // TODO: Investigate why void return breaks the FFI generation
+    // // Invalid: Void return type is not Vec<T> or Option<T>
+    // [SpacetimeDB.View(Name = "view_def_no_return", Public = true)]
+    // public static void ViewDefNoReturn(ViewContext ctx)
+    // {
+    //     return;
+    // }
+
+    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    [SpacetimeDB.View(Name = "view_def_wrong_return", Public = true)]
+    public static Player ViewDefWrongReturn(ViewContext ctx)
+    {
+        return new Player { Identity = new() };
+    }
+
+    // Invalid: Returns type that is not a SpacetimeType
+    [SpacetimeDB.View(Name = "view_def_returns_not_a_spacetime_type", Public = true)]
+    public static NotSpacetimeType? ViewDefReturnsNotASpacetimeType(AnonymousViewContext ctx)
+    {
+        return new NotSpacetimeType();
+    }
 }

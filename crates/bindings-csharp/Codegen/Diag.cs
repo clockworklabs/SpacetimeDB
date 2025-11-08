@@ -191,6 +191,13 @@ internal static class ErrorDescriptor
             method => $"View '{method.Identifier}' must have an explicit name.",
             method => method
         );
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
+        new(
+            group,
+            "Views must return Vec<T> or Option<T>",
+            method => $"View '{method.Identifier}' must return Vec<T> or Option<T>.",
+            method => method
+        );
 
     // TODO: Remove once Views support Private: Views must be Public currently
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustBePublic =

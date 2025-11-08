@@ -27,11 +27,4 @@ public interface IViewContext
     }
 }
 
-public interface IAnonymousViewContext
-{
-    public static Identity GetIdentity()
-    {
-        FFI.identity(out var identity);
-        return identity;
-    }
-}
+public interface IAnonymousViewContext { }

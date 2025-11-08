@@ -16,7 +16,7 @@ public static partial class Module
     }
 
     [SpacetimeDB.View(Name = "GetExampleDataById", Public = true)]
-    public static ExampleData? GetExampleDataById(ViewContext ctx) //, uint id)
+    public static ExampleData? GetExampleDataById(ViewContext ctx)//, uint id)
     {
         return ctx.Db.ExampleData.Id.Find(0);
     }

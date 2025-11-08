@@ -979,6 +979,15 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewContextParam, methodSyntax);
         }
 
+        // Validate return type: must be Option<T> or Vec<T>
+        if (
+            !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.List")
+        )
+        {
+            diag.Report(ErrorDescriptor.ViewInvalidReturn, methodSyntax);
+        }
+
         Parameters = new(
             method
                 .Parameters.Skip(1)
