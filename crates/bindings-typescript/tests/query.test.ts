@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { makeQueryBuilder, eq, literal, and, or, not } from '../src/server/query';
+import { Identity } from '../src/lib/identity';
+import {
+  makeQueryBuilder,
+  eq,
+  literal,
+  and,
+  or,
+  not,
+} from '../src/server/query';
 import type { UntypedSchemaDef } from '../src/server/schema';
 import { table } from '../src/server/table';
 import { t } from '../src/server/type_builders';
@@ -57,7 +65,9 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb
       .query('person')
-      .filter(row => and(eq(row.name, literal('Alice')), eq(row.age, literal(30))))
+      .filter(row =>
+        and(eq(row.name, literal('Alice')), eq(row.age, literal(30)))
+      )
       .toSql();
 
     expect(sql).toBe(
@@ -76,15 +86,33 @@ describe('TableScan.toSql', () => {
       `SELECT * FROM "person" WHERE NOT ("person"."name" = 'Bob')`
     );
   });
-});
+
   it('renders OR clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb
       .query('person')
-      .filter(row => or(eq(row.name, literal('Carol')), eq(row.name, literal('Dave'))))
+      .filter(row =>
+        or(eq(row.name, literal('Carol')), eq(row.name, literal('Dave')))
+      )
       .toSql();
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE ("person"."name" = 'Carol') OR ("person"."name" = 'Dave')`
     );
   });
+
+  it('renders Identity literals using their hex form', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const identity = new Identity(
+      '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    );
+    const sql = qb
+      .query('person')
+      .filter(row => eq(row.id, literal(identity)))
+      .toSql();
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
+    );
+  });
+});

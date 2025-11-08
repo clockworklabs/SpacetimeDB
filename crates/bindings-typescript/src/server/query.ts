@@ -1,3 +1,4 @@
+import { Identity } from '../lib/identity';
 import type { Index, IndexOpts, UntypedIndex } from './indexes';
 import type { UntypedSchemaDef } from './schema';
 import type { RowType, TableIndexes, TableSchema } from './table';
@@ -207,8 +208,10 @@ export type ColumnExprForValue<Table extends TypedTableDef, Value> = {
     : never;
 }[ColumnNames<Table>];
 
+type LiteralValue = string | number | bigint | boolean | Identity;
+
 export type ValueExpr<TableDef extends TypedTableDef, Value> =
-  | LiteralExpr<Value>
+  | LiteralExpr<Value & LiteralValue>
   | ColumnExprForValue<TableDef, Value>;
 
 type LiteralExpr<Value> = {
@@ -224,11 +227,19 @@ type BooleanExpr<Table extends TypedTableDef> =
     }
   | {
       type: 'and';
-      clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]];
+      clauses: readonly [
+        BooleanExpr<Table>,
+        BooleanExpr<Table>,
+        ...BooleanExpr<Table>[],
+      ];
     }
   | {
       type: 'or';
-      clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]];
+      clauses: readonly [
+        BooleanExpr<Table>,
+        BooleanExpr<Table>,
+        ...BooleanExpr<Table>[],
+      ];
     }
   | {
       type: 'not';
@@ -256,7 +267,9 @@ export function eq<Table extends TypedTableDef>(
   };
 }
 
-export function literal<Value>(value: Value): LiteralExpr<Value> {
+export function literal<Value extends LiteralValue>(
+  value: Value
+): LiteralExpr<Value> {
   return { type: 'literal', value };
 }
 
@@ -267,13 +280,21 @@ export function not<Table extends TypedTableDef>(
 }
 
 export function and<Table extends TypedTableDef>(
-  ...clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]]
+  ...clauses: readonly [
+    BooleanExpr<Table>,
+    BooleanExpr<Table>,
+    ...BooleanExpr<Table>[],
+  ]
 ): BooleanExpr<Table> {
   return { type: 'and', clauses };
 }
 
 export function or<Table extends TypedTableDef>(
-  ...clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]]
+  ...clauses: readonly [
+    BooleanExpr<Table>,
+    BooleanExpr<Table>,
+    ...BooleanExpr<Table>[],
+  ]
 ): BooleanExpr<Table> {
   return { type: 'or', clauses };
 }
@@ -292,6 +313,7 @@ function booleanExprToSql<Table extends TypedTableDef>(
       return `NOT ${wrapInParens(booleanExprToSql(expr.clause))}`;
   }
 }
+
 function wrapInParens(sql: string): string {
   return `(${sql})`;
 }
@@ -308,6 +330,9 @@ function valueExprToSql<Table extends TypedTableDef>(
 function literalValueToSql(value: unknown): string {
   if (value === null || value === undefined) {
     return 'NULL';
+  }
+  if (value instanceof Identity) {
+    return `0x${value.toHexString()}`;
   }
   switch (typeof value) {
     case 'number':
@@ -328,6 +353,6 @@ function quoteIdentifier(name: string): string {
 
 function isLiteralExpr<Value>(
   expr: ValueExpr<any, Value>
-): expr is LiteralExpr<Value> {
+): expr is LiteralExpr<Value & LiteralValue> {
   return (expr as LiteralExpr<Value>).type === 'literal';
 }
