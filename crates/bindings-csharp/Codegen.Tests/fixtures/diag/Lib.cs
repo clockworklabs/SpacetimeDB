@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Security.Cryptography.X509Certificates;
 using SpacetimeDB;
 
 public enum LocalEnum { }
