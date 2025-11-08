@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import CallReducerType from './call_reducer_type';
 import SubscribeType from './subscribe_type';
 import OneOffQueryType from './one_off_query_type';

@@ -20,6 +20,10 @@ import ProductType from './product_type_type';
 
 export default __t.object('RawProcedureDefV9', {
   name: __t.string(),
-  params: __t.lazy(() => ProductType),
-  returnType: __t.lazy(() => AlgebraicType),
+  get params() {
+    return ProductType;
+  },
+  get returnType() {
+    return AlgebraicType;
+  },
 });

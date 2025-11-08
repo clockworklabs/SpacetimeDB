@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 
 export default __t.object('SubscriptionError', {
   totalHostExecutionDurationMicros: __t.u64(),

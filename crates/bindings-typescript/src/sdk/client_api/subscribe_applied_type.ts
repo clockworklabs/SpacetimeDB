@@ -23,13 +23,17 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import QueryId from './query_id_type';
 import SubscribeRows from './subscribe_rows_type';
 
 export default __t.object('SubscribeApplied', {
   requestId: __t.u32(),
   totalHostExecutionDurationMicros: __t.u64(),
-  queryId: __t.lazy(() => QueryId),
-  rows: __t.lazy(() => SubscribeRows),
+  get queryId() {
+    return QueryId;
+  },
+  get rows() {
+    return SubscribeRows;
+  },
 });

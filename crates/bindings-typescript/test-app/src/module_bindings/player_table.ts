@@ -29,5 +29,7 @@ import Point from './point_type';
 export default __t.row({
   ownerId: __t.string(),
   name: __t.string(),
-  location: __t.lazy(() => Point),
+  get location() {
+    return Point;
+  },
 });

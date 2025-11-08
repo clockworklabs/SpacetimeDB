@@ -23,10 +23,12 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import RowSizeHint from './row_size_hint_type';
 
 export default __t.object('BsatnRowList', {
-  sizeHint: __t.lazy(() => RowSizeHint),
+  get sizeHint() {
+    return RowSizeHint;
+  },
   rowsData: __t.byteArray(),
 });

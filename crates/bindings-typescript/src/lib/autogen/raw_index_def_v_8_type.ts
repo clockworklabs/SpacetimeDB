@@ -20,6 +20,8 @@ import IndexType from './index_type_type';
 export default __t.object('RawIndexDefV8', {
   indexName: __t.string(),
   isUnique: __t.bool(),
-  indexType: __t.lazy(() => IndexType),
+  get indexType() {
+    return IndexType;
+  },
   columns: __t.array(__t.u16()),
 });

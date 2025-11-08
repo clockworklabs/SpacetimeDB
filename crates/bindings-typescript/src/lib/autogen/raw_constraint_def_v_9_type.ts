@@ -19,5 +19,7 @@ import RawConstraintDataV9 from './raw_constraint_data_v_9_type';
 
 export default __t.object('RawConstraintDefV9', {
   name: __t.option(__t.string()),
-  data: __t.lazy(() => RawConstraintDataV9),
+  get data() {
+    return RawConstraintDataV9;
+  },
 });

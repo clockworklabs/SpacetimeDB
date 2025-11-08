@@ -19,5 +19,7 @@ import AlgebraicType from './algebraic_type_type';
 
 export default __t.object('RawColumnDefV8', {
   colName: __t.string(),
-  colType: __t.lazy(() => AlgebraicType),
+  get colType() {
+    return AlgebraicType;
+  },
 });

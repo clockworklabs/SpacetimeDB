@@ -18,5 +18,7 @@ import {
 import ProductTypeElement from './product_type_element_type';
 
 export default __t.object('ProductType', {
-  elements: __t.array(__t.lazy(() => ProductTypeElement)),
+  get elements() {
+    return __t.array(ProductTypeElement);
+  },
 });

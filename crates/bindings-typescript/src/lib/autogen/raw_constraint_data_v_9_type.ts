@@ -21,7 +21,9 @@ import * as RawConstraintDataV9Variants from './raw_constraint_data_v_9_variants
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
 const RawConstraintDataV9 = __t.enum('RawConstraintDataV9', {
-  Unique: __t.lazy(() => RawUniqueConstraintDataV9),
+  get Unique() {
+    return RawUniqueConstraintDataV9;
+  },
 });
 
 export default RawConstraintDataV9;

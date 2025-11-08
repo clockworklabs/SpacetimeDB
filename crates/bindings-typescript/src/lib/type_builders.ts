@@ -1,19 +1,18 @@
 import {
   AlgebraicType,
+  AlgebraicTypeVariants,
   ConnectionId,
   Identity,
   ScheduleAt,
   TimeDuration,
   Timestamp,
   Option,
-  type AlgebraicTypeVariants,
   type ConnectionIdAlgebraicType,
   type IdentityAlgebraicType,
   type OptionAlgebraicType,
   type TimeDurationAlgebraicType,
   type TimestampAlgebraicType,
 } from '..';
-import { addType, MODULE_DEF } from '../lib/schema';
 import type { CoerceRow } from './table';
 import { set, type SetField } from './type_util';
 
@@ -83,7 +82,7 @@ type RowType<Row extends RowObj> = {
 /**
  * Type which represents a valid argument to the ProductColumnBuilder
  */
-type ElementsObj = Record<string, TypeBuilder<any, any>>;
+export type ElementsObj = Record<string, TypeBuilder<any, any>>;
 
 /**
  * Type which converts the elements of ElementsObj to a ProductType elements array
@@ -108,7 +107,7 @@ type ObjectType<Elements extends ElementsObj> = {
   [K in keyof Elements]: InferTypeOfTypeBuilder<Elements[K]>;
 };
 
-type VariantsObj = Record<string, TypeBuilder<any, any>>;
+export type VariantsObj = Record<string, TypeBuilder<any, any>>;
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type UnitBuilder = ProductBuilder<{}>;
 type SimpleVariantsObj = Record<string, UnitBuilder>;
@@ -157,18 +156,10 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
    *
    * e.g. `string` corresponds to `AlgebraicType.String`
    */
-  readonly algebraicType: SpacetimeType | AlgebraicTypeVariants.Ref;
+  readonly algebraicType: SpacetimeType;
 
-  constructor(algebraicType: SpacetimeType | AlgebraicTypeVariants.Ref) {
+  constructor(algebraicType: SpacetimeType) {
     this.algebraicType = algebraicType;
-  }
-
-  resolveType(): SpacetimeType {
-    let ty: AlgebraicType = this.algebraicType;
-    while (ty.tag === 'Ref') {
-      ty = MODULE_DEF.typespace.types[ty.value];
-    }
-    return ty as SpacetimeType;
   }
 
   optional(): OptionBuilder<typeof this> {
@@ -1153,6 +1144,8 @@ export class ProductBuilder<Elements extends ElementsObj>
     }
   >
   implements Defaultable<ObjectType<Elements>, any> {
+  readonly typeName: string | undefined;
+  readonly elements: Elements;
   constructor(elements: Elements, name?: string) {
     function elementsArrayFromElementsObj<Obj extends ElementsObj>(obj: Obj) {
       return Object.entries(obj).map(([name, value]) => ({
@@ -1161,13 +1154,12 @@ export class ProductBuilder<Elements extends ElementsObj>
       }));
     }
     super(
-      addType(
-        name,
-        AlgebraicType.Product({
-          elements: elementsArrayFromElementsObj(elements),
-        })
-      )
+      AlgebraicType.Product({
+        elements: elementsArrayFromElementsObj(elements),
+      })
     );
+    this.typeName = name;
+    this.elements = elements;
   }
   default(
     value: ObjectType<Elements>
@@ -1186,12 +1178,12 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
     value: { elements: ElementsArrayFromRowObj<Row> };
   }
 > {
-  row: CoerceRow<Row>;
-  nameProvided: boolean;
+  readonly row: CoerceRow<Row>;
+  readonly typeName: string | undefined;
   constructor(row: Row, name?: string) {
     const mappedRow = Object.fromEntries(
-      Object.entries(row).map(([name, builder]) => [
-        name,
+      Object.entries(row).map(([colName, builder]) => [
+        colName,
         builder instanceof ColumnBuilder
           ? builder
           : new ColumnBuilder(builder, {}),
@@ -1203,10 +1195,9 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
       algebraicType: builder.typeBuilder.algebraicType,
     })) as ElementsArrayFromRowObj<Row>;
 
-    super(addType(name, AlgebraicType.Product({ elements })));
-    this.nameProvided = name != null;
-
+    super(AlgebraicType.Product({ elements }));
     this.row = mappedRow;
+    this.typeName = name;
   }
 }
 
@@ -1220,7 +1211,8 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   EnumType<Variants>,
   { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
 > {
-  protected readonly _variants: Variants;
+  readonly variants: Variants;
+  readonly typeName: string | undefined;
   constructor(variants: Variants, name?: string) {
     function variantsArrayFromVariantsObj<Variants extends VariantsObj>(
       variants: Variants
@@ -1231,14 +1223,11 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
       }));
     }
     super(
-      addType(
-        name,
-        AlgebraicType.Sum({
-          variants: variantsArrayFromVariantsObj(variants),
-        })
-      )
+      AlgebraicType.Sum({
+        variants: variantsArrayFromVariantsObj(variants),
+      })
     );
-    this._variants = variants;
+    this.variants = variants;
   }
 
   /**
@@ -1572,6 +1561,11 @@ const defaultMetadata: ColumnMetadata<never> = {};
  *
  * It carries both a phantom TypeScript type (the `Type`) and
  * runtime algebraic type information.
+ * 
+ * IMPORTANT! We have deliberately chosen to not have {@link ColumnBuilder} 
+ * extend {@link TypeBuilder} so that you cannot pass a {@link ColumnBuilder}
+ * where a {@link TypeBuilder} is expected. i.e. We want to maintain
+ * contravariance for functions that accept {@link TypeBuilder} parameters.
  */
 export class ColumnBuilder<
   Type,
@@ -2584,6 +2578,78 @@ export class TimeDurationColumnBuilder<
   }
 }
 
+export class RefBuilder extends TypeBuilder<number, AlgebraicTypeVariants.Ref> {
+  readonly ref: number;
+  constructor(ref: number) {
+    super(AlgebraicType.Ref(ref));
+    this.ref = ref;
+  }
+}
+
+interface EnumFn {
+  /**
+   * Creates a simple sum type whose cases are all unit variants.
+   * Each string in the array becomes a case of the enum.
+   *
+   * Example:
+   * ```ts
+   * t.enum("Color", ["red", "green", "blue"]);
+   * ```
+   */
+  <Case extends string>(
+    name: string,
+    cases: readonly [Case, ...Case[]]
+  ): SimpleSumBuilder<Record<Case, UnitBuilder>>;
+
+  /**
+   * Creates an empty simple sum type (no cases, equivalent to `never`).
+   * This can be useful for code generation or placeholder types.
+   * Example:
+   * ```ts
+   * t.enum("Never", []);
+   * ```
+   */
+  (name: string, cases: []): SimpleSumBuilder<Record<never, UnitBuilder>>;
+
+  /**
+   * Creates a full sum type, where each case can have a payload.
+   * Each value in the object must be a {@link TypeBuilder}.
+   *
+   * Example:
+   * ```ts
+   * t.enum("Result", { Ok: t.unit(), Err: t.string() });
+   * ```
+   */
+  <Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj>;
+}
+
+const enumImpl = ((nameOrObj: any, maybeObj?: any) => {
+  let obj: any = nameOrObj;
+  let name: string | undefined = undefined;
+
+  if (typeof nameOrObj === "string") {
+    if (!maybeObj) {
+      throw new TypeError(
+        "When providing a name, you must also provide the variants object or array."
+      );
+    }
+    obj = maybeObj;
+    name = nameOrObj;
+  }
+
+  // Simple sum (array form)
+  if (Array.isArray(obj)) {
+    const simpleVariantsObj: Record<string, UnitBuilder> = {};
+    for (const variant of obj) {
+      simpleVariantsObj[variant] = new ProductBuilder({});
+    }
+    return new SimpleSumBuilder(simpleVariantsObj, name);
+  }
+
+  // Regular sum (object form)
+  return new SumBuilder(obj, name);
+}) as EnumFn;
+
 /**
  * A collection of factory functions for creating various SpacetimeDB algebraic types
  * to be used in table definitions. Each function returns a corresponding builder
@@ -2790,50 +2856,7 @@ export const t = {
     return new ArrayBuilder(e);
   },
 
-  /**
-   * Creates a new `Sum` {@link AlgebraicType} to be used in table definitions. Sum types in SpacetimeDB
-   * are similar to enums or unions in languages like Rust or TypeScript respectively.
-   * Each variant of the enum must be a {@link TypeBuilder}.
-   * Represented as a union of string literals in TypeScript.
-   *
-   * @param name (optional) A display name for the sum type. If omitted, an anonymous sum type is created.
-   * @param obj The object defining the variants of the enum, whose variant
-   * types must be {@link TypeBuilder}s.
-   * @returns A new {@link SumBuilder} instance.
-   */
-  enum: ((nameOrObj: any, maybeObj?: any) => {
-    let obj: VariantsObj = nameOrObj;
-    let name: string | undefined = undefined;
-    if (typeof nameOrObj === 'string') {
-      if (!maybeObj) {
-        throw new TypeError(
-          'When providing a name, you must also provide the variants object.'
-        );
-      }
-      obj = maybeObj;
-      name = nameOrObj;
-    }
-    if (
-      Object.values(obj).every(x => {
-        if (typeof x === 'function') {
-          return false;
-        }
-        const ty: AlgebraicType = x.resolveType();
-        return ty.tag === 'Product' && ty.value.elements.length === 0;
-      })
-    ) {
-      return new SimpleSumBuilder(obj as SimpleVariantsObj, name);
-    }
-    return new SumBuilder(obj, name);
-  }) as {
-    <Obj extends SimpleVariantsObj>(
-      name: string,
-      obj: Obj
-    ): SimpleSumBuilder<Obj>;
-    <Obj extends VariantsObj>(name: string, obj: Obj): SumBuilder<Obj>;
-    // TODO: Currently names are not optional
-    // <Obj extends VariantsObj>(obj: Obj): SumBuilder<Obj>;
-  },
+  enum: enumImpl,
 
   /**
    * This is a special helper function for conveniently creating {@link Product} type columns with no fields.

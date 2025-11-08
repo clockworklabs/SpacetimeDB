@@ -20,6 +20,10 @@ import Lifecycle from './lifecycle_type';
 
 export default __t.object('RawReducerDefV9', {
   name: __t.string(),
-  params: __t.lazy(() => ProductType),
-  lifecycle: __t.option(__t.lazy(() => Lifecycle)),
+  get params() {
+    return ProductType;
+  },
+  get lifecycle() {
+    return __t.option(Lifecycle);
+  },
 });

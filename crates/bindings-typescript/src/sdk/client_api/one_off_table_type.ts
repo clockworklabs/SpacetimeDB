@@ -23,10 +23,12 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import BsatnRowList from './bsatn_row_list_type';
 
 export default __t.object('OneOffTable', {
   tableName: __t.string(),
-  rows: __t.lazy(() => BsatnRowList),
+  get rows() {
+    return BsatnRowList;
+  },
 });

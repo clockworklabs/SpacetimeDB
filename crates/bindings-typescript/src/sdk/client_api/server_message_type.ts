@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import InitialSubscription from './initial_subscription_type';
 import TransactionUpdate from './transaction_update_type';
 import TransactionUpdateLight from './transaction_update_light_type';
@@ -40,17 +40,39 @@ import * as ServerMessageVariants from './server_message_variants';
 
 // The tagged union or sum type for the algebraic type `ServerMessage`.
 const ServerMessage = __t.enum('ServerMessage', {
-  InitialSubscription: __t.lazy(() => InitialSubscription),
-  TransactionUpdate: __t.lazy(() => TransactionUpdate),
-  TransactionUpdateLight: __t.lazy(() => TransactionUpdateLight),
-  IdentityToken: __t.lazy(() => IdentityToken),
-  OneOffQueryResponse: __t.lazy(() => OneOffQueryResponse),
-  SubscribeApplied: __t.lazy(() => SubscribeApplied),
-  UnsubscribeApplied: __t.lazy(() => UnsubscribeApplied),
-  SubscriptionError: __t.lazy(() => SubscriptionError),
-  SubscribeMultiApplied: __t.lazy(() => SubscribeMultiApplied),
-  UnsubscribeMultiApplied: __t.lazy(() => UnsubscribeMultiApplied),
-  ProcedureResult: __t.lazy(() => ProcedureResult),
+  get InitialSubscription() {
+    return InitialSubscription;
+  },
+  get TransactionUpdate() {
+    return TransactionUpdate;
+  },
+  get TransactionUpdateLight() {
+    return TransactionUpdateLight;
+  },
+  get IdentityToken() {
+    return IdentityToken;
+  },
+  get OneOffQueryResponse() {
+    return OneOffQueryResponse;
+  },
+  get SubscribeApplied() {
+    return SubscribeApplied;
+  },
+  get UnsubscribeApplied() {
+    return UnsubscribeApplied;
+  },
+  get SubscriptionError() {
+    return SubscriptionError;
+  },
+  get SubscribeMultiApplied() {
+    return SubscribeMultiApplied;
+  },
+  get UnsubscribeMultiApplied() {
+    return UnsubscribeMultiApplied;
+  },
+  get ProcedureResult() {
+    return ProcedureResult;
+  },
 });
 
 export default ServerMessage;

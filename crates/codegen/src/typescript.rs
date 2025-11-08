@@ -493,7 +493,7 @@ fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
 /// ```
 fn write_object_type_builder_fields(
     module: &ModuleDef,
-    out: &mut impl Write,
+    out: &mut Indenter,
     elements: &[(Identifier, AlgebraicTypeUse)],
     convert_case: bool,
 ) -> anyhow::Result<()> {
@@ -504,9 +504,39 @@ fn write_object_type_builder_fields(
             ident.deref().into()
         };
 
-        write!(out, "{name}: ")?;
+        write_type_builder_field(module, out, &name, ty)?;
+    }
+
+    Ok(())
+}
+
+fn write_type_builder_field(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    ty: &AlgebraicTypeUse,
+) -> fmt::Result {
+    // Do we need a getter? (Option/Array only if their inner is a Ref)
+    let needs_getter = match ty {
+        AlgebraicTypeUse::Ref(_) => true,
+        AlgebraicTypeUse::Option(inner) | AlgebraicTypeUse::Array(inner) => {
+            matches!(inner.as_ref(), AlgebraicTypeUse::Ref(_))
+        }
+        _ => false,
+    };
+
+    if needs_getter {
+        writeln!(out, "get {name}() {{");
+        out.indent(1);
+        write!(out, "return ");
         write_type_builder(module, out, ty)?;
-        writeln!(out, ",")?;
+        writeln!(out, ";");
+        out.dedent(1);
+        writeln!(out, "}},");
+    } else {
+        write!(out, "{name}: ");
+        write_type_builder(module, out, ty)?;
+        writeln!(out, ",");
     }
 
     Ok(())
@@ -554,7 +584,7 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
             write!(out, ")")?;
         },
         AlgebraicTypeUse::Ref(r) => {
-            write!(out, "__t.lazy(() => {})", type_ref_name(module, *r))?;
+            write!(out, "{}", type_ref_name(module, *r))?;
         },
     }
     Ok(())

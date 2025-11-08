@@ -1,4 +1,4 @@
-import { AlgebraicType, ProductType } from './algebraic_type';
+import { ProductType } from './algebraic_type';
 import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
@@ -6,10 +6,9 @@ import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type { ColumnIndex, IndexColumns, Indexes, IndexOpts, ReadonlyIndexes } from './indexes';
-import { MODULE_DEF, splitName } from './schema';
+import { registerTypesRecursively, MODULE_DEF, resolveType, splitName } from './schema';
 import type { TableSchema } from './table_schema';
 import {
-  ProductBuilder,
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
@@ -186,7 +185,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     row = new RowBuilder(row);
   }
 
-  row.resolveType().value.elements.forEach((elem, i) => {
+  const rowTypeRef = registerTypesRecursively(row);
+
+  row.algebraicType.value.elements.forEach((elem, i) => {
     colIds.set(elem.name, i);
     colNameList.push(elem.name);
   });
@@ -298,7 +299,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   const tableDef: Infer<typeof RawTableDefV9> = {
     name,
-    productTypeRef: row.algebraicType.value as number,
+    productTypeRef: rowTypeRef.ref,
     primaryKey: pk,
     indexes,
     constraints,
@@ -315,16 +316,16 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  if (!row.nameProvided) {
+  if (row.typeName === undefined) {
     MODULE_DEF.types.push({
       customOrdering: true,
       name: splitName(name),
-      ty: row.algebraicType.value as number,
+      ty: rowTypeRef.ref,
     });
   }
 
   const productType = {
-    elements: row.resolveType().value.elements.map(elem => {
+    elements: resolveType(MODULE_DEF.typespace, row).value.elements.map(elem => {
       return { name: elem.name, algebraicType: elem.algebraicType };
     }),
   };

@@ -2,11 +2,17 @@ import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type Typespace from './autogen/typespace_type';
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  type ColumnBuilder,
+  ColumnBuilder,
+  ProductBuilder,
+  RefBuilder,
+  RowBuilder,
+  SumBuilder,
+  type ElementsObj,
   type Infer,
   type RowObj,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type TypeBuilder,
+  type VariantsObj,
 } from './type_builders';
 import type { UntypedTableDef } from './table';
 import {
@@ -20,6 +26,7 @@ import {
 import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
 import {
   AlgebraicType,
+  type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
@@ -65,33 +72,81 @@ export const MODULE_DEF: Infer<typeof RawModuleDefV9> = {
 
 const COMPOUND_TYPES = new Map<
   AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
-  AlgebraicTypeVariants.Ref
+  RefBuilder
 >();
 
-export function addType<T extends AlgebraicType>(
-  name: string | undefined,
-  ty: T
-): T | AlgebraicTypeVariants.Ref {
-  if (
-    (ty.tag === 'Product' && (ty.value.elements.length > 0 || name != null)) ||
-    (ty.tag === 'Sum' && (ty.value.variants.length > 0 || name != null))
-  ) {
-    let r = COMPOUND_TYPES.get(ty);
-    if (r == null) {
-      r = AlgebraicType.Ref(MODULE_DEF.typespace.types.length);
-      MODULE_DEF.typespace.types.push(ty);
-      COMPOUND_TYPES.set(ty, r);
-      if (name != null)
-        MODULE_DEF.types.push({
-          name: splitName(name),
-          ty: r.value,
-          customOrdering: true,
-        });
-    }
-    return r;
-  } else {
-    return ty;
+/**
+ * Resolves the actual type of a TypeBuilder by following its references until it reaches a non-ref type.
+ * @param typespace The typespace to resolve types against.
+ * @param typeBuilder The TypeBuilder to resolve.
+ * @returns The resolved algebraic type.
+ */
+export function resolveType<AT extends AlgebraicTypeType>(
+  typespace: Infer<typeof Typespace>,
+  typeBuilder: TypeBuilder<any, AT>
+): AT {
+  let ty: AlgebraicType = typeBuilder.algebraicType;
+  while (ty.tag === 'Ref') {
+    ty = typespace.types[ty.value];
   }
+  return ty as AT;
+}
+
+/**
+ * Adds a type to the module definition's typespace as a `Ref` if it is a named compound type (Product or Sum).
+ * Otherwise, returns the type as is.
+ * @param name 
+ * @param ty 
+ * @returns 
+ */
+export function registerTypesRecursively(
+  typeBuilder: SumBuilder<VariantsObj> | ProductBuilder<ElementsObj> | RowBuilder<RowObj> 
+): RefBuilder {
+  const ty = typeBuilder.algebraicType;
+  const name = typeBuilder.typeName;
+
+  let r = COMPOUND_TYPES.get(ty);
+  if (r != null) {
+    // Already added to typespace
+    return r;
+  }
+
+  // Recursively register nested compound types
+  if (typeBuilder instanceof RowBuilder) {
+    for (const [name, elem] of Object.entries(typeBuilder.row)) {
+      if (!(elem instanceof ProductBuilder || elem instanceof SumBuilder || elem instanceof RowBuilder)) {
+        continue;
+      }
+      typeBuilder.row[name] = new ColumnBuilder(registerTypesRecursively(elem), {});
+    }
+  } else if (typeBuilder instanceof ProductBuilder) {
+    for (const [name, elem] of Object.entries(typeBuilder.elements)) {
+      if (!(elem instanceof ProductBuilder || elem instanceof SumBuilder || elem instanceof RowBuilder)) {
+        continue;
+      }
+      typeBuilder.elements[name] = registerTypesRecursively(elem);
+    }
+  } else if (typeBuilder instanceof SumBuilder) {
+    for (const [name, variant] of Object.entries(typeBuilder.variants)) {
+      if (!(variant instanceof ProductBuilder || variant instanceof SumBuilder || variant instanceof RowBuilder)) {
+        continue;
+      }
+      typeBuilder.variants[name] = registerTypesRecursively(variant);
+    }
+  }
+ 
+  // Add to typespace and return a Ref type
+  r = new RefBuilder(MODULE_DEF.typespace.types.length);
+  MODULE_DEF.typespace.types.push(ty);
+
+  COMPOUND_TYPES.set(ty, r);
+  if (name !== undefined)
+    MODULE_DEF.types.push({
+      name: splitName(name),
+      ty: r.ref,
+      customOrdering: true,
+    });
+  return r;
 }
 
 export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
@@ -345,7 +400,7 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
 export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   ...args:
     | [H]
-    | H 
+    | H
 ): Schema<TablesToSchema<H>> {
   const handles = (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as H;
 
@@ -371,7 +426,7 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
 type HasAccessor = { accessorName: PropertyKey };
 
 export type ConvertToAccessorMap<TableDefs extends readonly HasAccessor[]> = {
-  [Tbl in TableDefs[number] as Tbl["accessorName"]]: Tbl
+  [Tbl in TableDefs[number]as Tbl["accessorName"]]: Tbl
 };
 
 export function convertToAccessorMap<T extends readonly HasAccessor[]>(arr: T): ConvertToAccessorMap<T> {

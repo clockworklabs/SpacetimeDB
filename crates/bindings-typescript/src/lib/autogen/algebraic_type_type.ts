@@ -24,9 +24,15 @@ import * as AlgebraicTypeVariants from './algebraic_type_variants';
 const AlgebraicType: __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType> =
   __t.enum('AlgebraicType', {
     Ref: __t.u32(),
-    Sum: __t.lazy(() => SumType),
-    Product: __t.lazy(() => ProductType),
-    Array: __t.lazy(() => AlgebraicType),
+    get Sum() {
+      return SumType;
+    },
+    get Product() {
+      return ProductType;
+    },
+    get Array() {
+      return AlgebraicType;
+    },
     String: __t.unit(),
     Bool: __t.unit(),
     I8: __t.unit(),

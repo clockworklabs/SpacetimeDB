@@ -23,12 +23,14 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import CompressableQueryUpdate from './compressable_query_update_type';
 
 export default __t.object('TableUpdate', {
   tableId: __t.u32(),
   tableName: __t.string(),
   numRows: __t.u64(),
-  updates: __t.array(__t.lazy(() => CompressableQueryUpdate)),
+  get updates() {
+    return __t.array(CompressableQueryUpdate);
+  },
 });

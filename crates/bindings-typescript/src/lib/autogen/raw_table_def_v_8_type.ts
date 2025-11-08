@@ -22,10 +22,18 @@ import RawSequenceDefV8 from './raw_sequence_def_v_8_type';
 
 export default __t.object('RawTableDefV8', {
   tableName: __t.string(),
-  columns: __t.array(__t.lazy(() => RawColumnDefV8)),
-  indexes: __t.array(__t.lazy(() => RawIndexDefV8)),
-  constraints: __t.array(__t.lazy(() => RawConstraintDefV8)),
-  sequences: __t.array(__t.lazy(() => RawSequenceDefV8)),
+  get columns() {
+    return __t.array(RawColumnDefV8);
+  },
+  get indexes() {
+    return __t.array(RawIndexDefV8);
+  },
+  get constraints() {
+    return __t.array(RawConstraintDefV8);
+  },
+  get sequences() {
+    return __t.array(RawSequenceDefV8);
+  },
   tableType: __t.string(),
   tableAccess: __t.string(),
   scheduled: __t.option(__t.string()),

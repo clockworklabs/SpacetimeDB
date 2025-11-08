@@ -23,11 +23,13 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import ProcedureStatus from './procedure_status_type';
 
 export default __t.object('ProcedureResult', {
-  status: __t.lazy(() => ProcedureStatus),
+  get status() {
+    return ProcedureStatus;
+  },
   timestamp: __t.timestamp(),
   totalHostExecutionDuration: __t.timeDuration(),
   requestId: __t.u32(),

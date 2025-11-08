@@ -18,6 +18,8 @@ import {
 import RawTableDefV8 from './raw_table_def_v_8_type';
 
 export default __t.object('TableDesc', {
-  schema: __t.lazy(() => RawTableDefV8),
+  get schema() {
+    return RawTableDefV8;
+  },
   data: __t.u32(),
 });

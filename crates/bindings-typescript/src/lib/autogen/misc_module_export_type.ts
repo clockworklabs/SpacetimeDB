@@ -21,7 +21,9 @@ import * as MiscModuleExportVariants from './misc_module_export_variants';
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
 const MiscModuleExport = __t.enum('MiscModuleExport', {
-  TypeAlias: __t.lazy(() => TypeAlias),
+  get TypeAlias() {
+    return TypeAlias;
+  },
 });
 
 export default MiscModuleExport;

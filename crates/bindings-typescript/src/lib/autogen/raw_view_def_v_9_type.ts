@@ -22,6 +22,10 @@ export default __t.object('RawViewDefV9', {
   name: __t.string(),
   isPublic: __t.bool(),
   isAnonymous: __t.bool(),
-  params: __t.lazy(() => ProductType),
-  returnType: __t.lazy(() => AlgebraicType),
+  get params() {
+    return ProductType;
+  },
+  get returnType() {
+    return AlgebraicType;
+  },
 });

@@ -23,14 +23,16 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import QueryUpdate from './query_update_type';
 
 import * as CompressableQueryUpdateVariants from './compressable_query_update_variants';
 
 // The tagged union or sum type for the algebraic type `CompressableQueryUpdate`.
 const CompressableQueryUpdate = __t.enum('CompressableQueryUpdate', {
-  Uncompressed: __t.lazy(() => QueryUpdate),
+  get Uncompressed() {
+    return QueryUpdate;
+  },
   Brotli: __t.byteArray(),
   Gzip: __t.byteArray(),
 });

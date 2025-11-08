@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 
 export type FixedSize = { tag: 'FixedSize'; value: number };
 export type RowOffsets = { tag: 'RowOffsets'; value: bigint[] };

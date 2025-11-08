@@ -18,5 +18,7 @@ import {
 import AlgebraicType from './algebraic_type_type';
 
 export default __t.object('Typespace', {
-  types: __t.array(__t.lazy(() => AlgebraicType)),
+  get types() {
+    return __t.array(AlgebraicType);
+  },
 });

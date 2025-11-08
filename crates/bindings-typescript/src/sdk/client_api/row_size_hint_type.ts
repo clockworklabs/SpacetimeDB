@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import * as RowSizeHintVariants from './row_size_hint_variants';
 
 // The tagged union or sum type for the algebraic type `RowSizeHint`.

@@ -20,5 +20,7 @@ import RawIndexAlgorithm from './raw_index_algorithm_type';
 export default __t.object('RawIndexDefV9', {
   name: __t.option(__t.string()),
   accessorName: __t.option(__t.string()),
-  algorithm: __t.lazy(() => RawIndexAlgorithm),
+  get algorithm() {
+    return RawIndexAlgorithm;
+  },
 });

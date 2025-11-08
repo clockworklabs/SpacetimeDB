@@ -22,8 +22,12 @@ import * as RawModuleDefVariants from './raw_module_def_variants';
 
 // The tagged union or sum type for the algebraic type `RawModuleDef`.
 const RawModuleDef = __t.enum('RawModuleDef', {
-  V8BackCompat: __t.lazy(() => RawModuleDefV8),
-  V9: __t.lazy(() => RawModuleDefV9),
+  get V8BackCompat() {
+    return RawModuleDefV8;
+  },
+  get V9() {
+    return RawModuleDefV9;
+  },
 });
 
 export default RawModuleDef;

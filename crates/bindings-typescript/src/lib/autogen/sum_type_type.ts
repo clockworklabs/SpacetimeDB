@@ -18,5 +18,7 @@ import {
 import SumTypeVariant from './sum_type_variant_type';
 
 export default __t.object('SumType', {
-  variants: __t.array(__t.lazy(() => SumTypeVariant)),
+  get variants() {
+    return __t.array(SumTypeVariant);
+  },
 });

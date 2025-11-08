@@ -23,10 +23,22 @@ import RawMiscModuleExportV9 from './raw_misc_module_export_v_9_type';
 import RawRowLevelSecurityDefV9 from './raw_row_level_security_def_v_9_type';
 
 export default __t.object('RawModuleDefV9', {
-  typespace: __t.lazy(() => Typespace),
-  tables: __t.array(__t.lazy(() => RawTableDefV9)),
-  reducers: __t.array(__t.lazy(() => RawReducerDefV9)),
-  types: __t.array(__t.lazy(() => RawTypeDefV9)),
-  miscExports: __t.array(__t.lazy(() => RawMiscModuleExportV9)),
-  rowLevelSecurity: __t.array(__t.lazy(() => RawRowLevelSecurityDefV9)),
+  get typespace() {
+    return Typespace;
+  },
+  get tables() {
+    return __t.array(RawTableDefV9);
+  },
+  get reducers() {
+    return __t.array(RawReducerDefV9);
+  },
+  get types() {
+    return __t.array(RawTypeDefV9);
+  },
+  get miscExports() {
+    return __t.array(RawMiscModuleExportV9);
+  },
+  get rowLevelSecurity() {
+    return __t.array(RawRowLevelSecurityDefV9);
+  },
 });

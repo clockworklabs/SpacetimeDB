@@ -23,10 +23,12 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import DatabaseUpdate from './database_update_type';
 
 export default __t.object('TransactionUpdateLight', {
   requestId: __t.u32(),
-  update: __t.lazy(() => DatabaseUpdate),
+  get update() {
+    return DatabaseUpdate;
+  },
 });

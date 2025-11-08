@@ -23,12 +23,14 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import OneOffTable from './one_off_table_type';
 
 export default __t.object('OneOffQueryResponse', {
   messageId: __t.byteArray(),
   error: __t.option(__t.string()),
-  tables: __t.array(__t.lazy(() => OneOffTable)),
+  get tables() {
+    return __t.array(OneOffTable);
+  },
   totalHostExecutionDuration: __t.timeDuration(),
 });

@@ -26,10 +26,22 @@ export default __t.object('RawTableDefV9', {
   name: __t.string(),
   productTypeRef: __t.u32(),
   primaryKey: __t.array(__t.u16()),
-  indexes: __t.array(__t.lazy(() => RawIndexDefV9)),
-  constraints: __t.array(__t.lazy(() => RawConstraintDefV9)),
-  sequences: __t.array(__t.lazy(() => RawSequenceDefV9)),
-  schedule: __t.option(__t.lazy(() => RawScheduleDefV9)),
-  tableType: __t.lazy(() => TableType),
-  tableAccess: __t.lazy(() => TableAccess),
+  get indexes() {
+    return __t.array(RawIndexDefV9);
+  },
+  get constraints() {
+    return __t.array(RawConstraintDefV9);
+  },
+  get sequences() {
+    return __t.array(RawSequenceDefV9);
+  },
+  get schedule() {
+    return __t.option(RawScheduleDefV9);
+  },
+  get tableType() {
+    return TableType;
+  },
+  get tableAccess() {
+    return TableAccess;
+  },
 });

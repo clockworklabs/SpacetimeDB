@@ -19,5 +19,7 @@ import AlgebraicType from './algebraic_type_type';
 
 export default __t.object('SumTypeVariant', {
   name: __t.option(__t.string()),
-  algebraicType: __t.lazy(() => AlgebraicType),
+  get algebraicType() {
+    return AlgebraicType;
+  },
 });

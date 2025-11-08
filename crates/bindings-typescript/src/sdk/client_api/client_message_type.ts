@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import CallReducer from './call_reducer_type';
 import Subscribe from './subscribe_type';
 import OneOffQuery from './one_off_query_type';
@@ -37,14 +37,30 @@ import * as ClientMessageVariants from './client_message_variants';
 
 // The tagged union or sum type for the algebraic type `ClientMessage`.
 const ClientMessage = __t.enum('ClientMessage', {
-  CallReducer: __t.lazy(() => CallReducer),
-  Subscribe: __t.lazy(() => Subscribe),
-  OneOffQuery: __t.lazy(() => OneOffQuery),
-  SubscribeSingle: __t.lazy(() => SubscribeSingle),
-  SubscribeMulti: __t.lazy(() => SubscribeMulti),
-  Unsubscribe: __t.lazy(() => Unsubscribe),
-  UnsubscribeMulti: __t.lazy(() => UnsubscribeMulti),
-  CallProcedure: __t.lazy(() => CallProcedure),
+  get CallReducer() {
+    return CallReducer;
+  },
+  get Subscribe() {
+    return Subscribe;
+  },
+  get OneOffQuery() {
+    return OneOffQuery;
+  },
+  get SubscribeSingle() {
+    return SubscribeSingle;
+  },
+  get SubscribeMulti() {
+    return SubscribeMulti;
+  },
+  get Unsubscribe() {
+    return Unsubscribe;
+  },
+  get UnsubscribeMulti() {
+    return UnsubscribeMulti;
+  },
+  get CallProcedure() {
+    return CallProcedure;
+  },
 });
 
 export default ClientMessage;

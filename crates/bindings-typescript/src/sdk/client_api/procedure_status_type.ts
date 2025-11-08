@@ -23,7 +23,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import * as ProcedureStatusVariants from './procedure_status_variants';
 
 // The tagged union or sum type for the algebraic type `ProcedureStatus`.

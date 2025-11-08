@@ -19,5 +19,7 @@ import ProductTypeElement from './product_type_element_type';
 
 export default __t.object('ReducerDef', {
   name: __t.string(),
-  args: __t.array(__t.lazy(() => ProductTypeElement)),
+  get args() {
+    return __t.array(ProductTypeElement);
+  },
 });

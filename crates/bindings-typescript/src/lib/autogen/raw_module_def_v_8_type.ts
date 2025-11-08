@@ -21,8 +21,16 @@ import ReducerDef from './reducer_def_type';
 import MiscModuleExport from './misc_module_export_type';
 
 export default __t.object('RawModuleDefV8', {
-  typespace: __t.lazy(() => Typespace),
-  tables: __t.array(__t.lazy(() => TableDesc)),
-  reducers: __t.array(__t.lazy(() => ReducerDef)),
-  miscExports: __t.array(__t.lazy(() => MiscModuleExport)),
+  get typespace() {
+    return Typespace;
+  },
+  get tables() {
+    return __t.array(TableDesc);
+  },
+  get reducers() {
+    return __t.array(ReducerDef);
+  },
+  get miscExports() {
+    return __t.array(MiscModuleExport);
+  },
 });

@@ -23,9 +23,15 @@ import * as RawMiscModuleExportV9Variants from './raw_misc_module_export_v_9_var
 
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
 const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
-  ColumnDefaultValue: __t.lazy(() => RawColumnDefaultValueV9),
-  Procedure: __t.lazy(() => RawProcedureDefV9),
-  View: __t.lazy(() => RawViewDefV9),
+  get ColumnDefaultValue() {
+    return RawColumnDefaultValueV9;
+  },
+  get Procedure() {
+    return RawProcedureDefV9;
+  },
+  get View() {
+    return RawViewDefV9;
+  },
 });
 
 export default RawMiscModuleExportV9;

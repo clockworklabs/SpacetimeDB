@@ -23,13 +23,17 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import QueryId from './query_id_type';
 import DatabaseUpdate from './database_update_type';
 
 export default __t.object('UnsubscribeMultiApplied', {
   requestId: __t.u32(),
   totalHostExecutionDurationMicros: __t.u64(),
-  queryId: __t.lazy(() => QueryId),
-  update: __t.lazy(() => DatabaseUpdate),
+  get queryId() {
+    return QueryId;
+  },
+  get update() {
+    return DatabaseUpdate;
+  },
 });

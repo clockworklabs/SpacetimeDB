@@ -139,7 +139,7 @@ export function pushReducer(
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
-      algebraicType: ('typeBuilder' in c ? c.typeBuilder : c).algebraicType,
+      algebraicType: c.algebraicType,
     })),
   };
 

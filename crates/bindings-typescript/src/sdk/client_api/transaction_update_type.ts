@@ -23,17 +23,23 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import UpdateStatus from './update_status_type';
 import ReducerCallInfo from './reducer_call_info_type';
 import EnergyQuanta from './energy_quanta_type';
 
 export default __t.object('TransactionUpdate', {
-  status: __t.lazy(() => UpdateStatus),
+  get status() {
+    return UpdateStatus;
+  },
   timestamp: __t.timestamp(),
   callerIdentity: __t.identity(),
   callerConnectionId: __t.connectionId(),
-  reducerCall: __t.lazy(() => ReducerCallInfo),
-  energyQuantaUsed: __t.lazy(() => EnergyQuanta),
+  get reducerCall() {
+    return ReducerCallInfo;
+  },
+  get energyQuantaUsed() {
+    return EnergyQuanta;
+  },
   totalHostExecutionDuration: __t.timeDuration(),
 });

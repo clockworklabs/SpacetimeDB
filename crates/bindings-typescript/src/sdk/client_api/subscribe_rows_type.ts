@@ -23,11 +23,13 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-} from '../../';
+} from 'spacetimedb';
 import TableUpdate from './table_update_type';
 
 export default __t.object('SubscribeRows', {
   tableId: __t.u32(),
   tableName: __t.string(),
-  tableRows: __t.lazy(() => TableUpdate),
+  get tableRows() {
+    return TableUpdate;
+  },
 });
