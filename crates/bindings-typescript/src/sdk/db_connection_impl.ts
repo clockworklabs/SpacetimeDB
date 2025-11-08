@@ -3,7 +3,6 @@ import {
   AlgebraicType,
   type ComparablePrimitive,
 } from '../';
-import { parseValue } from '../';
 import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
 import BsatnRowList from './client_api/bsatn_row_list_type.ts';
@@ -21,7 +20,6 @@ import {
   type EventContextInterface,
   type ReducerEventContextInterface,
   type SubscriptionEventContextInterface,
-  type UntypedEventContext,
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';

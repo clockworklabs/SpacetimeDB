@@ -1,7 +1,7 @@
 import { ConnectionId, type Infer } from '../';
 import { Timestamp } from '../';
-import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from '../';
+import type UpdateStatus from './client_api/update_status_type.ts';
 import type { ReducerEventInfo } from './reducers.ts';
 
 export type ReducerEvent<Reducer extends ReducerEventInfo> = {

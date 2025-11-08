@@ -1,7 +1,6 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
 import type { DbConnectionConfig, ErrorContextInterface, Identity, RemoteModuleOf, SubscriptionEventContextInterface } from '../';
-import { type UntypedRemoteModule } from './spacetime_module';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 

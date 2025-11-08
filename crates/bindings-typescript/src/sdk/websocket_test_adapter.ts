@@ -1,5 +1,5 @@
 import { AlgebraicType, BinaryWriter, type Infer } from '../';
-import { ServerMessage } from './client_api/index.ts';
+import ServerMessage from './client_api/server_message_type';
 
 class WebsocketTestAdapter {
   onclose: any;

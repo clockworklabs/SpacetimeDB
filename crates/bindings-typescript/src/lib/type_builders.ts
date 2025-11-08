@@ -1,20 +1,15 @@
-import {
-  AlgebraicType,
-  AlgebraicTypeVariants,
-  ConnectionId,
-  Identity,
-  ScheduleAt,
-  TimeDuration,
-  Timestamp,
-  Option,
-  type ConnectionIdAlgebraicType,
-  type IdentityAlgebraicType,
-  type OptionAlgebraicType,
-  type TimeDurationAlgebraicType,
-  type TimestampAlgebraicType,
-} from '..';
+import { AlgebraicType, type AlgebraicTypeVariants } from './algebraic_type';
+import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
+import { Identity, type IdentityAlgebraicType } from './identity';
+import { Option, type OptionAlgebraicType } from './option';
+import ScheduleAt from './schedule_at';
 import type { CoerceRow } from './table';
+import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
+import { Timestamp, type TimestampAlgebraicType } from './timestamp';
 import { set, type SetField } from './type_util';
+
+// Used in codegen files
+export { type AlgebraicTypeType } from './algebraic_type';
 
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
