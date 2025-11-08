@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::HashSet,
     ops::{Bound, Deref, DerefMut},
     sync::Arc,
 };
@@ -7,9 +8,12 @@ use std::{
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
-use spacetimedb_expr::{expr::AggType, StatementSource};
+use spacetimedb_expr::{
+    expr::{AggType, CollectViews},
+    StatementSource,
+};
 use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewDatabaseId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
@@ -64,6 +68,14 @@ impl DerefMut for ProjectPlan {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan,
+        }
+    }
+}
+
+impl CollectViews for ProjectPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.collect_views(views),
         }
     }
 }
@@ -238,6 +250,22 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
+}
+
+impl CollectViews for PhysicalPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+        self.visit(&mut |plan| {
+            let view_info = match plan {
+                Self::TableScan(scan, _) => &scan.schema.view_info,
+                Self::IxScan(scan, _) => &scan.schema.view_info,
+                Self::IxJoin(join, _) => &join.rhs.view_info,
+                _ => return,
+            };
+            if let Some(info) = view_info {
+                views.insert(info.view_id);
+            }
+        });
+    }
 }
 
 impl PhysicalPlan {
