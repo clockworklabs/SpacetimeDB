@@ -23,6 +23,10 @@ export type TableDefByName<
 
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl>;
+} & {
+  scan<Name extends TableNames<SchemaDef>>(
+    table: Name
+  ): TableScan<SchemaDef, TableDefByName<SchemaDef, Name>>;
 };
 
 export function fakeQueryBuilder<
@@ -65,6 +69,13 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
     );
     (qb as Record<string, TableRef<any>>)[table.name] = ref;
   }
+  const builder = qb as QueryBuilder<SchemaDef>;
+  builder.scan = function <Name extends TableNames<SchemaDef>>(
+    table: Name
+  ): TableScan<SchemaDef, TableDefByName<SchemaDef, Name>> {
+    const ref = this[table] as TableRef<TableDefByName<SchemaDef, Name>>;
+    return new TableScan<SchemaDef, TableDefByName<SchemaDef, Name>>(ref);
+  };
   return Object.freeze(qb) as QueryBuilder<SchemaDef>;
 }
 
@@ -117,7 +128,7 @@ export class TableScan<
   SchemaDef extends UntypedSchemaDef,
   TableDef extends TypedTableDef,
 > {
-  // readonly filters: readonly BooleanExpr<TableDef>[];
+  constructor(readonly table: TableRef<TableDef>) {}
 
   filter(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
