@@ -7,7 +7,6 @@ import type {
   InferSpacetimeTypeOfTypeBuilder,
   TypeBuilder,
 } from './type_builders';
-import type { CollapseTuple } from './type_util';
 
 /**
  * Helper to get the set of table names.
@@ -28,12 +27,6 @@ export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
     table: Name
   ): TableScan<SchemaDef, TableDefByName<SchemaDef, Name>>;
 };
-
-export function fakeQueryBuilder<
-  SchemaDef extends UntypedSchemaDef,
->(): QueryBuilder<SchemaDef> {
-  throw 'unimplemented';
-}
 
 /**
  * A runtime reference to a table. This materializes the RowExpr for us.
@@ -128,16 +121,25 @@ export class TableScan<
   SchemaDef extends UntypedSchemaDef,
   TableDef extends TypedTableDef,
 > {
-  constructor(readonly table: TableRef<TableDef>) {}
+  constructor(
+    readonly table: TableRef<TableDef>,
+    readonly where?: BooleanExpr<TableDef>
+  ) {}
 
   filter(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
   ): TableScan<SchemaDef, TableDef> {
-    throw 'unimplemented';
+    const nextWhere = predicate(this.table.cols);
+    return new TableScan<SchemaDef, TableDef>(this.table, nextWhere);
   }
 
   toSql(): string {
-    throw 'unimplemented';
+    const tableName = quoteIdentifier(this.table.name);
+    const base = `SELECT * FROM ${tableName}`;
+    if (!this.where) {
+      return base;
+    }
+    return `${base} WHERE ${booleanExprToSql(this.where)}`;
   }
 }
 
@@ -214,16 +216,30 @@ type LiteralExpr<Value> = {
   value: Value;
 };
 
-type BooleanExpr<Table extends TypedTableDef> = {
-  type: 'eq';
-  left: ValueExpr<Table, any>;
-  right: ValueExpr<Table, any>;
-};
+type BooleanExpr<Table extends TypedTableDef> =
+  | {
+      type: 'eq';
+      left: ValueExpr<Table, any>;
+      right: ValueExpr<Table, any>;
+    }
+  | {
+      type: 'and';
+      clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]];
+    }
+  | {
+      type: 'or';
+      clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]];
+    }
+  | {
+      type: 'not';
+      clause: BooleanExpr<Table>;
+    };
 
 export function eq<Table extends TypedTableDef>(
   left: ValueExpr<Table, any>,
   right: ValueExpr<Table, any>
 ): BooleanExpr<Table> {
+  // TODO: Not sure if normalizing like this is actually helpful.
   const lk = 'type' in left && left.type === 'literal';
   const rk = 'type' in right && right.type === 'literal';
   if (lk && !rk) {
@@ -242,4 +258,76 @@ export function eq<Table extends TypedTableDef>(
 
 export function literal<Value>(value: Value): LiteralExpr<Value> {
   return { type: 'literal', value };
+}
+
+export function not<Table extends TypedTableDef>(
+  clause: BooleanExpr<Table>
+): BooleanExpr<Table> {
+  return { type: 'not', clause };
+}
+
+export function and<Table extends TypedTableDef>(
+  ...clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]]
+): BooleanExpr<Table> {
+  return { type: 'and', clauses };
+}
+
+export function or<Table extends TypedTableDef>(
+  ...clauses: readonly [BooleanExpr<Table>, BooleanExpr<Table>, ...BooleanExpr<Table>[]]
+): BooleanExpr<Table> {
+  return { type: 'or', clauses };
+}
+
+function booleanExprToSql<Table extends TypedTableDef>(
+  expr: BooleanExpr<Table>
+): string {
+  switch (expr.type) {
+    case 'eq':
+      return `${valueExprToSql(expr.left)} = ${valueExprToSql(expr.right)}`;
+    case 'and':
+      return expr.clauses.map(booleanExprToSql).map(wrapInParens).join(' AND ');
+    case 'or':
+      return expr.clauses.map(booleanExprToSql).map(wrapInParens).join(' OR ');
+    case 'not':
+      return `NOT ${wrapInParens(booleanExprToSql(expr.clause))}`;
+  }
+}
+function wrapInParens(sql: string): string {
+  return `(${sql})`;
+}
+
+function valueExprToSql<Table extends TypedTableDef>(
+  expr: ValueExpr<Table, any>
+): string {
+  if (isLiteralExpr(expr)) {
+    return literalValueToSql(expr.value);
+  }
+  return `${quoteIdentifier(expr.table)}.${quoteIdentifier(expr.column)}`;
+}
+
+function literalValueToSql(value: unknown): string {
+  if (value === null || value === undefined) {
+    return 'NULL';
+  }
+  switch (typeof value) {
+    case 'number':
+    case 'bigint':
+      return String(value);
+    case 'boolean':
+      return value ? 'TRUE' : 'FALSE';
+    case 'string':
+      return `'${value.replace(/'/g, "''")}'`;
+    default:
+      return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+  }
+}
+
+function quoteIdentifier(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function isLiteralExpr<Value>(
+  expr: ValueExpr<any, Value>
+): expr is LiteralExpr<Value> {
+  return (expr as LiteralExpr<Value>).type === 'literal';
 }
