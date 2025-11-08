@@ -15,6 +15,8 @@ namespace SpacetimeDB.Internal
     {
         [DataMember(Name = "name")]
         public string Name;
+        [DataMember(Name = "index")]
+        public uint Index;
         [DataMember(Name = "is_public")]
         public bool IsPublic;
         [DataMember(Name = "is_anonymous")]
@@ -26,6 +28,7 @@ namespace SpacetimeDB.Internal
 
         public RawViewDefV9(
             string Name,
+            uint Index,
             bool IsPublic,
             bool IsAnonymous,
             List<SpacetimeDB.BSATN.AggregateElement> Params,
@@ -33,6 +36,7 @@ namespace SpacetimeDB.Internal
         )
         {
             this.Name = Name;
+            this.Index = Index;
             this.IsPublic = IsPublic;
             this.IsAnonymous = IsAnonymous;
             this.Params = Params;

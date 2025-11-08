@@ -122,6 +122,12 @@ pub struct DuplicateName(pub String);
 #[error("`filter!` does not support column projections; Must return table rows")]
 pub struct FilterReturnType;
 
+#[derive(Debug, Error)]
+#[error("`{view_name}` is a view; DML on views is not supported")]
+pub struct DmlOnView {
+    pub view_name: Box<str>,
+}
+
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]
@@ -137,6 +143,8 @@ pub enum TypingError {
     #[error(transparent)]
     ParseError(#[from] SqlParseError),
 
+    #[error(transparent)]
+    DmlOnView(#[from] DmlOnView),
     #[error(transparent)]
     InvalidOp(#[from] InvalidOp),
     #[error(transparent)]

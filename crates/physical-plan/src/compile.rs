@@ -65,6 +65,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
     match ast {
         RelExpr::RelVar(Relvar { schema, alias, delta }) => {
             let label = var.label(alias.as_ref());
+            let schema = schema.inner();
             PhysicalPlan::TableScan(
                 TableScan {
                     schema,
@@ -97,7 +98,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
                 lhs: Box::new(compile_rel_expr(var, *lhs)),
                 rhs: Box::new(PhysicalPlan::TableScan(
                     TableScan {
-                        schema: rhs_schema,
+                        schema: rhs_schema.inner(),
                         limit: None,
                         delta,
                     },
@@ -130,7 +131,7 @@ fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
             let lhs = compile_rel_expr(var, *lhs);
             let rhs = PhysicalPlan::TableScan(
                 TableScan {
-                    schema: rhs_schema,
+                    schema: rhs_schema.inner(),
                     limit: None,
                     delta,
                 },

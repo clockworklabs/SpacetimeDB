@@ -454,6 +454,9 @@ pub struct RawViewDefV9 {
     /// The name of the view function as defined in the module
     pub name: RawIdentifier,
 
+    /// The index of the view in the module's list of views.
+    pub index: u32,
+
     /// Is this a public or a private view?
     /// Currently only public views are supported.
     /// Private views may be supported in the future.
@@ -732,6 +735,7 @@ impl RawModuleDefV9Builder {
     pub fn add_view(
         &mut self,
         name: impl Into<RawIdentifier>,
+        index: usize,
         is_public: bool,
         is_anonymous: bool,
         params: ProductType,
@@ -739,6 +743,7 @@ impl RawModuleDefV9Builder {
     ) {
         self.module.misc_exports.push(RawMiscModuleExportV9::View(RawViewDefV9 {
             name: name.into(),
+            index: index as u32,
             is_public,
             is_anonymous,
             params,

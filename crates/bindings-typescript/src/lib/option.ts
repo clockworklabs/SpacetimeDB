@@ -1,10 +1,10 @@
 import { AlgebraicType } from './algebraic_type';
 
-export type OptionAlgebraicType = {
+export type OptionAlgebraicType<T extends AlgebraicType = AlgebraicType> = {
   tag: 'Sum';
   value: {
     variants: [
-      { name: 'some'; algebraicType: AlgebraicType },
+      { name: 'some'; algebraicType: T },
       {
         name: 'none';
         algebraicType: { tag: 'Product'; value: { elements: [] } };
@@ -14,9 +14,13 @@ export type OptionAlgebraicType = {
 };
 
 export const Option: {
-  getAlgebraicType(innerType: AlgebraicType): OptionAlgebraicType;
+  getAlgebraicType<T extends AlgebraicType = AlgebraicType>(
+    innerType: T
+  ): OptionAlgebraicType<T>;
 } = {
-  getAlgebraicType(innerType: AlgebraicType): OptionAlgebraicType {
+  getAlgebraicType<T extends AlgebraicType = AlgebraicType>(
+    innerType: T
+  ): OptionAlgebraicType<T> {
     return AlgebraicType.Sum({
       variants: [
         { name: 'some', algebraicType: innerType },

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
 use spacetimedb_primitives::TableId;
-use spacetimedb_schema::schema::TableSchema;
+use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
 /// A projection is the root of any relational expression.
@@ -42,10 +42,10 @@ impl ProjectName {
         }
     }
 
-    /// The [TableSchema] of the returned rows.
+    /// The [`TableOrViewSchema`] of the returned rows.
     /// Note this expression returns rows from a relvar.
     /// Hence it this method should never return [None].
-    pub fn return_table(&self) -> Option<&TableSchema> {
+    pub fn return_table(&self) -> Option<&TableOrViewSchema> {
         match self {
             Self::None(input) => input.return_table(),
             Self::Some(input, alias) => input.find_table_schema(alias),
@@ -65,7 +65,7 @@ impl ProjectName {
     /// Iterate over the returned column names and types
     pub fn for_each_return_field(&self, mut f: impl FnMut(&str, &AlgebraicType)) {
         if let Some(schema) = self.return_table() {
-            for schema in schema.columns() {
+            for schema in schema.public_columns() {
                 f(&schema.col_name, &schema.col_type);
             }
         }
@@ -148,9 +148,9 @@ pub enum AggType {
 
 impl ProjectList {
     /// Does this expression project a single relvar?
-    /// If so, we return it's [TableSchema].
+    /// If so, we return it's [`TableOrViewSchema`].
     /// If not, it projects a list of columns, so we return [None].
-    pub fn return_table(&self) -> Option<&TableSchema> {
+    pub fn return_table(&self) -> Option<&TableOrViewSchema> {
         match self {
             Self::Name(project) => project.first().and_then(|expr| expr.return_table()),
             Self::Limit(input, _) => input.return_table(),
@@ -205,7 +205,7 @@ pub enum RelExpr {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relvar {
     /// The table schema of this relvar
-    pub schema: Arc<TableSchema>,
+    pub schema: Arc<TableOrViewSchema>,
     /// The name of this relvar
     pub alias: Box<str>,
     /// Does this relvar represent a delta table?
@@ -259,8 +259,8 @@ impl RelExpr {
         }
     }
 
-    /// Return the [TableSchema] for a relvar in the expression
-    pub fn find_table_schema(&self, alias: &str) -> Option<&TableSchema> {
+    /// Return the [`TableOrViewSchema`] for a relvar in the expression
+    pub fn find_table_schema(&self, alias: &str) -> Option<&TableOrViewSchema> {
         match self {
             Self::RelVar(relvar) if relvar.alias.as_ref() == alias => Some(&relvar.schema),
             Self::Select(input, _) => input.find_table_schema(alias),
@@ -278,8 +278,8 @@ impl RelExpr {
     }
 
     /// Does this expression return a single relvar?
-    /// If so, return it's [TableSchema], otherwise return [None].
-    pub fn return_table(&self) -> Option<&TableSchema> {
+    /// If so, return it's [`TableOrViewSchema`], otherwise return [None].
+    pub fn return_table(&self) -> Option<&TableOrViewSchema> {
         match self {
             Self::RelVar(Relvar { schema, .. }) => Some(schema),
             Self::Select(input, _) => input.return_table(),

@@ -132,6 +132,15 @@ pub struct InvalidProcedureArguments(
     InvalidFunctionArguments,
 );
 
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "view".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for view {}: {}", .0.function_name, .0.err)]
+pub struct InvalidViewArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
+
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);
     let mut track = serde_path_to_error::Track::new();

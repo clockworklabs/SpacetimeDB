@@ -66,3 +66,12 @@ declare module 'spacetime:sys@1.0' {
   export function identity(): { __identity__: u256 };
   export function get_jwt_payload(connection_id: u128): Uint8Array;
 }
+
+declare module 'spacetime:sys@1.1' {
+  export type ModuleHooks = {
+    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array;
+    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array;
+  };
+
+  export function register_hooks(hooks: ModuleHooks);
+}

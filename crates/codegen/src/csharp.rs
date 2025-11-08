@@ -15,7 +15,7 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
-use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef, TypespaceForGenerate,
 };
@@ -433,7 +433,7 @@ pub struct Csharp<'opts> {
 }
 
 impl Lang for Csharp<'_> {
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let mut output = CsharpAutogen::new(
             self.namespace,
             &[
@@ -447,9 +447,6 @@ impl Lang for Csharp<'_> {
 
         writeln!(output, "public sealed partial class RemoteTables");
         indented_block(&mut output, |output| {
-            let schema = TableSchema::from_module_def(module, table, (), 0.into())
-                .validated()
-                .expect("Failed to generate table due to validation errors");
             let csharp_table_name = table.name.deref().to_case(Case::Pascal);
             let csharp_table_class_name = csharp_table_name.clone() + "Handle";
             let table_type = type_ref_name(module, table.product_type_ref);

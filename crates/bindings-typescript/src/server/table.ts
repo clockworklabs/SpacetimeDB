@@ -5,7 +5,13 @@ import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type { AllUnique } from './constraints';
-import type { ColumnIndex, IndexColumns, Indexes, IndexOpts } from './indexes';
+import type {
+  ColumnIndex,
+  IndexColumns,
+  Indexes,
+  IndexOpts,
+  ReadonlyIndexes,
+} from './indexes';
 import { MODULE_DEF, splitName } from './schema';
 import {
   RowBuilder,
@@ -54,25 +60,48 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 export type UntypedTableDef = {
   name: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  indexes: IndexOpts<any>[];
+  indexes: readonly IndexOpts<any>[];
 };
 
 /**
  * A type representing the indexes defined on a table.
  */
 export type TableIndexes<TableDef extends UntypedTableDef> = {
-  [k in keyof TableDef['columns'] & string]: ColumnIndex<
-    k,
-    TableDef['columns'][k]['columnMetadata']
-  >;
+  [K in keyof TableDef['columns'] & string as ColumnIndex<
+    K,
+    TableDef['columns'][K]['columnMetadata']
+  > extends never
+    ? never
+    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: {
-    name: I['name'];
-    unique: AllUnique<TableDef, IndexColumns<I>>;
-    algorithm: Lowercase<I['algorithm']>;
-    columns: IndexColumns<I>;
-  };
+  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+    TableDef,
+    I
+  >;
 };
+
+type TableIndexFromDef<
+  TableDef extends UntypedTableDef,
+  I extends IndexOpts<keyof TableDef['columns'] & string>,
+> =
+  NormalizeIndexColumns<TableDef, I> extends infer Cols extends ReadonlyArray<
+    keyof TableDef['columns'] & string
+  >
+    ? {
+        name: I['name'];
+        unique: AllUnique<TableDef, Cols>;
+        algorithm: Lowercase<I['algorithm']>;
+        columns: Cols;
+      }
+    : never;
+
+type NormalizeIndexColumns<
+  TableDef extends UntypedTableDef,
+  I extends IndexOpts<keyof TableDef['columns'] & string>,
+> =
+  IndexColumns<I> extends ReadonlyArray<keyof TableDef['columns'] & string>
+    ? IndexColumns<I>
+    : never;
 
 /**
  * Options for configuring a database table.
@@ -108,17 +137,25 @@ export type Table<TableDef extends UntypedTableDef> = Prettify<
   TableMethods<TableDef> & Indexes<TableDef, TableIndexes<TableDef>>
 >;
 
-/**
- * A type representing the methods available on a table.
- */
-export type TableMethods<TableDef extends UntypedTableDef> = {
+export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
+  ReadonlyTableMethods<TableDef> &
+    ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+>;
+
+export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   /** Returns the number of rows in the TX state. */
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
   iter(): IterableIterator<RowType<TableDef>>;
   [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+}
 
+/**
+ * A type representing the methods available on a table.
+ */
+export interface TableMethods<TableDef extends UntypedTableDef>
+  extends ReadonlyTableMethods<TableDef> {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *
@@ -130,7 +167,7 @@ export type TableMethods<TableDef extends UntypedTableDef> = {
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
   delete(row: RowType<TableDef>): boolean;
-};
+}
 
 /**
  * Represents a handle to a database table, including its name, row type, and row spacetime type.

@@ -123,6 +123,7 @@ pub trait StateView {
         Ok(TableSchema::new(
             table_id,
             table_name,
+            None,
             columns,
             indexes,
             constraints,

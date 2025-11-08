@@ -11,7 +11,7 @@ use spacetimedb_physical_plan::plan::{
     HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
     TableScan, TupleField,
 };
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::product;
 
 use crate::{Datastore, DeltaStore, Row, Tuple};
@@ -22,6 +22,7 @@ use crate::{Datastore, DeltaStore, Row, Tuple};
 /// Hence this operator is not particularly optimized.
 pub enum ProjectListExecutor {
     Name(Vec<PipelinedProject>),
+    View(Vec<ViewProject>),
     List(Vec<PipelinedExecutor>, Vec<TupleField>),
     Limit(Box<ProjectListExecutor>, u64),
     Agg(Vec<PipelinedExecutor>, AggType),
@@ -29,7 +30,41 @@ pub enum ProjectListExecutor {
 
 impl From<ProjectListPlan> for ProjectListExecutor {
     fn from(plan: ProjectListPlan) -> Self {
+        /// A helper that checks if a [`ProjectListPlan`] returns an unprojected view table
+        fn returns_view_table(plans: &[ProjectPlan]) -> bool {
+            plans.first().is_some_and(|plan| plan.returns_view_table())
+        }
+
+        /// A helper that returns the number of columns returned by this [`ProjectListPlan`]
+        fn num_cols(plans: &[ProjectPlan]) -> usize {
+            plans
+                .first()
+                .and_then(|plan| plan.return_table())
+                .map(|schema| schema.num_cols())
+                .unwrap_or_default()
+        }
+
+        /// A helper that returns the number of private columns returned by this [`ProjectListPlan`]
+        fn num_private_cols(plans: &[ProjectPlan]) -> usize {
+            plans
+                .first()
+                .and_then(|plan| plan.return_table())
+                .map(|schema| schema.num_private_cols())
+                .unwrap_or_default()
+        }
+
         match plan {
+            ProjectListPlan::Name(plans) if returns_view_table(&plans) => {
+                let num_cols = num_cols(&plans);
+                let num_private_cols = num_private_cols(&plans);
+                Self::View(
+                    plans
+                        .into_iter()
+                        .map(PipelinedProject::from)
+                        .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                        .collect(),
+                )
+            }
             ProjectListPlan::Name(plan) => Self::Name(plan.into_iter().map(PipelinedProject::from).collect()),
             ProjectListPlan::List(plan, fields) => {
                 Self::List(plan.into_iter().map(PipelinedExecutor::from).collect(), fields)
@@ -58,6 +93,14 @@ impl ProjectListExecutor {
                         n += 1;
                         let row = row.to_product_value();
                         bytes_scanned += row.size_of();
+                        f(row)
+                    })?;
+                }
+            }
+            Self::View(plans) => {
+                for plan in plans {
+                    plan.execute(tx, metrics, &mut |row| {
+                        n += 1;
                         f(row)
                     })?;
                 }
@@ -105,6 +148,60 @@ impl ProjectListExecutor {
         }
         metrics.rows_scanned += n;
         metrics.bytes_scanned += bytes_scanned;
+        Ok(())
+    }
+}
+
+/// An executor for a query that returns rows from a view.
+/// Essentially just a projection that drops the view's private columns.
+///
+/// Unlike user tables, view tables can have private columns.
+/// For example, if a view is not anonymous, its backing table will have a `sender` column.
+/// This column tracks which rows belong to which caller of the view.
+/// However we must remove this column before sending rows from the view to a client.
+///
+/// See `TableSchema::from_view_def_for_datastore` for more details.
+#[derive(Debug)]
+pub struct ViewProject {
+    num_cols: usize,
+    num_private_cols: usize,
+    inner: PipelinedProject,
+}
+
+impl ViewProject {
+    pub fn new(inner: PipelinedProject, num_cols: usize, num_private_cols: usize) -> Self {
+        Self {
+            inner,
+            num_cols,
+            num_private_cols,
+        }
+    }
+
+    pub fn execute<Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(ProductValue) -> Result<()>,
+    ) -> Result<()> {
+        let mut n = 0;
+        let mut bytes_scanned = 0;
+        self.inner.execute(tx, metrics, &mut |row| match row {
+            Row::Ptr(ptr) => {
+                n += 1;
+                let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
+                let row = ptr.project_product(&col_list)?;
+                bytes_scanned += row.size_of();
+                f(row)
+            }
+            Row::Ref(val) => {
+                n += 1;
+                let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
+                let row = val.project_product(&col_list)?;
+                bytes_scanned += row.size_of();
+                f(row)
+            }
+        })?;
+        metrics.rows_scanned += n;
         Ok(())
     }
 }

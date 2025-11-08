@@ -1768,6 +1768,7 @@ impl<'a> RowRef<'a> {
     ///
     /// If `cols` contains zero or more than one column, the values of the projected columns are wrapped in a [`ProductValue`].
     /// If `cols` is a single column, the value of that column is returned without wrapping in a `ProductValue`.
+    /// If you want to wrap single elements in a [`ProductValue`], see [`Self::project_product`].
     pub fn project(self, cols: &ColList) -> Result<AlgebraicValue, InvalidFieldError> {
         if let Some(head) = cols.as_singleton() {
             return self.read_col(head).map_err(|_| head.into());
@@ -1783,6 +1784,26 @@ impl<'a> RowRef<'a> {
             elements.push(col_val);
         }
         Ok(AlgebraicValue::product(elements))
+    }
+
+    /// Construct a projection of the row at `self` by extracting the `cols`.
+    ///
+    /// Returns an error if `cols` specifies an index which is out-of-bounds for the row at `self`.
+    ///
+    /// This method always returns a [`ProductValue`], even when projecting a single element.
+    /// If you don't want to wrap single elements in a [`ProductValue`], see [`Self::project`].
+    pub fn project_product(self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
+        let mut elements = Vec::with_capacity(cols.len() as usize);
+        for col in cols.iter() {
+            let col_val = self.read_col(col).map_err(|err| match err {
+                TypeError::WrongType { .. } => {
+                    unreachable!("AlgebraicValue::read_column never returns a `TypeError::WrongType`")
+                }
+                TypeError::IndexOutOfBounds { .. } => col,
+            })?;
+            elements.push(col_val);
+        }
+        Ok(ProductValue::from(elements))
     }
 
     /// Returns the raw row pointer for this row reference.

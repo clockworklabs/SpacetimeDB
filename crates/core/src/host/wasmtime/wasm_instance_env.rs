@@ -9,6 +9,7 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, Timin
 use crate::host::AbiCall;
 use anyhow::Context as _;
 use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::future::Future;
@@ -103,17 +104,11 @@ pub(super) struct WasmInstanceEnv {
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
-    /// The point in time the last, or current, reducer or procedure call started at.
-    funcall_start: Instant,
-
     /// Track time spent in all wasm instance env calls (aka syscall time).
     ///
     /// Each function, like `insert`, will add the `Duration` spent in it
     /// to this tracker.
     call_times: CallTimes,
-
-    /// The name of the last, including current, reducer or procedure to be executed by this environment.
-    funcall_name: String,
 
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
@@ -130,7 +125,6 @@ type RtResult<T> = anyhow::Result<T>;
 impl WasmInstanceEnv {
     /// Create a new `WasmEnstanceEnv` from the given `InstanceEnv`.
     pub fn new(instance_env: InstanceEnv) -> Self {
-        let funcall_start = Instant::now();
         Self {
             instance_env,
             mem: None,
@@ -139,9 +133,7 @@ impl WasmInstanceEnv {
             standard_bytes_sink: None,
             iters: Default::default(),
             timing_spans: Default::default(),
-            funcall_start,
             call_times: CallTimes::new(),
-            funcall_name: String::from("<initializing>"),
             chunk_pool: <_>::default(),
         }
     }
@@ -224,7 +216,13 @@ impl WasmInstanceEnv {
     ///
     /// Returns the handle used by reducers and procedures to read from `args`
     /// as well as the handle used to write the reducer error message or procedure return value.
-    pub fn start_funcall(&mut self, name: &str, args: bytes::Bytes, ts: Timestamp) -> (BytesSourceId, u32) {
+    pub fn start_funcall(
+        &mut self,
+        name: &str,
+        args: bytes::Bytes,
+        ts: Timestamp,
+        func_type: FuncCallType,
+    ) -> (BytesSourceId, u32) {
         // Create the output sink.
         // Reducers which fail will write their error message here.
         // Procedures will write their result here.
@@ -232,16 +230,14 @@ impl WasmInstanceEnv {
 
         let args = self.create_bytes_source(args).unwrap();
 
-        self.funcall_start = Instant::now();
-        name.clone_into(&mut self.funcall_name);
-        self.instance_env.start_funcall(ts);
+        self.instance_env.start_funcall(name, ts, func_type);
 
         (args, errors)
     }
 
     /// Returns the name of the most recent reducer or procedure to be run in this environment.
     pub fn funcall_name(&self) -> &str {
-        &self.funcall_name
+        &self.instance_env.func_name
     }
 
     /// Returns the name of the most recent reducer or procedure to be run in this environment,
@@ -253,7 +249,7 @@ impl WasmInstanceEnv {
 
     /// Returns the start time of the most recent reducer or procedure to be run in this environment.
     pub fn funcall_start(&self) -> Instant {
-        self.funcall_start
+        self.instance_env.start_instant
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer or procedure call is over.
@@ -267,7 +263,7 @@ impl WasmInstanceEnv {
         // we only explicitly clear the source/sink buffers and the "syscall" times.
         // TODO: should we be clearing `iters` and/or `timing_spans`?
 
-        let total_duration = self.funcall_start.elapsed();
+        let total_duration = self.instance_env.start_instant.elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();

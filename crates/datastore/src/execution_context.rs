@@ -131,6 +131,7 @@ pub enum WorkloadType {
     Unsubscribe,
     Update,
     Internal,
+    View,
     Procedure,
 }
 

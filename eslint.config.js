@@ -76,6 +76,7 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       "eslint-comments/no-unused-disable": "off",
+      "@typescript-eslint/no-empty-object-type": ['error', { allowObjectTypes: 'always' }],
     },
   }
 );

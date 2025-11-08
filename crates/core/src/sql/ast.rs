@@ -12,7 +12,7 @@ use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_schema::def::error::RelationError;
 use spacetimedb_schema::relation::{ColExpr, FieldName};
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema, TableSchema};
 use spacetimedb_vm::errors::ErrorVm;
 use spacetimedb_vm::expr::{Expr, FieldExpr, FieldOp};
 use spacetimedb_vm::operator::{OpCmp, OpLogic, OpQuery};
@@ -503,12 +503,14 @@ impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
             .map(|schema| schema.table_id)
     }
 
-    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
         let AuthCtx { owner, caller } = self.auth;
         self.tx
             .get_schema(table_id)
             .filter(|schema| schema.table_access == StAccess::Public || caller == owner)
-            .cloned()
+            .map(Arc::clone)
+            .map(TableOrViewSchema::from)
+            .map(Arc::new)
     }
 
     fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {

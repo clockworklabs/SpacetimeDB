@@ -160,6 +160,18 @@ impl AlgebraicValue {
         }
     }
 
+    /// Converts `self` into an `Option<AlgebraicValue>`, if applicable.
+    pub fn into_option(self) -> Result<Option<Self>, Self> {
+        match self {
+            AlgebraicValue::Sum(sum_value) => match sum_value.tag {
+                0 => Ok(Some(*sum_value.value)),
+                1 => Ok(None),
+                _ => Err(AlgebraicValue::Sum(sum_value)),
+            },
+            _ => Err(self),
+        }
+    }
+
     /// Returns an [`AlgebraicValue`] for `some: v`.
     ///
     /// The `some` variant is assigned the tag `0`.

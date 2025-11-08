@@ -5,7 +5,7 @@ use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
-use crate::energy::{EnergyQuanta, ReducerBudget};
+use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
 use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
@@ -154,8 +154,8 @@ impl WasmtimeFuel {
     const QUANTA_MULTIPLIER: u64 = 1_000;
 }
 
-impl From<ReducerBudget> for WasmtimeFuel {
-    fn from(v: ReducerBudget) -> Self {
+impl From<FunctionBudget> for WasmtimeFuel {
+    fn from(v: FunctionBudget) -> Self {
         // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
@@ -164,9 +164,9 @@ impl From<ReducerBudget> for WasmtimeFuel {
     }
 }
 
-impl From<WasmtimeFuel> for ReducerBudget {
+impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        ReducerBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
     }
 }
 
