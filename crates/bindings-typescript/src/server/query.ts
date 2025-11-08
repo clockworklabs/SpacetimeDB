@@ -65,7 +65,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
     );
     (qb as Record<string, TableRef<any>>)[table.name] = ref;
   }
-  return qb;
+  return Object.freeze(qb) as QueryBuilder<SchemaDef>;
 }
 
 function createRowExpr<TableDef extends TypedTableDef>(

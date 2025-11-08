@@ -40,6 +40,17 @@ const COMPOUND_TYPES = new Map<
   AlgebraicTypeVariants.Ref
 >();
 
+let REGISTERED_SCHEMA: UntypedSchemaDef | null = null;
+
+export function getRegisteredSchema(): UntypedSchemaDef {
+  if (REGISTERED_SCHEMA == null) {
+    throw new Error(
+      'No schema has been registered yet. Call schema() before accessing it.'
+    );
+  }
+  return REGISTERED_SCHEMA;
+}
+
 export function addType<T extends AlgebraicType>(
   name: string | undefined,
   ty: T
@@ -365,6 +376,13 @@ export function schema(
   // Modify the `MODULE_DEF` which will be read by
   // __describe_module__
   MODULE_DEF.tables.push(...tableDefs);
+  REGISTERED_SCHEMA = {
+    tables: handles.map(handle => ({
+      name: handle.tableName,
+      columns: handle.rowType.row,
+      indexes: handle.idxs,
+    })),
+  };
   // MODULE_DEF.typespace = typespace;
   // throw new Error(
   //   MODULE_DEF.tables

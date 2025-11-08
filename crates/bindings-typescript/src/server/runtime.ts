@@ -25,11 +25,11 @@ import {
   type AuthCtx,
   type JsonObject,
 } from './reducers';
-import { MODULE_DEF } from './schema';
+import { MODULE_DEF, getRegisteredSchema } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
-import { fakeQueryBuilder } from './query';
+import { makeQueryBuilder, type QueryBuilder } from './query';
 
 const { freeze } = Object;
 
@@ -197,7 +197,7 @@ export const hooks: ModuleHooks = {
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
-      queryBuilder: fakeQueryBuilder(),
+      queryBuilder: getQueryBuilder(),
       senderAuth: AuthCtxImpl.fromSystemTables(
         ConnectionId.nullIfZero(new ConnectionId(connId)),
         senderIdentity
@@ -218,6 +218,12 @@ let DB_VIEW: DbView<any> | null = null;
 function getDbView() {
   DB_VIEW ??= makeDbView(MODULE_DEF);
   return DB_VIEW;
+}
+
+let QUERY_BUILDER: QueryBuilder<any> | null = null;
+function getQueryBuilder() {
+  QUERY_BUILDER ??= makeQueryBuilder(getRegisteredSchema());
+  return QUERY_BUILDER;
 }
 
 function makeDbView(module_def: RawModuleDefV9): DbView<any> {

@@ -94,9 +94,10 @@ spacetimedb.init(ctx => {
   // .filter
   // col("age")
 
+  // ctx.db.person[Symbol]
+
   //ctx.query.from('person')
-  ctx.queryBuilder
-    .query('person')
+  ctx.queryBuilder.person
     // .query('person')
     .filter(row => eq(row['age'], literal(20)));
   // .filter(row => eq(row.age, literal(20)))
