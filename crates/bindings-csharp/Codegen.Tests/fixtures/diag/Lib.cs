@@ -575,4 +575,25 @@ public partial class Module
     {
         return new NotSpacetimeType();
     }
+
+    [SpacetimeDB.View(Name = "view_def_no_anon_identity", Public = true)]
+    public static Player? ViewDefNoAnonIdentity(AnonymousViewContext ctx)
+    {
+        ctx.GetIdentity();
+        return null;
+    }
+
+    [SpacetimeDB.View(Name = "view_def_no_iter", Public = true)]
+    public static Player? ViewDefNoIter(AnonymousViewContext ctx)
+    {
+        ctx.Db.Player.Iter();
+        return null;
+    }
+
+    [SpacetimeDB.View(Name = "view_def_index_no_mutation", Public = true)]
+    public static Player? ViewDefIndexNoMutation(AnonymousViewContext ctx)
+    {
+        ctx.Db.Player.Identity.Delete(0);
+        return null;
+    }
 }

@@ -1,5 +1,28 @@
 ﻿[
   {/*
+    {
+        ctx.GetIdentity();
+            ^^^^^^^^^^^
+        return null;
+*/
+    Message: 'AnonymousViewContext' does not contain a definition for 'GetIdentity' and no accessible extension method 'GetIdentity' accepting a first argument of type 'AnonymousViewContext' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
 SpacetimeDB.Internal.Module.RegisterTable<global::TestUniqueNotEquatable, SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable>();
         SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FILTER);
                                                                                   ^^^^^^^^^
@@ -12,6 +35,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
       Title: ,
       HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS0122),
       MessageFormat: '{0}' is inaccessible due to its protection level,
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        ctx.Db.Player.Identity.Delete(0);
+                               ^^^^^^
+        return null;
+*/
+    Message: 'PlayerReadOnly.IdentityIndex' does not contain a definition for 'Delete' and no accessible extension method 'Delete' accepting a first argument of type 'PlayerReadOnly.IdentityIndex' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
       Category: Compiler,
       DefaultSeverity: Error,
       IsEnabledByDefault: true,
@@ -52,6 +98,29 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_FOU
         return new Player { Identity = new() };
 */
     Message: 'PlayerReadOnly' does not contain a definition for 'Insert' and no accessible extension method 'Insert' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
+    Severity: Error,
+    Descriptor: {
+      Id: CS1061,
+      Title: ,
+      HelpLink: https://msdn.microsoft.com/query/roslyn.query?appId=roslyn&k=k(CS1061),
+      MessageFormat: '{0}' does not contain a definition for '{1}' and no accessible extension method '{1}' accepting a first argument of type '{0}' could be found (are you missing a using directive or an assembly reference?),
+      Category: Compiler,
+      DefaultSeverity: Error,
+      IsEnabledByDefault: true,
+      CustomTags: [
+        Compiler,
+        Telemetry,
+        NotConfigurable
+      ]
+    }
+  },
+  {/*
+    {
+        ctx.Db.Player.Iter();
+                      ^^^^
+        return null;
+*/
+    Message: 'PlayerReadOnly' does not contain a definition for 'Iter' and no accessible extension method 'Iter' accepting a first argument of type 'PlayerReadOnly' could be found (are you missing a using directive or an assembly reference?),
     Severity: Error,
     Descriptor: {
       Id: CS1061,

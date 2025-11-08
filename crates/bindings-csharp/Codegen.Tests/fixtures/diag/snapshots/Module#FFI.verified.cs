@@ -1030,6 +1030,84 @@ namespace SpacetimeDB
     }
 }
 
+sealed class ViewDefIndexNoMutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
+
+    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefIndexNoMutation",
+            Index: 1,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefIndexNoMutation((SpacetimeDB.AnonymousViewContext)ctx);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefIndexNoMutation': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewDefNoAnonIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
+
+    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefNoAnonIdentity",
+            Index: 2,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefNoAnonIdentity((SpacetimeDB.AnonymousViewContext)ctx);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoAnonIdentity': " + e);
+            throw;
+        }
+    }
+}
+
 sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     private static readonly SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
@@ -1064,6 +1142,45 @@ sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
         catch (System.Exception e)
         {
             global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoContext': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewDefNoIterViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
+
+    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefNoIter",
+            Index: 3,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefNoIter((SpacetimeDB.AnonymousViewContext)ctx);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoIter': " + e);
             throw;
         }
     }
@@ -1121,7 +1238,7 @@ sealed class ViewDefReturnsNotASpacetimeTypeViewDispatcher
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
             Name: "ViewDefReturnsNotASpacetimeType",
-            Index: 1,
+            Index: 4,
             IsPublic: true,
             IsAnonymous: true,
             Params: [],
@@ -1318,8 +1435,6 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public ulong Count => DoCount();
 
-        public IEnumerable<global::Player> Iter() => DoIter();
-
         public sealed class IdentityIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
                 global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly,
@@ -1345,8 +1460,6 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public ulong Count => DoCount();
 
-        public IEnumerable<global::TestAutoIncNotInteger> Iter() => DoIter();
-
         public sealed class IdentityFieldIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
                 global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly,
@@ -1371,8 +1484,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestDefaultFieldValues") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestDefaultFieldValues> Iter() => DoIter();
     }
 
     public sealed class TestDuplicateTableNameReadOnly
@@ -1382,8 +1493,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestDuplicateTableName") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestDuplicateTableName> Iter() => DoIter();
     }
 
     public sealed class TestIndexIssuesReadOnly
@@ -1393,8 +1502,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestIndexIssues") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestIndexIssues> Iter() => DoIter();
 
         public sealed class TestIndexWithoutColumnsIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::TestIndexIssues>
@@ -1436,24 +1543,10 @@ namespace SpacetimeDB.Internal.ViewHandles
                     )
                 );
 
-            public ulong Delete(int SelfIndexingColumn) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                        SelfIndexingColumn
-                    )
-                );
-
             public IEnumerable<global::TestIndexIssues> Filter(
                 global::SpacetimeDB.Internal.Bound<int> SelfIndexingColumn
             ) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                        SelfIndexingColumn
-                    )
-                );
-
-            public ulong Delete(global::SpacetimeDB.Internal.Bound<int> SelfIndexingColumn) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
                         SelfIndexingColumn
                     )
@@ -1470,8 +1563,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestScheduleWithMissingScheduleAtField") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestScheduleIssues> Iter() => DoIter();
     }
 
     public sealed class TestScheduleWithoutPrimaryKeyReadOnly
@@ -1481,8 +1572,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestScheduleWithoutPrimaryKey") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestScheduleIssues> Iter() => DoIter();
     }
 
     public sealed class TestScheduleWithoutScheduleAtReadOnly
@@ -1492,8 +1581,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestScheduleWithoutScheduleAt") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestScheduleIssues> Iter() => DoIter();
 
         public sealed class IdCorrectTypeIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1520,8 +1607,6 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public ulong Count => DoCount();
 
-        public IEnumerable<global::TestScheduleIssues> Iter() => DoIter();
-
         public sealed class IdWrongTypeIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
                 global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly,
@@ -1547,8 +1632,6 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public ulong Count => DoCount();
 
-        public IEnumerable<global::TestScheduleIssues> Iter() => DoIter();
-
         public sealed class IdCorrectTypeIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
                 global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly,
@@ -1573,8 +1656,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("TestUniqueNotEquatable") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::TestUniqueNotEquatable> Iter() => DoIter();
 
         public sealed class PrimaryKeyFieldIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1768,7 +1849,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefIndexNoMutationViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoAnonIdentityViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoContextViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoIterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoPublicViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefReturnsNotASpacetimeTypeViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongContextViewDispatcher>();

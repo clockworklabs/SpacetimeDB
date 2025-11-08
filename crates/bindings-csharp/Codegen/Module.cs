@@ -652,14 +652,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     public IEnumerable<{{{globalName}}}> Filter({{{scalarArgs}}}) =>
                         DoFilter(new global::SpacetimeDB.Internal.BTreeIndexBounds<{{{types}}}>({{{ctorArg}}}));
 
-                    public ulong Delete({{{scalarArgs}}}) =>
-                        DoDelete(new global::SpacetimeDB.Internal.BTreeIndexBounds<{{{types}}}>({{{ctorArg}}}));
-
                     public IEnumerable<{{{globalName}}}> Filter({{{boundsArgs}}}) =>
                         DoFilter(new global::SpacetimeDB.Internal.BTreeIndexBounds<{{{types}}}>({{{ctorArg}}}));
-
-                    public ulong Delete({{{boundsArgs}}}) =>
-                        DoDelete(new global::SpacetimeDB.Internal.BTreeIndexBounds<{{{types}}}>({{{ctorArg}}}));
                     """
                 );
             }
@@ -790,7 +784,6 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     internal {{{accessor.Name}}}ReadOnly() : base("{{{accessor.Name}}}") { }
 
                     public ulong Count => DoCount();
-                    public IEnumerable<{{{globalName}}}> Iter() => DoIter();
 
                     {{{readOnlyIndexDecls}}}
                 }

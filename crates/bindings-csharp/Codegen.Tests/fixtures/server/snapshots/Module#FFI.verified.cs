@@ -1149,8 +1149,6 @@ namespace SpacetimeDB.Internal.ViewHandles
 
         public ulong Count => DoCount();
 
-        public IEnumerable<global::BTreeMultiColumn> Iter() => DoIter();
-
         public sealed class LocationIndex
             : global::SpacetimeDB.Internal.ReadOnlyIndexBase<global::BTreeMultiColumn>
         {
@@ -1159,13 +1157,6 @@ namespace SpacetimeDB.Internal.ViewHandles
 
             public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(
-                        X
-                    )
-                );
-
-            public ulong Delete(uint X) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(
                         X
                     )
@@ -1180,25 +1171,8 @@ namespace SpacetimeDB.Internal.ViewHandles
                     )
                 );
 
-            public ulong Delete(global::SpacetimeDB.Internal.Bound<uint> X) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(
-                        X
-                    )
-                );
-
             public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y) f) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32
-                    >(f)
-                );
-
-            public ulong Delete((uint X, uint Y) f) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<
                         uint,
                         SpacetimeDB.BSATN.U32,
@@ -1219,30 +1193,8 @@ namespace SpacetimeDB.Internal.ViewHandles
                     >(f)
                 );
 
-            public ulong Delete((uint X, global::SpacetimeDB.Internal.Bound<uint> Y) f) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32
-                    >(f)
-                );
-
             public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y, uint Z) f) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32
-                    >(f)
-                );
-
-            public ulong Delete((uint X, uint Y, uint Z) f) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<
                         uint,
                         SpacetimeDB.BSATN.U32,
@@ -1266,18 +1218,6 @@ namespace SpacetimeDB.Internal.ViewHandles
                         SpacetimeDB.BSATN.U32
                     >(f)
                 );
-
-            public ulong Delete((uint X, uint Y, global::SpacetimeDB.Internal.Bound<uint> Z) f) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32
-                    >(f)
-                );
         }
 
         internal LocationIndex Location => new();
@@ -1290,8 +1230,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("BTreeViews") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::BTreeViews> Iter() => DoIter();
 
         public sealed class IdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1322,24 +1260,10 @@ namespace SpacetimeDB.Internal.ViewHandles
                     )
                 );
 
-            public ulong Delete(uint X) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(
-                        X
-                    )
-                );
-
             public IEnumerable<global::BTreeViews> Filter(
                 global::SpacetimeDB.Internal.Bound<uint> X
             ) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(
-                        X
-                    )
-                );
-
-            public ulong Delete(global::SpacetimeDB.Internal.Bound<uint> X) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(
                         X
                     )
@@ -1355,30 +1279,10 @@ namespace SpacetimeDB.Internal.ViewHandles
                     >(f)
                 );
 
-            public ulong Delete((uint X, uint Y) f) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32
-                    >(f)
-                );
-
             public IEnumerable<global::BTreeViews> Filter(
                 (uint X, global::SpacetimeDB.Internal.Bound<uint> Y) f
             ) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        uint,
-                        SpacetimeDB.BSATN.U32,
-                        uint,
-                        SpacetimeDB.BSATN.U32
-                    >(f)
-                );
-
-            public ulong Delete((uint X, global::SpacetimeDB.Internal.Bound<uint> Y) f) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<
                         uint,
                         SpacetimeDB.BSATN.U32,
@@ -1404,26 +1308,10 @@ namespace SpacetimeDB.Internal.ViewHandles
                     >(Faction)
                 );
 
-            public ulong Delete(string Faction) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        string,
-                        SpacetimeDB.BSATN.String
-                    >(Faction)
-                );
-
             public IEnumerable<global::BTreeViews> Filter(
                 global::SpacetimeDB.Internal.Bound<string> Faction
             ) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        string,
-                        SpacetimeDB.BSATN.String
-                    >(Faction)
-                );
-
-            public ulong Delete(global::SpacetimeDB.Internal.Bound<string> Faction) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<
                         string,
                         SpacetimeDB.BSATN.String
@@ -1441,8 +1329,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("MultiTable1") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::MultiTableRow> Iter() => DoIter();
 
         public sealed class FooIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1474,26 +1360,10 @@ namespace SpacetimeDB.Internal.ViewHandles
                     >(Name)
                 );
 
-            public ulong Delete(string Name) =>
-                DoDelete(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        string,
-                        SpacetimeDB.BSATN.String
-                    >(Name)
-                );
-
             public IEnumerable<global::MultiTableRow> Filter(
                 global::SpacetimeDB.Internal.Bound<string> Name
             ) =>
                 DoFilter(
-                    new global::SpacetimeDB.Internal.BTreeIndexBounds<
-                        string,
-                        SpacetimeDB.BSATN.String
-                    >(Name)
-                );
-
-            public ulong Delete(global::SpacetimeDB.Internal.Bound<string> Name) =>
-                DoDelete(
                     new global::SpacetimeDB.Internal.BTreeIndexBounds<
                         string,
                         SpacetimeDB.BSATN.String
@@ -1511,8 +1381,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("MultiTable2") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::MultiTableRow> Iter() => DoIter();
 
         public sealed class BarIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1538,8 +1406,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("PrivateTable") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::PrivateTable> Iter() => DoIter();
     }
 
     public sealed class PublicTableReadOnly
@@ -1549,8 +1415,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("PublicTable") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::PublicTable> Iter() => DoIter();
 
         public sealed class IdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1576,8 +1440,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("RegressionMultipleUniqueIndexesHadSameName") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::RegressionMultipleUniqueIndexesHadSameName> Iter() => DoIter();
 
         public sealed class Unique1Index
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
@@ -1621,8 +1483,6 @@ namespace SpacetimeDB.Internal.ViewHandles
             : base("SendMessageTimer") { }
 
         public ulong Count => DoCount();
-
-        public IEnumerable<global::Timers.SendMessageTimer> Iter() => DoIter();
 
         public sealed class ScheduledIdIndex
             : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
