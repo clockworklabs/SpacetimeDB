@@ -24,7 +24,7 @@ export type TableDefByName<
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl>;
 } & {
-  scan<Name extends TableNames<SchemaDef>>(
+  query<Name extends TableNames<SchemaDef>>(
     table: Name
   ): TableScan<SchemaDef, TableDefByName<SchemaDef, Name>>;
 };
@@ -70,7 +70,7 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
     (qb as Record<string, TableRef<any>>)[table.name] = ref;
   }
   const builder = qb as QueryBuilder<SchemaDef>;
-  builder.scan = function <Name extends TableNames<SchemaDef>>(
+  builder.query = function <Name extends TableNames<SchemaDef>>(
     table: Name
   ): TableScan<SchemaDef, TableDefByName<SchemaDef, Name>> {
     const ref = this[table] as TableRef<TableDefByName<SchemaDef, Name>>;
