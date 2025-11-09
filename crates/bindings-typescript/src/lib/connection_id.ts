@@ -64,6 +64,13 @@ export class ConnectionId {
   }
 
   /**
+   * Check if two connection IDs are equal.
+   */
+  equals(other: ConnectionId): boolean {
+    return this.isEqual(other);
+  }
+
+  /**
    * Print the connection ID as a hexadecimal string.
    */
   toHexString(): string {

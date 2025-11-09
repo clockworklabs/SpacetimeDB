@@ -36,10 +36,17 @@ export class Identity {
   }
 
   /**
-   * Compare two identities for equality.
+   * Check if two identities are equal. 
    */
   isEqual(other: Identity): boolean {
     return this.toHexString() === other.toHexString();
+  }
+
+  /**
+   * Check if two identities are equal.
+   */
+  equals(other: Identity): boolean {
+    return this.isEqual(other);
   }
 
   /**
