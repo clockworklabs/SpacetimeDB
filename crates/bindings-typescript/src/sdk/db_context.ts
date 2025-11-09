@@ -1,8 +1,5 @@
 import type { ClientDbView } from './db_view';
-import type {
-  ReducersView,
-  SetReducerFlags,
-} from './reducers';
+import type { ReducersView, SetReducerFlags } from './reducers';
 import type { UntypedRemoteModule } from './spacetime_module';
 import type { SubscriptionBuilderImpl } from './subscription_builder_impl';
 

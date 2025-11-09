@@ -2,14 +2,9 @@ import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from '../';
-import type {
-  EventContextInterface,
-  TableDefForTableName,
-} from './index.ts';
+import type { EventContextInterface, TableDefForTableName } from './index.ts';
 import type { RowType, UntypedTableDef } from '../lib/table.ts';
-import type {
-  ClientTableCoreImplementable,
-} from './client_table.ts';
+import type { ClientTableCoreImplementable } from './client_table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import type { TableNamesOf } from '../lib/schema.ts';
 

@@ -28,9 +28,7 @@ import type {
   UnsubscribeAppliedMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
-import {
-  type UntypedRemoteModule,
-} from './spacetime_module.ts';
+import { type UntypedRemoteModule } from './spacetime_module.ts';
 import {
   TableCache,
   type Operation,

@@ -97,7 +97,7 @@ export interface UniqueIndex<
 > extends ReadonlyUniqueIndex<TableDef, I> {
   delete(colVal: IndexVal<TableDef, I>): boolean;
   update(colVal: RowType<TableDef>): RowType<TableDef>;
-};
+}
 
 /**
  * A type representing a read-only ranged index on a database table.

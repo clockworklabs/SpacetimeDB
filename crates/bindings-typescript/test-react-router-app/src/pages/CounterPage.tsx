@@ -18,9 +18,7 @@ export default function CounterPage() {
         <p>
           Click above to increment the count, click below to clear the count.
         </p>
-        <button onClick={() => clearCounter()}>
-          clear count
-        </button>
+        <button onClick={() => clearCounter()}>clear count</button>
       </div>
     </>
   );

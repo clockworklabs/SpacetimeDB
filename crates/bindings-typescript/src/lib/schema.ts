@@ -33,7 +33,12 @@ import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
 import type { TableSchema } from './table_schema';
 import { toCamelCase } from './util';
-import { defineView, type AnonymousViewFn, type ViewFn, type ViewReturnTypeBuilder } from './views';
+import {
+  defineView,
+  type AnonymousViewFn,
+  type ViewFn,
+  type ViewReturnTypeBuilder,
+} from './views';
 
 export type TableNamesOf<S extends UntypedSchemaDef> =
   S['tables'][number]['name'];

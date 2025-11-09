@@ -113,7 +113,10 @@ import type { AlgebraicType } from './algebraic_type';
 import type Typespace from './autogen/typespace_type';
 import type { Infer } from './type_builders';
 
-export function bsatnBaseSize(typespace: Infer<typeof Typespace>, ty: AlgebraicType): number {
+export function bsatnBaseSize(
+  typespace: Infer<typeof Typespace>,
+  ty: AlgebraicType
+): number {
   const assumedArrayLength = 4;
   while (ty.tag === 'Ref') ty = typespace.types[ty.value];
   if (ty.tag === 'Product') {

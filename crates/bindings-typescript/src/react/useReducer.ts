@@ -7,9 +7,9 @@ import type { Prettify } from '../lib/type_util';
 type IsEmptyObject<T> = [keyof T] extends [never] ? true : false;
 type MaybeParams<T> = IsEmptyObject<T> extends true ? [] : [params: T];
 
-type ParamsType<R extends UntypedReducerDef> = MaybeParams<Prettify<
-  InferTypeOfRow<R['params']>
->>;
+type ParamsType<R extends UntypedReducerDef> = MaybeParams<
+  Prettify<InferTypeOfRow<R['params']>>
+>;
 
 export function useReducer<ReducerDef extends UntypedReducerDef>(
   reducerDef: ReducerDef
@@ -18,9 +18,7 @@ export function useReducer<ReducerDef extends UntypedReducerDef>(
   const reducerName = reducerDef.accessorName;
 
   // Holds calls made before the connection exists
-  const queueRef = useRef<
-    ParamsType<ReducerDef>[]
-  >([]);
+  const queueRef = useRef<ParamsType<ReducerDef>[]>([]);
 
   // Flush when we finally have a connection
   useEffect(() => {
