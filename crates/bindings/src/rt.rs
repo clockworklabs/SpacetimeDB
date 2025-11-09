@@ -735,7 +735,9 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
-        module.inner.add_view(I::NAME, true, false, params, return_type);
+        module
+            .inner
+            .add_view(I::NAME, module.views.len(), true, false, params, return_type);
         module.views.push(I::INVOKE);
     })
 }
@@ -750,7 +752,9 @@ where
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
         let return_type = I::return_type(&mut module.inner).unwrap();
-        module.inner.add_view(I::NAME, true, true, params, return_type);
+        module
+            .inner
+            .add_view(I::NAME, module.views_anon.len(), true, true, params, return_type);
         module.views_anon.push(I::INVOKE);
     })
 }

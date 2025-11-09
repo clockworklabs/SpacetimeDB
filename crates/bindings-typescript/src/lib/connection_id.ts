@@ -1,5 +1,5 @@
 import { AlgebraicType } from './algebraic_type';
-import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './utils';
+import { hexStringToU128, u128ToHexString, u128ToUint8Array } from './util';
 
 export type ConnectionIdAlgebraicType = {
   tag: 'Product';

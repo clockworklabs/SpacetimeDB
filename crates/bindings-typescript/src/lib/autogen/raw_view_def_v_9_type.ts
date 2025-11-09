@@ -14,6 +14,7 @@ import ProductType from './product_type_type';
 
 export default __t.object('RawViewDefV9', {
   name: __t.string(),
+  index: __t.u32(),
   isPublic: __t.bool(),
   isAnonymous: __t.bool(),
   get params() {

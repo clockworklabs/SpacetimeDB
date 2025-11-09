@@ -17,6 +17,7 @@ use spacetimedb_schema::def::{
     BTreeAlgorithm, IndexAlgorithm, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
 };
 use spacetimedb_schema::identifier::Identifier;
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
 
 use super::code_indenter::{CodeIndenter, Indenter};
@@ -98,7 +99,7 @@ impl Lang for TypeScript {
     ///   location: pointType,
     /// }))
     /// ```
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, _schema: TableSchema) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 

@@ -13,7 +13,7 @@ use core::ptr;
 use core::sync::atomic::Ordering;
 use core::time::Duration;
 use core::{ffi::c_void, sync::atomic::AtomicBool};
-use spacetimedb_client_api_messages::energy::ReducerBudget;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
 use std::sync::Arc;
 use v8::{Isolate, IsolateHandle};
 
@@ -25,7 +25,7 @@ pub(super) fn with_timeout_and_cb_every<R>(
     _handle: IsolateHandle,
     _callback_every: u64,
     _callback: InterruptCallback,
-    _budget: ReducerBudget,
+    _budget: FunctionBudget,
     logic: impl FnOnce() -> R,
 ) -> R {
     // Start the concurrent thread.
@@ -55,7 +55,7 @@ pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_vo
         return;
     };
     let database = env.instance_env.replica_ctx.database_identity;
-    let reducer = env.reducer_name();
+    let reducer = env.funcall_name();
     let dur = env.reducer_start().elapsed();
     tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
 }
@@ -71,7 +71,7 @@ fn run_timeout_and_cb_every(
     handle: IsolateHandle,
     callback_every: u64,
     callback: InterruptCallback,
-    budget: ReducerBudget,
+    budget: FunctionBudget,
 ) -> Arc<AtomicBool> {
     // When `execution_done_flag` is set, the ticker thread will stop.
     let execution_done_flag = Arc::new(AtomicBool::new(false));
@@ -107,7 +107,7 @@ fn run_timeout_and_cb_every(
 }
 
 /// Converts a [`ReducerBudget`] to a [`Duration`].
-fn budget_to_duration(_budget: ReducerBudget) -> Duration {
+fn budget_to_duration(_budget: FunctionBudget) -> Duration {
     // TODO(v8): This is fake logic that allows a maximum timeout.
     // Replace with sensible math.
     Duration::MAX
@@ -115,15 +115,15 @@ fn budget_to_duration(_budget: ReducerBudget) -> Duration {
 
 /// Returns [`EnergyStats`] for a reducer given its `budget`
 /// and the `duration` it took to execute.
-pub(super) fn energy_from_elapsed(budget: ReducerBudget, duration: Duration) -> EnergyStats {
+pub(super) fn energy_from_elapsed(budget: FunctionBudget, duration: Duration) -> EnergyStats {
     let used = duration_to_budget(duration);
     let remaining = budget - used;
     EnergyStats { budget, remaining }
 }
 
 /// Converts a [`Duration`] to a [`ReducerBudget`].
-fn duration_to_budget(_duration: Duration) -> ReducerBudget {
+fn duration_to_budget(_duration: Duration) -> FunctionBudget {
     // TODO(v8): This is fake logic that allows minimum energy usage.
     // Replace with sensible math.
-    ReducerBudget::ZERO
+    FunctionBudget::ZERO
 }

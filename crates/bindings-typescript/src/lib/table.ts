@@ -69,27 +69,50 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
 export type UntypedTableDef = {
   name: string;
   accessorName: string;
-  columns: CoerceRow<RowObj>;
+  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   rowType: ProductType;
-  indexes: IndexOpts<any>[];
+  indexes: readonly IndexOpts<any>[];
 };
 
 /**
  * A type representing the indexes defined on a table.
  */
 export type TableIndexes<TableDef extends UntypedTableDef> = {
-  [k in keyof TableDef['columns'] & string]: ColumnIndex<
-    k,
-    TableDef['columns'][k]['columnMetadata']
-  >;
+  [K in keyof TableDef['columns'] & string as ColumnIndex<
+    K,
+    TableDef['columns'][K]['columnMetadata']
+  > extends never
+    ? never
+    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: {
-    name: I['name'];
-    unique: AllUnique<TableDef, IndexColumns<I>>;
-    algorithm: Lowercase<I['algorithm']>;
-    columns: IndexColumns<I>;
-  };
+  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+    TableDef,
+    I
+  >;
 };
+
+type TableIndexFromDef<
+  TableDef extends UntypedTableDef,
+  I extends IndexOpts<keyof TableDef['columns'] & string>,
+> =
+  NormalizeIndexColumns<TableDef, I> extends infer Cols extends ReadonlyArray<
+    keyof TableDef['columns'] & string
+  >
+    ? {
+        name: I['name'];
+        unique: AllUnique<TableDef, Cols>;
+        algorithm: Lowercase<I['algorithm']>;
+        columns: Cols;
+      }
+    : never;
+
+type NormalizeIndexColumns<
+  TableDef extends UntypedTableDef,
+  I extends IndexOpts<keyof TableDef['columns'] & string>,
+> =
+  IndexColumns<I> extends ReadonlyArray<keyof TableDef['columns'] & string>
+    ? IndexColumns<I>
+    : never;
 
 /**
  * Options for configuring a database table.
@@ -131,10 +154,20 @@ export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
     ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
 >;
 
-export type ReadonlyTableMethods<TableDef extends UntypedTableDef> = {
+export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   /** Returns the number of rows in the TX state. */
   count(): bigint;
 
+  /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
+  iter(): IterableIterator<RowType<TableDef>>;
+  [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+}
+
+/**
+ * A type representing the methods available on a table.
+ */
+export interface TableMethods<TableDef extends UntypedTableDef>
+  extends ReadonlyTableMethods<TableDef> {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *
@@ -142,27 +175,11 @@ export type ReadonlyTableMethods<TableDef extends UntypedTableDef> = {
    * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
    * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
    * */
-  iter(): IterableIterator<RowType<TableDef>>;
-  [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
-};
+  insert(row: RowType<TableDef>): RowType<TableDef>;
 
-/**
- * A type representing the methods available on a table.
- */
-export type TableMethods<TableDef extends UntypedTableDef> =
-  ReadonlyTableMethods<TableDef> & {
-    /**
-     * Insert and return the inserted row (auto-increment fields filled).
-     *
-     * May throw on error:
-     * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
-     * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
-     * */
-    insert(row: RowType<TableDef>): RowType<TableDef>;
-
-    /** Delete a row equal to `row`. Returns true if something was deleted. */
-    delete(row: RowType<TableDef>): boolean;
-  };
+  /** Delete a row equal to `row`. Returns true if something was deleted. */
+  delete(row: RowType<TableDef>): boolean;
+}
 
 /**
  * Defines a database table with schema and options

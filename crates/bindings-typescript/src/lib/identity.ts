@@ -1,5 +1,5 @@
 import { AlgebraicType } from './algebraic_type';
-import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './utils';
+import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './util';
 
 export type IdentityAlgebraicType = {
   tag: 'Product';

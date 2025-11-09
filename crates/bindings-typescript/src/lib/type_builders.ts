@@ -103,7 +103,6 @@ type ObjectType<Elements extends ElementsObj> = {
 };
 
 export type VariantsObj = Record<string, TypeBuilder<any, any>>;
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 type UnitBuilder = ProductBuilder<{}>;
 type SimpleVariantsObj = Record<string, UnitBuilder>;
 
@@ -1170,10 +1169,13 @@ export class ByteArrayBuilder
 export class OptionBuilder<Value extends TypeBuilder<any, any>>
   extends TypeBuilder<
     InferTypeOfTypeBuilder<Value> | undefined,
-    OptionAlgebraicType
+    OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
   >
   implements
-    Defaultable<InferTypeOfTypeBuilder<Value> | undefined, OptionAlgebraicType>
+    Defaultable<
+      InferTypeOfTypeBuilder<Value> | undefined,
+      OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
+    >
 {
   /**
    * The phantom value type of the option for TypeScript
@@ -1181,7 +1183,7 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
   readonly value!: Value;
 
   constructor(value: Value) {
-    let innerType: AlgebraicType;
+    let innerType: InferSpacetimeTypeOfTypeBuilder<Value>;
     if (value instanceof ColumnBuilder) {
       innerType = value.typeBuilder.algebraicType;
     } else {
@@ -2500,11 +2502,14 @@ export class OptionColumnBuilder<
   >
   extends ColumnBuilder<
     InferTypeOfTypeBuilder<Value> | undefined,
-    OptionAlgebraicType,
+    OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>,
     M
   >
   implements
-    Defaultable<InferTypeOfTypeBuilder<Value> | undefined, OptionAlgebraicType>
+    Defaultable<
+      InferTypeOfTypeBuilder<Value> | undefined,
+      OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
+    >
 {
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined

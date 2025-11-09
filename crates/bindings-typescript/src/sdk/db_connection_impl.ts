@@ -54,7 +54,7 @@ import type {
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
-import { toCamelCase } from '../lib/utils.ts';
+import { toCamelCase } from '../lib/util.ts';
 
 export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
 
@@ -400,7 +400,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           const asBase64 = fromByteArray(rowBytes);
           rowId = asBase64;
         }
-
         previousOffset = reader.offset;
 
         rows.push({

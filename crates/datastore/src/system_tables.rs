@@ -17,7 +17,7 @@ use spacetimedb_lib::db::raw_def::*;
 use spacetimedb_lib::de::{Deserialize, DeserializeOwned, Error};
 use spacetimedb_lib::ser::Serialize;
 use spacetimedb_lib::st_var::StVarValue;
-use spacetimedb_lib::{ConnectionId, Identity, ProductValue, SpacetimeType};
+use spacetimedb_lib::{ConnectionId, Identity, ProductValue, SpacetimeType, Timestamp};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::hash::Hash;
@@ -71,8 +71,8 @@ pub const ST_VIEW_ID: TableId = TableId(12);
 pub const ST_VIEW_PARAM_ID: TableId = TableId(13);
 /// The static ID of the table that tracks view columns
 pub const ST_VIEW_COLUMN_ID: TableId = TableId(14);
-/// The static ID of the table that tracks the clients subscribed to each view
-pub const ST_VIEW_CLIENT_ID: TableId = TableId(15);
+/// The static ID of the table that tracks the number of clients subscribed to each view
+pub const ST_VIEW_SUB_ID: TableId = TableId(15);
 /// The static ID of the table that tracks view arguments
 pub const ST_VIEW_ARG_ID: TableId = TableId(16);
 
@@ -90,7 +90,7 @@ pub(crate) const ST_ROW_LEVEL_SECURITY_NAME: &str = "st_row_level_security";
 pub(crate) const ST_VIEW_NAME: &str = "st_view";
 pub(crate) const ST_VIEW_PARAM_NAME: &str = "st_view_param";
 pub(crate) const ST_VIEW_COLUMN_NAME: &str = "st_view_column";
-pub(crate) const ST_VIEW_CLIENT_NAME: &str = "st_view_client";
+pub(crate) const ST_VIEW_SUB_NAME: &str = "st_view_sub";
 pub(crate) const ST_VIEW_ARG_NAME: &str = "st_view_arg";
 /// Reserved range of sequence values used for system tables.
 ///
@@ -138,7 +138,7 @@ pub fn system_tables() -> [TableSchema; 16] {
         st_view_schema(),
         st_view_param_schema(),
         st_view_column_schema(),
-        st_view_client_schema(),
+        st_view_sub_schema(),
         st_view_arg_schema(),
     ]
 }
@@ -182,7 +182,7 @@ pub(crate) const ST_CONNECTION_CREDENTIALS_IDX: usize = 10;
 pub(crate) const ST_VIEW_IDX: usize = 11;
 pub(crate) const ST_VIEW_PARAM_IDX: usize = 12;
 pub(crate) const ST_VIEW_COLUMN_IDX: usize = 13;
-pub(crate) const ST_VIEW_CLIENT_IDX: usize = 14;
+pub(crate) const ST_VIEW_SUB_IDX: usize = 14;
 pub(crate) const ST_VIEW_ARG_IDX: usize = 15;
 
 macro_rules! st_fields_enum {
@@ -250,11 +250,13 @@ st_fields_enum!(enum StViewColumnFields {
     "col_type", ColType = 3,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
-st_fields_enum!(enum StViewClientFields {
+st_fields_enum!(enum StViewSubFields {
     "view_id", ViewId = 0,
     "arg_id", ArgId = 1,
     "identity", Identity = 2,
-    "connection_id", ConnectionId = 3,
+    "num_subscribers", NumSubscribers = 3,
+    "has_subscribers", HasSubscribers = 4,
+    "last_called", LastCalled = 5,
 });
 // WARNING: For a stable schema, don't change the field names and discriminants.
 st_fields_enum!(enum StViewArgFields {
@@ -398,15 +400,17 @@ fn system_module_def() -> ModuleDef {
         .with_unique_constraint(st_view_param_unique_cols)
         .with_index_no_accessor_name(btree(st_view_param_unique_cols));
 
-    let st_view_client_type = builder.add_type::<StViewClientRow>();
+    let st_view_sub_type = builder.add_type::<StViewSubRow>();
     builder
-        .build_table(
-            ST_VIEW_CLIENT_NAME,
-            *st_view_client_type.as_ref().expect("should be ref"),
-        )
+        .build_table(ST_VIEW_SUB_NAME, *st_view_sub_type.as_ref().expect("should be ref"))
         .with_type(TableType::System)
-        .with_index_no_accessor_name(btree([StViewClientFields::ViewId, StViewClientFields::ArgId]))
-        .with_index_no_accessor_name(btree([StViewClientFields::Identity, StViewClientFields::ConnectionId]));
+        .with_index_no_accessor_name(btree(StViewSubFields::Identity))
+        .with_index_no_accessor_name(btree(StViewSubFields::HasSubscribers))
+        .with_index_no_accessor_name(btree([
+            StViewSubFields::ViewId,
+            StViewSubFields::ArgId,
+            StViewSubFields::Identity,
+        ]));
 
     let st_view_arg_type = builder.add_type::<StViewArgRow>();
     builder
@@ -516,7 +520,7 @@ fn system_module_def() -> ModuleDef {
     validate_system_table::<StViewFields>(&result, ST_VIEW_NAME);
     validate_system_table::<StViewParamFields>(&result, ST_VIEW_PARAM_NAME);
     validate_system_table::<StViewColumnFields>(&result, ST_VIEW_COLUMN_NAME);
-    validate_system_table::<StViewClientFields>(&result, ST_VIEW_CLIENT_NAME);
+    validate_system_table::<StViewSubFields>(&result, ST_VIEW_SUB_NAME);
     validate_system_table::<StViewArgFields>(&result, ST_VIEW_ARG_NAME);
 
     result
@@ -585,10 +589,11 @@ lazy_static::lazy_static! {
         m.insert("st_view_view_name_idx_btree", IndexId(15));
         m.insert("st_view_param_view_id_param_pos_idx_btree", IndexId(16));
         m.insert("st_view_column_view_id_col_pos_idx_btree", IndexId(17));
-        m.insert("st_view_client_view_id_arg_id_idx_btree", IndexId(18));
-        m.insert("st_view_client_identity_connection_id_idx_btree", IndexId(19));
-        m.insert("st_view_arg_id_idx_btree", IndexId(20));
-        m.insert("st_view_arg_bytes_idx_btree", IndexId(21));
+        m.insert("st_view_sub_identity_idx_btree", IndexId(18));
+        m.insert("st_view_sub_has_subscribers_idx_btree", IndexId(19));
+        m.insert("st_view_sub_view_id_arg_id_identity_idx_btree", IndexId(20));
+        m.insert("st_view_arg_id_idx_btree", IndexId(21));
+        m.insert("st_view_arg_bytes_idx_btree", IndexId(22));
         m
     };
 }
@@ -717,8 +722,8 @@ pub fn st_view_column_schema() -> TableSchema {
     st_schema(ST_VIEW_COLUMN_NAME, ST_VIEW_COLUMN_ID)
 }
 
-pub fn st_view_client_schema() -> TableSchema {
-    st_schema(ST_VIEW_CLIENT_NAME, ST_VIEW_CLIENT_ID)
+pub fn st_view_sub_schema() -> TableSchema {
+    st_schema(ST_VIEW_SUB_NAME, ST_VIEW_SUB_ID)
 }
 
 pub fn st_view_arg_schema() -> TableSchema {
@@ -747,7 +752,7 @@ pub(crate) fn system_table_schema(table_id: TableId) -> Option<TableSchema> {
         ST_VIEW_ID => Some(st_view_schema()),
         ST_VIEW_PARAM_ID => Some(st_view_param_schema()),
         ST_VIEW_COLUMN_ID => Some(st_view_column_schema()),
-        ST_VIEW_CLIENT_ID => Some(st_view_client_schema()),
+        ST_VIEW_SUB_ID => Some(st_view_sub_schema()),
         ST_VIEW_ARG_ID => Some(st_view_arg_schema()),
         _ => None,
     }
@@ -793,7 +798,7 @@ impl From<StTableRow> for ProductValue {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewRow {
     /// An auto-inc id for each view
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     /// The name of the view function as defined in the module
     pub view_name: Box<str>,
     /// The [`TableId`] for this view if materialized.
@@ -902,7 +907,7 @@ impl From<ColumnSchema> for StColumnRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewColumnRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     pub col_pos: ColId,
     pub col_name: Box<str>,
     pub col_type: AlgebraicTypeViaBytes,
@@ -917,24 +922,34 @@ pub struct StViewColumnRow {
 #[sats(crate = spacetimedb_lib)]
 pub struct StViewParamRow {
     /// A foreign key referencing [`ST_VIEW_NAME`].
-    pub view_id: ViewId,
+    pub view_id: ViewDatabaseId,
     pub param_pos: ColId,
     pub param_name: Box<str>,
     pub param_type: AlgebraicTypeViaBytes,
 }
 
-/// System table [ST_VIEW_CLIENT_NAME]
+/// System table [ST_VIEW_SUB_NAME]
 ///
-/// | view_id | arg_id | identity | connection_id |
-/// |---------|--------|----------|---------------|
-/// | 1       | 2      | 0x...    | 0x...         |
+/// | view_id | arg_id | identity | num_subscribers | has_subscribers | last_called |
+/// |---------|--------|----------|-----------------|-----------------|-------------|
+/// | 1       | 2      | 0x...    | 3               | true            | <timestamp> |
 #[derive(Debug, Clone, Eq, PartialEq, SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
-pub struct StViewClientRow {
-    pub view_id: ViewId,
-    pub arg_id: u64,
+pub struct StViewSubRow {
+    pub view_id: ViewDatabaseId,
+    pub arg_id: ArgId,
     pub identity: IdentityViaU256,
-    pub connection_id: ConnectionIdViaU128,
+    pub num_subscribers: u64,
+    pub has_subscribers: bool,
+    pub last_called: TimestampViaI64,
+}
+
+impl TryFrom<RowRef<'_>> for StViewSubRow {
+    type Error = DatastoreError;
+
+    fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
+        read_via_bsatn(row)
+    }
 }
 
 /// System table [ST_VIEW_ARG_NAME]
@@ -1004,6 +1019,13 @@ impl From<StIndexAlgorithm> for IndexAlgorithm {
 }
 
 impl TryFrom<RowRef<'_>> for StIndexRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
+impl TryFrom<RowRef<'_>> for StViewArgRow {
     type Error = DatastoreError;
     fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
         read_via_bsatn(row)
@@ -1238,6 +1260,30 @@ impl From<Identity> for IdentityViaU256 {
     }
 }
 
+impl From<IdentityViaU256> for AlgebraicValue {
+    fn from(val: IdentityViaU256) -> Self {
+        AlgebraicValue::U256(val.0.to_u256().into())
+    }
+}
+
+/// A wrapper for [`Timestamp`] that acts like [`AlgebraicType::I64`] for serialization purposes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TimestampViaI64(pub Timestamp);
+impl_serialize!([] TimestampViaI64, (self, ser) => self.0.to_micros_since_unix_epoch().serialize(ser));
+impl_deserialize!([] TimestampViaI64, de => <i64>::deserialize(de).map(Timestamp::from_micros_since_unix_epoch).map(TimestampViaI64));
+impl_st!([] TimestampViaI64, AlgebraicType::I64);
+impl From<Timestamp> for TimestampViaI64 {
+    fn from(ts: Timestamp) -> Self {
+        Self(ts)
+    }
+}
+
+impl From<TimestampViaI64> for AlgebraicValue {
+    fn from(val: TimestampViaI64) -> Self {
+        AlgebraicValue::I64(val.0.to_micros_since_unix_epoch())
+    }
+}
+
 /// System table [ST_MODULE_NAME]
 /// This table holds exactly one row, describing the latest version of the
 /// SpacetimeDB module associated with the database:
@@ -1345,6 +1391,12 @@ impl TryFrom<RowRef<'_>> for StClientRow {
 
     fn try_from(row: RowRef<'_>) -> Result<Self, Self::Error> {
         read_via_bsatn(row)
+    }
+}
+
+impl From<StClientRow> for (Identity, ConnectionId) {
+    fn from(value: StClientRow) -> Self {
+        (value.identity.0, value.connection_id.0)
     }
 }
 

@@ -15,7 +15,7 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import type { ReducerSchema } from './reducer_schema';
-import { toCamelCase } from './utils';
+import { toCamelCase } from './util';
 import type { CamelCase } from './type_util';
 
 /**
