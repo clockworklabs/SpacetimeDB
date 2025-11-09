@@ -7,12 +7,7 @@ import type { Timestamp } from '../lib/timestamp';
 import type { QueryBuilder } from './query';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { Table } from './table';
-import type {
-  InferTypeOfRow,
-  RowBuilder,
-  RowObj,
-  TypeBuilder,
-} from './type_builders';
+import type { InferTypeOfRow, RowObj, TypeBuilder } from './type_builders';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -129,10 +124,13 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
  * @param fn - The reducer function.
  * @param lifecycle - Optional lifecycle hooks for the reducer.
  */
-export function pushReducer(
+export function pushReducer<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj | RowObj,
+>(
   name: string,
-  params: RowObj | RowBuilder<RowObj>,
-  fn: Reducer<any, any>,
+  params: Params,
+  fn: Reducer<S, Params>,
   lifecycle?: RawReducerDefV9['lifecycle']
 ): void {
   if (existingReducers.has(name))
@@ -152,7 +150,7 @@ export function pushReducer(
     lifecycle, // <- lifecycle flag lands here
   });
 
-  REDUCERS.push(fn);
+  REDUCERS.push(fn as Reducer<any, any>);
 }
 
 const existingReducers = new Set<string>();
@@ -196,11 +194,7 @@ export const REDUCERS: Reducer<any, any>[] = [];
 export function reducer<
   S extends UntypedSchemaDef,
   Params extends ParamsObj | RowObj,
->(
-  name: string,
-  params: Params,
-  fn: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
-): void {
+>(name: string, params: Params, fn: Reducer<S, Params>): void {
   pushReducer(name, params, fn);
 }
 
