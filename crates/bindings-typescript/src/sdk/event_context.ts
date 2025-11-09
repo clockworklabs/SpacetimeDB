@@ -7,18 +7,21 @@ import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type UntypedEventContext = EventContextInterface<UntypedRemoteModule>;
 
-export interface EventContextInterface<
-  RemoteModule extends UntypedRemoteModule,
-> extends DbContext<RemoteModule> {
+export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
+  extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
-  event: Event<ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>>;
+  event: Event<
+    ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>
+  >;
 }
 
 export interface ReducerEventContextInterface<
   RemoteModule extends UntypedRemoteModule,
 > extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
-  event: ReducerEvent<ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>>;
+  event: ReducerEvent<
+    ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>
+  >;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -28,9 +31,8 @@ export interface SubscriptionEventContextInterface<
   /** No event is provided **/
 }
 
-export interface ErrorContextInterface<
-  RemoteModule extends UntypedRemoteModule,
-> extends DbContext<RemoteModule> {
+export interface ErrorContextInterface<RemoteModule extends UntypedRemoteModule>
+  extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event?: Error;
 }

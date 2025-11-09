@@ -3,10 +3,10 @@ export type ReducerHandle<ReducerName extends string> = {
   readonly reducerName?: ReducerName;
 };
 
-export type ReducerNamesFromReducers<R> = R extends object 
+export type ReducerNamesFromReducers<R> = R extends object
   ? {
       [K in keyof R]: R[K] extends ReducerHandle<infer ReducerName>
-        ? ReducerName 
+        ? ReducerName
         : never;
     }[keyof R]
   : never;

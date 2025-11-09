@@ -288,9 +288,9 @@ type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
 };
 
 export function reducersToSchema<
-  const T extends readonly ReducerSchema<any, any>[]
+  const T extends readonly ReducerSchema<any, any>[],
 >(reducers: T): ReducersToSchema<T> {
-  const mapped = reducers.map((r) => {
+  const mapped = reducers.map(r => {
     const paramsRow = r.params.row;
 
     return {
@@ -308,7 +308,7 @@ export function reducersToSchema<
       paramsType: T[I]['paramsSpacetimeType'];
     };
   };
-  
+
   const result = { reducers: mapped } satisfies ReducersToSchema<T>;
   return result;
 }
@@ -339,21 +339,18 @@ export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
 ): Reducers<ReducersToSchema<H>>;
 
 export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
-  ...args:
-    | [H]
-    | H
+  ...args: [H] | H
 ): Reducers<ReducersToSchema<H>> {
-  const handles = (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as H;
+  const handles = (
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  ) as H;
   return new Reducers(handles);
 }
 
 export function reducerSchema<
   ReducerName extends string,
   Params extends ParamsObj,
->(
-  name: ReducerName,
-  params: Params 
-): ReducerSchema<ReducerName, Params> {
+>(name: ReducerName, params: Params): ReducerSchema<ReducerName, Params> {
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -371,5 +368,4 @@ export function reducerSchema<
       lifecycle: undefined,
     },
   };
-} 
-
+}

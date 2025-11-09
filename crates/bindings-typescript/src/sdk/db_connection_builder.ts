@@ -1,6 +1,12 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { DbConnectionConfig, ErrorContextInterface, Identity, RemoteModuleOf, SubscriptionEventContextInterface } from '../';
+import type {
+  DbConnectionConfig,
+  ErrorContextInterface,
+  Identity,
+  RemoteModuleOf,
+  SubscriptionEventContextInterface,
+} from '../';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 
@@ -12,9 +18,7 @@ import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
  * always have a concrete RemoteModule type in those cases. Even if they user
  * did do this, they would just lose type safety on the RemoteModule.
  */
-export class DbConnectionBuilder<
-  DbConnection extends DbConnectionImpl<any>
-> {
+export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #uri?: URL;
   #nameOrAddress?: string;
   #identity?: Identity;
@@ -35,7 +39,9 @@ export class DbConnectionBuilder<
    */
   constructor(
     private remoteModule: RemoteModuleOf<DbConnection>,
-    private dbConnectionCtor: (config: DbConnectionConfig<RemoteModuleOf<DbConnection>>) => DbConnection
+    private dbConnectionCtor: (
+      config: DbConnectionConfig<RemoteModuleOf<DbConnection>>
+    ) => DbConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
@@ -181,7 +187,12 @@ export class DbConnectionBuilder<
    * });
    * ```
    */
-  onConnectError(callback: (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>, error: Error) => void): this {
+  onConnectError(
+    callback: (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      error: Error
+    ) => void
+  ): this {
     this.#emitter.on('connectError', callback);
     return this;
   }
@@ -213,7 +224,10 @@ export class DbConnectionBuilder<
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
-    callback: (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>, error?: Error | undefined) => void
+    callback: (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      error?: Error | undefined
+    ) => void
   ): this {
     this.#emitter.on('disconnect', callback);
     return this;
@@ -258,6 +272,6 @@ export class DbConnectionBuilder<
       confirmedReads: this.#confirmedReads,
       createWSFn: this.#createWSFn,
       remoteModule: this.remoteModule,
-    })
+    });
   }
 }

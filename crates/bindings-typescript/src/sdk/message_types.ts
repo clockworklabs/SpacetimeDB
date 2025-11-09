@@ -25,11 +25,10 @@ export type TransactionUpdateMessage = {
   energyConsumed: bigint;
 };
 
-export type TransactionUpdateLightMessage =
-  {
-    tag: 'TransactionUpdateLight';
-    tableUpdates: TableUpdate<UntypedTableDef>[];
-  };
+export type TransactionUpdateLightMessage = {
+  tag: 'TransactionUpdateLight';
+  tableUpdates: TableUpdate<UntypedTableDef>[];
+};
 
 export type IdentityTokenMessage = {
   tag: 'IdentityToken';
@@ -57,10 +56,10 @@ export type SubscriptionError = {
 };
 
 export type Message =
-    | InitialSubscriptionMessage
-    | TransactionUpdateMessage
-    | TransactionUpdateLightMessage
-    | IdentityTokenMessage
-    | SubscribeAppliedMessage
-    | UnsubscribeAppliedMessage
-    | SubscriptionError;
+  | InitialSubscriptionMessage
+  | TransactionUpdateMessage
+  | TransactionUpdateLightMessage
+  | IdentityTokenMessage
+  | SubscribeAppliedMessage
+  | UnsubscribeAppliedMessage
+  | SubscriptionError;

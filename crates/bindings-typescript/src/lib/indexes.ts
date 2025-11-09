@@ -100,7 +100,7 @@ export type UniqueIndex<
 };
 
 /**
- * A type representing a read-only ranged index on a database table. 
+ * A type representing a read-only ranged index on a database table.
  */
 export type ReadonlyRangedIndex<
   TableDef extends UntypedTableDef,

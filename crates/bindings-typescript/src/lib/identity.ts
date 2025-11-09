@@ -36,7 +36,7 @@ export class Identity {
   }
 
   /**
-   * Check if two identities are equal. 
+   * Check if two identities are equal.
    */
   isEqual(other: Identity): boolean {
     return this.toHexString() === other.toHexString();

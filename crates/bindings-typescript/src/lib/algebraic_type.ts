@@ -69,17 +69,24 @@ export type AlgebraicType = AlgebraicTypeType;
 /**
  * The variant types of the Algebraic Type tagged union.
  */
-export { AlgebraicTypeVariants }
+export { AlgebraicTypeVariants };
 
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
   Ref: (value: number): AlgebraicTypeVariants.Ref => ({ tag: 'Ref', value }),
-  Sum: <T extends SumTypeType>(value: T): { tag: 'Sum'; value: T } => ({ tag: 'Sum', value }),
-  Product: <T extends ProductTypeType>(value: T): { tag: 'Product'; value: T } => ({
+  Sum: <T extends SumTypeType>(value: T): { tag: 'Sum'; value: T } => ({
+    tag: 'Sum',
+    value,
+  }),
+  Product: <T extends ProductTypeType>(
+    value: T
+  ): { tag: 'Product'; value: T } => ({
     tag: 'Product',
     value,
   }),
-  Array: <T extends AlgebraicTypeType>(value: T): { tag: 'Array'; value: T } => ({
+  Array: <T extends AlgebraicTypeType>(
+    value: T
+  ): { tag: 'Array'; value: T } => ({
     tag: 'Array',
     value,
   }),
@@ -280,7 +287,7 @@ export const AlgebraicType = {
       }
     }
   },
-}
+};
 
 /**
  * A structural product type  of the factors given by `elements`.

@@ -6,18 +6,11 @@ import type {
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModule } from './spacetime_module';
 
-export class SubscriptionBuilderImpl<
-  RemoteModule extends UntypedRemoteModule,
-> {
-  #onApplied?: (
-    ctx: SubscriptionEventContextInterface<RemoteModule>
-  ) => void = undefined;
-  #onError?: (
-    ctx: ErrorContextInterface<RemoteModule>
-  ) => void = undefined;
-  constructor(
-    private db: DbConnectionImpl<RemoteModule>
-  ) {}
+export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
+  #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
+    undefined;
+  #onError?: (ctx: ErrorContextInterface<RemoteModule>) => void = undefined;
+  constructor(private db: DbConnectionImpl<RemoteModule>) {}
 
   /**
    * Registers `callback` to run when this query is successfully added to our subscribed set,
@@ -35,9 +28,7 @@ export class SubscriptionBuilderImpl<
    * @returns The current `SubscriptionBuilder` instance.
    */
   onApplied(
-    cb: (
-      ctx: SubscriptionEventContextInterface<RemoteModule>
-    ) => void
+    cb: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void
   ): SubscriptionBuilderImpl<RemoteModule> {
     this.#onApplied = cb;
     return this;
@@ -128,13 +119,14 @@ export type SubscribeEvent = 'applied' | 'error' | 'end';
 export class SubscriptionManager<RemoteModule extends UntypedRemoteModule> {
   subscriptions: Map<
     number,
-    { handle: SubscriptionHandleImpl<RemoteModule>; emitter: EventEmitter<SubscribeEvent> }
+    {
+      handle: SubscriptionHandleImpl<RemoteModule>;
+      emitter: EventEmitter<SubscribeEvent>;
+    }
   > = new Map();
 }
 
-export class SubscriptionHandleImpl<
-  RemoteModule extends UntypedRemoteModule,
-> {
+export class SubscriptionHandleImpl<RemoteModule extends UntypedRemoteModule> {
   #queryId: number;
   #unsubscribeCalled: boolean = false;
   #endedState: boolean = false;
@@ -145,19 +137,12 @@ export class SubscriptionHandleImpl<
   constructor(
     private db: DbConnectionImpl<RemoteModule>,
     querySql: string[],
-    onApplied?: (
-      ctx: SubscriptionEventContextInterface<RemoteModule>
-    ) => void,
-    onError?: (
-      ctx: ErrorContextInterface<RemoteModule>,
-      error: Error
-    ) => void
+    onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void,
+    onError?: (ctx: ErrorContextInterface<RemoteModule>, error: Error) => void
   ) {
     this.#emitter.on(
       'applied',
-      (
-        ctx: SubscriptionEventContextInterface<RemoteModule>
-      ) => {
+      (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
         this.#activeState = true;
         if (onApplied) {
           onApplied(ctx);
@@ -166,10 +151,7 @@ export class SubscriptionHandleImpl<
     );
     this.#emitter.on(
       'error',
-      (
-        ctx: ErrorContextInterface<RemoteModule>,
-        error: Error
-      ) => {
+      (ctx: ErrorContextInterface<RemoteModule>, error: Error) => {
         this.#activeState = false;
         this.#endedState = true;
         if (onError) {
@@ -193,9 +175,7 @@ export class SubscriptionHandleImpl<
     this.db.unregisterSubscription(this.#queryId);
     this.#emitter.on(
       'end',
-      (
-        _ctx: SubscriptionEventContextInterface<RemoteModule>
-      ) => {
+      (_ctx: SubscriptionEventContextInterface<RemoteModule>) => {
         this.#endedState = true;
         this.#activeState = false;
       }
@@ -213,9 +193,7 @@ export class SubscriptionHandleImpl<
    * @param onEnd - Callback to run upon successful unsubscribe.
    */
   unsubscribeThen(
-    onEnd: (
-      ctx: SubscriptionEventContextInterface<RemoteModule>
-    ) => void
+    onEnd: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void
   ): void {
     if (this.#endedState) {
       throw new Error('Subscription has already ended');
@@ -227,9 +205,7 @@ export class SubscriptionHandleImpl<
     this.db.unregisterSubscription(this.#queryId);
     this.#emitter.on(
       'end',
-      (
-        ctx: SubscriptionEventContextInterface<RemoteModule>
-      ) => {
+      (ctx: SubscriptionEventContextInterface<RemoteModule>) => {
         this.#endedState = true;
         this.#activeState = false;
         onEnd(ctx);

@@ -206,13 +206,11 @@ type ColumnsFromRow<R> = {
  * });
  * ```
  */
-export function useTable<
-  TableDef extends UntypedTableDef,
->(
+export function useTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
   where: Expr<ColumnsFromRow<RowType<TableDef>>>,
-  callbacks?: UseTableCallbacks<RowType<TableDef>>
-): readonly RowType<TableDef>[];
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): readonly Prettify<RowType<TableDef>>[];
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -247,22 +245,18 @@ export function useTable<
  * });
  * ```
  */
-export function useTable<
-  TableDef extends UntypedTableDef,
->(
+export function useTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
-  callbacks?: UseTableCallbacks<RowType<TableDef>>
-): readonly RowType<TableDef>[];
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): readonly Prettify<RowType<TableDef>>[];
 
-export function useTable<
-  TableDef extends UntypedTableDef,
->(
+export function useTable<TableDef extends UntypedTableDef>(
   tableDef: TableDef,
   whereClauseOrCallbacks?:
     | Expr<ColumnsFromRow<RowType<TableDef>>>
     | UseTableCallbacks<RowType<TableDef>>,
   callbacks?: UseTableCallbacks<RowType<TableDef>>
-): readonly RowType<TableDef>[] {
+): readonly Prettify<RowType<TableDef>>[] {
   type UseTableRowType = RowType<TableDef>;
   const tableName = tableDef.name;
   let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
@@ -271,7 +265,9 @@ export function useTable<
     typeof whereClauseOrCallbacks === 'object' &&
     'type' in whereClauseOrCallbacks
   ) {
-    whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<UseTableRowType>>;
+    whereClause = whereClauseOrCallbacks as Expr<
+      ColumnsFromRow<UseTableRowType>
+    >;
   } else {
     callbacks = whereClauseOrCallbacks as
       | UseTableCallbacks<UseTableRowType>
@@ -294,27 +290,32 @@ export function useTable<
     (whereClause ? ` WHERE ${toString(whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
-  const lastSnapshotRef = useRef<readonly UseTableRowType[] | null>(null);
+  const lastSnapshotRef = useRef<readonly Prettify<UseTableRowType>[] | null>(
+    null
+  );
 
   const whereKey = whereClause ? toString(whereClause) : '';
 
-  const computeSnapshot = useCallback((): readonly UseTableRowType[] => {
-    const connection = connectionState.getConnection();
-    if (!connection) {
-      return [];
-    }
-    const table = connection.db[tableName];
-    const result: readonly UseTableRowType[] = whereClause
-      ? (Array.from(table.iter()).filter(row => evaluate(whereClause, row as UseTableRowType)) as UseTableRowType[])
-      : (Array.from(table.iter()) as UseTableRowType[]);
-    return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, tableName, whereKey, subscribeApplied]);
+  const computeSnapshot =
+    useCallback((): readonly Prettify<UseTableRowType>[] => {
+      const connection = connectionState.getConnection();
+      if (!connection) {
+        return [];
+      }
+      const table = connection.db[tableName];
+      const result: readonly Prettify<UseTableRowType>[] = whereClause
+        ? (Array.from(table.iter()).filter(row =>
+            evaluate(whereClause, row as UseTableRowType)
+          ) as Prettify<UseTableRowType>[])
+        : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
+      return result;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [connectionState, tableName, whereKey, subscribeApplied]);
 
   useEffect(() => {
     const connection = connectionState.getConnection()!;
     if (connectionState.isActive && connection) {
-      const cancel = connection 
+      const cancel = connection
         .subscriptionBuilder()
         .onApplied(() => {
           setSubscribeApplied(true);
@@ -328,7 +329,10 @@ export function useTable<
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
-      const onInsert = (ctx: EventContextInterface<UntypedRemoteModule>, row: any) => {
+      const onInsert = (
+        ctx: EventContextInterface<UntypedRemoteModule>,
+        row: any
+      ) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
@@ -343,7 +347,10 @@ export function useTable<
         }
       };
 
-      const onDelete = (ctx: EventContextInterface<UntypedRemoteModule>, row: any) => {
+      const onDelete = (
+        ctx: EventContextInterface<UntypedRemoteModule>,
+        row: any
+      ) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
@@ -358,7 +365,11 @@ export function useTable<
         }
       };
 
-      const onUpdate = (ctx: EventContextInterface<UntypedRemoteModule>, oldRow: any, newRow: any) => {
+      const onUpdate = (
+        ctx: EventContextInterface<UntypedRemoteModule>,
+        oldRow: any,
+        newRow: any
+      ) => {
         const change = classifyMembership(whereClause, oldRow, newRow);
 
         switch (change) {
@@ -412,7 +423,7 @@ export function useTable<
     ]
   );
 
-  const getSnapshot = useCallback((): readonly UseTableRowType[] => {
+  const getSnapshot = useCallback((): readonly Prettify<UseTableRowType>[] => {
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = computeSnapshot();
     }

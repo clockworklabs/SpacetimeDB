@@ -18,7 +18,10 @@ export interface SpacetimeDBProviderProps<
 
 export function SpacetimeDBProvider<
   DbConnection extends DbConnectionImpl<any>,
->({ connectionBuilder, children }: SpacetimeDBProviderProps<DbConnection>): React.JSX.Element {
+>({
+  connectionBuilder,
+  children,
+}: SpacetimeDBProviderProps<DbConnection>): React.JSX.Element {
   // Holds the imperative connection instance when (and only when) we’re on the client.
   const connRef = React.useRef<DbConnection | null>(null);
   const getConnection = React.useCallback(() => connRef.current, []);
@@ -29,7 +32,7 @@ export function SpacetimeDBProvider<
     token: undefined,
     connectionId: ConnectionId.random(),
     connectionError: undefined,
-    getConnection: getConnection as ConnectionState["getConnection"],
+    getConnection: getConnection as ConnectionState['getConnection'],
   });
 
   // Build on the client only; useEffect won't run during SSR.
@@ -37,7 +40,7 @@ export function SpacetimeDBProvider<
     if (!connRef.current) {
       connRef.current = connectionBuilder.build();
     }
-    console.log("HAPPPP");
+    console.log('HAPPPP');
     // Register callback for onConnect to update state
     const onConnect = (conn: DbConnection) => {
       setState(s => ({
@@ -48,13 +51,18 @@ export function SpacetimeDBProvider<
         connectionId: conn.connectionId,
       }));
     };
-    const onDisconnect = (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>) => {
+    const onDisconnect = (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>
+    ) => {
       setState(s => ({
         ...s,
         isActive: ctx.isActive,
       }));
     };
-    const onConnectError = (ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>, err: Error) => {
+    const onConnectError = (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      err: Error
+    ) => {
       setState(s => ({
         ...s,
         isActive: ctx.isActive,
@@ -88,4 +96,4 @@ export function SpacetimeDBProvider<
     { value: state },
     children
   );
- }
+}

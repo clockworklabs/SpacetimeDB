@@ -34,7 +34,8 @@ import type { CamelCase } from './type_util';
 import type { TableSchema } from './table_schema';
 import { toCamelCase } from './utils';
 
-export type TableNamesOf<S extends UntypedSchemaDef> = S['tables'][number]['name'];
+export type TableNamesOf<S extends UntypedSchemaDef> =
+  S['tables'][number]['name'];
 
 /**
  * An untyped representation of the database schema.
@@ -60,10 +61,10 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
 };
 
 export function tablesToSchema<
-  const T extends readonly TableSchema<any, any, readonly any[]>[]
+  const T extends readonly TableSchema<any, any, readonly any[]>[],
 >(tables: T): TablesToSchema<T> {
   const result = {
-    tables: tables.map((schema) => {
+    tables: tables.map(schema => {
       return {
         name: schema.tableName,
         accessorName: toCamelCase(schema.tableName),
@@ -73,15 +74,15 @@ export function tablesToSchema<
         indexes: [...schema.idxs],
       } as const;
     }) as {
-        // preserve tuple indices so the return type matches `[i in keyof T]`
-        readonly [I in keyof T]: {
-          name: T[I]['tableName'];
-          accessorName: CamelCase<T[I]['tableName']>;
-          columns: T[I]['rowType']['row'];
-          rowType: T[I]['rowSpacetimeType'];
-          indexes: T[I]['idxs'];
-        };
-      },
+      // preserve tuple indices so the return type matches `[i in keyof T]`
+      readonly [I in keyof T]: {
+        name: T[I]['tableName'];
+        accessorName: CamelCase<T[I]['tableName']>;
+        columns: T[I]['rowType']['row'];
+        rowType: T[I]['rowSpacetimeType'];
+        indexes: T[I]['idxs'];
+      };
+    },
   } satisfies TablesToSchema<T>;
   return result;
 }
@@ -123,12 +124,15 @@ export function resolveType<AT extends AlgebraicTypeType>(
 /**
  * Adds a type to the module definition's typespace as a `Ref` if it is a named compound type (Product or Sum).
  * Otherwise, returns the type as is.
- * @param name 
- * @param ty 
- * @returns 
+ * @param name
+ * @param ty
+ * @returns
  */
 export function registerTypesRecursively(
-  typeBuilder: SumBuilder<VariantsObj> | ProductBuilder<ElementsObj> | RowBuilder<RowObj>
+  typeBuilder:
+    | SumBuilder<VariantsObj>
+    | ProductBuilder<ElementsObj>
+    | RowBuilder<RowObj>
 ): RefBuilder {
   const ty = typeBuilder.algebraicType;
   const name = typeBuilder.typeName;
@@ -142,21 +146,42 @@ export function registerTypesRecursively(
   // Recursively register nested compound types
   if (typeBuilder instanceof RowBuilder) {
     for (const [name, elem] of Object.entries(typeBuilder.row)) {
-      if (!(elem instanceof ProductBuilder || elem instanceof SumBuilder || elem instanceof RowBuilder)) {
+      if (
+        !(
+          elem instanceof ProductBuilder ||
+          elem instanceof SumBuilder ||
+          elem instanceof RowBuilder
+        )
+      ) {
         continue;
       }
-      typeBuilder.row[name] = new ColumnBuilder(registerTypesRecursively(elem), {});
+      typeBuilder.row[name] = new ColumnBuilder(
+        registerTypesRecursively(elem),
+        {}
+      );
     }
   } else if (typeBuilder instanceof ProductBuilder) {
     for (const [name, elem] of Object.entries(typeBuilder.elements)) {
-      if (!(elem instanceof ProductBuilder || elem instanceof SumBuilder || elem instanceof RowBuilder)) {
+      if (
+        !(
+          elem instanceof ProductBuilder ||
+          elem instanceof SumBuilder ||
+          elem instanceof RowBuilder
+        )
+      ) {
         continue;
       }
       typeBuilder.elements[name] = registerTypesRecursively(elem);
     }
   } else if (typeBuilder instanceof SumBuilder) {
     for (const [name, variant] of Object.entries(typeBuilder.variants)) {
-      if (!(variant instanceof ProductBuilder || variant instanceof SumBuilder || variant instanceof RowBuilder)) {
+      if (
+        !(
+          variant instanceof ProductBuilder ||
+          variant instanceof SumBuilder ||
+          variant instanceof RowBuilder
+        )
+      ) {
         continue;
       }
       typeBuilder.variants[name] = registerTypesRecursively(variant);
@@ -221,7 +246,11 @@ class Schema<S extends UntypedSchemaDef> {
   readonly typespace: Infer<typeof Typespace>;
   readonly schemaType: S;
 
-  constructor(tables: Infer<typeof RawTableDefV9>[], typespace: Infer<typeof Typespace>, handles: readonly TableSchema<any, any, any>[]) {
+  constructor(
+    tables: Infer<typeof RawTableDefV9>[],
+    typespace: Infer<typeof Typespace>,
+    handles: readonly TableSchema<any, any, any>[]
+  ) {
     this.tablesDef = { tables };
     this.typespace = typespace;
     // TODO: TableSchema and TableDef should really be unified
@@ -428,11 +457,11 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
  * ```
  */
 export function schema<const H extends readonly TableSchema<any, any, any>[]>(
-  ...args:
-    | [H]
-    | H
+  ...args: [H] | H
 ): Schema<TablesToSchema<H>> {
-  const handles = (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as H;
+  const handles = (
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  ) as H;
   const tableDefs = handles.map(h => h.tableDef);
 
   // Side-effect:
@@ -455,9 +484,13 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
 type HasAccessor = { accessorName: PropertyKey };
 
 export type ConvertToAccessorMap<TableDefs extends readonly HasAccessor[]> = {
-  [Tbl in TableDefs[number] as Tbl["accessorName"]]: Tbl
+  [Tbl in TableDefs[number] as Tbl['accessorName']]: Tbl;
 };
 
-export function convertToAccessorMap<T extends readonly HasAccessor[]>(arr: T): ConvertToAccessorMap<T> {
-  return Object.fromEntries(arr.map(v => [v.accessorName, v])) as ConvertToAccessorMap<T>;
+export function convertToAccessorMap<T extends readonly HasAccessor[]>(
+  arr: T
+): ConvertToAccessorMap<T> {
+  return Object.fromEntries(
+    arr.map(v => [v.accessorName, v])
+  ) as ConvertToAccessorMap<T>;
 }

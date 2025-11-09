@@ -180,8 +180,8 @@ export const hooks: ModuleHooks = {
     AlgebraicType.serializeValue(
       writer,
       RawModuleDef.algebraicType,
-      RawModuleDef.create('V9', MODULE_DEF),
-    )
+      RawModuleDef.create('V9', MODULE_DEF)
+    );
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
@@ -235,7 +235,10 @@ function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
   );
 }
 
-function makeTableView(typespace: Infer<typeof Typespace>, table: Infer<typeof RawTableDefV9>): Table<any> {
+function makeTableView(
+  typespace: Infer<typeof Typespace>,
+  table: Infer<typeof RawTableDefV9>
+): Table<any> {
   const table_id = sys.table_id_from_name(table.name);
   const rowType = typespace.types[table.productTypeRef];
   if (rowType.tag !== 'Product') {
@@ -472,7 +475,10 @@ function makeTableView(typespace: Infer<typeof Typespace>, table: Infer<typeof R
   return freeze(tableView);
 }
 
-function bsatnBaseSize(typespace: Infer<typeof Typespace>, ty: AlgebraicType): number {
+function bsatnBaseSize(
+  typespace: Infer<typeof Typespace>,
+  ty: AlgebraicType
+): number {
   const assumedArrayLength = 4;
   while (ty.tag === 'Ref') ty = typespace.types[ty.value];
   if (ty.tag === 'Product') {

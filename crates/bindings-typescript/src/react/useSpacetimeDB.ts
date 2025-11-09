@@ -3,7 +3,9 @@ import type { DbConnectionImpl } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
-export const SpacetimeDBContext = createContext<ConnectionState | undefined>(undefined);
+export const SpacetimeDBContext = createContext<ConnectionState | undefined>(
+  undefined
+);
 
 // Throws an error if used outside of a SpacetimeDBProvider
 // Error is caught by other hooks like useTable so they can provide better error messages

@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { AlgebraicType, BinaryReader, BinaryWriter, ConnectionId, Identity, ScheduleAt } from 'spacetimedb';
+import {
+  AlgebraicType,
+  BinaryReader,
+  BinaryWriter,
+  ConnectionId,
+  Identity,
+  ScheduleAt,
+} from 'spacetimedb';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {

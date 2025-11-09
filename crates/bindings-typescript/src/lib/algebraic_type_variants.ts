@@ -1,4 +1,8 @@
-import type { AlgebraicTypeType, ProductTypeType, SumTypeType } from "./algebraic_type";
+import type {
+  AlgebraicTypeType,
+  ProductTypeType,
+  SumTypeType,
+} from './algebraic_type';
 
 export type Ref = { tag: 'Ref'; value: number };
 export type Sum = { tag: 'Sum'; value: SumTypeType };

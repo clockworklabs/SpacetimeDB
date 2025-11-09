@@ -1,8 +1,8 @@
-import type { ProductType } from "./algebraic_type";
-import type RawReducerDefV9 from "./autogen/raw_reducer_def_v_9_type";
-import type { ParamsObj } from "./reducers";
-import type { Infer, RowBuilder, RowObj } from "./type_builders";
-import type { CamelCase } from "./type_util";
+import type { ProductType } from './algebraic_type';
+import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
+import type { ParamsObj } from './reducers';
+import type { Infer, RowBuilder, RowObj } from './type_builders';
+import type { CamelCase } from './type_util';
 
 /**
  * Represents a handle to a database reducer, including its name and argument type.
@@ -15,7 +15,7 @@ export type ReducerSchema<
    * The name of the reducer.
    */
   readonly reducerName: ReducerName;
-  
+
   /**
    * The accessor name for the reducer.
    */
@@ -25,7 +25,7 @@ export type ReducerSchema<
    * The TypeBuilder representation of the reducer's parameter type.
    */
   readonly params: RowBuilder<Params>;
-  
+
   /**
    * The {@link ProductType} representing the structure of the reducer's parameters.
    */

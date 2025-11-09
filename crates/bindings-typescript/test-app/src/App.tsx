@@ -1,7 +1,13 @@
 import { tables, reducers } from './module_bindings';
 import { useEffect } from 'react';
 import './App.css';
-import { eq, useReducer, useSpacetimeDB, useTable, where } from '../../src/react';
+import {
+  eq,
+  useReducer,
+  useSpacetimeDB,
+  useTable,
+  where,
+} from '../../src/react';
 
 function getRandomInt(max: number) {
   return Math.floor(Math.random() * max);
@@ -10,10 +16,9 @@ function getRandomInt(max: number) {
 function App() {
   const connection = useSpacetimeDB();
   const players = useTable(tables.player, where(eq('name', 'Hello')), {
-    onInsert: (row) => {
-      console.log('Player inserted:', rows);
+    onInsert: row => {
+      console.log('Player inserted:', row);
     },
-
   });
   const x = players[0];
   const createPlayer = useReducer(reducers.createPlayer);

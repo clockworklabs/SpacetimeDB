@@ -5,8 +5,19 @@ import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { AllUnique, ConstraintOpts } from './constraints';
-import type { ColumnIndex, IndexColumns, Indexes, IndexOpts, ReadonlyIndexes } from './indexes';
-import { registerTypesRecursively, MODULE_DEF, resolveType, splitName } from './schema';
+import type {
+  ColumnIndex,
+  IndexColumns,
+  Indexes,
+  IndexOpts,
+  ReadonlyIndexes,
+} from './indexes';
+import {
+  registerTypesRecursively,
+  MODULE_DEF,
+  resolveType,
+  splitName,
+} from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
@@ -17,7 +28,7 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { Prettify, } from './type_util';
+import type { Prettify } from './type_util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -26,9 +37,9 @@ type ColList = ColId[];
 /**
  * A helper type to extract the row type from a TableDef
  */
-export type RowType<TableDef extends UntypedTableDef> = Prettify<InferTypeOfRow<
+export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
   TableDef['columns']
->>;
+>;
 
 /**
  * Coerces a column which may be a TypeBuilder or ColumnBuilder into a ColumnBuilder
@@ -36,7 +47,9 @@ export type RowType<TableDef extends UntypedTableDef> = Prettify<InferTypeOfRow<
 export type CoerceColumn<
   Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
 > =
-  Col extends TypeBuilder<infer T, infer U> ? ColumnBuilder<T, U, ColumnMetadata<any>> : Col;
+  Col extends TypeBuilder<infer T, infer U>
+    ? ColumnBuilder<T, U, ColumnMetadata<any>>
+    : Col;
 
 /**
  * Coerces a RowObj where TypeBuilders are replaced with ColumnBuilders
@@ -136,19 +149,20 @@ export type ReadonlyTableMethods<TableDef extends UntypedTableDef> = {
 /**
  * A type representing the methods available on a table.
  */
-export type TableMethods<TableDef extends UntypedTableDef> = ReadonlyTableMethods<TableDef> & {
-  /**
-   * Insert and return the inserted row (auto-increment fields filled).
-   *
-   * May throw on error:
-   * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
-   * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
-   * */
-  insert(row: RowType<TableDef>): RowType<TableDef>;
+export type TableMethods<TableDef extends UntypedTableDef> =
+  ReadonlyTableMethods<TableDef> & {
+    /**
+     * Insert and return the inserted row (auto-increment fields filled).
+     *
+     * May throw on error:
+     * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
+     * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
+     * */
+    insert(row: RowType<TableDef>): RowType<TableDef>;
 
-  /** Delete a row equal to `row`. Returns true if something was deleted. */
-  delete(row: RowType<TableDef>): boolean;
-};
+    /** Delete a row equal to `row`. Returns true if something was deleted. */
+    delete(row: RowType<TableDef>): boolean;
+  };
 
 /**
  * Defines a database table with schema and options
@@ -279,7 +293,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       };
       constraints.push({ name: constraintOpts.name, data });
       continue;
-    } 
+    }
     if (constraintOpts.constraint === 'primaryKey') {
       pk.push(...constraintOpts.columns.map(c => colIds.get(c)!));
     }
@@ -325,9 +339,11 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   }
 
   const productType = {
-    elements: resolveType(MODULE_DEF.typespace, row).value.elements.map(elem => {
-      return { name: elem.name, algebraicType: elem.algebraicType };
-    }),
+    elements: resolveType(MODULE_DEF.typespace, row).value.elements.map(
+      elem => {
+        return { name: elem.name, algebraicType: elem.algebraicType };
+      }
+    ),
   };
 
   return {
