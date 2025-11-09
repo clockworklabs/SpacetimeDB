@@ -18,22 +18,22 @@ export type IndexOpts<AllowedCol extends string> = {
 /**
  * An untyped representation of an index definition.
  */
-type UntypedIndex<AllowedCol extends string> = {
+export type UntypedIndex<AllowedCol extends string> = {
   name: string;
   unique: boolean;
   algorithm: 'btree' | 'direct';
-  columns: AllowedCol[];
+  columns: readonly AllowedCol[];
 };
 
 /**
  * A helper type to extract the column names from an index definition.
  */
 export type IndexColumns<I extends IndexOpts<any>> = I extends {
-  columns: string[];
+  columns: readonly string[];
 }
-  ? I['columns']
-  : I extends { column: string }
-    ? [I['column']]
+  ? readonly [...I['columns']]
+  : I extends { column: infer Name extends string }
+    ? readonly [Name]
     : never;
 
 /**
@@ -46,6 +46,13 @@ export type Indexes<
   [k in keyof I]: Index<TableDef, I[k]>;
 };
 
+export type ReadonlyIndexes<
+  TableDef extends UntypedTableDef,
+  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+> = {
+  [k in keyof I]: ReadonlyIndex<TableDef, I[k]>;
+};
+
 /**
  * A type representing a database index, which can be either unique or ranged.
  */
@@ -56,32 +63,51 @@ export type Index<
   ? UniqueIndex<TableDef, I>
   : RangedIndex<TableDef, I>;
 
+export type ReadonlyIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> = I['unique'] extends true
+  ? ReadonlyUniqueIndex<TableDef, I>
+  : ReadonlyRangedIndex<TableDef, I>;
+
+export interface ReadonlyUniqueIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> {
+  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
+}
+
 /**
  * A type representing a unique index on a database table.
  * Unique indexes enforce that the indexed columns contain unique values.
  */
-export type UniqueIndex<
+export interface UniqueIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = {
-  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
+> extends ReadonlyUniqueIndex<TableDef, I> {
   delete(col_val: IndexVal<TableDef, I>): boolean;
   update(col_val: RowType<TableDef>): RowType<TableDef>;
-};
+}
+
+export interface ReadonlyRangedIndex<
+  TableDef extends UntypedTableDef,
+  I extends UntypedIndex<keyof TableDef['columns'] & string>,
+> {
+  filter(
+    range: IndexScanRangeBounds<TableDef, I>
+  ): IterableIterator<RowType<TableDef>>;
+}
 
 /**
  * A type representing a ranged index on a database table.
  * Ranged indexes allow for range queries on the indexed columns.
  */
-export type RangedIndex<
+export interface RangedIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> = {
-  filter(
-    range: IndexScanRangeBounds<TableDef, I>
-  ): IterableIterator<RowType<TableDef>>;
+> extends ReadonlyRangedIndex<TableDef, I> {
   delete(range: IndexScanRangeBounds<TableDef, I>): number;
-};
+}
 
 /**
  * A helper type to extract the value type of an index based on the table definition and index definition.
@@ -95,9 +121,18 @@ export type IndexVal<
 /**
  * A helper type to extract the types of the columns that make up an index.
  */
-type _IndexVal<TableDef extends UntypedTableDef, Columns extends string[]> = {
-  [i in keyof Columns]: TableDef['columns'][Columns[i]]['typeBuilder']['type'];
-};
+type _IndexVal<
+  TableDef extends UntypedTableDef,
+  Columns extends readonly string[],
+> = Columns extends readonly [
+  infer Head extends string,
+  ...infer Tail extends readonly string[],
+]
+  ? [
+      TableDef['columns'][Head]['typeBuilder']['type'],
+      ..._IndexVal<TableDef, Tail>,
+    ]
+  : [];
 
 /**
  * A helper type to define the bounds for scanning an index.
@@ -115,7 +150,9 @@ export type IndexScanRangeBounds<
  * It supports omitting trailing columns if the index is multi-column.
  * This version only allows omitting the array if the index is single-column to avoid ambiguity.
  */
-type _IndexScanRangeBounds<Columns extends any[]> = Columns extends [infer Term]
+type _IndexScanRangeBounds<Columns extends readonly any[]> = Columns extends [
+  infer Term,
+]
   ? Term | Range<Term>
   : _IndexScanRangeBoundsCase<Columns>;
 
@@ -124,12 +161,10 @@ type _IndexScanRangeBounds<Columns extends any[]> = Columns extends [infer Term]
  * This type allows for specifying exact values or ranges for each column in the index.
  * It supports omitting trailing columns if the index is multi-column.
  */
-type _IndexScanRangeBoundsCase<Columns extends any[]> = Columns extends [
-  ...infer Prefix,
-  infer Term,
-]
-  ? [...Prefix, Term | Range<Term>] | _IndexScanRangeBounds<Prefix>
-  : never;
+type _IndexScanRangeBoundsCase<Columns extends readonly any[]> =
+  Columns extends [...infer Prefix, infer Term]
+    ? readonly [...Prefix, Term | Range<Term>] | _IndexScanRangeBounds<Prefix>
+    : never;
 
 /**
  * A helper type representing a column index definition.
@@ -141,7 +176,7 @@ export type ColumnIndex<
   {
     name: Name;
     unique: ColumnIsUnique<M>;
-    columns: [Name];
+    columns: readonly [Name];
     algorithm: 'btree' | 'direct';
   } & (M extends {
     indexType: infer I extends NonNullable<IndexTypes>;

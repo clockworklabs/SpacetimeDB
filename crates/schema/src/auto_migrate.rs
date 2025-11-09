@@ -1110,6 +1110,7 @@ mod tests {
         let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
         builder.add_view(
             "my_view",
+            0,
             true,
             true,
             ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -1206,6 +1207,7 @@ mod tests {
         let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
         builder.add_view(
             "my_view",
+            0,
             true,
             true,
             ProductType::from([("x", AlgebraicType::U32)]),
@@ -1765,6 +1767,7 @@ mod tests {
             );
             builder.add_view(
                 "my_view",
+                0,
                 true,
                 true,
                 ProductType::from([("x", AlgebraicType::U32)]),
@@ -1793,6 +1796,7 @@ mod tests {
             );
             builder.add_view(
                 "my_view",
+                0,
                 true,
                 true,
                 ProductType::from([("x", AlgebraicType::U32)]),
@@ -1835,6 +1839,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1850,6 +1855,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1868,6 +1874,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1883,6 +1890,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1937,6 +1945,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1952,6 +1961,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         false,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1970,6 +1980,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1985,6 +1996,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -2003,6 +2015,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -2018,6 +2031,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2036,6 +2050,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -2051,6 +2066,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("y", AlgebraicType::U32), ("x", AlgebraicType::U32)]),
@@ -2069,6 +2085,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2084,6 +2101,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2102,6 +2120,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2117,6 +2136,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2135,6 +2155,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2150,6 +2171,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2168,6 +2190,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2183,6 +2206,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2201,6 +2225,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2216,6 +2241,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),

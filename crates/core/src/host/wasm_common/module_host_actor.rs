@@ -1,8 +1,10 @@
 use bytes::Bytes;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_lib::de::DeserializeSeed;
+use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_primitives::ProcedureId;
+use spacetimedb_primitives::ViewDatabaseId;
+use spacetimedb_primitives::ViewId;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use std::future::Future;
 use std::sync::Arc;
@@ -12,11 +14,14 @@ use tracing::span::EnteredSpan;
 use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
 use crate::database_logger;
-use crate::energy::{EnergyMonitor, ReducerBudget, ReducerFingerprint};
+use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
+use crate::host::host_controller::ViewOutcome;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
+use crate::host::module_host::ViewCallResult;
 use crate::host::module_host::{
-    CallProcedureParams, CallReducerParams, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
+    ModuleFunctionCall, ModuleInfo,
 };
 use crate::host::{
     ArgsTuple, ProcedureCallError, ProcedureCallResult, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
@@ -61,26 +66,30 @@ pub trait WasmInstance: Send + Sync + 'static {
 
     fn instance_env(&self) -> &InstanceEnv;
 
-    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: ReducerBudget) -> ExecuteResult;
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult;
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
+
+    fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult;
 
     fn log_traceback(func_type: &str, func: &str, trap: &anyhow::Error);
 
-    async fn call_procedure(&mut self, op: ProcedureOp, budget: ReducerBudget) -> ProcedureExecuteResult;
+    async fn call_procedure(&mut self, op: ProcedureOp, budget: FunctionBudget) -> ProcedureExecuteResult;
 }
 
 pub struct EnergyStats {
-    pub budget: ReducerBudget,
-    pub remaining: ReducerBudget,
+    pub budget: FunctionBudget,
+    pub remaining: FunctionBudget,
 }
 
 impl EnergyStats {
     pub const ZERO: Self = Self {
-        budget: ReducerBudget::ZERO,
-        remaining: ReducerBudget::ZERO,
+        budget: FunctionBudget::ZERO,
+        remaining: FunctionBudget::ZERO,
     };
 
     /// Returns the used energy amount.
-    fn used(&self) -> ReducerBudget {
+    fn used(&self) -> FunctionBudget {
         (self.budget.get() - self.remaining.get()).into()
     }
 }
@@ -104,19 +113,29 @@ impl ExecutionTimings {
 /// The result that `__call_reducer__` produces during normal non-trap execution.
 pub type ReducerResult = Result<(), Box<str>>;
 
-pub struct ExecuteResult {
+pub struct ExecutionStats {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
+}
+
+#[derive(derive_more::AsRef)]
+pub struct ReducerExecuteResult {
+    #[as_ref]
+    pub stats: ExecutionStats,
     pub call_result: anyhow::Result<ReducerResult>,
 }
 
+#[derive(derive_more::AsRef)]
+pub struct ViewExecuteResult {
+    #[as_ref]
+    pub stats: ExecutionStats,
+    pub call_result: anyhow::Result<Bytes>,
+}
+#[derive(derive_more::AsRef)]
 pub struct ProcedureExecuteResult {
-    #[allow(unused)]
-    pub energy: EnergyStats,
-    #[allow(unused)]
-    pub timings: ExecutionTimings,
-    pub memory_allocation: usize,
+    #[as_ref]
+    pub stats: ExecutionStats,
     pub call_result: anyhow::Result<Bytes>,
 }
 
@@ -312,6 +331,28 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.trapped = trapped;
         res
     }
+
+    pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
+        let is_anonymous = params.is_anonymous;
+        let (res, trapped) = self.common.call_view_with_tx(
+            &self.instance.instance_env().replica_ctx.clone(),
+            tx,
+            params,
+            |ty, fun, err| T::log_traceback(ty, fun, err),
+            |tx, op: ViewOp<'_>, budget| {
+                self.instance.instance_env().tx.clone().set(tx, || {
+                    if is_anonymous {
+                        self.instance.call_view_anon(op.into(), budget)
+                    } else {
+                        self.instance.call_view(op, budget)
+                    }
+                })
+            },
+        );
+
+        self.trapped = trapped;
+        res
+    }
 }
 
 pub(crate) struct InstanceCommon {
@@ -397,7 +438,7 @@ impl InstanceCommon {
         &mut self,
         params: CallProcedureParams,
         log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_procedure: impl FnOnce(ProcedureOp, ReducerBudget) -> F,
+        vm_call_procedure: impl FnOnce(ProcedureOp, FunctionBudget) -> F,
     ) -> Result<ProcedureCallResult, ProcedureCallError> {
         let CallProcedureParams {
             timestamp,
@@ -425,12 +466,11 @@ impl InstanceCommon {
             timestamp,
             arg_bytes: args.get_bsatn().clone(),
         };
-
-        let energy_fingerprint = ReducerFingerprint {
+        let energy_fingerprint = FunctionFingerprint {
             module_hash: self.info.module_hash,
             module_identity: self.info.owner_identity,
             caller_identity,
-            reducer_name: &procedure_def.name,
+            function_name: &procedure_def.name,
         };
 
         // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
@@ -439,10 +479,13 @@ impl InstanceCommon {
         let result = vm_call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
-            memory_allocation,
+            stats:
+                ExecutionStats {
+                    memory_allocation,
+                    // TODO(procedure-energy): Do something with timing and energy.
+                    ..
+                },
             call_result,
-            // TODO(procedure-energy): Do something with timing and energy.
-            ..
         } = result;
 
         // TODO(shub): deduplicate with reducer and view logic.
@@ -513,7 +556,7 @@ impl InstanceCommon {
         tx: Option<MutTxId>,
         params: CallReducerParams,
         log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
-        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, ReducerBudget) -> (MutTxId, ExecuteResult),
+        vm_call_reducer: impl FnOnce(MutTxId, ReducerOp<'_>, FunctionBudget) -> (MutTxId, ReducerExecuteResult),
     ) -> (ReducerCallResult, bool) {
         let CallReducerParams {
             timestamp,
@@ -529,23 +572,14 @@ impl InstanceCommon {
 
         let stdb = &*replica_ctx.relational_db.clone();
         let database_identity = replica_ctx.database_identity;
-        let reducer_def = self.info.module_def.reducer_by_id(reducer_id);
+        let info = self.info.clone();
+        let reducer_def = info.module_def.reducer_by_id(reducer_id);
         let reducer_name = &*reducer_def.name;
-        let reducer = reducer_name.to_string();
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
         let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
-
-        let _outer_span = start_call_reducer_span(reducer_name, &caller_identity, caller_connection_id_opt);
-
-        let energy_fingerprint = ReducerFingerprint {
-            module_hash: self.info.module_hash,
-            module_identity: self.info.owner_identity,
-            caller_identity,
-            reducer_name,
-        };
-        let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
+        let _outer_span = start_call_function_span(reducer_name, &caller_identity, caller_connection_id_opt);
 
         let op = ReducerOp {
             id: reducer_id,
@@ -560,67 +594,40 @@ impl InstanceCommon {
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
-        let reducer_span = start_run_reducer_span(budget);
+        let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
+        let (tx, result) = self.call_function(caller_identity, reducer_name, |budget| {
+            let (tx, res) = vm_call_reducer(tx, op, budget);
+            (Some(tx), res)
+        });
+        let mut tx = tx.expect("transaction should be present here");
 
-        let (mut tx, result) = vm_call_reducer(tx, op, budget);
-
-        let ExecuteResult {
-            energy,
-            timings,
-            memory_allocation,
-            call_result,
-        } = result;
-
-        let energy_used = energy.used();
+        let energy_used = result.stats.energy.used();
         let energy_quanta_used = energy_used.into();
+        let timings = &result.stats.timings;
         vm_metrics.report(
             energy_used.get(),
-            timings.total_duration,
-            &timings.wasm_instance_env_call_times,
+            result.stats.timings.total_duration,
+            &result.stats.timings.wasm_instance_env_call_times,
         );
 
-        self.energy_monitor
-            .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
-        if self.allocated_memory != memory_allocation {
-            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
-            self.allocated_memory = memory_allocation;
-        }
-
-        reducer_span
-            .record("timings.total_duration", tracing::field::debug(timings.total_duration))
-            .record("energy.used", tracing::field::debug(energy_used));
-
-        maybe_log_long_running_reducer(reducer_name, timings.total_duration);
-        reducer_span.exit();
-
-        let mut outer_error = false;
-        let status = match call_result {
+        let mut trapped = false;
+        let status = match result.call_result {
             Err(err) => {
                 log_traceback("reducer", reducer_name, &err);
-
-                WORKER_METRICS
-                    .wasm_instance_errors
-                    .with_label_values(
-                        &caller_identity,
-                        &self.info.module_hash,
-                        &caller_connection_id,
-                        reducer_name,
-                    )
-                    .inc();
-
                 // An outer error occurred.
                 // This signifies a logic error in the module rather than a properly
                 // handled bad argument from the caller of a reducer.
                 // For WASM, this will be interpreted as a trap
                 // and that the instance must be discarded.
                 // However, that does not necessarily apply to e.g., V8.
-                outer_error = true;
+                trapped = true;
 
-                if energy.remaining.get() == 0 {
-                    EventStatus::OutOfEnergy
-                } else {
-                    EventStatus::Failed("The instance encountered a fatal error.".into())
-                }
+                self.handle_outer_error(
+                    &result.stats.energy,
+                    &caller_identity,
+                    &Some(caller_connection_id),
+                    reducer_name,
+                )
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
             // for us and replace this with the actual database update.
@@ -648,7 +655,7 @@ impl InstanceCommon {
             caller_identity,
             caller_connection_id: caller_connection_id_opt,
             function_call: ModuleFunctionCall {
-                reducer,
+                reducer: reducer_name.to_string(),
                 reducer_id,
                 args,
             },
@@ -666,10 +673,161 @@ impl InstanceCommon {
             execution_duration: timings.total_duration,
         };
 
-        (res, outer_error)
+        (res, trapped)
+    }
+
+    fn handle_outer_error(
+        &mut self,
+        energy: &EnergyStats,
+        caller_identity: &Identity,
+        caller_connection_id: &Option<ConnectionId>,
+        reducer_name: &str,
+    ) -> EventStatus {
+        WORKER_METRICS
+            .wasm_instance_errors
+            .with_label_values(
+                caller_identity,
+                &self.info.module_hash,
+                &caller_connection_id.unwrap_or(ConnectionId::ZERO),
+                reducer_name,
+            )
+            .inc();
+
+        if energy.remaining.get() == 0 {
+            EventStatus::OutOfEnergy
+        } else {
+            EventStatus::Failed("The instance encountered a fatal error.".into())
+        }
+    }
+
+    /// Calls a function (reducer, view) and performs energy monitoring.
+    fn call_function<F, R: AsRef<ExecutionStats>>(
+        &mut self,
+        caller_identity: Identity,
+        function_name: &str,
+        vm_call_function: F,
+    ) -> (Option<MutTxId>, R)
+    where
+        F: FnOnce(FunctionBudget) -> (Option<MutTxId>, R),
+    {
+        let energy_fingerprint = FunctionFingerprint {
+            module_hash: self.info.module_hash,
+            module_identity: self.info.owner_identity,
+            caller_identity,
+            function_name,
+        };
+        let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
+
+        let function_span = start_run_function_span(budget);
+
+        let (tx, result) = vm_call_function(budget);
+
+        let stats: &ExecutionStats = result.as_ref();
+        let energy_used = stats.energy.used();
+        let energy_quanta_used = energy_used.into();
+        let timings = &stats.timings;
+        let memory_allocation = stats.memory_allocation;
+
+        self.energy_monitor
+            .record_reducer(&energy_fingerprint, energy_quanta_used, timings.total_duration);
+        if self.allocated_memory != memory_allocation {
+            self.metric_wasm_memory_bytes.set(memory_allocation as i64);
+            self.allocated_memory = memory_allocation;
+        }
+
+        maybe_log_long_running_function(function_name, timings.total_duration);
+
+        function_span
+            .record("timings.total_duration", tracing::field::debug(timings.total_duration))
+            .record("energy.used", tracing::field::debug(energy_used));
+
+        (tx, result)
+    }
+
+    /// Execute a view.
+    ///
+    /// Similar to `call_reducer_with_tx`, but for views.
+    /// unlike to `call_reducer_with_tx`, It does not handle `tx`creation or commit,
+    /// It returns the updated `tx` instead.
+    pub(crate) fn call_view_with_tx(
+        &mut self,
+        replica_ctx: &ReplicaContext,
+        tx: MutTxId,
+        params: CallViewParams,
+        log_traceback: impl FnOnce(&str, &str, &anyhow::Error),
+        vm_call_view: impl FnOnce(MutTxId, ViewOp<'_>, FunctionBudget) -> (MutTxId, ViewExecuteResult),
+    ) -> (ViewCallResult, bool) {
+        let CallViewParams {
+            caller_identity,
+            caller_connection_id,
+            view_id,
+            args,
+            return_type,
+            timestamp,
+            view_db_id,
+            is_anonymous,
+        } = params;
+
+        let info = self.info.clone();
+        let view_def = info.module_def.view_by_id(view_id, is_anonymous);
+        let view_name = &*view_def.name;
+
+        let _outer_span = start_call_function_span(view_name, &caller_identity, caller_connection_id);
+
+        let op = ViewOp {
+            id: view_id,
+            db_id: view_db_id,
+            name: view_name,
+            caller_identity: &caller_identity,
+            args: &args,
+            timestamp,
+        };
+
+        let (tx, result) = self.call_function(caller_identity, view_name, |budget| {
+            let (tx, res) = vm_call_view(tx, op, budget);
+            (Some(tx), res)
+        });
+        let mut tx = tx.expect("transaction should be present here");
+
+        let mut trapped = false;
+        let outcome = match result.call_result {
+            Err(err) => {
+                log_traceback("view", view_name, &err);
+                trapped = true;
+
+                self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
+                    .into()
+            }
+            Ok(res) => {
+                let db = &replica_ctx.relational_db.clone();
+                db.materialize_view(
+                    &mut tx,
+                    view_name,
+                    args,
+                    return_type,
+                    res,
+                    info.module_def.typespace(),
+                    caller_identity,
+                )
+                .map_err(|err| {
+                    log::info!("view returned error: {err}");
+                    err
+                })
+                .expect("error updating view result");
+                ViewOutcome::Success
+            }
+        };
+
+        let res = ViewCallResult {
+            outcome,
+            tx,
+            energy_used: result.stats.energy.used().into(),
+            execution_duration: result.stats.timings.total_duration,
+        };
+
+        (res, trapped)
     }
 }
-
 /// VM-related metrics for reducer execution.
 struct VmMetrics {
     /// The time spent executing a reducer + plus evaluating its subscription queries.
@@ -719,13 +877,13 @@ impl VmMetrics {
     }
 }
 
-/// Starts the `call_reducer` span.
-fn start_call_reducer_span(
+/// Starts the `call_function` span.
+fn start_call_function_span(
     reducer_name: &str,
     caller_identity: &Identity,
     caller_connection_id_opt: Option<ConnectionId>,
 ) -> EnteredSpan {
-    tracing::trace_span!("call_reducer",
+    tracing::trace_span!("call_function",
         reducer_name,
         %caller_identity,
         caller_connection_id = caller_connection_id_opt.map(tracing::field::debug),
@@ -733,10 +891,10 @@ fn start_call_reducer_span(
     .entered()
 }
 
-/// Starts the `run_reducer` span.
-fn start_run_reducer_span(budget: ReducerBudget) -> EnteredSpan {
+/// Starts the `run_function` span.
+fn start_run_function_span(budget: FunctionBudget) -> EnteredSpan {
     tracing::trace_span!(
-        "run_reducer",
+        "run_function",
         timings.total_duration = tracing::field::Empty,
         energy.budget = budget.get(),
         energy.used = tracing::field::Empty,
@@ -745,7 +903,7 @@ fn start_run_reducer_span(budget: ReducerBudget) -> EnteredSpan {
 }
 
 /// Logs a tracing message if a reducer doesn't finish in a single frame at 60 FPS.
-fn maybe_log_long_running_reducer(reducer_name: &str, total_duration: Duration) {
+fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration) {
     const FRAME_LEN_60FPS: Duration = Duration::from_secs(1).checked_div(60).unwrap();
     if total_duration > FRAME_LEN_60FPS {
         tracing::debug!(
@@ -802,6 +960,48 @@ fn commit_and_broadcast_event(
     {
         Ok(res) => res.event,
         Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+    }
+}
+
+/// Describes a view call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct ViewOp<'a> {
+    pub id: ViewId,
+    pub db_id: ViewDatabaseId,
+    pub name: &'a str,
+    pub args: &'a ArgsTuple,
+    pub caller_identity: &'a Identity,
+    pub timestamp: Timestamp,
+}
+
+/// Describes an anonymous view call in a cheaply shareable way.
+#[derive(Clone, Debug)]
+pub struct AnonymousViewOp<'a> {
+    pub id: ViewId,
+    pub db_id: ViewDatabaseId,
+    pub name: &'a str,
+    pub args: &'a ArgsTuple,
+    pub timestamp: Timestamp,
+}
+
+impl<'a> From<ViewOp<'a>> for AnonymousViewOp<'a> {
+    fn from(
+        ViewOp {
+            id,
+            db_id,
+            name,
+            args,
+            timestamp,
+            ..
+        }: ViewOp<'a>,
+    ) -> Self {
+        Self {
+            id,
+            db_id,
+            name,
+            args,
+            timestamp,
+        }
     }
 }
 

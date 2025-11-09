@@ -865,10 +865,11 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         self.module()
-            .on_module_thread("subscribe_single", move || {
-                me.module()
-                    .subscriptions()
-                    .add_single_subscription(me.sender, subscription, timer, None)
+            .on_module_thread_async("subscribe_single", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_single_subscription(Some(&host), me.sender, subscription, timer, None)
+                    .await
             })
             .await?
     }
@@ -890,10 +891,11 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         self.module()
-            .on_module_thread("subscribe_multi", move || {
-                me.module()
-                    .subscriptions()
-                    .add_multi_subscription(me.sender, request, timer, None)
+            .on_module_thread_async("subscribe_multi", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_multi_subscription(Some(&host), me.sender, request, timer, None)
+                    .await
             })
             .await?
     }
@@ -915,12 +917,14 @@ impl ClientConnection {
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
-        asyncify(move || {
-            me.module()
-                .subscriptions()
-                .add_legacy_subscriber(me.sender, subscription, timer, None)
-        })
-        .await
+        self.module()
+            .on_module_thread_async("subscribe", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_legacy_subscriber(Some(&host), me.sender, subscription, timer, None)
+                    .await
+            })
+            .await?
     }
 
     pub async fn one_off_query_json(

@@ -6,14 +6,15 @@ import type { ColumnMetadata } from './type_builders';
  */
 export type AllUnique<
   TableDef extends UntypedTableDef,
-  Columns extends Array<keyof TableDef['columns']>,
-> = {
-  [i in keyof Columns]: ColumnIsUnique<
-    TableDef['columns'][Columns[i]]['columnMetadata']
-  >;
-} extends true[]
-  ? true
-  : false;
+  Columns extends ReadonlyArray<keyof TableDef['columns']>,
+> = Columns extends readonly [
+  infer Head extends keyof TableDef['columns'],
+  ...infer Tail extends ReadonlyArray<keyof TableDef['columns']>,
+]
+  ? ColumnIsUnique<TableDef['columns'][Head]['columnMetadata']> extends true
+    ? AllUnique<TableDef, Tail>
+    : false
+  : true;
 
 /**
  * A helper type to determine if a column is unique based on its metadata.
