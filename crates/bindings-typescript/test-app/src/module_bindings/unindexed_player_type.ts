@@ -12,7 +12,8 @@ import {
 import Point from './point_type';
 
 export default __t.object('UnindexedPlayer', {
-  ownerId: __t.string(),
+  id: __t.u32(),
+  ownerId: __t.identity(),
   name: __t.string(),
   get location() {
     return Point;

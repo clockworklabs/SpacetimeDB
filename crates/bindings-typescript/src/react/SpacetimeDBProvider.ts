@@ -3,24 +3,22 @@ import {
   type DbConnectionImpl,
   type ErrorContextInterface,
   type RemoteModuleOf,
-  type SubscriptionEventContextInterface,
 } from '../sdk/db_connection_impl';
 import * as React from 'react';
 import { SpacetimeDBContext } from './useSpacetimeDB';
 import type { ConnectionState } from './connection_state';
 import { ConnectionId } from '../lib/connection_id';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
 export interface SpacetimeDBProviderProps<
-  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
+  DbConnection extends DbConnectionImpl<any>,
 > {
   connectionBuilder: DbConnectionBuilder<DbConnection>;
   children?: React.ReactNode;
 }
 
 export function SpacetimeDBProvider<
-  DbConnection extends DbConnectionImpl<UntypedRemoteModule>,
->({ connectionBuilder, children }: SpacetimeDBProviderProps<DbConnection>) {
+  DbConnection extends DbConnectionImpl<any>,
+>({ connectionBuilder, children }: SpacetimeDBProviderProps<DbConnection>): React.JSX.Element {
   // Holds the imperative connection instance when (and only when) we’re on the client.
   const connRef = React.useRef<DbConnection | null>(null);
   const getConnection = React.useCallback(() => connRef.current, []);
@@ -36,8 +34,12 @@ export function SpacetimeDBProvider<
 
   // Build on the client only; useEffect won't run during SSR.
   React.useEffect(() => {
+    if (!connRef.current) {
+      connRef.current = connectionBuilder.build();
+    }
+    console.log("HAPPPP");
     // Register callback for onConnect to update state
-      const onConnect = (conn: DbConnection) => {
+    const onConnect = (conn: DbConnection) => {
       setState(s => ({
         ...s,
         isActive: conn.isActive,
@@ -63,7 +65,7 @@ export function SpacetimeDBProvider<
     connectionBuilder.onDisconnect(onDisconnect);
     connectionBuilder.onConnectError(onConnectError);
 
-    const conn = connRef.current!;
+    const conn = connRef.current;
     setState(s => ({
       ...s,
       isActive: conn.isActive,
@@ -71,11 +73,6 @@ export function SpacetimeDBProvider<
       token: conn.token,
       connectionId: conn.connectionId,
     }));
-
-    // Lazily build once
-    if (!connRef.current) {
-      connRef.current = connectionBuilder.build();
-    }
 
     return () => {
       connRef.current?.removeOnConnect(onConnect as any);

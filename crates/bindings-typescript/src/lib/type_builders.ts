@@ -6,7 +6,7 @@ import ScheduleAt from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
-import { set, type SetField } from './type_util';
+import { set, type Prettify, type SetField } from './type_util';
 
 // Used in codegen files
 export { type AlgebraicTypeType } from './algebraic_type';
@@ -15,7 +15,7 @@ export { type AlgebraicTypeType } from './algebraic_type';
  * Helper type to extract the TypeScript type from a TypeBuilder
  */
 export type InferTypeOfTypeBuilder<T extends TypeBuilder<any, any>> =
-  T extends TypeBuilder<infer U, any> ? U : never;
+  T extends TypeBuilder<infer U, any> ? Prettify<U> : never;
 
 /**
  * Helper type to extract the Spacetime type from a TypeBuilder
@@ -1188,7 +1188,7 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
     const elements = Object.entries(mappedRow).map(([name, builder]) => ({
       name,
       algebraicType: builder.typeBuilder.algebraicType,
-    })) as ElementsArrayFromRowObj<Row>;
+    }));
 
     super(AlgebraicType.Product({ elements }));
     this.row = mappedRow;
@@ -1611,14 +1611,13 @@ export class U8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
   autoInc(): U8ColumnBuilder<SetField<M, 'isAutoIncrement', true>> {
     return new U8ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { isAutoIncrement: true })
+      set(this.columnMetadata, { isAutoIncrement: true as const })
     );
   }
   default(value: number): U8ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new U8ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new U8ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1663,10 +1662,9 @@ export class U16ColumnBuilder<
     );
   }
   default(value: number): U16ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new U16ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new U16ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1711,10 +1709,9 @@ export class U32ColumnBuilder<
     );
   }
   default(value: number): U32ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new U32ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new U32ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1759,10 +1756,9 @@ export class U64ColumnBuilder<
     );
   }
   default(value: bigint): U64ColumnBuilder<SetField<M, 'defaultValue', bigint>> {
-    return new U64ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new U64ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1807,10 +1803,9 @@ export class U128ColumnBuilder<
     );
   }
   default(value: bigint): U128ColumnBuilder<SetField<M, 'defaultValue', bigint>> {
-    return new U128ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new U128ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1855,10 +1850,9 @@ export class U256ColumnBuilder<
     );
   }
   default(value: bigint): U256ColumnBuilder<SetField<M, 'defaultValue', bigint>> {
-    return new U256ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new U256ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1901,10 +1895,9 @@ export class I8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
     );
   }
   default(value: number): I8ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new I8ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new I8ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1949,10 +1942,9 @@ export class I16ColumnBuilder<
     );
   }
   default(value: number): I16ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new I16ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new I16ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -1997,10 +1989,9 @@ export class I32ColumnBuilder<
     );
   }
   default(value: number): I32ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new I32ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new I32ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2045,10 +2036,9 @@ export class I64ColumnBuilder<
     );
   }
   default(value: bigint): I64ColumnBuilder<SetField<M, 'defaultValue', bigint>> {
-    return new I64ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new I64ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2093,10 +2083,9 @@ export class I128ColumnBuilder<
     );
   }
   default(value: bigint): I128ColumnBuilder<SetField<M, 'defaultValue', bigint>> {
-    return new I128ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new I128ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2141,10 +2130,9 @@ export class I256ColumnBuilder<
     );
   }
   default(value: bigint): I256ColumnBuilder<SetField<M, 'defaultValue', bigint>> {
-    return new I256ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new I256ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2154,10 +2142,9 @@ export class F32ColumnBuilder<
   extends ColumnBuilder<number, AlgebraicTypeVariants.F32, M>
   implements Defaultable<number, AlgebraicTypeVariants.F32> {
   default(value: number): F32ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new F32ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new F32ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2167,10 +2154,9 @@ export class F64ColumnBuilder<
   extends ColumnBuilder<number, AlgebraicTypeVariants.F64, M>
   implements Defaultable<number, AlgebraicTypeVariants.F64> {
   default(value: number): F64ColumnBuilder<SetField<M, 'defaultValue', number>> {
-    return new F64ColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new F64ColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2208,10 +2194,9 @@ export class BoolColumnBuilder<
     );
   }
   default(value: boolean): BoolColumnBuilder<SetField<M, 'defaultValue', boolean>> {
-    return new BoolColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new BoolColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2249,10 +2234,9 @@ export class StringColumnBuilder<
     );
   }
   default(value: string): StringColumnBuilder<SetField<M, 'defaultValue', string>> {
-    return new StringColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new StringColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2278,10 +2262,9 @@ export class ArrayColumnBuilder<
     Element,
     SetField<M, 'defaultValue', Array<InferTypeOfTypeBuilder<Element>>>
   > {
-    return new ArrayColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new ArrayColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2314,10 +2297,9 @@ export class OptionColumnBuilder<
     Value,
     SetField<M, 'defaultValue', InferTypeOfTypeBuilder<Value> | undefined>
   > {
-    return new OptionColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
+    return new OptionColumnBuilder(this.typeBuilder, set(this.columnMetadata, {
       defaultValue: value,
-    });
+    }));
   }
 }
 
@@ -2437,10 +2419,7 @@ export class IdentityColumnBuilder<
   default(
     value: Identity
   ): IdentityColumnBuilder<SetField<M, 'defaultValue', Identity>> {
-    return new IdentityColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
-      defaultValue: value,
-    });
+    return new IdentityColumnBuilder(this.typeBuilder, set(this.columnMetadata, { defaultValue: value }));
   }
 }
 
@@ -2480,10 +2459,7 @@ export class ConnectionIdColumnBuilder<
   default(
     value: ConnectionId
   ): ConnectionIdColumnBuilder<SetField<M, 'defaultValue', ConnectionId>> {
-    return new ConnectionIdColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
-      defaultValue: value,
-    });
+    return new ConnectionIdColumnBuilder(this.typeBuilder, set(this.columnMetadata, { defaultValue: value }));
   }
 }
 
@@ -2523,10 +2499,7 @@ export class TimestampColumnBuilder<
   default(
     value: Timestamp
   ): TimestampColumnBuilder<SetField<M, 'defaultValue', Timestamp>> {
-    return new TimestampColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
-      defaultValue: value,
-    });
+    return new TimestampColumnBuilder(this.typeBuilder, set(this.columnMetadata, { defaultValue: value }));
   }
 }
 
@@ -2566,10 +2539,7 @@ export class TimeDurationColumnBuilder<
   default(
     value: TimeDuration
   ): TimeDurationColumnBuilder<SetField<M, 'defaultValue', TimeDuration>> {
-    return new TimeDurationColumnBuilder(this.typeBuilder, {
-      ...this.columnMetadata,
-      defaultValue: value,
-    });
+    return new TimeDurationColumnBuilder(this.typeBuilder, set(this.columnMetadata, { defaultValue: value }));
   }
 }
 

@@ -6,13 +6,11 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import { DbConnectionImpl, type EventContextInterface, type RemoteModuleOf } from '../sdk/db_connection_impl';
+import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
-import type { RowType, Table, UntypedTableDef } from '../lib/table';
-import type { ClientTable } from '../sdk/client_table';
-import type { InferTypeOfRow } from '../lib/type_builders';
-import type { PrettifyDeep } from '../lib/type_util';
+import type { RowType, UntypedTableDef } from '../lib/table';
+import type { Prettify } from '../lib/type_util';
 
 export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -175,10 +173,46 @@ type ColumnsFromRow<R> = {
 }[keyof R] &
   string;
 
-// Row type for a given connection + table key
-type RowTypeOfTable<
+/**
+ * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
+ *
+ * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
+ * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
+ *
+ * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
+ *
+ * Overloads:
+ * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
+ * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
+ *
+ * @template DbConnection The type of the SpacetimeDB connection.
+ * @template RowType The type of the table row.
+ * @template TableName The name of the table.
+ *
+ * @param tableName - The name of the table to subscribe to.
+ * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
+ * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
+ *
+ * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
+ *
+ * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
+ *
+ * @example
+ * ```tsx
+ * const { rows, state } = useTable('users', where(eq('isActive', true)), {
+ *   onInsert: (row) => console.log('Inserted:', row),
+ *   onDelete: (row) => console.log('Deleted:', row),
+ *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
+ * });
+ * ```
+ */
+export function useTable<
   TableDef extends UntypedTableDef,
-> = InferTypeOfRow<RowType<TableDef>>;
+>(
+  tableDef: TableDef,
+  where: Expr<ColumnsFromRow<RowType<TableDef>>>,
+  callbacks?: UseTableCallbacks<RowType<TableDef>>
+): readonly RowType<TableDef>[];
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -217,67 +251,19 @@ export function useTable<
   TableDef extends UntypedTableDef,
 >(
   tableDef: TableDef,
-  where: Expr<ColumnsFromRow<RowTypeOfTable<TableDef>>>,
-  callbacks?: UseTableCallbacks<RowTypeOfTable<TableDef>>
-): PrettifyDeep<RowTypeOfTable<TableDef>>[];
-
-/**
- * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
- *
- * This hook returns a snapshot of the table's rows, filtered by an optional `where` clause, and provides a loading state
- * until the initial subscription is applied. It also allows you to specify callbacks for row insertions, deletions, and updates.
- *
- * The hook must be used within a component tree wrapped by `SpacetimeDBProvider`.
- *
- * Overloads:
- * - `useTable(tableName, where, callbacks?)`: Subscribe to a table with a filter and optional callbacks.
- * - `useTable(tableName, callbacks?)`: Subscribe to a table without a filter, with optional callbacks.
- *
- * @template DbConnection The type of the SpacetimeDB connection.
- * @template RowType The type of the table row.
- * @template TableName The name of the table.
- *
- * @param tableName - The name of the table to subscribe to.
- * @param whereClauseOrCallbacks - (Optional) Either a filter expression (where clause) or the callbacks object.
- * @param callbacks - (Optional) Callbacks for row insert, delete, and update events.
- *
- * @returns A snapshot object containing the current rows and the subscription state (`'loading'` or `'ready'`).
- *
- * @throws Error if the hook is used outside of a `SpacetimeDBProvider`.
- *
- * @example
- * ```tsx
- * const { rows, state } = useTable('users', where(eq('isActive', true)), {
- *   onInsert: (row) => console.log('Inserted:', row),
- *   onDelete: (row) => console.log('Deleted:', row),
- *   onUpdate: (oldRow, newRow) => console.log('Updated:', oldRow, newRow),
- * });
- * ```
- */
-// export function useTable<
-//   TableDef extends UntypedTableDef,
-// >(
-//   tableDef: TableDef,
-//   where: Expr<ColumnsFromRow<RowTypeOfTable<TableDef>>>,
-//   callbacks?: UseQueryCallbacks<RowTypeOfTable<TableDef>>
-// ): Snapshot<PrettifyDeep<RowTypeOfTable<TableDef>>>;
-export function useTable<
-  TableDef extends UntypedTableDef,
->(
-  tableDef: TableDef,
-  callbacks?: UseTableCallbacks<RowTypeOfTable<TableDef>>
-): PrettifyDeep<RowTypeOfTable<TableDef>>[];
+  callbacks?: UseTableCallbacks<RowType<TableDef>>
+): readonly RowType<TableDef>[];
 
 export function useTable<
   TableDef extends UntypedTableDef,
 >(
   tableDef: TableDef,
   whereClauseOrCallbacks?:
-    | Expr<ColumnsFromRow<RowTypeOfTable<TableDef>>>
-    | UseTableCallbacks<RowTypeOfTable<TableDef>>,
-  callbacks?: UseTableCallbacks<RowTypeOfTable<TableDef>>
-): readonly RowTypeOfTable<TableDef>[] {
-  type UseTableRowType = RowTypeOfTable<TableDef>;
+    | Expr<ColumnsFromRow<RowType<TableDef>>>
+    | UseTableCallbacks<RowType<TableDef>>,
+  callbacks?: UseTableCallbacks<RowType<TableDef>>
+): readonly RowType<TableDef>[] {
+  type UseTableRowType = RowType<TableDef>;
   const tableName = tableDef.name;
   let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
   if (

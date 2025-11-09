@@ -1,13 +1,17 @@
-import { tables, reducers, DbConnection } from './module_bindings';
+import { tables, reducers } from './module_bindings';
 import { useEffect } from 'react';
 import './App.css';
 import { useReducer, useSpacetimeDB, useTable } from '../../src/react';
 
+function getRandomInt(max: number) {
+  return Math.floor(Math.random() * max);
+}
+
 function App() {
   const connection = useSpacetimeDB();
   const players = useTable(tables.player);
+  const x = players[0];
   const createPlayer = useReducer(reducers.createPlayer);
-  createPlayer({ name: 'Test', location: { x: 0, y: 0 } });
 
   useEffect(() => {
     setTimeout(() => {
@@ -21,15 +25,24 @@ function App() {
       <p>{connection.identity?.toHexString()}</p>
 
       <button
-        onClick={() =>
-          connection.getConnection<DbConnection>()?.reducers.createPlayer({
+        onClick={() => {
+          const player = {
             name: 'Hello',
-            location: { x: 10, y: 40 },
-          })
-        }
+            location: { x: getRandomInt(100), y: getRandomInt(100) },
+          };
+          console.log('Creating player:', player);
+          createPlayer(player);
+        }}
       >
         Update
       </button>
+      <div>
+        {Array.from(players).map((player, i) => (
+          <div key={i}>
+            {player.name} - ({player.location.x}, {player.location.y})
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,23 +1,16 @@
+import type { ConnectionId } from "./connection_id";
+import type { Identity } from "./identity";
+import type { ScheduleAt } from "./schedule_at";
+import type { TimeDuration } from "./time_duration";
+import type { Timestamp } from "./timestamp";
+
+type DoNotPrettify = Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt;
+
 /**
  * Utility to make TS show cleaner types by flattening intersections.
  */
-export type Prettify<T> = { [K in keyof T]: T[K] } & {};
-
-type Builtin =
-  | string | number | boolean | symbol | bigint | null | undefined
-  | Function | Date | RegExp | Error
-  | Map<any, any> | Set<any> | WeakMap<any, any> | WeakSet<any>
-  | Promise<any>;
-
-// Deep
-export type _PrettifyDeep<T> =
-  T extends Builtin ? T :
-  T extends readonly [...infer _] ? { [K in keyof T]: PrettifyDeep<T[K]> } :
-  T extends ReadonlyArray<infer U> ? ReadonlyArray<PrettifyDeep<U>> :
-  T extends object ? Prettify<{ [K in keyof T]: PrettifyDeep<T[K]> }> :
-  T;
-
-export type PrettifyDeep<T> = T extends unknown ? _PrettifyDeep<T> : never;
+export type Prettify<T> =
+  T extends DoNotPrettify ? T : { [K in keyof T]: T[K] } & {};
 
 /**
  * Helper function to sets a field in an object
@@ -36,7 +29,7 @@ export function set<T, F extends string, V>(
   x: T,
   t: { [k in F]: V }
 ): SetField<T, F, V> {
-  return { ...x, ...t };
+  return { ...x, ...t } as SetField<T, F, V>;
 }
 
 /**

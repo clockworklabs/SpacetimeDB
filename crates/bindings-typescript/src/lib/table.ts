@@ -17,7 +17,7 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { Prettify, PrettifyDeep } from './type_util';
+import type { Prettify, } from './type_util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -26,9 +26,9 @@ type ColList = ColId[];
 /**
  * A helper type to extract the row type from a TableDef
  */
-export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
+export type RowType<TableDef extends UntypedTableDef> = Prettify<InferTypeOfRow<
   TableDef['columns']
->;
+>>;
 
 /**
  * Coerces a column which may be a TypeBuilder or ColumnBuilder into a ColumnBuilder

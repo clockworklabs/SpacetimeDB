@@ -17,6 +17,7 @@ import {
 } from './type_builders';
 import type { ReducerSchema } from './reducer_schema';
 import { toCamelCase } from './utils';
+import type { CamelCase } from './type_util';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -264,10 +265,11 @@ export function clientDisconnected<
 }
 
 class Reducers<ReducersDef extends UntypedReducersDef> {
-  /**
-   * Phantom type to track the reducers definition 
-   */
-  reducersType!: ReducersDef;
+  reducersType: ReducersDef;
+
+  constructor(handles: readonly ReducerSchema<any, any>[]) {
+    this.reducersType = reducersToSchema(handles) as ReducersDef;
+  }
 }
 
 /**
@@ -278,12 +280,38 @@ type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
     /** @type {UntypedReducerDef} */
     readonly [i in keyof T]: {
       name: T[i]['reducerName'];
-      accessorName: T[i]['accessorName'];
+      accessorName: CamelCase<T[i]['accessorName']>;
       params: T[i]['params']['row'];
       paramsType: T[i]['paramsSpacetimeType'];
     };
   };
 };
+
+export function reducersToSchema<
+  const T extends readonly ReducerSchema<any, any>[]
+>(reducers: T): ReducersToSchema<T> {
+  const mapped = reducers.map((r) => {
+    const paramsRow = r.params.row;
+
+    return {
+      name: r.reducerName,
+      // Prefer the schema's own accessorName if present at runtime; otherwise derive it.
+      accessorName: r.accessorName,
+      params: paramsRow,
+      paramsType: r.paramsSpacetimeType,
+    } as const;
+  }) as {
+    readonly [I in keyof T]: {
+      name: T[I]['reducerName'];
+      accessorName: T[I]['accessorName'];
+      params: T[I]['params']['row'];
+      paramsType: T[I]['paramsSpacetimeType'];
+    };
+  };
+  
+  const result = { reducers: mapped } satisfies ReducersToSchema<T>;
+  return result;
+}
 
 /**
  * Creates a schema from table definitions
@@ -310,12 +338,13 @@ export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
   handles: H
 ): Reducers<ReducersToSchema<H>>;
 
-export function reducers(
+export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
   ...args:
-    | [readonly ReducerSchema<any, any>[]]
-    | readonly ReducerSchema<any, any>[]
-): Reducers<UntypedReducersDef> {
-  return new Reducers();
+    | [H]
+    | H
+): Reducers<ReducersToSchema<H>> {
+  const handles = (args.length === 1 && Array.isArray(args[0]) ? args[0] : args) as H;
+  return new Reducers(handles);
 }
 
 export function reducerSchema<
