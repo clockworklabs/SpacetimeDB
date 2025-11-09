@@ -63,7 +63,8 @@ pub trait WasmInstancePre: Send + Sync + 'static {
     fn instantiate(&self, env: InstanceEnv, func_names: &FuncNames) -> Result<Self::Instance, InitializationError>;
 }
 
-// TODO: rename and move
+// TODO: Technically this trait is also used for V8.
+// We should rename and move to some place more appropriate.
 pub trait WasmInstance {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError>;
 
