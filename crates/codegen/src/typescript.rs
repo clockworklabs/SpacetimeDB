@@ -99,7 +99,12 @@ impl Lang for TypeScript {
     ///   location: pointType,
     /// }))
     /// ```
-    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, _schema: TableSchema) -> OutputFile {
+    fn generate_table_file_from_schema(
+        &self,
+        module: &ModuleDef,
+        table: &TableDef,
+        _schema: TableSchema,
+    ) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
