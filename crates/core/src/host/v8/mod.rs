@@ -619,7 +619,7 @@ struct V8Instance<'a, 'scope, 'isolate> {
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
-        extract_description(&mut self.scope, self.hooks, self.replica_ctx)
+        extract_description(self.scope, self.hooks, self.replica_ctx)
     }
 
     fn replica_ctx(&self) -> &Arc<ReplicaContext> {
