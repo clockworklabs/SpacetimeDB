@@ -4,12 +4,10 @@ import { stdbLogger } from './logger.ts';
 import type { ComparablePrimitive } from '../';
 import type {
   EventContextInterface,
-  ClientTable,
   TableDefForTableName,
 } from './index.ts';
-import type { RowType, Table, UntypedTableDef } from '../lib/table.ts';
+import type { RowType, UntypedTableDef } from '../lib/table.ts';
 import type {
-  ClientTableCore,
   ClientTableCoreImplementable,
 } from './client_table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';

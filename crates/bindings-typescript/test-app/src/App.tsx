@@ -20,7 +20,6 @@ function App() {
       console.log('Player inserted:', row);
     },
   });
-  const x = players[0];
   const createPlayer = useReducer(reducers.createPlayer);
 
   useEffect(() => {

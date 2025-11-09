@@ -13,8 +13,6 @@ import RawColumnDefaultValueV9 from './raw_column_default_value_v_9_type';
 import RawProcedureDefV9 from './raw_procedure_def_v_9_type';
 import RawViewDefV9 from './raw_view_def_v_9_type';
 
-import * as RawMiscModuleExportV9Variants from './raw_misc_module_export_v_9_variants';
-
 // The tagged union or sum type for the algebraic type `RawMiscModuleExportV9`.
 const RawMiscModuleExportV9 = __t.enum('RawMiscModuleExportV9', {
   get ColumnDefaultValue() {

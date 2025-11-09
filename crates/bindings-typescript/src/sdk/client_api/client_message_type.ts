@@ -18,8 +18,6 @@ import Unsubscribe from './unsubscribe_type';
 import UnsubscribeMulti from './unsubscribe_multi_type';
 import CallProcedure from './call_procedure_type';
 
-import * as ClientMessageVariants from './client_message_variants';
-
 // The tagged union or sum type for the algebraic type `ClientMessage`.
 const ClientMessage = __t.enum('ClientMessage', {
   get CallReducer() {

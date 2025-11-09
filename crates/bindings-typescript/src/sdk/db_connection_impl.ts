@@ -29,7 +29,6 @@ import type {
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
 import {
-  type RemoteModule,
   type UntypedRemoteModule,
 } from './spacetime_module.ts';
 import {
@@ -52,7 +51,6 @@ import type {
   ReducerEventInfo,
   ReducersView,
   SetReducerFlags,
-  UntypedReducersDef,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
@@ -897,9 +895,9 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     params: object,
     flags: CallReducerFlags
   ) {
-    let writer = new BinaryWriter(1024);
+    const writer = new BinaryWriter(1024);
     ProductType.serializeValue(writer, paramsType, params);
-    let argsBuffer = writer.getBuffer();
+    const argsBuffer = writer.getBuffer();
     this.callReducer(reducerName, argsBuffer, flags);
   }
 

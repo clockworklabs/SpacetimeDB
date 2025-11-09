@@ -28,25 +28,25 @@ import {
 } from '../../../src/index';
 
 // Import and reexport all reducer arg types
-import CreatePlayer from './create_player_reducer.ts';
+import CreatePlayer from './create_player_reducer';
 export { CreatePlayer };
 
 // Import and reexport all table handle types
-import PlayerRow from './player_table.ts';
+import PlayerRow from './player_table';
 export { PlayerRow };
-import UnindexedPlayerRow from './unindexed_player_table.ts';
+import UnindexedPlayerRow from './unindexed_player_table';
 export { UnindexedPlayerRow };
-import UserRow from './user_table.ts';
+import UserRow from './user_table';
 export { UserRow };
 
 // Import and reexport all types
-import Player from './player_type.ts';
+import Player from './player_type';
 export { Player };
-import Point from './point_type.ts';
+import Point from './point_type';
 export { Point };
-import UnindexedPlayer from './unindexed_player_type.ts';
+import UnindexedPlayer from './unindexed_player_type';
 export { UnindexedPlayer };
-import User from './user_type.ts';
+import User from './user_type';
 export { User };
 
 const tablesSchema = __schema(

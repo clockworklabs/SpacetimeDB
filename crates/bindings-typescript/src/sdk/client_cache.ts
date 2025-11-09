@@ -114,7 +114,7 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
   ): TableCacheForTableName<RemoteModule, N> {
     const name = tableDef.name as N;
 
-    let table = this.tables.get(name);
+    const table = this.tables.get(name);
     if (table) {
       return table;
     }

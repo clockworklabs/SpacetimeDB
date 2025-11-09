@@ -11,8 +11,6 @@ import {
 } from '../../lib/type_builders';
 import DatabaseUpdate from './database_update_type';
 
-import * as UpdateStatusVariants from './update_status_variants';
-
 // The tagged union or sum type for the algebraic type `UpdateStatus`.
 const UpdateStatus = __t.enum('UpdateStatus', {
   get Committed() {

@@ -9,7 +9,6 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../index';
-import * as IndexTypeVariants from './index_type_variants';
 
 // The tagged union or sum type for the algebraic type `IndexType`.
 const IndexType = __t.enum('IndexType', {

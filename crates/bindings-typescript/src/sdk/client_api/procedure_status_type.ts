@@ -9,7 +9,6 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import * as ProcedureStatusVariants from './procedure_status_variants';
 
 // The tagged union or sum type for the algebraic type `ProcedureStatus`.
 const ProcedureStatus = __t.enum('ProcedureStatus', {

@@ -4,113 +4,13 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
 } from '../../../src/index';
-import { User } from './user_type';
-import {
-  type EventContext,
-  type Reducer,
-  RemoteReducers,
-  RemoteTables,
-} from '.';
-declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
-/**
- * Table handle for the table `user`.
- *
- * Obtain a handle from the [`user`] property on [`RemoteTables`],
- * like `ctx.db.user`.
- *
- * Users are encouraged not to explicitly reference this type,
- * but to directly chain method calls,
- * like `ctx.db.user.on_insert(...)`.
- */
-export class UserTableHandle<TableName extends string>
-  implements __TableHandle<TableName>
-{
-  // phantom type to track the table name
-  readonly tableName!: TableName;
-  tableCache: __TableCache<User>;
-
-  constructor(tableCache: __TableCache<User>) {
-    this.tableCache = tableCache;
-  }
-
-  count(): number {
-    return this.tableCache.count();
-  }
-
-  iter(): Iterable<User> {
-    return this.tableCache.iter();
-  }
-  /**
-   * Access to the `identity` unique index on the table `user`,
-   * which allows point queries on the field of the same name
-   * via the [`UserIdentityUnique.find`] method.
-   *
-   * Users are encouraged not to explicitly reference this type,
-   * but to directly chain method calls,
-   * like `ctx.db.user.identity().find(...)`.
-   *
-   * Get a handle on the `identity` unique index on the table `user`.
-   */
-  identity = {
-    // Find the subscribed row whose `identity` column value is equal to `colVal`,
-    // if such a row is present in the client cache.
-    find: (colVal: __Identity): User | undefined => {
-      for (let row of this.tableCache.iter()) {
-        if (__deepEqual(row.identity, colVal)) {
-          return row;
-        }
-      }
-    },
-  };
-
-  onInsert = (cb: (ctx: EventContext, row: User) => void) => {
-    return this.tableCache.onInsert(cb);
-  };
-
-  removeOnInsert = (cb: (ctx: EventContext, row: User) => void) => {
-    return this.tableCache.removeOnInsert(cb);
-  };
-
-  onDelete = (cb: (ctx: EventContext, row: User) => void) => {
-    return this.tableCache.onDelete(cb);
-  };
-
-  removeOnDelete = (cb: (ctx: EventContext, row: User) => void) => {
-    return this.tableCache.removeOnDelete(cb);
-  };
-
-  // Updates are only defined for tables with primary keys.
-  onUpdate = (cb: (ctx: EventContext, oldRow: User, newRow: User) => void) => {
-    return this.tableCache.onUpdate(cb);
-  };
-
-  removeOnUpdate = (
-    cb: (ctx: EventContext, onRow: User, newRow: User) => void
-  ) => {
-    return this.tableCache.removeOnUpdate(cb);
-  };
-}
+export default __t.row({
+  identity: __t.identity(),
+  hasIncrementedCount: __t.u32(),
+});

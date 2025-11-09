@@ -11,7 +11,6 @@ import {
   RowBuilder,
   type Infer,
   type InferTypeOfRow,
-  type ProductBuilder,
   type RowObj,
   type TypeBuilder,
 } from './type_builders';

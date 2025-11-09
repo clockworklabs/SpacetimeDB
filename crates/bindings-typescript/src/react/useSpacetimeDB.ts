@@ -1,7 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { DbConnectionImpl } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
-import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 
 export const SpacetimeDBContext = createContext<ConnectionState | undefined>(
   undefined

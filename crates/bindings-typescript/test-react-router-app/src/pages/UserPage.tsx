@@ -1,28 +1,14 @@
-import { useEffect } from 'react';
 import { useSpacetimeDB, useTable } from '../../../src/react';
-import { DbConnection, User } from '../module_bindings';
+import { tables, User } from '../module_bindings';
+import { Infer } from '../../../src';
 
 export default function UserPage() {
-  const stdb = useSpacetimeDB<DbConnection>();
-  const { rows: users } = useTable<DbConnection, User>('user');
+  const connection = useSpacetimeDB();
+  const users = useTable(tables.user);
 
-  useEffect(() => {
-    if (!stdb.isActive) return;
-
-    const sub = stdb
-      .subscriptionBuilder()
-      .onError((err: any) => console.error('User subscription error:', err))
-      .onApplied(() => console.log('User subscription applied'))
-      .subscribe('SELECT * FROM user');
-
-    return () => {
-      sub.unsubscribeThen(() => console.log('User subscription cleaned up'));
-    };
-  }, [stdb.isActive]);
-
-  const identityHex = stdb.identity?.toHexString();
+  const identityHex = connection.identity?.toHexString();
   const currentUser = users.find(
-    (u: User) => u.identity.toHexString() === identityHex
+    (u: Infer<typeof User>) => u.identity.toHexString() === identityHex
   );
 
   return (

@@ -2,7 +2,7 @@ import { ConnectionId, type Infer } from '../';
 import { Identity } from '../';
 import type { TableUpdate } from './table_cache.ts';
 import { Timestamp } from '../';
-import type { RowType, Table, UntypedTableDef } from '../lib/table.ts';
+import type { UntypedTableDef } from '../lib/table.ts';
 import type UpdateStatus from './client_api/update_status_type.ts';
 
 export type InitialSubscriptionMessage = {

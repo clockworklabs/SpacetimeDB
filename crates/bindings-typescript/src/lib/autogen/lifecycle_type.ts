@@ -9,7 +9,6 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../index';
-import * as LifecycleVariants from './lifecycle_variants';
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
 const Lifecycle = __t.enum('Lifecycle', {

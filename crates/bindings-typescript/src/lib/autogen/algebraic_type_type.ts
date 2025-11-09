@@ -12,8 +12,6 @@ import {
 import SumType from './sum_type_type';
 import ProductType from './product_type_type';
 
-import * as AlgebraicTypeVariants from './algebraic_type_variants';
-
 // The tagged union or sum type for the algebraic type `AlgebraicType`.
 const AlgebraicType: __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType> =
   __t.enum('AlgebraicType', {

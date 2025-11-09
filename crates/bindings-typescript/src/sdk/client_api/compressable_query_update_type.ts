@@ -11,8 +11,6 @@ import {
 } from '../../lib/type_builders';
 import QueryUpdate from './query_update_type';
 
-import * as CompressableQueryUpdateVariants from './compressable_query_update_variants';
-
 // The tagged union or sum type for the algebraic type `CompressableQueryUpdate`.
 const CompressableQueryUpdate = __t.enum('CompressableQueryUpdate', {
   get Uncompressed() {

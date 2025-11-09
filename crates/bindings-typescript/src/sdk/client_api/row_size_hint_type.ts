@@ -9,7 +9,6 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../lib/type_builders';
-import * as RowSizeHintVariants from './row_size_hint_variants';
 
 // The tagged union or sum type for the algebraic type `RowSizeHint`.
 const RowSizeHint = __t.enum('RowSizeHint', {

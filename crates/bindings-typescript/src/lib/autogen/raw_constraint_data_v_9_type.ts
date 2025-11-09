@@ -11,8 +11,6 @@ import {
 } from '../../index';
 import RawUniqueConstraintDataV9 from './raw_unique_constraint_data_v_9_type';
 
-import * as RawConstraintDataV9Variants from './raw_constraint_data_v_9_variants';
-
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
 const RawConstraintDataV9 = __t.enum('RawConstraintDataV9', {
   get Unique() {

@@ -1303,6 +1303,7 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
       })
     );
     this.variants = variants;
+    this.typeName = name;
   }
 
   /**

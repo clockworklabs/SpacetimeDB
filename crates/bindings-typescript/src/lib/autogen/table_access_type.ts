@@ -9,7 +9,6 @@ import {
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
 } from '../../index';
-import * as TableAccessVariants from './table_access_variants';
 
 // The tagged union or sum type for the algebraic type `TableAccess`.
 const TableAccess = __t.enum('TableAccess', {

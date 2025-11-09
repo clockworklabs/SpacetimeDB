@@ -286,8 +286,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // add explicit constraints from options.constraints
   for (const constraintOpts of opts.constraints ?? []) {
     if (constraintOpts.constraint === 'unique') {
-      let data: Infer<typeof RawConstraintDefV9>['data'];
-      data = {
+      const data: Infer<typeof RawConstraintDefV9>['data'] = {
         tag: 'Unique',
         value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
       };

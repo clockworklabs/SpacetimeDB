@@ -21,8 +21,6 @@ import SubscribeMultiApplied from './subscribe_multi_applied_type';
 import UnsubscribeMultiApplied from './unsubscribe_multi_applied_type';
 import ProcedureResult from './procedure_result_type';
 
-import * as ServerMessageVariants from './server_message_variants';
-
 // The tagged union or sum type for the algebraic type `ServerMessage`.
 const ServerMessage = __t.enum('ServerMessage', {
   get InitialSubscription() {

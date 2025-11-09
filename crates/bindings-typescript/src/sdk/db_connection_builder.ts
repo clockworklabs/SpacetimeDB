@@ -5,7 +5,6 @@ import type {
   ErrorContextInterface,
   Identity,
   RemoteModuleOf,
-  SubscriptionEventContextInterface,
 } from '../';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
