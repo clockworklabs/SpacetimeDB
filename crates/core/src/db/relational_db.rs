@@ -44,7 +44,9 @@ use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace};
+use spacetimedb_sats::{
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace, WithTypespace,
+};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1527,7 +1529,7 @@ impl RelationalDB {
         tx: &mut MutTxId,
         table_id: TableId,
         sender: Identity,
-        return_type: AlgebraicTypeRef,
+        row_type: AlgebraicTypeRef,
         bytes: Bytes,
         typespace: &Typespace,
     ) -> Result<(), DBError> {
@@ -1538,8 +1540,11 @@ impl RelationalDB {
             .collect::<Vec<_>>();
         self.delete(tx, table_id, rows_to_delete);
 
-        // Deserialize the return rows
-        let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type).resolve(return_type);
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
         let rows = seed
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
             .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
@@ -1593,8 +1598,11 @@ impl RelationalDB {
         // Clear entire backing table
         self.clear_table(tx, table_id)?;
 
-        // Deserialize the return rows
-        let seed = spacetimedb_sats::WithTypespace::new(typespace, &row_type).resolve(row_type);
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
         let rows = seed
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
             .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
