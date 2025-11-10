@@ -44,12 +44,13 @@ use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIA
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_execution::pipelined::{PipelinedProject, ViewProject};
+use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::{ProcedureId, TableId, ViewDatabaseId, ViewId};
+use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewDatabaseId, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
@@ -57,7 +58,7 @@ use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use std::future::Future;
 use std::sync::atomic::AtomicBool;
@@ -1118,7 +1119,7 @@ impl ModuleHost {
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
             if drop_view_subscribers {
-                if let Err(err) = tx.dec_st_view_subscribers(caller_identity) {
+                if let Err(err) = tx.unsubscribe_views(caller_identity) {
                     log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
                 }
             }
@@ -1485,6 +1486,39 @@ impl ModuleHost {
             }
         })
         .await?
+    }
+
+    /// Materializes the views return by the `view_collector`, if not already materialized,
+    /// and updates `st_view_sub` accordingly.
+    ///
+    /// Passing [`Workload::Sql`] will update `st_view_sub.last_called`.
+    /// Passing [`Workload::Subscribe`] will also increment `st_view_sub.num_subscribers`,
+    /// in addition to updating `st_view_sub.last_called`.
+    pub async fn materialize_views(
+        &self,
+        mut tx: MutTxId,
+        view_collector: &impl CollectViews,
+        sender: Identity,
+        workload: Workload,
+    ) -> Result<MutTxId, ViewCallError> {
+        use FunctionArgs::*;
+        let mut view_ids = HashSet::new();
+        view_collector.collect_views(&mut view_ids);
+        for view_id in view_ids {
+            let name = tx.lookup_st_view(view_id)?.view_name;
+            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, sender)? {
+                tx = self.call_view(tx, &name, Nullary, sender, None).await?.tx;
+            }
+            // If this is a sql call, we only update this view's "last called" timestamp
+            if let Workload::Sql = workload {
+                tx.update_view_timestamp(view_id, ArgId::SENTINEL, sender)?;
+            }
+            // If this is a subscribe call, we also increment this view's subscriber count
+            if let Workload::Subscribe = workload {
+                tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            }
+        }
+        Ok(tx)
     }
 
     pub async fn call_view(

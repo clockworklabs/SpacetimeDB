@@ -22,9 +22,10 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
+use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId, ViewDatabaseId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -51,6 +52,14 @@ pub struct Plan {
     hash: QueryHash,
     sql: String,
     plans: Vec<SubscriptionPlan>,
+}
+
+impl CollectViews for Plan {
+    fn collect_views(&self, views: &mut std::collections::HashSet<ViewDatabaseId>) {
+        for plan in &self.plans {
+            plan.collect_views(views);
+        }
+    }
 }
 
 impl Plan {

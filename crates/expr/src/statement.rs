@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
@@ -30,13 +29,6 @@ use super::{
 pub enum Statement {
     Select(ProjectList),
     DML(DML),
-}
-
-impl Statement {
-    pub fn views(&self) -> Vec<(&str, Bytes)> {
-        //TODO: implement view name extraction
-        vec![]
-    }
 }
 
 pub enum DML {

@@ -8,13 +8,16 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
-    StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
-    ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
-};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{
+    error::ViewError,
+    system_tables::{
+        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
+        StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
+        ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+    },
+};
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
@@ -51,7 +54,7 @@ use spacetimedb_sats::{
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
-    def::{ModuleDef, ViewColumnDef, ViewDef},
+    def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
@@ -356,16 +359,21 @@ impl MutTxId {
 
         let ViewDef {
             name,
-            is_anonymous,
-            is_public,
-            params,
+            param_columns,
             return_columns,
             ..
         } = view_def;
 
-        let view_id = self.insert_into_st_view(name.clone().into(), table_id, *is_public, *is_anonymous)?;
-        self.insert_into_st_view_param(view_id, params)?;
+        let view_name: Box<str> = name.clone().into();
+
+        // `create_table` inserts into `st_view` and updates the table schema.
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
         Ok((view_id, table_id))
     }
 
@@ -425,6 +433,10 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         table_schema.update_table_id(table_id);
+
+        if let Some(info) = table_schema.view_info.as_mut() {
+            info.view_id = self.insert_into_st_view(table_name.clone(), table_id, true, info.is_anonymous)?;
+        }
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
@@ -543,18 +555,15 @@ impl MutTxId {
 
     /// For each parameter of a view, insert a row into `st_view_param`.
     /// This does not include the context parameter.
-    fn insert_into_st_view_param(&mut self, view_id: ViewDatabaseId, params: &ProductType) -> Result<()> {
-        for (i, field) in params.elements.iter().enumerate() {
+    fn insert_into_st_view_param(&mut self, view_id: ViewDatabaseId, params: &[ViewParamDef]) -> Result<()> {
+        for ViewParamDef { name, col_id, ty, .. } in params {
             self.insert_via_serialize_bsatn(
                 ST_VIEW_PARAM_ID,
                 &StViewParamRow {
                     view_id,
-                    param_pos: i.into(),
-                    param_name: field
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
-                    param_type: field.algebraic_type.clone().into(),
+                    param_pos: *col_id,
+                    param_name: name.clone().into(),
+                    param_type: ty.clone().into(),
                 },
             )?;
         }
@@ -1873,15 +1882,12 @@ impl MutTxId {
         Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
     }
 
-    /// Does this caller have an entry for `view_id` in `st_view_sub`?
-    /// If so, update the `last_called` column.
-    /// Otherwise insert a row into `st_view_sub` with no subscribers.
-    pub fn st_view_sub_update_or_insert_last_called(
-        &mut self,
-        view_id: ViewDatabaseId,
-        arg_id: ArgId,
-        sender: Identity,
-    ) -> Result<()> {
+    /// Updates the `last_called` timestamp in `st_view_sub`.
+    /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
+    ///
+    /// This is invoked when calling a view, but not subscribing to it.
+    /// Such is the case for the sql http api.
+    pub fn update_view_timestamp(&mut self, view_id: ViewDatabaseId, arg_id: ArgId, sender: Identity) -> Result<()> {
         use StViewSubFields::*;
 
         let identity = IdentityViaU256(sender);
@@ -1916,8 +1922,84 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Decrements the number of subscribers in `st_view_sub` for a client identity.
-    pub fn dec_st_view_subscribers(&mut self, sender: Identity) -> Result<()> {
+    /// Increment `num_subscribers` in `st_view_sub` to effectively subscribe a caller to a view.
+    /// We insert a row if there are no current subscribers and the row does not exist.
+    pub fn subscribe_view(&mut self, view_id: ViewDatabaseId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_SUB_ID,
+                &StViewSubRow {
+                    num_subscribers: row.num_subscribers + 1,
+                    has_subscribers: true,
+                    last_called,
+                    ..row
+                },
+            )?;
+            return Ok(());
+        }
+
+        // Insert `st_view_sub` row with 1 subscriber
+        self.insert_via_serialize_bsatn(
+            ST_VIEW_SUB_ID,
+            &StViewSubRow {
+                view_id,
+                arg_id,
+                identity,
+                num_subscribers: 1,
+                has_subscribers: true,
+                last_called,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
+    pub fn unsubscribe_view(&mut self, view_id: ViewDatabaseId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_SUB_ID,
+                &StViewSubRow {
+                    num_subscribers: row.num_subscribers - 1,
+                    has_subscribers: row.num_subscribers > 1,
+                    last_called,
+                    ..row
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// To effectively unsubscribe a caller from all of their subscribed views,
+    /// we decrement `num_subscribers` in `st_view_sub` for all of a caller's views.
+    pub fn unsubscribe_views(&mut self, sender: Identity) -> Result<()> {
         let sender = IdentityViaU256(sender);
         let cols = col_list![StViewSubFields::Identity];
         let value = sender.into();

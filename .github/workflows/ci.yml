@@ -140,6 +140,9 @@ jobs:
         #Note: Unreal tests will be run separately
         run: cargo test --all -- --skip unreal
 
+      - name: Run fallocate tests
+        run: cargo test -p spacetimedb-durability --features fallocate
+
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
 

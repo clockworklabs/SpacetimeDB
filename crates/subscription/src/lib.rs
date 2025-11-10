@@ -6,10 +6,10 @@ use spacetimedb_execution::{
     },
     Datastore, DeltaStore, Row,
 };
-use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewDatabaseId};
 use spacetimedb_query::compile_subscription;
 use std::sync::Arc;
 use std::{collections::HashSet, ops::RangeBounds};
@@ -361,6 +361,12 @@ pub struct SubscriptionPlan {
     fragments: Fragments,
     /// The optimized plan without any delta scans
     plan_opt: ProjectPlan,
+}
+
+impl CollectViews for SubscriptionPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+        self.plan_opt.collect_views(views);
+    }
 }
 
 impl SubscriptionPlan {
