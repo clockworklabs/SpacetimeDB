@@ -168,6 +168,7 @@ async fn local_durability(
             commitlog: spacetimedb_commitlog::Options {
                 max_segment_size,
                 max_records_in_commit: 1.try_into().unwrap(),
+                preallocate_segments: true,
                 ..<_>::default()
             },
             ..<_>::default()
