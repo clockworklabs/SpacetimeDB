@@ -13,7 +13,7 @@ use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewInfo};
+use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
     table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
@@ -122,7 +122,7 @@ pub trait StateView {
             .transpose()?;
 
         // Look up the view info for the table in question, if any.
-        let view_info: Option<ViewInfo> = self
+        let view_info: Option<ViewDefInfo> = self
             .iter_by_col_eq(
                 ST_VIEW_ID,
                 StViewFields::TableId,
@@ -136,7 +136,7 @@ pub trait StateView {
                         .next()
                         .is_some();
 
-                    Ok(ViewInfo {
+                    Ok(ViewDefInfo {
                         view_id: row.view_id,
                         has_args,
                         is_anonymous: row.is_anonymous,
