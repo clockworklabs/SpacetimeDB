@@ -38,7 +38,7 @@ use spacetimedb_durability as durability;
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
-use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, ConnectionId};
@@ -46,7 +46,9 @@ use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace};
+use spacetimedb_sats::{
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, ProductValue, Typespace, WithTypespace,
+};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -1546,9 +1548,9 @@ impl RelationalDB {
         // Build the filter key for identifying rows to update
         let mut input_args = Vec::new();
         if !is_anonymous {
-            input_args.push(AlgebraicValue::OptionSome(caller_identity.into()));
+            input_args.push(AlgebraicValue::from(caller_identity));
         }
-        if !tx.is_view_parameterized(view_id)? {
+        if tx.is_view_parameterized(view_id)? {
             input_args.push(AlgebraicValue::U64(arg_id));
         }
         let input_args = ProductValue {
@@ -1566,7 +1568,12 @@ impl RelationalDB {
         trace!("Deleted {deleted_count} stale rows from view table {table_id} for arg_id {arg_id}");
 
         // Deserialize the return value
-        let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type).resolve(return_type);
+        let ret_type = typespace.resolve(return_type);
+        // The return type is expected to be an array of products
+        let array_type = AlgebraicType::Array(ArrayType {
+            elem_ty: Box::new(ret_type.ty().clone()),
+        });
+        let seed = WithTypespace::new(typespace, &array_type);
         let return_val = seed
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
             .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;

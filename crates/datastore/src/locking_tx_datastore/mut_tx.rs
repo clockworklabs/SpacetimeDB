@@ -789,7 +789,6 @@ impl MutTxId {
 
         let is_materialized =
             self.read_sets.contains_key(&view_call) || self.committed_state_write_lock.is_materialized(&view_call);
-
         Ok((is_materialized, view_call.into_args()))
     }
 }
@@ -2056,6 +2055,9 @@ impl MutTxId {
 
     /// Get or insert view argument into `ST_VIEW_ARG_ID`.
     pub fn get_or_insert_st_view_arg(&mut self, args: &Bytes) -> Result<u64> {
+        if args.is_empty() {
+            return Ok(ArgId::SENTINEL.into());
+        }
         let bytes_av = AlgebraicValue::Bytes(args.to_vec().into());
         let mut rows = self.iter_by_col_eq(ST_VIEW_ARG_ID, [StViewArgFields::Bytes], &bytes_av)?;
 
