@@ -15,7 +15,7 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
-use crate::host::{FunctionArgs, ModuleHost};
+use crate::host::ModuleHost;
 use crate::messages::websocket::Subscribe;
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::{collect_table_update_for_view, execute_plans};
@@ -42,9 +42,8 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
 use std::collections::HashSet;
-use std::sync::OnceLock;
 use std::{sync::Arc, time::Instant};
-use tokio::sync::{oneshot, watch};
+use tokio::sync::oneshot;
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
@@ -57,7 +56,6 @@ pub struct ModuleSubscriptions {
     broadcast_queue: BroadcastQueue,
     owner_identity: Identity,
     stats: Arc<SubscriptionGauges>,
-    module_rx: OnceLock<watch::Receiver<ModuleHost>>,
 }
 
 #[derive(Debug, Clone)]
@@ -196,38 +194,9 @@ impl ModuleSubscriptions {
             broadcast_queue,
             owner_identity,
             stats,
-            module_rx: OnceLock::new(),
         }
     }
 
-    /// Should be called once to initialize the `ModuleSubscriptions` with a `ModuleHost` receiver.
-    pub fn init(&self, module_host: watch::Receiver<ModuleHost>) {
-        self.module_rx
-            .set(module_host)
-            .expect("ModuleSubscriptions::init called twice");
-    }
-
-    #[allow(dead_code)]
-    async fn call_view(
-        &self,
-        tx: MutTxId,
-        view_name: &str,
-        args: FunctionArgs,
-        sender: Arc<ClientConnectionSender>,
-    ) -> Result<(), DBError> {
-        let module_host_rx = self
-            .module_rx
-            .get()
-            .expect("ModuleSubscriptions::init not called before call_view");
-        let module_host = module_host_rx.borrow();
-
-        let _result = module_host
-            .call_view(tx, view_name, args, sender.id.identity, Some(sender.id.connection_id))
-            .await;
-
-        // TODO: Handle result
-        Ok(())
-    }
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
     pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
