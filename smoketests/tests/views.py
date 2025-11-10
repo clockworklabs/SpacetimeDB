@@ -1,6 +1,5 @@
 from .. import Smoketest, random_string
 
-
 class Views(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
@@ -101,3 +100,113 @@ pub fn person(ctx: &ViewContext) -> Option<ABC> {
 
         with self.assertRaises(Exception):
             self.publish_module(name)
+
+
+
+class SqlViews(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    log::info!("player view called");
+    ctx.db.player_state().id().find(42)
+}
+
+#[spacetimedb::view(name = player_none, public)]
+pub fn player_none(_ctx: &ViewContext) -> Option<PlayerState> {
+    None
+}
+
+#[spacetimedb::view(name = player_vec, public)]
+pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
+    let first = ctx.db.player_state().id().find(42).unwrap();
+    let second = PlayerState { id: 7, level: 3 };
+    vec![first, second]
+}
+"""
+
+    def assertSql(self, sql, expected):
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.database_identity, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        
+        self.assertMultiLineEqual(sql_out, expected)
+
+    def insert_initial_data(self):
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """\
+INSERT INTO player_state (id, level) VALUES (42, 7);
+""",
+        )
+
+    def call_player_view(self):
+
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+ 42 | 7
+""")
+
+    def test_http_sql(self):
+        """This test asserts that views can be queried over HTTP SQL"""
+        self.insert_initial_data()
+
+        self.call_player_view()
+
+        self.assertSql("SELECT * FROM player_none", """\
+ id | level
+----+-------
+""")
+
+        self.assertSql("SELECT * FROM player_vec", """\
+ id | level
+----+-------
+ 42 | 7
+ 7  | 3
+""")
+
+    def test_a_view_materialization(self):
+        """This test asserts whether views are materialized correctly"""
+        self.insert_initial_data()
+        player_called_log = "player view called"
+
+
+        self.assertNotIn(player_called_log, self.logs(100))
+
+        self.call_player_view()
+        #On first call, the view is evaluated
+        self.assertIn(player_called_log, self.logs(100))
+    
+        self.call_player_view()
+        #On second call, the view is cached
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 1)
+
+        # insert to cause cache invalidation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """\
+INSERT INTO player_state (id, level) VALUES (22, 8);
+""",
+        )
+
+        self.call_player_view()
+        #On third call, after invalidation, the view is evaluated again
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+
+
