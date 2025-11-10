@@ -28,6 +28,14 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
         )
     });
 
+    // TODO: Remove this once we have view bindings for C# and TypeScript
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::AddView(_) | AutoMigrateStep::RemoveView(_) | AutoMigrateStep::UpdateView(_)
+        )
+    });
+
     assert!(
         diff.is_empty(),
         "Rust and {lang_name} modules are not identical. Here are the steps to migrate from {lang_name} to Rust: {diff:#?}"
@@ -69,12 +77,12 @@ macro_rules! declare_tests {
     }
 
 declare_tests! {
+    benchmarks => "benchmarks",
     module_test => "module-test",
     sdk_test_connect_disconnect => "sdk-test-connect-disconnect",
     sdk_test => "sdk-test",
 }
 
-// FIXME: Move `benchmarks => "benchmarks,` back into the macro once `benchmarks-ts` exists
 #[test]
 #[serial]
 fn ensure_same_schema_rust_csharp_benchmarks() {

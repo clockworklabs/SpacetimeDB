@@ -311,3 +311,17 @@ impl ModuleLanguage for Rust {
         &MODULE
     }
 }
+
+pub struct TypeScript;
+
+impl ModuleLanguage for TypeScript {
+    const NAME: &'static str = "typescript";
+
+    fn get_module() -> &'static CompiledModule {
+        lazy_static::lazy_static! {
+            pub static ref MODULE: CompiledModule = CompiledModule::compile("benchmarks-ts", COMPILATION_MODE);
+        }
+
+        &MODULE
+    }
+}

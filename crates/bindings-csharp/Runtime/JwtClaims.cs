@@ -67,7 +67,7 @@ public sealed class JwtClaims
     {
         if (!RootElement.TryGetProperty("aud", out var aud))
         {
-            throw new InvalidOperationException("JWT missing 'aud' claim");
+            return [];
         }
 
         return aud.ValueKind switch

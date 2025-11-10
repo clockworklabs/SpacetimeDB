@@ -7,13 +7,14 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Instant, SystemTime};
 
-use super::messages::{OneOffQueryResponseMessage, SerializableMessage};
+use super::messages::{OneOffQueryResponseMessage, ProcedureResultMessage, SerializableMessage};
 use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
+use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::worker_metrics::WORKER_METRICS;
@@ -834,6 +835,29 @@ impl ClientConnection {
             .await
     }
 
+    pub async fn call_procedure(
+        &self,
+        procedure: &str,
+        args: FunctionArgs,
+        request_id: RequestId,
+        timer: Instant,
+    ) -> Result<(), BroadcastError> {
+        let res = self
+            .module()
+            .call_procedure(
+                self.id.identity,
+                Some(self.id.connection_id),
+                Some(timer),
+                procedure,
+                args,
+            )
+            .await;
+
+        self.module()
+            .subscriptions()
+            .send_procedure_message(self.sender(), ProcedureResultMessage::from_result(&res, request_id))
+    }
+
     pub async fn subscribe_single(
         &self,
         subscription: SubscribeSingle,
@@ -841,10 +865,11 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         self.module()
-            .on_module_thread("subscribe_single", move || {
-                me.module()
-                    .subscriptions()
-                    .add_single_subscription(me.sender, subscription, timer, None)
+            .on_module_thread_async("subscribe_single", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_single_subscription(Some(&host), me.sender, subscription, timer, None)
+                    .await
             })
             .await?
     }
@@ -866,10 +891,11 @@ impl ClientConnection {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         self.module()
-            .on_module_thread("subscribe_multi", move || {
-                me.module()
-                    .subscriptions()
-                    .add_multi_subscription(me.sender, request, timer, None)
+            .on_module_thread_async("subscribe_multi", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_multi_subscription(Some(&host), me.sender, request, timer, None)
+                    .await
             })
             .await?
     }
@@ -891,12 +917,14 @@ impl ClientConnection {
 
     pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
-        asyncify(move || {
-            me.module()
-                .subscriptions()
-                .add_legacy_subscriber(me.sender, subscription, timer, None)
-        })
-        .await
+        self.module()
+            .on_module_thread_async("subscribe", async move || {
+                let host = me.module();
+                host.subscriptions()
+                    .add_legacy_subscriber(Some(&host), me.sender, subscription, timer, None)
+                    .await
+            })
+            .await?
     }
 
     pub async fn one_off_query_json(

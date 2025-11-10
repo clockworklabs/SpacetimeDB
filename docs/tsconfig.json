@@ -1,13 +1,8 @@
 {
+  // This file is not used in compilation. It is here just for a nice editor experience.
+  "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "esModuleInterop": false,
-    "strict": true,
-    "skipLibCheck": true,
-    "types": ["node"],
-    "noEmit": true
+    "baseUrl": "."
   },
-  "include": ["nav.ts", "scripts/**/*.ts"]
+  "exclude": [".docusaurus", "build"]
 }

@@ -6,28 +6,34 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
-use crate::system_tables::{
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-    ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
-};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::state_view::iter_st_column_for_table,
+    locking_tx_datastore::{
+        mut_tx::{ViewCall, ViewReadSets},
+        state_view::iter_st_column_for_table,
+    },
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
         ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
         ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
         ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
-        ST_VAR_IDX,
+        ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::TxData,
 };
+use crate::{
+    locking_tx_datastore::mut_tx::ReadSet,
+    system_tables::{
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
+        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+    },
+};
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
@@ -46,6 +52,61 @@ use spacetimedb_table::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use thin_vec::ThinVec;
+
+type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<ViewCall>>;
+type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
+
+#[derive(Default)]
+struct CommittedReadSets {
+    tables: IntMap<TableId, HashSet<ViewCall>>,
+    index_keys: IntMap<TableId, IndexColReadSet>,
+}
+
+impl MemoryUsage for CommittedReadSets {
+    fn heap_usage(&self) -> usize {
+        //TODO: fix this
+        //self.tables.heap_usage() + self.index_keys.heap_usage() + self.views.heap_usage()
+        0
+    }
+}
+
+impl CommittedReadSets {
+    /// Record in the [`CommittedState`] that this view scans this table
+    fn view_scans_table(&mut self, view: ViewCall, table_id: TableId) {
+        self.tables.entry(table_id).or_default().insert(view);
+    }
+
+    /// Record in the [`CommittedState`] that this view reads this index `key` for these table `cols`
+    fn view_reads_index_key(&mut self, view: ViewCall, table_id: TableId, cols: ColList, key: &AlgebraicValue) {
+        self.index_keys
+            .entry(table_id)
+            .or_default()
+            .entry(cols)
+            .or_default()
+            .entry(key.clone())
+            .or_default()
+            .insert(view);
+    }
+
+    /// Clear all read sets for views involving `table_id`.
+    /// This is called when a table is modified,
+    fn clear_views_for_table(&mut self, table_id: TableId) {
+        self.tables.remove(&table_id);
+        //TODO: clear from index only if stored indexed row has been updated
+        self.index_keys.remove(&table_id);
+    }
+
+    /// Returns true if the given view exists in any read set.
+    /// This is used to determine whether a view needs to be re-evaluated.
+    fn is_materialized(&self, view: &ViewCall) -> bool {
+        self.tables.values().any(|views| views.contains(view))
+            || self.index_keys.values().any(|col_map| {
+                col_map
+                    .values()
+                    .any(|key_map| key_map.values().any(|views| views.contains(view)))
+            })
+    }
+}
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -72,6 +133,11 @@ pub struct CommittedState {
     /// We should split `CommittedState` into two types
     /// where one, e.g., `ReplayCommittedState`, has this field.
     table_dropped: IntSet<TableId>,
+    /// We track the read sets for each view in the committed state.
+    /// We check each reducer's write set against these read sets.
+    /// Any overlap will trigger a re-evaluation of the affected view,
+    /// and its read set will be updated accordingly.
+    read_sets: CommittedReadSets,
 }
 
 impl MemoryUsage for CommittedState {
@@ -83,6 +149,7 @@ impl MemoryUsage for CommittedState {
             index_id_map,
             page_pool: _,
             table_dropped,
+            read_sets,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -90,6 +157,7 @@ impl MemoryUsage for CommittedState {
             + blob_store.heap_usage()
             + index_id_map.heap_usage()
             + table_dropped.heap_usage()
+            + read_sets.heap_usage()
     }
 }
 
@@ -152,6 +220,7 @@ impl CommittedState {
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
             table_dropped: <_>::default(),
+            read_sets: <_>::default(),
             page_pool,
         }
     }
@@ -259,6 +328,8 @@ impl CommittedState {
         self.create_table(ST_VIEW_ID, schemas[ST_VIEW_IDX].clone());
         self.create_table(ST_VIEW_PARAM_ID, schemas[ST_VIEW_PARAM_IDX].clone());
         self.create_table(ST_VIEW_COLUMN_ID, schemas[ST_VIEW_COLUMN_IDX].clone());
+        self.create_table(ST_VIEW_SUB_ID, schemas[ST_VIEW_SUB_IDX].clone());
+        self.create_table(ST_VIEW_ARG_ID, schemas[ST_VIEW_ARG_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -359,7 +430,7 @@ impl CommittedState {
             let dropped_table_id = Self::read_table_id(row);
             self.tables
                 .remove(&dropped_table_id)
-                .expect("table to remove should exist");
+                .unwrap_or_else(|| panic!("table {} to remove should exist", dropped_table_id));
             // Mark the table as dropped so that when
             // processing row deletions for that table later,
             // they are simply ignored in (1).
@@ -614,7 +685,7 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
@@ -638,6 +709,12 @@ impl CommittedState {
         // Record any truncated tables in the `TxData`.
         tx_data.add_truncates(truncates);
 
+        // Merge read sets from the `MutTxId` into the `CommittedState`.
+        // It's important that this happens after applying the changes to `tx_data`,
+        // which implies `tx_data` already contains inserts and deletes for view tables
+        // so that we can pass updated set of table ids.
+        self.merge_read_sets(read_sets, tx_data.table_ids_and_names().map(|(id, _)| id));
+
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
         if self.tx_consumes_offset(&tx_data, ctx) {
@@ -646,6 +723,29 @@ impl CommittedState {
         }
 
         tx_data
+    }
+
+    fn merge_read_set(&mut self, view: ViewCall, read_set: ReadSet) {
+        for table_id in read_set.tables_scanned() {
+            self.read_sets.view_scans_table(view.clone(), *table_id);
+        }
+        for (table_id, index_id, key) in read_set.index_keys_scanned() {
+            if let Some(cols) = self
+                .get_schema(*table_id)
+                .map(|table_schema| table_schema.col_list_for_index_id(*index_id))
+            {
+                self.read_sets.view_reads_index_key(view.clone(), *table_id, cols, key);
+            }
+        }
+    }
+
+    fn merge_read_sets(&mut self, read_sets: ViewReadSets, updated_tables: impl IntoIterator<Item = TableId>) {
+        for (view, read_set) in read_sets {
+            self.merge_read_set(view, read_set);
+        }
+        for table_id in updated_tables {
+            self.read_sets.clear_views_for_table(table_id);
+        }
     }
 
     fn merge_apply_deletes(
@@ -960,6 +1060,10 @@ impl CommittedState {
             .data_size_blob_store_bytes_used_by_blobs
             .with_label_values(&database_identity)
             .set(self.blob_store.bytes_used_by_blobs() as _);
+    }
+
+    pub(super) fn is_materialized(&self, view: &ViewCall) -> bool {
+        self.read_sets.is_materialized(view)
     }
 }
 

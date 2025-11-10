@@ -686,6 +686,7 @@ pub(crate) mod tests {
             TableSchema::new(
                 TableId::SENTINEL,
                 table_name.into(),
+                None,
                 columns,
                 vec![],
                 vec![],

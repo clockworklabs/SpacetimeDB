@@ -29,6 +29,13 @@ import { MODULE_DEF } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
+import {
+  ANON_VIEWS,
+  VIEWS,
+  type AnonymousViewCtx,
+  type ViewCtx,
+} from './views';
+import { bsatnBaseSize } from './util';
 
 const { freeze } = Object;
 
@@ -85,6 +92,9 @@ class JwtClaimsImpl implements JwtClaims {
   }
   get audience() {
     const aud = this.fullPayload['aud'];
+    if (aud == null) {
+      return [];
+    }
     return typeof aud === 'string' ? [aud] : (aud as string[]);
   }
 }
@@ -193,7 +203,7 @@ export const hooks: ModuleHooks = {
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
-      authCtx: AuthCtxImpl.fromSystemTables(
+      senderAuth: AuthCtxImpl.fromSystemTables(
         ConnectionId.nullIfZero(new ConnectionId(connId)),
         senderIdentity
       ),
@@ -206,6 +216,46 @@ export const hooks: ModuleHooks = {
       }
       throw e;
     }
+  },
+};
+
+export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
+  __call_view__(id, sender, argsBuf) {
+    const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
+    const ctx: ViewCtx<any> = freeze({
+      sender: new Identity(sender),
+      // this is the non-readonly DbView, but the typing for the user will be
+      // the readonly one, and if they do call mutating functions it will fail
+      // at runtime
+      db: getDbView(),
+    });
+    const args = AlgebraicType.deserializeValue(
+      new BinaryReader(argsBuf),
+      AlgebraicType.Product(params),
+      MODULE_DEF.typespace
+    );
+    const ret = fn(ctx, args);
+    const retBuf = new BinaryWriter(returnTypeBaseSize);
+    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
+    return retBuf.getBuffer();
+  },
+  __call_view_anon__(id, argsBuf) {
+    const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
+    const ctx: AnonymousViewCtx<any> = freeze({
+      // this is the non-readonly DbView, but the typing for the user will be
+      // the readonly one, and if they do call mutating functions it will fail
+      // at runtime
+      db: getDbView(),
+    });
+    const args = AlgebraicType.deserializeValue(
+      new BinaryReader(argsBuf),
+      AlgebraicType.Product(params),
+      MODULE_DEF.typespace
+    );
+    const ret = fn(ctx, args);
+    const retBuf = new BinaryWriter(returnTypeBaseSize);
+    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
+    return retBuf.getBuffer();
   },
 };
 
@@ -459,47 +509,6 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
   }
 
   return freeze(tableView);
-}
-
-function bsatnBaseSize(typespace: Typespace, ty: AlgebraicType): number {
-  const assumedArrayLength = 4;
-  while (ty.tag === 'Ref') ty = typespace.types[ty.value];
-  if (ty.tag === 'Product') {
-    let sum = 0;
-    for (const { algebraicType: elem } of ty.value.elements) {
-      sum += bsatnBaseSize(typespace, elem);
-    }
-    return sum;
-  } else if (ty.tag === 'Sum') {
-    let min = Infinity;
-    for (const { algebraicType: vari } of ty.value.variants) {
-      const vSize = bsatnBaseSize(typespace, vari);
-      if (vSize < min) min = vSize;
-    }
-    if (min === Infinity) min = 0;
-    return 4 + min;
-  } else if (ty.tag == 'Array') {
-    return 4 + assumedArrayLength * bsatnBaseSize(typespace, ty.value);
-  }
-  return {
-    String: 4 + assumedArrayLength,
-    Sum: 1,
-    Bool: 1,
-    I8: 1,
-    U8: 1,
-    I16: 2,
-    U16: 2,
-    I32: 4,
-    U32: 4,
-    F32: 4,
-    I64: 8,
-    U64: 8,
-    F64: 8,
-    I128: 16,
-    U128: 16,
-    I256: 32,
-    U256: 32,
-  }[ty.tag];
 }
 
 function hasOwn<K extends PropertyKey>(

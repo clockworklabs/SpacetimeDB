@@ -61,7 +61,25 @@ impl<R: Repo, T> Generic<R, T> {
         }
         let head = if let Some(last) = tail.pop() {
             debug!("resuming last segment: {last}");
+            // Resume the last segment for writing, or create a new segment
+            // starting from the last good commit + 1.
             repo::resume_segment_writer(&repo, opts, last)?.or_else(|meta| {
+                // The first commit in the last segment being corrupt is an
+                // edge case: we'd try to start a new segment with an offset
+                // equal to the already existing one, which would fail.
+                //
+                // We cannot just skip it either, as we don't know the reason
+                // for the corruption (there could be more, potentially
+                // recoverable commits in the segment).
+                //
+                // Thus, provide some context about what is wrong and refuse to
+                // start.
+                if meta.tx_range.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("repo {}: first commit in resumed segment {} is corrupt", repo, last),
+                    ));
+                }
                 tail.push(meta.tx_range.start);
                 repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)
             })?

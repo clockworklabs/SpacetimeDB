@@ -1,6 +1,6 @@
 use std::{
     collections::{btree_map, BTreeMap},
-    io,
+    fmt, io,
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -41,6 +41,12 @@ impl Memory {
 
     pub fn unlimited() -> Self {
         Self::new(u64::MAX)
+    }
+}
+
+impl fmt::Display for Memory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<memory>")
     }
 }
 

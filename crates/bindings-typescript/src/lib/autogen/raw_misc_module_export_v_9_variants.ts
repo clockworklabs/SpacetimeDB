@@ -19,8 +19,16 @@ import {
 import { RawColumnDefaultValueV9 as RawColumnDefaultValueV9Type } from './raw_column_default_value_v_9_type';
 // Mark import as potentially unused
 declare type __keep_RawColumnDefaultValueV9Type = RawColumnDefaultValueV9Type;
+import { RawProcedureDefV9 as RawProcedureDefV9Type } from './raw_procedure_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawProcedureDefV9Type = RawProcedureDefV9Type;
+import { RawViewDefV9 as RawViewDefV9Type } from './raw_view_def_v_9_type';
+// Mark import as potentially unused
+declare type __keep_RawViewDefV9Type = RawViewDefV9Type;
 
 export type ColumnDefaultValue = {
   tag: 'ColumnDefaultValue';
   value: RawColumnDefaultValueV9Type;
 };
+export type Procedure = { tag: 'Procedure'; value: RawProcedureDefV9Type };
+export type View = { tag: 'View'; value: RawViewDefV9Type };

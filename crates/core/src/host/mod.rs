@@ -24,10 +24,10 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProgramStorage,
-    ReducerCallResult, ReducerOutcome,
+    extract_schema, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProcedureCallResult,
+    ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
-pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
+pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
 
 /// Encoded arguments to a database function.
@@ -132,6 +132,15 @@ pub struct InvalidProcedureArguments(
     InvalidFunctionArguments,
 );
 
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "view".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for view {}: {}", .0.function_name, .0.err)]
+pub struct InvalidViewArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
+
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);
     let mut track = serde_path_to_error::Track::new();
@@ -167,4 +176,6 @@ pub enum AbiCall {
     GetJwt,
 
     VolatileNonatomicScheduleImmediate,
+
+    ProcedureSleepUntil,
 }

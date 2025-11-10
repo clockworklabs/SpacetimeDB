@@ -1,5 +1,6 @@
 use std::{
     io,
+    slice::SliceIndex,
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -85,6 +86,11 @@ impl Segment {
     pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
         let mut storage = self.storage.write().unwrap();
         storage.buf[pos] = f(storage.buf[pos])
+    }
+
+    pub fn modify_bytes_at(&mut self, range: impl SliceIndex<[u8], Output = [u8]>, f: impl FnOnce(&mut [u8])) {
+        let mut storage = self.storage.write().unwrap();
+        f(&mut storage.buf[range])
     }
 
     pub fn allocated_space(&self) -> u64 {
