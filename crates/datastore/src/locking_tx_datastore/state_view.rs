@@ -121,26 +121,29 @@ pub trait StateView {
             })
             .transpose()?;
 
+        // Look up the view info for the table in question, if any.
         let view_info: Option<ViewInfo> = self
             .iter_by_col_eq(
                 ST_VIEW_ID,
                 StViewFields::TableId,
                 &AlgebraicValue::OptionSome(value_eq.clone()),
-            )?
-            .next()
-            .map(|row| -> Result<_> {
-                let row = StViewRow::try_from(row)?;
-                let has_args = self
-                    .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
-                    .next()
-                    .is_some();
+            )
+            .map(|mut iter| {
+                iter.next().map(|row| -> Result<_> {
+                    let row = StViewRow::try_from(row)?;
+                    let has_args = self
+                        .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
+                        .next()
+                        .is_some();
 
-                Ok(ViewInfo {
-                    view_id: row.view_id,
-                    has_args,
-                    is_anonymous: row.is_anonymous,
+                    Ok(ViewInfo {
+                        view_id: row.view_id,
+                        has_args,
+                        is_anonymous: row.is_anonymous,
+                    })
                 })
             })
+            .unwrap_or(None)
             .transpose()?;
 
         Ok(TableSchema::new(
