@@ -544,6 +544,10 @@ pub struct CallViewParams {
     pub view_id: ViewId,
     pub table_id: TableId,
     pub fn_ptr: ViewFnPtr,
+    /// This is not always the same identity as `sender`.
+    /// For subscribe and sql calls it will be.
+    /// However for atomic view update after a reducer call,
+    /// this will be the caller of the reducer.
     pub caller: Identity,
     pub sender: Option<Identity>,
     pub args: ArgsTuple,
