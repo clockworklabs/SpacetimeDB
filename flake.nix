@@ -168,7 +168,6 @@
             packages = [
               rustStable
               rustNightly
-              cargoArtifacts
               pkgs.cargo-insta
             ];
           };
