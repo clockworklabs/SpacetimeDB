@@ -10,8 +10,8 @@ use bytes::Bytes;
 use enum_map::EnumMap;
 use fs2::FileExt;
 use log::trace;
-use spacetimedb_commitlog as commitlog;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
@@ -634,8 +634,8 @@ impl RelationalDB {
     /// The number of bytes on disk occupied by the durability layer.
     ///
     /// If this is an in-memory instance, `Ok(0)` is returned.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
-        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        self.disk_size_fn.as_ref().map_or(Ok(<_>::default()), |f| f())
     }
 
     /// The size in bytes of all of the in-memory data in this database.
