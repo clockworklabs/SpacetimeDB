@@ -20,7 +20,7 @@ use crate::host::AbiCall;
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
-use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId, ViewId};
+use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::Serialize;
 use v8::{
     callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
@@ -424,10 +424,11 @@ pub(super) fn call_call_view(
     let fun = hooks.call_view.context("`__call_view__` was never defined")?;
 
     let ViewOp {
-        id: ViewId(view_id),
-        db_id: _,
+        fn_ptr: ViewFnPtr(view_id),
+        view_id: _,
+        table_id: _,
         name: _,
-        caller_identity: sender,
+        sender,
         timestamp: _,
         args: view_args,
     } = op;
@@ -456,8 +457,9 @@ pub(super) fn call_call_view_anon(
     let fun = hooks.call_view_anon.context("`__call_view__` was never defined")?;
 
     let AnonymousViewOp {
-        id: ViewId(view_id),
-        db_id: _,
+        fn_ptr: ViewFnPtr(view_id),
+        view_id: _,
+        table_id: _,
         name: _,
         timestamp: _,
         args: view_args,
