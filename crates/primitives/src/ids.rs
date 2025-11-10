@@ -141,7 +141,7 @@ system_id! {
 system_id! {
     /// The index of a view as defined in a module's view lists.
     ///
-    /// Unline reducers and procedures, the module maintains two lists for views.
+    /// Unlike reducers and procedures, the module maintains two lists for views.
     /// One for `ViewContext` and the other for `AnonymousViewContext`.
     /// As such, this index does not uniquely identify a view on its own.
     /// You must know which list this index refers to.
