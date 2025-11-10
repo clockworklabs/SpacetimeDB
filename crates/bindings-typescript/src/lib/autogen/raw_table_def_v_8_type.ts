@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import RawColumnDefV8 from './raw_column_def_v_8_type';
 import RawIndexDefV8 from './raw_index_def_v_8_type';
 import RawConstraintDefV8 from './raw_constraint_def_v_8_type';

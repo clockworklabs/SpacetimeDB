@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import ProductType from './product_type_type';
 import Lifecycle from './lifecycle_type';
 

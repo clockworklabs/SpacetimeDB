@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import IndexType from './index_type_type';
 
 export default __t.object('RawIndexDefV8', {

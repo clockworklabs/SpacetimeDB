@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import TypeAlias from './type_alias_type';
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.

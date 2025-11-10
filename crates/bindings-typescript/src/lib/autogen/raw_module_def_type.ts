@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import RawModuleDefV8 from './raw_module_def_v_8_type';
 import RawModuleDefV9 from './raw_module_def_v_9_type';
 

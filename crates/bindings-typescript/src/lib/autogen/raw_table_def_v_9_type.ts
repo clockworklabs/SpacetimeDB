@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import RawIndexDefV9 from './raw_index_def_v_9_type';
 import RawConstraintDefV9 from './raw_constraint_def_v_9_type';
 import RawSequenceDefV9 from './raw_sequence_def_v_9_type';

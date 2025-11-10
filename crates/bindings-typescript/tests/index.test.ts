@@ -15,7 +15,7 @@ describe('TypeBuilder', () => {
       y: t.f64(),
       z: t.f64(),
     });
-    expect(point.resolveType()).toEqual({
+    expect(point.algebraicType).toEqual({
       tag: 'Product',
       value: {
         elements: [
@@ -32,7 +32,7 @@ describe('TypeBuilder', () => {
       a: t.string(),
       b: t.number(),
     });
-    expect(sumType.resolveType()).toEqual({
+    expect(sumType.algebraicType).toEqual({
       tag: 'Sum',
       value: {
         variants: [

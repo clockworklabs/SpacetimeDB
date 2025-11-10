@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import RawConstraintDataV9 from './raw_constraint_data_v_9_type';
 
 export default __t.object('RawConstraintDefV9', {

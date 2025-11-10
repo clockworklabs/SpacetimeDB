@@ -218,7 +218,7 @@ export function init<S extends UntypedSchemaDef, Params extends ParamsObj>(
   params: Params,
   fn: Reducer<S, Params>
 ): void {
-  pushReducer(name, params, fn, Lifecycle.create('Init'));
+  pushReducer(name, params, fn, Lifecycle.Init);
 }
 
 /**
@@ -234,7 +234,7 @@ export function clientConnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
 >(name: string, params: Params, fn: Reducer<S, Params>): void {
-  pushReducer(name, params, fn, Lifecycle.create('OnConnect'));
+  pushReducer(name, params, fn, Lifecycle.OnConnect);
 }
 
 /**
@@ -260,7 +260,7 @@ export function clientDisconnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
 >(name: string, params: Params, fn: Reducer<S, Params>): void {
-  pushReducer(name, params, fn, Lifecycle.create('OnDisconnect'));
+  pushReducer(name, params, fn, Lifecycle.OnDisconnect);
 }
 
 class Reducers<ReducersDef extends UntypedReducersDef> {

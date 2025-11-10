@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { AlgebraicType } from '../src/index';
+import { AlgebraicType } from '../src/lib/algebraic_type';
 
 describe('AlgebraicType', () => {
   test('intoMapKey handles all primitive types', () => {

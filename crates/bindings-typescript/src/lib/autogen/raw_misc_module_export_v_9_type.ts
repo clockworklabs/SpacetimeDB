@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import RawColumnDefaultValueV9 from './raw_column_default_value_v_9_type';
 import RawProcedureDefV9 from './raw_procedure_def_v_9_type';
 import RawViewDefV9 from './raw_view_def_v_9_type';

@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 
 // The tagged union or sum type for the algebraic type `TableType`.
 const TableType = __t.enum('TableType', {

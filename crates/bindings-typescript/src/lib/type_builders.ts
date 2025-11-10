@@ -1,4 +1,6 @@
 import { AlgebraicType, type AlgebraicTypeVariants } from './algebraic_type';
+import type BinaryReader from './binary_reader';
+import type BinaryWriter from './binary_writer';
 import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
 import { Identity, type IdentityAlgebraicType } from './identity';
 import { Option, type OptionAlgebraicType } from './option';
@@ -117,8 +119,8 @@ type IsUnit<B> = B extends UnitBuilder ? true : false;
  */
 type EnumType<Variants extends VariantsObj> = {
   [K in keyof Variants & string]: IsUnit<Variants[K]> extends true
-    ? { tag: K }
-    : { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> };
+  ? { tag: K }
+  : { tag: K; value: InferTypeOfTypeBuilder<Variants[K]> };
 }[keyof Variants & string];
 
 /**
@@ -134,8 +136,7 @@ type VariantsArrayFromVariantsObj<Obj extends VariantsObj> = {
  * and the corresponding `AlgebraicType`.
  */
 export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
-  implements Optional<Type, SpacetimeType>
-{
+  implements Optional<Type, SpacetimeType> {
   /**
    * The TypeScript phantom type. This is not stored at runtime,
    * but is visible to the compiler
@@ -159,6 +160,14 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
 
   optional(): OptionBuilder<typeof this> {
     return new OptionBuilder(this);
+  }
+
+  serialize(writer: BinaryWriter, value: Type): void {
+    AlgebraicType.serializeValue(writer, this.algebraicType, value);
+  }
+
+  deserialize(reader: BinaryReader): Type {
+    return AlgebraicType.deserializeValue(reader, this.algebraicType);
   }
 }
 
@@ -345,12 +354,11 @@ interface Defaultable<
 export class U8Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.U8>
   implements
-    Indexable<number, AlgebraicTypeVariants.U8>,
-    Uniqueable<number, AlgebraicTypeVariants.U8>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.U8>,
-    AutoIncrementable<number, AlgebraicTypeVariants.U8>,
-    Defaultable<number, AlgebraicTypeVariants.U8>
-{
+  Indexable<number, AlgebraicTypeVariants.U8>,
+  Uniqueable<number, AlgebraicTypeVariants.U8>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.U8>,
+  AutoIncrementable<number, AlgebraicTypeVariants.U8>,
+  Defaultable<number, AlgebraicTypeVariants.U8> {
   constructor() {
     super(AlgebraicType.U8);
   }
@@ -398,12 +406,11 @@ export class U8Builder
 export class U16Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.U16>
   implements
-    Indexable<number, AlgebraicTypeVariants.U16>,
-    Uniqueable<number, AlgebraicTypeVariants.U16>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.U16>,
-    AutoIncrementable<number, AlgebraicTypeVariants.U16>,
-    Defaultable<number, AlgebraicTypeVariants.U16>
-{
+  Indexable<number, AlgebraicTypeVariants.U16>,
+  Uniqueable<number, AlgebraicTypeVariants.U16>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.U16>,
+  AutoIncrementable<number, AlgebraicTypeVariants.U16>,
+  Defaultable<number, AlgebraicTypeVariants.U16> {
   constructor() {
     super(AlgebraicType.U16);
   }
@@ -451,12 +458,11 @@ export class U16Builder
 export class U32Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.U32>
   implements
-    Indexable<number, AlgebraicTypeVariants.U32>,
-    Uniqueable<number, AlgebraicTypeVariants.U32>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.U32>,
-    AutoIncrementable<number, AlgebraicTypeVariants.U32>,
-    Defaultable<number, AlgebraicTypeVariants.U32>
-{
+  Indexable<number, AlgebraicTypeVariants.U32>,
+  Uniqueable<number, AlgebraicTypeVariants.U32>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.U32>,
+  AutoIncrementable<number, AlgebraicTypeVariants.U32>,
+  Defaultable<number, AlgebraicTypeVariants.U32> {
   constructor() {
     super(AlgebraicType.U32);
   }
@@ -504,12 +510,11 @@ export class U32Builder
 export class U64Builder
   extends TypeBuilder<bigint, AlgebraicTypeVariants.U64>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.U64>,
-    Uniqueable<bigint, AlgebraicTypeVariants.U64>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.U64>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.U64>,
-    Defaultable<bigint, AlgebraicTypeVariants.U64>
-{
+  Indexable<bigint, AlgebraicTypeVariants.U64>,
+  Uniqueable<bigint, AlgebraicTypeVariants.U64>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.U64>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.U64>,
+  Defaultable<bigint, AlgebraicTypeVariants.U64> {
   constructor() {
     super(AlgebraicType.U64);
   }
@@ -557,12 +562,11 @@ export class U64Builder
 export class U128Builder
   extends TypeBuilder<bigint, AlgebraicTypeVariants.U128>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.U128>,
-    Uniqueable<bigint, AlgebraicTypeVariants.U128>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.U128>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.U128>,
-    Defaultable<bigint, AlgebraicTypeVariants.U128>
-{
+  Indexable<bigint, AlgebraicTypeVariants.U128>,
+  Uniqueable<bigint, AlgebraicTypeVariants.U128>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.U128>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.U128>,
+  Defaultable<bigint, AlgebraicTypeVariants.U128> {
   constructor() {
     super(AlgebraicType.U128);
   }
@@ -613,12 +617,11 @@ export class U128Builder
 export class U256Builder
   extends TypeBuilder<bigint, AlgebraicTypeVariants.U256>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.U256>,
-    Uniqueable<bigint, AlgebraicTypeVariants.U256>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.U256>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.U256>,
-    Defaultable<bigint, AlgebraicTypeVariants.U256>
-{
+  Indexable<bigint, AlgebraicTypeVariants.U256>,
+  Uniqueable<bigint, AlgebraicTypeVariants.U256>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.U256>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.U256>,
+  Defaultable<bigint, AlgebraicTypeVariants.U256> {
   constructor() {
     super(AlgebraicType.U256);
   }
@@ -669,12 +672,11 @@ export class U256Builder
 export class I8Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.I8>
   implements
-    Indexable<number, AlgebraicTypeVariants.I8>,
-    Uniqueable<number, AlgebraicTypeVariants.I8>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.I8>,
-    AutoIncrementable<number, AlgebraicTypeVariants.I8>,
-    Defaultable<number, AlgebraicTypeVariants.I8>
-{
+  Indexable<number, AlgebraicTypeVariants.I8>,
+  Uniqueable<number, AlgebraicTypeVariants.I8>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.I8>,
+  AutoIncrementable<number, AlgebraicTypeVariants.I8>,
+  Defaultable<number, AlgebraicTypeVariants.I8> {
   constructor() {
     super(AlgebraicType.I8);
   }
@@ -722,12 +724,11 @@ export class I8Builder
 export class I16Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.I16>
   implements
-    Indexable<number, AlgebraicTypeVariants.I16>,
-    Uniqueable<number, AlgebraicTypeVariants.I16>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.I16>,
-    AutoIncrementable<number, AlgebraicTypeVariants.I16>,
-    Defaultable<number, AlgebraicTypeVariants.I16>
-{
+  Indexable<number, AlgebraicTypeVariants.I16>,
+  Uniqueable<number, AlgebraicTypeVariants.I16>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.I16>,
+  AutoIncrementable<number, AlgebraicTypeVariants.I16>,
+  Defaultable<number, AlgebraicTypeVariants.I16> {
   constructor() {
     super(AlgebraicType.I16);
   }
@@ -775,13 +776,12 @@ export class I16Builder
 export class I32Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.I32>
   implements
-    TypeBuilder<number, AlgebraicTypeVariants.I32>,
-    Indexable<number, AlgebraicTypeVariants.I32>,
-    Uniqueable<number, AlgebraicTypeVariants.I32>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.I32>,
-    AutoIncrementable<number, AlgebraicTypeVariants.I32>,
-    Defaultable<number, AlgebraicTypeVariants.I32>
-{
+  TypeBuilder<number, AlgebraicTypeVariants.I32>,
+  Indexable<number, AlgebraicTypeVariants.I32>,
+  Uniqueable<number, AlgebraicTypeVariants.I32>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.I32>,
+  AutoIncrementable<number, AlgebraicTypeVariants.I32>,
+  Defaultable<number, AlgebraicTypeVariants.I32> {
   constructor() {
     super(AlgebraicType.I32);
   }
@@ -829,12 +829,11 @@ export class I32Builder
 export class I64Builder
   extends TypeBuilder<bigint, AlgebraicTypeVariants.I64>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.I64>,
-    Uniqueable<bigint, AlgebraicTypeVariants.I64>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.I64>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.I64>,
-    Defaultable<bigint, AlgebraicTypeVariants.I64>
-{
+  Indexable<bigint, AlgebraicTypeVariants.I64>,
+  Uniqueable<bigint, AlgebraicTypeVariants.I64>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.I64>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.I64>,
+  Defaultable<bigint, AlgebraicTypeVariants.I64> {
   constructor() {
     super(AlgebraicType.I64);
   }
@@ -882,12 +881,11 @@ export class I64Builder
 export class I128Builder
   extends TypeBuilder<bigint, AlgebraicTypeVariants.I128>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.I128>,
-    Uniqueable<bigint, AlgebraicTypeVariants.I128>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.I128>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.I128>,
-    Defaultable<bigint, AlgebraicTypeVariants.I128>
-{
+  Indexable<bigint, AlgebraicTypeVariants.I128>,
+  Uniqueable<bigint, AlgebraicTypeVariants.I128>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.I128>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.I128>,
+  Defaultable<bigint, AlgebraicTypeVariants.I128> {
   constructor() {
     super(AlgebraicType.I128);
   }
@@ -938,12 +936,11 @@ export class I128Builder
 export class I256Builder
   extends TypeBuilder<bigint, AlgebraicTypeVariants.I256>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.I256>,
-    Uniqueable<bigint, AlgebraicTypeVariants.I256>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.I256>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.I256>,
-    Defaultable<bigint, AlgebraicTypeVariants.I256>
-{
+  Indexable<bigint, AlgebraicTypeVariants.I256>,
+  Uniqueable<bigint, AlgebraicTypeVariants.I256>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.I256>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.I256>,
+  Defaultable<bigint, AlgebraicTypeVariants.I256> {
   constructor() {
     super(AlgebraicType.I256);
   }
@@ -993,8 +990,7 @@ export class I256Builder
 
 export class F32Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.F32>
-  implements Defaultable<number, AlgebraicTypeVariants.F32>
-{
+  implements Defaultable<number, AlgebraicTypeVariants.F32> {
   constructor() {
     super(AlgebraicType.F32);
   }
@@ -1010,8 +1006,7 @@ export class F32Builder
 
 export class F64Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.F64>
-  implements Defaultable<number, AlgebraicTypeVariants.F64>
-{
+  implements Defaultable<number, AlgebraicTypeVariants.F64> {
   constructor() {
     super(AlgebraicType.F64);
   }
@@ -1028,11 +1023,10 @@ export class F64Builder
 export class BoolBuilder
   extends TypeBuilder<boolean, AlgebraicTypeVariants.Bool>
   implements
-    Indexable<boolean, AlgebraicTypeVariants.Bool>,
-    Uniqueable<boolean, AlgebraicTypeVariants.Bool>,
-    PrimaryKeyable<boolean, AlgebraicTypeVariants.Bool>,
-    Defaultable<boolean, AlgebraicTypeVariants.Bool>
-{
+  Indexable<boolean, AlgebraicTypeVariants.Bool>,
+  Uniqueable<boolean, AlgebraicTypeVariants.Bool>,
+  PrimaryKeyable<boolean, AlgebraicTypeVariants.Bool>,
+  Defaultable<boolean, AlgebraicTypeVariants.Bool> {
   constructor() {
     super(AlgebraicType.Bool);
   }
@@ -1075,11 +1069,10 @@ export class BoolBuilder
 export class StringBuilder
   extends TypeBuilder<string, AlgebraicTypeVariants.String>
   implements
-    Indexable<string, AlgebraicTypeVariants.String>,
-    Uniqueable<string, AlgebraicTypeVariants.String>,
-    PrimaryKeyable<string, AlgebraicTypeVariants.String>,
-    Defaultable<string, AlgebraicTypeVariants.String>
-{
+  Indexable<string, AlgebraicTypeVariants.String>,
+  Uniqueable<string, AlgebraicTypeVariants.String>,
+  PrimaryKeyable<string, AlgebraicTypeVariants.String>,
+  Defaultable<string, AlgebraicTypeVariants.String> {
   constructor() {
     super(AlgebraicType.String);
   }
@@ -1124,8 +1117,7 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
     Array<InferTypeOfTypeBuilder<Element>>,
     { tag: 'Array'; value: InferSpacetimeTypeOfTypeBuilder<Element> }
   >
-  implements Defaultable<Array<InferTypeOfTypeBuilder<Element>>, any>
-{
+  implements Defaultable<Array<InferTypeOfTypeBuilder<Element>>, any> {
   /**
    * The phantom element type of the array for TypeScript
    */
@@ -1152,8 +1144,7 @@ export class ByteArrayBuilder
     Uint8Array,
     { tag: 'Array'; value: AlgebraicTypeVariants.U8 }
   >
-  implements Defaultable<Uint8Array, any>
-{
+  implements Defaultable<Uint8Array, any> {
   constructor() {
     super(AlgebraicType.Array(AlgebraicType.U8));
   }
@@ -1172,11 +1163,10 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
     OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
   >
   implements
-    Defaultable<
-      InferTypeOfTypeBuilder<Value> | undefined,
-      OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
-    >
-{
+  Defaultable<
+    InferTypeOfTypeBuilder<Value> | undefined,
+    OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
+  > {
   /**
    * The phantom value type of the option for TypeScript
    */
@@ -1216,8 +1206,7 @@ export class ProductBuilder<Elements extends ElementsObj>
       value: { elements: ElementsArrayFromElementsObj<Elements> };
     }
   >
-  implements Defaultable<ObjectType<Elements>, any>
-{
+  implements Defaultable<ObjectType<Elements>, any> {
   readonly typeName: string | undefined;
   readonly elements: Elements;
   constructor(elements: Elements, name?: string) {
@@ -1281,15 +1270,30 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
 // Value type produced for a given variant key + builder
 type EnumValue<K extends string, B extends TypeBuilder<any, any>> =
   IsUnit<B> extends true
-    ? { tag: K }
-    : { tag: K; value: InferTypeOfTypeBuilder<B> };
+  ? { tag: K }
+  : { tag: K; value: InferTypeOfTypeBuilder<B> };
 
-export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
+type VariantConstructor<
+  K extends string,
+  V extends TypeBuilder<any, any>
+> = IsUnit<V> extends true
+  ? EnumValue<K, V>
+  : (value: InferTypeOfTypeBuilder<V>) => EnumValue<K, V>;
+
+type SumBuilderVariantConstructors<Variants extends VariantsObj> = {
+  [K in keyof Variants & string]: VariantConstructor<K, Variants[K]>;
+};
+
+export type SumBuilder<Variants extends VariantsObj> = SumBuilderImpl<Variants> &
+  SumBuilderVariantConstructors<Variants>;
+
+class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
   EnumType<Variants>,
   { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
 > {
   readonly variants: Variants;
   readonly typeName: string | undefined;
+
   constructor(variants: Variants, name?: string) {
     function variantsArrayFromVariantsObj<Variants extends VariantsObj>(
       variants: Variants
@@ -1299,13 +1303,54 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
         algebraicType: value.algebraicType,
       }));
     }
+
     super(
       AlgebraicType.Sum({
         variants: variantsArrayFromVariantsObj(variants),
       })
     );
+
     this.variants = variants;
     this.typeName = name;
+
+    // ---- Runtime unit detection ----
+    // Adjust this to your real shape if needed.
+    // From your code, you have `value.algebraicType` available.
+    function isUnitRuntime(v: any): boolean {
+      // common patterns — tweak as necessary:
+      if (!v || !v.algebraicType) return false;
+      const t = v.algebraicType;
+      return t.tag === 'Unit' || t.kind === 'Unit' || t.type === 'Unit';
+    }
+
+    // wire dynamic per-variant methods
+    // e.g. mySumBuilder.Foo(value)
+    for (const key of Object.keys(variants) as Array<keyof Variants & string>) {
+      const variant = variants[key];
+
+      if (isUnitRuntime(variant)) {
+        // Unit: expose a read-only VALUE (no call)
+        const constant = this.create(key as any) as EnumValue<typeof key, Variants[typeof key]>;
+        Object.defineProperty(this, key, {
+          value: constant,
+          writable: false,
+          enumerable: true,
+          configurable: false,
+        });
+      } else {
+        // Payload: expose a function(value) -> EnumValue
+        const fn = ((value: any) => this.create(key as any, value)) as VariantConstructor<
+          typeof key & string,
+          Variants[typeof key]
+        >;
+        Object.defineProperty(this, key, {
+          value: fn,
+          writable: false,
+          enumerable: true,
+          configurable: false,
+        });
+      }
+    }
   }
 
   /**
@@ -1313,17 +1358,13 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
    * - Unit variants: create('bar')
    * - Payload variants: create('foo', value)
    */
-  create<K extends keyof Variants & string>(
-    ...args: IsUnit<Variants[K]> extends true
-      ? [tag: K] // unit variant: only the tag
-      : [tag: K, value: InferTypeOfTypeBuilder<Variants[K]>] // payload variant: tag + value
-  ): EnumValue<K, Variants[K]> {
-    const [tag, value] = args as [K, unknown];
-    // just return the shape, types guarantee correctness
-    return (value === undefined ? { tag } : { tag, value }) as EnumValue<
-      K,
-      Variants[K]
-    >;
+  private create<K extends keyof Variants & string>(tag: K): EnumValue<K, Variants[K]>;
+  private create<K extends keyof Variants & string>(
+    tag: K,
+    value: InferTypeOfTypeBuilder<Variants[K]>
+  ): EnumValue<K, Variants[K]>;
+  private create(tag: string, value?: unknown) {
+    return (value === undefined ? { tag } : { tag, value });
   }
 
   default(
@@ -1339,24 +1380,30 @@ export class SumBuilder<Variants extends VariantsObj> extends TypeBuilder<
   }
 }
 
-export class SimpleSumBuilder<Variants extends SimpleVariantsObj>
-  extends SumBuilder<Variants>
+export const SumBuilder: {
+  new <Variants extends VariantsObj>(
+    variants: Variants,
+    name?: string
+  ): SumBuilderImpl<Variants> & SumBuilderVariantConstructors<Variants>;
+} = SumBuilderImpl as any;
+
+class SimpleSumBuilderImpl<Variants extends SimpleVariantsObj>
+  extends SumBuilderImpl<Variants>
   implements
-    Indexable<
-      EnumType<Variants>,
-      {
-        tag: 'Sum';
-        value: { variants: VariantsArrayFromVariantsObj<Variants> };
-      }
-    >,
-    PrimaryKeyable<
-      EnumType<Variants>,
-      {
-        tag: 'Sum';
-        value: { variants: VariantsArrayFromVariantsObj<Variants> };
-      }
-    >
-{
+  Indexable<
+    EnumType<Variants>,
+    {
+      tag: 'Sum';
+      value: { variants: VariantsArrayFromVariantsObj<Variants> };
+    }
+  >,
+  PrimaryKeyable<
+    EnumType<Variants>,
+    {
+      tag: 'Sum';
+      value: { variants: VariantsArrayFromVariantsObj<Variants> };
+    }
+  > {
   index(): SimpleSumColumnBuilder<
     Variants,
     SetField<DefaultMetadata, 'indexType', 'btree'>
@@ -1389,14 +1436,23 @@ export class SimpleSumBuilder<Variants extends SimpleVariantsObj>
   }
 }
 
+export const SimpleSumBuilder: {
+  new <Variants extends SimpleVariantsObj>(
+    variants: Variants,
+    name?: string
+  ): SimpleSumBuilderImpl<Variants> & SumBuilderVariantConstructors<Variants>;
+} = SimpleSumBuilderImpl as any;
+
+export type SimpleSumBuilder<Variants extends SimpleVariantsObj> =
+  SimpleSumBuilderImpl<Variants> & SumBuilderVariantConstructors<Variants>;
+
 export class IdentityBuilder
   extends TypeBuilder<Identity, IdentityAlgebraicType>
   implements
-    Indexable<Identity, IdentityAlgebraicType>,
-    Uniqueable<Identity, IdentityAlgebraicType>,
-    PrimaryKeyable<Identity, IdentityAlgebraicType>,
-    Defaultable<Identity, IdentityAlgebraicType>
-{
+  Indexable<Identity, IdentityAlgebraicType>,
+  Uniqueable<Identity, IdentityAlgebraicType>,
+  PrimaryKeyable<Identity, IdentityAlgebraicType>,
+  Defaultable<Identity, IdentityAlgebraicType> {
   constructor() {
     super(Identity.getAlgebraicType());
   }
@@ -1451,11 +1507,10 @@ export class IdentityBuilder
 export class ConnectionIdBuilder
   extends TypeBuilder<ConnectionId, ConnectionIdAlgebraicType>
   implements
-    Indexable<ConnectionId, ConnectionIdAlgebraicType>,
-    Uniqueable<ConnectionId, ConnectionIdAlgebraicType>,
-    PrimaryKeyable<ConnectionId, ConnectionIdAlgebraicType>,
-    Defaultable<ConnectionId, ConnectionIdAlgebraicType>
-{
+  Indexable<ConnectionId, ConnectionIdAlgebraicType>,
+  Uniqueable<ConnectionId, ConnectionIdAlgebraicType>,
+  PrimaryKeyable<ConnectionId, ConnectionIdAlgebraicType>,
+  Defaultable<ConnectionId, ConnectionIdAlgebraicType> {
   constructor() {
     super(ConnectionId.getAlgebraicType());
   }
@@ -1514,11 +1569,10 @@ export class ConnectionIdBuilder
 export class TimestampBuilder
   extends TypeBuilder<Timestamp, TimestampAlgebraicType>
   implements
-    Indexable<Timestamp, TimestampAlgebraicType>,
-    Uniqueable<Timestamp, TimestampAlgebraicType>,
-    PrimaryKeyable<Timestamp, TimestampAlgebraicType>,
-    Defaultable<Timestamp, TimestampAlgebraicType>
-{
+  Indexable<Timestamp, TimestampAlgebraicType>,
+  Uniqueable<Timestamp, TimestampAlgebraicType>,
+  PrimaryKeyable<Timestamp, TimestampAlgebraicType>,
+  Defaultable<Timestamp, TimestampAlgebraicType> {
   constructor() {
     super(Timestamp.getAlgebraicType());
   }
@@ -1577,11 +1631,10 @@ export class TimestampBuilder
 export class TimeDurationBuilder
   extends TypeBuilder<TimeDuration, TimeDurationAlgebraicType>
   implements
-    Indexable<TimeDuration, TimeDurationAlgebraicType>,
-    Uniqueable<TimeDuration, TimeDurationAlgebraicType>,
-    PrimaryKeyable<TimeDuration, TimeDurationAlgebraicType>,
-    Defaultable<TimeDuration, TimeDurationAlgebraicType>
-{
+  Indexable<TimeDuration, TimeDurationAlgebraicType>,
+  Uniqueable<TimeDuration, TimeDurationAlgebraicType>,
+  PrimaryKeyable<TimeDuration, TimeDurationAlgebraicType>,
+  Defaultable<TimeDuration, TimeDurationAlgebraicType> {
   constructor() {
     super(TimeDuration.getAlgebraicType());
   }
@@ -1689,17 +1742,24 @@ export class ColumnBuilder<
     this.typeBuilder = typeBuilder;
     this.columnMetadata = metadata;
   }
+
+  serialize(writer: BinaryWriter, value: Type): void {
+    AlgebraicType.serializeValue(writer, this.typeBuilder.algebraicType, value);
+  }
+
+  deserialize(reader: BinaryReader): Type {
+    return AlgebraicType.deserializeValue(reader, this.typeBuilder.algebraicType);
+  }
 }
 
 export class U8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
   extends ColumnBuilder<number, AlgebraicTypeVariants.U8, M>
   implements
-    Indexable<number, AlgebraicTypeVariants.U8>,
-    Uniqueable<number, AlgebraicTypeVariants.U8>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.U8>,
-    AutoIncrementable<number, AlgebraicTypeVariants.U8>,
-    Defaultable<number, AlgebraicTypeVariants.U8>
-{
+  Indexable<number, AlgebraicTypeVariants.U8>,
+  Uniqueable<number, AlgebraicTypeVariants.U8>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.U8>,
+  AutoIncrementable<number, AlgebraicTypeVariants.U8>,
+  Defaultable<number, AlgebraicTypeVariants.U8> {
   index(): U8ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1741,16 +1801,15 @@ export class U8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
 }
 
 export class U16ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.U16, M>
   implements
-    Indexable<number, AlgebraicTypeVariants.U16>,
-    Uniqueable<number, AlgebraicTypeVariants.U16>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.U16>,
-    AutoIncrementable<number, AlgebraicTypeVariants.U16>,
-    Defaultable<number, AlgebraicTypeVariants.U16>
-{
+  Indexable<number, AlgebraicTypeVariants.U16>,
+  Uniqueable<number, AlgebraicTypeVariants.U16>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.U16>,
+  AutoIncrementable<number, AlgebraicTypeVariants.U16>,
+  Defaultable<number, AlgebraicTypeVariants.U16> {
   index(): U16ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1794,16 +1853,15 @@ export class U16ColumnBuilder<
 }
 
 export class U32ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.U32, M>
   implements
-    Indexable<number, AlgebraicTypeVariants.U32>,
-    Uniqueable<number, AlgebraicTypeVariants.U32>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.U32>,
-    AutoIncrementable<number, AlgebraicTypeVariants.U32>,
-    Defaultable<number, AlgebraicTypeVariants.U32>
-{
+  Indexable<number, AlgebraicTypeVariants.U32>,
+  Uniqueable<number, AlgebraicTypeVariants.U32>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.U32>,
+  AutoIncrementable<number, AlgebraicTypeVariants.U32>,
+  Defaultable<number, AlgebraicTypeVariants.U32> {
   index(): U32ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1847,16 +1905,15 @@ export class U32ColumnBuilder<
 }
 
 export class U64ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.U64, M>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.U64>,
-    Uniqueable<bigint, AlgebraicTypeVariants.U64>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.U64>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.U64>,
-    Defaultable<bigint, AlgebraicTypeVariants.U64>
-{
+  Indexable<bigint, AlgebraicTypeVariants.U64>,
+  Uniqueable<bigint, AlgebraicTypeVariants.U64>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.U64>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.U64>,
+  Defaultable<bigint, AlgebraicTypeVariants.U64> {
   index(): U64ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1900,16 +1957,15 @@ export class U64ColumnBuilder<
 }
 
 export class U128ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.U128, M>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.U128>,
-    Uniqueable<bigint, AlgebraicTypeVariants.U128>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.U128>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.U128>,
-    Defaultable<bigint, AlgebraicTypeVariants.U128>
-{
+  Indexable<bigint, AlgebraicTypeVariants.U128>,
+  Uniqueable<bigint, AlgebraicTypeVariants.U128>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.U128>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.U128>,
+  Defaultable<bigint, AlgebraicTypeVariants.U128> {
   index(): U128ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -1953,16 +2009,15 @@ export class U128ColumnBuilder<
 }
 
 export class U256ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.U256, M>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.U256>,
-    Uniqueable<bigint, AlgebraicTypeVariants.U256>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.U256>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.U256>,
-    Defaultable<bigint, AlgebraicTypeVariants.U256>
-{
+  Indexable<bigint, AlgebraicTypeVariants.U256>,
+  Uniqueable<bigint, AlgebraicTypeVariants.U256>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.U256>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.U256>,
+  Defaultable<bigint, AlgebraicTypeVariants.U256> {
   index(): U256ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2008,12 +2063,11 @@ export class U256ColumnBuilder<
 export class I8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
   extends ColumnBuilder<number, AlgebraicTypeVariants.I8, M>
   implements
-    Indexable<number, AlgebraicTypeVariants.I8>,
-    Uniqueable<number, AlgebraicTypeVariants.I8>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.I8>,
-    AutoIncrementable<number, AlgebraicTypeVariants.I8>,
-    Defaultable<number, AlgebraicTypeVariants.I8>
-{
+  Indexable<number, AlgebraicTypeVariants.I8>,
+  Uniqueable<number, AlgebraicTypeVariants.I8>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.I8>,
+  AutoIncrementable<number, AlgebraicTypeVariants.I8>,
+  Defaultable<number, AlgebraicTypeVariants.I8> {
   index(): I8ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2055,16 +2109,15 @@ export class I8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
 }
 
 export class I16ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.I16, M>
   implements
-    Indexable<number, AlgebraicTypeVariants.I16>,
-    Uniqueable<number, AlgebraicTypeVariants.I16>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.I16>,
-    AutoIncrementable<number, AlgebraicTypeVariants.I16>,
-    Defaultable<number, AlgebraicTypeVariants.I16>
-{
+  Indexable<number, AlgebraicTypeVariants.I16>,
+  Uniqueable<number, AlgebraicTypeVariants.I16>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.I16>,
+  AutoIncrementable<number, AlgebraicTypeVariants.I16>,
+  Defaultable<number, AlgebraicTypeVariants.I16> {
   index(): I16ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2108,16 +2161,15 @@ export class I16ColumnBuilder<
 }
 
 export class I32ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.I32, M>
   implements
-    Indexable<number, AlgebraicTypeVariants.I32>,
-    Uniqueable<number, AlgebraicTypeVariants.I32>,
-    PrimaryKeyable<number, AlgebraicTypeVariants.I32>,
-    AutoIncrementable<number, AlgebraicTypeVariants.I32>,
-    Defaultable<number, AlgebraicTypeVariants.I32>
-{
+  Indexable<number, AlgebraicTypeVariants.I32>,
+  Uniqueable<number, AlgebraicTypeVariants.I32>,
+  PrimaryKeyable<number, AlgebraicTypeVariants.I32>,
+  AutoIncrementable<number, AlgebraicTypeVariants.I32>,
+  Defaultable<number, AlgebraicTypeVariants.I32> {
   index(): I32ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2161,16 +2213,15 @@ export class I32ColumnBuilder<
 }
 
 export class I64ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.I64, M>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.I64>,
-    Uniqueable<bigint, AlgebraicTypeVariants.I64>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.I64>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.I64>,
-    Defaultable<bigint, AlgebraicTypeVariants.I64>
-{
+  Indexable<bigint, AlgebraicTypeVariants.I64>,
+  Uniqueable<bigint, AlgebraicTypeVariants.I64>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.I64>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.I64>,
+  Defaultable<bigint, AlgebraicTypeVariants.I64> {
   index(): I64ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2214,16 +2265,15 @@ export class I64ColumnBuilder<
 }
 
 export class I128ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.I128, M>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.I128>,
-    Uniqueable<bigint, AlgebraicTypeVariants.I128>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.I128>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.I128>,
-    Defaultable<bigint, AlgebraicTypeVariants.I128>
-{
+  Indexable<bigint, AlgebraicTypeVariants.I128>,
+  Uniqueable<bigint, AlgebraicTypeVariants.I128>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.I128>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.I128>,
+  Defaultable<bigint, AlgebraicTypeVariants.I128> {
   index(): I128ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2267,16 +2317,15 @@ export class I128ColumnBuilder<
 }
 
 export class I256ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.I256, M>
   implements
-    Indexable<bigint, AlgebraicTypeVariants.I256>,
-    Uniqueable<bigint, AlgebraicTypeVariants.I256>,
-    PrimaryKeyable<bigint, AlgebraicTypeVariants.I256>,
-    AutoIncrementable<bigint, AlgebraicTypeVariants.I256>,
-    Defaultable<bigint, AlgebraicTypeVariants.I256>
-{
+  Indexable<bigint, AlgebraicTypeVariants.I256>,
+  Uniqueable<bigint, AlgebraicTypeVariants.I256>,
+  PrimaryKeyable<bigint, AlgebraicTypeVariants.I256>,
+  AutoIncrementable<bigint, AlgebraicTypeVariants.I256>,
+  Defaultable<bigint, AlgebraicTypeVariants.I256> {
   index(): I256ColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2320,11 +2369,10 @@ export class I256ColumnBuilder<
 }
 
 export class F32ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.F32, M>
-  implements Defaultable<number, AlgebraicTypeVariants.F32>
-{
+  implements Defaultable<number, AlgebraicTypeVariants.F32> {
   default(
     value: number
   ): F32ColumnBuilder<SetField<M, 'defaultValue', number>> {
@@ -2338,11 +2386,10 @@ export class F32ColumnBuilder<
 }
 
 export class F64ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.F64, M>
-  implements Defaultable<number, AlgebraicTypeVariants.F64>
-{
+  implements Defaultable<number, AlgebraicTypeVariants.F64> {
   default(
     value: number
   ): F64ColumnBuilder<SetField<M, 'defaultValue', number>> {
@@ -2356,15 +2403,14 @@ export class F64ColumnBuilder<
 }
 
 export class BoolColumnBuilder<
-    M extends ColumnMetadata<boolean> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<boolean> = DefaultMetadata,
+>
   extends ColumnBuilder<boolean, AlgebraicTypeVariants.Bool, M>
   implements
-    Indexable<boolean, AlgebraicTypeVariants.Bool>,
-    Uniqueable<boolean, AlgebraicTypeVariants.Bool>,
-    PrimaryKeyable<boolean, AlgebraicTypeVariants.Bool>,
-    Defaultable<boolean, AlgebraicTypeVariants.Bool>
-{
+  Indexable<boolean, AlgebraicTypeVariants.Bool>,
+  Uniqueable<boolean, AlgebraicTypeVariants.Bool>,
+  PrimaryKeyable<boolean, AlgebraicTypeVariants.Bool>,
+  Defaultable<boolean, AlgebraicTypeVariants.Bool> {
   index(): BoolColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2402,15 +2448,14 @@ export class BoolColumnBuilder<
 }
 
 export class StringColumnBuilder<
-    M extends ColumnMetadata<string> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<string> = DefaultMetadata,
+>
   extends ColumnBuilder<string, AlgebraicTypeVariants.String, M>
   implements
-    Indexable<string, AlgebraicTypeVariants.String>,
-    Uniqueable<string, AlgebraicTypeVariants.String>,
-    PrimaryKeyable<string, AlgebraicTypeVariants.String>,
-    Defaultable<string, AlgebraicTypeVariants.String>
-{
+  Indexable<string, AlgebraicTypeVariants.String>,
+  Uniqueable<string, AlgebraicTypeVariants.String>,
+  PrimaryKeyable<string, AlgebraicTypeVariants.String>,
+  Defaultable<string, AlgebraicTypeVariants.String> {
   index(): StringColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2448,22 +2493,21 @@ export class StringColumnBuilder<
 }
 
 export class ArrayColumnBuilder<
-    Element extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      Array<InferTypeOfTypeBuilder<Element>>
-    > = DefaultMetadata,
-  >
+  Element extends TypeBuilder<any, any>,
+  M extends ColumnMetadata<
+    Array<InferTypeOfTypeBuilder<Element>>
+  > = DefaultMetadata,
+>
   extends ColumnBuilder<
     Array<InferTypeOfTypeBuilder<Element>>,
     { tag: 'Array'; value: InferSpacetimeTypeOfTypeBuilder<Element> },
     M
   >
   implements
-    Defaultable<
-      Array<InferTypeOfTypeBuilder<Element>>,
-      AlgebraicTypeVariants.Array
-    >
-{
+  Defaultable<
+    Array<InferTypeOfTypeBuilder<Element>>,
+    AlgebraicTypeVariants.Array
+  > {
   default(
     value: Array<InferTypeOfTypeBuilder<Element>>
   ): ArrayColumnBuilder<
@@ -2495,22 +2539,21 @@ export class ByteArrayColumnBuilder<
 }
 
 export class OptionColumnBuilder<
-    Value extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      InferTypeOfTypeBuilder<Value> | undefined
-    > = DefaultMetadata,
-  >
+  Value extends TypeBuilder<any, any>,
+  M extends ColumnMetadata<
+    InferTypeOfTypeBuilder<Value> | undefined
+  > = DefaultMetadata,
+>
   extends ColumnBuilder<
     InferTypeOfTypeBuilder<Value> | undefined,
     OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>,
     M
   >
   implements
-    Defaultable<
-      InferTypeOfTypeBuilder<Value> | undefined,
-      OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
-    >
-{
+  Defaultable<
+    InferTypeOfTypeBuilder<Value> | undefined,
+    OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
+  > {
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined
   ): OptionColumnBuilder<
@@ -2527,9 +2570,9 @@ export class OptionColumnBuilder<
 }
 
 export class ProductColumnBuilder<
-    Elements extends ElementsObj,
-    M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
-  >
+  Elements extends ElementsObj,
+  M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
+>
   extends ColumnBuilder<
     ObjectType<Elements>,
     {
@@ -2538,8 +2581,7 @@ export class ProductColumnBuilder<
     },
     M
   >
-  implements Defaultable<ObjectType<Elements>, AlgebraicTypeVariants.Product>
-{
+  implements Defaultable<ObjectType<Elements>, AlgebraicTypeVariants.Product> {
   default(
     value: ObjectType<Elements>
   ): ProductColumnBuilder<
@@ -2554,16 +2596,15 @@ export class ProductColumnBuilder<
 }
 
 export class SumColumnBuilder<
-    Variants extends VariantsObj,
-    M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
-  >
+  Variants extends VariantsObj,
+  M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
+>
   extends ColumnBuilder<
     EnumType<Variants>,
     { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } },
     M
   >
-  implements Defaultable<EnumType<Variants>, AlgebraicTypeVariants.Sum>
-{
+  implements Defaultable<EnumType<Variants>, AlgebraicTypeVariants.Sum> {
   default(
     value: EnumType<Variants>
   ): SumColumnBuilder<
@@ -2578,14 +2619,13 @@ export class SumColumnBuilder<
 }
 
 export class SimpleSumColumnBuilder<
-    Variants extends VariantsObj,
-    M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
-  >
+  Variants extends VariantsObj,
+  M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
+>
   extends SumColumnBuilder<Variants, M>
   implements
-    Indexable<EnumType<Variants>, AlgebraicTypeVariants.Sum>,
-    PrimaryKeyable<EnumType<Variants>, AlgebraicTypeVariants.Sum>
-{
+  Indexable<EnumType<Variants>, AlgebraicTypeVariants.Sum>,
+  PrimaryKeyable<EnumType<Variants>, AlgebraicTypeVariants.Sum> {
   index(): SimpleSumColumnBuilder<
     Variants,
     SetField<DefaultMetadata, 'indexType', 'btree'>
@@ -2619,15 +2659,14 @@ export class SimpleSumColumnBuilder<
 }
 
 export class IdentityColumnBuilder<
-    M extends ColumnMetadata<Identity> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<Identity> = DefaultMetadata,
+>
   extends ColumnBuilder<Identity, IdentityAlgebraicType, M>
   implements
-    Indexable<Identity, IdentityAlgebraicType>,
-    Uniqueable<Identity, IdentityAlgebraicType>,
-    PrimaryKeyable<Identity, IdentityAlgebraicType>,
-    Defaultable<Identity, IdentityAlgebraicType>
-{
+  Indexable<Identity, IdentityAlgebraicType>,
+  Uniqueable<Identity, IdentityAlgebraicType>,
+  PrimaryKeyable<Identity, IdentityAlgebraicType>,
+  Defaultable<Identity, IdentityAlgebraicType> {
   index(): IdentityColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2663,15 +2702,14 @@ export class IdentityColumnBuilder<
 }
 
 export class ConnectionIdColumnBuilder<
-    M extends ColumnMetadata<ConnectionId> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<ConnectionId> = DefaultMetadata,
+>
   extends ColumnBuilder<ConnectionId, ConnectionIdAlgebraicType, M>
   implements
-    Indexable<ConnectionId, ConnectionIdAlgebraicType>,
-    Uniqueable<ConnectionId, ConnectionIdAlgebraicType>,
-    PrimaryKeyable<ConnectionId, ConnectionIdAlgebraicType>,
-    Defaultable<ConnectionId, ConnectionIdAlgebraicType>
-{
+  Indexable<ConnectionId, ConnectionIdAlgebraicType>,
+  Uniqueable<ConnectionId, ConnectionIdAlgebraicType>,
+  PrimaryKeyable<ConnectionId, ConnectionIdAlgebraicType>,
+  Defaultable<ConnectionId, ConnectionIdAlgebraicType> {
   index(): ConnectionIdColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2707,15 +2745,14 @@ export class ConnectionIdColumnBuilder<
 }
 
 export class TimestampColumnBuilder<
-    M extends ColumnMetadata<Timestamp> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<Timestamp> = DefaultMetadata,
+>
   extends ColumnBuilder<Timestamp, TimestampAlgebraicType, M>
   implements
-    Indexable<Timestamp, TimestampAlgebraicType>,
-    Uniqueable<Timestamp, TimestampAlgebraicType>,
-    PrimaryKeyable<Timestamp, TimestampAlgebraicType>,
-    Defaultable<Timestamp, TimestampAlgebraicType>
-{
+  Indexable<Timestamp, TimestampAlgebraicType>,
+  Uniqueable<Timestamp, TimestampAlgebraicType>,
+  PrimaryKeyable<Timestamp, TimestampAlgebraicType>,
+  Defaultable<Timestamp, TimestampAlgebraicType> {
   index(): TimestampColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2751,15 +2788,14 @@ export class TimestampColumnBuilder<
 }
 
 export class TimeDurationColumnBuilder<
-    M extends ColumnMetadata<TimeDuration> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<TimeDuration> = DefaultMetadata,
+>
   extends ColumnBuilder<TimeDuration, TimeDurationAlgebraicType, M>
   implements
-    Indexable<TimeDuration, TimeDurationAlgebraicType>,
-    Uniqueable<TimeDuration, TimeDurationAlgebraicType>,
-    PrimaryKeyable<TimeDuration, TimeDurationAlgebraicType>,
-    Defaultable<TimeDuration, TimeDurationAlgebraicType>
-{
+  Indexable<TimeDuration, TimeDurationAlgebraicType>,
+  Uniqueable<TimeDuration, TimeDurationAlgebraicType>,
+  PrimaryKeyable<TimeDuration, TimeDurationAlgebraicType>,
+  Defaultable<TimeDuration, TimeDurationAlgebraicType> {
   index(): TimeDurationColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
     algorithm: N
@@ -2815,7 +2851,7 @@ interface EnumFn {
   <Case extends string>(
     name: string,
     cases: readonly [Case, ...Case[]]
-  ): SimpleSumBuilder<Record<Case, UnitBuilder>>;
+  ): SimpleSumBuilderImpl<Record<Case, UnitBuilder>>;
 
   /**
    * Creates an empty simple sum type (no cases, equivalent to `never`).
@@ -2825,7 +2861,7 @@ interface EnumFn {
    * t.enum("Never", []);
    * ```
    */
-  (name: string, cases: []): SimpleSumBuilder<Record<never, UnitBuilder>>;
+  (name: string, cases: []): SimpleSumBuilderImpl<Record<never, UnitBuilder>>;
 
   /**
    * Creates a full sum type, where each case can have a payload.
@@ -2859,7 +2895,7 @@ const enumImpl = ((nameOrObj: any, maybeObj?: any) => {
     for (const variant of obj) {
       simpleVariantsObj[variant] = new ProductBuilder({});
     }
-    return new SimpleSumBuilder(simpleVariantsObj, name);
+    return new SimpleSumBuilderImpl(simpleVariantsObj, name);
   }
 
   // Regular sum (object form)

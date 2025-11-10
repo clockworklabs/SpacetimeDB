@@ -39,7 +39,7 @@ fn main() -> anyhow::Result<()> {
             if filename == "index.ts" {
                 return Ok(());
             }
-            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../index";"#);
+            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../lib/type_builders";"#);
 
             // Elide types which are related to client-side only things
             let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");

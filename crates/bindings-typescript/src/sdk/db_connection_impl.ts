@@ -337,7 +337,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       emitter: handleEmitter,
     });
     this.#sendMessage(
-      ClientMessage.create('SubscribeMulti', {
+      ClientMessage.SubscribeMulti({
         queryStrings: querySql,
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
@@ -350,7 +350,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
 
   unregisterSubscription(queryId: number): void {
     this.#sendMessage(
-      ClientMessage.create('UnsubscribeMulti', {
+      ClientMessage.UnsubscribeMulti({
         queryId: { id: queryId },
         // The TypeScript SDK doesn't currently track `request_id`s,
         // so always use 0.
@@ -869,7 +869,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     argsBuffer: Uint8Array,
     flags: CallReducerFlags
   ): void {
-    const message = ClientMessage.create('CallReducer', {
+    const message = ClientMessage.CallReducer({
       reducer: reducerName,
       args: argsBuffer,
       // The TypeScript SDK doesn't currently track `request_id`s,

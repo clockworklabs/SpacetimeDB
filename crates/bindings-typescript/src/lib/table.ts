@@ -247,10 +247,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       let algorithm: Infer<typeof RawIndexAlgorithm>;
       switch (algo) {
         case 'btree':
-          algorithm = RawIndexAlgorithm.create('BTree', [id]);
+          algorithm = RawIndexAlgorithm.BTree([id]);
           break;
         case 'direct':
-          algorithm = RawIndexAlgorithm.create('Direct', id);
+          algorithm = RawIndexAlgorithm.Direct(id);
           break;
       }
       indexes.push({

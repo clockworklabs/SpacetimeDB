@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import RawUniqueConstraintDataV9 from './raw_unique_constraint_data_v_9_type';
 
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.

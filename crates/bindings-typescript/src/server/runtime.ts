@@ -182,7 +182,7 @@ export const hooks: ModuleHooks = {
     AlgebraicType.serializeValue(
       writer,
       RawModuleDef.algebraicType,
-      RawModuleDef.create('V9', MODULE_DEF)
+      RawModuleDef.V9(MODULE_DEF)
     );
     return writer.getBuffer();
   },

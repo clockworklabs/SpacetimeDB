@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 
 export default __t.object('RawUniqueConstraintDataV9', {
   columns: __t.array(__t.u16()),

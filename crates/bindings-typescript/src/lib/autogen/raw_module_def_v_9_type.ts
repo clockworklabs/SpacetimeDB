@@ -8,7 +8,7 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from '../../index';
+} from '../../lib/type_builders';
 import Typespace from './typespace_type';
 import RawTableDefV9 from './raw_table_def_v_9_type';
 import RawReducerDefV9 from './raw_reducer_def_v_9_type';
