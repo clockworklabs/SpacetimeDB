@@ -30,7 +30,7 @@ use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
@@ -622,6 +622,10 @@ impl CommittedState {
         // timetravel queries may benefit from seeing all inputs, even if
         // the database state did not change.
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
+    }
+
+    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId) {
+        self.read_sets.remove_view(view_id)
     }
 
     pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {

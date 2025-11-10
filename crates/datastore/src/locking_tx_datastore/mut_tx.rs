@@ -109,6 +109,14 @@ impl ViewReadSets {
         self.tables.entry(table_id).or_default().insert_scan(call);
     }
 
+    /// Removes keys for `view_id` from the read set
+    pub fn remove_view(&mut self, view_id: ViewId) {
+        self.tables.retain(|_, readset| {
+            readset.remove_view(view_id);
+            !readset.is_empty()
+        });
+    }
+
     /// Merge or union read sets together
     pub fn merge(&mut self, readset: Self) {
         for (table_id, rs) in readset.tables {
@@ -132,6 +140,16 @@ impl TableReadSet {
     /// Returns the views that perform a full scan of this read set's table
     fn views_for_table_scan(&self) -> impl Iterator<Item = &ViewCallInfo> {
         self.table_scans.iter()
+    }
+
+    /// Is this read set empty?
+    fn is_empty(&self) -> bool {
+        self.table_scans.is_empty()
+    }
+
+    /// Removes keys for `view_id` from the read set
+    fn remove_view(&mut self, view_id: ViewId) {
+        self.table_scans.retain(|info| info.view_id != view_id);
     }
 
     /// Merge or union two read sets for this table
@@ -198,6 +216,12 @@ impl MutTxId {
             .flat_map(|table_id| self.read_sets.views_for_table_scan(table_id))
             .collect::<HashSet<_>>()
             .into_iter()
+    }
+
+    /// Removes keys for `view_id` from the committed read set.
+    /// Used for dropping views in an auto-migration.
+    pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
+        self.committed_state_write_lock.drop_view_from_read_sets(view_id)
     }
 }
 
@@ -369,6 +393,8 @@ impl MutTxId {
         self.drop_st_view(view_id)?;
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
+        self.drop_st_view_sub(view_id)?;
+        self.drop_view_from_committed_read_set(view_id);
 
         // Drop the view's backing table if materialized
         if let StViewRow {
@@ -635,6 +661,11 @@ impl MutTxId {
     /// Drops the rows in `st_view_column` for this `view_id`
     fn drop_st_view_column(&mut self, view_id: ViewId) -> Result<()> {
         self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
+    }
+
+    /// Drops the rows in `st_view_sub` for this `view_id`
+    fn drop_st_view_sub(&mut self, view_id: ViewId) -> Result<()> {
+        self.delete_col_eq(ST_VIEW_SUB_ID, StViewSubFields::ViewId.col_id(), &view_id.into())
     }
 
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
