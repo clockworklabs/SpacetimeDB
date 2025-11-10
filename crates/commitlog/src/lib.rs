@@ -20,6 +20,7 @@ mod varint;
 pub use crate::{
     commit::{Commit, StoredCommit},
     payload::{Decoder, Encode},
+    repo::fs::SizeOnDisk,
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
@@ -89,6 +90,12 @@ pub struct Options {
         serde(default = "Options::default_offset_index_require_segment_fsync")
     )]
     pub offset_index_require_segment_fsync: bool,
+    /// If `true`, preallocate the disk space for commitlog segments, up to the
+    /// `max_segment_size`.
+    ///
+    /// Has no effect if the `fallocate` feature is not enabled.
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_preallocate_segments"))]
+    pub preallocate_segments: bool,
 }
 
 impl Default for Options {
@@ -102,6 +109,7 @@ impl Options {
     pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::MAX;
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
+    pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
@@ -109,6 +117,7 @@ impl Options {
         max_records_in_commit: Self::default_max_records_in_commit(),
         offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
         offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
+        preallocate_segments: Self::default_preallocate_segments(),
     };
 
     pub const fn default_log_format_version() -> u8 {
@@ -129,6 +138,10 @@ impl Options {
 
     pub const fn default_offset_index_require_segment_fsync() -> bool {
         Self::DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC
+    }
+
+    pub const fn default_preallocate_segments() -> bool {
+        Self::DEFAULT_PREALLOCATE_SEGMENTS
     }
 
     /// Compute the length in bytes of an offset index based on the settings in
@@ -158,6 +171,13 @@ impl<T> Commitlog<T> {
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
     pub fn open(root: CommitLogDir, opts: Options, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
+        #[cfg(not(feature = "fallocate"))]
+        if opts.preallocate_segments {
+            log::warn!(
+                "`preallocate_segments` enabled but not supported by this build. commitlog-dir={}",
+                root.display()
+            );
+        }
         let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
 
         Ok(Self {
@@ -356,7 +376,7 @@ impl<T> Commitlog<T> {
     }
 
     /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         let inner = self.inner.read().unwrap();
         inner.repo.size_on_disk()
     }

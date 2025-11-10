@@ -23,6 +23,7 @@ use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
+use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
@@ -1094,6 +1095,9 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     let message_log_size = DB_METRICS
         .message_log_size
         .with_label_values(&replica_ctx.database_identity);
+    let message_log_blocks = DB_METRICS
+        .message_log_blocks
+        .with_label_values(&replica_ctx.database_identity);
     let module_log_file_size = DB_METRICS
         .module_log_file_size
         .with_label_values(&replica_ctx.database_identity);
@@ -1106,9 +1110,15 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
             ctx.total_disk_usage()
         });
         if let Ok(disk_usage) = disk_usage_future.await {
-            if let Some(num_bytes) = disk_usage.durability {
-                message_log_size.set(num_bytes as i64);
+            if let Some(SizeOnDisk {
+                total_bytes,
+                total_blocks,
+            }) = disk_usage.durability
+            {
+                message_log_size.set(total_bytes as i64);
+                message_log_blocks.set(total_blocks as i64);
             }
+
             if let Some(num_bytes) = disk_usage.logs {
                 module_log_file_size.set(num_bytes as i64);
             }
