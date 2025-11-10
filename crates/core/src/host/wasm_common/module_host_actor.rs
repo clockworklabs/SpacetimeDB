@@ -4,6 +4,7 @@ use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_lib::Hash;
 use spacetimedb_primitives::ProcedureId;
 use spacetimedb_primitives::TableId;
 use spacetimedb_primitives::ViewFnPtr;
@@ -694,7 +695,13 @@ impl InstanceCommon {
                 )
             }
             Err(ExecutionError::User(err)) => {
-                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                log_reducer_error(
+                    inst.replica_ctx(),
+                    timestamp,
+                    reducer_name,
+                    &err,
+                    &self.info.module_hash,
+                );
                 EventStatus::Failed(err.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -712,7 +719,13 @@ impl InstanceCommon {
                     Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                     Err(err) => {
                         let err = err.to_string();
-                        log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                        log_reducer_error(
+                            inst.replica_ctx(),
+                            timestamp,
+                            reducer_name,
+                            &err,
+                            &self.info.module_hash,
+                        );
                         EventStatus::Failed(err)
                     }
                 }
@@ -1118,8 +1131,19 @@ fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration)
 }
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
-fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
+fn log_reducer_error(
+    replica_ctx: &ReplicaContext,
+    timestamp: Timestamp,
+    reducer: &str,
+    message: &str,
+    module_hash: &Hash,
+) {
     use database_logger::Record;
+
+    WORKER_METRICS
+        .sender_errors
+        .with_label_values(&replica_ctx.database_identity, module_hash, reducer)
+        .inc();
 
     log::info!("reducer returned error: {message}");
 
