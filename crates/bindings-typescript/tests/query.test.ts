@@ -21,12 +21,26 @@ const personTable = table(
   }
 );
 
+const ordersTable = table(
+  { name: 'orders' },
+  {
+    order_id: t.identity(),
+    person_id: t.identity(),
+    item_name: t.string(),
+  }
+);
+
 const schemaDef: UntypedSchemaDef = {
   tables: [
     {
       name: personTable.tableName,
       columns: personTable.rowType.row,
       indexes: personTable.idxs,
+    },
+    {
+      name: ordersTable.tableName,
+      columns: ordersTable.rowType.row,
+      indexes: ordersTable.idxs,
     },
   ],
 };
@@ -113,6 +127,26 @@ describe('TableScan.toSql', () => {
 
     expect(sql).toBe(
       `SELECT * FROM "person" WHERE "person"."id" = 0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
+    );
+  });
+
+  it('renders EXISTS clauses built via existsIn', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = qb
+      .query('person')
+      .existsIn(
+        qb
+          .query('orders')
+          .filter(orderRow => eq(orderRow.item_name, literal('Widget'))),
+        {
+          leftColumns: ['id'] as const,
+          rightColumns: ['person_id'] as const,
+        }
+      )
+      .toSql();
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE EXISTS (SELECT 1 FROM "orders" WHERE ("person"."id" = "orders"."person_id") AND ("orders"."item_name" = 'Widget'))`
     );
   });
 });
