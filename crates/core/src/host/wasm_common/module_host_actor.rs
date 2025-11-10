@@ -633,7 +633,7 @@ impl InstanceCommon {
         };
 
         // Only re-evaluate and update views if the reducer's execution was successful
-        let (out, trapped) = if !trapped && !matches!(status, EventStatus::Committed(_)) {
+        let (out, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
             self.call_views_with_tx(tx, caller_identity, &info.module_def, inst, timestamp)
         } else {
             (ViewCallResult::default(tx), trapped)
