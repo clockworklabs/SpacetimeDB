@@ -108,11 +108,7 @@ impl Lang for TypeScript {
         }
     }
 
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("Failed to generate table due to validation errors");
-
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 

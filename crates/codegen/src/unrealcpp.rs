@@ -36,7 +36,7 @@ impl UnrealCpp<'_> {
 }
 
 impl Lang for UnrealCpp<'_> {
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let struct_name = type_ref_name(module, table.product_type_ref);
         let self_header = struct_name.clone() + "Table";
 
@@ -57,10 +57,6 @@ impl Lang for UnrealCpp<'_> {
         let handle_cls = format!("U{struct_name}Table"); // "UMessageTable"
         let table_name = table.name.deref().to_string();
         let table_pascal = struct_name.clone();
-
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("table schema should validate");
 
         // Generate unique index classes first
         let product_type = module.typespace_for_generate()[table.product_type_ref].as_product();

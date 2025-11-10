@@ -25,11 +25,10 @@ use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
 use enum_map::EnumMap;
-use hashbrown::Equivalent;
+use hashbrown::{Equivalent, HashMap};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
-use spacetimedb_data_structures::map::HashMap;
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
@@ -38,7 +37,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewId};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
@@ -246,6 +245,12 @@ impl ModuleDef {
         self.views.get(name)
     }
 
+    /// Convenience method to look up a view, possibly by a string, returning its id as well.
+    pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewId, &ViewDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.views.get(name).map(|def| (def.index, def))
+    }
+
     /// Convenience method to look up a reducer, possibly by a string.
     pub fn reducer<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ReducerDef> {
         // If the string IS a valid identifier, we can just look it up.
@@ -288,6 +293,15 @@ impl ModuleDef {
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
         self.procedures.get_index(id.idx()).map(|(_, def)| def)
+    }
+
+    /// Look up a view by its id, panicking if it doesn't exist.
+    pub fn view_by_id(&self, id: ViewId, is_anonymoys: bool) -> &ViewDef {
+        self.views
+            .iter()
+            .find(|(_, def)| def.index == id && def.is_anonymous == is_anonymoys)
+            .expect("view id not found")
+            .1
     }
 
     /// Looks up a lifecycle reducer defined in the module.
@@ -523,6 +537,31 @@ impl From<TableDef> for RawTableDefV9 {
     }
 }
 
+impl From<ViewDef> for TableDef {
+    fn from(def: ViewDef) -> Self {
+        use TableAccess::*;
+        let ViewDef {
+            name,
+            is_public,
+            product_type_ref,
+            return_columns,
+            ..
+        } = def;
+        Self {
+            name,
+            product_type_ref,
+            primary_key: None,
+            columns: return_columns.into_iter().map(ColumnDef::from).collect(),
+            indexes: <_>::default(),
+            constraints: <_>::default(),
+            sequences: <_>::default(),
+            schedule: None,
+            table_type: TableType::User,
+            table_access: if is_public { Public } else { Private },
+        }
+    }
+}
+
 /// A sequence definition for a database table column.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SequenceDef {
@@ -717,6 +756,26 @@ pub struct ColumnDef {
 
     /// The default value of this column, if present.
     pub default_value: Option<AlgebraicValue>,
+}
+
+impl From<ViewColumnDef> for ColumnDef {
+    fn from(def: ViewColumnDef) -> Self {
+        let ViewColumnDef {
+            name,
+            col_id,
+            ty,
+            ty_for_generate,
+            view_name: table_name,
+        } = def;
+        Self {
+            name,
+            col_id,
+            ty,
+            ty_for_generate,
+            table_name,
+            default_value: None,
+        }
+    }
 }
 
 /// A struct representing a validated view column
@@ -1056,6 +1115,11 @@ pub struct ViewDef {
     /// This type does not have access to the `Identity` of the caller.
     pub is_anonymous: bool,
 
+    /// It represents the unique index of this view within the module.
+    /// Module contains separate list for anonymous and non-anonymous views,
+    /// so `is_anonymous` is needed to fully identify the view along with this index.
+    pub index: ViewId,
+
     /// The parameters of the view.
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
@@ -1067,19 +1131,26 @@ pub struct ViewDef {
     pub params_for_generate: ProductTypeDef,
 
     /// The return type of the view.
-    /// Either `T`, `Option<T>`, or `Vec<T>` where `T` is a [`ProductType`].
+    /// Either `Option<T>` or `Vec<T>` where:
     ///
-    /// Here `Option<T>` refers to [`AlgebraicType::option()`] and `Vec<T>` refers to [`AlgebraicType::array()`].
-    ///
-    /// `T` defines the columns of the view.
-    /// `T` will be registered in the module's `Typespace`.
+    /// 1. `T` is a [`ProductType`] containing the columns of the view,
+    /// 2. `T` is registered in the module's typespace,
+    /// 3. `Option<T>` refers to [`AlgebraicType::option()`], and
+    /// 4. `Vec<T>` refers to [`AlgebraicType::array()`]
     pub return_type: AlgebraicType,
 
     /// The return type of the view, formatted for client codegen.
     pub return_type_for_generate: AlgebraicTypeUse,
 
+    /// The single source of truth for the view's columns.
+    ///
+    /// If a view can return only `Option<T>` or `Vec<T>`,
+    /// this is a reference to the inner product type `T`.
+    /// All elements of `T` must have names.
+    pub product_type_ref: AlgebraicTypeRef,
+
     /// The return columns of this view.
-    /// The same information is stored in `return_type`.
+    /// The same information is stored in `product_type_ref`.
     /// This is just a more convenient-to-access format.
     pub return_columns: Vec<ViewColumnDef>,
 
@@ -1108,14 +1179,13 @@ impl From<ViewDef> for RawViewDefV9 {
             is_anonymous,
             is_public,
             params,
-            params_for_generate: _,
             return_type,
-            return_type_for_generate: _,
-            return_columns: _,
-            param_columns: _,
+            index,
+            ..
         } = val;
         RawViewDefV9 {
             name: name.into(),
+            index: index.into(),
             is_anonymous,
             is_public,
             params,

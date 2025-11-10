@@ -11,7 +11,7 @@ use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
@@ -71,11 +71,7 @@ impl __sdk::InModule for {type_name} {{
             code: output.into_inner(),
         }]
     }
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("Failed to generate table due to validation errors");
-
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let type_ref = table.product_type_ref;
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -201,7 +197,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
             "}",
         );
 
-        if schema.pk().is_some() {
+        if table.primary_key.is_some() {
             let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
             write!(
                 out,
