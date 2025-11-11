@@ -13,7 +13,7 @@
     "generate": "cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path ../../../../modules/quickstart-chat && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --project-path server --server local",
-    "spacetime:publish": "spacetime publish --project-path server --server testnet"
+    "spacetime:publish": "spacetime publish --project-path server --server maincloud"
   },
   "dependencies": {
     "spacetimedb": "workspace:*",
