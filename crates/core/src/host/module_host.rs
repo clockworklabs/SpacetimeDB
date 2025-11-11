@@ -192,7 +192,7 @@ pub struct ModuleFunctionCall {
 impl ModuleFunctionCall {
     pub fn update() -> Self {
         Self {
-            reducer: String::new(),
+            reducer: String::from("update"),
             reducer_id: u32::MAX.into(),
             args: ArgsTuple::nullary(),
         }

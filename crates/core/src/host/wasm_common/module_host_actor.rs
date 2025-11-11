@@ -399,6 +399,8 @@ impl InstanceCommon {
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
         let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
+        let mut energy_quanta_used = FunctionBudget::ZERO;
+        let mut host_execution_duration = Duration::ZERO;
 
         match res {
             Err(e) => {
@@ -416,6 +418,8 @@ impl InstanceCommon {
                     crate::db::update::UpdateResult::EvaluateSubscribedViews => {
                         let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
                         tx = out.tx;
+                        energy_quanta_used = out.energy_used;
+                        host_execution_duration = out.total_duration;
 
                         if trapped || out.outcome != ViewOutcome::Success {
                             let msg = match trapped {
@@ -443,8 +447,8 @@ impl InstanceCommon {
                         caller_connection_id: None,
                         function_call: ModuleFunctionCall::update(),
                         status: EventStatus::Committed(DatabaseUpdate::default()),
-                        energy_quanta_used: FunctionBudget::ZERO.into(),
-                        host_execution_duration: Duration::ZERO,
+                        energy_quanta_used: energy_quanta_used.into(),
+                        host_execution_duration,
                         request_id: None,
                         timer: None,
                     };
@@ -465,7 +469,7 @@ impl InstanceCommon {
         tx: MutTxId,
         inst: &mut I,
     ) -> Result<(ViewCallResult, bool), anyhow::Error> {
-        let views = self.info.module_def.views().cloned().collect::<Vec<_>>();
+        let views = self.info.module_def.views().collect::<Vec<_>>();
         let owner_identity = self.info.owner_identity;
 
         let mut view_calls = Vec::new();
@@ -493,11 +497,11 @@ impl InstanceCommon {
                     view_name: view_name.to_owned().into(),
                     view_id,
                     table_id,
-                    fn_ptr,
+                    fn_ptr: *fn_ptr,
                     caller: owner_identity,
-                    sender: if is_anonymous { None } else { Some(sub.identity.into()) },
+                    sender: if *is_anonymous { None } else { Some(sub.identity.into()) },
                     args: ArgsTuple::nullary(),
-                    row_type: product_type_ref,
+                    row_type: *product_type_ref,
                     timestamp: Timestamp::now(),
                 });
             }

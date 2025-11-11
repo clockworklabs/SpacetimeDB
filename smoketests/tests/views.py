@@ -364,10 +364,6 @@ INSERT INTO player_state (id, level) VALUES (1, 1);
         self.write_module_code(self.TRAPPED_MODULE_CODE_UPDATED)
         with self.assertRaises(Exception):
             self.publish_module(self.database_identity, clear = False)
-        logs = self.logs(100)
-        print("hey")
-        print(logs)
-
 
         # test old module still works
         self.assertSql("SELECT * FROM player", """\
