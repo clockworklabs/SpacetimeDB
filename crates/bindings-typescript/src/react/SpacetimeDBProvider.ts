@@ -40,7 +40,6 @@ export function SpacetimeDBProvider<
     if (!connRef.current) {
       connRef.current = connectionBuilder.build();
     }
-    console.log('HAPPPP');
     // Register callback for onConnect to update state
     const onConnect = (conn: DbConnection) => {
       setState(s => ({

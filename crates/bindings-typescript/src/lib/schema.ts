@@ -39,6 +39,8 @@ import {
   type ViewFn,
   type ViewReturnTypeBuilder,
 } from './views';
+import RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
+import type { Index, IndexOpts } from './indexes';
 
 export type TableNamesOf<S extends UntypedSchemaDef> =
   S['tables'][number]['name'];
@@ -77,7 +79,16 @@ export function tablesToSchema<
         columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
         rowType: schema.rowSpacetimeType,
         // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
-        indexes: [...schema.idxs],
+        indexes: [
+          ...schema.idxs.map(
+            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> =>
+              ({
+                name: idx.name,
+                algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
+                // TODO: columns
+              }) as IndexOpts<any>
+          ),
+        ],
       } as const;
     }) as {
       // preserve tuple indices so the return type matches `[i in keyof T]`
@@ -298,13 +309,13 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  reducer<Params extends ParamsObj | RowObj>(
+  reducer<Params extends ParamsObj>(
     name: string,
     params: Params,
     fn: Reducer<S, Params>
   ): Reducer<S, Params>;
   reducer(name: string, fn: Reducer<S, {}>): Reducer<S, {}>;
-  reducer<Params extends ParamsObj | RowObj>(
+  reducer<Params extends ParamsObj>(
     name: string,
     paramsOrFn: Params | Reducer<S, any>,
     fn?: Reducer<S, Params>

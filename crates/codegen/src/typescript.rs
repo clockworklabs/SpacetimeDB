@@ -128,7 +128,7 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, &product_def.elements, true).unwrap();
+        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true).unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
@@ -418,7 +418,7 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, params, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true).unwrap());
         writeln!(out, "}};");
     }
 }
@@ -442,7 +442,7 @@ fn define_body_for_product(
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true).unwrap());
         writeln!(out, "}});");
     }
     out.newline();
@@ -455,7 +455,7 @@ fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
     writeln!(out, "indexes: [");
     out.indent(1);
     for index_def in iter_indexes(table) {
-        if !index_def.generated() {
+        if index_def.generated() {
             // Skip system-defined indexes
             continue;
         }
@@ -466,7 +466,18 @@ fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
                     let name_camel = field_name.deref().to_case(Case::Camel);
                     (name_camel, field_type)
                 };
-                writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
+                // TODO(cloutiertyler):
+                // The name users supply is actually the accessor name which will be used
+                // in TypeScript to access the index. This will be used verbatim.
+                // This is confusing because it is not the index name and there is
+                // no actual way for the user to set the actual index name.
+                // I think we should standardize: name and accessorName as the way to set
+                // the name and accessor name of an index across all SDKs.
+                if let Some(accessor_name) = &index_def.accessor_name {
+                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
+                } else {
+                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
+                }
                 out.indent(1);
                 for col_id in columns.iter() {
                     writeln!(out, "'{}',", get_name_and_type(col_id).0);
@@ -483,11 +494,35 @@ fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
     }
     out.dedent(1);
     writeln!(out, "],");
+    writeln!(out, "constraints: [");
+    out.indent(1);
+    // Unique constraints
+    for (_, constraint) in &table.constraints {
+        let columns: Vec<_> = constraint
+            .data
+            .unique_columns() // Option<&ColSet>
+            .into_iter() // Iterator over 0 or 1 item (&ColSet)
+            .flat_map(|cs| cs.iter()) // Iterator over the ColIds inside the set
+            .map(|col_id| {
+                let (field_name, _field_type) = &product_def.elements[col_id.idx()];
+                format!("'{}'", field_name)
+            })
+            .collect();
+
+        writeln!(
+            out,
+            "{{ name: '{}', constraint: 'unique', columns: [{}] }},",
+            constraint.name,
+            columns.join(", ")
+        );
+    }
+    out.dedent(1);
+    writeln!(out, "],");
 }
 
 /// e.g.
 /// ```ts
-///   x: __t.f32(),
+///   x: __t.f32().primaryKey(),
 ///   y: __t.f32(),
 ///   fooBar: __t.string(),
 /// ```
@@ -495,22 +530,27 @@ fn write_object_type_builder_fields(
     module: &ModuleDef,
     out: &mut Indenter,
     elements: &[(Identifier, AlgebraicTypeUse)],
+    primary_key: Option<ColId>,
     convert_case: bool,
 ) -> anyhow::Result<()> {
-    for (ident, ty) in elements {
+    for (i,  (ident, ty)) in elements.iter().enumerate() {
         let name = if convert_case {
             ident.deref().to_case(Case::Camel)
         } else {
             ident.deref().into()
         };
 
-        write_type_builder_field(module, out, &name, ty)?;
+        let is_primary_key = match primary_key {
+            Some(pk) => pk.idx() == i,
+            None => false,
+        };
+        write_type_builder_field(module, out, &name, ty, is_primary_key)?;
     }
 
     Ok(())
 }
 
-fn write_type_builder_field(module: &ModuleDef, out: &mut Indenter, name: &str, ty: &AlgebraicTypeUse) -> fmt::Result {
+fn write_type_builder_field(module: &ModuleDef, out: &mut Indenter, name: &str, ty: &AlgebraicTypeUse, is_primary_key: bool) -> fmt::Result {
     // Do we need a getter? (Option/Array only if their inner is a Ref)
     let needs_getter = match ty {
         AlgebraicTypeUse::Ref(_) => true,
@@ -525,12 +565,18 @@ fn write_type_builder_field(module: &ModuleDef, out: &mut Indenter, name: &str, 
         out.indent(1);
         write!(out, "return ");
         write_type_builder(module, out, ty)?;
+        if is_primary_key {
+            write!(out, ".primaryKey()");
+        }
         writeln!(out, ";");
         out.dedent(1);
         writeln!(out, "}},");
     } else {
         write!(out, "{name}: ");
         write_type_builder(module, out, ty)?;
+        if is_primary_key {
+            write!(out, ".primaryKey()");
+        }
         writeln!(out, ",");
     }
 
@@ -605,7 +651,7 @@ fn define_body_for_sum(
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
     write!(out, " = __t.enum(\"{name}\", {{");
-    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, false).unwrap());
+    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false).unwrap());
     writeln!(out, "}});");
     out.newline();
     writeln!(out, "export default {name};");

@@ -1,7 +1,7 @@
 import type { TableNamesOf, UntypedSchemaDef } from '../lib/schema.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
-import { TableCache } from './table_cache.ts';
+import { type TableCache, TableCacheImpl } from './table_cache.ts';
 
 type TableName<SchemaDef> = [SchemaDef] extends [UntypedSchemaDef]
   ? TableNamesOf<SchemaDef>
@@ -119,7 +119,9 @@ export class ClientCache<RemoteModule extends UntypedRemoteModule> {
       return table;
     }
 
-    const newTable = new TableCache<RemoteModule, N>(tableDef);
+    const newTable = new TableCacheImpl<RemoteModule, N>(
+      tableDef
+    ) as TableCache<RemoteModule, N>;
     this.tables.set(name, newTable);
     return newTable;
   }

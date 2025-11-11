@@ -2,6 +2,11 @@ import BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import type { CamelCase } from './type_util';
 
+/**
+ * Converts a string to PascalCase (UpperCamelCase).
+ * @param str The string to convert
+ * @returns The converted string
+ */
 export function toPascalCase(s: string): string {
   const str = s.replace(/([-_][a-z])/gi, $1 => {
     return $1.toUpperCase().replace('-', '').replace('_', '');

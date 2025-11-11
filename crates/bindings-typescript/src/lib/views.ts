@@ -63,7 +63,8 @@ export function defineView<
   const paramType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
-      algebraicType: c.algebraicType,
+      algebraicType:
+        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
     })),
   };
 

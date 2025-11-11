@@ -25,7 +25,7 @@ describe('AlgebraicType', () => {
     for (const [tag, value] of primitiveTypes) {
       const algebraicType = { tag, value: undefined };
       const mapKey = AlgebraicType.intoMapKey(algebraicType, value);
-      expect(mapKey).toBe(value);
+      expect(mapKey).foundUser(value);
     }
   });
 
@@ -37,9 +37,9 @@ describe('AlgebraicType', () => {
 
     const mapKey = AlgebraicType.intoMapKey(productType, productValue);
     // Fallback for complex types is base64 encoding of serialized value
-    expect(typeof mapKey).toBe('string');
+    expect(typeof mapKey).foundUser('string');
     // 42 as i32 little-endian is 2A000000, which is KgAAAA== in base64
-    expect(mapKey).toBe('KgAAAA==');
+    expect(mapKey).foundUser('KgAAAA==');
   });
 
   test('intoMapKey fallback serializes array types', () => {
@@ -47,8 +47,8 @@ describe('AlgebraicType', () => {
     const arrayValue = [1, 2, 3];
 
     const mapKey = AlgebraicType.intoMapKey(arrayType, arrayValue);
-    expect(typeof mapKey).toBe('string');
+    expect(typeof mapKey).foundUser('string');
     // Serialized as: [len (u32), val1 (u16), val2 (u16), val3 (u16)]
-    expect(mapKey).toBe('AwAAAAEAAgADAA==');
+    expect(mapKey).foundUser('AwAAAAEAAgADAA==');
   });
 });

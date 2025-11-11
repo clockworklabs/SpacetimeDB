@@ -1,12 +1,20 @@
 import { EventEmitter } from './event_emitter.ts';
 
 import { stdbLogger } from './logger.ts';
-import type { ComparablePrimitive } from '../';
+import { deepEqual, type ComparablePrimitive } from '../';
 import type { EventContextInterface, TableDefForTableName } from './index.ts';
-import type { RowType, UntypedTableDef } from '../lib/table.ts';
+import type { RowType, TableIndexes, UntypedTableDef } from '../lib/table.ts';
 import type { ClientTableCoreImplementable } from './client_table.ts';
 import type { UntypedRemoteModule } from './spacetime_module.ts';
 import type { TableNamesOf } from '../lib/schema.ts';
+import type {
+  ReadonlyIndex,
+  ReadonlyIndexes,
+  ReadonlyRangedIndex,
+  ReadonlyUniqueIndex,
+  UntypedIndex,
+} from '../lib/indexes.ts';
+import type { Bound } from '../server/range.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -29,10 +37,31 @@ export type PendingCallback = {
   cb: () => void;
 };
 
+// Strict scalar compare for index term values.
+const scalarCompare = (x: any, y: any): number => {
+  if (x === y) return 0;
+  // Compare booleans/numbers/bigints/strings with JS ordering.
+  return x < y ? -1 : 1;
+};
+
+export type TableIndexView<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> = ReadonlyIndexes<
+  TableDefForTableName<RemoteModule, TableName>,
+  TableIndexes<TableDefForTableName<RemoteModule, TableName>>
+>;
+
+export type TableCache<
+  RemoteModule extends UntypedRemoteModule,
+  TableName extends TableNamesOf<RemoteModule>,
+> = TableCacheImpl<RemoteModule, TableName> &
+  TableIndexView<RemoteModule, TableName>;
+
 /**
  * Builder to generate calls to query a `table` in the database
  */
-export class TableCache<
+export class TableCacheImpl<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
 > implements ClientTableCoreImplementable<RemoteModule, TableName>
@@ -54,6 +83,121 @@ export class TableCache<
     this.tableDef = tableDef;
     this.rows = new Map();
     this.emitter = new EventEmitter();
+    // Build indexes
+    const indexesDef = this.tableDef.indexes || {};
+    for (const idx of indexesDef) {
+      const idxDef = idx as UntypedIndex<
+        keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
+      >;
+      const index = this.#makeReadonlyIndex(idxDef);
+      (this as any)[idx.name!] = index;
+    }
+  }
+
+  // TODO: this just scans the whole table; we should build proper index structures
+  #makeReadonlyIndex<
+    I extends UntypedIndex<
+      keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
+    >,
+  >(idx: I): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
+    type TableDef = TableDefForTableName<RemoteModule, TableName>;
+    type Row = RowType<TableDef>;
+
+    // We do not yet support non-btree indexes
+    if (idx.algorithm !== 'btree') {
+      throw new Error('Only btree indexes are supported in TableCacheImpl');
+    }
+
+    const columns = idx.columns as readonly (keyof Row & string)[];
+
+    // Extract the tuple key for this btree index (column order preserved)
+    const getKey = (row: Row): readonly unknown[] => columns.map(c => row[c]);
+
+    // The server’s ranged scan fixes all prefix cols to equality and applies
+    // the bound only to the *last* term. We mirror that.
+    //
+    // rangeArg for multi-col index is:
+    //   [...prefixEqualValues, (lastTerm | Range<lastTerm>)]
+    //
+    // If only one element is provided, it’s the last term (scalar or Range).
+    const matchRange = (row: Row, rangeArg: any): boolean => {
+      const key = getKey(row);
+
+      // Normalize rangeArg into an array.
+      // With multi-col b-tree, IndexScanRangeBounds always yields at least one element.
+      const arr = Array.isArray(rangeArg) ? rangeArg : [rangeArg];
+
+      const prefixLen = Math.max(0, arr.length - 1);
+      // Check equality over the prefix (all but the last provided element)
+      for (let i = 0; i < prefixLen; i++) {
+        if (!deepEqual(key[i], arr[i])) return false;
+      }
+
+      const lastProvided = arr[arr.length - 1];
+      const kLast = key[prefixLen];
+
+      // If the last provided is a Range<T>, apply bounds; otherwise equality.
+      if (
+        lastProvided &&
+        typeof lastProvided === 'object' &&
+        'from' in lastProvided &&
+        'to' in lastProvided
+      ) {
+        // Range<T>
+        const from = lastProvided.from as Bound<any>;
+        const to = lastProvided.to as Bound<any>;
+
+        // Lower bound
+        if (from.tag !== 'unbounded') {
+          const c = scalarCompare(kLast, from.value);
+          if (c < 0) return false;
+          if (c === 0 && from.tag === 'excluded') return false;
+        }
+
+        // Upper bound
+        if (to.tag !== 'unbounded') {
+          const c = scalarCompare(kLast, to.value);
+          if (c > 0) return false;
+          if (c === 0 && to.tag === 'excluded') return false;
+        }
+
+        // All good on last term; any remaining columns (if any) are unconstrained,
+        // which matches server behavior for a prefix scan.
+        return true;
+      } else {
+        // Equality on the last provided element
+        if (!deepEqual(kLast, lastProvided)) return false;
+        // Any remaining columns are unconstrained (prefix equality only).
+        return true;
+      }
+    };
+
+    const isUnique = idx.unique === true;
+
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    if (isUnique) {
+      const impl: ReadonlyUniqueIndex<TableDef, I> = {
+        find: (colVal: any): Row | null => {
+          // For unique btree, caller supplies the *full* key (tuple if multi-col).
+          const expected = Array.isArray(colVal) ? colVal : [colVal];
+          for (const row of self.iter()) {
+            if (deepEqual(getKey(row), expected)) return row;
+          }
+          return null;
+        },
+      };
+      return impl as ReadonlyIndex<TableDef, I>;
+    } else {
+      const impl: ReadonlyRangedIndex<TableDef, I> = {
+        *filter(range: any): IterableIterator<Row> {
+          for (const row of self.iter()) {
+            if (matchRange(row, range)) yield row;
+          }
+        },
+      };
+      return impl as ReadonlyIndex<TableDef, I>;
+    }
   }
 
   /**

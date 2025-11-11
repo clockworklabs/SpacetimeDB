@@ -12,7 +12,7 @@ import {
 import Point from './point_type';
 
 export default __t.row({
-  id: __t.u32(),
+  id: __t.u32().primaryKey(),
   userId: __t.identity(),
   name: __t.string(),
   get location() {

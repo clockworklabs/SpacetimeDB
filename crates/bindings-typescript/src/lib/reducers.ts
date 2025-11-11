@@ -8,6 +8,7 @@ import type { UntypedReducersDef } from '../sdk/reducers';
 import type { DbView } from '../server/db_view';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import {
+  ColumnBuilder,
   RowBuilder,
   type Infer,
   type InferTypeOfRow,
@@ -21,13 +22,15 @@ import type { CamelCase } from './type_util';
 /**
  * Helper to extract the parameter types from an object type
  */
-export type ParamsObj = Record<string, TypeBuilder<any, any>>;
+export type ParamsObj = Record<
+  string,
+  TypeBuilder<any, any> | ColumnBuilder<any, any, any>
+>;
 
 /**
  * Helper to convert a ParamsObj or RowObj into an object type
  */
-type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
-  InferTypeOfRow<ParamDef>;
+type ParamsAsObject<ParamDef extends ParamsObj> = InferTypeOfRow<ParamDef>;
 
 /**
  * Defines a SpacetimeDB reducer function.
@@ -55,10 +58,7 @@ type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
  * );
  * ```
  */
-export type Reducer<
-  S extends UntypedSchemaDef,
-  Params extends ParamsObj | RowObj,
-> = (
+export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
   ctx: ReducerCtx<S>,
   payload: ParamsAsObject<Params>
 ) => void | { tag: 'ok' } | { tag: 'err'; value: string };
@@ -190,10 +190,7 @@ export const REDUCERS: Reducer<any, any>[] = [];
  * );
  * ```
  */
-export function reducer<
-  S extends UntypedSchemaDef,
-  Params extends ParamsObj | RowObj,
->(
+export function reducer<S extends UntypedSchemaDef, Params extends ParamsObj>(
   name: string,
   params: Params,
   fn: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
@@ -353,7 +350,8 @@ export function reducerSchema<
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
-      algebraicType: c.algebraicType,
+      algebraicType:
+        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
     })),
   };
   return {

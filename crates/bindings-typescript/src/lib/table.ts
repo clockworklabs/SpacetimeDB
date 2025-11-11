@@ -254,8 +254,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
           break;
       }
       indexes.push({
-        name: undefined,
-        accessorName: name,
+        name: undefined, // Unnamed indexes will be assigned a globally unique name
+        accessorName: name, // The name of this column will be used as the accessor name
         algorithm,
       });
     }
@@ -297,6 +297,13 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         algorithm = { tag: 'Direct', value: colIds.get(indexOpts.column)! };
         break;
     }
+    // unnamed indexes will be assigned a globally unique name
+    // The name users supply is actually the accessor name which will be used
+    // in TypeScript to access the index. This will be used verbatim.
+    // This is confusing because it is not the index name and there is
+    // no actual way for the user to set the actual index name.
+    // I think we should standardize: name and accessorName as the way to set
+    // the name and accessor name of an index across all SDKs.
     indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
   }
 

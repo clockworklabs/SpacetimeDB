@@ -11,7 +11,10 @@ export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
   extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event: Event<
-    ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>
+    ReducerEventInfo<
+      RemoteModule['reducers'][number]['name'],
+      InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+    >
   >;
 }
 
@@ -20,7 +23,10 @@ export interface ReducerEventContextInterface<
 > extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event: ReducerEvent<
-    ReducerEventInfo<InferTypeOfRow<RemoteModule['reducers'][number]['params']>>
+    ReducerEventInfo<
+      RemoteModule['reducers'][number]['name'],
+      InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+    >
   >;
 }
 

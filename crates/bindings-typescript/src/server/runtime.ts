@@ -32,7 +32,12 @@ import type { DbView } from './db_view';
 import { toCamelCase } from '../lib/util';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize } from '../lib/util';
-import { ANON_VIEWS, VIEWS, type AnonymousViewCtx, type ViewCtx } from '../lib/views';
+import {
+  ANON_VIEWS,
+  VIEWS,
+  type AnonymousViewCtx,
+  type ViewCtx,
+} from '../lib/views';
 
 const { freeze } = Object;
 

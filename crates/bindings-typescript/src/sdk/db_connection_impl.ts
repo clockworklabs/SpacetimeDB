@@ -30,7 +30,7 @@ import type {
 import type { ReducerEvent } from './reducer_event.ts';
 import { type UntypedRemoteModule } from './spacetime_module.ts';
 import {
-  TableCache,
+  type TableCache,
   type Operation,
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
@@ -46,15 +46,22 @@ import {
 import { stdbLogger } from './logger.ts';
 import { fromByteArray } from 'base64-js';
 import type {
+  ReducerEventCallback,
   ReducerEventInfo,
   ReducersView,
   SetReducerFlags,
+  SubscriptionEventCallback,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
-import { toCamelCase } from '../lib/util.ts';
+import { toCamelCase, toPascalCase } from '../lib/util.ts';
 
-export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
+export {
+  DbConnectionBuilder,
+  SubscriptionBuilderImpl,
+  type TableCache,
+  type Event,
+};
 
 export type RemoteModuleOf<C> =
   C extends DbConnectionImpl<infer RM> ? RM : never;
@@ -70,18 +77,6 @@ export type {
 
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
-
-type ReducerEventCallback<
-  RemoteModule extends UntypedRemoteModule,
-  ReducerArgs extends any[] = any[],
-> = (
-  ctx: ReducerEventContextInterface<RemoteModule>,
-  ...args: ReducerArgs
-) => void;
-
-type SubscriptionEventCallback<RemoteModule extends UntypedRemoteModule> = (
-  ctx: SubscriptionEventContextInterface<RemoteModule>
-) => void;
 
 function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   switch (flags) {
@@ -273,6 +268,26 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           flags
         );
       };
+
+      const onReducerEventKey = `on${toPascalCase(reducer.name)}`;
+      (out as any)[onReducerEventKey] = (
+        callback: ReducerEventCallback<
+          RemoteModule,
+          InferTypeOfRow<typeof reducer.params>
+        >
+      ) => {
+        this.onReducer(reducer.name, callback);
+      };
+
+      const offReducerEventKey = `removeOn${toPascalCase(reducer.name)}`;
+      (out as any)[offReducerEventKey] = (
+        callback: ReducerEventCallback<
+          RemoteModule,
+          InferTypeOfRow<typeof reducer.params>
+        >
+      ) => {
+        this.offReducer(reducer.name, callback);
+      };
     }
 
     return out as ReducersView<RemoteModule>;
@@ -296,6 +311,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #makeEventContext(
     event: Event<
       ReducerEventInfo<
+        RemoteModule['reducers'][number]['name'],
         InferTypeOfRow<RemoteModule['reducers'][number]['params']>
       >
     >

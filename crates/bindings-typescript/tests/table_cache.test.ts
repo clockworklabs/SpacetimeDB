@@ -1,7 +1,7 @@
-import { type Operation, TableCache } from '../src/sdk/table_cache';
+import { type Operation, TableCacheImpl } from '../src/sdk/table_cache';
 import { describe, expect, test } from 'vitest';
 import Player from '../test-app/src/module_bindings/player_type.ts';
-import { AlgebraicType, Identity, type Infer } from 'spacetimedb';
+import { AlgebraicType, Identity, type Infer } from '../src';
 import { tables } from '../test-app/src/module_bindings/index.ts';
 
 interface ApplyOperations {
@@ -43,7 +43,7 @@ function deleteEvent(row: any, ctx: any = {}): CallbackEvent {
 
 interface AssertionInput {
   // The state of the table cache.
-  tableCache: TableCache<any, string>;
+  tableCache: TableCacheImpl<any, string>;
   // The sequence of callbacks that were fired from the last applyOperations.
   callbackHistory: CallbackEvent[];
 }
@@ -57,7 +57,10 @@ interface TestStep {
   assertions: Assertion[];
 }
 
-function runTest(tableCache: TableCache<any, string>, testSteps: TestStep[]) {
+function runTest(
+  tableCache: TableCacheImpl<any, string>,
+  testSteps: TestStep[]
+) {
   const callbackHistory: CallbackEvent[] = [];
   tableCache.onInsert((ctx, row) => {
     callbackHistory.push({
@@ -97,22 +100,15 @@ function runTest(tableCache: TableCache<any, string>, testSteps: TestStep[]) {
 
 describe('TableCache', () => {
   describe('Unindexed player table', () => {
-    const pointType = AlgebraicType.Product({
-      elements: [
-        { name: 'x', algebraicType: AlgebraicType.U16 },
-        { name: 'y', algebraicType: AlgebraicType.U16 },
-      ],
-    });
-    const playerType = AlgebraicType.Product({
-      elements: [
-        { name: 'ownerId', algebraicType: AlgebraicType.String },
-        { name: 'name', algebraicType: AlgebraicType.String },
-        { name: 'location', algebraicType: pointType },
-      ],
-    });
-    const newTable = () => new TableCache(tables.unindexedPlayer);
-    const mkOperation = (type: 'insert' | 'delete', row: Infer<typeof Player>) => {
-      const rowId = AlgebraicType.intoMapKey({ tag: 'Product', value: tables.unindexedPlayer.rowType }, row);
+    const newTable = () => new TableCacheImpl(tables.unindexedPlayer);
+    const mkOperation = (
+      type: 'insert' | 'delete',
+      row: Infer<typeof Player>
+    ) => {
+      const rowId = AlgebraicType.intoMapKey(
+        { tag: 'Product', value: tables.unindexedPlayer.rowType },
+        row
+      );
       return {
         type,
         rowId,
@@ -139,11 +135,11 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -170,11 +166,11 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -201,11 +197,11 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -217,10 +213,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(0);
+            expect(callbackHistory.length).foundUser(0);
           },
         ],
       });
@@ -246,10 +242,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -261,9 +257,9 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(0);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('delete');
+            expect(tableCache.count()).foundUser(0);
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('delete');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -302,10 +298,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -318,9 +314,9 @@ describe('TableCache', () => {
         assertions: [
           ({ tableCache, callbackHistory }) => {
             // We still have one reference left, so it isn't actually deleted.
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(0);
+            expect(callbackHistory.length).foundUser(0);
           },
         ],
       });
@@ -332,9 +328,9 @@ describe('TableCache', () => {
         assertions: [
           ({ tableCache, callbackHistory }) => {
             // Now it is actually deleted.
-            expect(tableCache.count()).toBe(0);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('delete');
+            expect(tableCache.count()).foundUser(0);
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('delete');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -347,7 +343,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
             expect(callbackHistory).toEqual([insertEvent(player)]);
           },
@@ -360,7 +356,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
             expect(callbackHistory).toEqual([]);
           },
@@ -373,7 +369,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(0);
+            expect(tableCache.count()).foundUser(0);
             expect(callbackHistory).toEqual([deleteEvent(mkPlayer())]);
           },
         ],
@@ -398,31 +394,20 @@ describe('TableCache', () => {
         rowsInserted++;
         expect(row).toEqual(op.row);
       });
-      expect(callbacks.length).toBe(1);
-      expect(tableCache.count()).toBe(1n);
+      expect(callbacks.length).foundUser(1);
+      expect(tableCache.count()).foundUser(1n);
       callbacks.forEach(cb => {
         cb.cb();
       });
-      expect(rowsInserted).toBe(1);
+      expect(rowsInserted).foundUser(1);
     });
   });
   describe('Indexed player table', () => {
-    const pointType = AlgebraicType.Product({
-      elements: [
-        { name: 'x', algebraicType: AlgebraicType.U16 },
-        { name: 'y', algebraicType: AlgebraicType.U16 },
-      ],
-    });
-    const playerType: AlgebraicType = AlgebraicType.Product({
-      elements: [
-        { name: 'id', algebraicType: AlgebraicType.U32 },
-        { name: 'userId', algebraicType: AlgebraicType.Product({ elements: [{ name: '__identity__', algebraicType: AlgebraicType.U256 }] }) },
-        { name: 'name', algebraicType: AlgebraicType.String },
-        { name: 'location', algebraicType: pointType },
-      ],
-    });
-    const newTable = () => new TableCache(tables.player);
-    const mkOperation = (type: 'insert' | 'delete', row: Infer<typeof Player>) => {
+    const newTable = () => new TableCacheImpl(tables.player);
+    const mkOperation = (
+      type: 'insert' | 'delete',
+      row: Infer<typeof Player>
+    ) => {
       const rowId = AlgebraicType.intoMapKey(
         { tag: 'Product', value: tables.player.rowType },
         row['id']
@@ -453,11 +438,11 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -484,11 +469,11 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -515,11 +500,11 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -531,10 +516,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter()).length).toBe(1);
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter()).length).foundUser(1);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(0);
+            expect(callbackHistory.length).foundUser(0);
           },
         ],
       });
@@ -560,10 +545,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -575,9 +560,9 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(0);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('delete');
+            expect(tableCache.count()).foundUser(0);
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('delete');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -604,7 +589,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(mkPlayer('jeff'));
             expect(callbackHistory).toEqual([insertEvent(mkPlayer('jeff'))]);
           },
@@ -620,8 +605,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
-            expect(Array.from(tableCache.iter())[0]).toEqual(mkPlayer('jeffv2'));
+            expect(tableCache.count()).foundUser(1n);
+            expect(Array.from(tableCache.iter())[0]).toEqual(
+              mkPlayer('jeffv2')
+            );
             expect(callbackHistory).toEqual([
               updateEvent(mkPlayer('jeff'), mkPlayer('jeffv2')),
             ]);
@@ -662,10 +649,10 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('insert');
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('insert');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -678,9 +665,9 @@ describe('TableCache', () => {
         assertions: [
           ({ tableCache, callbackHistory }) => {
             // We still have one reference left, so it isn't actually deleted.
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
-            expect(callbackHistory.length).toBe(0);
+            expect(callbackHistory.length).foundUser(0);
           },
         ],
       });
@@ -692,9 +679,9 @@ describe('TableCache', () => {
         assertions: [
           ({ tableCache, callbackHistory }) => {
             // Now it is actually deleted.
-            expect(tableCache.count()).toBe(0);
-            expect(callbackHistory.length).toBe(1);
-            expect(callbackHistory[0].type).toBe('delete');
+            expect(tableCache.count()).foundUser(0);
+            expect(callbackHistory.length).foundUser(1);
+            expect(callbackHistory[0].type).foundUser('delete');
             expect(callbackHistory[0].row).toEqual(player);
           },
         ],
@@ -707,7 +694,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
             expect(callbackHistory).toEqual([insertEvent(player)]);
           },
@@ -720,7 +707,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(1n);
+            expect(tableCache.count()).foundUser(1n);
             expect(Array.from(tableCache.iter())[0]).toEqual(player);
             expect(callbackHistory).toEqual([]);
           },
@@ -733,7 +720,7 @@ describe('TableCache', () => {
         },
         assertions: [
           ({ tableCache, callbackHistory }) => {
-            expect(tableCache.count()).toBe(0);
+            expect(tableCache.count()).foundUser(0);
             expect(callbackHistory).toEqual([deleteEvent(mkPlayer())]);
           },
         ],
@@ -758,31 +745,17 @@ describe('TableCache', () => {
         rowsInserted++;
         expect(row).toEqual(op.row);
       });
-      expect(callbacks.length).toBe(1);
-      expect(tableCache.count()).toBe(1n);
+      expect(callbacks.length).foundUser(1);
+      expect(tableCache.count()).foundUser(1n);
       callbacks.forEach(cb => {
         cb.cb();
       });
-      expect(rowsInserted).toBe(1);
+      expect(rowsInserted).foundUser(1);
     });
   });
 
-  const pointType = AlgebraicType.Product({
-    elements: [
-      { name: 'x', algebraicType: AlgebraicType.U16 },
-      { name: 'y', algebraicType: AlgebraicType.U16 },
-    ],
-  });
-  const playerType = AlgebraicType.Product({
-    elements: [
-      { name: 'ownerId', algebraicType: AlgebraicType.String },
-      { name: 'name', algebraicType: AlgebraicType.String },
-      { name: 'location', algebraicType: pointType },
-    ],
-  });
-
   test('should be empty on creation', () => {
-    const tableCache = new TableCache(tables.player);
-    expect(tableCache.count()).toBe(0n);
+    const tableCache = new TableCacheImpl(tables.player);
+    expect(tableCache.count()).foundUser(0n);
   });
 });

@@ -60,3 +60,16 @@ type CamelCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
  * - Normalizes the *first* character to lowercase (e.g. "User_Name" -> "userName")
  */
 export type CamelCase<S extends string> = Uncapitalize<CamelCaseImpl<S>>;
+
+type PascalCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
+  ? `${Capitalize<Head>}${PascalCaseImpl<Tail>}`
+  : S extends `${infer Head}-${infer Tail}`
+    ? `${Capitalize<Head>}${PascalCaseImpl<Tail>}`
+    : Capitalize<S>;
+
+/**
+ * Convert "some_identifier-name" -> "SomeIdentifierName"
+ * - No spaces; allowed separators: "_" and "-"
+ * - Normalizes the *first* character to uppercase (e.g. "user_name" -> "UserName")
+ */
+export type PascalCase<S extends string> = PascalCaseImpl<S>;
