@@ -97,7 +97,7 @@ impl MemoryUsage for ViewReadSets {
 
 impl ViewReadSets {
     /// Returns the views that perform a full scan of this table
-    fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -216,7 +216,7 @@ impl MutTxId {
             .keys()
             .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
             .chain(self.tx_state.delete_tables.keys())
-            .flat_map(|table_id| self.read_sets.views_for_table_scan(table_id))
+            .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
             .collect::<HashSet<_>>()
             .into_iter()
     }
