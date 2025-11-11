@@ -474,6 +474,7 @@ pub(super) fn catch_exception<'scope, T>(
 
 /// Encodes whether it is safe to continue using the [`Isolate`]
 /// for further execution after [`catch_exception`] has happened.
+#[derive(Debug)]
 pub(super) enum CanContinue {
     Yes,
     YesCancelTermination,

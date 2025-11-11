@@ -54,6 +54,7 @@ use v8::{
 };
 
 mod budget;
+mod builtins;
 mod de;
 mod error;
 mod from_value;
@@ -522,6 +523,9 @@ fn spawn_instance_worker(
         let mut isolate = new_isolate();
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
+        catch_exception(scope, |scope| Ok(builtins::evalute_builtins(scope)?))
+            .expect("our builtin code shouldn't error");
+
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
             if result_tx.send(res).is_err() {
@@ -673,24 +677,28 @@ fn find_source_map(code: &str) -> Option<&str> {
     })
 }
 
+/// A slot counter for [`ScriptOrigin::script_id`]s.
+struct NextScriptId(i32);
+fn get_script_id(scope: &mut PinScope<'_, '_>) -> i32 {
+    if let Some(x) = scope.get_slot_mut::<NextScriptId>() {
+        let n = x.0;
+        x.0 += 1;
+        n
+    } else {
+        scope.set_slot(NextScriptId(1));
+        0
+    }
+}
+
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     resource_name: Local<'scope, Value>,
-    script_id: i32,
-    code: &str,
+    source_map_url: Option<Local<'_, Value>>,
+    code: Local<'_, v8::String>,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
-    // Get the source map, if any.
-    let source_map_url = find_source_map(code)
-        .map(|sm| sm.into_string(scope))
-        .transpose()
-        .map_err(|e| e.into_range_error().throw(scope))?
-        .map(Into::into);
-
-    // Convert the code to a string.
-    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
-
+    let script_id = get_script_id(scope);
     // Assemble the source.
     let origin = ScriptOrigin::new(
         scope,
@@ -738,11 +746,21 @@ fn eval_module<'scope>(
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     code: &str,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
+    // Get the source map, if any.
+    let source_map_url = find_source_map(code)
+        .map(|sm| sm.into_string(scope))
+        .transpose()
+        .map_err(|e| e.into_range_error().throw(scope))?
+        .map(Into::into);
+
+    // Convert the code to a string.
+    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
+
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
-    eval_module(scope, name, 0, code, resolve_sys_module)
+    eval_module(scope, name, source_map_url, code, resolve_sys_module)
 }
 
 /// Compiles, instantiate, and evaluate the user module with `code`
