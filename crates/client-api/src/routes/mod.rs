@@ -1,8 +1,7 @@
-use database::DatabaseRoutes;
 use http::header;
 use tower_http::cors;
 
-use crate::{ControlStateDelegate, NodeDelegate};
+use crate::{Authorization, ControlStateDelegate, NodeDelegate};
 
 pub mod database;
 pub mod energy;
@@ -13,6 +12,8 @@ pub mod metrics;
 pub mod prometheus;
 pub mod subscribe;
 
+use self::database::DatabaseRoutes;
+
 /// This API call is just designed to allow clients to determine whether or not they can
 /// establish a connection to SpacetimeDB. This API call doesn't actually do anything.
 pub async fn ping(_auth: crate::auth::SpacetimeAuthHeader) {}
@@ -20,7 +21,7 @@ pub async fn ping(_auth: crate::auth::SpacetimeAuthHeader) {}
 #[allow(clippy::let_and_return)]
 pub fn router<S>(ctx: &S, database_routes: DatabaseRoutes<S>, extra: axum::Router<S>) -> axum::Router<S>
 where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     use axum::routing::get;
     let router = axum::Router::new()

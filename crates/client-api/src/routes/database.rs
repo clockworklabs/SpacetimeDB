@@ -10,7 +10,10 @@ use crate::auth::{
 };
 use crate::routes::subscribe::generate_random_connection_id;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
-use crate::{log_and_500, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, NodeDelegate};
+use crate::{
+    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, NodeDelegate,
+    Unauthorized,
+};
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
 use axum::response::{ErrorResponse, IntoResponse};
@@ -428,7 +431,7 @@ pub async fn logs<S>(
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: ControlStateDelegate + NodeDelegate,
+    S: ControlStateDelegate + NodeDelegate + Authorization,
 {
     // You should not be able to read the logs from a database that you do not own
     // so, unless you are the owner, this will fail.
@@ -438,17 +441,9 @@ where
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    if database.owner_identity != auth.claims.identity {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!(
-                "Identity does not own database, expected: {} got: {}",
-                database.owner_identity.to_hex(),
-                auth.claims.identity.to_hex()
-            ),
-        )
-            .into());
-    }
+    worker_ctx
+        .authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
+        .await?;
 
     let replica = worker_ctx
         .get_leader_replica_by_database(database.id)
@@ -619,7 +614,7 @@ pub struct ResetDatabaseQueryParams {
     host_type: HostType,
 }
 
-pub async fn reset<S: NodeDelegate + ControlStateDelegate>(
+pub async fn reset<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
     Path(ResetDatabaseParams { name_or_identity }): Path<ResetDatabaseParams>,
     Query(ResetDatabaseQueryParams {
@@ -634,13 +629,8 @@ pub async fn reset<S: NodeDelegate + ControlStateDelegate>(
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    if database.database_identity != auth.claims.identity {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            "only the database owner can reset / clear a database",
-        )
-            .into());
-    }
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::ResetDatabase)
+        .await?;
 
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
     ctx.reset_database(
@@ -681,11 +671,10 @@ pub struct PublishDatabaseQueryParams {
     policy: MigrationPolicy,
     #[serde(default)]
     host_type: HostType,
-    #[allow(unused)] // ignore for now
     parent: Option<NameOrIdentity>,
 }
 
-pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
+pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
     Path(PublishDatabaseParams { name_or_identity }): Path<PublishDatabaseParams>,
     Query(PublishDatabaseQueryParams {
@@ -694,7 +683,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         token,
         policy,
         host_type,
-        parent: _, // ignore for now
+        parent,
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -726,6 +715,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
     }
 
     let (database_identity, db_name) = get_or_create_identity_and_name(&ctx, &auth, name_or_identity.as_ref()).await?;
+    let maybe_parent_database_identity = match parent.as_ref() {
+        None => None,
+        Some(parent) => parent.resolve(&ctx).await.map(Some)?,
+    };
 
     // Check that the replication factor looks somewhat sane.
     let num_replicas = num_replicas.map(validate_replication_factor).transpose()?.flatten();
@@ -738,14 +731,19 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         // If not, check that the we caller is sufficiently authenticated.
         None => {
             allow_creation(&auth)?;
+            if let Some(parent) = maybe_parent_database_identity {
+                ctx.authorize_action(
+                    auth.claims.identity,
+                    database_identity,
+                    Action::CreateDatabase { parent: Some(parent) },
+                )
+                .await?;
+            }
         }
         // If yes, authorize via ctx.
         Some(database) => {
-            // NOTE: This is redundant at the moment, but will be replaced by
-            // a more interesting authorization check with the "teams" feature.
-            if database.owner_identity != auth.claims.identity {
-                return Err((StatusCode::UNAUTHORIZED, "a database can only be updated by its owner").into());
-            }
+            ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+                .await?;
         }
     }
 
@@ -754,6 +752,16 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         PublishOp::Updated
     } else {
         PublishOp::Created
+    };
+    // If a parent is given, resolve to an existing database.
+    let parent = if let Some(name_or_identity) = parent {
+        let identity = name_or_identity
+            .resolve(&ctx)
+            .await
+            .map_err(|_| bad_request(format!("Parent database {name_or_identity} not found").into()))?;
+        Some(identity)
+    } else {
+        None
     };
 
     let schema_migration_policy = schema_migration_policy(policy, token)?;
@@ -765,7 +773,7 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 program_bytes,
                 num_replicas,
                 host_type,
-                parent: None,
+                parent,
             },
             schema_migration_policy,
         )
@@ -897,7 +905,7 @@ pub struct PrePublishQueryParams {
     host_type: HostType,
 }
 
-pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
+pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
     Path(PrePublishParams { name_or_identity }): Path<PrePublishParams>,
     Query(PrePublishQueryParams { style, host_type }): Query<PrePublishQueryParams>,
@@ -956,44 +964,39 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
 
 /// Resolves the [`NameOrIdentity`] to a database identity and checks if the
 /// `auth` identity owns the database.
-async fn resolve_and_authenticate<S: ControlStateDelegate>(
+async fn resolve_and_authenticate<S: ControlStateDelegate + Authorization>(
     ctx: &S,
     name_or_identity: &NameOrIdentity,
     auth: &SpacetimeAuth,
 ) -> axum::response::Result<Identity> {
     let database_identity = name_or_identity.resolve(ctx).await?;
-
     let database = worker_ctx_find_database(ctx, &database_identity)
         .await?
         .ok_or(NO_SUCH_DATABASE)?;
 
-    if database.owner_identity != auth.claims.identity {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            format!(
-                "Identity does not own database, expected: {} got: {}",
-                database.owner_identity.to_hex(),
-                auth.claims.identity.to_hex()
-            ),
-        )
-            .into());
-    }
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
+        .await?;
 
     Ok(database_identity)
 }
 
 #[derive(Deserialize)]
 pub struct DeleteDatabaseParams {
-    name_or_identity: NameOrIdentity,
+    pub name_or_identity: NameOrIdentity,
 }
 
-pub async fn delete_database<S: ControlStateDelegate>(
+pub async fn delete_database<S: ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
     Path(DeleteDatabaseParams { name_or_identity }): Path<DeleteDatabaseParams>,
     Extension(auth): Extension<SpacetimeAuth>,
 ) -> axum::response::Result<impl IntoResponse> {
     let database_identity = name_or_identity.resolve(&ctx).await?;
+    let Some(_database) = worker_ctx_find_database(&ctx, &database_identity).await? else {
+        return Ok(());
+    };
 
+    ctx.authorize_action(auth.claims.identity, database_identity, Action::DeleteDatabase)
+        .await?;
     ctx.delete_database(&auth.claims.identity, &database_identity)
         .await
         .map_err(log_and_500)?;
@@ -1036,7 +1039,7 @@ pub struct SetNamesParams {
     name_or_identity: NameOrIdentity,
 }
 
-pub async fn set_names<S: ControlStateDelegate>(
+pub async fn set_names<S: ControlStateDelegate + Authorization>(
     State(ctx): State<S>,
     Path(SetNamesParams { name_or_identity }): Path<SetNamesParams>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -1059,14 +1062,18 @@ pub async fn set_names<S: ControlStateDelegate>(
         ));
     };
 
-    if database.owner_identity != auth.claims.identity {
-        return Ok((
-            StatusCode::UNAUTHORIZED,
-            axum::Json(name::SetDomainsResult::NotYourDatabase {
-                database: database.database_identity,
-            }),
-        ));
-    }
+    ctx.authorize_action(auth.claims.identity, database.database_identity, Action::RenameDatabase)
+        .await
+        .map_err(|e| match e {
+            Unauthorized::Unauthorized { .. } => (
+                StatusCode::UNAUTHORIZED,
+                axum::Json(name::SetDomainsResult::NotYourDatabase {
+                    database: database.database_identity,
+                }),
+            )
+                .into(),
+            Unauthorized::InternalError(e) => log_and_500(e),
+        })?;
 
     for name in &validated_names {
         if ctx.lookup_identity(name.as_str()).unwrap().is_some() {
@@ -1163,7 +1170,7 @@ pub struct DatabaseRoutes<S> {
 
 impl<S> Default for DatabaseRoutes<S>
 where
-    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization + Clone + 'static,
 {
     fn default() -> Self {
         use axum::routing::{delete, get, post, put};
@@ -1191,7 +1198,7 @@ where
 
 impl<S> DatabaseRoutes<S>
 where
-    S: NodeDelegate + ControlStateDelegate + Clone + 'static,
+    S: NodeDelegate + ControlStateDelegate + Authorization + Clone + 'static,
 {
     pub fn into_router(self, ctx: S) -> axum::Router<S> {
         let db_router = axum::Router::<S>::new()
