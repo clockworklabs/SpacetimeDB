@@ -197,13 +197,16 @@ impl MutTxId {
     /// Record that a view performs an index scan in this transaction's read set
     pub fn record_index_scan(
         &mut self,
-        _: &FuncCallType,
-        _: TableId,
+        op: &FuncCallType,
+        table_id: TableId,
         _: IndexId,
         _: Bound<AlgebraicValue>,
         _: Bound<AlgebraicValue>,
     ) {
         // TODO: Implement read set tracking for index scans
+        if let FuncCallType::View(view) = op {
+            self.read_sets.insert_scan(table_id, view.clone());
+        }
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
