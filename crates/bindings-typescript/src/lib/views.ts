@@ -24,6 +24,11 @@ export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: ReadonlyTable<Tbl>;
 };
 
+export type ViewOpts = {
+  name: string;
+  public: true;
+};
+
 export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
@@ -52,7 +57,7 @@ export function defineView<
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 >(
-  name: string,
+  opts: ViewOpts,
   anon: Anonymous,
   params: Params,
   ret: Ret,
@@ -71,9 +76,9 @@ export function defineView<
   MODULE_DEF.miscExports.push({
     tag: 'View',
     value: {
-      name,
+      name: opts.name,
       index: (anon ? ANON_VIEWS : VIEWS).length,
-      isPublic: true,
+      isPublic: opts.public,
       isAnonymous: anon,
       params: paramType,
       returnType: ret.algebraicType,

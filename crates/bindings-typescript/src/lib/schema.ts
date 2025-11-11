@@ -37,6 +37,7 @@ import {
   defineView,
   type AnonymousViewFn,
   type ViewFn,
+  type ViewOpts,
   type ViewReturnTypeBuilder,
 } from './views';
 import RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
@@ -448,27 +449,27 @@ class Schema<S extends UntypedSchemaDef> {
   }
 
   view<Ret extends ViewReturnTypeBuilder>(
-    name: string,
+    opts: ViewOpts,
     ret: Ret,
     fn: ViewFn<S, {}, Ret>
   ): void {
-    defineView(name, false, {}, ret, fn);
+    defineView(opts, false, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
   // view<Ret extends ViewReturnTypeBuilder>(
-  //   name: string,
+  //   opts: ViewOpts,
   //   ret: Ret,
   //   fn: ViewFn<S, {}, Ret>
   // ): void;
   // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   name: string,
+  //   opts: ViewOpts,
   //   params: Params,
   //   ret: Ret,
   //   fn: ViewFn<S, {}, Ret>
   // ): void;
   // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   name: string,
+  //   opts: ViewOpts,
   //   paramsOrRet: Ret | Params,
   //   retOrFn: ViewFn<S, {}, Ret> | Ret,
   //   maybeFn?: ViewFn<S, Params, Ret>
@@ -481,27 +482,27 @@ class Schema<S extends UntypedSchemaDef> {
   // }
 
   anyonymousView<Ret extends ViewReturnTypeBuilder>(
-    name: string,
+    opts: ViewOpts,
     ret: Ret,
     fn: AnonymousViewFn<S, {}, Ret>
   ): void {
-    defineView(name, true, {}, ret, fn);
+    defineView(opts, true, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
   // anyonymousView<Ret extends ViewReturnTypeBuilder>(
-  //   name: string,
+  //   opts: ViewOpts,
   //   ret: Ret,
   //   fn: AnonymousViewFn<S, {}, Ret>
   // ): void;
   // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   name: string,
+  //   opts: ViewOpts,
   //   params: Params,
   //   ret: Ret,
   //   fn: AnonymousViewFn<S, {}, Ret>
   // ): void;
   // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
-  //   name: string,
+  //   opts: ViewOpts,
   //   paramsOrRet: Ret | Params,
   //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
   //   maybeFn?: AnonymousViewFn<S, Params, Ret>
