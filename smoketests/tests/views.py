@@ -186,7 +186,9 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
  7  | 3
 """)
 
-    def test_view_materialization(self):
+    # test is prefixed with 'a' to ensure it runs before any other tests,
+    # since it relies on log capturing starting from an empty log.
+    def test_a_view_materialization(self):
         """This test asserts whether views are materialized correctly"""
         self.insert_initial_data()
         player_called_log = "player view called"
