@@ -191,7 +191,6 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
         self.insert_initial_data()
         player_called_log = "player view called"
 
-
         self.assertNotIn(player_called_log, self.logs(100))
 
         self.call_player_view()

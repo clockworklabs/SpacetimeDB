@@ -1543,9 +1543,11 @@ impl ModuleHost {
             let view_name = st_view_row.view_name;
             let view_id = st_view_row.view_id;
             let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
+            let is_anonymous = st_view_row.is_anonymous;
+            let sender = if is_anonymous { None } else { Some(caller) };
             if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
                 tx = self
-                    .call_view(tx, &view_name, view_id, table_id, Nullary, caller, Some(caller))
+                    .call_view(tx, &view_name, view_id, table_id, Nullary, caller, sender)
                     .await?
                     .tx;
             }
