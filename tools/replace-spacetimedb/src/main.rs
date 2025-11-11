@@ -51,7 +51,12 @@ fn main() {
         ignore_globs: args.ignore,
     };
 
-    match replace_in_tree(&args.target_dir, &args.index_replacement, &args.other_replacement, &opts) {
+    match replace_in_tree(
+        &args.target_dir,
+        &args.index_replacement,
+        &args.other_replacement,
+        &opts,
+    ) {
         Ok(stats) => {
             println!(
                 "✅ Replacement complete. Files changed: {} | Occurrences: {}",
