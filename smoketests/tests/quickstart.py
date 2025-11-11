@@ -361,7 +361,7 @@ class TypeScript(Rust):
 
     def server_postprocess(self, server_path: Path):
         build_typescript_sdk()
-        pnpm("install", TYPESCRIPT_BINDINGS_PATH, cwd=server_path)
+        pnpm("install", 'file:%s' % TYPESCRIPT_BINDINGS_PATH, cwd=server_path)
 
     def test_quickstart(self):
         """Run the TypeScript quickstart guides for server."""
