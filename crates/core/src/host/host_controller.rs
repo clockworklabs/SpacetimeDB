@@ -171,22 +171,6 @@ impl From<&EventStatus> for ReducerOutcome {
     }
 }
 
-pub enum ViewOutcome {
-    Success,
-    Failed(String),
-    BudgetExceeded,
-}
-
-impl From<EventStatus> for ViewOutcome {
-    fn from(status: EventStatus) -> Self {
-        match status {
-            EventStatus::Committed(_) => ViewOutcome::Success,
-            EventStatus::Failed(e) => ViewOutcome::Failed(e),
-            EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ProcedureCallResult {
     pub return_val: AlgebraicValue,

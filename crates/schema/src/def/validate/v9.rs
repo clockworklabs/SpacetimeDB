@@ -542,7 +542,7 @@ impl ModuleValidator<'_> {
             is_anonymous,
             is_public,
             params,
-            index: index.into(),
+            fn_ptr: index.into(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
                 recursive: false, // A `ProductTypeDef` not stored in a `Typespace` cannot be recursive.
