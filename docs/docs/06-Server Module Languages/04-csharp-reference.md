@@ -1029,7 +1029,7 @@ Views can be queried and subscribed to like normal tables and are updated atomic
 
 ```sql
 SELECT * FROM my_player;
-SELECt * FROM players_for_level;
+SELECT * FROM players_for_level;
 ```
 
 #### `ViewContext` and `AnonymousViewContext`

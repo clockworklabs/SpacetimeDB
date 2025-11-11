@@ -547,8 +547,8 @@ spacetimedb.reducer('send_message', { arg: ScheduledJobs.rowType }, (ctx, { arg 
 ## Views
 
 Views are read‑only functions that compute and return results from your tables.
-They are declared with either `spacetimedb.view(name, returnType, handler)` or `spacetimedb.anonymousView(name, returnType, handler)`.
-Note, `spacetimedb` is the value returned from the `schema` function.
+They are declared with either `spacetimedb.view(viewOpts, returnType, handler)` or `spacetimedb.anonymousView(viewOpts, returnType, handler)`,
+where `spacetimedb` is the value returned from the `schema` function, and `viewOpts` is defined as `{ name: string; public: true; }`
 
 The handler signature is `(ctx) => rows`, where `rows` must be either an array or option of product values.
 Views must be declared as `public`, with an explicit `name`, and do not accept user parameters beyond the context type.
@@ -572,7 +572,7 @@ const spacetimedb = schema(players, playerLevels);
 // At-most-one row: return Option<row> via t.option(...)
 // Your function may return the row or null
 spacetimedb.view(
-  'my_player',
+  { name: 'my_player', public: true },
   t.option(players.row()),
   (ctx) => {
     const row = ctx.db.players.identity.find(ctx.sender);
@@ -582,7 +582,7 @@ spacetimedb.view(
 
 // Multiple rows: return an array of rows via t.array(...)
 spacetimedb.anonymousView(
-  'players_for_level',
+  { name: 'players_for_level', public: true },
   t.array(
     t.product({
       id: t.u64(),
@@ -605,7 +605,7 @@ Views can be queried and subscribed to like normal tables and are updated atomic
 
 ```sql
 SELECT * FROM my_player;
-SELECt * FROM players_for_level;
+SELECT * FROM players_for_level;
 ```
 
 #### `ViewContext` and `AnonymousViewContext`
