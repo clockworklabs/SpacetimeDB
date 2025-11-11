@@ -51,6 +51,9 @@ pub fn clear_database() -> Arg {
         .short('c')
         .num_args(0..=1)
         .value_parser(value_parser!(ClearMode))
+        // Because we have a default value for this flag, invocations can be ambiguous between
+        //passing a value to this flag, vs using the default value and passing an anonymous arg
+        // to the rest of the command. Adding `require_equals` resolves this ambiguity.
         .require_equals(true)
         .default_missing_value("always")
         .help(
