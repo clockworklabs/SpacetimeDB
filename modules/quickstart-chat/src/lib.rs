@@ -1,4 +1,4 @@
-use spacetimedb::{Identity, ReducerContext, Table, Timestamp};
+use spacetimedb::{Identity, ReducerContext, Table, Timestamp, rand::seq::index};
 
 #[spacetimedb::table(name = user, public)]
 pub struct User {
@@ -11,6 +11,7 @@ pub struct User {
 #[spacetimedb::table(name = message, public)]
 pub struct Message {
     sender: Identity,
+    #[index(btree)]
     sent: Timestamp,
     text: String,
 }

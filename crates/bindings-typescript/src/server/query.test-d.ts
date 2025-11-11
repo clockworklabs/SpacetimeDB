@@ -97,9 +97,15 @@ spacetimedb.init(ctx => {
   // ctx.db.person[Symbol]
 
   //ctx.query.from('person')
-  ctx.queryBuilder
+
+  const filteredQuery = ctx.queryBuilder
     .query('person')
     // .query('person')
     .filter(row => eq(row['age'], literal(20)));
-  // .filter(row => eq(row.age, literal(20)))
+
+  filteredQuery.semijoinTo(
+    ctx.queryBuilder.order,
+    p => p.age,
+    o => o.item_name
+  );
 });

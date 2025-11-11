@@ -130,23 +130,72 @@ describe('TableScan.toSql', () => {
     );
   });
 
-  it('renders EXISTS clauses built via existsIn', () => {
+  it('renders semijoin queries without additional filters', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb
       .query('person')
-      .existsIn(
-        qb
-          .query('orders')
-          .filter(orderRow => eq(orderRow.item_name, literal('Widget'))),
-        {
-          leftColumns: ['id'] as const,
-          rightColumns: ['person_id'] as const,
-        }
+      .semijoinTo(
+        qb.orders,
+        person => person.id,
+        order => order.person_id
       )
       .toSql();
 
     expect(sql).toBe(
-      `SELECT * FROM "person" WHERE EXISTS (SELECT 1 FROM "orders" WHERE ("person"."id" = "orders"."person_id") AND ("orders"."item_name" = 'Widget'))`
+      `SELECT "right".* from "person" "left" join "orders" "right" on "left"."id" = "right"."person_id"`
+    );
+  });
+
+  it('renders semijoin queries alongside existing predicates', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = qb
+      .query('person')
+      .filter(row => eq(row.age, literal(42)))
+      .semijoinTo(
+        qb.orders,
+        person => person.id,
+        order => order.person_id
+      )
+      .toSql();
+
+    expect(sql).toBe(
+      `SELECT "right".* from "person" "left" join "orders" "right" on "left"."id" = "right"."person_id" WHERE "left"."age" = 42`
+    );
+  });
+
+  it('escapes literals when rendering semijoin filters', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = qb
+      .query('person')
+      .filter(row => eq(row.name, literal("O'Brian")))
+      .semijoinTo(
+        qb.orders,
+        person => person.id,
+        order => order.person_id
+      )
+      .toSql();
+
+    expect(sql).toBe(
+      `SELECT "right".* from "person" "left" join "orders" "right" on "left"."id" = "right"."person_id" WHERE "left"."name" = 'O''Brian'`
+    );
+  });
+
+  it('renders compound AND filters for semijoin queries', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = qb
+      .query('person')
+      .filter(row =>
+        and(eq(row.name, literal('Alice')), eq(row.age, literal(30)))
+      )
+      .semijoinTo(
+        qb.orders,
+        person => person.id,
+        order => order.person_id
+      )
+      .toSql();
+
+    expect(sql).toBe(
+      `SELECT "right".* from "person" "left" join "orders" "right" on "left"."id" = "right"."person_id" WHERE ("left"."name" = 'Alice') AND ("left"."age" = 30)`
     );
   });
 });

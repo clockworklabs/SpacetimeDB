@@ -91,47 +91,41 @@ function createRowExpr<TableDef extends TypedTableDef>(
   }
   return Object.freeze(row) as RowExpr<TableDef>;
 }
-// A static list of column names for a table.
-// type ColumnList<
-//   SchemaDef extends UntypedSchemaDef,
-//   TableName extends TableNames<SchemaDef>,
-// > = readonly ColumnNames<TableDefByName<SchemaDef, TableName>>[];
 
 export type ColumnList<
   TableDef extends TypedTableDef,
-  T extends readonly ColumnNames<
-    TableDef
-  >[] = readonly ColumnNames<TableDef>[],
+  T extends readonly ColumnNames<TableDef>[] = readonly ColumnNames<TableDef>[],
 > = T;
 
 export type JoinCondition<
   LeftTable extends TypedTableDef,
   RightTable extends TypedTableDef,
 > = {
-  leftColumns: ColumnList<LeftTable>;
-  rightColumns: ColumnList<RightTable>;
+  leftColumn: AnyColumnExpr<LeftTable>;
+  rightColumn: AnyColumnExpr<RightTable>;
 };
 
-type JoinExpr<Table extends TypedTableDef> = Readonly<SemiJoinExpr<Table>>;
-
-type SemiJoinExpr<Table extends TypedTableDef> = Readonly<{
-  type: 'semi';
-  table: TableRef<TypedTableDef>;
-  on: readonly JoinOnClause<Table>[];
-  innerWhere?: BooleanExpr<TypedTableDef>;
-}>;
-
-type JoinOnClause<Table extends TypedTableDef> = Readonly<{
-  left: ColumnExpr<Table, ColumnNames<Table>>;
-  right: ColumnExpr<TypedTableDef, ColumnNames<TypedTableDef>>;
+type JoinOnClause<
+  T1 extends TypedTableDef,
+  T2 extends TypedTableDef,
+> = Readonly<{
+  left: ColumnExprList2<T1>;
+  right: ColumnExprList2<T2>;
 }>;
 
 type TableNameFromDef<
   SchemaDef extends UntypedSchemaDef,
   TableDef extends TypedTableDef,
-> = TableDef extends TableDefByName<SchemaDef, infer Name extends TableNames<SchemaDef>>
-  ? Name
-  : never;
+> =
+  TableDef extends TableDefByName<
+    SchemaDef,
+    infer Name extends TableNames<SchemaDef>
+  >
+    ? Name
+    : never;
+
+type ColumnExprList2<TableDef extends TypedTableDef> =
+  readonly AnyColumnExpr<TableDef>[];
 
 type ColumnExprList<
   SchemaDef extends UntypedSchemaDef,
@@ -147,100 +141,102 @@ export class TableScan<
 > {
   constructor(
     readonly table: TableRef<TableDef>,
-    readonly where?: BooleanExpr<TableDef>,
-    readonly joins: readonly JoinExpr<TableDef>[] = []
+    readonly where?: BooleanExpr<TableDef>
   ) {}
 
   filter(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
   ): TableScan<SchemaDef, TableDef> {
     const nextWhere = predicate(this.table.cols);
-    return new TableScan<SchemaDef, TableDef>(this.table, nextWhere, this.joins);
+    return new TableScan<SchemaDef, TableDef>(this.table, nextWhere);
   }
 
-  existsIn<
-    OtherTable extends TableDef,
-    CurrentName extends TableNameFromDef<SchemaDef, TableDef> = TableNameFromDef<
-      SchemaDef,
-      TableDef
-    >,
-  >(
-    _other: TableScan<SchemaDef, OtherTable>,
-    _join: CurrentName extends never
-      ? never
-      : JoinCondition<SchemaDef, CurrentName, OtherName>
+  semijoinTo<OtherTable extends TypedTableDef>(
+    other: TableRef<OtherTable>,
+    leftCol: (left: RowExpr<TableDef>) => AnyColumnExpr<TableDef>,
+    rightCol: (right: RowExpr<OtherTable>) => AnyColumnExpr<OtherTable>
   ): Semijoin<SchemaDef, TableDef, OtherTable> {
-    const { leftColumns, rightColumns } = _join as JoinCondition<
-      SchemaDef,
-      CurrentName,
-      OtherName
-    >;
-    if (leftColumns.length !== rightColumns.length) {
-      throw new Error('Join conditions must pair the same number of columns.');
-    }
-    const joinedColumns = leftColumns.map((leftColumn, idx) => {
-      const rightColumn = rightColumns[idx];
-      const leftExpr = this.table.cols[leftColumn];
-      const rightExpr = _other.table.cols[rightColumn];
-      if (!leftExpr || !rightExpr) {
-        throw new Error(
-          `Invalid join columns: ${String(leftColumn)} -> ${String(rightColumn)}.`
-        );
-      }
-      return {
-        left: leftExpr,
-        right: rightExpr as ColumnExpr<
-          TypedTableDef,
-          ColumnNames<TypedTableDef>
-        >,
-      };
-    });
+    const leftColumn = leftCol(this.table.cols);
+    const rightColumn = rightCol(other.cols);
 
-    return new Semijoin<SchemaDef, TableDef, OtherTable>(this, _other, joinedColumns);
+    const semijoin: Semijoin<SchemaDef, TableDef, OtherTable> = {
+      type: 'semijoin',
+      left: this.table,
+      right: other,
+      leftWhereClause: this.where,
+      joinClause: {
+        leftColumn,
+        rightColumn,
+      },
+      toSql() {
+        return renderSemijoinToSql(semijoin);
+      },
+    };
+    return semijoin;
   }
 
   toSql(): string {
-    const tableName = quoteIdentifier(this.table.name);
-    const base = `SELECT * FROM ${tableName}`;
-    if (!this.where && this.joins.length === 0) {
-      return base;
-    }
-    const clauses: string[] = [];
-    if (this.where) {
-      clauses.push(booleanExprToSql(this.where));
-    }
-    for (const join of this.joins) {
-      clauses.push(joinExprToSql(join));
-    }
-    const whereSql =
-      clauses.length === 1
-        ? clauses[0]
-        : clauses.map(wrapInParens).join(' AND ');
-    return `${base} WHERE ${whereSql}`;
+    return renderSelectSql(this.table.name, this.where);
   }
 }
 
-export class Semijoin<
+export type Semijoin<
   SchemaDef extends UntypedSchemaDef,
   LeftTable extends TypedTableDef,
   RightTable extends TypedTableDef,
-> extends TableScan<SchemaDef, LeftTable> {
-  constructor(
-    left: TableScan<SchemaDef, LeftTable>,
-    readonly right: TableScan<SchemaDef, RightTable>,
-    readonly joinColumns: readonly JoinOnClause<LeftTable>[]
-  ) {
-    super(
-      left.table,
-      left.where,
-      left.joins.concat({
-        type: 'semi',
-        table: right.table as TableRef<TypedTableDef>,
-        on: joinColumns,
-        innerWhere: right.where as BooleanExpr<TypedTableDef> | undefined,
-      })
-    );
+> = Readonly<{
+  type: 'semijoin';
+  left: TableRef<LeftTable>;
+  right: TableRef<RightTable>;
+  joinClause: JoinCondition<LeftTable, RightTable>;
+  leftWhereClause?: BooleanExpr<LeftTable>;
+  toSql(): string;
+}>;
+
+export function renderSemijoinToSql<
+  SchemaDef extends UntypedSchemaDef,
+  LeftTable extends TypedTableDef,
+  RightTable extends TypedTableDef,
+>(semijoin: Semijoin<SchemaDef, LeftTable, RightTable>): string {
+  const leftAlias = quoteIdentifier('left');
+  const rightAlias = quoteIdentifier('right');
+  const quotedRightTable = quoteIdentifier(semijoin.right.name);
+  const quotedLeftTable = quoteIdentifier(semijoin.left.name);
+  const base = `SELECT ${rightAlias}.* from ${quotedLeftTable} ${leftAlias} join ${quotedRightTable} ${rightAlias} on `;
+  const joinClause = `${leftAlias}.${quoteIdentifier(semijoin.joinClause.leftColumn.column)} = ${rightAlias}.${quoteIdentifier(semijoin.joinClause.rightColumn.column)}`;
+  return (
+    base + joinClause + renderWhereClauseSql('left', semijoin.leftWhereClause)
+  );
+}
+
+function renderWhereClauseSql(
+  tableName: string,
+  where?: BooleanExpr<any>
+): string {
+  if (where == undefined) {
+    return '';
   }
+  return ` WHERE ${booleanExprToSql(where, tableName)}`;
+}
+
+function renderSelectSql<Table extends TypedTableDef>(
+  tableName: string,
+  where?: BooleanExpr<Table>,
+  extraClauses: readonly string[] = []
+): string {
+  const quotedTable = quoteIdentifier(tableName);
+  const base = `SELECT * FROM ${quotedTable}`;
+  const clauses: string[] = [];
+  if (where) {
+    clauses.push(booleanExprToSql(where));
+  }
+  clauses.push(...extraClauses);
+  if (clauses.length === 0) {
+    return base;
+  }
+  const whereSql =
+    clauses.length === 1 ? clauses[0] : clauses.map(wrapInParens).join(' AND ');
+  return `${base} WHERE ${whereSql}`;
 }
 
 // TODO: Just use UntypedTableDef if they end up being the same.
@@ -307,7 +303,13 @@ export type ColumnExprForValue<Table extends TypedTableDef, Value> = {
     : never;
 }[ColumnNames<Table>];
 
-type LiteralValue = string | number | bigint | boolean | Identity | ConnectionId;
+type LiteralValue =
+  | string
+  | number
+  | bigint
+  | boolean
+  | Identity
+  | ConnectionId;
 
 export type ValueExpr<TableDef extends TypedTableDef, Value> =
   | LiteralExpr<Value & LiteralValue>
@@ -372,7 +374,6 @@ export function eq<Table extends TypedTableDef>(
   };
 }
 
-
 export function not<Table extends TypedTableDef>(
   clause: BooleanExpr<Table>
 ): BooleanExpr<Table> {
@@ -400,46 +401,25 @@ export function or<Table extends TypedTableDef>(
 }
 
 function booleanExprToSql<Table extends TypedTableDef>(
-  expr: BooleanExpr<Table>
+  expr: BooleanExpr<Table>,
+  tableAlias?: string
 ): string {
   switch (expr.type) {
     case 'eq':
-      return `${valueExprToSql(expr.left)} = ${valueExprToSql(expr.right)}`;
+      return `${valueExprToSql(expr.left, tableAlias)} = ${valueExprToSql(expr.right, tableAlias)}`;
     case 'and':
-      return expr.clauses.map(booleanExprToSql).map(wrapInParens).join(' AND ');
+      return expr.clauses
+        .map(c => booleanExprToSql(c, tableAlias))
+        .map(wrapInParens)
+        .join(' AND ');
     case 'or':
-      return expr.clauses.map(booleanExprToSql).map(wrapInParens).join(' OR ');
+      return expr.clauses
+        .map(c => booleanExprToSql(c, tableAlias))
+        .map(wrapInParens)
+        .join(' OR ');
     case 'not':
-      return `NOT ${wrapInParens(booleanExprToSql(expr.clause))}`;
+      return `NOT ${wrapInParens(booleanExprToSql(expr.clause, tableAlias))}`;
   }
-}
-
-function joinExprToSql<Table extends TypedTableDef>(
-  join: JoinExpr<Table>
-): string {
-  switch (join.type) {
-    case 'semi':
-      return semiJoinToSql(join);
-  }
-}
-
-function semiJoinToSql<Table extends TypedTableDef>(
-  join: SemiJoinExpr<Table>
-): string {
-  const base = `SELECT 1 FROM ${quoteIdentifier(join.table.name)}`;
-  const conditions: string[] = join.on.map(({ left, right }) => {
-    return `${valueExprToSql<Table>(left)} = ${valueExprToSql<TypedTableDef>(
-      right
-    )}`;
-  });
-  if (join.innerWhere) {
-    conditions.push(booleanExprToSql(join.innerWhere));
-  }
-  const whereSql =
-    conditions.length > 0
-      ? ` WHERE ${conditions.map(wrapInParens).join(' AND ')}`
-      : '';
-  return `EXISTS (${base}${whereSql})`;
 }
 
 function wrapInParens(sql: string): string {
@@ -447,12 +427,14 @@ function wrapInParens(sql: string): string {
 }
 
 function valueExprToSql<Table extends TypedTableDef>(
-  expr: ValueExpr<Table, any>
+  expr: ValueExpr<Table, any>,
+  tableAlias?: string
 ): string {
   if (isLiteralExpr(expr)) {
     return literalValueToSql(expr.value);
   }
-  return `${quoteIdentifier(expr.table)}.${quoteIdentifier(expr.column)}`;
+  const table = tableAlias ?? expr.table;
+  return `${quoteIdentifier(table)}.${quoteIdentifier(expr.column)}`;
 }
 
 function literalValueToSql(value: unknown): string {
