@@ -42,6 +42,6 @@ export type TableSchema<
   readonly constraints: readonly {
     name: string | undefined;
     constraint: 'unique';
-    columns: readonly string[];
+    columns: [any];
   }[];
 };

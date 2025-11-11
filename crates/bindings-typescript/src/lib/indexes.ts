@@ -20,6 +20,7 @@ export type IndexOpts<AllowedCol extends string> = {
  */
 export type UntypedIndex<AllowedCol extends string> = {
   name: string;
+  unique?: boolean;
   algorithm: 'btree' | 'direct';
   columns: readonly AllowedCol[];
 };

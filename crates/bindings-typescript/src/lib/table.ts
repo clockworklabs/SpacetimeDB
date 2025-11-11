@@ -140,6 +140,15 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
   : CoerceArray<[]>;
 
 /**
+ * Extracts the constraints from TableOpts, defaulting to an empty array if none are provided.
+ */
+type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
+  constraints: infer Constraints extends NonNullable<any[]>;
+}
+  ? Constraints 
+  : CoerceArray<[]>;
+
+/**
  * Table<Row, UniqueConstraintViolation = never, AutoIncOverflow = never>
  *
  * - Row: row shape
@@ -374,5 +383,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     rowSpacetimeType: productType,
     tableDef,
     idxs: indexes as OptsIndices<Opts>,
+    constraints: constraints as OptsConstraints<Opts>
   };
 }

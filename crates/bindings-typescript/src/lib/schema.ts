@@ -88,7 +88,7 @@ export function tablesToSchema<
           ...schema.tableDef.constraints.map(c => ({
             name: c.name,
             constraint: 'unique' as const,
-            columns: c.data.value.columns.map(i => colNameList[i]),
+            columns: Array.from(c.data.value.columns.map(i => colNameList[i])),
           })),
         ],
         // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
