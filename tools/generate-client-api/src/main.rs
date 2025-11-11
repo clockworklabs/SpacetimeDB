@@ -37,7 +37,8 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
 
 fn main() -> Result<()> {
     let out_dir = "src/sdk/client_api";
-    let replacement = "../../index";
+    let index_replacement = "../../index";
+    let other_replacement = "../../lib/type_builders";
 
     // 1) Build prerequisite
     run_inherit("cargo", &["build", "-p", "spacetimedb-standalone"])?;
@@ -97,7 +98,7 @@ fn main() -> Result<()> {
         include_hidden: false,
         ignore_globs: vec!["**/node_modules/**".into(), "**/dist/**".into()],
     };
-    let stats = replace_in_tree(out_dir, replacement, &opts)?;
+    let stats = replace_in_tree(out_dir, index_replacement, other_replacement, &opts)?;
     println!(
         "Replaced {} occurrences across {} files.",
         stats.occurrences, stats.files_changed

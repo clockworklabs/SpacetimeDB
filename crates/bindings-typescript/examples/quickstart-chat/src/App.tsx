@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import './App.css';
-import { DbConnection, Message, User } from './module_bindings';
-import { useSpacetimeDB, useTable, where, eq } from 'spacetimedb/react';
-import { Identity, Timestamp } from 'spacetimedb';
+import { tables, reducers, Message } from './module_bindings';
+import { useSpacetimeDB, useTable, where, eq, useReducer } from 'spacetimedb/react';
+import { Identity, Infer, Timestamp } from 'spacetimedb';
 
 export type PrettyMessage = {
   senderName: string;
@@ -14,21 +14,21 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState([] as Message[]);
+  const [systemMessages, setSystemMessages] = useState([] as Infer<typeof Message>[]);
   const [newMessage, setNewMessage] = useState('');
-  const conn = useSpacetimeDB<DbConnection>();
 
-  conn.setReducerFlags();
-  const { identity, isActive: connected } = conn;
+  const { identity, isActive: connected } = useSpacetimeDB();
+  const setName = useReducer(reducers.setName);
+  const sendMessage = useReducer(reducers.sendMessage);
 
   // Subscribe to all messages in the chat
-  const { rows: messages } = useTable<DbConnection, Message>('message');
+  const messages = useTable(tables.message);
 
   // Subscribe to all online users in the chat
   // so we can show who's online and demonstrate
   // the `where` and `eq` query expressions
-  const { rows: onlineUsers } = useTable<DbConnection, User>(
-    'user',
+  const onlineUsers = useTable(
+    tables.user,
     where(eq('online', true)),
     {
       onInsert: user => {
@@ -58,13 +58,13 @@ function App() {
     }
   );
 
-  const { rows: offlineUsers } = useTable<DbConnection, User>(
-    'user',
+  const offlineUsers = useTable(
+    tables.user,
     where(eq('online', false))
   );
   const users = [...onlineUsers, ...offlineUsers];
 
-  const prettyMessages: PrettyMessage[] = Array.from(messages)
+  const prettyMessages: PrettyMessage[] = messages
     .concat(systemMessages)
     .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
     .map(message => {
@@ -97,13 +97,13 @@ function App() {
   const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSettingName(false);
-    conn.reducers.setName(newName);
+    setName({ name: newName });
   };
 
   const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setNewMessage('');
-    conn.reducers.sendMessage(newMessage);
+    sendMessage({ text: newMessage });
   };
 
   return (
