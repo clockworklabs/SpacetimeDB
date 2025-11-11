@@ -15,7 +15,7 @@ function getRandomInt(max: number) {
 
 function App() {
   const connection = useSpacetimeDB();
-  const players = useTable(tables.player, where(eq('name', 'Hello')), {
+  const [players] = useTable(tables.player, where(eq('name', 'Hello')), {
     onInsert: row => {
       console.log('Player inserted:', row);
     },
@@ -24,7 +24,7 @@ function App() {
 
   useEffect(() => {
     setTimeout(() => {
-      console.log(Array.from(players));
+      console.log(players);
     }, 5000);
   }, [connection, players]);
 

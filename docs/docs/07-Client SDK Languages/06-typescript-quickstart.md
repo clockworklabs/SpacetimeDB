@@ -575,7 +575,7 @@ const setName = useReducer(reducers.setName);
 const sendMessage = useReducer(reducers.sendMessage);
 
 // Subscribe to all messages in the chat
-const messages = useTable(tables.message);
+const [messages] = useTable(tables.message);
 ```
 
 Next replace `const onlineUsers: User[] = [];` with the following:
@@ -584,7 +584,7 @@ Next replace `const onlineUsers: User[] = [];` with the following:
 // Subscribe to all online users in the chat
 // so we can show who's online and demonstrate
 // the `where` and `eq` query expressions
-const onlineUsers = useTable(
+const [onlineUsers] = useTable(
   tables.user,
   where(eq('online', true))
 );
@@ -751,7 +751,7 @@ const prettyMessages: PrettyMessage[] = Array.from(messages)
 Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: User[] = [];` with:
 
 ```tsx
-const offlineUsers = useTable(
+const [offlineUsers] = useTable(
   tables.user,
   where(eq('online', false))
 );

@@ -30,12 +30,12 @@ function App() {
   const sendMessage = useReducer(reducers.sendMessage);
 
   // Subscribe to all messages in the chat
-  const messages = useTable(tables.message);
+  const [messages] = useTable(tables.message);
 
   // Subscribe to all online users in the chat
   // so we can show who's online and demonstrate
   // the `where` and `eq` query expressions
-  const onlineUsers = useTable(tables.user, where(eq('online', true)), {
+  const [onlineUsers] = useTable(tables.user, where(eq('online', true)), {
     onInsert: user => {
       // All users being inserted here are online
       const name = user.name || user.identity.toHexString().substring(0, 8);
@@ -62,7 +62,7 @@ function App() {
     },
   });
 
-  const offlineUsers = useTable(tables.user, where(eq('online', false)));
+  const [offlineUsers] = useTable(tables.user, where(eq('online', false)));
   const users = [...onlineUsers, ...offlineUsers];
 
   const prettyMessages: PrettyMessage[] = messages

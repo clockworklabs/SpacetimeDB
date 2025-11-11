@@ -508,8 +508,10 @@ fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
     writeln!(out, "],");
     writeln!(out, "constraints: [");
     out.indent(1);
-    // Unique constraints
-    for (_, constraint) in &table.constraints {
+    // Unique constraints sorted by name for determinism
+    let mut constraints: Vec<_> = table.constraints.iter().collect();
+    constraints.sort_by_key(|(name, _)| *name);
+    for (_, constraint) in constraints {
         let columns: Vec<_> = constraint
             .data
             .unique_columns() // Option<&ColSet>

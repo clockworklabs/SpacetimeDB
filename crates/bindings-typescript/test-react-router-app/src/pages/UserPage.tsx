@@ -4,7 +4,7 @@ import { Infer } from '../../../src';
 
 export default function UserPage() {
   const connection = useSpacetimeDB();
-  const users = useTable(tables.user);
+  const [users] = useTable(tables.user);
 
   const identityHex = connection.identity?.toHexString();
   const currentUser = users.find(

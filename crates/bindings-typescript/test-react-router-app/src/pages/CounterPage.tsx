@@ -2,7 +2,7 @@ import { useReducer, useTable } from '../../../src/react';
 import { tables, reducers } from '../module_bindings';
 
 export default function CounterPage() {
-  const counter = useTable(tables.counter);
+  const [counter] = useTable(tables.counter);
   const incrementCounter = useReducer(reducers.incrementCounter);
   const clearCounter = useReducer(reducers.clearCounter);
 

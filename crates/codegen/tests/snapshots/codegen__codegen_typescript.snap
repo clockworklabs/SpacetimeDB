@@ -345,9 +345,9 @@ const tablesSchema = __schema(
       ] },
     ],
     constraints: [
-      { name: 'logged_out_player_player_id_key', constraint: 'unique', columns: ['player_id'] },
-      { name: 'logged_out_player_name_key', constraint: 'unique', columns: ['name'] },
       { name: 'logged_out_player_identity_key', constraint: 'unique', columns: ['identity'] },
+      { name: 'logged_out_player_name_key', constraint: 'unique', columns: ['name'] },
+      { name: 'logged_out_player_player_id_key', constraint: 'unique', columns: ['player_id'] },
     ],
   }, PlayerRow),
   __table({
@@ -393,9 +393,9 @@ const tablesSchema = __schema(
       ] },
     ],
     constraints: [
-      { name: 'player_player_id_key', constraint: 'unique', columns: ['player_id'] },
-      { name: 'player_name_key', constraint: 'unique', columns: ['name'] },
       { name: 'player_identity_key', constraint: 'unique', columns: ['identity'] },
+      { name: 'player_name_key', constraint: 'unique', columns: ['name'] },
+      { name: 'player_player_id_key', constraint: 'unique', columns: ['player_id'] },
     ],
   }, PlayerRow),
   __table({
