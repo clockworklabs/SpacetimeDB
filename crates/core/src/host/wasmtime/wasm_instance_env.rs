@@ -1454,7 +1454,8 @@ impl WasmInstanceEnv {
     ///
     /// # Traps
     ///
-    /// This function does not trap.
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<i64>()]` is not in bounds of WASM memory.
     ///
     /// # Errors
     ///
@@ -1463,21 +1464,27 @@ impl WasmInstanceEnv {
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
     pub fn procedure_start_mut_transaction<'caller>(
         caller: Caller<'caller, Self>,
-        (): (),
+        (out,): (WasmPtr<u64>,),
     ) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(caller, AbiCall::ProcedureStartMutTransaction, |mut caller| async {
-            let (_, env) = Self::mem_env(&mut caller);
-            let res = env.instance_env.start_mutable_tx().await;
+        Self::async_with_span(
+            caller,
+            AbiCall::ProcedureStartMutTransaction,
+            move |mut caller| async move {
+                let (mem, env) = Self::mem_env(&mut caller);
+                let res = env.instance_env.start_mutable_tx().await.map_err(Into::into);
+                let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+                let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
 
-            let result = res
-                .map(|()| {
-                    env.in_anon_tx = true;
-                    0u16.into()
-                })
-                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err.into()));
+                let result = res
+                    .map(|()| {
+                        env.in_anon_tx = true;
+                        0u16.into()
+                    })
+                    .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err));
 
-            (caller, result)
-        })
+                (caller, result)
+            },
+        )
     }
 
     /// Commits a mutable transaction,
