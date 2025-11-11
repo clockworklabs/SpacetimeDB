@@ -99,15 +99,32 @@ pub fn person(ctx: &ViewContext) -> Option<ABC> {
 
 class SqlViews(Smoketest):
     MODULE_CODE = """
+use spacetimedb::AnonymousViewContext;
 use spacetimedb::ViewContext;
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = player_state)]
+#[spacetimedb::table(name = player_level)]
 pub struct PlayerState {
     #[primary_key]
     id: u64,
     #[index(btree)]
     level: u64,
+}
+
+#[spacetimedb::reducer]
+pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
+    ctx.db.player_level().insert(PlayerState { id, level });
+}
+
+#[spacetimedb::view(name = my_player_and_level, public)]
+pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
+    ctx.db.player_level().id().find(0)
+}
+
+#[spacetimedb::view(name = player_and_level, public)]
+pub fn player_and_level(ctx: &AnonymousViewContext) -> Vec<PlayerState> {
+    ctx.db.player_level().level().filter(2)
 }
 
 #[spacetimedb::view(name = player, public)]
@@ -172,7 +189,7 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
  7  | 3
 """)
 
-    def test_a_view_materialization(self):
+    def test_view_materialization(self):
         """This test asserts whether views are materialized correctly"""
         self.insert_initial_data()
         player_called_log = "player view called"
@@ -203,4 +220,34 @@ INSERT INTO player_state (id, level) VALUES (22, 8);
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 2)
 
+    def test_query_anonymous_view_reducer(self):
+        """Tests that anonymous views are updated for reducers"""
+        self.call("add_player_level", 0, 1)
+        self.call("add_player_level", 1, 2)
 
+        self.assertSql("SELECT * FROM my_player_and_level", """\
+ id | level
+----+-------
+ 0  | 1
+""")
+
+        self.assertSql("SELECT * FROM player_and_level", """\
+ id | level
+----+-------
+ 1  | 2
+""")
+
+        self.call("add_player_level", 2, 2)
+
+        self.assertSql("SELECT * FROM player_and_level", """\
+ id | level
+----+-------
+ 1  | 2
+ 2  | 2
+""")
+
+        self.assertSql("SELECT * FROM player_and_level WHERE id = 2", """\
+ id | level
+----+-------
+ 2  | 2
+""")
