@@ -10,7 +10,6 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
-use crate::host::host_controller::ViewOutcome;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
 use crate::messages::control_db::{Database, HostType};
@@ -40,7 +39,7 @@ use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
 use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::system_tables::{ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
@@ -717,6 +716,22 @@ pub enum ReducerCallError {
     LifecycleReducer(Lifecycle),
 }
 
+pub enum ViewOutcome {
+    Success,
+    Failed(String),
+    BudgetExceeded,
+}
+
+impl From<EventStatus> for ViewOutcome {
+    fn from(status: EventStatus) -> Self {
+        match status {
+            EventStatus::Committed(_) => ViewOutcome::Success,
+            EventStatus::Failed(e) => ViewOutcome::Failed(e),
+            EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
+        }
+    }
+}
+
 pub struct ViewCallResult {
     pub outcome: ViewOutcome,
     pub tx: MutTxId,
@@ -751,6 +766,8 @@ pub enum ViewCallError {
     MissingClientConnection,
     #[error("DB error during view call: {0}")]
     DatastoreError(#[from] DatastoreError),
+    #[error("The module instance encountered a fatal error: {0}")]
+    InternalError(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -1515,41 +1532,76 @@ impl ModuleHost {
         &self,
         mut tx: MutTxId,
         view_collector: &impl CollectViews,
-        sender: Identity,
+        caller: Identity,
         workload: Workload,
     ) -> Result<MutTxId, ViewCallError> {
         use FunctionArgs::*;
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
         for view_id in view_ids {
-            let name = tx.lookup_st_view(view_id)?.view_name;
-            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, sender)? {
-                tx = self.call_view(tx, &name, Nullary, sender).await?.tx;
+            let st_view_row = tx.lookup_st_view(view_id)?;
+            let view_name = st_view_row.view_name;
+            let view_id = st_view_row.view_id;
+            let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
+            if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
+                tx = self
+                    .call_view(tx, &view_name, view_id, table_id, Nullary, caller, Some(caller))
+                    .await?
+                    .tx;
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
-                tx.update_view_timestamp(view_id, ArgId::SENTINEL, sender)?;
+                tx.update_view_timestamp(view_id, ArgId::SENTINEL, caller)?;
             }
             // If this is a subscribe call, we also increment this view's subscriber count
             if let Workload::Subscribe = workload {
-                tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+                tx.subscribe_view(view_id, ArgId::SENTINEL, caller)?;
             }
         }
         Ok(tx)
+    }
+
+    pub async fn call_views_with_tx(&self, tx: MutTxId, caller: Identity) -> Result<ViewCallResult, ViewCallError> {
+        use FunctionArgs::*;
+        let mut out = ViewCallResult::default(tx);
+        for ViewCallInfo {
+            view_id,
+            table_id,
+            view_name,
+            sender,
+        } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
+        {
+            let result = self
+                .call_view(out.tx, &view_name, view_id, table_id, Nullary, caller, sender)
+                .await?;
+
+            // Increment execution stats
+            out.tx = result.tx;
+            out.outcome = result.outcome;
+            out.energy_used += result.energy_used;
+            out.total_duration += result.total_duration;
+            out.abi_duration += result.abi_duration;
+
+            // Terminate early if execution failed
+            if !matches!(out.outcome, ViewOutcome::Success) {
+                break;
+            }
+        }
+        Ok(out)
     }
 
     pub async fn call_view(
         &self,
         tx: MutTxId,
         view_name: &str,
+        view_id: ViewId,
+        table_id: TableId,
         args: FunctionArgs,
-        sender: Identity,
+        caller: Identity,
+        sender: Option<Identity>,
     ) -> Result<ViewCallResult, ViewCallError> {
         let module_def = &self.info.module_def;
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
-        let st_view_row = tx.lookup_st_view_by_name(view_name)?;
-        let view_id = st_view_row.view_id;
-        let table_id = st_view_row.table_id.ok_or(ViewCallError::TableDoesNotExist(view_id))?;
         let fn_ptr = view_def.fn_ptr;
         let row_type = view_def.product_type_ref;
         let typespace = module_def.typespace().with_type(view_def);
@@ -1557,7 +1609,7 @@ impl ModuleHost {
         let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
 
         match self
-            .call_view_inner(tx, view_name, view_id, table_id, fn_ptr, sender, args, row_type)
+            .call_view_inner(tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type)
             .await
         {
             err @ Err(ViewCallError::NoSuchView) => {
@@ -1581,7 +1633,8 @@ impl ModuleHost {
         view_id: ViewId,
         table_id: TableId,
         fn_ptr: ViewFnPtr,
-        sender: Identity,
+        caller: Identity,
+        sender: Option<Identity>,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
     ) -> Result<ViewCallResult, ViewCallError> {
@@ -1591,15 +1644,15 @@ impl ModuleHost {
                 inst.call_view(
                     tx,
                     CallViewParams {
+                        timestamp: Timestamp::now(),
                         view_name,
                         view_id,
                         table_id,
                         fn_ptr,
-                        caller: sender,
-                        sender: Some(sender),
+                        caller,
+                        sender,
                         args,
                         row_type,
-                        timestamp: Timestamp::now(),
                     },
                 )
             })
