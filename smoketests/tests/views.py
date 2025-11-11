@@ -95,8 +95,6 @@ pub fn person(ctx: &ViewContext) -> Option<ABC> {
         with self.assertRaises(Exception):
             self.publish_module(name)
 
-
-
 class SqlViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::AnonymousViewContext;
