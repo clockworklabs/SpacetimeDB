@@ -273,7 +273,7 @@ pub async fn run(
 
             // Update views
             let result = match module {
-                Some(module) => module.call_views_with_tx(tx, auth.caller).await?,
+                Some(module) => module.call_views_with_tx(tx, auth.caller()).await?,
                 None => ViewCallResult::default(tx),
             };
 
