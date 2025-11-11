@@ -815,32 +815,26 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
-/// // An example of a parameterized view
-/// #[view(name = players_at_level, public)]
-/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
-///     ctx.db.player().level().filter(level).collect()
-/// }
-///
 /// // An example that is analogous to a semijoin in sql
 /// #[view(name = players_at_coordinates, public)]
-/// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+/// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
 ///     ctx
 ///         .db
 ///         .location()
 ///         .coordinates()
-///         .filter((x, y))
+///         .filter((3u64, 5u64))
 ///         .filter_map(|location| ctx.db.player().id().find(location.player_id))
 ///         .collect()
 /// }
 ///
 /// // An example of a join that combines fields from two different tables
 /// #[view(name = players_with_coordinates, public)]
-/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
+/// fn players_with_coordinates(ctx: &AnonymousViewContext) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db
 ///         .location()
 ///         .coordinates()
-///         .filter((x, y))
+///         .filter((3u64, 5u64))
 ///         .filter_map(|location| ctx
 ///             .db
 ///             .player()

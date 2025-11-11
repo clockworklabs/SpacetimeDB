@@ -15,8 +15,8 @@ pub struct PlayerState {
 }
 
 #[spacetimedb::view(name = player, public)]
-pub fn player(ctx: &ViewContext, id: u64) -> Option<PlayerState> {
-    ctx.db.player_state().id().find(id)
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(0u64)
 }
 """
 
@@ -35,13 +35,7 @@ pub fn player(ctx: &ViewContext, id: u64) -> Option<PlayerState> {
 ---------+-----------+---------------+-----------+--------------
  4096    | "player"  | (some = 4097) | true      | false
 """)
-        
-        self.assertSql("SELECT * FROM st_view_param", """\
- view_id | param_pos | param_name | param_type      
----------+-----------+------------+------------
- 4096    | 0         | "id"       | 0x0d
-""")
-        
+
         self.assertSql("SELECT * FROM st_view_column", """\
  view_id | col_pos | col_name | col_type      
 ---------+---------+----------+----------
