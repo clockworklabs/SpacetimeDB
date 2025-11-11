@@ -6,7 +6,10 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{
+    DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ViewCallError, ViewCallResult,
+    ViewOutcome,
+};
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
 use crate::subscription::module_subscription_manager::TransactionOffset;
@@ -263,6 +266,21 @@ pub async fn run(
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
+
+            // Update views
+            let result = match module {
+                Some(module) => module.call_views_with_tx(tx, auth.caller).await?,
+                None => ViewCallResult::default(tx),
+            };
+
+            // Rollback transaction and report metrics if view execution failed
+            if let ViewOutcome::Failed(err) = result.outcome {
+                let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
+                db.report_mut_tx_metrics(reducer, metrics, None);
+                return Err(DBError::View(ViewCallError::InternalError(err)));
+            }
+
+            let tx = result.tx;
 
             // Commit the tx if there are no deltas to process
             if subs.is_none() {

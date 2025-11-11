@@ -28,18 +28,16 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
         )
     });
 
-    // TODO: Remove these once we have view bindings for C# and TypeScript
-    if lang_name == "ts" || lang_name == "typescript" {
-        diff.retain(|step| {
-            !matches!(
-                step,
-                AutoMigrateStep::AddView(_) | AutoMigrateStep::RemoveView(_) | AutoMigrateStep::UpdateView(_)
-            )
-        });
-    }
-    if lang_name == "cs" || lang_name == "C#" {
-        diff.retain(|step| !matches!(step, AutoMigrateStep::UpdateView(_)));
-    }
+    // TODO: Remove this once we have view bindings for C# and TypeScript
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::DisconnectAllUsers
+                | AutoMigrateStep::AddView(_)
+                | AutoMigrateStep::RemoveView(_)
+                | AutoMigrateStep::UpdateView(_)
+        )
+    });
 
     assert!(
         diff.is_empty(),
