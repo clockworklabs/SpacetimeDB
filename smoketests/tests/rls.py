@@ -102,7 +102,7 @@ pub fn add_user(ctx: &ReducerContext, name: String) {
 """
     
     ADD_RLS = """ 
-    #[spacetimedb::client_visibility_filter]
+#[spacetimedb::client_visibility_filter]
 const USER_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql(
     "SELECT * FROM users WHERE identity = :sender"
 );
@@ -146,7 +146,7 @@ const USER_FILTER: spacetimedb::Filter = spacetimedb::Filter::Sql(
         # Validate disconnect + schema migration logs
         self.assertIn("Disconnecting all users", logs)
     
-    def test_rls_disconnect_no(self):
+    def test_rls_no_disconnect(self):
         """This tests that not changing the RLS rules does not disconnect existing clients"""
         
         name = random_string()
