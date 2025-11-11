@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import './App.css';
 import { tables, reducers, Message } from './module_bindings';
-import { useSpacetimeDB, useTable, where, eq, useReducer } from 'spacetimedb/react';
+import {
+  useSpacetimeDB,
+  useTable,
+  where,
+  eq,
+  useReducer,
+} from 'spacetimedb/react';
 import { Identity, Infer, Timestamp } from 'spacetimedb';
 
 export type PrettyMessage = {
@@ -14,7 +20,9 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState([] as Infer<typeof Message>[]);
+  const [systemMessages, setSystemMessages] = useState(
+    [] as Infer<typeof Message>[]
+  );
   const [newMessage, setNewMessage] = useState('');
 
   const { identity, isActive: connected } = useSpacetimeDB();
@@ -27,41 +35,34 @@ function App() {
   // Subscribe to all online users in the chat
   // so we can show who's online and demonstrate
   // the `where` and `eq` query expressions
-  const onlineUsers = useTable(
-    tables.user,
-    where(eq('online', true)),
-    {
-      onInsert: user => {
-        // All users being inserted here are online
-        const name = user.name || user.identity.toHexString().substring(0, 8);
-        setSystemMessages(prev => [
-          ...prev,
-          {
-            sender: Identity.zero(),
-            text: `${name} has connected.`,
-            sent: Timestamp.now(),
-          },
-        ]);
-      },
-      onDelete: user => {
-        // All users being deleted here are offline
-        const name = user.name || user.identity.toHexString().substring(0, 8);
-        setSystemMessages(prev => [
-          ...prev,
-          {
-            sender: Identity.zero(),
-            text: `${name} has disconnected.`,
-            sent: Timestamp.now(),
-          },
-        ]);
-      },
-    }
-  );
+  const onlineUsers = useTable(tables.user, where(eq('online', true)), {
+    onInsert: user => {
+      // All users being inserted here are online
+      const name = user.name || user.identity.toHexString().substring(0, 8);
+      setSystemMessages(prev => [
+        ...prev,
+        {
+          sender: Identity.zero(),
+          text: `${name} has connected.`,
+          sent: Timestamp.now(),
+        },
+      ]);
+    },
+    onDelete: user => {
+      // All users being deleted here are offline
+      const name = user.name || user.identity.toHexString().substring(0, 8);
+      setSystemMessages(prev => [
+        ...prev,
+        {
+          sender: Identity.zero(),
+          text: `${name} has disconnected.`,
+          sent: Timestamp.now(),
+        },
+      ]);
+    },
+  });
 
-  const offlineUsers = useTable(
-    tables.user,
-    where(eq('online', false))
-  );
+  const offlineUsers = useTable(tables.user, where(eq('online', false)));
   const users = [...onlineUsers, ...offlineUsers];
 
   const prettyMessages: PrettyMessage[] = messages
