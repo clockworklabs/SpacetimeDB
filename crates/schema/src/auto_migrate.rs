@@ -546,7 +546,7 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     // 2. If we change the order of the columns or parameters
     // 3. If we change the types of the columns or parameters
     // 4. If we change the context parameter
-    let Any(incompatible_return_type) = diff(plan.old, plan.new, |def| {
+    let Any(_incompatible_return_type) = diff(plan.old, plan.new, |def| {
         def.lookup_expect::<ViewDef>(key).return_columns.iter()
     })
     .map(|col_diff| {
@@ -575,7 +575,7 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    let Any(incompatible_param_types) = diff(plan.old, plan.new, |def| {
+    let Any(_incompatible_param_types) = diff(plan.old, plan.new, |def| {
         def.lookup_expect::<ViewDef>(key).param_columns.iter()
     })
     .map(|col_diff| {
@@ -604,15 +604,24 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
-        plan.steps.push(AutoMigrateStep::AddView(new.key()));
-        plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+    // TODO: Uncomment and re-enable view auto-migrations without disconnecting clients
+    //
+    // if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
+    //     plan.steps.push(AutoMigrateStep::AddView(new.key()));
+    //     plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
 
-        if !plan.disconnects_all_users() {
-            plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
-        }
-    } else {
-        plan.steps.push(AutoMigrateStep::UpdateView(old.key()));
+    //     if !plan.disconnects_all_users() {
+    //         plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
+    //     }
+    // } else {
+    //     plan.steps.push(AutoMigrateStep::UpdateView(old.key()));
+    // }
+
+    plan.steps.push(AutoMigrateStep::AddView(new.key()));
+    plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
+
+    if !plan.disconnects_all_users() {
+        plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
     }
 
     Ok(())
@@ -1904,18 +1913,31 @@ mod tests {
             let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
             let steps = &plan.steps[..];
 
-            assert!(!plan.disconnects_all_users(), "{name}, plan: {plan:#?}");
+            // TODO: Assert that we don't disconnect users once we have automatic view update in auto-migrations
+            //
+            // assert!(!plan.disconnects_all_users(), "{name}, plan: {plan:#?}");
+
+            // assert!(
+            //     steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
+            //     "{name}, steps: {steps:?}"
+            // );
+            // assert!(
+            //     !steps.contains(&AutoMigrateStep::AddView(&my_view)),
+            //     "{name}, steps: {steps:?}"
+            // );
+            // assert!(
+            //     !steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
+            //     "{name}, steps: {steps:?}"
+            // );
+
+            assert!(plan.disconnects_all_users(), "{name}, plan: {plan:#?}");
 
             assert!(
-                steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
+                steps.contains(&AutoMigrateStep::AddView(&my_view)),
                 "{name}, steps: {steps:?}"
             );
             assert!(
-                !steps.contains(&AutoMigrateStep::AddView(&my_view)),
-                "{name}, steps: {steps:?}"
-            );
-            assert!(
-                !steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
+                steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
                 "{name}, steps: {steps:?}"
             );
         }

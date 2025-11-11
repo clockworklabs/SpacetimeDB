@@ -25,7 +25,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId, ViewDatabaseId};
+use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -55,7 +55,7 @@ pub struct Plan {
 }
 
 impl CollectViews for Plan {
-    fn collect_views(&self, views: &mut std::collections::HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut std::collections::HashSet<ViewId>) {
         for plan in &self.plans {
             plan.collect_views(views);
         }
