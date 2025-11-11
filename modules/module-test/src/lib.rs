@@ -466,3 +466,8 @@ fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
         field: format!("{foo}"),
     }
 }
+
+#[spacetimedb::procedure]
+fn with_transaction(ctx: &mut ProcedureContext) {
+    ctx.with_transaction(|tx| say_hello(tx));
+}

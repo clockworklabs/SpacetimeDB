@@ -4,6 +4,7 @@
 use core::cell::{LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
+use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
@@ -888,8 +889,6 @@ pub struct ViewContext {
 /// number generation.
 ///
 /// Implements the `DbContext` trait for accessing views into a database.
-/// Currently, being this generic is only meaningful in clients,
-/// as `ReducerContext` is the only implementor of `DbContext` within modules.
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
@@ -903,6 +902,8 @@ pub struct ReducerContext {
     /// Will be `None` for certain reducers invoked automatically by the host,
     /// including `init` and scheduled reducers.
     pub connection_id: Option<ConnectionId>,
+
+    sender_auth: AuthCtx,
 
     /// Allows accessing the local database attached to a module.
     ///
@@ -942,8 +943,6 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
-    sender_auth: AuthCtx,
-
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
@@ -964,16 +963,12 @@ impl ReducerContext {
 
     #[doc(hidden)]
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
-        let sender_auth = match connection_id {
-            Some(cid) => AuthCtx::from_connection_id(cid),
-            None => AuthCtx::internal(),
-        };
         Self {
             db,
             sender,
             timestamp,
             connection_id,
-            sender_auth,
+            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
         }
@@ -1008,6 +1003,57 @@ impl ReducerContext {
             sender: self.sender,
             db: LocalReadOnly {},
         }
+    }
+}
+
+/// The context that an anonymous transaction
+/// in [`ProcedureContext::with_transaction`] is provided with.
+///
+/// Includes information about the client starting the transaction
+/// and the time of the procedure/reducer,
+/// as well as a view into the module's database.
+///
+/// If the crate was compiled with the `rand` feature, also includes faculties for random
+/// number generation.
+///
+/// Implements the `DbContext` trait for accessing views into a database.
+pub struct TxContext(ReducerContext);
+
+impl AsRef<ReducerContext> for TxContext {
+    fn as_ref(&self) -> &ReducerContext {
+        &self.0
+    }
+}
+
+impl Deref for TxContext {
+    type Target = ReducerContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Values which knows whether they signify an ok state as opposed to error.
+pub trait IsOk {
+    /// Returns whether the current state of `self` is "ok".
+    fn is_ok(&self) -> bool;
+}
+
+impl IsOk for () {
+    fn is_ok(&self) -> bool {
+        true
+    }
+}
+
+impl<T> IsOk for Option<T> {
+    fn is_ok(&self) -> bool {
+        self.is_some()
+    }
+}
+
+impl<T, E> IsOk for Result<T, E> {
+    fn is_ok(&self) -> bool {
+        self.is_ok()
     }
 }
 
@@ -1074,6 +1120,65 @@ impl ProcedureContext {
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
         self.timestamp = new_time;
     }
+
+    /// Acquire a mutable transaction
+    /// and execute `body` with read-write access to the database.
+    ///
+    /// When `body().is_ok()`,
+    /// the transaction will be committed and its mutations persisted.
+    /// When `!body().is_ok()`,
+    /// the transaction will be rolled back and its mutations discarded.
+    ///
+    /// Regardless of the transaction's success or failure,
+    /// the return value of `body` is not persisted to the commitlog
+    /// or broadcast to subscribed clients.
+    /// Clients attribute mutations performed by this transaction to `Event::UnknownTransaction`.
+    ///
+    /// If the transaction fails to commit after `body` returns,
+    /// e.g., due to a conflict with a concurrent transaction,
+    /// this method will re-invoke `body` with a new transaction in order to retry.
+    /// This is done once. On the second failure, a panic will occur.
+    pub fn with_transaction<R: IsOk>(&mut self, body: impl Fn(&TxContext) -> R) -> R {
+        let run = || {
+            // Start the transaction.
+            let timestamp = sys::procedure::procedure_start_mut_transaction().expect(
+                "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
+            );
+            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+            // We've resumed, so do the work.
+            let tx = ReducerContext::new(Local {}, self.sender, self.connection_id, timestamp);
+            let tx = TxContext(tx);
+            body(&tx)
+        };
+
+        let mut res = run();
+        let abort = || {
+            sys::procedure::procedure_abort_mut_transaction()
+                .expect("should have a pending mutable anon tx as `procedure_start_mut_transaction` preceded")
+        };
+
+        // Commit or roll back?
+        if res.is_ok() {
+            if sys::procedure::procedure_commit_mut_transaction().is_err() {
+                log::warn!("committing anonymous transaction failed");
+
+                // NOTE(procedure,centril): there's no actual guarantee that `body`
+                // does the exact same as the time before, as the timestamps differ
+                // and due to interior mutability.
+                res = run();
+                if res.is_ok() {
+                    sys::procedure::procedure_commit_mut_transaction().expect("transaction retry failed again")
+                } else {
+                    abort();
+                }
+            }
+        } else {
+            abort();
+        }
+
+        res
+    }
 }
 
 /// A handle on a database with a particular table schema.
@@ -1102,9 +1207,16 @@ impl DbContext for ReducerContext {
     }
 }
 
-// `ProcedureContext` is *not* a `DbContext`. We will add a `TxContext`
-// which can be obtained from `ProcedureContext::start_tx`,
-// and that will be a `DbContext`.
+impl DbContext for TxContext {
+    type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+// `ProcedureContext` is *not* a `DbContext`
+// but a `TxContext` derived from it is.
 
 /// Allows accessing the local database attached to the module.
 ///
@@ -1125,18 +1237,25 @@ pub struct JwtClaims {
 }
 
 /// Authentication information for the caller of a reducer.
+#[derive(Clone)]
 pub struct AuthCtx {
     is_internal: bool,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
-    jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
+    jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
 impl AuthCtx {
+    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
+    /// and for when there isn't.
+    fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
+        conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
+    }
+
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
         AuthCtx {
             is_internal,
-            jwt: Box::new(LazyCell::new(jwt_fn)),
+            jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
 

@@ -674,14 +674,15 @@ pub mod raw {
         ///
         /// # Traps
         ///
-        /// This function does not trap.
+        /// Traps if:
+        /// - `out` is NULL or `out[..size_of::<i64>()]` is not in bounds of WASM memory.
         ///
         /// # Errors
         ///
         /// Returns an error:
         ///
         /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
-        pub fn procedure_start_mut_transaction() -> u16;
+        pub fn procedure_start_mut_transaction(out: *mut i64) -> u16;
 
         /// Commits a mutable transaction,
         /// suspending execution of this WASM instance until
@@ -1322,7 +1323,7 @@ impl Drop for RowIter {
 pub mod procedure {
     //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
 
-    use super::{call_no_ret, raw, Result};
+    use super::{call, call_no_ret, raw, Result};
 
     #[inline]
     pub fn sleep_until(wake_at_timestamp: i64) -> i64 {
@@ -1335,7 +1336,7 @@ pub mod procedure {
     /// suspending execution of this WASM instance until
     /// a mutable transaction lock is aquired.
     ///
-    /// Upon resuming, returns `Ok(())` on success,
+    /// Upon resuming, returns `Ok(timestamp)` on success,
     /// enabling further calls that require a pending transaction,
     /// or [`Errno`] otherwise.
     ///
@@ -1345,8 +1346,8 @@ pub mod procedure {
     ///
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
     #[inline]
-    pub fn procedure_start_mut_transaction() -> Result<()> {
-        call_no_ret(|| unsafe { raw::procedure_start_mut_transaction() })
+    pub fn procedure_start_mut_transaction() -> Result<i64> {
+        unsafe { call(|out| raw::procedure_start_mut_transaction(out)) }
     }
 
     /// Commits a mutable transaction,
