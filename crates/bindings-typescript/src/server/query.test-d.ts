@@ -3,7 +3,6 @@ import type { Indexes, UniqueIndex } from './indexes';
 import {
   eq,
   literal,
-  type ColumnExpr,
   type RowExpr,
   type TableNames,
   type TableSchemaAsTableDef,
@@ -51,14 +50,6 @@ const order = table(
 
 const spacetimedb = schema([person, order]);
 
-/*
-type PersonDef = {
-  name: typeof person.tableName;
-  columns: typeof person.rowType.row;
-  indexes: typeof person.idxs;
-};
-*/
-
 const tableDef = {
   name: person.tableName,
   columns: person.rowType.row,
@@ -80,30 +71,19 @@ const orderDef = {
   indexes: order.idxs,
 };
 
-//idxs2.
-
 spacetimedb.init(ctx => {
-  // ctx.db.person.
-  //ctx.db.person.
-  //ctx.db
-  // ctx.db.person.id_name_idx.find
-
-  // Downside of the string approach for columns is that if I hover, I don't get the type information.
-
-  // ctx.queryBuilder.
-  // .filter
-  // col("age")
-
-  // ctx.db.person[Symbol]
-
-  //ctx.query.from('person')
-
+  const firstQuery = ctx.queryBuilder.query('person');
+  firstQuery.semijoinTo(
+    ctx.queryBuilder.order,
+    p => p.age,
+    o => o.item_name
+  );
   const filteredQuery = ctx.queryBuilder
     .query('person')
-    // .query('person')
-    .filter(row => eq(row['age'], literal(20)));
+    .filter(row => eq(row.age, literal(20)));
 
-  filteredQuery.semijoinTo(
+  // Eventually this should not type check.
+  const _semijoin = filteredQuery.semijoinTo(
     ctx.queryBuilder.order,
     p => p.age,
     o => o.item_name

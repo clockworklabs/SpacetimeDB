@@ -101,6 +101,19 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('accumulates multiple filters with AND logic', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = qb
+      .query('person')
+      .filter(row => eq(row.name, literal('Eve')))
+      .filter(row => eq(row.age, literal(25)))
+      .toSql();
+
+    expect(sql).toBe(
+      `SELECT * FROM "person" WHERE ("person"."name" = 'Eve') AND ("person"."age" = 25)`
+    );
+  });
+
   it('renders OR clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb
