@@ -3,7 +3,7 @@ use ignore::{DirEntry, WalkBuilder};
 use regex::Regex;
 use std::fs;
 use std::io;
-use std::path::{Path};
+use std::path::Path;
 
 #[derive(Clone, Debug)]
 pub struct ReplaceOptions {
@@ -104,15 +104,14 @@ pub fn replace_in_tree(
         };
 
         // Count before replacing
-        let matches = re_single.find_iter(&content).count()
-            + re_double.find_iter(&content).count();
+        let matches = re_single.find_iter(&content).count() + re_double.find_iter(&content).count();
         if matches == 0 {
             continue;
         }
 
         // Do the replacements, preserving quote style
         let updated1 = re_single.replace_all(&content, format!("}} from '{}'", replacement));
-        let updated  = re_double.replace_all(&updated1,  format!("}} from \"{}\"", replacement));
+        let updated = re_double.replace_all(&updated1, format!("}} from \"{}\"", replacement));
 
         if options.dry_run {
             println!("[dry-run] {} ({} matches)", path.display(), matches);
@@ -127,5 +126,8 @@ pub fn replace_in_tree(
         total_matches += matches;
     }
 
-    Ok(ReplaceStats { files_changed, occurrences: total_matches })
+    Ok(ReplaceStats {
+        files_changed,
+        occurrences: total_matches,
+    })
 }

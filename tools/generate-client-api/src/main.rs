@@ -27,10 +27,7 @@ fn run_capture(cmd: &str, args: &[&str]) -> Result<String> {
         .output()
         .with_context(|| format!("Failed to start {cmd}"))?;
     if !out.status.success() {
-        return Err(anyhow!(
-            "Command failed: {cmd} {args:?} (exit {})",
-            out.status
-        ));
+        return Err(anyhow!("Command failed: {cmd} {args:?} (exit {})", out.status));
     }
     Ok(String::from_utf8(out.stdout)?)
 }

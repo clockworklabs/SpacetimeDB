@@ -63,7 +63,6 @@ fn main() -> Result<()> {
     )?;
 
     if let Some(replacement) = &args.replacement {
-
         // 5) Replace "spacetimedb" references
         let opts = ReplaceOptions {
             dry_run: false,
@@ -79,11 +78,7 @@ fn main() -> Result<()> {
             ]),
             follow_symlinks: false,
             include_hidden: false,
-            ignore_globs: vec![
-                "**/node_modules/**".into(),
-                "**/dist/**".into(),
-                "**/target/**".into(),
-            ],
+            ignore_globs: vec!["**/node_modules/**".into(), "**/dist/**".into(), "**/target/**".into()],
         };
 
         let stats = replace_in_tree(&args.out_dir, replacement, &opts)?;

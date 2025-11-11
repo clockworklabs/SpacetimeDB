@@ -48,6 +48,9 @@ declare type __keep_Unsubscribe = Unsubscribe;
 import { UnsubscribeMulti } from './unsubscribe_multi_type';
 // Mark import as potentially unused
 declare type __keep_UnsubscribeMulti = UnsubscribeMulti;
+import { CallProcedure } from './call_procedure_type';
+// Mark import as potentially unused
+declare type __keep_CallProcedure = CallProcedure;
 
 import * as ClientMessageVariants from './client_message_variants';
 
@@ -59,7 +62,8 @@ export type ClientMessage =
   | ClientMessageVariants.SubscribeSingle
   | ClientMessageVariants.SubscribeMulti
   | ClientMessageVariants.Unsubscribe
-  | ClientMessageVariants.UnsubscribeMulti;
+  | ClientMessageVariants.UnsubscribeMulti
+  | ClientMessageVariants.CallProcedure;
 
 let _cached_ClientMessage_type_value: __AlgebraicTypeType | null = null;
 
@@ -102,6 +106,9 @@ export const ClientMessage = {
     tag: 'UnsubscribeMulti',
     value,
   }),
+  CallProcedure: (
+    value: CallProcedure
+  ): ClientMessageVariants.CallProcedure => ({ tag: 'CallProcedure', value }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     if (_cached_ClientMessage_type_value)
@@ -137,6 +144,10 @@ export const ClientMessage = {
       {
         name: 'UnsubscribeMulti',
         algebraicType: UnsubscribeMulti.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'CallProcedure',
+        algebraicType: CallProcedure.getTypeScriptAlgebraicType(),
       }
     );
     return _cached_ClientMessage_type_value;
