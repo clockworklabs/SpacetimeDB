@@ -111,7 +111,9 @@ export function u256ToHexString(data: bigint): string {
  * @returns The converted string
  */
 export function toCamelCase<T extends string>(str: T): CamelCase<T> {
-  return str.replace(/[-_]+(\w)/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
+  return str
+    .replace(/[-_]+/g, '_') // collapse runs to a single separator (no backtracking issue)
+    .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
 }
 
 import type { AlgebraicType } from './algebraic_type';

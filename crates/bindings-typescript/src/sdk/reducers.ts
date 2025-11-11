@@ -46,14 +46,16 @@ export type ReducersView<RemoteModule> = IfAny<
         [K in RemoteModule['reducers'][number] as CamelCase<
           K['accessorName']
         >]: (params: InferTypeOfRow<K['params']>) => void;
-      } & { // onX: `on${PascalCase(name)}`
+      } & {
+        // onX: `on${PascalCase(name)}`
         [K in RemoteModule['reducers'][number] as `on${PascalCase<K['accessorName']>}`]: (
           callback: ReducerEventCallback<
             RemoteModule,
             InferTypeOfRow<K['params']>
           >
         ) => void;
-      } & { // removeOnX: `removeOn${PascalCase(name)}`
+      } & {
+        // removeOnX: `removeOn${PascalCase(name)}`
         [K in RemoteModule['reducers'][number] as `removeOn${PascalCase<K['accessorName']>}`]: (
           callback: ReducerEventCallback<
             RemoteModule,
