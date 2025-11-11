@@ -2046,6 +2046,15 @@ impl MutTxId {
         Ok(())
     }
 
+    /// Get all view subscriptions for a given view.
+    pub fn lookup_st_view_subs(&self, view_id: ViewId) -> Result<Vec<StViewSubRow>> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .map(StViewSubRow::try_from)
+            .collect::<Result<Vec<_>>>()
+    }
+
     /// Lookup a row in `st_view` by its primary key
     fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
         self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?

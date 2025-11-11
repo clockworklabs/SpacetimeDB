@@ -189,6 +189,16 @@ pub struct ModuleFunctionCall {
     pub args: ArgsTuple,
 }
 
+impl ModuleFunctionCall {
+    pub fn update() -> Self {
+        Self {
+            reducer: String::new(),
+            reducer_id: u32::MAX.into(),
+            args: ArgsTuple::nullary(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ModuleEvent {
     pub timestamp: Timestamp,
@@ -716,6 +726,7 @@ pub enum ReducerCallError {
     LifecycleReducer(Lifecycle),
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum ViewOutcome {
     Success,
     Failed(String),

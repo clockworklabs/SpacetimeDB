@@ -10,6 +10,7 @@ use spacetimedb_primitives::ViewFnPtr;
 use spacetimedb_primitives::ViewId;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::ViewDef;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -308,9 +309,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = self.instance.replica_ctx();
         self.common
-            .update_database(replica_ctx, program, old_module_info, policy)
+            .update_database(program, old_module_info, policy, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -365,13 +365,14 @@ impl InstanceCommon {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub(crate) fn update_database(
-        &self,
-        replica_ctx: &ReplicaContext,
+    pub(crate) fn update_database<I: WasmInstance>(
+        &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db;
 
@@ -408,19 +409,101 @@ impl InstanceCommon {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(res) => {
-                if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                }
                 system_logger.info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
-                match res {
-                    crate::db::update::UpdateResult::Success => Ok(UpdateDatabaseResult::UpdatePerformed),
-                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        Ok(UpdateDatabaseResult::UpdatePerformedWithClientDisconnect)
+                let res: UpdateDatabaseResult = match res {
+                    crate::db::update::UpdateResult::Success => UpdateDatabaseResult::UpdatePerformed,
+                    crate::db::update::UpdateResult::EvaluateSubscribedViews => {
+                        let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                        tx = out.tx;
+
+                        if trapped || out.outcome != ViewOutcome::Success {
+                            let msg = match trapped {
+                                true => "Trapped while evaluating views during database update".to_string(),
+                                false => format!(
+                                    "Views evaluation did not complete successfully during database update: {:?}",
+                                    out.outcome
+                                ),
+                            };
+
+                            UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
+                        } else {
+                            UpdateDatabaseResult::UpdatePerformed
+                        }
                     }
+                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
+                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
+                    }
+                };
+
+                if res.was_successful() {
+                    let event = ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: self.info.owner_identity,
+                        caller_connection_id: None,
+                        function_call: ModuleFunctionCall::update(),
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        energy_quanta_used: FunctionBudget::ZERO.into(),
+                        host_execution_duration: Duration::ZERO,
+                        request_id: None,
+                        timer: None,
+                    };
+                    //TODO: Return back event in `UpdateDatabaseResult`?
+                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                } else {
+                    let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                    stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 }
+                Ok(res)
             }
         }
+    }
+
+    /// Re-evaluates all views which have entries in `st_view_subs`.
+    fn evaluate_subscribed_views<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut I,
+    ) -> Result<(ViewCallResult, bool), anyhow::Error> {
+        let views = self.info.module_def.views().cloned().collect::<Vec<_>>();
+        let owner_identity = self.info.owner_identity;
+
+        let mut view_calls = Vec::new();
+
+        for view in views {
+            let ViewDef {
+                name: view_name,
+                is_anonymous,
+                fn_ptr,
+                product_type_ref,
+                ..
+            } = view;
+
+            let st_view = tx
+                .view_from_name(&view_name)?
+                .ok_or_else(|| anyhow::anyhow!("view {} not found in database", &view_name))?;
+
+            let view_id = st_view.view_id;
+            let table_id = st_view
+                .table_id
+                .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
+
+            for sub in tx.lookup_st_view_subs(view_id)? {
+                view_calls.push(CallViewParams {
+                    view_name: view_name.to_owned().into(),
+                    view_id,
+                    table_id,
+                    fn_ptr,
+                    caller: owner_identity,
+                    sender: if is_anonymous { None } else { Some(sub.identity.into()) },
+                    args: ArgsTuple::nullary(),
+                    row_type: product_type_ref,
+                    timestamp: Timestamp::now(),
+                });
+            }
+        }
+
+        Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
     async fn call_procedure<I: WasmInstance>(
@@ -873,47 +956,59 @@ impl InstanceCommon {
         inst: &mut I,
         timestamp: Timestamp,
     ) -> (ViewCallResult, bool) {
-        let mut trapped = false;
-        let mut out = ViewCallResult::default(tx);
-        for ViewCallInfo {
-            view_id,
-            table_id,
-            view_name,
-            sender,
-        } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
-        {
-            let view_def = module_def
-                .view(&*view_name)
-                .unwrap_or_else(|| panic!("view `{}` not found", view_name));
-            let fn_ptr = view_def.fn_ptr;
-            let args = ArgsTuple::nullary();
-            let row_type = view_def.product_type_ref;
-            let params = CallViewParams {
-                view_name,
-                view_id,
-                table_id,
-                fn_ptr,
-                caller,
-                sender,
-                args,
-                row_type,
-                timestamp,
-            };
-            let (result, ok) = self.call_view_with_tx(out.tx, params, inst);
+        let view_calls = tx
+            .view_for_update()
+            .cloned()
+            .map(|info| {
+                let view_def = module_def
+                    .view(&*info.view_name)
+                    .unwrap_or_else(|| panic!("view `{}` not found", info.view_name));
 
-            // Increment execution stats
+                CallViewParams {
+                    view_name: info.view_name,
+                    view_id: info.view_id,
+                    table_id: info.table_id,
+                    fn_ptr: view_def.fn_ptr,
+                    caller,
+                    sender: info.sender,
+                    args: ArgsTuple::nullary(),
+                    row_type: view_def.product_type_ref,
+                    timestamp,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        self.execute_view_calls(tx, view_calls, inst)
+    }
+
+    /// Executes view calls and accumulate results.
+    /// Returns early if any call traps or fails.
+    fn execute_view_calls<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        view_calls: Vec<CallViewParams>,
+        inst: &mut I,
+    ) -> (ViewCallResult, bool) {
+        let mut out = ViewCallResult::default(tx);
+        let mut trapped = false;
+
+        for params in view_calls {
+            let (result, call_trapped) = self.call_view_with_tx(out.tx, params, inst);
+
             out.tx = result.tx;
             out.outcome = result.outcome;
             out.energy_used += result.energy_used;
             out.total_duration += result.total_duration;
             out.abi_duration += result.abi_duration;
-            trapped = trapped || ok;
+
+            trapped = trapped || call_trapped;
 
             // Terminate early if execution failed
             if trapped || !matches!(out.outcome, ViewOutcome::Success) {
                 break;
             }
         }
+
         (out, trapped)
     }
 }
