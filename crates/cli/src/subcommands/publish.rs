@@ -1,15 +1,14 @@
-use anyhow::{ensure, Context};
 use clap::Arg;
 use clap::ArgAction::{Set, SetTrue};
 use clap::ArgMatches;
 use reqwest::{StatusCode, Url};
 use spacetimedb_client_api_messages::name::{is_identity, parse_database_name, PublishResult};
-use spacetimedb_client_api_messages::name::{DatabaseNameError, PrePublishResult, PrettyPrintStyle, PublishOp};
+use spacetimedb_client_api_messages::name::{PrePublishResult, PrettyPrintStyle, PublishOp};
 use std::path::PathBuf;
 use std::{env, fs};
 
 use crate::config::Config;
-use crate::util::{add_auth_header_opt, get_auth_header, AuthHeader, ResponseExt};
+use crate::util::{add_auth_header_opt, get_auth_header, unauth_error_context, AuthHeader, ResponseExt};
 use crate::util::{decode_identity, y_or_n};
 use crate::{build, common_args};
 
@@ -77,17 +76,6 @@ pub fn cli() -> clap::Command {
             common_args::anonymous()
         )
         .arg(
-            Arg::new("parent")
-            .help("Domain or identity of a parent for this database")
-            .long("parent")
-            .long_help(
-"A valid domain or identity of an existing database that should be the parent of this database.
-
-If a parent is given, the new database inherits the team permissions from the parent.
-A parent can only be set when a database is created, not when it is updated."
-            )
-        )
-        .arg(
             Arg::new("name|identity")
                 .help("A valid domain or identity for this database")
                 .long_help(
@@ -118,16 +106,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let build_options = args.get_one::<String>("build_options").unwrap();
     let num_replicas = args.get_one::<u8>("num_replicas");
     let break_clients_flag = args.get_flag("break_clients");
-    let parent = args.get_one::<String>("parent");
 
     // If the user didn't specify an identity and we didn't specify an anonymous identity, then
     // we want to use the default identity
     // TODO(jdetter): We should maybe have some sort of user prompt here for them to be able to
     //  easily create a new identity with an email
     let auth_header = get_auth_header(&mut config, anon_identity, server, !force).await?;
-
-    let (name_or_identity, parent) =
-        validate_name_and_parent(name_or_identity.map(String::as_str), parent.map(String::as_str))?;
 
     if !path_to_project.exists() {
         return Err(anyhow::anyhow!(
@@ -168,11 +152,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     );
 
     let client = reqwest::Client::new();
-    // If a name was given, ensure to percent-encode it.
-    // We also use PUT with a name or identity, and POST otherwise.
+    // If a domain or identity was provided, we should locally make sure it looks correct and
     let mut builder = if let Some(name_or_identity) = name_or_identity {
+        if !is_identity(name_or_identity) {
+            parse_database_name(name_or_identity)?;
+        }
         let encode_set = const { &percent_encoding::NON_ALPHANUMERIC.remove(b'_').remove(b'-') };
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
+
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
         if !clear_database {
@@ -187,7 +174,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 break_clients_flag,
             )
             .await?;
-        }
+        };
 
         builder
     } else {
@@ -217,9 +204,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
         builder = builder.query(&[("num_replicas", *n)]);
     }
-    if let Some(parent) = parent {
-        builder = builder.query(&[("parent", parent)]);
-    }
 
     println!("Publishing module...");
 
@@ -236,6 +220,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     let res = builder.body(program_bytes).send().await?;
+    if res.status() == StatusCode::UNAUTHORIZED && !anon_identity {
+        // If we're not in the `anon_identity` case, then we have already forced the user to log in above (using `get_auth_header`), so this should be safe to unwrap.
+        let token = config.spacetimedb_token().unwrap();
+        let identity = decode_identity(token)?;
+        let err = res.text().await?;
+        return unauth_error_context(
+            Err(anyhow::anyhow!(err)),
+            &identity,
+            config.server_nick_or_host(server)?,
+        );
+    }
+
     let response: PublishResult = res.json_or_error().await?;
     match response {
         PublishResult::Success {
@@ -274,47 +270,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     Ok(())
 }
 
-fn validate_name_or_identity(name_or_identity: &str) -> Result<(), DatabaseNameError> {
-    if is_identity(name_or_identity) {
-        Ok(())
-    } else {
-        parse_database_name(name_or_identity).map(drop)
-    }
-}
-
-fn invalid_parent_name(name: &str) -> String {
-    format!("invalid parent database name `{name}`")
-}
-
-fn validate_name_and_parent<'a>(
-    name: Option<&'a str>,
-    parent: Option<&'a str>,
-) -> anyhow::Result<(Option<&'a str>, Option<&'a str>)> {
-    if let Some(parent) = parent.as_ref() {
-        validate_name_or_identity(parent).with_context(|| invalid_parent_name(parent))?;
-    }
-
-    match name {
-        Some(name) => match name.split_once('/') {
-            Some((parent_alt, child)) => {
-                ensure!(
-                    parent.is_none() || parent.is_some_and(|parent| parent == parent_alt),
-                    "cannot specify both --parent and <parent>/<child>"
-                );
-                validate_name_or_identity(parent_alt).with_context(|| invalid_parent_name(parent_alt))?;
-                validate_name_or_identity(child)?;
-
-                Ok((Some(child), Some(parent_alt)))
-            }
-            None => {
-                validate_name_or_identity(name)?;
-                Ok((Some(name), parent))
-            }
-        },
-        None => Ok((None, parent)),
-    }
-}
-
 /// Determine the pretty print style based on the NO_COLOR environment variable.
 ///
 /// See: https://no-color.org
@@ -338,7 +293,16 @@ async fn apply_pre_publish_if_needed(
     auth_header: &AuthHeader,
     break_clients_flag: bool,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
-    if let Some(pre) = call_pre_publish(client, base_url, domain, host_type, program_bytes, auth_header).await? {
+    if let Some(pre) = call_pre_publish(
+        client,
+        base_url,
+        &domain.to_string(),
+        host_type,
+        program_bytes,
+        auth_header,
+    )
+    .await?
+    {
         println!("{}", pre.migrate_plan);
 
         if pre.break_clients
@@ -394,68 +358,4 @@ async fn call_pre_publish(
 
     let pre_publish_result: PrePublishResult = res.json_or_error().await?;
     Ok(Some(pre_publish_result))
-}
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_matches;
-    use spacetimedb_lib::Identity;
-
-    use super::*;
-
-    #[test]
-    fn validate_none_arguments_returns_none_values() {
-        assert_matches!(validate_name_and_parent(None, None), Ok((None, None)));
-        assert_matches!(validate_name_and_parent(Some("foo"), None), Ok((Some(_), None)));
-        assert_matches!(validate_name_and_parent(None, Some("foo")), Ok((None, Some(_))));
-    }
-
-    #[test]
-    fn validate_valid_arguments_returns_arguments() {
-        let name = "child";
-        let parent = "parent";
-        let result = (Some(name), Some(parent));
-        assert_matches!(
-            validate_name_and_parent(Some(name), Some(parent)),
-            Ok(val) if val == result
-        );
-    }
-
-    #[test]
-    fn validate_parent_and_path_name_returns_error_unless_parent_equal() {
-        assert_matches!(
-            validate_name_and_parent(Some("parent/child"), Some("parent")),
-            Ok((Some("child"), Some("parent")))
-        );
-        assert_matches!(validate_name_and_parent(Some("parent/child"), Some("cousin")), Err(_));
-    }
-
-    #[test]
-    fn validate_more_than_two_path_segments_are_an_error() {
-        assert_matches!(validate_name_and_parent(Some("proc/net/tcp"), None), Err(_));
-        assert_matches!(validate_name_and_parent(Some("proc//net"), None), Err(_));
-    }
-
-    #[test]
-    fn validate_trailing_slash_is_an_error() {
-        assert_matches!(validate_name_and_parent(Some("foo//"), None), Err(_));
-        assert_matches!(validate_name_and_parent(Some("foo/bar/"), None), Err(_));
-    }
-
-    #[test]
-    fn validate_parent_cant_have_slash() {
-        assert_matches!(validate_name_and_parent(Some("child"), Some("par/ent")), Err(_));
-        assert_matches!(validate_name_and_parent(Some("child"), Some("parent/")), Err(_));
-    }
-
-    #[test]
-    fn validate_name_or_parent_can_be_identities() {
-        let parent = Identity::ZERO.to_string();
-        let child = Identity::ONE.to_string();
-
-        assert_matches!(
-            validate_name_and_parent(Some(&child), Some(&parent)),
-            Ok(res) if res == (Some(&child), Some(&parent))
-        );
-    }
 }

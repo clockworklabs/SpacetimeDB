@@ -1,4 +1,5 @@
 from .. import Smoketest, random_string
+import unittest
 import json
 
 class Domains(Smoketest):
@@ -25,15 +26,15 @@ class Domains(Smoketest):
         with self.assertRaises(Exception):
             self.spacetime("logs", orig_name)
 
+    @unittest.expectedFailure
     def test_subdomain_behavior(self):
         """Test how we treat the / character in published names"""
 
         root_name = random_string()
         self.publish_module(root_name)
+        id_to_rename = self.database_identity
 
-        # TODO: This is valid in editions with the teams feature, but
-        # smoketests don't know the target's edition.
-        # self.publish_module(f"{root_name}/test")
+        self.publish_module(f"{root_name}/test")
 
         with self.assertRaises(Exception):
             self.publish_module(f"{root_name}//test")

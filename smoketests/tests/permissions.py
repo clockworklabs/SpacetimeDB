@@ -81,7 +81,7 @@ class PrivateTablePermissions(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{ReducerContext, Table};
 
-#[spacetimedb::table(name = secret, private)]
+#[spacetimedb::table(name = secret)]
 pub struct Secret {
     answer: u8,
 }
@@ -97,9 +97,9 @@ pub fn init(ctx: &ReducerContext) {
 }
 
 #[spacetimedb::reducer]
-pub fn do_thing(ctx: &ReducerContext, thing: String) {
+pub fn do_thing(ctx: &ReducerContext) {
     ctx.db.secret().insert(Secret { answer: 20 });
-    ctx.db.common_knowledge().insert(CommonKnowledge { thing });
+    ctx.db.common_knowledge().insert(CommonKnowledge { thing: "howdy".to_owned() });
 }
 """
 
@@ -113,7 +113,7 @@ pub fn do_thing(ctx: &ReducerContext, thing: String) {
             " 42     ",
             ""
         ])
-        self.assertMultiLineEqual(str(out), answer)
+        self.assertMultiLineEqual(out, answer)
 
         self.reset_config()
         self.new_identity()
@@ -121,33 +121,12 @@ pub fn do_thing(ctx: &ReducerContext, thing: String) {
         with self.assertRaises(Exception):
             self.spacetime("sql", self.database_identity, "select * from secret")
 
-        # Subscribing to the private table failes.
         with self.assertRaises(Exception):
             self.subscribe("SELECT * FROM secret", n=0)
 
-        # Subscribing to the public table works.
-        sub = self.subscribe("SELECT * FROM common_knowledge", n = 1)
-        self.call("do_thing", "godmorgon")
-        self.assertEqual(sub(), [
-            {
-                'common_knowledge': {
-                    'deletes': [],
-                    'inserts': [{'thing': 'godmorgon'}]
-                }
-            }
-        ])
-
-        # Subscribing to both tables returns updates for the public one.
         sub = self.subscribe("SELECT * FROM *", n=1)
-        self.call("do_thing", "howdy", anon=True)
-        self.assertEqual(sub(), [
-            {
-                'common_knowledge': {
-                    'deletes': [],
-                    'inserts': [{'thing': 'howdy'}]
-                }
-            }
-        ])
+        self.call("do_thing", anon=True)
+        self.assertEqual(sub(), [{'common_knowledge': {'deletes': [], 'inserts': [{'thing': 'howdy'}]}}])
 
 
 class LifecycleReducers(Smoketest):
