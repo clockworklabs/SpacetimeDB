@@ -533,7 +533,7 @@ fn write_object_type_builder_fields(
     primary_key: Option<ColId>,
     convert_case: bool,
 ) -> anyhow::Result<()> {
-    for (i,  (ident, ty)) in elements.iter().enumerate() {
+    for (i, (ident, ty)) in elements.iter().enumerate() {
         let name = if convert_case {
             ident.deref().to_case(Case::Camel)
         } else {
@@ -550,7 +550,13 @@ fn write_object_type_builder_fields(
     Ok(())
 }
 
-fn write_type_builder_field(module: &ModuleDef, out: &mut Indenter, name: &str, ty: &AlgebraicTypeUse, is_primary_key: bool) -> fmt::Result {
+fn write_type_builder_field(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    name: &str,
+    ty: &AlgebraicTypeUse,
+    is_primary_key: bool,
+) -> fmt::Result {
     // Do we need a getter? (Option/Array only if their inner is a Ref)
     let needs_getter = match ty {
         AlgebraicTypeUse::Ref(_) => true,
