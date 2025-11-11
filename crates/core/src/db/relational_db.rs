@@ -36,7 +36,7 @@ use spacetimedb_durability as durability;
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
-use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, ConnectionId};

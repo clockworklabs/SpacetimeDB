@@ -13,9 +13,8 @@ use crate::{
     error::ViewError,
     system_tables::{
         system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-        StViewArgFields, StViewArgRow, StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow,
-        StViewSubFields, StViewSubRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_ARG_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
-        ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
+        ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
     },
 };
 use crate::{
@@ -30,7 +29,6 @@ use crate::{
 };
 use crate::{execution_context::ExecutionContext, system_tables::StViewColumnRow};
 use crate::{execution_context::Workload, system_tables::StViewRow};
-use bytes::Bytes;
 use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
@@ -38,7 +36,7 @@ use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::{bsatn::ToBsatn as _, db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
+use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     ConnectionId, Identity,
@@ -50,7 +48,6 @@ use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
     memory_usage::MemoryUsage,
-    product,
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
@@ -2047,27 +2044,6 @@ impl MutTxId {
             self.clear_table(table_id)?;
         }
         Ok(())
-    }
-
-    /// Get or insert view argument into `ST_VIEW_ARG_ID`.
-    pub fn get_or_insert_st_view_arg(&mut self, args: &Bytes) -> Result<u64> {
-        let bytes_av = AlgebraicValue::Bytes(args.to_vec().into());
-        let mut rows = self.iter_by_col_eq(ST_VIEW_ARG_ID, [StViewArgFields::Bytes], &bytes_av)?;
-
-        // Extract the first matching `arg_id`, if any.
-        if let Some(res) = rows.next() {
-            let row = StViewArgRow::try_from(res).expect("valid StViewArgRow");
-            return Ok(row.id);
-        }
-
-        let view_arg_bytes = product![0u64, bytes_av]
-            .to_bsatn_vec()
-            .expect("StViewArgRow serialization to never fail");
-
-        let (_, view_arg_row, _) = self.insert_via_serialize_bsatn(ST_VIEW_ARG_ID, &view_arg_bytes)?;
-        let StViewArgRow { id: arg_id, .. } = view_arg_row.collapse().try_into().expect("valid StViewArgRow");
-
-        Ok(arg_id)
     }
 
     /// Lookup a row in `st_view` by its primary key
