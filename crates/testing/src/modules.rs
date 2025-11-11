@@ -210,6 +210,7 @@ impl CompiledModule {
                 program_bytes: self.program_bytes(),
                 num_replicas: None,
                 host_type: self.host_type,
+                parent: None,
             },
             MigrationPolicy::Compatible,
         )
