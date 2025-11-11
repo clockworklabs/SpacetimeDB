@@ -5,7 +5,7 @@ pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
-use anyhow::{ensure, Context as _, Ok};
+use anyhow::{ensure, Context as _};
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
@@ -20,7 +20,7 @@ use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
-use spacetimedb_client_api::{Host, NodeDelegate};
+use spacetimedb_client_api::{ControlStateReadAccess as _, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -273,7 +273,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
                 let update_result = leader
-                    .update(database, spec.host_type, spec.program_bytes.into(), policy)
+                    .update(database, spec.host_type, spec.program_bytes.to_vec().into(), policy)
                     .await?;
                 if update_result.was_successful() {
                     let replicas = self.control_db.get_replicas_by_database(database_id)?;
@@ -337,7 +337,13 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
                 self.host_controller
-                    .migrate_plan(db, spec.host_type, host.replica_id, spec.program_bytes.into(), style)
+                    .migrate_plan(
+                        db,
+                        spec.host_type,
+                        host.replica_id,
+                        spec.program_bytes.to_vec().into(),
+                        style,
+                    )
                     .await
             }
             None => anyhow::bail!(
@@ -365,6 +371,42 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         for instance in self.control_db.get_replicas_by_database(database.id)? {
             self.delete_replica(instance.id).await?;
         }
+
+        Ok(())
+    }
+
+    async fn reset_database(&self, _caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        let mut database = self
+            .control_db
+            .get_database_by_identity(&spec.database_identity)?
+            .with_context(|| format!("Database `{}` does not exist", spec.database_identity))?;
+        let database_id = database.id;
+
+        if let Some(program) = spec.program_bytes {
+            let program_bytes = &program[..];
+            let program = Program::from_bytes(program_bytes);
+            let _hash_for_assert = program.hash;
+
+            database.initial_program = program.hash;
+            if let Some(host_type) = spec.host_type {
+                database.host_type = host_type;
+            }
+
+            self.host_controller
+                .check_module_validity(database.clone(), program)
+                .await?;
+            let _stored_hash_for_assert = self.program_store.put(program_bytes).await?;
+            debug_assert_eq!(_hash_for_assert, _stored_hash_for_assert);
+
+            self.control_db.update_database(database)?;
+        }
+
+        for instance in self.control_db.get_replicas_by_database(database_id)? {
+            self.delete_replica(instance.id).await?;
+        }
+        // Standalone only support a single replica.
+        let num_replicas = 1;
+        self.schedule_replicas(database_id, num_replicas).await?;
 
         Ok(())
     }
@@ -409,6 +451,30 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         Ok(self
             .control_db
             .spacetime_replace_domains(database_identity, owner_identity, domain_names)?)
+    }
+}
+
+impl spacetimedb_client_api::Authorization for StandaloneEnv {
+    async fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: spacetimedb_client_api::Action,
+    ) -> Result<(), spacetimedb_client_api::Unauthorized> {
+        let database = self
+            .get_database_by_identity(&database)?
+            .with_context(|| format!("database {database} not found"))
+            .with_context(|| format!("Unable to authorize {subject} to perform {action:?})"))?;
+        if subject == database.owner_identity {
+            return Ok(());
+        }
+
+        Err(spacetimedb_client_api::Unauthorized::Unauthorized {
+            subject,
+            action,
+            database: database.database_identity.into(),
+            source: None,
+        })
     }
 }
 

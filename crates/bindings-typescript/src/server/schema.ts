@@ -22,6 +22,12 @@ import {
   type AlgebraicTypeVariants,
 } from '../lib/algebraic_type';
 import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
+import {
+  defineView,
+  type AnonymousViewFn,
+  type ViewFn,
+  type ViewReturnTypeBuilder,
+} from './views';
 
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
@@ -187,7 +193,6 @@ class Schema<S extends UntypedSchemaDef> {
     params: Params,
     fn: Reducer<S, Params>
   ): Reducer<S, Params>;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   reducer(name: string, fn: Reducer<S, {}>): Reducer<S, {}>;
   reducer<Params extends ParamsObj | RowObj>(
     name: string,
@@ -226,11 +231,8 @@ class Schema<S extends UntypedSchemaDef> {
    * });
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(name: string, fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   init(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string' ? [nameOrFn, maybeFn] : ['init', nameOrFn];
@@ -253,11 +255,8 @@ class Schema<S extends UntypedSchemaDef> {
    *   }
    * );
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(name: string, fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientConnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string'
@@ -283,11 +282,8 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(name: string, fn: Reducer<S, {}>): void;
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   clientDisconnected(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string'
@@ -295,6 +291,72 @@ class Schema<S extends UntypedSchemaDef> {
         : ['on_disconnect', nameOrFn];
     clientDisconnected(name, {}, fn);
   }
+
+  view<Ret extends ViewReturnTypeBuilder>(
+    name: string,
+    ret: Ret,
+    fn: ViewFn<S, {}, Ret>
+  ): void {
+    defineView(name, false, {}, ret, fn);
+  }
+
+  // TODO: re-enable once parameterized views are supported in SQL
+  // view<Ret extends ViewReturnTypeBuilder>(
+  //   name: string,
+  //   ret: Ret,
+  //   fn: ViewFn<S, {}, Ret>
+  // ): void;
+  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  //   name: string,
+  //   params: Params,
+  //   ret: Ret,
+  //   fn: ViewFn<S, {}, Ret>
+  // ): void;
+  // view<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  //   name: string,
+  //   paramsOrRet: Ret | Params,
+  //   retOrFn: ViewFn<S, {}, Ret> | Ret,
+  //   maybeFn?: ViewFn<S, Params, Ret>
+  // ): void {
+  //   if (typeof retOrFn === 'function') {
+  //     defineView(name, false, {}, paramsOrRet as Ret, retOrFn);
+  //   } else {
+  //     defineView(name, false, paramsOrRet as Params, retOrFn, maybeFn!);
+  //   }
+  // }
+
+  anyonymousView<Ret extends ViewReturnTypeBuilder>(
+    name: string,
+    ret: Ret,
+    fn: AnonymousViewFn<S, {}, Ret>
+  ): void {
+    defineView(name, true, {}, ret, fn);
+  }
+
+  // TODO: re-enable once parameterized views are supported in SQL
+  // anyonymousView<Ret extends ViewReturnTypeBuilder>(
+  //   name: string,
+  //   ret: Ret,
+  //   fn: AnonymousViewFn<S, {}, Ret>
+  // ): void;
+  // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  //   name: string,
+  //   params: Params,
+  //   ret: Ret,
+  //   fn: AnonymousViewFn<S, {}, Ret>
+  // ): void;
+  // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  //   name: string,
+  //   paramsOrRet: Ret | Params,
+  //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
+  //   maybeFn?: AnonymousViewFn<S, Params, Ret>
+  // ): void {
+  //   if (typeof retOrFn === 'function') {
+  //     defineView(name, true, {}, paramsOrRet as Ret, retOrFn);
+  //   } else {
+  //     defineView(name, true, paramsOrRet as Params, retOrFn, maybeFn!);
+  //   }
+  // }
 
   clientVisibilityFilter = {
     sql(filter: string): void {

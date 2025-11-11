@@ -23,6 +23,7 @@ use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
+use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
@@ -326,9 +327,10 @@ impl HostController {
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn using_database<F, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
+    pub async fn using_database<F, Fut, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
     where
-        F: FnOnce(&RelationalDB) -> T + Send + 'static,
+        F: FnOnce(Arc<RelationalDB>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
         trace!("using database {}/{}", database.database_identity, replica_id);
@@ -340,10 +342,9 @@ impl HostController {
         });
 
         let db = module.replica_ctx().relational_db.clone();
-        let result = module.on_module_thread("using_database", move || f(&db)).await?;
+        let result = module.on_module_thread_async("using_database", move || f(db)).await?;
         Ok(result)
     }
-
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
@@ -847,9 +848,10 @@ impl Host {
         } = launched;
 
         // Disconnect dangling clients.
+        // No need to clear view tables here since we do it in `clear_all_clients`.
         for (identity, connection_id) in connected_clients {
             module_host
-                .call_identity_disconnected(identity, connection_id)
+                .call_identity_disconnected(identity, connection_id, false)
                 .await
                 .with_context(|| {
                     format!(
@@ -868,8 +870,14 @@ impl Host {
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
+        let module = watch::Sender::new(module_host);
+        //TODO(shub): Below code interfere with `exit_module` code,
+        // I suspect channel internally holds a reference to the module,
+        // even after we drop the sender.
+        //
+        // replica_ctx.subscriptions.init(module.subscribe());
         Ok(Host {
-            module: watch::Sender::new(module_host),
+            module,
             replica_ctx,
             scheduler,
             disk_metrics_recorder_task,
@@ -1071,6 +1079,9 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     let message_log_size = DB_METRICS
         .message_log_size
         .with_label_values(&replica_ctx.database_identity);
+    let message_log_blocks = DB_METRICS
+        .message_log_blocks
+        .with_label_values(&replica_ctx.database_identity);
     let module_log_file_size = DB_METRICS
         .module_log_file_size
         .with_label_values(&replica_ctx.database_identity);
@@ -1083,9 +1094,15 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
             ctx.total_disk_usage()
         });
         if let Ok(disk_usage) = disk_usage_future.await {
-            if let Some(num_bytes) = disk_usage.durability {
-                message_log_size.set(num_bytes as i64);
+            if let Some(SizeOnDisk {
+                total_bytes,
+                total_blocks,
+            }) = disk_usage.durability
+            {
+                message_log_size.set(total_bytes as i64);
+                message_log_blocks.set(total_blocks as i64);
             }
+
             if let Some(num_bytes) = disk_usage.logs {
                 module_log_file_size.set(num_bytes as i64);
             }

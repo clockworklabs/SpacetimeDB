@@ -5261,6 +5261,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "procedure-client"
+version = "1.7.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "prometheus"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6539,6 +6549,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdk-test-procedure-module"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "paste",
+ "spacetimedb 1.7.0",
+]
+
+[[package]]
 name = "sdk-unreal-test-harness"
 version = "1.7.0"
 dependencies = [
@@ -7144,6 +7164,7 @@ dependencies = [
  "names",
  "notify 7.0.0",
  "percent-encoding",
+ "pretty_assertions",
  "quick-xml 0.31.0",
  "regex",
  "reqwest 0.12.24",
@@ -7169,6 +7190,7 @@ dependencies = [
  "tar",
  "tempfile",
  "termcolor",
+ "termtree",
  "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -7227,6 +7249,7 @@ dependencies = [
  "spacetimedb-paths",
  "spacetimedb-schema",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
@@ -7291,6 +7314,7 @@ dependencies = [
  "itertools 0.12.1",
  "log",
  "memmap2",
+ "nix 0.30.1",
  "once_cell",
  "pretty_assertions",
  "proptest",
@@ -7488,9 +7512,11 @@ dependencies = [
  "anyhow",
  "itertools 0.12.1",
  "log",
+ "scopeguard",
  "spacetimedb-commitlog",
  "spacetimedb-paths",
  "spacetimedb-sats 1.7.0",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -7517,6 +7543,7 @@ version = "1.7.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
+ "bytes",
  "derive_more 0.99.20",
  "ethnum",
  "pretty_assertions",
@@ -7979,6 +8006,7 @@ name = "spacetimedb-testing"
 version = "1.7.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
@@ -8510,6 +8538,12 @@ dependencies = [
  "rustix 1.1.2",
  "windows-sys 0.60.2",
 ]
+
+[[package]]
+name = "termtree"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
 
 [[package]]
 name = "test-client"

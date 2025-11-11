@@ -5,13 +5,14 @@ use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
+use bytes::Bytes;
 use enum_map::EnumMap;
 use fs2::FileExt;
-use spacetimedb_commitlog as commitlog;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
-use spacetimedb_datastore::error::{DatastoreError, TableError};
+use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
@@ -32,16 +33,20 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability as durability;
+use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::st_var::StVarValue;
-use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
+use spacetimedb_lib::{bsatn, ConnectionId};
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
+use spacetimedb_sats::{
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace, WithTypespace,
+};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -627,8 +632,8 @@ impl RelationalDB {
     /// The number of bytes on disk occupied by the durability layer.
     ///
     /// If this is an in-memory instance, `Ok(0)` is returned.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
-        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        self.disk_size_fn.as_ref().map_or(Ok(<_>::default()), |f| f())
     }
 
     /// The size in bytes of all of the in-memory data in this database.
@@ -1403,6 +1408,11 @@ impl RelationalDB {
         Ok(rows_deleted)
     }
 
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
+        Ok(tx.clear_all_views()?)
+    }
+
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
         Ok(self.inner.create_sequence_mut_tx(tx, sequence_schema)?)
     }
@@ -1498,8 +1508,128 @@ impl RelationalDB {
             .into()
         })
     }
-}
 
+    /// Write `bytes` into a (sender) view's backing table.
+    ///
+    /// # Process
+    /// 1. Delete all rows for `sender` from the view's backing table
+    /// 2. Deserialize `bytes`
+    /// 3. Insert the new rows into the backing table
+    ///
+    /// # Arguments
+    /// * `tx` - Mutable transaction context
+    /// * `table_id` - The id of the view's backing table
+    /// * `sender` - The calling identity of the view being updated
+    /// * `row_type` - Expected return type of the view
+    /// * `bytes` - An array of product values (bsatn encoded)
+    /// * `typespace` - Type information for deserialization
+    #[allow(clippy::too_many_arguments)]
+    pub fn materialize_view(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        sender: Identity,
+        row_type: AlgebraicTypeRef,
+        bytes: Bytes,
+        typespace: &Typespace,
+    ) -> Result<(), DBError> {
+        // Delete rows for `sender` from the backing table
+        let rows_to_delete = self
+            .iter_by_col_eq_mut(tx, table_id, ColId(0), &sender.into())?
+            .map(|res| res.pointer())
+            .collect::<Vec<_>>();
+        self.delete(tx, table_id, rows_to_delete);
+
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
+        let rows = seed
+            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
+
+        // Insert new rows into the backing table
+        for product in rows
+            .into_array()
+            .map_err(|_| ViewError::SerializeRow)
+            .map_err(DatastoreError::from)?
+            .into_iter()
+        {
+            let product = product
+                .into_product()
+                .map_err(|_| ViewError::SerializeRow)
+                .map_err(DatastoreError::from)?;
+            self.insert(
+                tx,
+                table_id,
+                &ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements))
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Write `bytes` into an anonymous view's backing table.
+    ///
+    /// # Process
+    /// 1. Clear the view's backing table
+    /// 2. Deserialize `bytes`
+    /// 3. Insert the new rows into the backing table
+    ///
+    /// # Arguments
+    /// * `tx` - Mutable transaction context
+    /// * `table_id` - The id of the view's backing table
+    /// * `row_type` - Expected return type of the view
+    /// * `bytes` - An array of product values (bsatn encoded)
+    /// * `typespace` - Type information for deserialization
+    #[allow(clippy::too_many_arguments)]
+    pub fn materialize_anonymous_view(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        row_type: AlgebraicTypeRef,
+        bytes: Bytes,
+        typespace: &Typespace,
+    ) -> Result<(), DBError> {
+        // Clear entire backing table
+        self.clear_table(tx, table_id)?;
+
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
+        let rows = seed
+            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
+
+        // Insert new rows into the backing table
+        for product in rows
+            .into_array()
+            .map_err(|_| ViewError::SerializeRow)
+            .map_err(DatastoreError::from)?
+            .into_iter()
+        {
+            self.insert(
+                tx,
+                table_id,
+                &product
+                    .into_product()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
+        }
+
+        Ok(())
+    }
+}
 #[allow(unused)]
 #[derive(Clone)]
 struct LockFile {
@@ -2094,7 +2224,7 @@ pub mod tests_utils {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         is_anonymous: bool,
-    ) -> Result<TableId, DBError> {
+    ) -> Result<(ViewId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
 
         // Add the view's product type to the typespace
@@ -2107,6 +2237,7 @@ pub mod tests_utils {
 
         builder.add_view(
             name,
+            0,
             true,
             is_anonymous,
             ProductType::unit(),
@@ -2118,7 +2249,6 @@ pub mod tests_utils {
 
         // Allocate a backing table and return its table id
         db.with_auto_commit(Workload::Internal, |tx| db.create_view(tx, &module_def, view_def))
-            .map(|(_, table_id)| table_id)
     }
 
     /// Insert a row into a view's backing table
@@ -2216,7 +2346,6 @@ mod tests {
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
     use anyhow::bail;
-    use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;

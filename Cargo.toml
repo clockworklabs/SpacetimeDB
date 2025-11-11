@@ -43,9 +43,11 @@ members = [
   "modules/quickstart-chat",
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
+  "modules/sdk-test-procedure",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
+  "sdks/rust/tests/procedure-client",
   "tools/upgrade-version",
   "tools/license-check",
   "crates/bindings-typescript/test-app/server",
@@ -270,6 +272,7 @@ tar = "0.4"
 tempdir = "0.3.7"
 tempfile = "3.20"
 termcolor = "1.2.0"
+termtree = "0.5.1"
 thin-vec = "0.2.13"
 thiserror = "1.0.37"
 tokio = { version = "1.37", features = ["full"] }
