@@ -92,11 +92,6 @@ function createRowExpr<TableDef extends TypedTableDef>(
   return Object.freeze(row) as RowExpr<TableDef>;
 }
 
-export type ColumnList<
-  TableDef extends TypedTableDef,
-  T extends readonly ColumnNames<TableDef>[] = readonly ColumnNames<TableDef>[],
-> = T;
-
 export type JoinCondition<
   LeftTable extends TypedTableDef,
   RightTable extends TypedTableDef,
@@ -104,33 +99,6 @@ export type JoinCondition<
   leftColumn: AnyColumnExpr<LeftTable>;
   rightColumn: AnyColumnExpr<RightTable>;
 };
-
-type JoinOnClause<
-  T1 extends TypedTableDef,
-  T2 extends TypedTableDef,
-> = Readonly<{
-  left: ColumnExprList2<T1>;
-  right: ColumnExprList2<T2>;
-}>;
-
-type TableNameFromDef<
-  SchemaDef extends UntypedSchemaDef,
-  TableDef extends TypedTableDef,
-> =
-  TableDef extends TableDefByName<
-    SchemaDef,
-    infer Name extends TableNames<SchemaDef>
-  >
-    ? Name
-    : never;
-
-type ColumnExprList2<TableDef extends TypedTableDef> =
-  readonly AnyColumnExpr<TableDef>[];
-
-type ColumnExprList<
-  SchemaDef extends UntypedSchemaDef,
-  TableName extends TableNames<SchemaDef>,
-> = readonly AnyColumnExpr<TableDefByName<SchemaDef, TableName>>[];
 
 /**
  * Represents a query of a full table.
