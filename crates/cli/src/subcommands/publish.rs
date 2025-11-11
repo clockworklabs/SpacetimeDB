@@ -175,7 +175,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
-        if !(matches!(clear_database, ClearMode::Always)) {
+        if !(clear_database == ClearMode::Always) {
             builder = apply_pre_publish_if_needed(
                 builder,
                 &client,
@@ -196,7 +196,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         client.post(format!("{database_host}/v1/database"))
     };
 
-    if matches!(clear_database, ClearMode::Always) || matches!(clear_database, ClearMode::OnConflict) {
+    if clear_database == ClearMode::Always || clear_database == ClearMode::OnConflict {
         // Note: `name_or_identity` should be set, because it is `required` in the CLI arg config.
         println!(
             "This will DESTROY the current {} module, and ALL corresponding data.",
@@ -361,7 +361,7 @@ async fn apply_pre_publish_if_needed(
                 if matches!(clear_database, ClearMode::Never) {
                     println!("{}", manual.reason);
                     println!("Aborting publish due to required manual migration.");
-                    anyhow::bail!("Publishing aborted by user");
+                    anyhow::bail!("Aborting because publishing would require manual migration or deletion of data and --delete-data was not specified.");
                 }
             }
             PrePublishResult::AutoMigrate(auto) => {
