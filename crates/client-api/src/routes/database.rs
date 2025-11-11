@@ -681,8 +681,6 @@ pub struct PublishDatabaseQueryParams {
     policy: MigrationPolicy,
     #[serde(default)]
     host_type: HostType,
-    #[allow(unused)] // ignore for now
-    parent: Option<NameOrIdentity>,
 }
 
 pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
@@ -694,7 +692,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
         token,
         policy,
         host_type,
-        parent: _, // ignore for now
     }): Query<PublishDatabaseQueryParams>,
     Extension(auth): Extension<SpacetimeAuth>,
     program_bytes: Bytes,
@@ -765,7 +762,6 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate>(
                 program_bytes,
                 num_replicas,
                 host_type,
-                parent: None,
             },
             schema_migration_policy,
         )
@@ -918,7 +914,6 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate>(
                 program_bytes,
                 num_replicas: None,
                 host_type,
-                parent: None,
             },
             style,
         )
