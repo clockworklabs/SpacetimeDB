@@ -26,14 +26,9 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from 'spacetimedb';
-import { User } from './user_type';
-import {
-  type EventContext,
-  type Reducer,
-  RemoteReducers,
-  RemoteTables,
-} from '.';
+} from "spacetimedb";
+import { User } from "./user_type";
+import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
@@ -46,9 +41,7 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.user.on_insert(...)`.
  */
-export class UserTableHandle<TableName extends string>
-  implements __TableHandle<TableName>
-{
+export class UserTableHandle<TableName extends string> implements __TableHandle<TableName> {
   // phantom type to track the table name
   readonly tableName!: TableName;
   tableCache: __TableCache<User>;
@@ -89,28 +82,25 @@ export class UserTableHandle<TableName extends string>
 
   onInsert = (cb: (ctx: EventContext, row: User) => void) => {
     return this.tableCache.onInsert(cb);
-  };
+  }
 
   removeOnInsert = (cb: (ctx: EventContext, row: User) => void) => {
     return this.tableCache.removeOnInsert(cb);
-  };
+  }
 
   onDelete = (cb: (ctx: EventContext, row: User) => void) => {
     return this.tableCache.onDelete(cb);
-  };
+  }
 
   removeOnDelete = (cb: (ctx: EventContext, row: User) => void) => {
     return this.tableCache.removeOnDelete(cb);
-  };
+  }
 
   // Updates are only defined for tables with primary keys.
   onUpdate = (cb: (ctx: EventContext, oldRow: User, newRow: User) => void) => {
     return this.tableCache.onUpdate(cb);
-  };
+  }
 
-  removeOnUpdate = (
-    cb: (ctx: EventContext, onRow: User, newRow: User) => void
-  ) => {
+  removeOnUpdate = (cb: (ctx: EventContext, onRow: User, newRow: User) => void) => {
     return this.tableCache.removeOnUpdate(cb);
-  };
-}
+  }}

@@ -26,10 +26,10 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from 'spacetimedb';
+} from "spacetimedb";
 
 export type SetName = {
-  name: string;
+  name: string,
 };
 let _cached_SetName_type_value: __AlgebraicTypeType | null = null;
 
@@ -38,33 +38,27 @@ let _cached_SetName_type_value: __AlgebraicTypeType | null = null;
  */
 export const SetName = {
   /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
+  * A function which returns this type represented as an AlgebraicType.
+  * This function is derived from the AlgebraicType used to generate this type.
+  */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     if (_cached_SetName_type_value) return _cached_SetName_type_value;
     _cached_SetName_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_SetName_type_value.value.elements.push({
-      name: 'name',
-      algebraicType: __AlgebraicTypeValue.String,
-    });
+    _cached_SetName_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
     return _cached_SetName_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SetName): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      SetName.getTypeScriptAlgebraicType(),
-      value
-    );
+    __AlgebraicTypeValue.serializeValue(writer, SetName.getTypeScriptAlgebraicType(), value);
   },
 
   deserialize(reader: __BinaryReader): SetName {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      SetName.getTypeScriptAlgebraicType()
-    );
+    return __AlgebraicTypeValue.deserializeValue(reader, SetName.getTypeScriptAlgebraicType());
   },
-};
+
+}
 
 export default SetName;
+

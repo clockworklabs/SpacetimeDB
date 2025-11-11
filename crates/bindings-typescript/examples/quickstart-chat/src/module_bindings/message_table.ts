@@ -26,14 +26,9 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from 'spacetimedb';
-import { Message } from './message_type';
-import {
-  type EventContext,
-  type Reducer,
-  RemoteReducers,
-  RemoteTables,
-} from '.';
+} from "spacetimedb";
+import { Message } from "./message_type";
+import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
 declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
 
 /**
@@ -46,9 +41,7 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.message.on_insert(...)`.
  */
-export class MessageTableHandle<TableName extends string>
-  implements __TableHandle<TableName>
-{
+export class MessageTableHandle<TableName extends string> implements __TableHandle<TableName> {
   // phantom type to track the table name
   readonly tableName!: TableName;
   tableCache: __TableCache<Message>;
@@ -67,17 +60,17 @@ export class MessageTableHandle<TableName extends string>
 
   onInsert = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.onInsert(cb);
-  };
+  }
 
   removeOnInsert = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.removeOnInsert(cb);
-  };
+  }
 
   onDelete = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.onDelete(cb);
-  };
+  }
 
   removeOnDelete = (cb: (ctx: EventContext, row: Message) => void) => {
     return this.tableCache.removeOnDelete(cb);
-  };
+  }
 }
