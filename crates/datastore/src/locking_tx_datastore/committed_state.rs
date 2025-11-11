@@ -6,10 +6,6 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
-use crate::system_tables::{
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-    ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
-};
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError},
@@ -24,6 +20,13 @@ use crate::{
         ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::TxData,
+};
+use crate::{
+    locking_tx_datastore::ViewCallInfo,
+    system_tables::{
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
+        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+    },
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
@@ -77,6 +80,13 @@ pub struct CommittedState {
     /// Any overlap will trigger a re-evaluation of the affected view,
     /// and its read set will be updated accordingly.
     read_sets: ViewReadSets,
+}
+
+impl CommittedState {
+    /// Returns the views that perform a full scan of this table
+    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+        self.read_sets.views_for_table_scan(table_id)
+    }
 }
 
 impl MemoryUsage for CommittedState {
