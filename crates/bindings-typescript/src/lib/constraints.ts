@@ -47,5 +47,4 @@ export type ConstraintOpts<AllowedCol extends string> = {
   name?: string;
 } & (
   | { constraint: 'unique'; columns: [AllowedCol] }
-  | { constraint: 'primaryKey'; columns: [AllowedCol] }
 );

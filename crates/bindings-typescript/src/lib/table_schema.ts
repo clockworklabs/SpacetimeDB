@@ -35,4 +35,13 @@ export type TableSchema<
    * The indexes defined on the table.
    */
   readonly idxs: Idx;
+
+  /**
+   * The constraints defined on the table.
+   */
+  readonly constraints: readonly {
+    name: string | undefined;
+    constraint: 'unique';
+    columns: readonly string[];
+  }[];
 };

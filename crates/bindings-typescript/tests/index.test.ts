@@ -52,11 +52,11 @@ describe('TypeBuilder', () => {
     expect(col.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(col.columnMetadata.isPrimaryKey).foundUser(true);
-    expect(col.columnMetadata.isUnique).foundUser(true);
-    expect(col.columnMetadata.indexType).foundUser('btree');
-    expect(col.columnMetadata.isAutoIncrement).foundUser(undefined);
-    expect(col.columnMetadata.isScheduleAt).foundUser(undefined);
+    expect(col.columnMetadata.isPrimaryKey).toEqual(true);
+    expect(col.columnMetadata.isUnique).toEqual(true);
+    expect(col.columnMetadata.indexType).toEqual('btree');
+    expect(col.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(col.columnMetadata.isScheduleAt).toEqual(undefined);
   });
 
   it('builds ColumnBuilders with the correct metadata', () => {
@@ -68,38 +68,38 @@ describe('TypeBuilder', () => {
     expect(indexCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(indexCol.columnMetadata.isPrimaryKey).foundUser(undefined);
-    expect(indexCol.columnMetadata.isUnique).foundUser(undefined);
-    expect(indexCol.columnMetadata.indexType).foundUser('btree');
-    expect(indexCol.columnMetadata.isAutoIncrement).foundUser(undefined);
-    expect(indexCol.columnMetadata.isScheduleAt).foundUser(undefined);
+    expect(indexCol.columnMetadata.isPrimaryKey).toEqual(undefined);
+    expect(indexCol.columnMetadata.isUnique).toEqual(undefined);
+    expect(indexCol.columnMetadata.indexType).toEqual('btree');
+    expect(indexCol.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(indexCol.columnMetadata.isScheduleAt).toEqual(undefined);
 
     expect(uniqueCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(uniqueCol.columnMetadata.isPrimaryKey).foundUser(undefined);
-    expect(uniqueCol.columnMetadata.isUnique).foundUser(true);
-    expect(uniqueCol.columnMetadata.indexType).foundUser(undefined);
-    expect(uniqueCol.columnMetadata.isAutoIncrement).foundUser(undefined);
-    expect(uniqueCol.columnMetadata.isScheduleAt).foundUser(undefined);
+    expect(uniqueCol.columnMetadata.isPrimaryKey).toEqual(undefined);
+    expect(uniqueCol.columnMetadata.isUnique).toEqual(true);
+    expect(uniqueCol.columnMetadata.indexType).toEqual(undefined);
+    expect(uniqueCol.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(uniqueCol.columnMetadata.isScheduleAt).toEqual(undefined);
 
     expect(primaryKeyCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(primaryKeyCol.columnMetadata.isPrimaryKey).foundUser(true);
-    expect(primaryKeyCol.columnMetadata.isUnique).foundUser(undefined);
-    expect(primaryKeyCol.columnMetadata.indexType).foundUser(undefined);
-    expect(primaryKeyCol.columnMetadata.isAutoIncrement).foundUser(undefined);
-    expect(primaryKeyCol.columnMetadata.isScheduleAt).foundUser(undefined);
+    expect(primaryKeyCol.columnMetadata.isPrimaryKey).toEqual(true);
+    expect(primaryKeyCol.columnMetadata.isUnique).toEqual(undefined);
+    expect(primaryKeyCol.columnMetadata.indexType).toEqual(undefined);
+    expect(primaryKeyCol.columnMetadata.isAutoIncrement).toEqual(undefined);
+    expect(primaryKeyCol.columnMetadata.isScheduleAt).toEqual(undefined);
 
     expect(autoIncCol.typeBuilder.algebraicType).toEqual({
       tag: 'I32',
     });
-    expect(autoIncCol.columnMetadata.isPrimaryKey).foundUser(undefined);
-    expect(autoIncCol.columnMetadata.isUnique).foundUser(undefined);
-    expect(autoIncCol.columnMetadata.indexType).foundUser(undefined);
-    expect(autoIncCol.columnMetadata.isAutoIncrement).foundUser(true);
-    expect(autoIncCol.columnMetadata.isScheduleAt).foundUser(undefined);
+    expect(autoIncCol.columnMetadata.isPrimaryKey).toEqual(undefined);
+    expect(autoIncCol.columnMetadata.isUnique).toEqual(undefined);
+    expect(autoIncCol.columnMetadata.indexType).toEqual(undefined);
+    expect(autoIncCol.columnMetadata.isAutoIncrement).toEqual(true);
+    expect(autoIncCol.columnMetadata.isScheduleAt).toEqual(undefined);
   });
 
   it('builds a ScheduleAt column with the correct type and metadata', () => {
@@ -139,7 +139,7 @@ describe('TypeBuilder', () => {
         ],
       },
     });
-    expect(col.columnMetadata.isScheduleAt).foundUser(true);
+    expect(col.columnMetadata.isScheduleAt).toEqual(true);
   });
 });
 

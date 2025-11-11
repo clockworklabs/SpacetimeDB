@@ -314,10 +314,10 @@ describe('DbConnection', () => {
 
     const updatePromise = new Deferred<void>();
 
-    expect(client.db.player.count()).toEqual(0);
+    expect(client.db.player.count()).toEqual(0n);
 
     client.reducers.onCreatePlayer(() => {
-      expect(client.db.player.count()).toEqual(1);
+      expect(client.db.player.count()).toEqual(1n);
       updatePromise.resolve();
     });
 
@@ -577,7 +577,7 @@ describe('DbConnection', () => {
     expect(updates[0]['newUser'].username).toEqual(updatedUser.username);
 
     console.log('Users: ', [...client.db.user.iter()]);
-    expect(client.db.user.count()).toEqual(1);
+    expect(client.db.user.count()).toEqual(1n);
   });
 
   test('Filtering works', async () => {
@@ -643,6 +643,6 @@ describe('DbConnection', () => {
     const foundUser = client.db.user.identity.find(sallyIdentity);
     expect(foundUser).not.toBeUndefined();
     expect(foundUser!.username).toEqual('sally');
-    expect(client.db.user.count()).toEqual(2);
+    expect(client.db.user.count()).toEqual(2n);
   });
 });

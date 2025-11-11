@@ -72,6 +72,7 @@ export type UntypedTableDef = {
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
   rowType: ProductType;
   indexes: readonly IndexOpts<any>[];
+  constraints: readonly ConstraintOpts<any>[];
 };
 
 /**
@@ -242,6 +243,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
     // implicit 1‑column indexes
     if (meta.indexType || isUnique) {
+      console.log("GAAAAAAH", name);
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
       let algorithm: Infer<typeof RawIndexAlgorithm>;
@@ -316,9 +318,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       };
       constraints.push({ name: constraintOpts.name, data });
       continue;
-    }
-    if (constraintOpts.constraint === 'primaryKey') {
-      pk.push(...constraintOpts.columns.map(c => colIds.get(c)!));
     }
   }
 

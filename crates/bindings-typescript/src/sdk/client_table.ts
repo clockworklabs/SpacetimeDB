@@ -24,8 +24,8 @@ export type ClientTablePrimaryKeyMethods<
   onUpdate(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
-      newRow: RowType<TableDefForTableName<RemoteModule, TableName>>
+      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      newRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -36,8 +36,8 @@ export type ClientTablePrimaryKeyMethods<
   removeOnUpdate(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
-      newRow: RowType<TableDefForTableName<RemoteModule, TableName>>
+      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      newRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
 };
@@ -52,7 +52,7 @@ export type ClientTableMethods<
   onInsert(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -63,7 +63,7 @@ export type ClientTableMethods<
   removeOnInsert(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -73,7 +73,7 @@ export type ClientTableMethods<
   onDelete(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
 
@@ -84,7 +84,7 @@ export type ClientTableMethods<
   removeOnDelete(
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void;
 };

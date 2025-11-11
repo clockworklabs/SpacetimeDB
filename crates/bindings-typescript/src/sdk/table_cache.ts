@@ -15,6 +15,7 @@ import type {
   UntypedIndex,
 } from '../lib/indexes.ts';
 import type { Bound } from '../server/range.ts';
+import type { Prettify } from '../lib/type_util.ts';
 
 export type Operation<
   RowType extends Record<string, any> = Record<string, any>,
@@ -89,7 +90,7 @@ export class TableCacheImpl<
       const idxDef = idx as UntypedIndex<
         keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
       >;
-      const index = this.#makeReadonlyIndex(idxDef);
+      const index = this.#makeReadonlyIndex(this.tableDef, idxDef);
       (this as any)[idx.name!] = index;
     }
   }
@@ -99,7 +100,7 @@ export class TableCacheImpl<
     I extends UntypedIndex<
       keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
     >,
-  >(idx: I): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
+  >(tableDef: TableDefForTableName<RemoteModule, TableName>, idx: I): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
     type TableDef = TableDefForTableName<RemoteModule, TableName>;
     type Row = RowType<TableDef>;
 
@@ -108,7 +109,7 @@ export class TableCacheImpl<
       throw new Error('Only btree indexes are supported in TableCacheImpl');
     }
 
-    const columns = idx.columns as readonly (keyof Row & string)[];
+    const columns = idx.columns;
 
     // Extract the tuple key for this btree index (column order preserved)
     const getKey = (row: Row): readonly unknown[] => columns.map(c => row[c]);
@@ -172,7 +173,13 @@ export class TableCacheImpl<
       }
     };
 
-    const isUnique = idx.unique === true;
+    // An index is unique if it shares all columns with a unique constraint
+    const isUnique = tableDef.constraints.some(constraint => {
+      if (constraint.constraint !== 'unique') {
+        return false;
+      }
+      return deepEqual(constraint.columns, idx.columns);
+    });
 
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
@@ -445,7 +452,7 @@ export class TableCacheImpl<
   onInsert = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.on('insert', cb);
@@ -469,7 +476,7 @@ export class TableCacheImpl<
   onDelete = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.on('delete', cb);
@@ -493,8 +500,8 @@ export class TableCacheImpl<
   onUpdate = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.on('update', cb);
@@ -508,7 +515,7 @@ export class TableCacheImpl<
   removeOnInsert = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.off('insert', cb);
@@ -522,7 +529,7 @@ export class TableCacheImpl<
   removeOnDelete = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.off('delete', cb);
@@ -536,8 +543,8 @@ export class TableCacheImpl<
   removeOnUpdate = (
     cb: (
       ctx: EventContextInterface<RemoteModule>,
-      oldRow: RowType<TableDefForTableName<RemoteModule, TableName>>,
-      row: RowType<TableDefForTableName<RemoteModule, TableName>>
+      oldRow: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
+      row: Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     ) => void
   ): void => {
     this.emitter.off('update', cb);
