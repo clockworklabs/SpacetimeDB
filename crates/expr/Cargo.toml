@@ -17,6 +17,7 @@ spacetimedb-primitives.workspace = true
 spacetimedb-sats.workspace = true
 spacetimedb-schema.workspace = true
 spacetimedb-sql-parser.workspace = true
+bytes.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

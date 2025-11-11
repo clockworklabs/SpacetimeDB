@@ -5,6 +5,8 @@ use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_execution::Datastore;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
@@ -93,7 +95,7 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 
 /// Compile a string into a single read-only query.
 /// This returns an error if the string has multiple queries or mutations.
-pub fn compile_query_with_hashes(
+pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
     auth: &AuthCtx,
     tx: &Tx,
     input: &str,

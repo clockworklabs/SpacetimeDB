@@ -51,13 +51,13 @@ pub trait Schema: Sized {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ViewInfo {
+pub struct ViewDefInfo {
     pub view_id: ViewId,
     pub has_args: bool,
     pub is_anonymous: bool,
 }
 
-impl ViewInfo {
+impl ViewDefInfo {
     pub fn num_private_cols(&self) -> usize {
         (if self.is_anonymous { 0 } else { 1 }) + (if self.has_args { 1 } else { 0 })
     }
@@ -67,7 +67,7 @@ impl ViewInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableOrViewSchema {
     pub table_id: TableId,
-    pub view_info: Option<ViewInfo>,
+    pub view_info: Option<ViewDefInfo>,
     pub table_name: Box<str>,
     pub table_access: StAccess,
     inner: Arc<TableSchema>,
@@ -111,22 +111,22 @@ impl TableOrViewSchema {
     /// Hence columns in this list should be looked up by their [`ColId`] - not their position.
     pub fn public_columns(&self) -> &[ColumnSchema] {
         match self.view_info {
-            Some(ViewInfo {
+            Some(ViewDefInfo {
                 has_args: true,
                 is_anonymous: false,
                 ..
             }) => &self.inner.columns[2..],
-            Some(ViewInfo {
+            Some(ViewDefInfo {
                 has_args: true,
                 is_anonymous: true,
                 ..
             }) => &self.inner.columns[1..],
-            Some(ViewInfo {
+            Some(ViewDefInfo {
                 has_args: false,
                 is_anonymous: false,
                 ..
             }) => &self.inner.columns[1..],
-            Some(ViewInfo {
+            Some(ViewDefInfo {
                 has_args: false,
                 is_anonymous: true,
                 ..
@@ -155,7 +155,7 @@ pub struct TableSchema {
     pub table_name: Box<str>,
 
     /// Is this the backing table of a view?
-    pub view_info: Option<ViewInfo>,
+    pub view_info: Option<ViewDefInfo>,
 
     /// The columns of the table.
     /// The ordering of the columns is significant. Columns are frequently identified by `ColId`, that is, position in this list.
@@ -202,7 +202,7 @@ impl TableSchema {
     pub fn new(
         table_id: TableId,
         table_name: Box<str>,
-        view_info: Option<ViewInfo>,
+        view_info: Option<ViewDefInfo>,
         columns: Vec<ColumnSchema>,
         indexes: Vec<IndexSchema>,
         constraints: Vec<ConstraintSchema>,
@@ -273,6 +273,7 @@ impl TableSchema {
     /// Will only be non-zero in the case of views.
     pub fn num_private_cols(&self) -> usize {
         self.view_info
+            .as_ref()
             .map(|view_info| view_info.num_private_cols())
             .unwrap_or_default()
     }
@@ -739,7 +740,7 @@ impl TableSchema {
             StAccess::Private
         };
 
-        let view_info = ViewInfo {
+        let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
             has_args: !param_columns.is_empty(),
             is_anonymous: *is_anonymous,
@@ -861,7 +862,7 @@ impl TableSchema {
             StAccess::Private
         };
 
-        let view_info = ViewInfo {
+        let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
             has_args: !param_columns.is_empty(),
             is_anonymous: *is_anonymous,

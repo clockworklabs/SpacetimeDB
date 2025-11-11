@@ -4,7 +4,6 @@ use std::{
     io::{self, Seek as _, SeekFrom},
     iter::{self, repeat},
     num::NonZeroU16,
-    sync::RwLockWriteGuard,
 };
 
 use log::debug;
@@ -102,9 +101,8 @@ fn overwrite_reopen() {
 
     {
         let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
-        let mut data = last_segment.buf_mut();
-        let pos = data.len() - last_commit.encoded_len() + 1;
-        data[pos] = 255;
+        let pos = last_segment.len() - last_commit.encoded_len() + 1;
+        last_segment.modify_byte_at(pos, |_| 255);
     }
 
     let mut log = open_log::<[u8; 32]>(repo.clone());
@@ -153,7 +151,7 @@ fn overwrite_reopen() {
 fn first_commit_in_last_segment_corrupt() {
     enable_logging();
 
-    let repo = repo::Memory::new();
+    let repo = repo::Memory::unlimited();
     let options = Options {
         max_segment_size: 512,
         max_records_in_commit: NonZeroU16::new(1).unwrap(),
@@ -167,9 +165,8 @@ fn first_commit_in_last_segment_corrupt() {
     assert_eq!(2, segments.len(), "repo should contain 2 segments");
 
     {
-        let last_segment = repo.open_segment_writer(*segments.last().unwrap()).unwrap();
-        let mut data = last_segment.buf_mut();
-        data[segment::Header::LEN + 1..].fill(0);
+        let mut last_segment = repo.open_segment_writer(*segments.last().unwrap()).unwrap();
+        last_segment.modify_bytes_at(segment::Header::LEN + 1.., |data| data.fill(0));
     }
 
     assert_matches!(
@@ -200,8 +197,12 @@ struct ShortSegment {
 }
 
 impl ShortSegment {
-    fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
-        self.inner.buf_mut()
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
+        self.inner.modify_byte_at(pos, f);
     }
 }
 
@@ -218,6 +219,11 @@ impl FileLike for ShortSegment {
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> std::io::Result<()> {
         self.inner.ftruncate(tx_offset, size)
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.inner.fallocate(size)
     }
 }
 
@@ -261,7 +267,7 @@ struct ShortMem {
 impl ShortMem {
     pub fn new(max_len: u64) -> Self {
         Self {
-            inner: repo::Memory::new(),
+            inner: repo::Memory::new(max_len * 4096),
             max_len,
         }
     }

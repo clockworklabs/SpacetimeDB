@@ -209,6 +209,20 @@ impl<W: io::Write> Writer<W> {
 pub trait FileLike {
     fn fsync(&mut self) -> io::Result<()>;
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()>;
+    /// Allocate space for at least `size` bytes in the [FileLike].
+    ///
+    /// The allocated space shall not contain zero bytes, and shall not modify
+    /// the apparent size of the file (as reported by `stat`).
+    ///
+    /// No-op if `size` is smaller than the already allocated space.
+    ///
+    /// In other words, the method shall behave like:
+    ///
+    /// ```ignore
+    /// fallocate(fd, FALLOC_FL_KEEP_SIZE, 0, size)
+    /// ```
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()>;
 }
 
 impl FileLike for File {
@@ -219,6 +233,28 @@ impl FileLike for File {
     fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
         self.set_len(size)
     }
+
+    #[cfg(all(feature = "fallocate", target_os = "linux"))]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        use nix::fcntl::{fallocate, FallocateFlags};
+
+        fallocate(self, FallocateFlags::FALLOC_FL_KEEP_SIZE, 0, size as _)?;
+        Ok(())
+    }
+
+    // Fail compilation if `fallocate` is enabled but not supported.
+    #[cfg(all(feature = "fallocate", not(target_os = "linux"), not(any(test, feature = "test"))))]
+    compile_error!("`fallocate(2)` is not available on this platform");
+
+    // No-op if `fallocate` is enabled, unsupported, but this is a test build.
+    //
+    // If it's a test build, we may want to run `fallocate` semantics against
+    // an in-memory backend (on any platform). Hence, we need the method to be
+    // present.
+    #[cfg(all(feature = "fallocate", not(target_os = "linux"), any(test, feature = "test")))]
+    fn fallocate(&mut self, _: u64) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 impl<W: io::Write + FileLike> FileLike for BufWriter<W> {
@@ -228,6 +264,11 @@ impl<W: io::Write + FileLike> FileLike for BufWriter<W> {
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
         self.get_mut().ftruncate(tx_offset, size)
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.get_mut().fallocate(size)
     }
 }
 
@@ -244,6 +285,11 @@ impl<W: io::Write + FileLike> FileLike for Writer<W> {
             .as_mut()
             .map(|index| index.ftruncate(tx_offset, size));
         Ok(())
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.inner.fallocate(size)
     }
 }
 
@@ -340,6 +386,11 @@ impl FileLike for OffsetIndexWriter {
             .ok();
         Ok(())
     }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, _: u64) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 impl FileLike for IndexFileMut<TxOffset> {
@@ -350,6 +401,11 @@ impl FileLike for IndexFileMut<TxOffset> {
     fn ftruncate(&mut self, tx_offset: u64, _size: u64) -> io::Result<()> {
         self.truncate(tx_offset)
             .map_err(|e| io::Error::other(format!("failed to truncate offset index at {tx_offset}: {e:?}")))
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, _: u64) -> io::Result<()> {
+        Ok(())
     }
 }
 
@@ -714,7 +770,7 @@ mod tests {
 
     #[test]
     fn write_read_roundtrip() {
-        let repo = repo::Memory::default();
+        let repo = repo::Memory::unlimited();
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         writer.append([0; 32]).unwrap();
@@ -743,7 +799,7 @@ mod tests {
 
     #[test]
     fn metadata() {
-        let repo = repo::Memory::default();
+        let repo = repo::Memory::unlimited();
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
         // Commit 0..2
@@ -776,7 +832,7 @@ mod tests {
 
     #[test]
     fn commits() {
-        let repo = repo::Memory::default();
+        let repo = repo::Memory::unlimited();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
@@ -809,7 +865,7 @@ mod tests {
 
     #[test]
     fn transactions() {
-        let repo = repo::Memory::default();
+        let repo = repo::Memory::unlimited();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
         let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();

@@ -266,14 +266,15 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n, confirmed = False):
+    def subscribe(self, *queries, n, confirmed = False, database = None):
         self._check_published()
         assert isinstance(n, int)
 
         args = [
             SPACETIME_BIN,
             "--config-path", str(self.config_path),
-            "subscribe", self.database_identity,
+            "subscribe",
+            database if database is not None else self.database_identity,
             "-t", "600",
             "-n", str(n),
             "--print-initial-update",

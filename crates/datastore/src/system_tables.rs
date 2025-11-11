@@ -1025,6 +1025,13 @@ impl TryFrom<RowRef<'_>> for StIndexRow {
     }
 }
 
+impl TryFrom<RowRef<'_>> for StViewArgRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
 impl From<StIndexRow> for ProductValue {
     fn from(x: StIndexRow) -> Self {
         to_product_value(&x)

@@ -1718,6 +1718,7 @@ mod tests {
             TableRow { id: ST_VIEW_SUB_ID.into(), name: ST_VIEW_SUB_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: None },
             TableRow { id: ST_VIEW_ARG_ID.into(), name: ST_VIEW_ARG_NAME, ty: StTableType::System, access: StAccess::Public, primary_key: Some(StViewArgFields::Id.into()) },
 
+
         ]));
         #[rustfmt::skip]
         assert_eq!(query.scan_st_columns()?, map_array([

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-%s', github.sha) }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
   cancel-in-progress: true
 
 jobs:
@@ -19,11 +19,6 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
     steps:
-      - name: Print current ref and sha
-        run: |
-          echo "github.ref=${{ github.ref }}"
-          echo "github.sha=${{ github.sha }}"
-
       - name: Trigger and wait for Internal Tests
         uses: actions/github-script@v7
         with:
@@ -33,8 +28,14 @@ jobs:
             const targetRepo = 'SpacetimeDBPrivate';
             const workflowId = 'internal-tests.yml';
             const targetRef = 'master';
-            const publicRef = context.sha;
+            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
+            const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const preDispatch = new Date().toISOString();
+
+            console.log("context.eventName =", context.eventName);
+            console.log("context.ref =", context.ref);
+            console.log("context.sha =", context.sha);
+            console.log("Dispatch workflow with publicRef =", publicRef);
 
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
