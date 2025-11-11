@@ -992,7 +992,7 @@ public static partial class Module
     [SpacetimeDB.Table(Name = "player_level")]
     public partial struct PlayerLevel {
         [SpacetimeDB.Unique]
-        ulong Id;
+        ulong PlayerId;
 
         [SpacetimeDB.Index.BTree]
         ulong Level;
