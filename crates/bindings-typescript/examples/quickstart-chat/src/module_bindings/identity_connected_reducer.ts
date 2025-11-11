@@ -26,7 +26,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from "spacetimedb";
+} from 'spacetimedb';
 
 export type IdentityConnected = {};
 let _cached_IdentityConnected_type_value: __AlgebraicTypeType | null = null;
@@ -36,26 +36,33 @@ let _cached_IdentityConnected_type_value: __AlgebraicTypeType | null = null;
  */
 export const IdentityConnected = {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_IdentityConnected_type_value) return _cached_IdentityConnected_type_value;
-    _cached_IdentityConnected_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_IdentityConnected_type_value.value.elements.push(
-    );
+    if (_cached_IdentityConnected_type_value)
+      return _cached_IdentityConnected_type_value;
+    _cached_IdentityConnected_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
+    });
+    _cached_IdentityConnected_type_value.value.elements.push();
     return _cached_IdentityConnected_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: IdentityConnected): void {
-    __AlgebraicTypeValue.serializeValue(writer, IdentityConnected.getTypeScriptAlgebraicType(), value);
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      IdentityConnected.getTypeScriptAlgebraicType(),
+      value
+    );
   },
 
   deserialize(reader: __BinaryReader): IdentityConnected {
-    return __AlgebraicTypeValue.deserializeValue(reader, IdentityConnected.getTypeScriptAlgebraicType());
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      IdentityConnected.getTypeScriptAlgebraicType()
+    );
   },
-
-}
+};
 
 export default IdentityConnected;
-

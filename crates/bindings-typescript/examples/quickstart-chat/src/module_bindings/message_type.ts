@@ -26,12 +26,12 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from "spacetimedb";
+} from 'spacetimedb';
 
 export type Message = {
-  sender: __Identity,
-  sent: __Timestamp,
-  text: string,
+  sender: __Identity;
+  sent: __Timestamp;
+  text: string;
 };
 let _cached_Message_type_value: __AlgebraicTypeType | null = null;
 
@@ -40,30 +40,40 @@ let _cached_Message_type_value: __AlgebraicTypeType | null = null;
  */
 export const Message = {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     if (_cached_Message_type_value) return _cached_Message_type_value;
     _cached_Message_type_value = __AlgebraicTypeValue.Product({ elements: [] });
     _cached_Message_type_value.value.elements.push(
-      { name: "sender", algebraicType: __AlgebraicTypeValue.createIdentityType() },
-      { name: "sent", algebraicType: __AlgebraicTypeValue.createTimestampType() },
-      { name: "text", algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'sender',
+        algebraicType: __AlgebraicTypeValue.createIdentityType(),
+      },
+      {
+        name: 'sent',
+        algebraicType: __AlgebraicTypeValue.createTimestampType(),
+      },
+      { name: 'text', algebraicType: __AlgebraicTypeValue.String }
     );
     return _cached_Message_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Message): void {
-    __AlgebraicTypeValue.serializeValue(writer, Message.getTypeScriptAlgebraicType(), value);
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      Message.getTypeScriptAlgebraicType(),
+      value
+    );
   },
 
   deserialize(reader: __BinaryReader): Message {
-    return __AlgebraicTypeValue.deserializeValue(reader, Message.getTypeScriptAlgebraicType());
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      Message.getTypeScriptAlgebraicType()
+    );
   },
-
-}
+};
 
 export default Message;
-
-

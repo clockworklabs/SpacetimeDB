@@ -26,7 +26,7 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from "spacetimedb";
+} from 'spacetimedb';
 
 export type IdentityDisconnected = {};
 let _cached_IdentityDisconnected_type_value: __AlgebraicTypeType | null = null;
@@ -36,26 +36,33 @@ let _cached_IdentityDisconnected_type_value: __AlgebraicTypeType | null = null;
  */
 export const IdentityDisconnected = {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_IdentityDisconnected_type_value) return _cached_IdentityDisconnected_type_value;
-    _cached_IdentityDisconnected_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_IdentityDisconnected_type_value.value.elements.push(
-    );
+    if (_cached_IdentityDisconnected_type_value)
+      return _cached_IdentityDisconnected_type_value;
+    _cached_IdentityDisconnected_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
+    });
+    _cached_IdentityDisconnected_type_value.value.elements.push();
     return _cached_IdentityDisconnected_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: IdentityDisconnected): void {
-    __AlgebraicTypeValue.serializeValue(writer, IdentityDisconnected.getTypeScriptAlgebraicType(), value);
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      IdentityDisconnected.getTypeScriptAlgebraicType(),
+      value
+    );
   },
 
   deserialize(reader: __BinaryReader): IdentityDisconnected {
-    return __AlgebraicTypeValue.deserializeValue(reader, IdentityDisconnected.getTypeScriptAlgebraicType());
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      IdentityDisconnected.getTypeScriptAlgebraicType()
+    );
   },
-
-}
+};
 
 export default IdentityDisconnected;
-

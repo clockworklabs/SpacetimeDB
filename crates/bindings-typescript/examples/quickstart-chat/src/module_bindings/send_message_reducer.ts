@@ -26,10 +26,10 @@ import {
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
   type TableHandle as __TableHandle,
-} from "spacetimedb";
+} from 'spacetimedb';
 
 export type SendMessage = {
-  text: string,
+  text: string;
 };
 let _cached_SendMessage_type_value: __AlgebraicTypeType | null = null;
 
@@ -38,27 +38,35 @@ let _cached_SendMessage_type_value: __AlgebraicTypeType | null = null;
  */
 export const SendMessage = {
   /**
-  * A function which returns this type represented as an AlgebraicType.
-  * This function is derived from the AlgebraicType used to generate this type.
-  */
+   * A function which returns this type represented as an AlgebraicType.
+   * This function is derived from the AlgebraicType used to generate this type.
+   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     if (_cached_SendMessage_type_value) return _cached_SendMessage_type_value;
-    _cached_SendMessage_type_value = __AlgebraicTypeValue.Product({ elements: [] });
-    _cached_SendMessage_type_value.value.elements.push(
-      { name: "text", algebraicType: __AlgebraicTypeValue.String },
-    );
+    _cached_SendMessage_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
+    });
+    _cached_SendMessage_type_value.value.elements.push({
+      name: 'text',
+      algebraicType: __AlgebraicTypeValue.String,
+    });
     return _cached_SendMessage_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SendMessage): void {
-    __AlgebraicTypeValue.serializeValue(writer, SendMessage.getTypeScriptAlgebraicType(), value);
+    __AlgebraicTypeValue.serializeValue(
+      writer,
+      SendMessage.getTypeScriptAlgebraicType(),
+      value
+    );
   },
 
   deserialize(reader: __BinaryReader): SendMessage {
-    return __AlgebraicTypeValue.deserializeValue(reader, SendMessage.getTypeScriptAlgebraicType());
+    return __AlgebraicTypeValue.deserializeValue(
+      reader,
+      SendMessage.getTypeScriptAlgebraicType()
+    );
   },
-
-}
+};
 
 export default SendMessage;
-
