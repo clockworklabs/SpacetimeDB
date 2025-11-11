@@ -484,7 +484,7 @@ impl InstanceCommon {
             } = view;
 
             let st_view = tx
-                .view_from_name(&view_name)?
+                .view_from_name(view_name)?
                 .ok_or_else(|| anyhow::anyhow!("view {} not found in database", &view_name))?;
 
             let view_id = st_view.view_id;

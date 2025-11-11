@@ -789,7 +789,6 @@ fn ensure_old_ty_upgradable_to_new(
     new_ty: &AlgebraicType,
 ) -> Result<Any> {
     use AutoMigrateError::*;
-    println!("Ensuring upgradability from {:?} to {:?}", old_ty, new_ty);
     // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
     let ensure =
         |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old_container_name, old_column_name, old_ty, new_ty);
