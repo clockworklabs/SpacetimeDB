@@ -84,29 +84,33 @@ export function tablesToSchema<
         accessorName: toCamelCase(schema.tableName),
         columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
         rowType: schema.rowSpacetimeType,
-        constraints: [...schema.tableDef.constraints.map(c => ({
-          name: c.name,
-          constraint: 'unique' as const,
-          columns: c.data.value.columns.map(i => colNameList[i]),
-        }))],
+        constraints: [
+          ...schema.tableDef.constraints.map(c => ({
+            name: c.name,
+            constraint: 'unique' as const,
+            columns: c.data.value.columns.map(i => colNameList[i]),
+          })),
+        ],
         // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
         indexes: [
           ...schema.idxs.map(
             (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> =>
               ({
                 name: idx.accessorName,
-                unique: schema.tableDef.constraints.map(c => {
-                  if (idx.algorithm.tag == 'BTree') {
-                    return c.data.value.columns.every(col => {
-                      const idxColumns = idx.algorithm.value;
-                      if (Array.isArray(idxColumns)) {
-                        return idxColumns.includes(col);
-                      } else {
-                        return col === idxColumns;
-                      }
-                    });
-                  }
-                }).includes(true),
+                unique: schema.tableDef.constraints
+                  .map(c => {
+                    if (idx.algorithm.tag == 'BTree') {
+                      return c.data.value.columns.every(col => {
+                        const idxColumns = idx.algorithm.value;
+                        if (Array.isArray(idxColumns)) {
+                          return idxColumns.includes(col);
+                        } else {
+                          return col === idxColumns;
+                        }
+                      });
+                    }
+                  })
+                  .includes(true),
                 algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
                 columns: (() => {
                   const cols =
@@ -120,16 +124,16 @@ export function tablesToSchema<
         ],
       } as const;
     }) as {
-        // preserve tuple indices so the return type matches `[i in keyof T]`
-        readonly [I in keyof T]: {
-          name: T[I]['tableName'];
-          accessorName: CamelCase<T[I]['tableName']>;
-          columns: T[I]['rowType']['row'];
-          rowType: T[I]['rowSpacetimeType'];
-          indexes: T[I]['idxs'];
-          constraints: T[I]['constraints'];
-        };
-      },
+      // preserve tuple indices so the return type matches `[i in keyof T]`
+      readonly [I in keyof T]: {
+        name: T[I]['tableName'];
+        accessorName: CamelCase<T[I]['tableName']>;
+        columns: T[I]['rowType']['row'];
+        rowType: T[I]['rowSpacetimeType'];
+        indexes: T[I]['idxs'];
+        constraints: T[I]['constraints'];
+      };
+    },
   } satisfies TablesToSchema<T>;
   return result;
 }
@@ -587,7 +591,7 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
 type HasAccessor = { accessorName: PropertyKey };
 
 export type ConvertToAccessorMap<TableDefs extends readonly HasAccessor[]> = {
-  [Tbl in TableDefs[number]as Tbl['accessorName']]: Tbl;
+  [Tbl in TableDefs[number] as Tbl['accessorName']]: Tbl;
 };
 
 export function convertToAccessorMap<T extends readonly HasAccessor[]>(

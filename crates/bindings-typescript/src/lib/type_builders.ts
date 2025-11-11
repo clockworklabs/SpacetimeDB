@@ -28,12 +28,11 @@ export type InferSpacetimeTypeOfTypeBuilder<T extends TypeBuilder<any, any>> =
 /**
  * Helper type to extract the TypeScript type from a TypeBuilder
  */
-export type Infer<T> =
-  T extends RowObj
-    ? InferTypeOfRow<T>
-    : T extends TypeBuilder<any, any>
-      ? InferTypeOfTypeBuilder<T>
-        : never;
+export type Infer<T> = T extends RowObj
+  ? InferTypeOfRow<T>
+  : T extends TypeBuilder<any, any>
+    ? InferTypeOfTypeBuilder<T>
+    : never;
 
 /**
  * Helper type to extract the type of a row from an object.

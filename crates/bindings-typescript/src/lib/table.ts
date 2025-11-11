@@ -243,7 +243,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
     // implicit 1‑column indexes
     if (meta.indexType || isUnique) {
-      console.log("GAAAAAAH", name);
+      console.log('GAAAAAAH', name);
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
       let algorithm: Infer<typeof RawIndexAlgorithm>;

@@ -100,7 +100,10 @@ export class TableCacheImpl<
     I extends UntypedIndex<
       keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
     >,
-  >(tableDef: TableDefForTableName<RemoteModule, TableName>, idx: I): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
+  >(
+    tableDef: TableDefForTableName<RemoteModule, TableName>,
+    idx: I
+  ): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
     type TableDef = TableDefForTableName<RemoteModule, TableName>;
     type Row = RowType<TableDef>;
 
