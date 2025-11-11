@@ -1,6 +1,5 @@
 import json
 import toml
-import unittest
 
 from .. import Smoketest, parse_sql_result, random_string
 
@@ -105,7 +104,6 @@ class PermissionsTest(Smoketest):
         return self.subscribe(*queries, n = n)
 
 
-@unittest.skip("sql permissions not yet supported")
 class MutableSql(PermissionsTest):
     MODULE_CODE = """
 #[spacetimedb::table(name = person, public)]
@@ -295,7 +293,6 @@ class DeleteDatabase(PermissionsTest):
         self.delete_as(owner, parent)
 
 
-@unittest.skip("sql permissions not yet supported")
 class PrivateTables(PermissionsTest):
     def test_permissions_private_tables(self):
         """

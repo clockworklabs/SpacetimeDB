@@ -36,9 +36,8 @@ use spacetimedb_client_api_messages::websocket::Compression;
 use spacetimedb_data_structures::map::HashSet;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::TxId;
-use spacetimedb_lib::db::auth::{StAccess, StTableType};
+use spacetimedb_lib::db::auth::StTableType;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::def::error::AuthError;
@@ -604,12 +603,12 @@ impl From<Vec<SupportedQuery>> for ExecutionSet {
 }
 
 impl AuthAccess for ExecutionSet {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        self.exec_units.iter().try_for_each(|eu| eu.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.exec_units.iter().try_for_each(|eu| eu.check_auth(auth))
     }
 }
 
-/// Queries all the [`StTableType::User`] tables *right now*
+/// Querieshttps://github.com/clockworklabs/SpacetimeDBPrivate/pull/2207 all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
 pub(crate) fn get_all<T, F, I>(
@@ -624,7 +623,7 @@ where
     I: Iterator<Item = Arc<TableSchema>>,
 {
     Ok(get_all_tables(relational_db, tx)?
-        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
             let tx = SchemaViewer::new(tx, auth);
@@ -633,12 +632,12 @@ where
                     plans,
                     QueryHash::from_string(
                         &sql,
-                        auth.caller,
+                        auth.caller(),
                         // Note that when generating hashes for queries from owners,
                         // we always treat them as if they were parameterized by :sender.
                         // This is because RLS is not applicable to owners.
                         // Hence owner hashes must never overlap with client hashes.
-                        auth.is_owner() || has_param,
+                        auth.bypass_rls() || has_param,
                     ),
                     sql,
                 )
@@ -662,7 +661,7 @@ pub(crate) fn legacy_get_all(
         .get_all_tables(tx)?
         .iter()
         .map(Deref::deref)
-        .filter(|t| t.table_type == StTableType::User && (auth.is_owner() || t.table_access == StAccess::Public))
+        .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|src| SupportedQuery {
             kind: query::Supported::Select,
             expr: QueryExpr::new(src),
