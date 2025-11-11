@@ -604,11 +604,7 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
     })
     .collect();
 
-    if old.is_anonymous != new.is_anonymous
-        || incompatible_return_type
-        || incompatible_param_types
-        || old.return_type != new.return_type
-    {
+    if old.is_anonymous != new.is_anonymous || incompatible_return_type || incompatible_param_types {
         plan.steps.push(AutoMigrateStep::AddView(new.key()));
         plan.steps.push(AutoMigrateStep::RemoveView(old.key()));
 
@@ -616,7 +612,7 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
             plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
         }
     } else {
-        plan.steps.push(AutoMigrateStep::UpdateView(old.key()));
+        plan.steps.push(AutoMigrateStep::UpdateView(new.key()));
     }
 
     Ok(())
@@ -1830,117 +1826,109 @@ mod tests {
     }
 
     #[test]
-    fn migrate_view_option_to_vec() {
-        let old_def = create_module_def(|builder| {
-            let return_type_ref = builder.add_algebraic_type(
-                [],
-                "my_view_return_type",
-                AlgebraicType::product([("a", AlgebraicType::U64)]),
-                true,
+    fn migrate_view_recompute() {
+        struct TestCase {
+            desc: &'static str,
+            old_def: ModuleDef,
+            new_def: ModuleDef,
+        }
+
+        for TestCase {
+            desc: name,
+            old_def,
+            new_def,
+        } in [
+            TestCase {
+                desc: "Return `Vec<T>` instead of `Option<T>`",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        0,
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        0,
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+            TestCase {
+                desc: "No change; recompute view",
+                old_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        0,
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+                new_def: create_module_def(|builder| {
+                    let return_type_ref = builder.add_algebraic_type(
+                        [],
+                        "my_view_return_type",
+                        AlgebraicType::product([("a", AlgebraicType::U64)]),
+                        true,
+                    );
+                    builder.add_view(
+                        "my_view",
+                        0,
+                        true,
+                        true,
+                        ProductType::from([("x", AlgebraicType::U32)]),
+                        AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+                    );
+                }),
+            },
+        ] {
+            let my_view = expect_identifier("my_view");
+
+            let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+            let steps = &plan.steps[..];
+
+            assert!(!plan.disconnects_all_users(), "{name}, plan: {plan:#?}");
+
+            assert!(
+                steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
+                "{name}, steps: {steps:?}"
             );
-            builder.add_view(
-                "my_view",
-                0,
-                true,
-                true,
-                ProductType::from([("x", AlgebraicType::U32)]),
-                AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
+            assert!(
+                !steps.contains(&AutoMigrateStep::AddView(&my_view)),
+                "{name}, steps: {steps:?}"
             );
-        });
-
-        let new_def = create_module_def(|builder| {
-            let return_type_ref = builder.add_algebraic_type(
-                [],
-                "my_view_return_type",
-                AlgebraicType::product([("a", AlgebraicType::U64)]),
-                true,
+            assert!(
+                !steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
+                "{name}, steps: {steps:?}"
             );
-            builder.add_view(
-                "my_view",
-                0,
-                true,
-                true,
-                ProductType::from([("x", AlgebraicType::U32)]),
-                AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
-            );
-        });
-
-        let my_view = expect_identifier("my_view");
-        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
-        let steps = &plan.steps[..];
-
-        assert!(plan.disconnects_all_users(), "plan: {plan:#?}");
-
-        // Expect: remove + add the view (type changed)
-        assert!(
-            steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
-            "expected RemoveView step, got {steps:?}"
-        );
-        assert!(
-            steps.contains(&AutoMigrateStep::AddView(&my_view)),
-            "expected AddView step, got {steps:?}"
-        );
-        assert!(
-            !steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
-            "should not only update, got {steps:?}"
-        );
-    }
-
-    #[test]
-    fn migrate_view_recompute_same_def() {
-        let old_def = create_module_def(|builder| {
-            let return_type_ref = builder.add_algebraic_type(
-                [],
-                "my_view_return_type",
-                AlgebraicType::product([("a", AlgebraicType::U64)]),
-                true,
-            );
-            builder.add_view(
-                "my_view",
-                0,
-                true,
-                true,
-                ProductType::from([("x", AlgebraicType::U32)]),
-                AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
-            );
-        });
-
-        let new_def = create_module_def(|builder| {
-            let return_type_ref = builder.add_algebraic_type(
-                [],
-                "my_view_return_type",
-                AlgebraicType::product([("a", AlgebraicType::U64)]),
-                true,
-            );
-            builder.add_view(
-                "my_view",
-                0,
-                true,
-                true,
-                ProductType::from([("x", AlgebraicType::U32)]),
-                AlgebraicType::option(AlgebraicType::Ref(return_type_ref)),
-            );
-        });
-
-        let my_view = expect_identifier("my_view");
-        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
-        let steps = &plan.steps[..];
-
-        assert!(!plan.disconnects_all_users(), "plan: {plan:#?}");
-
-        // Expect: only update view (recompute needed but definition same)
-        assert!(
-            steps.contains(&AutoMigrateStep::UpdateView(&my_view)),
-            "expected UpdateView step, got {steps:?}"
-        );
-        assert!(
-            !steps.contains(&AutoMigrateStep::AddView(&my_view)),
-            "should not add, got {steps:?}"
-        );
-        assert!(
-            !steps.contains(&AutoMigrateStep::RemoveView(&my_view)),
-            "should not remove, got {steps:?}"
-        );
+        }
     }
 
     #[test]
