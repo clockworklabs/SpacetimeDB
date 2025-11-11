@@ -97,8 +97,7 @@ pub fn person(ctx: &ViewContext) -> Option<ABC> {
 
 class SqlViews(Smoketest):
     MODULE_CODE = """
-use spacetimedb::AnonymousViewContext;
-use spacetimedb::ViewContext;
+use spacetimedb::{AnonymousViewContext, ReducerContext, ViewContext};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = player_state)]
@@ -122,7 +121,7 @@ pub fn my_player_and_level(ctx: &AnonymousViewContext) -> Option<PlayerState> {
 
 #[spacetimedb::view(name = player_and_level, public)]
 pub fn player_and_level(ctx: &AnonymousViewContext) -> Vec<PlayerState> {
-    ctx.db.player_level().level().filter(2)
+    ctx.db.player_level().level().filter(2).collect()
 }
 
 #[spacetimedb::view(name = player, public)]
