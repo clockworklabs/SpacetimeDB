@@ -1,7 +1,7 @@
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg, ValueEnum};
 
-#[derive(Copy, Clone, Debug, ValueEnum)]
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq)]
 pub enum ClearMode {
     Always,     // parses as "always"
     OnConflict, // parses as "on-conflict"
