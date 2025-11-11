@@ -145,7 +145,7 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
 type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
   constraints: infer Constraints extends NonNullable<any[]>;
 }
-  ? Constraints 
+  ? Constraints
   : CoerceArray<[]>;
 
 /**
@@ -383,6 +383,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     rowSpacetimeType: productType,
     tableDef,
     idxs: indexes as OptsIndices<Opts>,
-    constraints: constraints as OptsConstraints<Opts>
+    constraints: constraints as OptsConstraints<Opts>,
   };
 }
