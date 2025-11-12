@@ -354,14 +354,18 @@ async fn apply_pre_publish_if_needed(
     {
         match pre {
             PrePublishResult::ManualMigrate(manual) => {
-                if matches!(clear_database, ClearMode::OnConflict) {
+                if clear_database == ClearMode::OnConflict {
                     println!("{}", manual.reason);
                     println!("Proceeding with database clear due to --delete-data=on-conflict.");
                 }
-                if matches!(clear_database, ClearMode::Never) {
+                if clear_database == ClearMode::Never {
                     println!("{}", manual.reason);
                     println!("Aborting publish due to required manual migration.");
                     anyhow::bail!("Aborting because publishing would require manual migration or deletion of data and --delete-data was not specified.");
+                }
+                if clear_database == ClearMode::Always {
+                    println!("{}", manual.reason);
+                    println!("Proceeding with database clear due to --delete-data=always.");
                 }
             }
             PrePublishResult::AutoMigrate(auto) => {

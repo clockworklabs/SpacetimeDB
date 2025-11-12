@@ -48,6 +48,7 @@ pub fn confirmed() -> Arg {
 pub fn clear_database() -> Arg {
     Arg::new("clear-database")
         .long("delete-data")
+        .alias("clear-database")
         .short('c')
         .num_args(0..=1)
         .value_parser(value_parser!(ClearMode))

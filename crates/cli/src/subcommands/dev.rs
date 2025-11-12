@@ -415,7 +415,7 @@ async fn generate_build_and_publish(
         "--project-path",
         project_path_str,
         "--yes",
-        "--clear-database",
+        "--delete-data",
         clear_flag,
     ];
     publish_args.extend_from_slice(&["--server", server]);
