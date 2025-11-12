@@ -153,6 +153,14 @@ pub struct ExecutionResult<T> {
     pub call_result: T,
 }
 
+impl<T> ExecutionResult<T> {
+    pub fn map_result<U>(self, f: impl FnOnce(T) -> U) -> ExecutionResult<U> {
+        let Self { stats, call_result } = self;
+        let call_result = f(call_result);
+        ExecutionResult { stats, call_result }
+    }
+}
+
 pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
 
 pub type ViewExecuteResult = ExecutionResult<Result<Bytes, ExecutionError>>;
@@ -381,11 +389,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        let ret = self.common.call_procedure(params, &mut self.instance).await;
-        if ret.result.is_err() {
-            self.trapped = true;
-        }
-        ret
+        let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
     }
 }
 
@@ -570,11 +576,11 @@ impl InstanceCommon {
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
-    async fn call_procedure<I: WasmInstance>(
+    pub(crate) async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> CallProcedureReturn {
+    ) -> (CallProcedureReturn, bool) {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -629,6 +635,8 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
+        let trapped = call_result.is_err();
+
         let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
@@ -659,7 +667,7 @@ impl InstanceCommon {
             }
         };
 
-        CallProcedureReturn { result, tx_offset }
+        (CallProcedureReturn { result, tx_offset }, trapped)
     }
 
     /// Execute a reducer.
