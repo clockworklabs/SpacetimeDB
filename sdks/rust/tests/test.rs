@@ -268,3 +268,37 @@ declare_tests_with_suffix!(rust, "");
 declare_tests_with_suffix!(typescript, "-ts");
 // TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");
+
+mod procedure {
+    //! Tests of procedure functionality, using <./procedure_client> and <../../../modules/sdk-test-procedure>.
+    //!
+    //! These are separate from the existing client and module because as of writing (pgoldman 2025-10-30),
+    //! we do not have procedure support in all of the module languages we have tested.
+
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-procedure";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn return_values() {
+        make_test("procedure-return-values").run()
+    }
+
+    #[test]
+    fn observe_panic() {
+        make_test("procedure-observe-panic").run()
+    }
+}

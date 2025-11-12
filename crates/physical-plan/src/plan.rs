@@ -13,7 +13,7 @@ use spacetimedb_expr::{
     StatementSource,
 };
 use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewDatabaseId};
+use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
@@ -73,7 +73,7 @@ impl DerefMut for ProjectPlan {
 }
 
 impl CollectViews for ProjectPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         match self {
             Self::None(plan) | Self::Name(plan, ..) => plan.collect_views(views),
         }
@@ -253,7 +253,7 @@ pub enum PhysicalPlan {
 }
 
 impl CollectViews for PhysicalPlan {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         self.visit(&mut |plan| {
             let view_info = match plan {
                 Self::TableScan(scan, _) => &scan.schema.view_info,
@@ -533,7 +533,7 @@ impl PhysicalPlan {
                     Box::new(Self::TableScan(scan, label)),
                     PhysicalExpr::BinOp(
                         BinOp::Eq,
-                        Box::new(PhysicalExpr::Value(auth.caller.into())),
+                        Box::new(PhysicalExpr::Value(auth.caller().into())),
                         Box::new(PhysicalExpr::Field(TupleField {
                             label,
                             label_pos: None,
@@ -1553,11 +1553,11 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1740,12 +1740,12 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///

@@ -171,22 +171,6 @@ impl From<&EventStatus> for ReducerOutcome {
     }
 }
 
-pub enum ViewOutcome {
-    Success,
-    Failed(String),
-    BudgetExceeded,
-}
-
-impl From<EventStatus> for ViewOutcome {
-    fn from(status: EventStatus) -> Self {
-        match status {
-            EventStatus::Committed(_) => ViewOutcome::Success,
-            EventStatus::Failed(e) => ViewOutcome::Failed(e),
-            EventStatus::OutOfEnergy => ViewOutcome::BudgetExceeded,
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ProcedureCallResult {
     pub return_val: AlgebraicValue,
@@ -569,12 +553,7 @@ async fn make_replica_ctx(
         send_worker_queue.clone(),
     )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions = ModuleSubscriptions::new(
-        relational_db.clone(),
-        subscriptions,
-        send_worker_queue,
-        database.owner_identity,
-    );
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue);
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,

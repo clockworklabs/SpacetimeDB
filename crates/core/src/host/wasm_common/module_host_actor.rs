@@ -1,13 +1,16 @@
 use bytes::Bytes;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::ViewCall;
+use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_primitives::ProcedureId;
-use spacetimedb_primitives::ViewDatabaseId;
+use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::ViewFnPtr;
 use spacetimedb_primitives::ViewId;
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_schema::def::ViewDef;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,11 +20,11 @@ use super::instrumentation::CallTimes;
 use crate::client::ClientConnectionSender;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::host::host_controller::ViewOutcome;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::instance_env::TxSlot;
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::ViewCallResult;
+use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
     CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
     ModuleFunctionCall, ModuleInfo,
@@ -127,6 +130,20 @@ pub struct ExecutionStats {
     pub energy: EnergyStats,
     pub timings: ExecutionTimings,
     pub memory_allocation: usize,
+}
+
+impl ExecutionStats {
+    fn energy_used(&self) -> FunctionBudget {
+        self.energy.used()
+    }
+
+    fn abi_duration(&self) -> Duration {
+        self.timings.wasm_instance_env_call_times.sum()
+    }
+
+    fn total_duration(&self) -> Duration {
+        self.timings.total_duration
+    }
 }
 
 pub enum ExecutionError {
@@ -292,9 +309,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = self.instance.replica_ctx();
         self.common
-            .update_database(replica_ctx, program, old_module_info, policy)
+            .update_database(program, old_module_info, policy, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
@@ -321,9 +337,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
+    pub fn call_view_with_tx(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
         let (res, trapped) = self.common.call_view_with_tx(tx, params, &mut self.instance);
-
         self.trapped = trapped;
         res
     }
@@ -350,13 +365,14 @@ impl InstanceCommon {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub(crate) fn update_database(
-        &self,
-        replica_ctx: &ReplicaContext,
+    pub(crate) fn update_database<I: WasmInstance>(
+        &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db;
 
@@ -383,6 +399,8 @@ impl InstanceCommon {
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
         let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
+        let mut energy_quanta_used = FunctionBudget::ZERO;
+        let mut host_execution_duration = Duration::ZERO;
 
         match res {
             Err(e) => {
@@ -393,19 +411,103 @@ impl InstanceCommon {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(res) => {
-                if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                }
                 system_logger.info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
-                match res {
-                    crate::db::update::UpdateResult::Success => Ok(UpdateDatabaseResult::UpdatePerformed),
-                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        Ok(UpdateDatabaseResult::UpdatePerformedWithClientDisconnect)
+                let res: UpdateDatabaseResult = match res {
+                    crate::db::update::UpdateResult::Success => UpdateDatabaseResult::UpdatePerformed,
+                    crate::db::update::UpdateResult::EvaluateSubscribedViews => {
+                        let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                        tx = out.tx;
+                        energy_quanta_used = out.energy_used;
+                        host_execution_duration = out.total_duration;
+
+                        if trapped || out.outcome != ViewOutcome::Success {
+                            let msg = match trapped {
+                                true => "Trapped while evaluating views during database update".to_string(),
+                                false => format!(
+                                    "Views evaluation did not complete successfully during database update: {:?}",
+                                    out.outcome
+                                ),
+                            };
+
+                            UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
+                        } else {
+                            UpdateDatabaseResult::UpdatePerformed
+                        }
                     }
+                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
+                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
+                    }
+                };
+
+                if res.was_successful() {
+                    let event = ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: self.info.owner_identity,
+                        caller_connection_id: None,
+                        function_call: ModuleFunctionCall::update(),
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        energy_quanta_used: energy_quanta_used.into(),
+                        host_execution_duration,
+                        request_id: None,
+                        timer: None,
+                    };
+                    //TODO: Return back event in `UpdateDatabaseResult`?
+                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                } else {
+                    let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                    stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 }
+                Ok(res)
             }
         }
+    }
+
+    /// Re-evaluates all views which have entries in `st_view_subs`.
+    fn evaluate_subscribed_views<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut I,
+    ) -> Result<(ViewCallResult, bool), anyhow::Error> {
+        let views = self.info.module_def.views().collect::<Vec<_>>();
+        let owner_identity = self.info.owner_identity;
+
+        let mut view_calls = Vec::new();
+
+        for view in views {
+            let ViewDef {
+                name: view_name,
+                is_anonymous,
+                fn_ptr,
+                product_type_ref,
+                ..
+            } = view;
+
+            let st_view = tx
+                .view_from_name(view_name)?
+                .ok_or_else(|| anyhow::anyhow!("view {} not found in database", &view_name))?;
+
+            let view_id = st_view.view_id;
+            let table_id = st_view
+                .table_id
+                .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
+
+            for sub in tx.lookup_st_view_subs(view_id)? {
+                view_calls.push(CallViewParams {
+                    view_name: view_name.to_owned().into(),
+                    view_id,
+                    table_id,
+                    fn_ptr: *fn_ptr,
+                    caller: owner_identity,
+                    sender: if *is_anonymous { None } else { Some(sub.identity.into()) },
+                    args: ArgsTuple::nullary(),
+                    row_type: *product_type_ref,
+                    timestamp: Timestamp::now(),
+                });
+            }
+        }
+
+        Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
     async fn call_procedure<I: WasmInstance>(
@@ -550,7 +652,6 @@ impl InstanceCommon {
 
         // Do some `with_label_values`.
         // TODO(perf, centril): consider caching this.
-        let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
         let _outer_span = start_call_function_span(reducer_name, &caller_identity, caller_connection_id_opt);
 
         let op = ReducerOp {
@@ -565,21 +666,13 @@ impl InstanceCommon {
         let workload = Workload::Reducer(ReducerContext::from(op.clone()));
         let tx = tx.unwrap_or_else(|| stdb.begin_mut_tx(IsolationLevel::Serializable, workload));
         let mut tx_slot = inst.tx_slot();
-        let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
 
         let vm_metrics = VmMetrics::new(&database_identity, reducer_name);
+        let _guard = vm_metrics.timer_guard_for_reducer_plus_query(tx.timer);
+
         let (mut tx, result) = tx_slot.set(tx, || {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
-
-        let energy_used = result.stats.energy.used();
-        let energy_quanta_used = energy_used.into();
-        let timings = &result.stats.timings;
-        vm_metrics.report(
-            energy_used.get(),
-            result.stats.timings.total_duration,
-            &result.stats.timings.wasm_instance_env_call_times,
-        );
 
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
@@ -626,6 +719,27 @@ impl InstanceCommon {
             }
         };
 
+        // Only re-evaluate and update views if the reducer's execution was successful
+        let (out, trapped) = if !trapped && matches!(status, EventStatus::Committed(_)) {
+            self.call_views_with_tx(tx, caller_identity, &info.module_def, inst, timestamp)
+        } else {
+            (ViewCallResult::default(tx), trapped)
+        };
+
+        // Account for view execution in reducer reporting metrics
+        vm_metrics.report_energy_used(out.energy_used);
+        vm_metrics.report_total_duration(out.total_duration);
+        vm_metrics.report_abi_duration(out.abi_duration);
+
+        let status = match out.outcome {
+            ViewOutcome::BudgetExceeded => EventStatus::OutOfEnergy,
+            ViewOutcome::Failed(err) => EventStatus::Failed(err),
+            ViewOutcome::Success => status,
+        };
+
+        let energy_quanta_used = result.stats.energy_used().into();
+        let total_duration = result.stats.total_duration();
+
         let event = ModuleEvent {
             timestamp,
             caller_identity,
@@ -637,16 +751,16 @@ impl InstanceCommon {
             },
             status,
             energy_quanta_used,
-            host_execution_duration: timings.total_duration,
+            host_execution_duration: total_duration,
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&self.info, client, event, tx);
+        let event = commit_and_broadcast_event(&self.info, client, event, out.tx);
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
             energy_used: energy_quanta_used,
-            execution_duration: timings.total_duration,
+            execution_duration: total_duration,
         };
 
         (res, trapped)
@@ -720,11 +834,13 @@ impl InstanceCommon {
         result
     }
 
-    /// Execute a view.
+    /// Executes a view and materializes its result,
+    /// deleting any previously materialized rows.
     ///
-    /// Similar to `call_reducer_with_tx`, but for views.
-    /// unlike to `call_reducer_with_tx`, It does not handle `tx`creation or commit,
-    /// It returns the updated `tx` instead.
+    /// Similar to [`Self::call_reducer_with_tx`], but for views.
+    /// However, unlike [`Self::call_reducer_with_tx`],
+    /// it mutates a previously allocated [`MutTxId`] and returns it.
+    /// It does not commit the transaction.
     pub(crate) fn call_view_with_tx<I: WasmInstance>(
         &mut self,
         tx: MutTxId,
@@ -732,75 +848,93 @@ impl InstanceCommon {
         inst: &mut I,
     ) -> (ViewCallResult, bool) {
         let CallViewParams {
-            caller_identity,
-            caller_connection_id,
+            view_name,
             view_id,
+            table_id,
+            fn_ptr,
+            caller,
+            sender,
             args,
-            return_type,
+            row_type,
             timestamp,
-            view_db_id,
-            is_anonymous,
         } = params;
 
-        let info = self.info.clone();
-        let view_def = info.module_def.view_by_id(view_id, is_anonymous);
-        let view_name = &*view_def.name;
+        let _outer_span = start_call_function_span(&view_name, &caller, None);
 
         let mut tx_slot = inst.tx_slot();
-
-        let _outer_span = start_call_function_span(view_name, &caller_identity, caller_connection_id);
-
-        let op = ViewOp {
-            id: view_id,
-            db_id: view_db_id,
-            name: view_name,
-            caller_identity: &caller_identity,
-            args: &args,
-            timestamp,
-        };
-
         let (mut tx, result) = tx_slot.set(tx, || {
-            self.call_function(caller_identity, view_name, |budget| {
-                if is_anonymous {
-                    inst.call_view_anon(op.into(), budget)
-                } else {
-                    inst.call_view(op, budget)
-                }
+            self.call_function(caller, &view_name, |budget| match sender {
+                Some(sender) => inst.call_view(
+                    ViewOp {
+                        name: &view_name,
+                        view_id,
+                        table_id,
+                        fn_ptr,
+                        sender: &sender,
+                        args: &args,
+                        timestamp,
+                    },
+                    budget,
+                ),
+                None => inst.call_view_anon(
+                    AnonymousViewOp {
+                        name: &view_name,
+                        view_id,
+                        table_id,
+                        fn_ptr,
+                        args: &args,
+                        timestamp,
+                    },
+                    budget,
+                ),
             })
         });
 
+        let replica_ctx = inst.replica_ctx();
+        let stdb = &*replica_ctx.relational_db.clone();
+        let database_identity = replica_ctx.database_identity;
+        let vm_metrics = VmMetrics::new(&database_identity, &view_name);
+
+        // Report execution metrics on each view call
+        vm_metrics.report(&result.stats);
+
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let outcome = match result.call_result {
-            Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
-                inst.log_traceback("view", view_name, &err);
-
-                self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
+        let outcome = match (result.call_result, sender) {
+            (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
+                inst.log_traceback("view", &view_name, &err);
+                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
                     .into()
             }
             // TODO: maybe do something else with user errors?
-            Err(ExecutionError::User(err)) => {
-                inst.log_traceback("view", view_name, &anyhow::anyhow!(err));
-
-                self.handle_outer_error(&result.stats.energy, &caller_identity, &caller_connection_id, view_name)
+            (Err(ExecutionError::User(err)), _) => {
+                inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
+                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
                     .into()
             }
-            Ok(res) => {
-                let db = &inst.replica_ctx().relational_db;
-                db.materialize_view(
+            // Materialize anonymous view
+            (Ok(bytes), None) => {
+                stdb.materialize_anonymous_view(&mut tx, table_id, row_type, bytes, self.info.module_def.typespace())
+                    .inspect_err(|err| {
+                        log::error!("Fatal error materializing view `{view_name}`: {err}");
+                    })
+                    .expect("Fatal error materializing view");
+                ViewOutcome::Success
+            }
+            // Materialize sender view
+            (Ok(bytes), Some(sender)) => {
+                stdb.materialize_view(
                     &mut tx,
-                    view_name,
-                    args,
-                    return_type,
-                    res,
-                    info.module_def.typespace(),
-                    caller_identity,
+                    table_id,
+                    sender,
+                    row_type,
+                    bytes,
+                    self.info.module_def.typespace(),
                 )
-                .map_err(|err| {
-                    log::info!("view returned error: {err}");
-                    err
+                .inspect_err(|err| {
+                    log::error!("Fatal error materializing view `{view_name}`: {err}");
                 })
-                .expect("error updating view result");
+                .expect("Fatal error materializing view");
                 ViewOutcome::Success
             }
         };
@@ -808,11 +942,78 @@ impl InstanceCommon {
         let res = ViewCallResult {
             outcome,
             tx,
-            energy_used: result.stats.energy.used().into(),
-            execution_duration: result.stats.timings.total_duration,
+            energy_used: result.stats.energy_used(),
+            total_duration: result.stats.total_duration(),
+            abi_duration: result.stats.abi_duration(),
         };
 
         (res, trapped)
+    }
+
+    /// A [`MutTxId`] knows which views must be updated (re-evaluated).
+    /// This method re-evaluates them and updates their backing tables.
+    pub(crate) fn call_views_with_tx<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        caller: Identity,
+        module_def: &ModuleDef,
+        inst: &mut I,
+        timestamp: Timestamp,
+    ) -> (ViewCallResult, bool) {
+        let view_calls = tx
+            .view_for_update()
+            .cloned()
+            .map(|info| {
+                let view_def = module_def
+                    .view(&*info.view_name)
+                    .unwrap_or_else(|| panic!("view `{}` not found", info.view_name));
+
+                CallViewParams {
+                    view_name: info.view_name,
+                    view_id: info.view_id,
+                    table_id: info.table_id,
+                    fn_ptr: view_def.fn_ptr,
+                    caller,
+                    sender: info.sender,
+                    args: ArgsTuple::nullary(),
+                    row_type: view_def.product_type_ref,
+                    timestamp,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        self.execute_view_calls(tx, view_calls, inst)
+    }
+
+    /// Executes view calls and accumulate results.
+    /// Returns early if any call traps or fails.
+    fn execute_view_calls<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        view_calls: Vec<CallViewParams>,
+        inst: &mut I,
+    ) -> (ViewCallResult, bool) {
+        let mut out = ViewCallResult::default(tx);
+        let mut trapped = false;
+
+        for params in view_calls {
+            let (result, call_trapped) = self.call_view_with_tx(out.tx, params, inst);
+
+            out.tx = result.tx;
+            out.outcome = result.outcome;
+            out.energy_used += result.energy_used;
+            out.total_duration += result.total_duration;
+            out.abi_duration += result.abi_duration;
+
+            trapped = trapped || call_trapped;
+
+            // Terminate early if execution failed
+            if trapped || !matches!(out.outcome, ViewOutcome::Success) {
+                break;
+            }
+        }
+
+        (out, trapped)
     }
 }
 /// VM-related metrics for reducer execution.
@@ -856,22 +1057,37 @@ impl VmMetrics {
         self.reducer_plus_query_duration.clone().with_timer(start)
     }
 
+    fn report_energy_used(&self, energy_used: FunctionBudget) {
+        self.reducer_fuel_used.inc_by(energy_used.get());
+    }
+
+    fn report_total_duration(&self, duration: Duration) {
+        self.reducer_duration_usec.inc_by(duration.as_micros() as u64);
+    }
+
+    fn report_abi_duration(&self, duration: Duration) {
+        self.reducer_abi_time_usec.inc_by(duration.as_micros() as u64);
+    }
+
     /// Reports some VM metrics.
-    fn report(&self, fuel_used: u64, reducer_duration: Duration, abi_time: &CallTimes) {
-        self.reducer_fuel_used.inc_by(fuel_used);
-        self.reducer_duration_usec.inc_by(reducer_duration.as_micros() as u64);
-        self.reducer_abi_time_usec.inc_by(abi_time.sum().as_micros() as u64);
+    fn report(&self, stats: &ExecutionStats) {
+        let energy_used = stats.energy.used();
+        let reducer_duration = stats.timings.total_duration;
+        let abi_time = stats.timings.wasm_instance_env_call_times.sum();
+        self.report_energy_used(energy_used);
+        self.report_total_duration(reducer_duration);
+        self.report_abi_duration(abi_time);
     }
 }
 
 /// Starts the `call_function` span.
 fn start_call_function_span(
-    reducer_name: &str,
+    function_name: &str,
     caller_identity: &Identity,
     caller_connection_id_opt: Option<ConnectionId>,
 ) -> EnteredSpan {
     tracing::trace_span!("call_function",
-        reducer_name,
+        function_name,
         %caller_identity,
         caller_connection_id = caller_connection_id_opt.map(tracing::field::debug),
     )
@@ -961,11 +1177,12 @@ pub trait InstanceOp {
 /// Describes a view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct ViewOp<'a> {
-    pub id: ViewId,
-    pub db_id: ViewDatabaseId,
     pub name: &'a str,
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
-    pub caller_identity: &'a Identity,
+    pub sender: &'a Identity,
     pub timestamp: Timestamp,
 }
 
@@ -973,24 +1190,28 @@ impl InstanceOp for ViewOp<'_> {
     fn name(&self) -> &str {
         self.name
     }
+
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
+
     fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCall::with_identity(
-            *self.caller_identity,
-            self.db_id,
-            self.args.get_bsatn().clone(),
-        ))
+        FuncCallType::View(ViewCallInfo {
+            view_id: self.view_id,
+            table_id: self.table_id,
+            view_name: self.name.to_owned().into_boxed_str(),
+            sender: Some(*self.sender),
+        })
     }
 }
 
 /// Describes an anonymous view call in a cheaply shareable way.
 #[derive(Clone, Debug)]
 pub struct AnonymousViewOp<'a> {
-    pub id: ViewId,
-    pub db_id: ViewDatabaseId,
     pub name: &'a str,
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub fn_ptr: ViewFnPtr,
     pub args: &'a ArgsTuple,
     pub timestamp: Timestamp,
 }
@@ -999,32 +1220,18 @@ impl InstanceOp for AnonymousViewOp<'_> {
     fn name(&self) -> &str {
         self.name
     }
+
     fn timestamp(&self) -> Timestamp {
         self.timestamp
     }
-    fn call_type(&self) -> FuncCallType {
-        FuncCallType::View(ViewCall::anonymous(self.db_id, self.args.get_bsatn().clone()))
-    }
-}
 
-impl<'a> From<ViewOp<'a>> for AnonymousViewOp<'a> {
-    fn from(
-        ViewOp {
-            id,
-            db_id,
-            name,
-            args,
-            timestamp,
-            ..
-        }: ViewOp<'a>,
-    ) -> Self {
-        Self {
-            id,
-            db_id,
-            name,
-            args,
-            timestamp,
-        }
+    fn call_type(&self) -> FuncCallType {
+        FuncCallType::View(ViewCallInfo {
+            view_id: self.view_id,
+            table_id: self.table_id,
+            view_name: self.name.to_owned().into_boxed_str(),
+            sender: None,
+        })
     }
 }
 
