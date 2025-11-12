@@ -2007,7 +2007,7 @@ impl MutTxId {
             let StViewRow {
                 table_id, is_anonymous, ..
             } = self.lookup_st_view(view_id)?;
-            let table_id = table_id.unwrap();
+            let table_id = table_id.expect("views have backing table");
 
             if is_anonymous {
                 self.clear_table(table_id)?;
