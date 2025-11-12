@@ -96,7 +96,7 @@ export interface UniqueIndex<
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > extends ReadonlyUniqueIndex<TableDef, I> {
   delete(colVal: IndexVal<TableDef, I>): boolean;
-  update(colVal: RowType<TableDef>): RowType<TableDef>;
+  update(colVal: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 }
 
 /**
@@ -108,7 +108,7 @@ export interface ReadonlyRangedIndex<
 > {
   filter(
     range: IndexScanRangeBounds<TableDef, I>
-  ): IterableIterator<RowType<TableDef>>;
+  ): IterableIterator<Prettify<RowType<TableDef>>>;
 }
 
 /**

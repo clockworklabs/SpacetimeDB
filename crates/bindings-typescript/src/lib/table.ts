@@ -169,8 +169,8 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
-  iter(): IterableIterator<RowType<TableDef>>;
-  [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+  iter(): IterableIterator<Prettify<RowType<TableDef>>>;
+  [Symbol.iterator](): IterableIterator<Prettify<RowType<TableDef>>>;
 }
 
 /**
@@ -185,10 +185,10 @@ export interface TableMethods<TableDef extends UntypedTableDef>
    * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
    * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
    * */
-  insert(row: RowType<TableDef>): RowType<TableDef>;
+  insert(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
-  delete(row: RowType<TableDef>): boolean;
+  delete(row: Prettify<RowType<TableDef>>): boolean;
 }
 
 /**
@@ -252,7 +252,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
     // implicit 1‑column indexes
     if (meta.indexType || isUnique) {
-      console.log('GAAAAAAH', name);
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
       let algorithm: Infer<typeof RawIndexAlgorithm>;
