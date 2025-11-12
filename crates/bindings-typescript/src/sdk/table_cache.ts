@@ -105,7 +105,7 @@ export class TableCacheImpl<
     idx: I
   ): ReadonlyIndex<TableDefForTableName<RemoteModule, TableName>, I> {
     type TableDef = TableDefForTableName<RemoteModule, TableName>;
-    type Row = RowType<TableDef>;
+    type Row = Prettify<RowType<TableDef>>;
 
     // We do not yet support non-btree indexes
     if (idx.algorithm !== 'btree') {
@@ -221,7 +221,7 @@ export class TableCacheImpl<
    * @returns The values of the rows in the table
    */
   iter(): IterableIterator<
-    RowType<TableDefForTableName<RemoteModule, TableName>>
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
   > {
     function* generator(
       rows: Map<
@@ -229,10 +229,12 @@ export class TableCacheImpl<
         [RowType<TableDefForTableName<RemoteModule, TableName>>, number]
       >
     ): IterableIterator<
-      RowType<TableDefForTableName<RemoteModule, TableName>>
+      Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
     > {
       for (const [row] of rows.values()) {
-        yield row;
+        yield row as Prettify<
+          RowType<TableDefForTableName<RemoteModule, TableName>>
+        >;
       }
     }
     return generator(this.rows);
@@ -243,7 +245,7 @@ export class TableCacheImpl<
    * @returns An iterator over the rows in the table
    */
   [Symbol.iterator](): IterableIterator<
-    RowType<TableDefForTableName<RemoteModule, TableName>>
+    Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>
   > {
     return this.iter();
   }
