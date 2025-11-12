@@ -27,8 +27,7 @@ jobs:
             const targetOwner = 'clockworklabs';
             const targetRepo = 'SpacetimeDBPrivate';
             const workflowId = 'ci.yml';
-            // TODO: Revert this before merging
-            const targetRef = 'bfops/merge-internal-tests';
+            const targetRef = 'master';
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const preDispatch = new Date().toISOString();
