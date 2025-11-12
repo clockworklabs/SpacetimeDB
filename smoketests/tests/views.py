@@ -249,3 +249,170 @@ INSERT INTO player_state (id, level) VALUES (22, 8);
 ----+-------
  2  | 2
 """)
+
+
+class AutoMigrateViews(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ViewContext;
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    MODULE_CODE_UPDATED = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(2u64)
+}
+"""
+
+    def assertSql(self, sql, expected):
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.database_identity, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        self.assertMultiLineEqual(sql_out, expected)
+
+    def test_views_auto_migration(self):
+        """Assert that views are auto-migrated correctly"""
+
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            "INSERT INTO player_state (id, level) VALUES (1, 1);",
+        )
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            "INSERT INTO player_state (id, level) VALUES (2, 2);",
+        )
+
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+ 1  | 1
+""")
+
+        self.write_module_code(self.MODULE_CODE_UPDATED)
+        self.publish_module(self.database_identity, clear=False)
+
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+ 2  | 2
+""")
+
+
+class AutoMigrateViewsTrapped(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ViewContext;
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    TRAPPED_MODULE_CODE_UPDATED = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+#[spacetimedb::view(name = player, public)]
+pub fn player(_ctx: &ViewContext) -> Option<PlayerState> {
+    panic!("This view is trapped")
+}
+"""
+
+    MODULE_CODE_RECOVERED = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(2u64)
+}
+"""
+
+    def assertSql(self, sql, expected):
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.database_identity, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        self.assertMultiLineEqual(sql_out, expected)
+
+    def test_recovery_from_trapped_views_auto_migration(self):
+        """Assert that view auto-migration recovers correctly after trapped migration"""
+
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            "INSERT INTO player_state (id, level) VALUES (1, 1);",
+        )
+
+        # Trigger initial materialization
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+ 1  | 1
+""")
+
+        # Attempt to publish trapped module (should fail)
+        self.write_module_code(self.TRAPPED_MODULE_CODE_UPDATED)
+        with self.assertRaises(Exception):
+            self.publish_module(self.database_identity, clear=False)
+
+        # Ensure old module still serves queries
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+ 1  | 1
+""")
+
+        # Fix the module and publish again
+        self.write_module_code(self.MODULE_CODE_RECOVERED)
+        self.publish_module(self.database_identity, clear=False)
+
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+""")

@@ -1260,6 +1260,12 @@ impl From<Identity> for IdentityViaU256 {
     }
 }
 
+impl From<IdentityViaU256> for Identity {
+    fn from(id: IdentityViaU256) -> Self {
+        id.0
+    }
+}
+
 impl From<IdentityViaU256> for AlgebraicValue {
     fn from(val: IdentityViaU256) -> Self {
         AlgebraicValue::U256(val.0.to_u256().into())
