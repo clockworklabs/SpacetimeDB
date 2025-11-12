@@ -69,15 +69,9 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        id: cache-rust-deps
         with:
-          workspaces: demo/Blackholio/server-rust
           shared-key: spacetimedb
-          key: ${{ github.ref }}
-          # Cache Rust deps even if unit tests have failed.
-          cache-on-failure: true
-          # Cache the CLI as well.
-          cache-all-crates: true
+          save-cache: false
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |

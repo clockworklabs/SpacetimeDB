@@ -86,9 +86,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: spacetimedb
-          key: ${{ github.ref }}
-          cache-on-failure: true
-          cache-all-crates: true
+          save-cache: false
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |

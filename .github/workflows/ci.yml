@@ -53,7 +53,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: spacetimedb
-          key: ${{ github.ref }}
           cache-on-failure: true
           cache-all-crates: true
       - uses: actions/setup-dotnet@v4
@@ -95,6 +94,8 @@ jobs:
   test:
     name: Test Suite
     runs-on: spacetimedb-runner
+    env:
+      CARGO_TARGET_DIR: target
     steps:
       - name: Find Git ref
         env:
@@ -114,6 +115,11 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: spacetimedb
+          save-cache: false
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -156,12 +162,20 @@ jobs:
   lints:
     name: Lints
     runs-on: spacetimedb-runner
+    env:
+      CARGO_TARGET_DIR: target
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: spacetimedb
+          save-cache: false
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -195,11 +209,19 @@ jobs:
   wasm_bindings:
     name: Build and test wasm bindings
     runs-on: spacetimedb-runner
+    env:
+      CARGO_TARGET_DIR: target
     steps:
       - uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: spacetimedb
+          save-cache: false
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-codegen
@@ -252,6 +274,8 @@ jobs:
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
+    env:
+      CARGO_TARGET_DIR: target
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -261,6 +285,12 @@ jobs:
 
       - name: Install rust target
         run: rustup target add ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: spacetimedb
+          save-cache: false
 
       - name: Install packages
         if: ${{ matrix.runner == 'arm-runner' }}
@@ -370,6 +400,8 @@ jobs:
     name: Check CLI docs
     permissions: read-all
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: target
     steps:
       - name: Find Git ref
         env:
@@ -412,6 +444,12 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: spacetimedb
+          save-cache: false
 
       - name: Check for docs change
         run: |
