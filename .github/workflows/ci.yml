@@ -14,10 +14,8 @@ on:
 name: CI
 
 concurrency:
-  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  # Only cancel when the event is a pull_request
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
 
 jobs:
   docker_smoketests:
@@ -58,6 +56,17 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+
+      # nodejs and pnpm are required for the typescript quickstart smoketest
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -146,6 +155,9 @@ jobs:
       - name: Run cargo test
         #Note: Unreal tests will be run separately
         run: cargo test --all -- --skip unreal
+
+      - name: Run fallocate tests
+        run: cargo test -p spacetimedb-durability --features fallocate
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
@@ -317,6 +329,8 @@ jobs:
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
     runs-on: spacetimedb-runner
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:

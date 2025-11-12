@@ -6,7 +6,7 @@ slug: /unity/part-3
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Unity Tutorial - Part 3 - Gameplay
+# Gameplay
 
 Need help with the tutorial? [Join our Discord server](https://discord.gg/spacetimedb)!
 
@@ -40,11 +40,11 @@ This reducer also demonstrates how to insert new rows into a table. Here we are 
 Now that we've ensured that our database always has a valid `world_size` let's spawn some food into the map. Add the following code to the end of the file.
 
 ```rust
-const FOOD_MASS_MIN: u32 = 2;
-const FOOD_MASS_MAX: u32 = 4;
+const FOOD_MASS_MIN: i32 = 2;
+const FOOD_MASS_MAX: i32 = 4;
 const TARGET_FOOD_COUNT: usize = 600;
 
-fn mass_to_radius(mass: u32) -> f32 {
+fn mass_to_radius(mass: i32) -> f32 {
     (mass as f32).sqrt()
 }
 
@@ -111,11 +111,11 @@ This reducer also demonstrates how to insert new rows into a table. Here we are 
 Now that we've ensured that our database always has a valid `world_size` let's spawn some food into the map. Add the following code to the end of the `Module` class.
 
 ```csharp
-const uint FOOD_MASS_MIN = 2;
-const uint FOOD_MASS_MAX = 4;
-const uint TARGET_FOOD_COUNT = 600;
+const int FOOD_MASS_MIN = 2;
+const int FOOD_MASS_MAX = 4;
+const int TARGET_FOOD_COUNT = 600;
 
-public static float MassToRadius(uint mass) => MathF.Sqrt(mass);
+public static float MassToRadius(int mass) => MathF.Sqrt(mass);
 
 [Reducer]
 public static void SpawnFood(ReducerContext ctx)
@@ -150,12 +150,12 @@ public static void SpawnFood(ReducerContext ctx)
 
 public static float Range(this Random rng, float min, float max) => rng.NextSingle() * (max - min) + min;
 
-public static uint Range(this Random rng, uint min, uint max) => (uint)rng.NextInt64(min, max);
+public static int Range(this Random rng, int min, int max) => (int)rng.NextInt64(min, max);
 ```
 
 In this reducer, we are using the `world_size` we configured along with the `ReducerContext`'s random number generator `.Rng` function to place 600 food uniformly randomly throughout the map. We've also chosen the `mass` of the food to be a random number between 2 and 4 inclusive.
 
-We also added two helper functions so we can get a random range as either a `uint` or a `float`.
+We also added two helper functions so we can get a random range as either a `int` or a `float`.
 
 </TabItem>
 </Tabs>
@@ -318,7 +318,7 @@ pub struct Player {
     identity: Identity,
     #[unique]
     #[auto_inc]
-    player_id: u32,
+    player_id: i32,
     name: String,
 }
 ```
@@ -334,7 +334,7 @@ public partial struct Player
     [PrimaryKey]
     public Identity identity;
     [Unique, AutoInc]
-    public uint player_id;
+    public int player_id;
     public string name;
 }
 ```
@@ -452,7 +452,7 @@ Now that we've got our food spawning and our players set up, let's create a matc
 Add the following to the bottom of your file.
 
 ```rust
-const START_PLAYER_MASS: u32 = 15;
+const START_PLAYER_MASS: i32 = 15;
 
 #[spacetimedb::reducer]
 pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
@@ -466,7 +466,7 @@ pub fn enter_game(ctx: &ReducerContext, name: String) -> Result<(), String> {
     Ok(())
 }
 
-fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<Entity, String> {
+fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: i32) -> Result<Entity, String> {
     let mut rng = ctx.rng();
     let world_size = ctx
         .db
@@ -489,8 +489,8 @@ fn spawn_player_initial_circle(ctx: &ReducerContext, player_id: u32) -> Result<E
 
 fn spawn_circle_at(
     ctx: &ReducerContext,
-    player_id: u32,
-    mass: u32,
+    player_id: i32,
+    mass: i32,
     position: DbVector2,
     timestamp: Timestamp,
 ) -> Result<Entity, String> {
@@ -518,7 +518,7 @@ The `enter_game` reducer takes one argument, the player's `name`. We can use thi
 Add the following to the end of the `Module` class.
 
 ```csharp
-const uint START_PLAYER_MASS = 15;
+const int START_PLAYER_MASS = 15;
 
 [Reducer]
 public static void EnterGame(ReducerContext ctx, string name)
@@ -530,7 +530,7 @@ public static void EnterGame(ReducerContext ctx, string name)
     SpawnPlayerInitialCircle(ctx, player.player_id);
 }
 
-public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id)
+public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, int player_id)
 {
     var rng = ctx.Rng;
     var world_size = (ctx.Db.config.id.Find(0) ?? throw new Exception("Config not found")).world_size;
@@ -546,7 +546,7 @@ public static Entity SpawnPlayerInitialCircle(ReducerContext ctx, uint player_id
     );
 }
 
-public static Entity SpawnCircleAt(ReducerContext ctx, uint player_id, uint mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
+public static Entity SpawnCircleAt(ReducerContext ctx, int player_id, int mass, DbVector2 position, SpacetimeDB.Timestamp timestamp)
 {
     var entity = ctx.Db.entity.Insert(new Entity
     {
@@ -731,14 +731,14 @@ public abstract class EntityController : MonoBehaviour
 
     private static readonly int ShaderColorProperty = Shader.PropertyToID("_Color");
 
-    [DoNotSerialize] public uint EntityId;
+    [DoNotSerialize] public int EntityId;
 
     protected float LerpTime;
     protected Vector3 LerpStartPosition;
     protected Vector3 LerpTargetPosition;
     protected Vector3 TargetScale;
 
-    protected virtual void Spawn(uint entityId)
+    protected virtual void Spawn(int entityId)
     {
         EntityId = entityId;
 
@@ -774,14 +774,14 @@ public abstract class EntityController : MonoBehaviour
         transform.localScale = Vector3.Lerp(transform.localScale, TargetScale, Time.deltaTime * 8);
     }
 
-    public static Vector3 MassToScale(uint mass)
+    public static Vector3 MassToScale(int mass)
     {
         var diameter = MassToDiameter(mass);
         return new Vector3(diameter, diameter, 1);
     }
 
-    public static float MassToRadius(uint mass) => Mathf.Sqrt(mass);
-    public static float MassToDiameter(uint mass) => MassToRadius(mass) * 2;
+    public static float MassToRadius(int mass) => Mathf.Sqrt(mass);
+    public static float MassToDiameter(int mass) => MassToRadius(mass) * 2;
 }
 ```
 
@@ -921,7 +921,7 @@ public class PlayerController : MonoBehaviour
 
     public static PlayerController Local { get; private set; }
 
-    private uint PlayerId;
+    private int PlayerId;
     private float LastMovementSendTimestamp;
     private Vector2? LockInputPosition;
     private List<CircleController> OwnedCircles = new List<CircleController>();
@@ -966,9 +966,9 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    public uint TotalMass()
+    public int TotalMass()
     {
-        return (uint)OwnedCircles
+        return (int)OwnedCircles
             .Select(circle => GameManager.Conn.Db.Entity.EntityId.Find(circle.EntityId))
             .Sum(e => e?.Mass ?? 0); //If this entity is being deleted on the same frame that we're moving, we can have a null entity here.
     }
@@ -1071,8 +1071,8 @@ Add a couple dictionaries at the top of your `GameManager` class which we'll use
 ```cs
     public static DbConnection Conn { get; private set; }
 
-    public static Dictionary<uint, EntityController> Entities = new Dictionary<uint, EntityController>();
-    public static Dictionary<uint, PlayerController> Players = new Dictionary<uint, PlayerController>();
+    public static Dictionary<int, EntityController> Entities = new Dictionary<int, EntityController>();
+    public static Dictionary<int, PlayerController> Players = new Dictionary<int, PlayerController>();
 ```
 
 Next lets add some callbacks when rows change in the database. Modify the `HandleConnect` method as below.
@@ -1147,7 +1147,7 @@ Next add the following implementations for those callbacks to the `GameManager` 
         }
     }
 
-    private static PlayerController GetOrCreatePlayer(uint playerId)
+    private static PlayerController GetOrCreatePlayer(int playerId)
     {
         if (!Players.TryGetValue(playerId, out var playerController))
         {
@@ -1235,19 +1235,10 @@ Lastly modify the `GameManager.SetupArena` method to set the `WorldSize` on the 
 
 ### Entering the Game
 
-<Tabs groupId="server-language" defaultValue="rust">
-  <TabItem value="rust" label="Rust">
-    At this point, you may need to regenerate your bindings the following
-    command from the `server-rust` directory.
-  </TabItem>
-  <TabItem value="csharp" label="C#">
-    At this point, you may need to regenerate your bindings the following
-    command from the `server-csharp` directory.
-  </TabItem>
-</Tabs>
+At this point, you may need to regenerate your bindings the following command from the `blackholio/spacetimedb` directory.
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings
 ```
 
 The last step is to call the `enter_game` reducer on the server, passing in a username for our player, which will spawn a circle for our player. For the sake of simplicity, let's call the `enter_game` reducer from the `HandleSubscriptionApplied` callback with the name "3Blave".
@@ -1282,7 +1273,7 @@ The label won't be centered at this point. Feel free to adjust it if you like. W
 
 ### Troubleshooting
 
-- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `autogen`
+- If you get an error when running the generate command, make sure you have an empty subfolder in your Unity project Assets folder called `module_bindings`
 
 - If you get an error in your Unity console when starting the game, double check that you have published your module and you have the correct module name specified in your `GameManager`.
 

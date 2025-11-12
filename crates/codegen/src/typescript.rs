@@ -108,11 +108,7 @@ impl Lang for TypeScript {
         }
     }
 
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("Failed to generate table due to validation errors");
-
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -311,6 +307,18 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         OutputFile {
             filename: reducer_module_name(&reducer.name) + ".ts",
             code: output.into_inner(),
+        }
+    }
+
+    fn generate_procedure_file(
+        &self,
+        _module: &ModuleDef,
+        procedure: &spacetimedb_schema::def::ProcedureDef,
+    ) -> OutputFile {
+        // TODO(procedure-typescript-client): implement this
+        OutputFile {
+            filename: procedure_module_name(&procedure.name) + ".ts",
+            code: "".to_string(),
         }
     }
 
@@ -1049,6 +1057,10 @@ fn reducer_module_name(reducer_name: &Identifier) -> String {
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.name.deref().to_case(Case::Camel)
+}
+
+fn procedure_module_name(procedure_name: &Identifier) -> String {
+    procedure_name.deref().to_case(Case::Snake) + "_procedure"
 }
 
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {

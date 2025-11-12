@@ -720,24 +720,9 @@ pub use spacetimedb_bindings_macro::reducer;
 /// Procedures are allowed to perform certain operations which take time.
 /// During the execution of these operations, the procedure's execution will be suspended,
 /// allowing other database operations to run in parallel.
-/// The simplest (and least useful) of these operators is [`ProcedureContext::sleep_until`].
 ///
 /// Procedures must not hold open a transaction while performing a blocking operation.
-///
-/// ```no_run
-/// # use std::time::Duration;
-/// # use spacetimedb::{procedure, ProcedureContext};
-/// #[procedure]
-/// fn sleep_one_second(ctx: &mut ProcedureContext) {
-///     let prev_time = ctx.timestamp;
-///     let target = prev_time + Duration::from_secs(1);
-///     ctx.sleep_until(target);
-///     let new_time = ctx.timestamp;
-///     let actual_delta = new_time.duration_since(prev_time).unwrap();
-///     log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
-/// }
-/// ```
-// TODO(procedure-http): replace this example with an HTTP request.
+// TODO(procedure-http): add example with an HTTP request.
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
 /// # Scheduled procedures
@@ -830,32 +815,26 @@ pub use spacetimedb_bindings_macro::procedure;
 ///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
-/// // An example of a parameterized view
-/// #[view(name = players_at_level, public)]
-/// fn players_at_level(ctx: &AnonymousViewContext, level: u32) -> Vec<Player> {
-///     ctx.db.player().level().filter(level).collect()
-/// }
-///
 /// // An example that is analogous to a semijoin in sql
 /// #[view(name = players_at_coordinates, public)]
-/// fn players_at_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<Player> {
+/// fn players_at_coordinates(ctx: &AnonymousViewContext) -> Vec<Player> {
 ///     ctx
 ///         .db
 ///         .location()
 ///         .coordinates()
-///         .filter((x, y))
+///         .filter((3u64, 5u64))
 ///         .filter_map(|location| ctx.db.player().id().find(location.player_id))
 ///         .collect()
 /// }
 ///
 /// // An example of a join that combines fields from two different tables
 /// #[view(name = players_with_coordinates, public)]
-/// fn players_with_coordinates(ctx: &AnonymousViewContext, x: u64, y: u64) -> Vec<PlayerAndLocation> {
+/// fn players_with_coordinates(ctx: &AnonymousViewContext) -> Vec<PlayerAndLocation> {
 ///     ctx
 ///         .db
 ///         .location()
 ///         .coordinates()
-///         .filter((x, y))
+///         .filter((3u64, 5u64))
 ///         .filter_map(|location| ctx
 ///             .db
 ///             .player()
@@ -1088,7 +1067,8 @@ impl ProcedureContext {
     /// log::info!("Slept from {prev_time} to {new_time}, a total of {actual_delta:?}");
     /// # }
     /// ```
-    // TODO(procedure-async): mark this method `async`.
+    // TODO(procedure-sleep-until): remove this method
+    #[cfg(feature = "unstable")]
     pub fn sleep_until(&mut self, timestamp: Timestamp) {
         let new_time = sys::procedure::sleep_until(timestamp.to_micros_since_unix_epoch());
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
@@ -1233,7 +1213,9 @@ impl JwtClaims {
     }
 
     fn extract_audience(&self) -> Vec<String> {
-        let aud = self.get_parsed().get("aud").unwrap();
+        let Some(aud) = self.get_parsed().get("aud") else {
+            return Vec::new();
+        };
         match aud {
             serde_json::Value::String(s) => vec![s.clone()],
             serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_str().map(String::from)).collect(),

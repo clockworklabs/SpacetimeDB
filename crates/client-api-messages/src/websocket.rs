@@ -105,6 +105,8 @@ pub enum ClientMessage<Args> {
     /// Remove a subscription to a SQL query that was added with SubscribeSingle.
     Unsubscribe(Unsubscribe),
     UnsubscribeMulti(UnsubscribeMulti),
+    /// Request a procedure run.
+    CallProcedure(CallProcedure<Args>),
 }
 
 impl<Args> ClientMessage<Args> {
@@ -127,6 +129,17 @@ impl<Args> ClientMessage<Args> {
             ClientMessage::Subscribe(x) => ClientMessage::Subscribe(x),
             ClientMessage::SubscribeMulti(x) => ClientMessage::SubscribeMulti(x),
             ClientMessage::UnsubscribeMulti(x) => ClientMessage::UnsubscribeMulti(x),
+            ClientMessage::CallProcedure(CallProcedure {
+                procedure,
+                args,
+                request_id,
+                flags,
+            }) => ClientMessage::CallProcedure(CallProcedure {
+                procedure,
+                args: f(args),
+                request_id,
+                flags,
+            }),
         }
     }
 }
@@ -292,6 +305,40 @@ pub struct OneOffQuery {
     pub query_string: Box<str>,
 }
 
+#[derive(SpacetimeType)]
+#[sats(crate = spacetimedb_lib)]
+/// Request a procedure run.
+///
+/// Parametric over the argument type to enable [`ClientMessage::map_args`].
+pub struct CallProcedure<Args> {
+    /// The name of the procedure to call.
+    pub procedure: Box<str>,
+    /// The arguments to the procedure.
+    ///
+    /// In the wire format, this will be a [`Bytes`], BSATN or JSON encoded according to the reducer's argument schema
+    /// and the enclosing message format.
+    pub args: Args,
+    /// An identifier for a client request.
+    ///
+    /// The server will include the same ID in the response [`ProcedureResult`].
+    pub request_id: u32,
+    /// Reserved space for future extensions.
+    pub flags: CallProcedureFlags,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum CallProcedureFlags {
+    #[default]
+    Default,
+}
+
+impl_st!([] CallProcedureFlags, AlgebraicType::U8);
+impl_serialize!([] CallProcedureFlags, (self, ser) => ser.serialize_u8(*self as u8));
+impl_deserialize!([] CallProcedureFlags, de => match de.deserialize_u8()? {
+    0 => Ok(Self::Default),
+    x => Err(D::Error::custom(format_args!("invalid call procedure flag {x}"))),
+});
+
 /// The tag recognized by the host and SDKs to mean no compression of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_NONE: u8 = 0;
 
@@ -326,6 +373,8 @@ pub enum ServerMessage<F: WebsocketFormat> {
     SubscribeMultiApplied(SubscribeMultiApplied<F>),
     /// Sent in response to an `UnsubscribeMulti` message. This contains the matching rows.
     UnsubscribeMultiApplied(UnsubscribeMultiApplied<F>),
+    /// Sent in response to a [`CallProcedure`] message. This contains the return value.
+    ProcedureResult(ProcedureResult<F>),
 }
 
 /// The matching rows of a subscription query.
@@ -703,6 +752,48 @@ pub struct OneOffTable<F: WebsocketFormat> {
     ///
     /// TODO(centril, 1.0): Evaluate whether we want to conditionally compress these.
     pub rows: F::List,
+}
+
+/// The result of running a procedure,
+/// including the return value of the procedure on success.
+///
+/// Sent in response to a [`CallProcedure`] message.
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub struct ProcedureResult<F: WebsocketFormat> {
+    /// The status of the procedure run.
+    ///
+    /// Contains the return value if successful, or the error message if not.
+    pub status: ProcedureStatus<F>,
+    /// The time when the reducer started.
+    ///
+    /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
+    pub timestamp: Timestamp,
+    /// The time the procedure took to run.
+    pub total_host_execution_duration: TimeDuration,
+    /// The same same client-provided identifier as in the original [`ProcedureCall`] request.
+    ///
+    /// Clients use this to correlate the response with the original request.
+    pub request_id: u32,
+}
+
+/// The status of a procedure call,
+/// including the return value on success.
+#[derive(SpacetimeType, Debug)]
+#[sats(crate = spacetimedb_lib)]
+pub enum ProcedureStatus<F: WebsocketFormat> {
+    /// The procedure ran and returned the enclosed value.
+    ///
+    /// All user error handling happens within here;
+    /// the returned value may be a `Result` or `Option`,
+    /// or any other type to which the user may ascribe arbitrary meaning.
+    Returned(F::Single),
+    /// The reducer was interrupted due to insufficient energy/funds.
+    ///
+    /// The procedure may have performed some observable side effects before being interrupted.
+    OutOfEnergy,
+    /// The call failed in the host, e.g. due to a type error or unknown procedure name.
+    InternalError(String),
 }
 
 /// Used whenever different formats need to coexist.

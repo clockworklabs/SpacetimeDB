@@ -64,6 +64,7 @@ tabled.workspace = true
 tar.workspace = true
 tempfile.workspace = true
 termcolor.workspace = true
+termtree.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
@@ -74,8 +75,17 @@ walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
 clap-markdown.workspace = true
+git2.workspace = true
+dialoguer = { workspace = true, features = ["fuzzy-select"] }
 rolldown.workspace = true
 rolldown_utils.workspace = true
+xmltree.workspace = true
+quick-xml.workspace = true
+names.workspace = true
+notify.workspace = true
+
+[dev-dependencies]
+pretty_assertions.workspace = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
@@ -83,6 +93,10 @@ tikv-jemalloc-ctl = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = ["Win32_System_Console"] }
+
+[build-dependencies]
+serde_json.workspace = true
+toml.workspace = true
 
 [lints]
 workspace = true

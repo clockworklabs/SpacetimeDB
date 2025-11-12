@@ -169,13 +169,17 @@ fn main() -> anyhow::Result<()> {
             }
         })?;
 
-        edit_toml("crates/cli/src/subcommands/project/rust/Cargo._toml", |doc| {
+        edit_toml("crates/cli/templates/basic-rust/server/Cargo.toml", |doc| {
             // Only set major.minor.* for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
             //
             // Note: This is meaningfully different than setting just major.minor.
             // See https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#default-requirements.
             doc["dependencies"]["spacetimedb"] = toml_edit::value(wildcard_patch.clone());
+        })?;
+
+        edit_toml("crates/cli/templates/basic-rust/client/Cargo.toml", |doc| {
+            doc["dependencies"]["spacetimedb-sdk"] = toml_edit::value(wildcard_patch.clone());
         })?;
 
         process_license_file("LICENSE.txt", &full_version);
@@ -281,9 +285,9 @@ fn main() -> anyhow::Result<()> {
             &full_version,
         )?;
 
-        // 4) Template StdbModule._csproj: SpacetimeDB.Runtime dependency -> major.minor.*
+        // 4) Template StdbModule.csproj: SpacetimeDB.Runtime dependency -> major.minor.*
         rewrite_csproj_package_ref_version(
-            "crates/cli/src/subcommands/project/csharp/StdbModule._csproj",
+            "crates/cli/templates/basic-c-sharp/server/StdbModule.csproj",
             "SpacetimeDB.Runtime",
             &wildcard_patch,
         )?;

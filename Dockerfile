@@ -4,6 +4,15 @@ FROM rust:bookworm AS builder
 WORKDIR /usr/src/app
 COPY . .
 
+# If we're in a git submodule, we'll have a corrupted/nonfunctional .git file instead of a proper .git directory.
+# To make the errors more sane, remove .git entirely.
+RUN if [ -f .git ]; then \
+      echo "❌ ERROR: .git is a file (likely a submodule pointer), not a directory." >&2; \
+      echo "This will cause errors in the build process, because git operations will fail." >&2; \
+      echo "To address this, replace the .git file with a proper .git directory." >&2; \
+      exit 1; \
+    fi
+
 RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --locked
 
 FROM rust:bookworm

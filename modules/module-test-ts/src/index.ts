@@ -137,11 +137,11 @@ const hasSpecialStuffRow = {
 };
 
 // Rust: two tables with the same row type: player & logged_out_player
-const playerLikeRow = {
+const playerLikeRow = t.row({
   identity: t.identity().primaryKey(),
   player_id: t.u64().autoInc().unique(),
   name: t.string().unique(),
-};
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCHEMA (tables + indexes + visibility)
@@ -212,6 +212,17 @@ const spacetimedb = schema(
   // Two tables with the same row type: player and logged_out_player
   table({ name: 'player', public: true }, playerLikeRow),
   table({ name: 'logged_out_player', public: true }, playerLikeRow)
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+spacetimedb.view(
+  { name: 'my_player', public: true },
+  playerLikeRow.optional(),
+  // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
+  ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -320,7 +331,7 @@ spacetimedb.reducer(
 
     // try_insert TestE { id: 0, name: "Tyler" }
     try {
-      const inserted = ctx.db.test_e.tryInsert({ id: 0n, name: 'Tyler' });
+      const inserted = ctx.db.test_e.insert({ id: 0n, name: 'Tyler' });
       console.info(`Inserted: ${JSON.stringify(inserted)}`);
     } catch (err) {
       console.info(`Error: ${String(err)}`);
