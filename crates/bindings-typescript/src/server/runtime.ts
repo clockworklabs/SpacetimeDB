@@ -1,4 +1,4 @@
-import { AlgebraicType } from '../lib/algebraic_type';
+import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
@@ -36,6 +36,7 @@ import {
   type ViewCtx,
 } from './views';
 import { bsatnBaseSize } from './util';
+import { callProcedure } from './procedures';
 
 const { freeze } = Object;
 
@@ -229,9 +230,9 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // at runtime
       db: getDbView(),
     });
-    const args = AlgebraicType.deserializeValue(
+    const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
-      AlgebraicType.Product(params),
+      params,
       MODULE_DEF.typespace
     );
     const ret = fn(ctx, args);
@@ -247,15 +248,27 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // at runtime
       db: getDbView(),
     });
-    const args = AlgebraicType.deserializeValue(
+    const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
-      AlgebraicType.Product(params),
+      params,
       MODULE_DEF.typespace
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
     return retBuf.getBuffer();
+  },
+};
+
+export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
+  __call_procedure__(id, sender, connection_id, timestamp, args) {
+    return callProcedure(
+      id,
+      new Identity(sender),
+      ConnectionId.nullIfZero(new ConnectionId(connection_id)),
+      new Timestamp(timestamp),
+      args
+    );
   },
 };
 
