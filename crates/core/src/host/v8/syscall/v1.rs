@@ -14,13 +14,13 @@ use crate::host::v8::{
     TerminationError, Throwable,
 };
 use crate::host::wasm_common::instrumentation::span;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
 use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
-use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId, ViewFnPtr};
+use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::Serialize;
 use v8::{
     callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
@@ -116,6 +116,11 @@ pub(super) fn sys_v1_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
 pub(super) fn sys_v1_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
     use register_hooks_v1_1 as register_hooks;
     create_synthetic_module!(scope, "spacetime:sys@1.1", (with_nothing, (), register_hooks))
+}
+
+pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    use register_hooks_v1_2 as register_hooks;
+    create_synthetic_module!(scope, "spacetime:sys@1.2", (with_nothing, (), register_hooks))
 }
 
 /// Registers a function in `module`
@@ -384,6 +389,42 @@ fn register_hooks_v1_1<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
     Ok(v8::undefined(scope).into())
 }
 
+/// Module ABI that registers the functions called by the host.
+///
+/// # Signature
+///
+/// ```ignore
+/// export function register_hooks(hooks: {
+///     __call_procedure__(
+///         id: u32,
+///         sender: u256,
+///         connection_id: u128,
+///         timestamp: u64,
+///         args: Uint8Array
+///     ): Uint8Array;
+/// }): void;
+/// ```
+///
+/// # Returns
+///
+/// Returns nothing.
+///
+/// # Throws
+///
+/// Throws a `TypeError` if:
+/// - `hooks` is not an object that has the correct functions.
+fn register_hooks_v1_2<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
+    // Convert `hooks` to an object.
+    let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
+
+    let call_procedure = get_hook_function(scope, hooks, str_from_ident!(__call_procedure__))?;
+
+    // Set the hooks.
+    set_hook_slots(scope, AbiVersion::V1, &[(ModuleHookKey::CallProcedure, call_procedure)])?;
+
+    Ok(v8::undefined(scope).into())
+}
+
 /// Calls the `__call_reducer__` function `fun`.
 pub(super) fn call_call_reducer(
     scope: &mut PinScope<'_, '_>,
@@ -454,7 +495,7 @@ pub(super) fn call_call_view_anon(
     hooks: &HookFunctions<'_>,
     op: AnonymousViewOp<'_>,
 ) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
-    let fun = hooks.call_view_anon.context("`__call_view__` was never defined")?;
+    let fun = hooks.call_view_anon.context("`__call_view_anon__` was never defined")?;
 
     let AnonymousViewOp {
         fn_ptr: ViewFnPtr(view_id),
@@ -475,6 +516,41 @@ pub(super) fn call_call_view_anon(
     // Deserialize the user result.
     let ret =
         cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+    let bytes = ret.get_contents(&mut []);
+
+    Ok(Bytes::copy_from_slice(bytes))
+}
+
+/// Calls the `__call_procedure__` function `fun`.
+pub(super) fn call_call_procedure(
+    scope: &mut PinScope<'_, '_>,
+    hooks: &HookFunctions<'_>,
+    op: ProcedureOp,
+) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+    let fun = hooks.call_procedure.context("`__call_procedure__` was never defined")?;
+
+    let ProcedureOp {
+        id: ProcedureId(procedure_id),
+        name: _,
+        caller_identity: sender,
+        caller_connection_id: connection_id,
+        timestamp,
+        arg_bytes: procedure_args,
+    } = op;
+    // Serialize the arguments.
+    let procedure_id = serialize_to_js(scope, &procedure_id)?;
+    let sender = serialize_to_js(scope, &sender.to_u256())?;
+    let connection_id = serialize_to_js(scope, &connection_id.to_u128())?;
+    let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
+    let procedure_args = serialize_to_js(scope, &procedure_args)?;
+    let args = &[procedure_id, sender, connection_id, timestamp, procedure_args];
+
+    // Call the function.
+    let ret = call_free_fun(scope, fun, args)?;
+
+    // Deserialize the user result.
+    let ret =
+        cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_procedure__`").map_err(|e| e.throw(scope))?;
     let bytes = ret.get_contents(&mut []);
 
     Ok(Bytes::copy_from_slice(bytes))
