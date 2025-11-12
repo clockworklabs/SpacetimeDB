@@ -3,7 +3,7 @@
 pub mod committed_state;
 pub mod datastore;
 mod mut_tx;
-pub use mut_tx::{FuncCallType, MutTxId, ViewCall};
+pub use mut_tx::{FuncCallType, MutTxId, ViewCallInfo};
 mod sequence;
 pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};

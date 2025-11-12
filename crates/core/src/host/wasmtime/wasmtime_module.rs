@@ -413,7 +413,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         prepare_store_for_call(store, budget);
 
         // Prepare sender identity and connection ID, as LITTLE-ENDIAN byte arrays.
-        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.caller_identity);
+        let [sender_0, sender_1, sender_2, sender_3] = prepare_identity_for_call(*op.sender);
         // Prepare arguments to the reducer + the error sink & start timings.
         let args_bytes = op.args.get_bsatn().clone();
 
@@ -437,7 +437,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             call_view,
             &mut *store,
             (
-                op.id.0,
+                op.fn_ptr.0,
                 sender_0,
                 sender_1,
                 sender_2,
@@ -484,7 +484,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             };
         };
 
-        let call_result = call_sync_typed_func(call_view_anon, &mut *store, (op.id.0, args_source.0, errors_sink));
+        let call_result = call_sync_typed_func(call_view_anon, &mut *store, (op.fn_ptr.0, args_source.0, errors_sink));
 
         let (stats, result_bytes) = finish_opcall(store, budget);
 

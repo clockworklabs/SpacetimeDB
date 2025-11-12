@@ -8,7 +8,7 @@ use itertools::Itertools;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::map::{HashSet, IntMap};
 use spacetimedb_lib::db::auth::{StAccess, StTableType};
-use spacetimedb_lib::Identity;
+use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::satn::Satn;
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
@@ -25,7 +25,7 @@ use std::{fmt, iter, mem};
 
 /// Trait for checking if the `caller` have access to `Self`
 pub trait AuthAccess {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError>;
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, From)]
@@ -1958,12 +1958,8 @@ impl QueryExpr {
 }
 
 impl AuthAccess for Query {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller {
-            return Ok(());
-        }
-
-        self.walk_sources(&mut |s| s.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.walk_sources(&mut |s| s.check_auth(auth))
     }
 }
 
@@ -2017,8 +2013,8 @@ impl fmt::Display for Query {
 }
 
 impl AuthAccess for SourceExpr {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller || self.table_access() == StAccess::Public {
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        if auth.has_read_access(self.table_access()) {
             return Ok(());
         }
 
@@ -2029,26 +2025,24 @@ impl AuthAccess for SourceExpr {
 }
 
 impl AuthAccess for QueryExpr {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller {
-            return Ok(());
-        }
-        self.walk_sources(&mut |s| s.check_auth(owner, caller))
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
+        self.walk_sources(&mut |s| s.check_auth(auth))
     }
 }
 
 impl AuthAccess for CrudExpr {
-    fn check_auth(&self, owner: Identity, caller: Identity) -> Result<(), AuthError> {
-        if owner == caller {
-            return Ok(());
-        }
+    fn check_auth(&self, auth: &AuthCtx) -> Result<(), AuthError> {
         // Anyone may query, so as long as the tables involved are public.
         if let CrudExpr::Query(q) = self {
-            return q.check_auth(owner, caller);
+            return q.check_auth(auth);
         }
 
         // Mutating operations require `owner == caller`.
-        Err(AuthError::OwnerRequired)
+        if !auth.has_write_access() {
+            return Err(AuthError::InsuffientPrivileges);
+        }
+
+        Ok(())
     }
 }
 
@@ -2117,7 +2111,7 @@ impl From<Code> for CodeResult {
 mod tests {
     use super::*;
 
-    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
+    use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, Identity};
     use spacetimedb_sats::{product, AlgebraicType, ProductType};
     use spacetimedb_schema::{def::ModuleDef, relation::Column, schema::Schema};
     use typed_arena::Arena;
@@ -2201,16 +2195,19 @@ mod tests {
     }
 
     fn assert_owner_private<T: AuthAccess>(auth: &T) {
-        assert!(auth.check_auth(ALICE, ALICE).is_ok());
+        assert!(auth.check_auth(&AuthCtx::new(ALICE, ALICE)).is_ok());
         assert!(matches!(
-            auth.check_auth(ALICE, BOB),
+            auth.check_auth(&AuthCtx::new(ALICE, BOB)),
             Err(AuthError::TablePrivate { .. })
         ));
     }
 
     fn assert_owner_required<T: AuthAccess>(auth: T) {
-        assert!(auth.check_auth(ALICE, ALICE).is_ok());
-        assert!(matches!(auth.check_auth(ALICE, BOB), Err(AuthError::OwnerRequired)));
+        assert!(auth.check_auth(&AuthCtx::new(ALICE, ALICE)).is_ok());
+        assert!(matches!(
+            auth.check_auth(&AuthCtx::new(ALICE, BOB)),
+            Err(AuthError::InsuffientPrivileges)
+        ));
     }
 
     fn mem_table(id: TableId, name: &str, fields: &[(u16, AlgebraicType, bool)]) -> SourceExpr {

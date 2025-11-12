@@ -91,6 +91,11 @@ metrics_group!(
         #[labels(db: Identity)]
         pub message_log_size: IntGaugeVec,
 
+        #[name = spacetime_message_log_size_blocks]
+        #[help = "For a given database, the number of 512-byte blocks allocated by its message log"]
+        #[labels(db: Identity)]
+        pub message_log_blocks: IntGaugeVec,
+
         #[name = spacetime_module_log_file_size_bytes]
         #[help = "For a given module, the size of its log file (in bytes)"]
         #[labels(db: Identity)]

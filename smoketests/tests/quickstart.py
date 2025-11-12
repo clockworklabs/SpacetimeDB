@@ -361,6 +361,10 @@ class TypeScript(Rust):
 
     def server_postprocess(self, server_path: Path):
         build_typescript_sdk()
+        # We already have spacetimedb as a depencency, but it's expecting to fetch from npm.
+        # If we don't uninstall before installing, pnpm can panic because it can't find
+        # the specified version on npm (even though we're about to override it anyway).
+        pnpm("uninstall", 'spacetimedb', cwd=server_path)
         pnpm("install", TYPESCRIPT_BINDINGS_PATH, cwd=server_path)
 
     def test_quickstart(self):

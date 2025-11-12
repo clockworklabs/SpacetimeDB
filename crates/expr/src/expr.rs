@@ -1,22 +1,22 @@
 use std::{collections::HashSet, sync::Arc};
 
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
-use spacetimedb_primitives::{TableId, ViewDatabaseId};
+use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
 pub trait CollectViews {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>);
+    fn collect_views(&self, views: &mut HashSet<ViewId>);
 }
 
 impl<T: CollectViews> CollectViews for Arc<T> {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         self.as_ref().collect_views(views);
     }
 }
 
 impl<T: CollectViews> CollectViews for Vec<T> {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         for item in self {
             item.collect_views(views);
         }
@@ -44,7 +44,7 @@ pub enum ProjectName {
 }
 
 impl CollectViews for ProjectName {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         match self {
             Self::None(expr) | Self::Some(expr, _) => expr.collect_views(views),
         }
@@ -173,7 +173,7 @@ pub enum AggType {
 }
 
 impl CollectViews for ProjectList {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         match self {
             Self::Limit(proj, _) => {
                 proj.collect_views(views);
@@ -259,7 +259,7 @@ pub struct Relvar {
 }
 
 impl CollectViews for RelExpr {
-    fn collect_views(&self, views: &mut HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
         self.visit(&mut |expr| {
             if let Self::RelVar(Relvar { schema, .. }) = expr {
                 if let Some(info) = &schema.view_info {

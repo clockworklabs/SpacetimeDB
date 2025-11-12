@@ -36,11 +36,31 @@ error: The first parameter of a view must be a context parameter: `&ViewContext`
 113 | fn view_def_pass_context_by_value(_: ViewContext) -> Vec<Player> {
     |                                      ^^^^^^^^^^^
 
+error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
+   --> tests/ui/views.rs:119:1
+    |
+119 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
    --> tests/ui/views.rs:125:1
     |
 125 | fn view_def_no_return(_: &ViewContext) {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
+   --> tests/ui/views.rs:154:1
+    |
+154 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0573]: expected type, found function `scheduled_table_view`
+   --> tests/ui/views.rs:142:56
+    |
+142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
+    |                             ---------------            ^^^^^^^^^^^^^^^^^^^^ help: a trait with a similar name exists: `scheduled_table__view`
+    |                             |
+    |                             similarly named trait `scheduled_table__view` defined here
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:106:1
@@ -58,25 +78,6 @@ error[E0276]: impl has stricter requirements than trait
     |
 106 | #[view(name = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<ReducerContext>: ViewKindTrait`
-    |
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: the trait bound `ViewKind<u32>: ViewKindTrait` is not satisfied
-   --> tests/ui/views.rs:118:1
-    |
-118 | #[view(name = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `ViewKindTrait` is not implemented for `ViewKind<u32>`
-    |
-    = help: the following other types implement trait `ViewKindTrait`:
-              ViewKind<AnonymousViewContext>
-              ViewKind<ViewContext>
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0276]: impl has stricter requirements than trait
-   --> tests/ui/views.rs:118:1
-    |
-118 | #[view(name = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ impl has extra requirement `ViewKind<u32>: ViewKindTrait`
     |
     = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
 
@@ -127,6 +128,7 @@ error[E0599]: no method named `insert` found for reference `&test__ViewHandle` i
            candidate #2: `bitflags::traits::Flags`
            candidate #3: `ppv_lite86::types::Vec2`
            candidate #4: `ppv_lite86::types::Vec4`
+           candidate #5: `similar::algorithms::DiffHook`
 
 error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:36:25
@@ -150,8 +152,9 @@ error[E0599]: no method named `delete` found for reference `&test__ViewHandle` i
    |                         ^^^^^^ method not found in `&test__ViewHandle`
    |
    = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following trait defines an item `delete`, perhaps you need to implement it:
+   = note: the following traits define an item `delete`, perhaps you need to implement one of them:
            candidate #1: `Table`
+           candidate #2: `similar::algorithms::DiffHook`
 
 error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly` in the current scope
   --> tests/ui/views.rs:50:30
@@ -197,58 +200,6 @@ error[E0599]: no function or associated item named `invoke` found for struct `Vi
     |
 106 | #[view(name = view_def_wrong_context, public)]
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<ReducerContext>`
-    |
-    = note: the function or associated item was found for
-            - `ViewDispatcher<AnonymousViewContext>`
-            - `ViewDispatcher<ViewContext>`
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0599]: no function or associated item named `register` found for struct `ViewRegistrar<u32>` in the current scope
-   --> tests/ui/views.rs:118:1
-    |
-118 | #[view(name = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewRegistrar<u32>`
-    |
-    = note: the function or associated item was found for
-            - `ViewRegistrar<AnonymousViewContext>`
-            - `ViewRegistrar<ViewContext>`
-    = note: this error originates in the attribute macro `view` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-error[E0277]: The first parameter of a `#[view]` must be `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:119:40
-    |
-119 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
-    |                                        ^^^ the trait `ViewContextArg` is not implemented for `u32`
-    |
-    = help: the following other types implement trait `ViewContextArg`:
-              AnonymousViewContext
-              ViewContext
-
-error[E0277]: the view argument `&ViewContext` does not implement `SpacetimeType`
-   --> tests/ui/views.rs:119:48
-    |
-119 | fn view_def_wrong_context_position(_: &u32, _: &ViewContext) -> Vec<Player> {
-    |                                                ^^^^^^^^^^^^ the trait `SpacetimeType` is not implemented for `ViewContext`
-    |
-    = note: if you own the type, try adding `#[derive(SpacetimeType)]` to its definition
-    = help: the following other types implement trait `SpacetimeType`:
-              &T
-              ()
-              AlgebraicType
-              AlgebraicTypeRef
-              Arc<T>
-              ArrayType
-              Box<T>
-              ColId
-            and $N others
-    = note: required for `&ViewContext` to implement `SpacetimeType`
-    = note: required for `&ViewContext` to implement `ViewArg`
-
-error[E0599]: no function or associated item named `invoke` found for struct `ViewDispatcher<u32>` in the current scope
-   --> tests/ui/views.rs:118:1
-    |
-118 | #[view(name = view_def_wrong_context_position, public)]
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item not found in `ViewDispatcher<u32>`
     |
     = note: the function or associated item was found for
             - `ViewDispatcher<AnonymousViewContext>`
@@ -456,23 +407,3 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               ColId
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
-
-error[E0277]: invalid signature for scheduled table reducer or procedure
-   --> tests/ui/views.rs:142:56
-    |
-142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
-    | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^---
-    | |                                                      |
-    | |                                                      unsatisfied trait bound
-    | required by a bound introduced by this call
-    |
-    = help: the trait `ExportFunctionForScheduledTable<'_, ScheduledTable, FnKindView>` is not implemented for fn item `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}`
-    = note: views cannot be scheduled
-    = note: the scheduled function must take `ScheduledTable` as its sole argument
-    = note: e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: ScheduledTable)`
-    = note: or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: ScheduledTable)`
-note: required by a bound in `scheduled_typecheck`
-   --> src/rt.rs
-    |
-    | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
-    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`

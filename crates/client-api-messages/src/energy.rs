@@ -126,7 +126,7 @@ impl fmt::Debug for EnergyBalance {
 /// In contrast to [`EnergyQuanta`], this is represented by a 64-bit integer. This makes energy handling
 /// for reducers easier, while still providing a unlikely-to-ever-be-reached maximum value (e.g. for wasmtime:
 /// `(u64::MAX eV / 1000 eV/instruction) * 3 ns/instruction = 640 days`)
-#[derive(Copy, Clone, From, Add, Sub)]
+#[derive(Copy, Clone, From, Add, Sub, AddAssign, SubAssign)]
 pub struct FunctionBudget(u64);
 
 impl FunctionBudget {

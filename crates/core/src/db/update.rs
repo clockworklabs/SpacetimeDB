@@ -27,6 +27,7 @@ impl UpdateLogger for SystemLogger {
 pub enum UpdateResult {
     Success,
     RequiresClientDisconnect,
+    EvaluateSubscribedViews,
 }
 
 /// Update the database according to the migration plan.
@@ -52,7 +53,7 @@ pub fn update_database(
     let old_module_def = plan.old_def();
     for table in existing_tables
         .iter()
-        .filter(|table| table.table_type != StTableType::System)
+        .filter(|table| table.table_type != StTableType::System && !table.is_view())
     {
         let old_def = old_module_def
             .table(&table.table_name[..])
@@ -146,7 +147,11 @@ fn auto_migrate_database(
                 stdb.drop_view(tx, view_id)?;
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::UpdateView(_) => {
-                unimplemented!("Recompute view and update its backing table")
+                // if we already have to disconnect clients, no need to set
+                // `EvaluateSubscribedViews` as clients will be disconnected anyway
+                if !matches!(res, UpdateResult::RequiresClientDisconnect) {
+                    res = UpdateResult::EvaluateSubscribedViews;
+                }
             }
             spacetimedb_schema::auto_migrate::AutoMigrateStep::AddIndex(index_name) => {
                 let table_def = plan.new.stored_in_table_def(index_name).unwrap();

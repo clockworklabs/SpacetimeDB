@@ -14,8 +14,7 @@ pub(crate) mod fs;
 #[cfg(any(test, feature = "test"))]
 pub mod mem;
 
-pub use fs::Fs;
-pub use fs::OnNewSegmentFn;
+pub use fs::{Fs, OnNewSegmentFn, SizeOnDisk};
 #[cfg(any(test, feature = "test"))]
 pub use mem::Memory;
 
@@ -32,6 +31,10 @@ pub trait SegmentLen: io::Seek {
     /// If the method returns successfully, the seek position before the call is
     /// restored. However, if it returns an error, the seek position is
     /// unspecified.
+    ///
+    /// The returned length will be the bytes actually written to the segment,
+    /// not the allocated size of the segment (if the `fallocate` feature is
+    /// enabled).
     //
     // TODO: Remove trait and replace with `Seek::stream_len` if / when stabilized:
     // https://github.com/rust-lang/rust/issues/59359
@@ -195,6 +198,8 @@ pub fn create_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Writer<R::SegmentWriter>> {
     let mut storage = repo.create_segment(offset)?;
+    // Ensure we have enough space for this segment.
+    fallocate(&mut storage, &opts)?;
     Header {
         log_format_version: opts.log_format_version,
         checksum_algorithm: Commit::CHECKSUM_ALGORITHM,
@@ -241,6 +246,11 @@ pub fn resume_segment_writer<R: Repo>(
     offset: u64,
 ) -> io::Result<Result<Writer<R::SegmentWriter>, Metadata>> {
     let mut storage = repo.open_segment_writer(offset)?;
+    // Ensure we have enough space for this segment.
+    // The segment could have been created without the `fallocate` feature
+    // enabled, so we call this here again to ensure writes can't fail due to
+    // ENOSPC.
+    fallocate(&mut storage, &opts)?;
     let offset_index = repo.get_offset_index(offset).ok();
     let Metadata {
         header,
@@ -302,4 +312,19 @@ pub fn open_segment_reader<R: Repo>(
     debug!("open segment reader at {offset}");
     let storage = repo.open_segment_reader(offset)?;
     Reader::new(max_log_format_version, offset, storage)
+}
+
+/// Allocate [Options::max_segment_size] of space for [FileLike]
+/// if the `fallocate` feature is enabled,
+/// and [Options::preallocate_segments] is `true`.
+///
+/// No-op otherwise.
+#[inline]
+pub(crate) fn fallocate(_f: &mut impl FileLike, _opts: &Options) -> io::Result<()> {
+    #[cfg(feature = "fallocate")]
+    if _opts.preallocate_segments {
+        _f.fallocate(_opts.max_segment_size)?;
+    }
+
+    Ok(())
 }

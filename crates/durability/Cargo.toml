@@ -9,17 +9,24 @@ description = "Traits and single-node implementation of durability for Spacetime
 
 [features]
 test = []
+fallocate = ["spacetimedb-commitlog/fallocate"]
 
 [dependencies]
 anyhow.workspace = true
 itertools.workspace = true
 log.workspace = true
+scopeguard.workspace = true
 spacetimedb-commitlog.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+spacetimedb-commitlog = { workspace = true, features = ["test"] }
+tempfile.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

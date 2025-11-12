@@ -219,7 +219,7 @@ const spacetimedb = schema(
 // ─────────────────────────────────────────────────────────────────────────────
 
 spacetimedb.view(
-  'my_player',
+  { name: 'my_player', public: true },
   playerLikeRow.optional(),
   // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
   ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined

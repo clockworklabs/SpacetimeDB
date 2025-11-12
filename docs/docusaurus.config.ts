@@ -32,6 +32,7 @@ shikiTheme.colors!['editor.background'] =
 
 const inkeepConfig: Partial<InkeepConfig> = {
   baseSettings: {
+    // This API key is public, it's okay to have it in client code, https://docs.inkeep.com/cloud/ui-components/public-api-keys#public-clients
     apiKey: '13504c49fb56b7c09a5ea0bcd68c2b55857661be4d6d311b',
     organizationDisplayName: 'SpacetimeDB',
     primaryBrandColor: '#4cf490',
@@ -93,7 +94,8 @@ const config: Config = {
       'classic',
       {
         docs: {
-          editUrl: "https://github.com/clockworklabs/SpacetimeDB/edit/master/docs/",
+          editUrl:
+            'https://github.com/clockworklabs/SpacetimeDB/edit/master/docs/',
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
           sidebarCollapsed: false,

@@ -459,7 +459,7 @@ fn spawn_instance_worker(
                     policy,
                 } => {
                     // Update the database.
-                    let res = instance_common.update_database(replica_ctx, program, old_module_info, policy);
+                    let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
 
                     // Reply to `JsInstance::update_database`.
                     if let Err(e) = update_response_tx.send(res) {
