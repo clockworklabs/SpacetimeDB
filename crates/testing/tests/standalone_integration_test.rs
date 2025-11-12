@@ -181,7 +181,7 @@ fn test_calling_a_procedure() {
     test_calling_a_procedure_in_module("module-test");
 }
 
-fn test_calling_with_transaction_in_module(module_name: &'static str) {
+fn test_calling_with_tx_in_module(module_name: &'static str) {
     init();
 
     CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
@@ -190,7 +190,7 @@ fn test_calling_with_transaction_in_module(module_name: &'static str) {
             let json = r#"
 {
   "CallProcedure": {
-    "procedure": "with_transaction",
+    "procedure": "with_tx",
     "args": "[]",
     "request_id": 0,
     "flags": 0
@@ -211,8 +211,8 @@ fn test_calling_with_transaction_in_module(module_name: &'static str) {
 
 #[test]
 #[serial]
-fn test_calling_with_transaction() {
-    test_calling_with_transaction_in_module("module-test");
+fn test_calling_with_tx() {
+    test_calling_with_tx_in_module("module-test");
 }
 
 /// Invoke the `module-test` module,

@@ -682,7 +682,7 @@ pub mod raw {
         /// Returns an error:
         ///
         /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
-        pub fn procedure_start_mut_transaction(out: *mut i64) -> u16;
+        pub fn procedure_start_mut_tx(out: *mut i64) -> u16;
 
         /// Commits a mutable transaction,
         /// suspending execution of this WASM instance until
@@ -700,14 +700,14 @@ pub mod raw {
         /// Returns an error:
         ///
         /// - `TRANSACTION_NOT_ANONYMOUS`,
-        ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+        ///   if the transaction was not started in [`procedure_start_mut_tx`].
         ///   This can happen if this syscall is erroneously called by a reducer.
         ///   The code `NOT_IN_TRANSACTION` does not happen,
         ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
         /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
         ///   This currently does not happen as anonymous read transactions
         ///   are not exposed to modules.
-        pub fn procedure_commit_mut_transaction() -> u16;
+        pub fn procedure_commit_mut_tx() -> u16;
 
         /// Aborts a mutable transaction,
         /// suspending execution of this WASM instance until
@@ -724,14 +724,14 @@ pub mod raw {
         /// Returns an error:
         ///
         /// - `TRANSACTION_NOT_ANONYMOUS`,
-        ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+        ///   if the transaction was not started in [`procedure_start_mut_tx`].
         ///   This can happen if this syscall is erroneously called by a reducer.
         ///   The code `NOT_IN_TRANSACTION` does not happen,
         ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
         /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
         ///   This currently does not happen as anonymous read transactions
         ///   are not exposed to modules.
-        pub fn procedure_abort_mut_transaction() -> u16;
+        pub fn procedure_abort_mut_tx() -> u16;
     }
 
     /// What strategy does the database index use?
@@ -1346,8 +1346,8 @@ pub mod procedure {
     ///
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
     #[inline]
-    pub fn procedure_start_mut_transaction() -> Result<i64> {
-        unsafe { call(|out| raw::procedure_start_mut_transaction(out)) }
+    pub fn procedure_start_mut_tx() -> Result<i64> {
+        unsafe { call(|out| raw::procedure_start_mut_tx(out)) }
     }
 
     /// Commits a mutable transaction,
@@ -1362,7 +1362,7 @@ pub mod procedure {
     /// Returns an error:
     ///
     /// - `TRANSACTION_NOT_ANONYMOUS`,
-    ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
     ///   This can happen if this syscall is erroneously called by a reducer.
     ///   The code `NOT_IN_TRANSACTION` does not happen,
     ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
@@ -1370,8 +1370,8 @@ pub mod procedure {
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
     #[inline]
-    pub fn procedure_commit_mut_transaction() -> Result<()> {
-        call_no_ret(|| unsafe { raw::procedure_commit_mut_transaction() })
+    pub fn procedure_commit_mut_tx() -> Result<()> {
+        call_no_ret(|| unsafe { raw::procedure_commit_mut_tx() })
     }
 
     /// Aborts a mutable transaction,
@@ -1385,7 +1385,7 @@ pub mod procedure {
     /// Returns an error:
     ///
     /// - `TRANSACTION_NOT_ANONYMOUS`,
-    ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
     ///   This can happen if this syscall is erroneously called by a reducer.
     ///   The code `NOT_IN_TRANSACTION` does not happen,
     ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
@@ -1393,7 +1393,7 @@ pub mod procedure {
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
     #[inline]
-    pub fn procedure_abort_mut_transaction() -> Result<()> {
-        call_no_ret(|| unsafe { raw::procedure_abort_mut_transaction() })
+    pub fn procedure_abort_mut_tx() -> Result<()> {
+        call_no_ret(|| unsafe { raw::procedure_abort_mut_tx() })
     }
 }
