@@ -546,6 +546,17 @@ fn scan_tables<'a>(lines: &mut Lines<'a>, plan: &'a PhysicalPlan) -> PrinterPlan
                 output,
             }
         }
+        PhysicalPlan::IxScansAnd(idx) => {
+            let mut plans = Vec::new();
+            for plan in idx {
+                plans.push(scan_tables(lines, plan));
+            }
+            let output = plans.last().map(|x| x.output()).unwrap_or(Output::Empty);
+            PrinterPlan::Union {
+                output: output.clone(),
+                plans,
+            }
+        }
         PhysicalPlan::IxJoin(idx, semi) => {
             lines.add_table(idx.rhs_label, &idx.rhs);
             let plan = scan_tables(lines, &idx.lhs);
@@ -911,7 +922,7 @@ fn eval_plan<'a>(lines: &mut Lines<'a>, plan: PrinterPlan<'a>, ident: u16) {
 /// - Showing the schema of the tables
 /// - Showing the planning time
 pub struct Explain<'a> {
-    ctx: &'a PhysicalCtx<'a>,
+    pub ctx: &'a PhysicalCtx<'a>,
     lines: Vec<Line<'a>>,
     labels: Labels<'a>,
     options: ExplainOptions,

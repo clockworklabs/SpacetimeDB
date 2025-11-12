@@ -673,8 +673,9 @@ pub(crate) fn legacy_get_all(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::relational_db::tests_utils::{begin_tx, TestDB};
+    use crate::db::relational_db::tests_utils::{begin_tx, expect_sub, TestDB};
     use crate::sql::compiler::compile_sql;
+    use expect_test::expect;
     use spacetimedb_lib::{error::ResultTest, identity::AuthCtx};
     use spacetimedb_sats::{product, AlgebraicType};
     use spacetimedb_schema::relation::DbTable;
@@ -689,7 +690,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[1.into()];
-        let _ = db.create_table_for_test("lhs", schema, indexes)?;
+        db.create_table_for_test("lhs", schema, indexes)?;
 
         // Create table [rhs] with index on [b, c]
         let schema = &[
@@ -717,6 +718,22 @@ mod tests {
         let Query::IndexJoin(join) = join else {
             panic!("expected an index join, but got {join:#?}");
         };
+
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
+            ],
+        );
 
         // Create an insert for an incremental update.
         let delta = vec![product![0u64, 0u64]];
@@ -778,7 +795,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[0.into(), 1.into()];
-        let _ = db.create_table_for_test("rhs", schema, indexes)?;
+        db.create_table_for_test("rhs", schema, indexes)?;
 
         let tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
@@ -797,6 +814,23 @@ mod tests {
         let Query::IndexJoin(join) = join else {
             panic!("expected an index join, but got {join:#?}");
         };
+
+        //TODO(sql): Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
+            ],
+        );
 
         // Create an insert for an incremental update.
         let delta = vec![product![0u64, 0u64, 0u64]];
@@ -849,8 +883,7 @@ mod tests {
         // Create table [lhs] with index on [b]
         let schema = &[("a", AlgebraicType::U64), ("b", AlgebraicType::U64)];
         let indexes = &[1.into()];
-        let _lhs_id = db
-            .create_table_for_test("lhs", schema, indexes)
+        db.create_table_for_test("lhs", schema, indexes)
             .expect("Failed to create_table_for_test lhs");
 
         // Create table [rhs] with index on [b, c]
@@ -860,8 +893,7 @@ mod tests {
             ("d", AlgebraicType::U64),
         ];
         let indexes = &[0.into(), 1.into()];
-        let _rhs_id = db
-            .create_table_for_test("rhs", schema, indexes)
+        db.create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
         let tx = begin_tx(&db);
@@ -884,6 +916,23 @@ mod tests {
         assert!(
             matches!(src_join, Query::IndexJoin(_)),
             "expected an index join, but got {src_join:#?}"
+        );
+
+        //TODO(sql): Why this generate same plan than the previous test? 'compile_incremental_index_join_index_side'
+        expect_sub(
+            &tx,
+            sql,
+            expect![
+                r#"
+Index Join: Rhs on lhs
+  Inner Unique: false
+  Join Cond: (rhs.b = lhs.b)
+  Output: lhs.a, lhs.b
+  -> Index Scan using Index rhs_c_idx_btree (rhs.c) on rhs
+     Index Cond: (rhs.c > U64(2))
+     Output: rhs.b, rhs.c, rhs.d
+     -> Filter: (rhs.c < U64(4) AND rhs.d = U64(3))"#
+            ],
         );
 
         let incr = IncrementalJoin::new(&expr).expect("Failed to construct IncrementalJoin");

@@ -161,7 +161,7 @@ impl ProjectField for Row<'_> {
 }
 
 /// Each query operator returns a tuple of [RowRef]s
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub enum Tuple<'a> {
     /// A pointer to a row in a base table
     Row(Row<'a>),

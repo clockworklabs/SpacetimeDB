@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::{
     check::Relvars,
+    check_sql_length,
     errors::{DmlOnView, InvalidLiteral},
     expr::{FieldProject, ProjectList, RelExpr, Relvar},
     type_limit,
@@ -439,7 +440,7 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
+fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
     match parse_sql(sql)?.resolve_sender(auth.caller()) {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
@@ -451,12 +452,14 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Ty
 }
 
 /// Parse and type check a *general* query into a [StatementCtx].
-pub fn compile_sql_stmt<'a>(
+pub fn compile_sql_stmt_with_ctx<'a>(
     sql: &'a str,
     tx: &impl SchemaView,
     auth: &AuthCtx,
     with_timings: bool,
 ) -> TypingResult<StatementCtx<'a>> {
+    check_sql_length(sql)?;
+
     let planning_time = if with_timings {
         Some(std::time::Instant::now())
     } else {

@@ -157,4 +157,10 @@ pub enum TypingError {
     DuplicateName(#[from] DuplicateName),
     #[error(transparent)]
     FilterReturnType(#[from] FilterReturnType),
+    #[error("SQL query exceeds maximum allowed length: {length} > {max_length}: \"{sql}...\"")]
+    SqlMaxLengthExceeded {
+        sql: String,
+        length: usize,
+        max_length: usize,
+    },
 }

@@ -2,6 +2,12 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use super::{
+    check_sql_length,
+    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
+    expr::RelExpr,
+    type_expr, type_proj, type_select, StatementCtx, StatementSource,
+};
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use crate::statement::Statement;
@@ -13,12 +19,6 @@ use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
-};
-
-use super::{
-    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
-    expr::RelExpr,
-    type_expr, type_proj, type_select, StatementCtx, StatementSource,
 };
 
 /// The result of type checking and name resolution
@@ -183,6 +183,8 @@ pub fn compile_sql_sub<'a>(
     auth: &AuthCtx,
     with_timings: bool,
 ) -> TypingResult<StatementCtx<'a>> {
+    check_sql_length(sql)?;
+
     let planning_time = if with_timings {
         Some(std::time::Instant::now())
     } else {
