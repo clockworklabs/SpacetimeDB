@@ -1,5 +1,6 @@
 use crate::util::{
-    is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, iter_types, print_auto_generated_version_comment,
+    is_reducer_invokable, iter_constraints, iter_indexes, iter_reducers, iter_table_and_view_names, iter_tables,
+    iter_types, iter_views, print_auto_generated_version_comment,
 };
 use crate::OutputFile;
 
@@ -7,6 +8,7 @@ use super::util::{collect_case, print_auto_generated_file_comment, type_ref_name
 
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
+use std::iter;
 use std::ops::Deref;
 
 use convert_case::{Case, Casing};
@@ -14,7 +16,7 @@ use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{
-    BTreeAlgorithm, IndexAlgorithm, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
+    BTreeAlgorithm, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
 };
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::TableSchema;
@@ -193,10 +195,9 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "// Import and reexport all table handle types");
-        for table in iter_tables(module) {
-            let table_name = &table.name;
+        for table_name in iter_table_and_view_names(module) {
             let table_module_name = table_module_name(table_name);
-            let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
+            let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept
             // `__t.object(...)`s.
             writeln!(out, "import {table_name_pascalcase}Row from \"./{table_module_name}\";");
@@ -222,7 +223,23 @@ impl Lang for TypeScript {
             let row_type_name = type_ref_name(module, type_ref);
             writeln!(out, "__table({{");
             out.indent(1);
-            write_table_opts(module, out, table);
+            write_table_opts(
+                module,
+                out,
+                type_ref,
+                &table.name,
+                iter_indexes(table),
+                iter_constraints(table),
+            );
+            out.dedent(1);
+            writeln!(out, "}}, {}Row),", row_type_name);
+        }
+        for view in iter_views(module) {
+            let type_ref = view.product_type_ref;
+            let row_type_name = type_ref_name(module, type_ref);
+            writeln!(out, "__table({{");
+            out.indent(1);
+            write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
             out.dedent(1);
             writeln!(out, "}}, {}Row),", row_type_name);
         }
@@ -460,13 +477,19 @@ fn define_body_for_product(
     out.newline();
 }
 
-fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
-    let type_ref = table.product_type_ref;
+fn write_table_opts<'a>(
+    module: &ModuleDef,
+    out: &mut Indenter,
+    type_ref: AlgebraicTypeRef,
+    name: &Identifier,
+    indexes: impl Iterator<Item = &'a IndexDef>,
+    constraints: impl Iterator<Item = &'a ConstraintDef>,
+) {
     let product_def = module.typespace_for_generate()[type_ref].as_product().unwrap();
-    writeln!(out, "name: '{}',", table.name.deref());
+    writeln!(out, "name: '{}',", name.deref());
     writeln!(out, "indexes: [");
     out.indent(1);
-    for index_def in iter_indexes(table) {
+    for index_def in indexes {
         if index_def.generated() {
             // Skip system-defined indexes
             continue;
@@ -509,9 +532,7 @@ fn write_table_opts(module: &ModuleDef, out: &mut Indenter, table: &TableDef) {
     writeln!(out, "constraints: [");
     out.indent(1);
     // Unique constraints sorted by name for determinism
-    let mut constraints: Vec<_> = table.constraints.iter().collect();
-    constraints.sort_by_key(|(name, _)| *name);
-    for (_, constraint) in constraints {
+    for constraint in constraints {
         let columns: Vec<_> = constraint
             .data
             .unique_columns() // Option<&ColSet>

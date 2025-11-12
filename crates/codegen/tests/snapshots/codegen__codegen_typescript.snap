@@ -267,6 +267,8 @@ import HasSpecialStuffRow from "./has_special_stuff_table";
 export { HasSpecialStuffRow };
 import LoggedOutPlayerRow from "./logged_out_player_table";
 export { LoggedOutPlayerRow };
+import MyPlayerRow from "./my_player_table";
+export { MyPlayerRow };
 import PersonRow from "./person_table";
 export { PersonRow };
 import PkMultiIdentityRow from "./pk_multi_identity_table";
@@ -465,6 +467,13 @@ const tablesSchema = __schema(
     constraints: [
     ],
   }, TestFoobarRow),
+  __table({
+    name: 'my_player',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, PlayerRow),
 );
 
 const reducersSchema = __reducers(
