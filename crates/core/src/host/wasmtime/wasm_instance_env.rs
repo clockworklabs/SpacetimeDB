@@ -1462,7 +1462,7 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
-    pub fn procedure_start_mut_transaction<'caller>(
+    pub fn procedure_start_mut_tx<'caller>(
         caller: Caller<'caller, Self>,
         (out,): (WasmPtr<u64>,),
     ) -> Fut<'caller, RtResult<u32>> {
@@ -1503,17 +1503,14 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `TRANSACTION_NOT_ANONYMOUS`,
-    ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
     ///   This can happen if this syscall is erroneously called by a reducer.
     ///   The code `NOT_IN_TRANSACTION` does not happen,
     ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_commit_mut_transaction<'caller>(
-        caller: Caller<'caller, Self>,
-        (): (),
-    ) -> Fut<'caller, RtResult<u32>> {
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
         Self::async_with_span(
             caller,
             AbiCall::ProcedureCommitMutTransaction,
@@ -1578,17 +1575,14 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `TRANSACTION_NOT_ANONYMOUS`,
-    ///   if the transaction was not started in [`procedure_start_mut_transaction`].
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
     ///   This can happen if this syscall is erroneously called by a reducer.
     ///   The code `NOT_IN_TRANSACTION` does not happen,
     ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_abort_mut_transaction<'caller>(
-        caller: Caller<'caller, Self>,
-        (): (),
-    ) -> Fut<'caller, RtResult<u32>> {
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
         Self::async_with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| async move {
             let (_, env) = Self::mem_env(&mut caller);
 

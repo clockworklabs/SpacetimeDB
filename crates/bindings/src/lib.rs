@@ -1007,7 +1007,7 @@ impl ReducerContext {
 }
 
 /// The context that an anonymous transaction
-/// in [`ProcedureContext::with_transaction`] is provided with.
+/// in [`ProcedureContext::with_tx`] is provided with.
 ///
 /// Includes information about the client starting the transaction
 /// and the time of the procedure/reducer,
@@ -1138,10 +1138,10 @@ impl ProcedureContext {
     /// e.g., due to a conflict with a concurrent transaction,
     /// this method will re-invoke `body` with a new transaction in order to retry.
     /// This is done once. On the second failure, a panic will occur.
-    pub fn with_transaction<R: IsOk>(&mut self, body: impl Fn(&TxContext) -> R) -> R {
+    pub fn with_tx<R: IsOk>(&mut self, body: impl Fn(&TxContext) -> R) -> R {
         let run = || {
             // Start the transaction.
-            let timestamp = sys::procedure::procedure_start_mut_transaction().expect(
+            let timestamp = sys::procedure::procedure_start_mut_tx().expect(
                 "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
             );
             let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
@@ -1154,13 +1154,13 @@ impl ProcedureContext {
 
         let mut res = run();
         let abort = || {
-            sys::procedure::procedure_abort_mut_transaction()
-                .expect("should have a pending mutable anon tx as `procedure_start_mut_transaction` preceded")
+            sys::procedure::procedure_abort_mut_tx()
+                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
         };
 
         // Commit or roll back?
         if res.is_ok() {
-            if sys::procedure::procedure_commit_mut_transaction().is_err() {
+            if sys::procedure::procedure_commit_mut_tx().is_err() {
                 log::warn!("committing anonymous transaction failed");
 
                 // NOTE(procedure,centril): there's no actual guarantee that `body`
@@ -1168,7 +1168,7 @@ impl ProcedureContext {
                 // and due to interior mutability.
                 res = run();
                 if res.is_ok() {
-                    sys::procedure::procedure_commit_mut_transaction().expect("transaction retry failed again")
+                    sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again")
                 } else {
                     abort();
                 }

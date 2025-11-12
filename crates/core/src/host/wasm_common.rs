@@ -423,9 +423,9 @@ macro_rules! abi_funcs {
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
-            "spacetime_10.3"::procedure_start_mut_transaction,
-            "spacetime_10.3"::procedure_commit_mut_transaction,
-            "spacetime_10.3"::procedure_abort_mut_transaction,
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
         }
     };
 }
