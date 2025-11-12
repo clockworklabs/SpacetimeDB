@@ -4,7 +4,7 @@ FROM rust:bookworm AS builder
 WORKDIR /usr/src/app
 COPY . .
 
-RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --release --locked
+RUN cargo build -p spacetimedb-standalone -p spacetimedb-cli --locked
 
 FROM rust:bookworm
 
