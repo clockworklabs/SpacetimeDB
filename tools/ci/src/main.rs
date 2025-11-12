@@ -75,13 +75,6 @@ enum CiCmd {
         )]
         github_token_auth: bool,
     },
-    /// Run Unreal Engine related tests
-    ///
-    /// This assumes the UE4 environment is already set up
-    ///
-    /// This is designed to run in the github actions environment, but should work locally if the
-    /// Unreal environment is set up correctly.
-    UnrealTests,
     /// Generates CLI documentation and checks for changes
     CliDocs {
         #[arg(
@@ -197,19 +190,6 @@ cargo run {github_token_auth_flag}--target {target} -p spacetimedb-update -- sel
 "${{ROOT_DIR}}"/spacetime --root-dir="${{ROOT_DIR}}" help
         "#
             ))?;
-        }
-
-        Some(CiCmd::UnrealTests) => {
-            run!("for p in \"$GITHUB_WORKSPACE\" \"${RUNNER_TEMP:-/__t}\" \"${RUNNER_TOOL_CACHE:-/__t}\"; do [ -d \"$p\" ] && setfacl -R -m u:ue4:rwX -m d:u:ue4:rwX \"$p\" || true; done")?;
-
-            run!("export CARGO_HOME=\"${RUNNER_TOOL_CACHE:-/__t}/cargo\"")?;
-            run!("export RUSTUP_HOME=\"${RUNNER_TOOL_CACHE:-/__t}/rustup\"")?;
-            run!("mkdir -p \"$CARGO_HOME\" \"$RUSTUP_HOME\"")?;
-
-            run!("chmod a+rx \"$UE_ROOT_PATH\" \"$UE_ROOT_PATH/Engine\" \"$UE_ROOT_PATH/Engine/Build\" \"$UE_ROOT_PATH/Engine/Build/BatchFiles/Linux\" || true")?;
-            run!("chmod a+rx \"$UE_ROOT_PATH/Engine/Build/BatchFiles/Linux/Build.sh\" || true")?;
-
-            run!("sudo -E -H -u ue4 env HOME=/home/ue4 CARGO_HOME=\"$CARGO_HOME\" RUSTUP_HOME=\"$RUSTUP_HOME\" PATH=\"$CARGO_HOME/bin:$PATH\" bash -lc 'set -euxo pipefail; if ! command -v cargo >/dev/null 2>&1; then curl -sSf https://sh.rustup.rs | sh -s -- -y; fi; rustup show >/dev/null; git config --global --add safe.directory \"$GITHUB_WORKSPACE\" || true; cd \"$GITHUB_WORKSPACE/sdks/unreal\"; cargo --version; cargo test'")?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
