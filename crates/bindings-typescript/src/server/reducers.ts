@@ -112,7 +112,6 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
-  queryBuilder: QueryBuilder<SchemaDef>;
   senderAuth: AuthCtx;
 }>;
 

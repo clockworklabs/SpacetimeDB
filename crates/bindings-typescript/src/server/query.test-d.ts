@@ -2,6 +2,7 @@ import type { U32 } from '../lib/autogen/algebraic_type_variants';
 import type { Indexes, UniqueIndex } from './indexes';
 import {
   eq,
+  from,
   literal,
   type RowExpr,
   type TableNames,
@@ -72,19 +73,17 @@ const orderDef = {
 };
 
 spacetimedb.init(ctx => {
-  const firstQuery = ctx.queryBuilder.query('person');
+  const firstQuery = from(ctx.db.person);
   firstQuery.semijoinTo(
-    ctx.queryBuilder.order,
+    ctx.db.order,
     p => p.age,
     o => o.item_name
   );
-  const filteredQuery = ctx.queryBuilder
-    .query('person')
-    .filter(row => eq(row.age, literal(20)));
+  const filteredQuery = firstQuery.where(row => eq(row.age, literal(20)));
 
   // Eventually this should not type check.
   const _semijoin = filteredQuery.semijoinTo(
-    ctx.queryBuilder.order,
+    ctx.db.order,
     p => p.age,
     o => o.item_name
   );

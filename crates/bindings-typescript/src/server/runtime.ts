@@ -29,7 +29,12 @@ import { MODULE_DEF, getRegisteredSchema } from './schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
-import { makeQueryBuilder, type QueryBuilder } from './query';
+import {
+  createTableRefFromDef,
+  makeQueryBuilder,
+  type QueryBuilder,
+} from './query';
+import type { TableRef } from './query';
 import {
   ANON_VIEWS,
   VIEWS,
@@ -204,7 +209,6 @@ export const hooks: ModuleHooks = {
       timestamp: new Timestamp(timestamp),
       connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
       db: getDbView(),
-      queryBuilder: getQueryBuilder(),
       senderAuth: AuthCtxImpl.fromSystemTables(
         ConnectionId.nullIfZero(new ConnectionId(connId)),
         senderIdentity
@@ -273,6 +277,13 @@ function getQueryBuilder() {
   return QUERY_BUILDER;
 }
 
+function makeTableRef(tableName: string): TableRef<any> {
+  const schema = getRegisteredSchema();
+  const tableDef = schema.tables.find(td => tableName == td.name);
+  if (!tableDef) throw `Unregistered table ${tableName}.`;
+  return createTableRefFromDef(tableDef);
+}
+
 function makeDbView(module_def: RawModuleDefV9): DbView<any> {
   return freeze(
     Object.fromEntries(
@@ -290,6 +301,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
   if (rowType.tag !== 'Product') throw 'impossible';
 
   const baseSize = bsatnBaseSize(typespace, rowType);
+  const tableRef = makeTableRef(table.name);
 
   const sequences = table.sequences.map(seq => {
     const col = rowType.value.elements[seq.column];
@@ -337,6 +349,7 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
       );
       return count > 0;
     },
+    ref: () => tableRef,
   };
 
   const tableView = Object.assign(

@@ -22,18 +22,12 @@ export type TableDefByName<
   Name extends TableNames<SchemaDef>,
 > = Extract<SchemaDef['tables'][number], { name: Name }>;
 
-export type Query<
-  SchemaDef extends UntypedSchemaDef,
-  TableDef extends TypedTableDef,
-> = ScanQuery<SchemaDef, TableDef>;
+export type Query<TableDef extends TypedTableDef> = ScanQuery<TableDef>;
 
-type ScanQuery<
-  SchemaDef extends UntypedSchemaDef,
-  TableDef extends TypedTableDef,
-> = Readonly<{
-  filter(
+type ScanQuery<TableDef extends TypedTableDef> = Readonly<{
+  where(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): ScanQuery<SchemaDef, TableDef>;
+  ): ScanQuery<TableDef>;
   /**
    * Query for rows in a different table that match the results of this query.
    * @param other The table we want results from.
@@ -41,27 +35,20 @@ type ScanQuery<
    * @param rightCol The column from the result table that we are using to join.
    */
   semijoinTo<OtherTable extends TypedTableDef>(
-    other: TableRef<OtherTable>,
+    other: RefSource<OtherTable>,
     leftCol: (left: RowExpr<TableDef>) => AnyColumnExpr<TableDef>,
     rightCol: (right: RowExpr<OtherTable>) => AnyColumnExpr<OtherTable>
-  ): SemijoinQuery<SchemaDef, TableDef>;
+  ): SemijoinQuery<OtherTable>;
   toSql(): string;
 }>;
 
-type SemijoinQuery<
-  SchemaDef extends UntypedSchemaDef,
-  LeftTable extends TypedTableDef,
-> = Readonly<{
+type SemijoinQuery<ResultTable extends TypedTableDef> = Readonly<{
   toSql(): string;
 }>;
 
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
   readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl>;
-} & {
-  query<Name extends TableNames<SchemaDef>>(
-    table: Name
-  ): Query<SchemaDef, TableDefByName<SchemaDef, Name>>;
-};
+} & {};
 
 /**
  * A runtime reference to a table. This materializes the RowExpr for us.
@@ -75,7 +62,11 @@ export type TableRef<TableDef extends TypedTableDef> = Readonly<{
   tableDef: TableDef;
 }>;
 
-function createTableRefFromDef<TableDef extends TypedTableDef>(
+export type RefSource<TableDef extends TypedTableDef> =
+  | TableRef<TableDef>
+  | { ref(): TableRef<TableDef> };
+
+export function createTableRefFromDef<TableDef extends TypedTableDef>(
   tableDef: TableDef
 ): TableRef<TableDef> {
   const cols = createRowExpr(tableDef);
@@ -87,6 +78,11 @@ function createTableRefFromDef<TableDef extends TypedTableDef>(
   };
 }
 
+/**
+ * This is only used in tests as a helper to get the TableRefs.
+ * @param schema
+ * @returns
+ */
 export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
   schema: SchemaDef
 ): QueryBuilder<SchemaDef> {
@@ -98,14 +94,6 @@ export function makeQueryBuilder<SchemaDef extends UntypedSchemaDef>(
     (qb as Record<string, TableRef<any>>)[table.name] = ref;
   }
   const builder = qb as QueryBuilder<SchemaDef>;
-  builder.query = function <Name extends TableNames<SchemaDef>>(
-    table: Name
-  ): Query<SchemaDef, TableDefByName<SchemaDef, Name>> {
-    const ref = this[table] as TableRef<TableDefByName<SchemaDef, Name>>;
-    return createScanQuery(
-      new TableScan<SchemaDef, TableDefByName<SchemaDef, Name>>(ref)
-    );
-  };
   return Object.freeze(qb) as QueryBuilder<SchemaDef>;
 }
 
@@ -135,43 +123,53 @@ export type JoinCondition<
   rightColumn: AnyColumnExpr<RightTable>;
 };
 
-class TableScan<
-  SchemaDef extends UntypedSchemaDef,
-  TableDef extends TypedTableDef,
-> {
+class TableScan<TableDef extends TypedTableDef> {
   constructor(
     readonly table: TableRef<TableDef>,
     readonly where?: BooleanExpr<TableDef>
   ) {}
 }
 
-function createScanQuery<
-  SchemaDef extends UntypedSchemaDef,
-  TableDef extends TypedTableDef,
->(scan: TableScan<SchemaDef, TableDef>): ScanQuery<SchemaDef, TableDef> {
+export function from<TableDef extends TypedTableDef>(
+  source: RefSource<TableDef>
+): ScanQuery<TableDef> {
+  return createScanQuery(new TableScan(resolveTableRef(source)));
+}
+
+function resolveTableRef<TableDef extends TypedTableDef>(
+  source: RefSource<TableDef>
+): TableRef<TableDef> {
+  if (typeof (source as { ref?: unknown }).ref === 'function') {
+    return (source as { ref(): TableRef<TableDef> }).ref();
+  }
+  return source as TableRef<TableDef>;
+}
+
+function createScanQuery<TableDef extends TypedTableDef>(
+  scan: TableScan<TableDef>
+): ScanQuery<TableDef> {
   return Object.freeze({
-    filter(
+    where(
       predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-    ): ScanQuery<SchemaDef, TableDef> {
+    ): ScanQuery<TableDef> {
       const newCondition = predicate(scan.table.cols);
       const nextWhere = scan.where
         ? and(scan.where, newCondition)
         : newCondition;
-      return createScanQuery(
-        new TableScan<SchemaDef, TableDef>(scan.table, nextWhere)
-      );
+      return createScanQuery(new TableScan<TableDef>(scan.table, nextWhere));
     },
     semijoinTo<OtherTable extends TypedTableDef>(
-      other: TableRef<OtherTable>,
+      other: RefSource<OtherTable>,
       leftCol: (left: RowExpr<TableDef>) => AnyColumnExpr<TableDef>,
       rightCol: (right: RowExpr<OtherTable>) => AnyColumnExpr<OtherTable>
-    ): SemijoinQuery<SchemaDef, TableDef> {
+    ): SemijoinQuery<TableDef> {
+      const otherRef = resolveTableRef(other);
       const leftColumn = leftCol(scan.table.cols);
-      const rightColumn = rightCol(other.cols);
-      const semijoin: Semijoin<SchemaDef, TableDef, OtherTable> = {
+      const rightColumn = rightCol(otherRef.cols);
+      const semijoin: Semijoin<TableDef, OtherTable> = {
         type: 'semijoin',
         left: scan.table,
-        right: other,
+        right: otherRef,
         leftWhereClause: scan.where,
         joinClause: {
           leftColumn,
@@ -187,12 +185,9 @@ function createScanQuery<
 }
 
 function createSemijoinQuery<
-  SchemaDef extends UntypedSchemaDef,
   LeftTable extends TypedTableDef,
   RightTable extends TypedTableDef,
->(
-  semijoin: Semijoin<SchemaDef, LeftTable, RightTable>
-): SemijoinQuery<SchemaDef, LeftTable> {
+>(semijoin: Semijoin<LeftTable, RightTable>): SemijoinQuery<LeftTable> {
   return Object.freeze({
     toSql(): string {
       return renderSemijoinToSql(semijoin);
@@ -201,7 +196,6 @@ function createSemijoinQuery<
 }
 
 export type Semijoin<
-  SchemaDef extends UntypedSchemaDef,
   LeftTable extends TypedTableDef,
   RightTable extends TypedTableDef,
 > = Readonly<{
@@ -213,10 +207,9 @@ export type Semijoin<
 }>;
 
 export function renderSemijoinToSql<
-  SchemaDef extends UntypedSchemaDef,
   LeftTable extends TypedTableDef,
   RightTable extends TypedTableDef,
->(semijoin: Semijoin<SchemaDef, LeftTable, RightTable>): string {
+>(semijoin: Semijoin<LeftTable, RightTable>): string {
   const leftAlias = quoteIdentifier('left');
   const rightAlias = quoteIdentifier('right');
   const quotedRightTable = quoteIdentifier(semijoin.right.name);

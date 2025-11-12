@@ -7,6 +7,7 @@ import {
   and,
   or,
   not,
+  from,
 } from '../src/server/query';
 import type { UntypedSchemaDef } from '../src/server/schema';
 import { table } from '../src/server/table';
@@ -30,7 +31,7 @@ const ordersTable = table(
   }
 );
 
-const schemaDef: UntypedSchemaDef = {
+const schemaDef = {
   tables: [
     {
       name: personTable.tableName,
@@ -43,21 +44,20 @@ const schemaDef: UntypedSchemaDef = {
       indexes: ordersTable.idxs,
     },
   ],
-};
+} as const satisfies UntypedSchemaDef;
 
 describe('TableScan.toSql', () => {
   it('renders a full-table scan when no filters are applied', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb.query('person').toSql();
+    const sql = from(qb.person).toSql();
 
     expect(sql).toBe('SELECT * FROM "person"');
   });
 
   it('renders a WHERE clause for simple equality filters', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row => eq(row.name, literal("O'Brian")))
+    const sql = from(qb.person)
+      .where(row => eq(row.name, literal("O'Brian")))
       .toSql();
 
     expect(sql).toBe(
@@ -67,9 +67,8 @@ describe('TableScan.toSql', () => {
 
   it('renders numeric literals and column references', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row => eq(row.age, literal(42)))
+    const sql = from(qb.person)
+      .where(row => eq(row.age, literal(42)))
       .toSql();
 
     expect(sql).toBe(`SELECT * FROM "person" WHERE "person"."age" = 42`);
@@ -77,9 +76,8 @@ describe('TableScan.toSql', () => {
 
   it('renders AND clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row =>
+    const sql = from(qb.person)
+      .where(row =>
         and(eq(row.name, literal('Alice')), eq(row.age, literal(30)))
       )
       .toSql();
@@ -91,9 +89,8 @@ describe('TableScan.toSql', () => {
 
   it('renders NOT clauses around subpredicates', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row => not(eq(row.name, literal('Bob'))))
+    const sql = from(qb.person)
+      .where(row => not(eq(row.name, literal('Bob'))))
       .toSql();
 
     expect(sql).toBe(
@@ -103,10 +100,9 @@ describe('TableScan.toSql', () => {
 
   it('accumulates multiple filters with AND logic', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row => eq(row.name, literal('Eve')))
-      .filter(row => eq(row.age, literal(25)))
+    const sql = from(qb.person)
+      .where(row => eq(row.name, literal('Eve')))
+      .where(row => eq(row.age, literal(25)))
       .toSql();
 
     expect(sql).toBe(
@@ -116,9 +112,8 @@ describe('TableScan.toSql', () => {
 
   it('renders OR clauses across multiple predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row =>
+    const sql = from(qb.person)
+      .where(row =>
         or(eq(row.name, literal('Carol')), eq(row.name, literal('Dave')))
       )
       .toSql();
@@ -133,9 +128,8 @@ describe('TableScan.toSql', () => {
     const identity = new Identity(
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     );
-    const sql = qb
-      .query('person')
-      .filter(row => eq(row.id, literal(identity)))
+    const sql = from(qb.person)
+      .where(row => eq(row.id, literal(identity)))
       .toSql();
 
     expect(sql).toBe(
@@ -145,8 +139,7 @@ describe('TableScan.toSql', () => {
 
   it('renders semijoin queries without additional filters', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
+    const sql = from(qb.person)
       .semijoinTo(
         qb.orders,
         person => person.id,
@@ -161,9 +154,8 @@ describe('TableScan.toSql', () => {
 
   it('renders semijoin queries alongside existing predicates', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row => eq(row.age, literal(42)))
+    const sql = from(qb.person)
+      .where(row => eq(row.age, literal(42)))
       .semijoinTo(
         qb.orders,
         person => person.id,
@@ -178,9 +170,8 @@ describe('TableScan.toSql', () => {
 
   it('escapes literals when rendering semijoin filters', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row => eq(row.name, literal("O'Brian")))
+    const sql = from(qb.person)
+      .where(row => eq(row.name, literal("O'Brian")))
       .semijoinTo(
         qb.orders,
         person => person.id,
@@ -195,9 +186,8 @@ describe('TableScan.toSql', () => {
 
   it('renders compound AND filters for semijoin queries', () => {
     const qb = makeQueryBuilder(schemaDef);
-    const sql = qb
-      .query('person')
-      .filter(row =>
+    const sql = from(qb.person)
+      .where(row =>
         and(eq(row.name, literal('Alice')), eq(row.age, literal(30)))
       )
       .semijoinTo(
