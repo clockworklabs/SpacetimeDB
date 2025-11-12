@@ -33,7 +33,10 @@ jobs:
           FAILED_CHECKS="$(
             gh pr checks "${{github.event.pull_request.html_url}}" \
               --json 'workflow,state,name' |
-              jq '.[] | select(.state != "SUCCESS")' |
+              jq '.[]
+                | select(.workflow != "Discord notifications")
+                | select(.state != "SUCCESS" and .state != "NEUTRAL")
+              ' |
               jq -r '"\(.workflow) / \(.name): \(.state)"'
           )"
           message+=$'\n'
