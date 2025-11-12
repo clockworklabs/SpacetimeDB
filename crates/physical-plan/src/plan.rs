@@ -533,7 +533,7 @@ impl PhysicalPlan {
                     Box::new(Self::TableScan(scan, label)),
                     PhysicalExpr::BinOp(
                         BinOp::Eq,
-                        Box::new(PhysicalExpr::Value(auth.caller.into())),
+                        Box::new(PhysicalExpr::Value(auth.caller().into())),
                         Box::new(PhysicalExpr::Field(TupleField {
                             label,
                             label_pos: None,
@@ -1553,11 +1553,11 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1740,12 +1740,12 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///

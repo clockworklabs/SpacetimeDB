@@ -29,7 +29,7 @@ use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
-use spacetimedb::identity::{AuthCtx, Identity};
+use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
@@ -530,15 +530,16 @@ pub async fn sql_direct<S>(
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
-    S: NodeDelegate + ControlStateDelegate,
+    S: NodeDelegate + ControlStateDelegate + Authorization,
 {
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    let auth = AuthCtx::new(database.owner_identity, caller_identity);
-    log::debug!("auth: {auth:?}");
+    let auth = worker_ctx
+        .authorize_sql(caller_identity, database.database_identity)
+        .await?;
 
     host.exec_sql(auth, database, confirmed, sql).await
 }
@@ -551,7 +552,7 @@ pub async fn sql<S>(
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate,
+    S: NodeDelegate + ControlStateDelegate + Authorization,
 {
     let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
 
