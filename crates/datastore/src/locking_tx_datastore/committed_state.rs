@@ -634,8 +634,8 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId) {
-        self.read_sets.remove_view(view_id)
+    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        self.read_sets.remove_view(view_id, sender)
     }
 
     pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {

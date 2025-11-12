@@ -107,9 +107,9 @@ impl ViewReadSets {
     }
 
     /// Removes keys for `view_id` from the read set
-    pub fn remove_view(&mut self, view_id: ViewId) {
+    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
         self.tables.retain(|_, readset| {
-            readset.remove_view(view_id);
+            readset.remove_view(view_id, sender);
             !readset.is_empty()
         });
     }
@@ -144,9 +144,14 @@ impl TableReadSet {
         self.table_scans.is_empty()
     }
 
-    /// Removes keys for `view_id` from the read set
-    fn remove_view(&mut self, view_id: ViewId) {
-        self.table_scans.retain(|info| info.view_id != view_id);
+    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
+    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        if let Some(identity) = sender {
+            self.table_scans
+                .retain(|call| !(call.view_id == view_id && call.sender.as_ref() == Some(&identity)));
+        } else {
+            self.table_scans.retain(|call| call.view_id != view_id);
+        }
     }
 
     /// Merge or union two read sets for this table
@@ -221,7 +226,14 @@ impl MutTxId {
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
     pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
-        self.committed_state_write_lock.drop_view_from_read_sets(view_id)
+        self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
+    }
+
+    /// Removes a specific view call from the committed read set.
+    /// Used when dropping views due to
+    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
+        self.committed_state_write_lock
+            .drop_view_from_read_sets(view_id, Some(sender))
     }
 }
 
@@ -1956,6 +1968,66 @@ impl MutTxId {
                 last_called,
             },
         )?;
+        Ok(())
+    }
+
+    /// Clean up Views that have no subscribers and haven't been called within the expiration duration.
+    ///
+    /// It looks for rows in `st_view_sub` where:
+    /// - `has_subscribers` is `false`,
+    /// - `last_called` timestamp is older than the expiration threshold.
+    ///
+    /// for each such row, it clears the backing table, readset entry and deletes the subscription row.
+    pub fn clear_expired_views(&mut self, expiration_duration: Duration) -> Result<()> {
+        let now = Timestamp::now();
+        let expiration_threshold = now - expiration_duration;
+
+        // Collect rows that meet expiration criteria
+        let expired_sub_rows: Vec<(StViewSubRow, RowPointer)> = self
+            .iter_by_col_eq(
+                ST_VIEW_ID,
+                StViewSubFields::HasSubscribers,
+                &AlgebraicValue::from(false),
+            )?
+            .map(|row_ref| {
+                StViewSubRow::try_from(row_ref)
+                    .map(|row| (row, row_ref.pointer()))
+                    .expect("Failed to deserialize st_view_sub row")
+            })
+            .filter(|(row, _)| {
+                !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold
+            })
+            .collect();
+
+        // For each expired view subscription, clear the backing table and delete the subscription
+        for (row, ptr) in expired_sub_rows {
+            let view_id = row.view_id;
+            let sender: Identity = row.identity.into();
+            // Get the view's backing table_id from st_view
+            let StViewRow {
+                table_id, is_anonymous, ..
+            } = self.lookup_st_view(view_id)?;
+            let table_id = table_id.unwrap();
+
+            if is_anonymous {
+                self.clear_table(table_id)?;
+                self.drop_view_from_committed_read_set(view_id);
+            } else {
+                let rows_to_delete = self
+                    .iter_by_col_eq(table_id, StViewSubFields::Identity, &sender.into())?
+                    .map(|res| res.pointer())
+                    .collect::<Vec<_>>();
+
+                for row_ptr in rows_to_delete {
+                    self.delete(table_id, row_ptr)?;
+                }
+
+                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+            }
+
+            // Finally, delete the st_view_sub row
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+        }
         Ok(())
     }
 

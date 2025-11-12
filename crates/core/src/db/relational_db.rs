@@ -1059,6 +1059,31 @@ impl RelationalDB {
     }
 }
 
+/// Duration after which expired unused views are cleaned up.
+/// Value is chosen arbitrarily; can be tuned later if needed.
+const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(100);
+
+/// Spawn a background task that periodically cleans up expired views.
+pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
+    tokio::spawn(async move {
+        let db = &db;
+        loop {
+            if let Err(e) = db.with_auto_commit(Workload::Internal, |tx| {
+                tx.clear_expired_views(VIEWS_EXPIRATION).map_err(DBError::from)
+            }) {
+                log::error!(
+                    "[{}] DATABASE: failed to clear expired views: {}",
+                    db.database_identity(),
+                    e
+                );
+            }
+
+            tokio::time::sleep(VIEWS_EXPIRATION).await;
+        }
+    })
+    .abort_handle()
+}
+
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
         Ok(self.inner.create_table_mut_tx(tx, schema)?)

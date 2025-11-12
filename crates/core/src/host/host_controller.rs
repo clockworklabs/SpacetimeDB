@@ -5,7 +5,7 @@ use super::{Scheduler, UpdateDatabaseResult};
 use crate::client::{ClientActorId, ClientName};
 use crate::database_logger::DatabaseLogger;
 use crate::db::persistence::PersistenceProvider;
-use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
+use crate::db::relational_db::{self, spawn_view_cleanup_loop, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::host::module_host::ModuleRuntime as _;
@@ -740,6 +740,9 @@ struct Host {
     /// Handle to the task responsible for recording metrics for each transaction.
     /// The task is aborted when [`Host`] is dropped.
     tx_metrics_recorder_task: AbortHandle,
+    /// Handle to the task responsible for cleaning up old views.
+    /// The task is aborted when [`Host`] is dropped.
+    view_cleanup_task: AbortHandle,
 }
 
 impl Host {
@@ -864,19 +867,17 @@ impl Host {
 
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
+        let view_cleanup_task = spawn_view_cleanup_loop(replica_ctx.relational_db.clone());
 
         let module = watch::Sender::new(module_host);
-        //TODO(shub): Below code interfere with `exit_module` code,
-        // I suspect channel internally holds a reference to the module,
-        // even after we drop the sender.
-        //
-        // replica_ctx.subscriptions.init(module.subscribe());
+
         Ok(Host {
             module,
             replica_ctx,
             scheduler,
             disk_metrics_recorder_task,
             tx_metrics_recorder_task,
+            view_cleanup_task,
         })
     }
 
@@ -1053,6 +1054,7 @@ impl Drop for Host {
     fn drop(&mut self) {
         self.disk_metrics_recorder_task.abort();
         self.tx_metrics_recorder_task.abort();
+        self.view_cleanup_task.abort();
     }
 }
 
