@@ -27,6 +27,16 @@ pub trait DbContext {
     /// so accesses to concrete-typed contexts don't need to use this method.
     fn reducers(&self) -> &Self::Reducers;
 
+    type Procedures;
+
+    /// Access to procedures defined by the module.
+    ///
+    /// The returned `Procedures` will have a method to invoke each procedure defined by the module.
+    ///
+    /// `DbConnection` and `EventContext` also have a public field `procedures`,
+    /// so accesses to concrete-typed contexts don't need to use this method.
+    fn procedures(&self) -> &Self::Procedures;
+
     type SetReducerFlags;
 
     /// Access to setters for per-reducer flags.

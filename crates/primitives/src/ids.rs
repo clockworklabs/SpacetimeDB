@@ -80,6 +80,7 @@ auto_inc_system_id!(TableId);
 
 system_id! {
     /// An identifier for a view, unique within a database.
+    /// It is stored in the db as the primary key column of `st_view`.
     pub struct ViewId(pub u32);
 }
 auto_inc_system_id!(ViewId);
@@ -135,6 +136,18 @@ system_id! {
     /// The index of a procedure as defined in a module's procedure list.
     // This is never stored in a system table, but is useful to have defined here.
     pub struct ProcedureId(pub u32);
+}
+
+system_id! {
+    /// The index of a view as defined in a module's view lists.
+    ///
+    /// Unlike reducers and procedures, the module maintains two lists for views.
+    /// One for `ViewContext` and the other for `AnonymousViewContext`.
+    /// As such, this index does not uniquely identify a view on its own.
+    /// You must know which list this index refers to.
+    ///
+    // This is never stored in a system table, but is useful to have defined here.
+    pub struct ViewFnPtr(pub u32);
 }
 
 /// An id for a function exported from a module, which may be a reducer or a procedure.

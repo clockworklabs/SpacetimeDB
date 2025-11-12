@@ -6,15 +6,21 @@ use self::error::{
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_reducer, call_describe_module, get_hook, resolve_sys_module, FnRet, HookFunction, ModuleHookKey,
+    call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks, resolve_sys_module, FnRet,
+    HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
-use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::module_host::Instance;
+use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
+use crate::host::module_host::{CallViewParams, Instance, ViewCallResult};
+use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
 use crate::host::wasm_common::instrumentation::CallTimes;
-use crate::host::wasm_common::module_host_actor::{DescribeError, ExecuteResult, ExecutionTimings, InstanceCommon};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
+    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
+    WasmInstance,
+};
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
@@ -23,7 +29,8 @@ use crate::util::asyncify;
 use anyhow::Context as _;
 use core::str;
 use itertools::Either;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_client_api_messages::energy::FunctionBudget;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
@@ -165,17 +172,11 @@ struct JsInstanceEnv {
     /// Track time spent in module-defined spans.
     timing_spans: TimingSpanSet,
 
-    /// The point in time the last reducer call started at.
-    reducer_start: Instant,
-
     /// Track time spent in all wasm instance env calls (aka syscall time).
     ///
     /// Each function, like `insert`, will add the `Duration` spent in it
     /// to this tracker.
     call_times: CallTimes,
-
-    /// The last, including current, reducer to be executed by this environment.
-    reducer_name: String,
 
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
@@ -187,10 +188,8 @@ impl JsInstanceEnv {
     fn new(instance_env: InstanceEnv) -> Self {
         Self {
             instance_env,
-            reducer_start: Instant::now(),
             call_times: CallTimes::new(),
             iters: <_>::default(),
-            reducer_name: "<initializing>".into(),
             chunk_pool: <_>::default(),
             timing_spans: <_>::default(),
         }
@@ -200,34 +199,32 @@ impl JsInstanceEnv {
     ///
     /// Returns the handle used by reducers to read from `args`
     /// as well as the handle used to write the error message, if any.
-    fn start_reducer(&mut self, name: &str, ts: Timestamp) {
-        self.reducer_start = Instant::now();
-        name.clone_into(&mut self.reducer_name);
-        self.instance_env.start_funcall(ts);
+    fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
+        self.instance_env.start_funcall(name, ts, func_type);
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
-    fn reducer_name(&self) -> &str {
-        &self.reducer_name
+    fn funcall_name(&self) -> &str {
+        &self.instance_env.func_name
     }
 
     /// Returns the name of the most recent reducer to be run in this environment,
     /// or `None` if no reducer is actively being invoked.
     fn log_record_function(&self) -> Option<&str> {
-        let function = self.reducer_name();
+        let function = self.funcall_name();
         (!function.is_empty()).then_some(function)
     }
 
     /// Returns the name of the most recent reducer to be run in this environment.
     fn reducer_start(&self) -> Instant {
-        self.reducer_start
+        self.instance_env.start_instant
     }
 
     /// Signal to this `WasmInstanceEnv` that a reducer call is over.
     /// This resets all of the state associated to a single reducer call,
     /// and returns instrumentation records.
     fn finish_reducer(&mut self) -> ExecutionTimings {
-        let total_duration = self.reducer_start.elapsed();
+        let total_duration = self.reducer_start().elapsed();
 
         // Taking the call times record also resets timings to 0s for the next call.
         let wasm_instance_env_call_times = self.call_times.take();
@@ -251,6 +248,7 @@ pub struct JsInstance {
     request_tx: SyncSender<JsWorkerRequest>,
     update_response_rx: Receiver<anyhow::Result<UpdateDatabaseResult>>,
     call_reducer_response_rx: Receiver<(ReducerCallResult, bool)>,
+    call_view_response_rx: Receiver<(ViewCallResult, bool)>,
     trapped: bool,
 }
 
@@ -305,6 +303,24 @@ impl JsInstance {
     ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
         todo!("JS/TS module procedure support")
     }
+
+    pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
+        // Send the request.
+        let request = JsWorkerRequest::CallView { tx, params };
+        self.request_tx
+            .send(request)
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        // Wait for the response.
+        let (response, trapped) = self
+            .call_view_response_rx
+            .recv()
+            .expect("worker's `call_view_response_tx` should be live as `JsInstance::drop` hasn't happened");
+
+        self.trapped = trapped;
+
+        response
+    }
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
@@ -323,6 +339,8 @@ enum JsWorkerRequest {
         tx: Option<MutTxId>,
         params: CallReducerParams,
     },
+    /// See [`JsInstance::call_view`].
+    CallView { tx: MutTxId, params: CallViewParams },
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -332,26 +350,25 @@ fn startup_instance_worker<'scope>(
     scope: &mut PinScope<'scope, '_>,
     program: Arc<str>,
     module_or_mcc: Either<ModuleCommon, ModuleCreationContextLimited>,
-) -> anyhow::Result<(HookFunction<'scope>, Either<ModuleCommon, ModuleCommon>)> {
+) -> anyhow::Result<(HookFunctions<'scope>, Either<ModuleCommon, ModuleCommon>)> {
     // Start-up the user's module.
     eval_user_module_catch(scope, &program).map_err(DescribeError::Setup)?;
 
     // Find the `__call_reducer__` function.
-    let call_reducer_fun =
-        get_hook(scope, ModuleHookKey::CallReducer).context("The `spacetimedb/server` module was never imported")?;
+    let hook_functions = get_hooks(scope).context("The `spacetimedb/server` module was never imported")?;
 
     // If we don't have a module, make one.
     let module_common = match module_or_mcc {
         Either::Left(module_common) => Either::Left(module_common),
         Either::Right(mcc) => {
-            let def = extract_description(scope, &mcc.replica_ctx)?;
+            let def = extract_description(scope, &hook_functions, &mcc.replica_ctx)?;
 
             // Validate and create a common module from the raw definition.
             Either::Right(build_common_module_from_raw(mcc, def)?)
         }
     };
 
-    Ok((call_reducer_fun, module_common))
+    Ok((hook_functions, module_common))
 }
 
 /// Returns a new isolate.
@@ -385,6 +402,8 @@ fn spawn_instance_worker(
     let (update_response_tx, update_response_rx) = mpsc::sync_channel(0);
     // The Worker --ReducerCallResult-> Instance channel:
     let (call_reducer_response_tx, call_reducer_response_rx) = mpsc::sync_channel(0);
+    // The Worker --ViewCallResult-> Instance channel:
+    let (call_view_response_tx, call_view_response_rx) = mpsc::sync_channel(0);
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -400,7 +419,7 @@ fn spawn_instance_worker(
                 unreachable!("should have a live receiver");
             }
         };
-        let (call_reducer_fun, module_common) = match startup_instance_worker(scope, program, module_or_mcc) {
+        let (hooks, module_common) = match startup_instance_worker(scope, program, module_or_mcc) {
             Err(err) => {
                 // There was some error in module setup.
                 // Return the error and terminate the worker.
@@ -421,6 +440,12 @@ fn spawn_instance_worker(
         let scheduler = module_common.scheduler().clone();
         let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler);
         scope.set_slot(JsInstanceEnv::new(instance_env));
+
+        let mut inst = V8Instance {
+            scope,
+            replica_ctx,
+            hooks: &hooks,
+        };
 
         // Process requests to the worker.
         //
@@ -449,13 +474,20 @@ fn spawn_instance_worker(
                     // but rather let this happen by `return_instance` using `JsInstance::trapped`
                     // which will cause `JsInstance` to be dropped,
                     // which in turn results in the loop being terminated.
-                    let res = call_reducer(&mut instance_common, replica_ctx, scope, call_reducer_fun, tx, params);
+                    let res = instance_common.call_reducer_with_tx(tx, params, &mut inst);
 
                     // Reply to `JsInstance::call_reducer`.
                     if let Err(e) = call_reducer_response_tx.send(res) {
                         // This should never happen as `JsInstance::call_reducer` immediately
                         // does `.recv` on the other end of the channel.
                         unreachable!("should have receiver for `call_reducer` response, {e}");
+                    }
+                }
+                JsWorkerRequest::CallView { tx, params } => {
+                    let res = instance_common.call_view_with_tx(tx, params, &mut inst);
+
+                    if let Err(e) = call_view_response_tx.send(res) {
+                        unreachable!("should have receiver for `call_view` response, {e}");
                     }
                 }
             }
@@ -469,6 +501,7 @@ fn spawn_instance_worker(
             request_tx,
             update_response_rx,
             call_reducer_response_rx,
+            call_view_response_rx,
             trapped: false,
         };
         (opt_mc, inst)
@@ -578,94 +611,117 @@ fn call_free_fun<'scope>(
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
-fn call_reducer<'scope>(
-    instance_common: &mut InstanceCommon,
-    replica_ctx: &ReplicaContext,
+struct V8Instance<'a, 'scope, 'isolate> {
+    scope: &'a mut PinScope<'scope, 'isolate>,
+    replica_ctx: &'a Arc<ReplicaContext>,
+    hooks: &'a HookFunctions<'a>,
+}
+
+impl WasmInstance for V8Instance<'_, '_, '_> {
+    fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
+        extract_description(self.scope, self.hooks, self.replica_ctx)
+    }
+
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        self.replica_ctx
+    }
+
+    fn tx_slot(&self) -> TxSlot {
+        self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
+    }
+
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
+        let ExecutionResult { stats, call_result } = common_call(self.scope, budget, op, |scope, op| {
+            Ok(call_call_reducer(scope, self.hooks, op)?)
+        });
+        let call_result = call_result.and_then(|res| res.map_err(ExecutionError::User));
+        ExecutionResult { stats, call_result }
+    }
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_view(scope, self.hooks, op)
+        })
+    }
+
+    fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_view_anon(scope, self.hooks, op)
+        })
+    }
+
+    fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error) {
+        log_traceback(self.replica_ctx, func_type, func, trap)
+    }
+
+    async fn call_procedure(&mut self, _op: ProcedureOp, _budget: FunctionBudget) -> ProcedureExecuteResult {
+        todo!("JS/TS module procedure support")
+    }
+}
+
+fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
-    fun: HookFunction<'_>,
-    tx: Option<MutTxId>,
-    params: CallReducerParams,
-) -> (super::ReducerCallResult, bool) {
-    let mut trapped = false;
+    budget: FunctionBudget,
+    op: O,
+    call: F,
+) -> ExecutionResult<Result<R, ExecutionError>>
+where
+    O: InstanceOp,
+    F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+{
+    // TODO(v8): Start the budget timeout and long-running logger.
+    let env = env_on_isolate_unwrap(scope);
 
-    let (res, _) = instance_common.call_reducer_with_tx(
-        replica_ctx,
-        tx,
-        params,
-        move |a, b, c| log_traceback(replica_ctx, a, b, c),
-        |tx, op, budget| {
-            // TODO(v8): Start the budget timeout and long-running logger.
-            let env = env_on_isolate_unwrap(scope);
-            let mut tx_slot = env.instance_env.tx.clone();
+    // Start the timer.
+    // We'd like this tightly around `call`.
+    env.start_funcall(op.name(), op.timestamp(), op.call_type());
 
-            // Start the timer.
-            // We'd like this tightly around `__call_reducer__`.
-            env.start_reducer(op.name, op.timestamp);
+    let call_result = catch_exception(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
+        // Convert `can_continue` to whether the isolate has "trapped".
+        // Also cancel execution termination if needed,
+        // that can occur due to terminating long running reducers.
+        match can_continue {
+            CanContinue::No => ExecutionError::Trap(e.into()),
+            CanContinue::Yes => ExecutionError::Recoverable(e.into()),
+            CanContinue::YesCancelTermination => {
+                scope.cancel_terminate_execution();
+                ExecutionError::Trap(e.into())
+            }
+        }
+    });
 
-            // Call `__call_reducer__` with `tx` provided.
-            // It should not be available before.
-            let (tx, call_result) = tx_slot.set(tx, || {
-                catch_exception(scope, |scope| {
-                    let res = call_call_reducer(scope, fun, op)?;
-                    Ok(res)
-                })
-                .map_err(|(e, can_continue)| {
-                    // Convert `can_continue` to whether the isolate has "trapped".
-                    // Also cancel execution termination if needed,
-                    // that can occur due to terminating long running reducers.
-                    trapped = match can_continue {
-                        CanContinue::No => false,
-                        CanContinue::Yes => true,
-                        CanContinue::YesCancelTermination => {
-                            scope.cancel_terminate_execution();
-                            true
-                        }
-                    };
+    // Finish timings.
+    let timings = env_on_isolate_unwrap(scope).finish_reducer();
 
-                    e
-                })
-                .map_err(anyhow::Error::from)
-            });
+    // Derive energy stats.
+    let energy = energy_from_elapsed(budget, timings.total_duration);
 
-            // Finish timings.
-            let timings = env_on_isolate_unwrap(scope).finish_reducer();
+    // Fetch the currently used heap size in V8.
+    // The used size is ostensibly fairer than the total size.
+    let memory_allocation = scope.get_heap_statistics().used_heap_size();
 
-            // Derive energy stats.
-            let energy = energy_from_elapsed(budget, timings.total_duration);
-
-            // Fetch the currently used heap size in V8.
-            // The used size is ostensibly fairer than the total size.
-            let memory_allocation = scope.get_heap_statistics().used_heap_size();
-
-            let exec_result = ExecuteResult {
-                energy,
-                timings,
-                memory_allocation,
-                call_result,
-            };
-            (tx, exec_result)
-        },
-    );
-
-    (res, trapped)
+    let stats = ExecutionStats {
+        energy,
+        timings,
+        memory_allocation,
+    };
+    ExecutionResult { stats, call_result }
 }
 
 /// Extracts the raw module def by running the registered `__describe_module__` hook.
 fn extract_description<'scope>(
     scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'_>,
     replica_ctx: &ReplicaContext,
 ) -> Result<RawModuleDef, DescribeError> {
     run_describer(
         |a, b, c| log_traceback(replica_ctx, a, b, c),
         || {
             catch_exception(scope, |scope| {
-                let describe_module = get_hook(scope, ModuleHookKey::DescribeModule)
-                    .context("The `spacetimedb/server` package was never imported into the module")?;
-                let def = call_describe_module(scope, describe_module)?;
+                let def = call_describe_module(scope, hooks)?;
                 Ok(def)
             })
-            .map_err(|(e, _)| e)
-            .map_err(Into::into)
+            .map_err(|(e, _)| e.into())
         },
     )
 }
@@ -699,7 +755,7 @@ mod test {
     fn call_call_reducer_works() {
         let call = |code| {
             with_module_catch(code, |scope| {
-                let fun = get_hook(scope, ModuleHookKey::CallReducer).unwrap();
+                let hooks = get_hooks(scope).unwrap();
                 let op = ReducerOp {
                     id: ReducerId(42),
                     name: "foobar",
@@ -708,7 +764,7 @@ mod test {
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };
-                Ok(call_call_reducer(scope, fun, op)?)
+                Ok(call_call_reducer(scope, &hooks, op)?)
             })
         };
 
@@ -778,8 +834,8 @@ js error Uncaught Error: foobar
             })
         "#;
         let raw_mod = with_module_catch(code, |scope| {
-            let describe_module = get_hook(scope, ModuleHookKey::DescribeModule).unwrap();
-            call_describe_module(scope, describe_module)
+            let hooks = get_hooks(scope).unwrap();
+            call_describe_module(scope, &hooks)
         })
         .map_err(|e| e.to_string());
         assert_eq!(raw_mod, Ok(RawModuleDef::V9(<_>::default())));

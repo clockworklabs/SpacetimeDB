@@ -37,7 +37,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
@@ -243,6 +243,12 @@ impl ModuleDef {
     pub fn view<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ViewDef> {
         // If the string IS a valid identifier, we can just look it up.
         self.views.get(name)
+    }
+
+    /// Convenience method to look up a view, possibly by a string, returning its id as well.
+    pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewFnPtr, &ViewDef)> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.views.get(name).map(|def| (def.fn_ptr, def))
     }
 
     /// Convenience method to look up a reducer, possibly by a string.
@@ -1100,6 +1106,11 @@ pub struct ViewDef {
     /// This type does not have access to the `Identity` of the caller.
     pub is_anonymous: bool,
 
+    /// It represents the unique index of this view within the module.
+    /// Module contains separate list for anonymous and non-anonymous views,
+    /// so `is_anonymous` is needed to fully identify the view along with this index.
+    pub fn_ptr: ViewFnPtr,
+
     /// The parameters of the view.
     ///
     /// This `ProductType` need not be registered in the module's `Typespace`.
@@ -1160,10 +1171,12 @@ impl From<ViewDef> for RawViewDefV9 {
             is_public,
             params,
             return_type,
+            fn_ptr: index,
             ..
         } = val;
         RawViewDefV9 {
             name: name.into(),
+            index: index.into(),
             is_anonymous,
             is_public,
             params,

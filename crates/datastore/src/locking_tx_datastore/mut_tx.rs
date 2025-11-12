@@ -8,12 +8,15 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
-    StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
-    ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
-};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{
+    error::ViewError,
+    system_tables::{
+        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
+        ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+    },
+};
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
@@ -30,7 +33,7 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::{IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
 use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
@@ -44,11 +47,12 @@ use spacetimedb_primitives::{
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
+    memory_usage::MemoryUsage,
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
-    def::{ModuleDef, ViewColumnDef, ViewDef},
+    def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
@@ -62,61 +66,102 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
 
-/// Views track their read sets and update the [`CommittedState`] with them.
-/// The [`CommittedState`] maintains these read sets in order to determine when to re-evaluate a view.
-#[derive(Default)]
-pub struct ReadSet {
-    table_scans: IntSet<TableId>,
-    index_keys: IntMap<TableId, IntMap<IndexId, AlgebraicValue>>,
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ViewCallInfo {
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub view_name: Box<str>,
+    pub sender: Option<Identity>,
 }
 
-impl ReadSet {
-    /// Enumerate the tables that are scanned and tracked by this read set
-    pub fn tables_scanned(&self) -> impl Iterator<Item = &TableId> + '_ {
-        self.table_scans.iter()
+/// A data structure for tracking the database rows/keys that are read by views
+#[derive(Default)]
+pub struct ViewReadSets {
+    tables: IntMap<TableId, TableReadSet>,
+}
+
+impl MemoryUsage for ViewReadSets {
+    fn heap_usage(&self) -> usize {
+        0 // TODO: Implement memory tracking for read sets
+    }
+}
+
+impl ViewReadSets {
+    /// Returns the views that perform a full scan of this table
+    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+        self.tables
+            .get(table_id)
+            .into_iter()
+            .flat_map(TableReadSet::views_for_table_scan)
     }
 
-    /// Enumerate the single index keys that are tracked by this read set
-    pub fn index_keys_scanned(&self) -> impl Iterator<Item = (&TableId, &IndexId, &AlgebraicValue)> + '_ {
-        self.index_keys
-            .iter()
-            .flat_map(|(table_id, keys)| keys.iter().map(move |(index_id, key)| (table_id, index_id, key)))
+    /// Record that a view performs a full scan of this table
+    fn insert_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
+        self.tables.entry(table_id).or_default().insert_scan(call);
     }
 
-    /// Track a table scan in this read set
-    fn insert_table_scan(&mut self, table_id: TableId) {
-        self.table_scans.insert(table_id);
+    /// Removes keys for `view_id` from the read set
+    pub fn remove_view(&mut self, view_id: ViewId) {
+        self.tables.retain(|_, readset| {
+            readset.remove_view(view_id);
+            !readset.is_empty()
+        });
     }
 
-    /// Track an index scan in this read set.
-    /// If we only read a single index key we record the key.
-    /// If we read a range, we treat it as though we scanned the entire table.
-    fn insert_index_scan(
-        &mut self,
-        table_id: TableId,
-        index_id: IndexId,
-        lower: Bound<AlgebraicValue>,
-        upper: Bound<AlgebraicValue>,
-    ) {
-        match (lower, upper) {
-            (Bound::Included(lower), Bound::Included(upper)) if lower == upper => {
-                self.index_keys.entry(table_id).or_default().insert(index_id, lower);
-            }
-            _ => {
-                self.table_scans.insert(table_id);
-            }
+    /// Merge or union read sets together
+    pub fn merge(&mut self, readset: Self) {
+        for (table_id, rs) in readset.tables {
+            self.tables.entry(table_id).or_default().merge(rs);
         }
     }
 }
 
-pub type ViewReadSets = IntMap<ViewId, ReadSet>;
+/// A table-level read set for views
+#[derive(Default)]
+struct TableReadSet {
+    table_scans: HashSet<ViewCallInfo>,
+}
+
+impl TableReadSet {
+    /// Record that this view performs a full scan of this read set's table
+    fn insert_scan(&mut self, call: ViewCallInfo) {
+        self.table_scans.insert(call);
+    }
+
+    /// Returns the views that perform a full scan of this read set's table
+    fn views_for_table_scan(&self) -> impl Iterator<Item = &ViewCallInfo> {
+        self.table_scans.iter()
+    }
+
+    /// Is this read set empty?
+    fn is_empty(&self) -> bool {
+        self.table_scans.is_empty()
+    }
+
+    /// Removes keys for `view_id` from the read set
+    fn remove_view(&mut self, view_id: ViewId) {
+        self.table_scans.retain(|info| info.view_id != view_id);
+    }
+
+    /// Merge or union two read sets for this table
+    fn merge(&mut self, readset: TableReadSet) {
+        self.table_scans.extend(readset.table_scans);
+    }
+}
+
+#[derive(Clone, Debug)]
+/// The type of operation being performed against the datastore.
+pub enum FuncCallType {
+    Reducer,
+    Procedure,
+    View(ViewCallInfo),
+}
 
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
@@ -140,27 +185,43 @@ static_assert_size!(MutTxId, 432);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
-    pub fn record_table_scan(&mut self, view_id: Option<ViewId>, table_id: TableId) {
-        if let Some(view_id) = view_id {
-            self.read_sets.entry(view_id).or_default().insert_table_scan(table_id)
+    pub fn record_table_scan(&mut self, op: &FuncCallType, table_id: TableId) {
+        if let FuncCallType::View(view) = op {
+            self.read_sets.insert_scan(table_id, view.clone());
         }
     }
 
     /// Record that a view performs an index scan in this transaction's read set
     pub fn record_index_scan(
         &mut self,
-        view_id: Option<ViewId>,
+        op: &FuncCallType,
         table_id: TableId,
-        index_id: IndexId,
-        lower: Bound<AlgebraicValue>,
-        upper: Bound<AlgebraicValue>,
+        _: IndexId,
+        _: Bound<AlgebraicValue>,
+        _: Bound<AlgebraicValue>,
     ) {
-        if let Some(view_id) = view_id {
-            self.read_sets
-                .entry(view_id)
-                .or_default()
-                .insert_index_scan(table_id, index_id, lower, upper)
+        // TODO: Implement read set tracking for index scans
+        if let FuncCallType::View(view) = op {
+            self.read_sets.insert_scan(table_id, view.clone());
         }
+    }
+
+    /// Returns the views whose read sets overlaps with this transaction's write set
+    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> {
+        self.tx_state
+            .insert_tables
+            .keys()
+            .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
+            .chain(self.tx_state.delete_tables.keys())
+            .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
+            .collect::<HashSet<_>>()
+            .into_iter()
+    }
+
+    /// Removes keys for `view_id` from the committed read set.
+    /// Used for dropping views in an auto-migration.
+    pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
+        self.committed_state_write_lock.drop_view_from_read_sets(view_id)
     }
 }
 
@@ -308,16 +369,21 @@ impl MutTxId {
 
         let ViewDef {
             name,
-            is_anonymous,
-            is_public,
-            params,
+            param_columns,
             return_columns,
             ..
         } = view_def;
 
-        let view_id = self.insert_into_st_view(name.clone().into(), table_id, *is_public, *is_anonymous)?;
-        self.insert_into_st_view_param(view_id, params)?;
+        let view_name: Box<str> = name.clone().into();
+
+        // `create_table` inserts into `st_view` and updates the table schema.
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
         Ok((view_id, table_id))
     }
 
@@ -327,6 +393,8 @@ impl MutTxId {
         self.drop_st_view(view_id)?;
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
+        self.drop_st_view_sub(view_id)?;
+        self.drop_view_from_committed_read_set(view_id);
 
         // Drop the view's backing table if materialized
         if let StViewRow {
@@ -377,6 +445,10 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         table_schema.update_table_id(table_id);
+
+        if let Some(info) = table_schema.view_info.as_mut() {
+            info.view_id = self.insert_into_st_view(table_name.clone(), table_id, true, info.is_anonymous)?;
+        }
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
@@ -444,13 +516,29 @@ impl MutTxId {
         })
     }
 
-    fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
+    pub fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
         let row = self
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewId, &view_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_view, view_id.into()))?;
 
         StViewRow::try_from(row)
+    }
+
+    pub fn lookup_st_view_by_name(&self, view: &str) -> Result<StViewRow> {
+        let st_view_row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, &view.into())?
+            .next()
+            .unwrap();
+
+        StViewRow::try_from(st_view_row)
+    }
+
+    /// Check if view has parameters.
+    pub fn is_view_parameterized(&self, view_id: ViewId) -> Result<bool> {
+        let view_id = view_id.into();
+        let mut iter = self.iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &view_id)?;
+        Ok(iter.next().is_some())
     }
 
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
@@ -479,18 +567,15 @@ impl MutTxId {
 
     /// For each parameter of a view, insert a row into `st_view_param`.
     /// This does not include the context parameter.
-    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &ProductType) -> Result<()> {
-        for (i, field) in params.elements.iter().enumerate() {
+    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &[ViewParamDef]) -> Result<()> {
+        for ViewParamDef { name, col_id, ty, .. } in params {
             self.insert_via_serialize_bsatn(
                 ST_VIEW_PARAM_ID,
                 &StViewParamRow {
                     view_id,
-                    param_pos: i.into(),
-                    param_name: field
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
-                    param_type: field.algebraic_type.clone().into(),
+                    param_pos: *col_id,
+                    param_name: name.clone().into(),
+                    param_type: ty.clone().into(),
                 },
             )?;
         }
@@ -578,6 +663,11 @@ impl MutTxId {
         self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
     }
 
+    /// Drops the rows in `st_view_sub` for this `view_id`
+    fn drop_st_view_sub(&mut self, view_id: ViewId) -> Result<()> {
+        self.delete_col_eq(ST_VIEW_SUB_ID, StViewSubFields::ViewId.col_id(), &view_id.into())
+    }
+
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
         self.clear_table(table_id)?;
 
@@ -651,6 +741,14 @@ impl MutTxId {
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
             .next();
         Ok(row.map(|row| row.read_col(StViewFields::ViewId).unwrap()))
+    }
+
+    pub fn view_from_name(&self, view_name: &str) -> Result<Option<StViewRow>> {
+        let view_name = &view_name.into();
+        let row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
+            .next();
+        Ok(row.map(|row| row.try_into().expect("st_view row should be valid")))
     }
 
     pub fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
@@ -1776,15 +1874,12 @@ impl MutTxId {
         Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
     }
 
-    /// Does this caller have an entry for `view_id` in `st_view_sub`?
-    /// If so, update the `last_called` column.
-    /// Otherwise insert a row into `st_view_sub` with no subscribers.
-    pub fn st_view_sub_update_or_insert_last_called(
-        &mut self,
-        view_id: ViewId,
-        arg_id: ArgId,
-        sender: Identity,
-    ) -> Result<()> {
+    /// Updates the `last_called` timestamp in `st_view_sub`.
+    /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
+    ///
+    /// This is invoked when calling a view, but not subscribing to it.
+    /// Such is the case for the sql http api.
+    pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
         use StViewSubFields::*;
 
         let identity = IdentityViaU256(sender);
@@ -1819,8 +1914,84 @@ impl MutTxId {
         Ok(())
     }
 
-    /// Decrements the number of subscribers in `st_view_sub` for a client identity.
-    pub fn dec_st_view_subscribers(&mut self, sender: Identity) -> Result<()> {
+    /// Increment `num_subscribers` in `st_view_sub` to effectively subscribe a caller to a view.
+    /// We insert a row if there are no current subscribers and the row does not exist.
+    pub fn subscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_SUB_ID,
+                &StViewSubRow {
+                    num_subscribers: row.num_subscribers + 1,
+                    has_subscribers: true,
+                    last_called,
+                    ..row
+                },
+            )?;
+            return Ok(());
+        }
+
+        // Insert `st_view_sub` row with 1 subscriber
+        self.insert_via_serialize_bsatn(
+            ST_VIEW_SUB_ID,
+            &StViewSubRow {
+                view_id,
+                arg_id,
+                identity,
+                num_subscribers: 1,
+                has_subscribers: true,
+                last_called,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
+    pub fn unsubscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_SUB_ID,
+                &StViewSubRow {
+                    num_subscribers: row.num_subscribers - 1,
+                    has_subscribers: row.num_subscribers > 1,
+                    last_called,
+                    ..row
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// To effectively unsubscribe a caller from all of their subscribed views,
+    /// we decrement `num_subscribers` in `st_view_sub` for all of a caller's views.
+    pub fn unsubscribe_views(&mut self, sender: Identity) -> Result<()> {
         let sender = IdentityViaU256(sender);
         let cols = col_list![StViewSubFields::Identity];
         let value = sender.into();
@@ -1873,6 +2044,22 @@ impl MutTxId {
             self.clear_table(table_id)?;
         }
         Ok(())
+    }
+
+    /// Lookup a row in `st_view` by its primary key
+    fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
+        self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?
+            .next()
+            .map(StViewRow::try_from)
+            .transpose()
+    }
+
+    /// Get the [`TableId`] for this view's backing table by probing `st_view`.
+    /// Note, all views with at least one subscriber are materialized.
+    pub fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
+        Ok(self
+            .st_view_row(view_id)?
+            .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))
     }
 
     pub fn insert_st_client(

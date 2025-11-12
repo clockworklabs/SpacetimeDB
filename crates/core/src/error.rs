@@ -15,6 +15,7 @@ use spacetimedb_table::table::ReadViaBsatnError;
 use thiserror::Error;
 
 use crate::client::ClientActorId;
+use crate::host::module_host::ViewCallError;
 use crate::host::scheduler::ScheduleError;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_primitives::*;
@@ -147,6 +148,8 @@ pub enum DBError {
     RestoreSnapshot(#[from] RestoreSnapshotError),
     #[error(transparent)]
     DurabilityGone(#[from] DurabilityExited),
+    #[error(transparent)]
+    View(#[from] ViewCallError),
 }
 
 impl DBError {

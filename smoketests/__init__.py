@@ -266,14 +266,15 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n, confirmed = False):
+    def subscribe(self, *queries, n, confirmed = False, database = None):
         self._check_published()
         assert isinstance(n, int)
 
         args = [
             SPACETIME_BIN,
             "--config-path", str(self.config_path),
-            "subscribe", self.database_identity,
+            "subscribe",
+            database if database is not None else self.database_identity,
             "-t", "600",
             "-n", str(n),
             "--print-initial-update",
@@ -386,7 +387,7 @@ class Smoketest(unittest.TestCase):
         if "database_identity" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.database_identity)
+                self.spacetime("delete", "--yes", self.database_identity)
             except Exception:
                 pass
 
@@ -395,7 +396,7 @@ class Smoketest(unittest.TestCase):
        if hasattr(cls, "database_identity"):
            try:
                # TODO: save the credentials in publish_module()
-               cls.spacetime("delete", cls.database_identity)
+               cls.spacetime("delete", "--yes", cls.database_identity)
            except Exception:
                pass
 

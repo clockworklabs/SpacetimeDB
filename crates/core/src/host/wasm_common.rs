@@ -16,6 +16,10 @@ pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
 pub const CALL_PROCEDURE_DUNDER: &str = "__call_procedure__";
 
+pub const CALL_VIEW_DUNDER: &str = "__call_view__";
+
+pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";
+
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like

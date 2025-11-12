@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use bytes::Bytes;
 use spacetimedb::config::CertificateAuthority;
 use spacetimedb::messages::control_db::HostType;
 use spacetimedb::util::jobs::JobCores;
@@ -95,7 +96,7 @@ pub struct CompiledModule {
     name: String,
     path: PathBuf,
     pub(super) host_type: HostType,
-    program_bytes: OnceLock<Vec<u8>>,
+    program_bytes: OnceLock<Bytes>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -124,12 +125,16 @@ impl CompiledModule {
         &self.path
     }
 
-    pub fn program_bytes(&self) -> &[u8] {
-        self.program_bytes.get_or_init(|| std::fs::read(&self.path).unwrap())
+    pub fn program_bytes(&self) -> Bytes {
+        self.program_bytes
+            .get_or_init(|| std::fs::read(&self.path).unwrap().into())
+            .clone()
     }
 
     pub async fn extract_schema(&self) -> ModuleDef {
-        spacetimedb::host::extract_schema(self.program_bytes().into(), self.host_type)
+        // TODO: extract_schema should accept &[u8]
+        let boxed_bytes: Box<[u8]> = self.program_bytes()[..].into();
+        spacetimedb::host::extract_schema(boxed_bytes, self.host_type)
             .await
             .unwrap()
     }
@@ -198,15 +203,14 @@ impl CompiledModule {
         let db_identity = SpacetimeAuth::alloc(&env).await.unwrap().claims.identity;
         let connection_id = generate_random_connection_id();
 
-        let program_bytes = self.program_bytes().to_owned();
-
         env.publish_database(
             &identity,
             DatabaseDef {
                 database_identity: db_identity,
-                program_bytes,
+                program_bytes: self.program_bytes(),
                 num_replicas: None,
                 host_type: self.host_type,
+                parent: None,
             },
             MigrationPolicy::Compatible,
         )
