@@ -230,7 +230,6 @@ impl MutTxId {
     }
 
     /// Removes a specific view call from the committed read set.
-    /// Used when dropping views due to
     pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
         self.committed_state_write_lock
             .drop_view_from_read_sets(view_id, Some(sender))
@@ -1985,7 +1984,7 @@ impl MutTxId {
         // Collect rows that meet expiration criteria
         let expired_sub_rows: Vec<(StViewSubRow, RowPointer)> = self
             .iter_by_col_eq(
-                ST_VIEW_ID,
+                ST_VIEW_SUB_ID,
                 StViewSubFields::HasSubscribers,
                 &AlgebraicValue::from(false),
             )?
