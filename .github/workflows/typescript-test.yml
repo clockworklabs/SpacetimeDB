@@ -16,6 +16,8 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: target
 
     steps:
       - name: Checkout repository
@@ -83,9 +85,6 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            modules/quickstart-chat
           shared-key: spacetimedb
           key: ${{ github.ref }}
           cache-on-failure: true
