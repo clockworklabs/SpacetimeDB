@@ -175,7 +175,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
-        if !(clear_database == ClearMode::Always) {
+        if clear_database != ClearMode::Always {
             builder = apply_pre_publish_if_needed(
                 builder,
                 &client,
