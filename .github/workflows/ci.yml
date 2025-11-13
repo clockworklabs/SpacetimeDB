@@ -93,7 +93,7 @@ jobs:
 
   test:
     name: Test Suite
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
     steps:
       - name: Find Git ref
         env:
