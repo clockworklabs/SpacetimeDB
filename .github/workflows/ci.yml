@@ -50,9 +50,11 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
           cache-on-failure: true
           cache-all-crates: true
+          cache-workspace-crates: true
 
       - uses: actions/setup-dotnet@v4
         with:
