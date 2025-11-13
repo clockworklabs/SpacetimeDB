@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { CallReducer } from './call_reducer_type';
 // Mark import as potentially unused
@@ -60,6 +61,8 @@ export type ClientMessage =
   | ClientMessageVariants.Unsubscribe
   | ClientMessageVariants.UnsubscribeMulti;
 
+let _cached_ClientMessage_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const ClientMessage = {
   // Helper functions for constructing each variant of the tagged union.
@@ -68,65 +71,75 @@ export const ClientMessage = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  CallReducer: (value: CallReducer): ClientMessage => ({
+  CallReducer: (value: CallReducer): ClientMessageVariants.CallReducer => ({
     tag: 'CallReducer',
     value,
   }),
-  Subscribe: (value: Subscribe): ClientMessage => ({ tag: 'Subscribe', value }),
-  OneOffQuery: (value: OneOffQuery): ClientMessage => ({
+  Subscribe: (value: Subscribe): ClientMessageVariants.Subscribe => ({
+    tag: 'Subscribe',
+    value,
+  }),
+  OneOffQuery: (value: OneOffQuery): ClientMessageVariants.OneOffQuery => ({
     tag: 'OneOffQuery',
     value,
   }),
-  SubscribeSingle: (value: SubscribeSingle): ClientMessage => ({
+  SubscribeSingle: (
+    value: SubscribeSingle
+  ): ClientMessageVariants.SubscribeSingle => ({
     tag: 'SubscribeSingle',
     value,
   }),
-  SubscribeMulti: (value: SubscribeMulti): ClientMessage => ({
-    tag: 'SubscribeMulti',
-    value,
-  }),
-  Unsubscribe: (value: Unsubscribe): ClientMessage => ({
+  SubscribeMulti: (
+    value: SubscribeMulti
+  ): ClientMessageVariants.SubscribeMulti => ({ tag: 'SubscribeMulti', value }),
+  Unsubscribe: (value: Unsubscribe): ClientMessageVariants.Unsubscribe => ({
     tag: 'Unsubscribe',
     value,
   }),
-  UnsubscribeMulti: (value: UnsubscribeMulti): ClientMessage => ({
+  UnsubscribeMulti: (
+    value: UnsubscribeMulti
+  ): ClientMessageVariants.UnsubscribeMulti => ({
     tag: 'UnsubscribeMulti',
     value,
   }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'CallReducer',
-          algebraicType: CallReducer.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'Subscribe',
-          algebraicType: Subscribe.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'OneOffQuery',
-          algebraicType: OneOffQuery.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'SubscribeSingle',
-          algebraicType: SubscribeSingle.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'SubscribeMulti',
-          algebraicType: SubscribeMulti.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'Unsubscribe',
-          algebraicType: Unsubscribe.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'UnsubscribeMulti',
-          algebraicType: UnsubscribeMulti.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_ClientMessage_type_value)
+      return _cached_ClientMessage_type_value;
+    _cached_ClientMessage_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_ClientMessage_type_value.value.variants.push(
+      {
+        name: 'CallReducer',
+        algebraicType: CallReducer.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'Subscribe',
+        algebraicType: Subscribe.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'OneOffQuery',
+        algebraicType: OneOffQuery.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'SubscribeSingle',
+        algebraicType: SubscribeSingle.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'SubscribeMulti',
+        algebraicType: SubscribeMulti.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'Unsubscribe',
+        algebraicType: Unsubscribe.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'UnsubscribeMulti',
+        algebraicType: UnsubscribeMulti.getTypeScriptAlgebraicType(),
+      }
+    );
+    return _cached_ClientMessage_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ClientMessage): void {

@@ -150,4 +150,72 @@ internal static class ErrorDescriptor
                 $"Field {field.Name} is marked as [ClientVisibilityFilter] but it is not public static readonly",
             field => field
         );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> IncompatibleDefaultAttributesCombination =
+        new(
+            group,
+            "Invalid Combination: AutoInc, Unique or PrimaryKey cannot have a Default value",
+            field =>
+                $"Field {field.Name} contains a default value and has a AutoInc, Unique or PrimaryKey attributes, which is not allowed.",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> InvalidDefaultValueType =
+        new(
+            group,
+            "Invalid Default Value Type",
+            field => $"Default value for field {field.Name} cannot be converted to provided type",
+            field => field
+        );
+
+    public static readonly ErrorDescriptor<IFieldSymbol> InvalidDefaultValueFormat =
+        new(
+            group,
+            "Invalid Default Value Format",
+            field => $"Default value for field {field.Name} has invalid format for provided type ",
+            field => field
+        );
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewContextParam =
+        new(
+            group,
+            "Views must start with ViewContext or AnonymousViewContext",
+            method =>
+                $"View method {method.Identifier} must have a first parameter of type ViewContext or AnonymousViewContext.",
+            method => method.ParameterList
+        );
+
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustHaveName =
+        new(
+            group,
+            "Views must have an explicit name.",
+            method => $"View '{method.Identifier}' must have an explicit name.",
+            method => method
+        );
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewInvalidReturn =
+        new(
+            group,
+            "Views must return Vec<T> or Option<T>",
+            method => $"View '{method.Identifier}' must return Vec<T> or Option<T>.",
+            method => method
+        );
+
+    // TODO: Remove once Views support Private: Views must be Public currently
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewMustBePublic =
+        new(
+            group,
+            "Views must be public",
+            method =>
+                $"View '{method.Identifier}' must have Public = true. Views are always public in SpacetimeDB.",
+            method => method
+        );
+
+    // TODO: Remove once Views support arguments: Views must have no arguments beyond the context.
+    public static readonly ErrorDescriptor<MethodDeclarationSyntax> ViewArgsUnsupported =
+        new(
+            group,
+            "Views must have no arguments beyond the context.",
+            method =>
+                $"View '{method.Identifier}' must have no arguments beyond the context. This is a temporary limitation.",
+            method => method
+        );
 }

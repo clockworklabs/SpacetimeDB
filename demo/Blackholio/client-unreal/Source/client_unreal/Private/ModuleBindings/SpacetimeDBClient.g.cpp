@@ -4,19 +4,19 @@
 #include "ModuleBindings/SpacetimeDBClient.g.h"
 #include "DBCache/WithBsatn.h"
 #include "BSATN/UEBSATNHelpers.h"
-#include "ModuleBindings/Tables/EntityTable.g.h"
-#include "ModuleBindings/Tables/MoveAllPlayersTimerTable.g.h"
-#include "ModuleBindings/Tables/CircleDecayTimerTable.g.h"
-#include "ModuleBindings/Tables/EntityTable.g.h"
+#include "ModuleBindings/Tables/ConsumeEntityTimerTable.g.h"
+#include "ModuleBindings/Tables/CircleTable.g.h"
 #include "ModuleBindings/Tables/FoodTable.g.h"
-#include "ModuleBindings/Tables/CircleRecombineTimerTable.g.h"
+#include "ModuleBindings/Tables/CircleTable.g.h"
+#include "ModuleBindings/Tables/SpawnFoodTimerTable.g.h"
 #include "ModuleBindings/Tables/ConfigTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
-#include "ModuleBindings/Tables/CircleTable.g.h"
+#include "ModuleBindings/Tables/EntityTable.g.h"
 #include "ModuleBindings/Tables/PlayerTable.g.h"
-#include "ModuleBindings/Tables/ConsumeEntityTimerTable.g.h"
-#include "ModuleBindings/Tables/SpawnFoodTimerTable.g.h"
-#include "ModuleBindings/Tables/CircleTable.g.h"
+#include "ModuleBindings/Tables/CircleDecayTimerTable.g.h"
+#include "ModuleBindings/Tables/CircleRecombineTimerTable.g.h"
+#include "ModuleBindings/Tables/EntityTable.g.h"
+#include "ModuleBindings/Tables/MoveAllPlayersTimerTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -108,19 +108,19 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
-	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("logged_out_entity"), Db->LoggedOutEntity);
-	RegisterTable<FMoveAllPlayersTimerType, UMoveAllPlayersTimerTable, FEventContext>(TEXT("move_all_players_timer"), Db->MoveAllPlayersTimer);
-	RegisterTable<FCircleDecayTimerType, UCircleDecayTimerTable, FEventContext>(TEXT("circle_decay_timer"), Db->CircleDecayTimer);
-	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("entity"), Db->Entity);
-	RegisterTable<FFoodType, UFoodTable, FEventContext>(TEXT("food"), Db->Food);
-	RegisterTable<FCircleRecombineTimerType, UCircleRecombineTimerTable, FEventContext>(TEXT("circle_recombine_timer"), Db->CircleRecombineTimer);
-	RegisterTable<FConfigType, UConfigTable, FEventContext>(TEXT("config"), Db->Config);
-	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("logged_out_player"), Db->LoggedOutPlayer);
-	RegisterTable<FCircleType, UCircleTable, FEventContext>(TEXT("logged_out_circle"), Db->LoggedOutCircle);
-	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("player"), Db->Player);
 	RegisterTable<FConsumeEntityTimerType, UConsumeEntityTimerTable, FEventContext>(TEXT("consume_entity_timer"), Db->ConsumeEntityTimer);
-	RegisterTable<FSpawnFoodTimerType, USpawnFoodTimerTable, FEventContext>(TEXT("spawn_food_timer"), Db->SpawnFoodTimer);
 	RegisterTable<FCircleType, UCircleTable, FEventContext>(TEXT("circle"), Db->Circle);
+	RegisterTable<FFoodType, UFoodTable, FEventContext>(TEXT("food"), Db->Food);
+	RegisterTable<FCircleType, UCircleTable, FEventContext>(TEXT("logged_out_circle"), Db->LoggedOutCircle);
+	RegisterTable<FSpawnFoodTimerType, USpawnFoodTimerTable, FEventContext>(TEXT("spawn_food_timer"), Db->SpawnFoodTimer);
+	RegisterTable<FConfigType, UConfigTable, FEventContext>(TEXT("config"), Db->Config);
+	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("player"), Db->Player);
+	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("logged_out_entity"), Db->LoggedOutEntity);
+	RegisterTable<FPlayerType, UPlayerTable, FEventContext>(TEXT("logged_out_player"), Db->LoggedOutPlayer);
+	RegisterTable<FCircleDecayTimerType, UCircleDecayTimerTable, FEventContext>(TEXT("circle_decay_timer"), Db->CircleDecayTimer);
+	RegisterTable<FCircleRecombineTimerType, UCircleRecombineTimerTable, FEventContext>(TEXT("circle_recombine_timer"), Db->CircleRecombineTimer);
+	RegisterTable<FEntityType, UEntityTable, FEventContext>(TEXT("entity"), Db->Entity);
+	RegisterTable<FMoveAllPlayersTimerType, UMoveAllPlayersTimerTable, FEventContext>(TEXT("move_all_players_timer"), Db->MoveAllPlayersTimer);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -155,35 +155,35 @@ void URemoteTables::Initialize()
 {
 
 	/** Creating tables */
-	LoggedOutEntity = NewObject<UEntityTable>(this);
-	MoveAllPlayersTimer = NewObject<UMoveAllPlayersTimerTable>(this);
-	CircleDecayTimer = NewObject<UCircleDecayTimerTable>(this);
-	Entity = NewObject<UEntityTable>(this);
-	Food = NewObject<UFoodTable>(this);
-	CircleRecombineTimer = NewObject<UCircleRecombineTimerTable>(this);
-	Config = NewObject<UConfigTable>(this);
-	LoggedOutPlayer = NewObject<UPlayerTable>(this);
-	LoggedOutCircle = NewObject<UCircleTable>(this);
-	Player = NewObject<UPlayerTable>(this);
 	ConsumeEntityTimer = NewObject<UConsumeEntityTimerTable>(this);
-	SpawnFoodTimer = NewObject<USpawnFoodTimerTable>(this);
 	Circle = NewObject<UCircleTable>(this);
+	Food = NewObject<UFoodTable>(this);
+	LoggedOutCircle = NewObject<UCircleTable>(this);
+	SpawnFoodTimer = NewObject<USpawnFoodTimerTable>(this);
+	Config = NewObject<UConfigTable>(this);
+	Player = NewObject<UPlayerTable>(this);
+	LoggedOutEntity = NewObject<UEntityTable>(this);
+	LoggedOutPlayer = NewObject<UPlayerTable>(this);
+	CircleDecayTimer = NewObject<UCircleDecayTimerTable>(this);
+	CircleRecombineTimer = NewObject<UCircleRecombineTimerTable>(this);
+	Entity = NewObject<UEntityTable>(this);
+	MoveAllPlayersTimer = NewObject<UMoveAllPlayersTimerTable>(this);
 	/**/
 
 	/** Initialization */
-	LoggedOutEntity->PostInitialize();
-	MoveAllPlayersTimer->PostInitialize();
-	CircleDecayTimer->PostInitialize();
-	Entity->PostInitialize();
-	Food->PostInitialize();
-	CircleRecombineTimer->PostInitialize();
-	Config->PostInitialize();
-	LoggedOutPlayer->PostInitialize();
-	LoggedOutCircle->PostInitialize();
-	Player->PostInitialize();
 	ConsumeEntityTimer->PostInitialize();
-	SpawnFoodTimer->PostInitialize();
 	Circle->PostInitialize();
+	Food->PostInitialize();
+	LoggedOutCircle->PostInitialize();
+	SpawnFoodTimer->PostInitialize();
+	Config->PostInitialize();
+	Player->PostInitialize();
+	LoggedOutEntity->PostInitialize();
+	LoggedOutPlayer->PostInitialize();
+	CircleDecayTimer->PostInitialize();
+	CircleRecombineTimer->PostInitialize();
+	Entity->PostInitialize();
+	MoveAllPlayersTimer->PostInitialize();
 	/**/
 }
 

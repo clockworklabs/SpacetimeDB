@@ -52,11 +52,11 @@ void ULeaderboardWidget::CollectPlayers(TArray<FLeaderboardEntry>& Out) const
 	const AGameManager* GM = AGameManager::Instance;
 	if (!GM) return;
 
-	TMap<uint32, TWeakObjectPtr<APlayerPawn>> PlayerMap = GM->GetPlayerMap();
+	TMap<int32, TWeakObjectPtr<APlayerPawn>> PlayerMap = GM->GetPlayerMap();
 	if (PlayerMap.Num() == 0) return;
 
 	// 2) Build entries: mass > 0 only
-	for (const TPair<uint32, TWeakObjectPtr<APlayerPawn>>& Pair : PlayerMap)
+	for (const TPair<int32, TWeakObjectPtr<APlayerPawn>>& Pair : PlayerMap)
 	{
 		APlayerPawn* Pawn = Pair.Value.Get();
 		if (!Pawn) continue;
@@ -81,7 +81,7 @@ void ULeaderboardWidget::CollectPlayers(TArray<FLeaderboardEntry>& Out) const
 	// 4) Keep top 10
 	if (Out.Num() > 10)
 	{
-		Out.SetNum(10, /*bAllowShrinking*/ false);
+		Out.SetNum(10, EAllowShrinking::No);
 	}
 
 	// 5) Append local player if not already present and has Mass > 0

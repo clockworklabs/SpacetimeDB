@@ -53,7 +53,7 @@ use crate::util::websocket::{
     CloseCode, CloseFrame, Message as WsMessage, WebSocketConfig, WebSocketStream, WebSocketUpgrade, WsError,
 };
 use crate::util::{NameOrIdentity, XForwardedFor};
-use crate::{log_and_500, ControlStateDelegate, NodeDelegate};
+use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
 pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::TEXT_PROTOCOL);
@@ -110,7 +110,7 @@ pub async fn handle_websocket<S>(
     ws: WebSocketUpgrade,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions,
+    S: NodeDelegate + ControlStateDelegate + HasWebSocketOptions + Authorization,
 {
     if connection_id.is_some() {
         // TODO: Bump this up to `log::warn!` after removing the client SDKs' uses of that parameter.
@@ -129,6 +129,7 @@ where
     }
 
     let db_identity = name_or_identity.resolve(&ctx).await?;
+    let sql_auth = ctx.authorize_sql(auth.claims.identity, db_identity).await?;
 
     let (res, ws_upgrade, protocol) =
         ws.select_protocol([(BIN_PROTOCOL, Protocol::Binary), (TEXT_PROTOCOL, Protocol::Text)]);
@@ -222,6 +223,7 @@ where
         let client = ClientConnection::spawn(
             client_id,
             auth.into(),
+            sql_auth,
             client_config,
             leader.replica_id,
             module_rx,

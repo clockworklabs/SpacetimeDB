@@ -27,7 +27,7 @@ OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 #define CSTR(s) (uint8_t*)s, sizeof(s) - 1
 
 #define STDB_EXTERN(name) \
-  __attribute__((import_module("spacetime_10.0"), import_name(#name))) extern
+  __attribute__((import_module(SPACETIME_MODULE_VERSION), import_name(#name))) extern
 
 #ifndef EXPERIMENTAL_WASM_AOT
 #define IMPORT(ret, name, params, args)    \
@@ -37,6 +37,7 @@ OPAQUE_TYPEDEF(ConsoleTimerId, uint32_t);
 #define IMPORT(ret, name, params, args) STDB_EXTERN(name) ret name params;
 #endif
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.0"
 IMPORT(Status, table_id_from_name,
        (const uint8_t* name, uint32_t name_len, TableId* id),
        (name, name_len, id));
@@ -97,6 +98,15 @@ IMPORT(void, volatile_nonatomic_schedule_immediate,
        (const uint8_t* name, size_t name_len, const uint8_t* args, size_t args_len),
        (name, name_len, args, args_len));
 IMPORT(void, identity, (void* id_ptr), (id_ptr));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.1"
+IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* out), (source, out));
+#undef SPACETIME_MODULE_VERSION
+
+#define SPACETIME_MODULE_VERSION "spacetime_10.2"
+IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_ptr), (connection_id_ptr, bytes_ptr));
+#undef SPACETIME_MODULE_VERSION
 
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;

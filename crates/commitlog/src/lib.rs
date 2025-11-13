@@ -2,11 +2,11 @@ use std::{
     io,
     num::{NonZeroU16, NonZeroU64},
     ops::RangeBounds,
-    sync::RwLock,
+    sync::{Arc, RwLock},
 };
 
 use log::trace;
-use repo::Repo;
+use repo::{fs::OnNewSegmentFn, Repo};
 use spacetimedb_paths::server::CommitLogDir;
 
 pub mod commit;
@@ -20,6 +20,7 @@ mod varint;
 pub use crate::{
     commit::{Commit, StoredCommit},
     payload::{Decoder, Encode},
+    repo::fs::SizeOnDisk,
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
@@ -89,6 +90,12 @@ pub struct Options {
         serde(default = "Options::default_offset_index_require_segment_fsync")
     )]
     pub offset_index_require_segment_fsync: bool,
+    /// If `true`, preallocate the disk space for commitlog segments, up to the
+    /// `max_segment_size`.
+    ///
+    /// Has no effect if the `fallocate` feature is not enabled.
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_preallocate_segments"))]
+    pub preallocate_segments: bool,
 }
 
 impl Default for Options {
@@ -102,6 +109,7 @@ impl Options {
     pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::MAX;
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
+    pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
@@ -109,6 +117,7 @@ impl Options {
         max_records_in_commit: Self::default_max_records_in_commit(),
         offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
         offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
+        preallocate_segments: Self::default_preallocate_segments(),
     };
 
     pub const fn default_log_format_version() -> u8 {
@@ -129,6 +138,10 @@ impl Options {
 
     pub const fn default_offset_index_require_segment_fsync() -> bool {
         Self::DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC
+    }
+
+    pub const fn default_preallocate_segments() -> bool {
+        Self::DEFAULT_PREALLOCATE_SEGMENTS
     }
 
     /// Compute the length in bytes of an offset index based on the settings in
@@ -157,8 +170,15 @@ impl<T> Commitlog<T> {
     /// This is only necessary when opening the commitlog for writing. See the
     /// free-standing functions in this module for how to traverse a read-only
     /// commitlog.
-    pub fn open(root: CommitLogDir, opts: Options) -> io::Result<Self> {
-        let inner = commitlog::Generic::open(repo::Fs::new(root)?, opts)?;
+    pub fn open(root: CommitLogDir, opts: Options, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
+        #[cfg(not(feature = "fallocate"))]
+        if opts.preallocate_segments {
+            log::warn!(
+                "`preallocate_segments` enabled but not supported by this build. commitlog-dir={}",
+                root.display()
+            );
+        }
+        let inner = commitlog::Generic::open(repo::Fs::new(root, on_new_segment)?, opts)?;
 
         Ok(Self {
             inner: RwLock::new(inner),
@@ -356,7 +376,7 @@ impl<T> Commitlog<T> {
     }
 
     /// Determine the size on disk of this commitlog.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         let inner = self.inner.read().unwrap();
         inner.repo.size_on_disk()
     }
@@ -390,6 +410,10 @@ impl<T: Encode> Commitlog<T> {
     /// I.e. the argument is not guaranteed to be flushed after the method
     /// returns. If that is desired, [`Self::flush`] must be called explicitly.
     ///
+    /// If writing `txdata` to the commitlog results in a new segment file being opened,
+    /// we will send a message down `on_new_segment`.
+    /// This will be hooked up to the `request_snapshot` channel of a `SnapshotWorker`.
+    ///
     /// # Errors
     ///
     /// If the log needs to be flushed, but an I/O error occurs, ownership of
@@ -403,6 +427,7 @@ impl<T: Encode> Commitlog<T> {
             if let Err(source) = inner.commit() {
                 return Err(error::Append { txdata, source });
             }
+
             // `inner.commit.n` must be zero at this point
             let res = inner.append(txdata);
             debug_assert!(res.is_ok(), "failed to append while holding write lock");
@@ -526,7 +551,7 @@ impl<T: Encode> Commitlog<T> {
 ///
 /// Unlike `open`, no segment will be created in an empty `repo`.
 pub fn committed_meta(root: CommitLogDir) -> Result<Option<segment::Metadata>, error::SegmentMetadata> {
-    commitlog::committed_meta(repo::Fs::new(root)?)
+    commitlog::committed_meta(repo::Fs::new(root, None)?)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -547,7 +572,7 @@ pub fn commits_from(
     root: CommitLogDir,
     offset: u64,
 ) -> io::Result<impl Iterator<Item = Result<StoredCommit, error::Traversal>>> {
-    commitlog::commits_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset)
+    commitlog::commits_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset)
 }
 
 /// Obtain an iterator which traverses the commitlog located at the `root`
@@ -582,7 +607,7 @@ where
     D::Error: From<error::Traversal>,
     T: 'a,
 {
-    commitlog::transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::transactions_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 /// Traverse the commitlog located at the `root` directory from the start and
@@ -608,7 +633,7 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transactions_from(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
+    commitlog::fold_transactions_from(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, offset, de)
 }
 
 pub fn fold_transaction_range<D>(root: CommitLogDir, range: impl RangeBounds<u64>, de: D) -> Result<(), D::Error>
@@ -616,5 +641,5 @@ where
     D: Decoder,
     D::Error: From<error::Traversal> + From<io::Error>,
 {
-    commitlog::fold_transaction_range(repo::Fs::new(root)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
+    commitlog::fold_transaction_range(repo::Fs::new(root, None)?, DEFAULT_LOG_FORMAT_VERSION, range, de)
 }

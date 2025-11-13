@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawScopedTypeNameV9 } from './raw_scoped_type_name_v_9_type';
 // Mark import as potentially unused
@@ -24,6 +25,8 @@ export type RawTypeDefV9 = {
   ty: number;
   customOrdering: boolean;
 };
+let _cached_RawTypeDefV9_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -33,16 +36,19 @@ export const RawTypeDefV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'name',
-          algebraicType: RawScopedTypeNameV9.getTypeScriptAlgebraicType(),
-        },
-        { name: 'ty', algebraicType: __AlgebraicTypeValue.U32 },
-        { name: 'customOrdering', algebraicType: __AlgebraicTypeValue.Bool },
-      ],
+    if (_cached_RawTypeDefV9_type_value) return _cached_RawTypeDefV9_type_value;
+    _cached_RawTypeDefV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawTypeDefV9_type_value.value.elements.push(
+      {
+        name: 'name',
+        algebraicType: RawScopedTypeNameV9.getTypeScriptAlgebraicType(),
+      },
+      { name: 'ty', algebraicType: __AlgebraicTypeValue.U32 },
+      { name: 'customOrdering', algebraicType: __AlgebraicTypeValue.Bool }
+    );
+    return _cached_RawTypeDefV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawTypeDefV9): void {

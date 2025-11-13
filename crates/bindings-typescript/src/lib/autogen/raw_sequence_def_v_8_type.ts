@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type RawSequenceDefV8 = {
@@ -25,6 +26,8 @@ export type RawSequenceDefV8 = {
   maxValue: bigint | undefined;
   allocated: bigint;
 };
+let _cached_RawSequenceDefV8_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -34,32 +37,36 @@ export const RawSequenceDefV8 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'sequenceName', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'colPos', algebraicType: __AlgebraicTypeValue.U16 },
-        { name: 'increment', algebraicType: __AlgebraicTypeValue.I128 },
-        {
-          name: 'start',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.I128
-          ),
-        },
-        {
-          name: 'minValue',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.I128
-          ),
-        },
-        {
-          name: 'maxValue',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.I128
-          ),
-        },
-        { name: 'allocated', algebraicType: __AlgebraicTypeValue.I128 },
-      ],
+    if (_cached_RawSequenceDefV8_type_value)
+      return _cached_RawSequenceDefV8_type_value;
+    _cached_RawSequenceDefV8_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawSequenceDefV8_type_value.value.elements.push(
+      { name: 'sequenceName', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'colPos', algebraicType: __AlgebraicTypeValue.U16 },
+      { name: 'increment', algebraicType: __AlgebraicTypeValue.I128 },
+      {
+        name: 'start',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.I128
+        ),
+      },
+      {
+        name: 'minValue',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.I128
+        ),
+      },
+      {
+        name: 'maxValue',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.I128
+        ),
+      },
+      { name: 'allocated', algebraicType: __AlgebraicTypeValue.I128 }
+    );
+    return _cached_RawSequenceDefV8_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawSequenceDefV8): void {

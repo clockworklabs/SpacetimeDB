@@ -5,7 +5,7 @@ use std::io;
 use super::{AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
 use crate::{
     auto_migrate::AutoMigrateStep,
-    def::{ConstraintData, ModuleDef, ScheduleDef},
+    def::{ConstraintData, FunctionKind, ModuleDef, ScheduleDef, ViewDef},
     identifier::Identifier,
 };
 use itertools::Itertools;
@@ -32,6 +32,18 @@ fn format_step<F: MigrationFormatter>(
     plan: &super::AutoMigratePlan,
 ) -> Result<(), FormattingErrors> {
     match step {
+        AutoMigrateStep::AddView(view) => {
+            let view_info = extract_view_info(*view, plan.new)?;
+            f.format_view(&view_info, Action::Created)
+        }
+        AutoMigrateStep::RemoveView(view) => {
+            let view_info = extract_view_info(*view, plan.old)?;
+            f.format_view(&view_info, Action::Removed)
+        }
+        // This means the body of the view may have been updated.
+        // So we must recompute it and send any updates to clients.
+        // No need to include this step in the formatted plan.
+        AutoMigrateStep::UpdateView(_) => Ok(()),
         AutoMigrateStep::AddTable(t) => {
             let table_info = extract_table_info(*t, plan)?;
             f.format_add_table(&table_info)
@@ -98,6 +110,8 @@ fn format_step<F: MigrationFormatter>(
 pub enum FormattingErrors {
     #[error("Table not found: {table}")]
     TableNotFound { table: Box<str> },
+    #[error("View not found: {view}")]
+    ViewNotFound { view: Box<str> },
     #[error("Index not found")]
     IndexNotFound,
     #[error("Constraint not found")]
@@ -128,6 +142,7 @@ pub enum Action {
 pub trait MigrationFormatter {
     fn format_header(&mut self) -> io::Result<()>;
     fn format_add_table(&mut self, table_info: &TableInfo) -> io::Result<()>;
+    fn format_view(&mut self, view_info: &ViewInfo, action: Action) -> io::Result<()>;
     fn format_index(&mut self, index_info: &IndexInfo, action: Action) -> io::Result<()>;
     fn format_constraint(&mut self, constraint_info: &ConstraintInfo, action: Action) -> io::Result<()>;
     fn format_sequence(&mut self, sequence_info: &SequenceInfo, action: Action) -> io::Result<()>;
@@ -149,6 +164,26 @@ pub struct TableInfo {
     pub indexes: Vec<IndexInfo>,
     pub sequences: Vec<SequenceInfo>,
     pub schedule: Option<ScheduleInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewInfo {
+    pub name: String,
+    pub params: Vec<ViewParamInfo>,
+    pub columns: Vec<ViewColumnInfo>,
+    pub is_anonymous: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewColumnInfo {
+    pub name: Identifier,
+    pub type_name: AlgebraicType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewParamInfo {
+    pub name: Identifier,
+    pub type_name: AlgebraicType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -188,7 +223,8 @@ pub struct AccessChangeInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScheduleInfo {
     pub table_name: String,
-    pub reducer_name: Identifier,
+    pub function_name: Identifier,
+    pub function_kind: FunctionKind,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,7 +350,8 @@ fn extract_table_info(
 
     let schedule = table_def.schedule.as_ref().map(|schedule| ScheduleInfo {
         table_name: table_def.name.to_string().clone(),
-        reducer_name: schedule.reducer_name.clone(),
+        function_name: schedule.function_name.clone(),
+        function_kind: schedule.function_kind,
     });
 
     Ok(TableInfo {
@@ -326,6 +363,53 @@ fn extract_table_info(
         indexes,
         sequences,
         schedule,
+    })
+}
+
+fn extract_view_info(
+    view: <ViewDef as crate::def::ModuleDefLookup>::Key<'_>,
+    module_def: &ModuleDef,
+) -> Result<ViewInfo, FormattingErrors> {
+    let view_def = module_def.view(view).ok_or_else(|| FormattingErrors::ViewNotFound {
+        view: view.to_string().into(),
+    })?;
+
+    let name = view_def.name.to_string();
+    let is_anonymous = view_def.is_anonymous;
+
+    let params = view_def
+        .param_columns
+        .iter()
+        .map(|column| {
+            let type_name = WithTypespace::new(module_def.typespace(), &column.ty)
+                .resolve_refs()
+                .map_err(|_| FormattingErrors::TypeResolution)?;
+            Ok(ViewParamInfo {
+                name: column.name.clone(),
+                type_name,
+            })
+        })
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    let columns = view_def
+        .return_columns
+        .iter()
+        .map(|column| {
+            let type_name = WithTypespace::new(module_def.typespace(), &column.ty)
+                .resolve_refs()
+                .map_err(|_| FormattingErrors::TypeResolution)?;
+            Ok(ViewColumnInfo {
+                name: column.name.clone(),
+                type_name,
+            })
+        })
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
+
+    Ok(ViewInfo {
+        name,
+        params,
+        columns,
+        is_anonymous,
     })
 }
 
@@ -438,7 +522,8 @@ fn extract_schedule_info(
 
     Ok(ScheduleInfo {
         table_name: schedule_def.name.to_string().clone(),
-        reducer_name: schedule_def.reducer_name.clone(),
+        function_name: schedule_def.function_name.clone(),
+        function_kind: schedule_def.function_kind,
     })
 }
 

@@ -2,7 +2,9 @@ use super::module_host::{EventStatus, ModuleHost, ModuleInfo, NoSuchModule};
 use super::scheduler::SchedulerStarter;
 use super::wasmtime::WasmtimeRuntime;
 use super::{Scheduler, UpdateDatabaseResult};
+use crate::client::{ClientActorId, ClientName};
 use crate::database_logger::DatabaseLogger;
+use crate::db::persistence::PersistenceProvider;
 use crate::db::relational_db::{self, DiskSizeFn, RelationalDB, Txdata};
 use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
@@ -14,20 +16,21 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
 use crate::util::asyncify;
-use crate::util::jobs::{JobCore, JobCores};
+use crate::util::jobs::{JobCores, SingleCoreExecutor};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
+use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_durability::{self as durability, TxOffset};
-use spacetimedb_lib::{hash_bytes, Identity};
+use spacetimedb_durability::{self as durability};
+use spacetimedb_lib::{hash_bytes, AlgebraicValue, Identity, Timestamp};
 use spacetimedb_paths::server::{ReplicaDir, ServerDataDir};
 use spacetimedb_paths::FromPathUnchecked;
 use spacetimedb_sats::hash::Hash;
@@ -53,13 +56,6 @@ type HostCell = Arc<AsyncRwLock<Option<Host>>>;
 type Hosts = Arc<Mutex<IntMap<u64, HostCell>>>;
 
 pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn);
-
-pub type StartSnapshotWatcher = Box<dyn FnOnce(watch::Receiver<TxOffset>)>;
-
-#[async_trait]
-pub trait DurabilityProvider: Send + Sync + 'static {
-    async fn durability(&self, replica_id: u64) -> anyhow::Result<(ExternalDurability, Option<StartSnapshotWatcher>)>;
-}
 
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
@@ -98,8 +94,8 @@ pub struct HostController {
     program_storage: ProgramStorage,
     /// The [`EnergyMonitor`] used by this controller.
     energy_monitor: Arc<dyn EnergyMonitor>,
-    /// Provides implementations of [`Durability`] for each replica.
-    durability: Arc<dyn DurabilityProvider>,
+    /// Provides persistence services for each replica.
+    persistence: Arc<dyn PersistenceProvider>,
     /// The page pool all databases will use by cloning the ref counted pool.
     pub page_pool: PagePool,
     /// The runtimes for running our modules.
@@ -175,13 +171,20 @@ impl From<&EventStatus> for ReducerOutcome {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ProcedureCallResult {
+    pub return_val: AlgebraicValue,
+    pub execution_duration: Duration,
+    pub start_timestamp: Timestamp,
+}
+
 impl HostController {
     pub fn new(
         data_dir: Arc<ServerDataDir>,
         default_config: db::Config,
         program_storage: ProgramStorage,
         energy_monitor: Arc<impl EnergyMonitor>,
-        durability: Arc<dyn DurabilityProvider>,
+        persistence: Arc<dyn PersistenceProvider>,
         db_cores: JobCores,
     ) -> Self {
         Self {
@@ -189,7 +192,7 @@ impl HostController {
             default_config,
             program_storage,
             energy_monitor,
-            durability,
+            persistence,
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
@@ -324,9 +327,10 @@ impl HostController {
     /// If the computation `F` panics, the host is removed from this controller,
     /// releasing its resources.
     #[tracing::instrument(level = "trace", skip_all)]
-    pub async fn using_database<F, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
+    pub async fn using_database<F, Fut, T>(&self, database: Database, replica_id: u64, f: F) -> anyhow::Result<T>
     where
-        F: FnOnce(&RelationalDB) -> T + Send + 'static,
+        F: FnOnce(Arc<RelationalDB>) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
         trace!("using database {}/{}", database.database_identity, replica_id);
@@ -338,10 +342,9 @@ impl HostController {
         });
 
         let db = module.replica_ctx().relational_db.clone();
-        let result = module.on_module_thread("using_database", move || f(&db)).await?;
+        let result = module.on_module_thread_async("using_database", move || f(db)).await?;
         Ok(result)
     }
-
     /// Update the [`ModuleHost`] identified by `replica_id` to the given
     /// program.
     ///
@@ -415,6 +418,7 @@ impl HostController {
                 .await?;
 
             *guard = Some(host);
+
             Ok::<_, anyhow::Error>(update_result)
         })
         .await??;
@@ -525,7 +529,10 @@ impl HostController {
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
-        Host::try_init(self, database, replica_id).await
+        let database_identity = database.database_identity;
+        Host::try_init(self, database, replica_id)
+            .await
+            .with_context(|| format!("failed to init replica {} for {}", replica_id, database_identity))
     }
 }
 
@@ -546,12 +553,7 @@ async fn make_replica_ctx(
         send_worker_queue.clone(),
     )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions = ModuleSubscriptions::new(
-        relational_db.clone(),
-        subscriptions,
-        send_worker_queue,
-        database.owner_identity,
-    );
+    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue);
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,
@@ -587,7 +589,7 @@ async fn make_module_host(
     program: Program,
     energy_monitor: Arc<dyn EnergyMonitor>,
     unregister: impl Fn() + Send + Sync + 'static,
-    core: JobCore,
+    executor: SingleCoreExecutor,
 ) -> anyhow::Result<(Program, ModuleHost)> {
     // `make_actor` is blocking, as it needs to compile the wasm to native code,
     // which may be computationally expensive - sometimes up to 1s for a large module.
@@ -595,6 +597,8 @@ async fn make_module_host(
     //       threads, but those aren't for computation. Also, wasmtime uses rayon
     //       to run compilation in parallel, so it'll need to run stuff in rayon anyway.
     asyncify(move || {
+        let database_identity = replica_ctx.database_identity;
+
         let mcc = ModuleCreationContext {
             replica_ctx,
             scheduler,
@@ -605,14 +609,14 @@ async fn make_module_host(
         let start = Instant::now();
         let module_host = match host_type {
             HostType::Wasm => {
-                let actor = runtimes.wasmtime.make_actor(mcc)?;
+                let (actor, init_inst) = runtimes.wasmtime.make_actor(mcc)?;
                 trace!("wasmtime::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, core)
+                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
             }
             HostType::Js => {
-                let actor = runtimes.v8.make_actor(mcc)?;
+                let (actor, init_inst) = runtimes.v8.make_actor(mcc)?;
                 trace!("v8::make_actor blocked for {:?}", start.elapsed());
-                ModuleHost::new(actor, unregister, core)
+                ModuleHost::new(actor, init_inst, unregister, executor, database_identity)
             }
         };
         Ok((program, module_host))
@@ -645,7 +649,7 @@ async fn launch_module(
     energy_monitor: Arc<dyn EnergyMonitor>,
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
-    core: JobCore,
+    executor: SingleCoreExecutor,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
@@ -662,7 +666,7 @@ async fn launch_module(
         program,
         energy_monitor.clone(),
         on_panic,
-        core,
+        executor,
     )
     .await?;
 
@@ -697,7 +701,7 @@ async fn update_module(
 ) -> anyhow::Result<UpdateDatabaseResult> {
     let addr = db.database_identity();
     match stored_program_hash(db)? {
-        None => Err(anyhow!("database `{}` not yet initialized", addr)),
+        None => Err(anyhow!("database `{addr}` not yet initialized")),
         Some(stored) => {
             let res = if stored == program.hash {
                 info!("database `{}` up to date with program `{}`", addr, program.hash);
@@ -751,7 +755,7 @@ impl Host {
             program_storage,
             energy_monitor,
             runtimes,
-            durability,
+            persistence,
             page_pool,
             ..
         } = host_controller;
@@ -766,23 +770,24 @@ impl Host {
                 database.owner_identity,
                 EmptyHistory::new(),
                 None,
-                None,
                 Some(tx_metrics_queue),
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                let snapshot_repo =
-                    relational_db::open_snapshot_repo(replica_dir.snapshots(), database.database_identity, replica_id)?;
-                let (history, _) = relational_db::local_durability(replica_dir.commit_log()).await?;
-                let (durability, start_snapshot_watcher) = durability.durability(replica_id).await?;
-
+                // Open a read-only copy of the local durability to replay from.
+                let (history, _) = relational_db::local_durability(
+                    replica_dir.commit_log(),
+                    // No need to include a snapshot request channel here, 'cause we're only reading from this instance.
+                    None,
+                )
+                .await?;
+                let persistence = persistence.persistence(&database, replica_id).await?;
                 let (db, clients) = RelationalDB::open(
                     &replica_dir,
                     database.database_identity,
                     database.owner_identity,
                     history,
-                    Some(durability),
-                    Some(snapshot_repo),
+                    Some(persistence),
                     Some(tx_metrics_queue),
                     page_pool.clone(),
                 )
@@ -796,10 +801,7 @@ impl Host {
                         "Failed to open database: {e:#}"
                     );
                 })?;
-                if let Some(start_snapshot_watcher) = start_snapshot_watcher {
-                    let watcher = db.subscribe_to_snapshots().expect("we passed snapshot_repo");
-                    start_snapshot_watcher(watcher)
-                }
+
                 (db, clients)
             }
         };
@@ -841,9 +843,10 @@ impl Host {
         } = launched;
 
         // Disconnect dangling clients.
+        // No need to clear view tables here since we do it in `clear_all_clients`.
         for (identity, connection_id) in connected_clients {
             module_host
-                .call_identity_disconnected(identity, connection_id)
+                .call_identity_disconnected(identity, connection_id, false)
                 .await
                 .with_context(|| {
                     format!(
@@ -862,8 +865,14 @@ impl Host {
         scheduler_starter.start(&module_host)?;
         let disk_metrics_recorder_task = tokio::spawn(metric_reporter(replica_ctx.clone())).abort_handle();
 
+        let module = watch::Sender::new(module_host);
+        //TODO(shub): Below code interfere with `exit_module` code,
+        // I suspect channel internally holds a reference to the module,
+        // even after we drop the sender.
+        //
+        // replica_ctx.subscriptions.init(module.subscribe());
         Ok(Host {
-            module: watch::Sender::new(module_host),
+            module,
             replica_ctx,
             scheduler,
             disk_metrics_recorder_task,
@@ -886,7 +895,7 @@ impl Host {
         page_pool: PagePool,
         database: Database,
         program: Program,
-        core: JobCore,
+        executor: SingleCoreExecutor,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -901,7 +910,6 @@ impl Host {
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
-            None,
             None,
             None,
             page_pool,
@@ -919,7 +927,7 @@ impl Host {
             Arc::new(NullEnergyMonitor),
             phony_replica_dir,
             runtimes.clone(),
-            core,
+            executor,
         )
         .await?;
 
@@ -952,7 +960,7 @@ impl Host {
         policy: MigrationPolicy,
         energy_monitor: Arc<dyn EnergyMonitor>,
         on_panic: impl Fn() + Send + Sync + 'static,
-        core: JobCore,
+        executor: SingleCoreExecutor,
     ) -> anyhow::Result<UpdateDatabaseResult> {
         let replica_ctx = &self.replica_ctx;
         let (scheduler, scheduler_starter) = Scheduler::open(self.replica_ctx.relational_db.clone());
@@ -965,7 +973,7 @@ impl Host {
             program,
             energy_monitor,
             on_panic,
-            core,
+            executor,
         )
         .await?;
 
@@ -974,14 +982,43 @@ impl Host {
 
         let update_result =
             update_module(&replica_ctx.relational_db, &module, program, old_module_info, policy).await?;
-        trace!("update result: {update_result:?}");
+
         // Only replace the module + scheduler if the update succeeded.
         // Otherwise, we want the database to continue running with the old state.
-        if update_result.was_successful() {
-            self.scheduler = scheduler;
-            scheduler_starter.start(&module)?;
-            let old_module = self.module.send_replace(module);
-            old_module.exit().await;
+        match update_result {
+            UpdateDatabaseResult::NoUpdateNeeded | UpdateDatabaseResult::UpdatePerformed => {
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                let old_module = self.module.send_replace(module);
+                old_module.exit().await;
+            }
+
+            // In this case, we need to disconnect all clients connected to the old module
+            UpdateDatabaseResult::UpdatePerformedWithClientDisconnect => {
+                // Replace the module first, so that new clients get the new module.
+                let old_watcher = std::mem::replace(&mut self.module, watch::Sender::new(module.clone()));
+
+                // Disconnect all clients connected to the old module.
+                let connected_clients = replica_ctx.relational_db.connected_clients()?;
+                for (identity, connection_id) in connected_clients {
+                    let client_actor_id = ClientActorId {
+                        identity,
+                        connection_id,
+                        name: ClientName(0),
+                    };
+                    //NOTE: This will call disconnect reducer of the new module, not the old one.
+                    //It makes sense, as relationaldb is already updated to the new module.
+                    module.disconnect_client(client_actor_id).await;
+                }
+
+                self.scheduler = scheduler;
+                scheduler_starter.start(&module)?;
+                // exit the old module, drop the `old_watcher` afterwards,
+                // which will signal websocket clients that the module is gone.
+                let old_module = old_watcher.borrow().clone();
+                old_module.exit().await;
+            }
+            _ => {}
         }
 
         Ok(update_result)
@@ -1037,6 +1074,9 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
     let message_log_size = DB_METRICS
         .message_log_size
         .with_label_values(&replica_ctx.database_identity);
+    let message_log_blocks = DB_METRICS
+        .message_log_blocks
+        .with_label_values(&replica_ctx.database_identity);
     let module_log_file_size = DB_METRICS
         .module_log_file_size
         .with_label_values(&replica_ctx.database_identity);
@@ -1049,9 +1089,15 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
             ctx.total_disk_usage()
         });
         if let Ok(disk_usage) = disk_usage_future.await {
-            if let Some(num_bytes) = disk_usage.durability {
-                message_log_size.set(num_bytes as i64);
+            if let Some(SizeOnDisk {
+                total_bytes,
+                total_blocks,
+            }) = disk_usage.durability
+            {
+                message_log_size.set(total_bytes as i64);
+                message_log_blocks.set(total_blocks as i64);
             }
+
             if let Some(num_bytes) = disk_usage.logs {
                 module_log_file_size.set(num_bytes as i64);
             }
@@ -1078,7 +1124,7 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
 
     let runtimes = HostRuntimes::new(None);
     let page_pool = PagePool::new(None);
-    let core = JobCore::default();
+    let core = SingleCoreExecutor::in_current_tokio_runtime();
     let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {

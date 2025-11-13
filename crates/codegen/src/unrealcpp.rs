@@ -36,7 +36,7 @@ impl UnrealCpp<'_> {
 }
 
 impl Lang for UnrealCpp<'_> {
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let struct_name = type_ref_name(module, table.product_type_ref);
         let self_header = struct_name.clone() + "Table";
 
@@ -57,10 +57,6 @@ impl Lang for UnrealCpp<'_> {
         let handle_cls = format!("U{struct_name}Table"); // "UMessageTable"
         let table_name = table.name.deref().to_string();
         let table_pascal = struct_name.clone();
-
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("table schema should validate");
 
         // Generate unique index classes first
         let product_type = module.typespace_for_generate()[table.product_type_ref].as_product();
@@ -603,16 +599,32 @@ impl Lang for UnrealCpp<'_> {
         }
     }
 
+    fn generate_procedure_file(
+        &self,
+        _module: &ModuleDef,
+        procedure: &spacetimedb_schema::def::ProcedureDef,
+    ) -> OutputFile {
+        // TODO(procedure-unreal-client): implement this
+        OutputFile {
+            filename: format!(
+                "Source/{}/Public/ModuleBindings/Procedures/{}.g.h",
+                self.module_name,
+                procedure.name.deref().to_case(Case::Pascal)
+            ),
+            code: "".to_string(),
+        }
+    }
+
     fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut files: Vec<OutputFile> = vec![];
 
         // First, collect and generate all optional types
         let optional_types = collect_optional_types(module);
         for optional_name in optional_types {
-            let module_name_pascal = self.module_name.to_case(Case::Pascal);
-            let filename = format!(
-                "Source/{module_name_pascal}/Public/ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h"
-            );
+            let module_name = &self.module_name;
+            let module_name_pascal = module_name.to_case(Case::Pascal);
+            let filename =
+                format!("Source/{module_name}/Public/ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h");
 
             let content = generate_optional_type(&optional_name, module, &self.get_api_macro(), self.module_name);
             files.push(OutputFile {
@@ -1033,7 +1045,10 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "{{");
     writeln!(output, "\tGENERATED_BODY()");
     writeln!(output);
-    writeln!(output, "\tFContextBase() = default;");
+    writeln!(
+        output,
+        "\tFContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Conn(nullptr) {{}};"
+    );
     writeln!(output, "\tFContextBase(UDbConnection* InConn);");
     writeln!(output);
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
@@ -1058,6 +1073,44 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "\tUPROPERTY()");
     writeln!(output, "\tUDbConnection* Conn;");
     writeln!(output);
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // BPLib for FContextBase - Needed to allow inheritance in Blueprint
+    writeln!(output, "UCLASS()");
+    writeln!(
+        output,
+        "class {api_macro} UContextBaseBpLib : public UBlueprintFunctionLibrary"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "private:");
+
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic URemoteTables* GetDb(const FContextBase& Ctx) {{ return Ctx.Db; }}"
+    );
+    writeln!(output);
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic URemoteReducers* GetReducers(const FContextBase& Ctx) {{ return Ctx.Reducers; }}"
+    );
+    writeln!(output);
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic USetReducerFlags* GetSetReducerFlags(const FContextBase& Ctx) {{ return Ctx.SetReducerFlags; }}"
+    );
+    writeln!(output);
+    writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
+    writeln!(
+        output,
+        "\tstatic bool IsActive(const FContextBase& Ctx) {{ return Ctx.IsActive(); }}"
+    );
+
     writeln!(output, "}};");
     writeln!(output);
 
@@ -1091,7 +1144,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output);
     writeln!(output, "public:");
     writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "    EReducerTag Tag;");
+    writeln!(output, "    EReducerTag Tag = static_cast<EReducerTag>(0);");
     writeln!(output);
     write!(output, "    TVariant<");
     {
@@ -3082,20 +3135,20 @@ fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
 fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_name: &str) -> String {
     match elem_type_str {
         "Bool" => "bool".to_string(),
-        "I8" => "int8".to_string(),
-        "U8" => "uint8".to_string(),
-        "I16" => "int16".to_string(),
-        "U16" => "uint16".to_string(),
-        "I32" => "int32".to_string(),
-        "U32" => "uint32".to_string(),
-        "I64" => "int64".to_string(),
-        "U64" => "uint64".to_string(),
-        "F32" => "float".to_string(),
-        "F64" => "double".to_string(),
-        "I128" => "FSpacetimeDBInt128".to_string(),
-        "U128" => "FSpacetimeDBUInt128".to_string(),
-        "I256" => "FSpacetimeDBInt256".to_string(),
-        "U256" => "FSpacetimeDBUInt256".to_string(),
+        "I8" | "Int8" => "int8".to_string(),
+        "U8" | "UInt8" => "uint8".to_string(),
+        "I16" | "Int16" => "int16".to_string(),
+        "U16" | "UInt16" => "uint16".to_string(),
+        "I32" | "Int32" => "int32".to_string(),
+        "U32" | "UInt32" => "uint32".to_string(),
+        "I64" | "Int64" => "int64".to_string(),
+        "U64" | "UInt64" => "uint64".to_string(),
+        "F32" | "Float" => "float".to_string(),
+        "F64" | "Double" => "double".to_string(),
+        "I128" | "Int128" => "FSpacetimeDBInt128".to_string(),
+        "U128" | "UInt128" => "FSpacetimeDBUInt128".to_string(),
+        "I256" | "Int256" => "FSpacetimeDBInt256".to_string(),
+        "U256" | "UInt256" => "FSpacetimeDBUInt256".to_string(),
         "String" => "FString".to_string(),
         "Identity" => "FSpacetimeDBIdentity".to_string(),
         "ConnectionId" => "FSpacetimeDBConnectionId".to_string(),
@@ -3118,20 +3171,20 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
     match elem {
         AlgebraicTypeUse::Primitive(p) => match p {
             PrimitiveType::Bool => "Bool".to_string(),
-            PrimitiveType::I8 => "I8".to_string(),
-            PrimitiveType::U8 => "U8".to_string(),
-            PrimitiveType::I16 => "I16".to_string(),
-            PrimitiveType::U16 => "U16".to_string(),
-            PrimitiveType::I32 => "I32".to_string(),
-            PrimitiveType::U32 => "U32".to_string(),
-            PrimitiveType::I64 => "I64".to_string(),
-            PrimitiveType::U64 => "U64".to_string(),
-            PrimitiveType::F32 => "F32".to_string(),
-            PrimitiveType::F64 => "F64".to_string(),
-            PrimitiveType::I128 => "I128".to_string(),
-            PrimitiveType::U128 => "U128".to_string(),
-            PrimitiveType::I256 => "I256".to_string(),
-            PrimitiveType::U256 => "U256".to_string(),
+            PrimitiveType::I8 => "Int8".to_string(),
+            PrimitiveType::U8 => "UInt8".to_string(),
+            PrimitiveType::I16 => "Int16".to_string(),
+            PrimitiveType::U16 => "UInt16".to_string(),
+            PrimitiveType::I32 => "Int32".to_string(),
+            PrimitiveType::U32 => "UInt32".to_string(),
+            PrimitiveType::I64 => "Int64".to_string(),
+            PrimitiveType::U64 => "UInt64".to_string(),
+            PrimitiveType::F32 => "Float".to_string(),
+            PrimitiveType::F64 => "Double".to_string(),
+            PrimitiveType::I128 => "Int128".to_string(),
+            PrimitiveType::U128 => "UInt128".to_string(),
+            PrimitiveType::I256 => "Int256".to_string(),
+            PrimitiveType::U256 => "UInt256".to_string(),
         },
         AlgebraicTypeUse::String => "String".to_string(),
         AlgebraicTypeUse::Identity => "Identity".to_string(),
@@ -3142,11 +3195,7 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
         AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
         AlgebraicTypeUse::Option(nested_inner) => {
             // Handle optional elements in arrays like Vec<Option<i32>>
-            let inner_optional_name = get_optional_type_name(module, nested_inner);
-            inner_optional_name
-                .strip_prefix("Optional")
-                .unwrap_or(&inner_optional_name)
-                .to_string()
+            get_optional_type_name(module, nested_inner)
         }
         _ => "Unknown".to_string(),
     }
@@ -3230,15 +3279,15 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             let module_name_pascal = module_name.to_case(Case::Pascal);
             format!("F{module_name_pascal}{inner_type_str}")
         }
-        _ if inner_type_str.starts_with("Vec") => {
-            // Handle OptionalVecXxx -> should use TArray<FModuleOptionalXxx>
-            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
+        _ if inner_type_str.starts_with("VecOptional") => {
+            // Handle specific optional array types like OptionalVecOptionalI32, OptionalVecOptionalString, etc.
+            let elem_type_str = &inner_type_str[11..]; // Remove "VecOptional" prefix
             let module_name_pascal = module_name.to_case(Case::Pascal);
             format!("TArray<F{module_name_pascal}Optional{elem_type_str}>")
         }
-        _ if inner_type_str.starts_with("OptionalVec") => {
-            // Handle specific optional array types like OptionalVecI32, OptionalVecString, etc.
-            let elem_type_str = &inner_type_str[11..]; // Remove "OptionalVec" prefix
+        _ if inner_type_str.starts_with("Vec") => {
+            // Handle OptionalVecXxx -> should use TArray<FModuleOptionalXxx>
+            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
             let cpp_elem_type = get_cpp_type_for_array_element(elem_type_str, module, module_name);
             format!("TArray<{cpp_elem_type}>")
         }
@@ -3254,7 +3303,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
                 type_name == inner_type_str
                     && matches!(
                         module.typespace_for_generate()[type_def.ty],
-                        AlgebraicTypeDef::Sum(_) | AlgebraicTypeDef::PlainEnum(_)
+                        AlgebraicTypeDef::PlainEnum(_)
                     )
             });
 
@@ -3280,41 +3329,10 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             // Basic types, no extra includes needed
         }
         _ if inner_type_str.starts_with("Vec") => {
-            // Handle OptionalVecXxx -> needs OptionalXxx include
-            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
-            let module_name_pascal = module_name.to_case(Case::Pascal);
-            extra_includes.push(format!(
-                "ModuleBindings/Optionals/{module_name_pascal}Optional{elem_type_str}.g.h"
-            ));
+            // Not required
         }
         _ if inner_type_str.starts_with("OptionalVec") => {
-            // Handle includes for specific optional array types
-            let elem_type_str = &inner_type_str[11..]; // Remove "OptionalVec" prefix
-            match elem_type_str {
-                "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" => {
-                    extra_includes.push("Types/Builtins.h".to_string());
-                }
-                "I128" | "U128" | "I256" | "U256" => {
-                    extra_includes.push("Types/LargeIntegers.h".to_string());
-                }
-                _ if elem_type_str.starts_with("Int32") => {
-                    // Handle nested optional includes like Int32 from OptionalInt32
-                    let module_name_pascal = module_name.to_case(Case::Pascal);
-                    extra_includes.push(format!(
-                        "ModuleBindings/Optionals/{module_name_pascal}OptionalInt32.g.h"
-                    ));
-                }
-                _ if !elem_type_str.starts_with("Bool")
-                    && !elem_type_str.starts_with("I")
-                    && !elem_type_str.starts_with("U")
-                    && !elem_type_str.starts_with("F")
-                    && elem_type_str != "String" =>
-                {
-                    // Custom type, need its header
-                    extra_includes.push(format!("ModuleBindings/Types/{elem_type_str}Type.g.h"));
-                }
-                _ => {} // Primitive types don't need extra includes
-            }
+            // Not required
         }
         _ if inner_type_str.starts_with("Optional") => {
             // Nested optional, need its header
@@ -3485,7 +3503,8 @@ fn autogen_cpp_struct(
     for (orig_name, ty) in product_type.into_iter() {
         let field_name = orig_name.deref().to_case(Case::Pascal);
         let ty_str = cpp_ty_fmt_with_module(module, ty, module_name).to_string();
-        let field_decl = format!("{ty_str} {field_name}");
+        let init_str = cpp_ty_init_fmt_impl(ty);
+        let field_decl = format!("{ty_str} {field_name}{init_str}");
 
         // Check if the type is blueprintable
         if is_blueprintable(module, ty) {
@@ -3818,7 +3837,10 @@ fn autogen_cpp_sum(
 
     writeln!(output);
 
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly)\n    E{name}Tag Tag;\n");
+    writeln!(
+        output,
+        "    UPROPERTY(BlueprintReadOnly)\n    E{name}Tag Tag = static_cast<E{name}Tag>(0);\n"
+    );
 
     /* 4a. Static factories per variant -------------------------------- */
     for (variant_name, variant_type) in &sum_type.variants {
@@ -4153,6 +4175,43 @@ fn cpp_ty_fmt_impl<'a>(
             }
         }
 
+        AlgebraicTypeUse::Never => unreachable!("never type"),
+    })
+}
+
+// For UPROPERTY() Unreal expects initialization values for certain types
+// (e.g. bools default to true if not explicitly initialized to false).
+fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
+    fmt_fn(move |f| match ty {
+        AlgebraicTypeUse::Primitive(p) => f.write_str(match p {
+            PrimitiveType::Bool => " = false",
+            PrimitiveType::I8 => " = 0",
+            PrimitiveType::U8 => " = 0",
+            PrimitiveType::I16 => " = 0",
+            PrimitiveType::U16 => " = 0",
+            PrimitiveType::I32 => " = 0",
+            PrimitiveType::U32 => " = 0",
+            PrimitiveType::I64 => " = 0",
+            PrimitiveType::U64 => " = 0",
+            PrimitiveType::F32 => " = 0.0f",
+            PrimitiveType::F64 => " = 0.0",
+            PrimitiveType::I128 => "",
+            PrimitiveType::U128 => "",
+            PrimitiveType::I256 => "",
+            PrimitiveType::U256 => "",
+        }),
+        AlgebraicTypeUse::Array(_elem) => f.write_str(""),
+        AlgebraicTypeUse::String => f.write_str(""),
+        AlgebraicTypeUse::Identity => f.write_str(""),
+        AlgebraicTypeUse::ConnectionId => f.write_str(""),
+        AlgebraicTypeUse::Timestamp => f.write_str(""),
+        AlgebraicTypeUse::TimeDuration => f.write_str(""),
+        AlgebraicTypeUse::ScheduleAt => f.write_str(""),
+        AlgebraicTypeUse::Unit => f.write_str(""),
+        // --------- references to user-defined types ---------
+        AlgebraicTypeUse::Ref(_r) => f.write_str(""),
+        // Options use the generated optional types
+        AlgebraicTypeUse::Option(_inner) => f.write_str(""),
         AlgebraicTypeUse::Never => unreachable!("never type"),
     })
 }

@@ -410,8 +410,10 @@ impl_st!([T] Vec<T>, ts => <[T]>::make_type(ts));
 impl_st!([T, const N: usize] SmallVec<[T; N]>, ts => <[T]>::make_type(ts));
 impl_st!([T] Option<T>, ts => AlgebraicType::option(T::make_type(ts)));
 
+impl_st!([] spacetimedb_primitives::ArgId, AlgebraicType::U64);
 impl_st!([] spacetimedb_primitives::ColId, AlgebraicType::U16);
 impl_st!([] spacetimedb_primitives::TableId, AlgebraicType::U32);
+impl_st!([] spacetimedb_primitives::ViewId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::IndexId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::SequenceId, AlgebraicType::U32);
 impl_st!([] spacetimedb_primitives::ConstraintId, AlgebraicType::U32);

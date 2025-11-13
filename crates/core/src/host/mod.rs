@@ -5,10 +5,9 @@ use derive_more::Display;
 use enum_map::Enum;
 use once_cell::sync::OnceCell;
 use spacetimedb_lib::bsatn;
-use spacetimedb_lib::de::serde::SeedWrapper;
-use spacetimedb_lib::de::DeserializeSeed;
+use spacetimedb_lib::de::{serde::SeedWrapper, DeserializeSeed};
 use spacetimedb_lib::ProductValue;
-use spacetimedb_schema::def::deserialize::ReducerArgsDeserializeSeed;
+use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
 
 mod disk_storage;
 mod host_controller;
@@ -25,43 +24,43 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, DurabilityProvider, ExternalDurability, ExternalStorage, HostController, MigratePlanResult,
-    ProgramStorage, ReducerCallResult, ReducerOutcome, StartSnapshotWatcher,
+    extract_schema, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProcedureCallResult,
+    ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
-pub use module_host::{ModuleHost, NoSuchModule, ReducerCallError, UpdateDatabaseResult};
+pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
 
+/// Encoded arguments to a database function.
+///
+/// A database function is either a reducer or a procedure.
 #[derive(Debug)]
-pub enum ReducerArgs {
+pub enum FunctionArgs {
     Json(ByteString),
     Bsatn(Bytes),
     Nullary,
 }
 
-impl ReducerArgs {
-    fn into_tuple(self, seed: ReducerArgsDeserializeSeed) -> Result<ArgsTuple, InvalidReducerArguments> {
-        self._into_tuple(seed).map_err(|err| InvalidReducerArguments {
+impl FunctionArgs {
+    fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
+        self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,
-            reducer: (*seed.reducer_def().name).into(),
+            function_name: seed.name().into(),
         })
     }
-    fn _into_tuple(self, seed: ReducerArgsDeserializeSeed) -> anyhow::Result<ArgsTuple> {
+    fn _into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> anyhow::Result<ArgsTuple> {
         Ok(match self {
-            ReducerArgs::Json(json) => ArgsTuple {
+            FunctionArgs::Json(json) => ArgsTuple {
                 tuple: from_json_seed(&json, SeedWrapper(seed))?,
                 bsatn: OnceCell::new(),
                 json: OnceCell::with_value(json),
             },
-            ReducerArgs::Bsatn(bytes) => ArgsTuple {
+            FunctionArgs::Bsatn(bytes) => ArgsTuple {
                 tuple: seed.deserialize(bsatn::Deserializer::new(&mut &bytes[..]))?,
                 bsatn: OnceCell::with_value(bytes),
                 json: OnceCell::new(),
             },
-            ReducerArgs::Nullary => {
-                anyhow::ensure!(
-                    seed.reducer_def().params.elements.is_empty(),
-                    "failed to typecheck args"
-                );
+            FunctionArgs::Nullary => {
+                anyhow::ensure!(seed.params().elements.is_empty(), "failed to typecheck args");
                 ArgsTuple::nullary()
             }
         })
@@ -106,13 +105,41 @@ impl Default for ArgsTuple {
 // TODO(noa): replace imports from this module with imports straight from primitives.
 pub use spacetimedb_primitives::ReducerId;
 
+/// Inner error type for [`InvalidReducerArguments`] and [`InvalidProcedureArguments`].
 #[derive(thiserror::Error, Debug)]
-#[error("invalid arguments for reducer {reducer}: {err}")]
-pub struct InvalidReducerArguments {
+#[error("invalid arguments for function {function_name}: {err}")]
+pub struct InvalidFunctionArguments {
     #[source]
     err: anyhow::Error,
-    reducer: Box<str>,
+    function_name: Box<str>,
 }
+
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "reducer".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for reducer {}: {}", .0.function_name, .0.err)]
+pub struct InvalidReducerArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
+
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "procedure".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for procedure {}: {}", .0.function_name, .0.err)]
+pub struct InvalidProcedureArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
+
+/// Newtype over [`InvalidFunctionArguments`] which renders with the word "view".
+#[derive(thiserror::Error, Debug)]
+#[error("invalid arguments for view {}: {}", .0.function_name, .0.err)]
+pub struct InvalidViewArguments(
+    #[from]
+    #[source]
+    InvalidFunctionArguments,
+);
 
 fn from_json_seed<'de, T: serde::de::DeserializeSeed<'de>>(s: &'de str, seed: T) -> anyhow::Result<T::Value> {
     let mut de = serde_json::Deserializer::from_str(s);
@@ -139,11 +166,16 @@ pub enum AbiCall {
     DatastoreDeleteByIndexScanRangeBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,
+    BytesSourceRemainingLength,
     BytesSinkWrite,
     ConsoleLog,
     ConsoleTimerStart,
     ConsoleTimerEnd,
     Identity,
+    JwtLength,
+    GetJwt,
 
     VolatileNonatomicScheduleImmediate,
+
+    ProcedureSleepUntil,
 }

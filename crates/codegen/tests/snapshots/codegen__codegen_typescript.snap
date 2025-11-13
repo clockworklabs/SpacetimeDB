@@ -30,11 +30,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type AddPlayer = {
   name: string,
 };
+let _cached_AddPlayer_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -44,11 +47,12 @@ export const AddPlayer = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_AddPlayer_type_value) return _cached_AddPlayer_type_value;
+    _cached_AddPlayer_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_AddPlayer_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_AddPlayer_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AddPlayer): void {
@@ -92,11 +96,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type AddPrivate = {
   name: string,
 };
+let _cached_AddPrivate_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -106,11 +113,12 @@ export const AddPrivate = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_AddPrivate_type_value) return _cached_AddPrivate_type_value;
+    _cached_AddPrivate_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_AddPrivate_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_AddPrivate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AddPrivate): void {
@@ -154,12 +162,15 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Add = {
   name: string,
   age: number,
 };
+let _cached_Add_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -169,12 +180,13 @@ export const Add = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
-      ]
-    });
+    if (_cached_Add_type_value) return _cached_Add_type_value;
+    _cached_Add_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Add_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+      { name: "age", algebraicType: __AlgebraicTypeValue.U8 },
+    );
+    return _cached_Add_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Add): void {
@@ -218,9 +230,12 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type AssertCallerIdentityIsModuleIdentity = {};
+let _cached_AssertCallerIdentityIsModuleIdentity_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -230,10 +245,11 @@ export const AssertCallerIdentityIsModuleIdentity = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_AssertCallerIdentityIsModuleIdentity_type_value) return _cached_AssertCallerIdentityIsModuleIdentity_type_value;
+    _cached_AssertCallerIdentityIsModuleIdentity_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_AssertCallerIdentityIsModuleIdentity_type_value.value.elements.push(
+    );
+    return _cached_AssertCallerIdentityIsModuleIdentity_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: AssertCallerIdentityIsModuleIdentity): void {
@@ -277,11 +293,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Baz = {
   field: string,
 };
+let _cached_Baz_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -291,11 +310,12 @@ export const Baz = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "field", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_Baz_type_value) return _cached_Baz_type_value;
+    _cached_Baz_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Baz_type_value.value.elements.push(
+      { name: "field", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_Baz_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Baz): void {
@@ -340,9 +360,12 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type ClientConnected = {};
+let _cached_ClientConnected_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -352,10 +375,11 @@ export const ClientConnected = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_ClientConnected_type_value) return _cached_ClientConnected_type_value;
+    _cached_ClientConnected_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_ClientConnected_type_value.value.elements.push(
+    );
+    return _cached_ClientConnected_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ClientConnected): void {
@@ -399,11 +423,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type DeletePlayer = {
   id: bigint,
 };
+let _cached_DeletePlayer_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -413,11 +440,12 @@ export const DeletePlayer = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U64},
-      ]
-    });
+    if (_cached_DeletePlayer_type_value) return _cached_DeletePlayer_type_value;
+    _cached_DeletePlayer_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_DeletePlayer_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U64 },
+    );
+    return _cached_DeletePlayer_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: DeletePlayer): void {
@@ -461,11 +489,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type DeletePlayersByName = {
   name: string,
 };
+let _cached_DeletePlayersByName_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -475,11 +506,12 @@ export const DeletePlayersByName = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_DeletePlayersByName_type_value) return _cached_DeletePlayersByName_type_value;
+    _cached_DeletePlayersByName_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_DeletePlayersByName_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_DeletePlayersByName_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: DeletePlayersByName): void {
@@ -523,6 +555,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Baz } from "./baz_type";
 // Mark import as potentially unused
@@ -535,6 +568,8 @@ export type Foobar = FoobarVariants.Baz |
   FoobarVariants.Bar |
   FoobarVariants.Har;
 
+let _cached_Foobar_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const Foobar = {
   // Helper functions for constructing each variant of the tagged union.
@@ -543,18 +578,19 @@ export const Foobar = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  Baz: (value: Baz): Foobar => ({ tag: "Baz", value }),
+  Baz: (value: Baz): FoobarVariants.Baz => ({ tag: "Baz", value }),
   Bar: { tag: "Bar" } as const,
-  Har: (value: number): Foobar => ({ tag: "Har", value }),
+  Har: (value: number): FoobarVariants.Har => ({ tag: "Har", value }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: "Baz", algebraicType: Baz.getTypeScriptAlgebraicType() },
-        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Har", algebraicType: __AlgebraicTypeValue.U32 },
-      ]
-    });
+    if (_cached_Foobar_type_value) return _cached_Foobar_type_value;
+    _cached_Foobar_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_Foobar_type_value.value.variants.push(
+      { name: "Baz", algebraicType: Baz.getTypeScriptAlgebraicType() },
+      { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Har", algebraicType: __AlgebraicTypeValue.U32 },
+    );
+    return _cached_Foobar_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Foobar): void {
@@ -599,6 +635,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Baz as BazType } from "./baz_type";
 // Mark import as potentially unused
@@ -638,6 +675,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { HasSpecialStuff } from "./has_special_stuff_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -653,7 +691,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.hasSpecialStuff.on_insert(...)`.
  */
-export class HasSpecialStuffTableHandle {
+export class HasSpecialStuffTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<HasSpecialStuff>;
 
   constructor(tableCache: __TableCache<HasSpecialStuff>) {
@@ -713,12 +753,15 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type HasSpecialStuff = {
   identity: __Identity,
   connectionId: __ConnectionId,
 };
+let _cached_HasSpecialStuff_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -728,12 +771,13 @@ export const HasSpecialStuff = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType()},
-        { name: "connectionId", algebraicType: __AlgebraicTypeValue.createConnectionIdType()},
-      ]
-    });
+    if (_cached_HasSpecialStuff_type_value) return _cached_HasSpecialStuff_type_value;
+    _cached_HasSpecialStuff_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_HasSpecialStuff_type_value.value.elements.push(
+      { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType() },
+      { name: "connectionId", algebraicType: __AlgebraicTypeValue.createConnectionIdType() },
+    );
+    return _cached_HasSpecialStuff_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: HasSpecialStuff): void {
@@ -780,6 +824,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 // Import and reexport all reducer arg types
@@ -875,11 +920,11 @@ export { NamespaceTestF };
 const REMOTE_MODULE = {
   tables: {
     has_special_stuff: {
-      tableName: "has_special_stuff",
+      tableName: "has_special_stuff" as const,
       rowType: HasSpecialStuff.getTypeScriptAlgebraicType(),
     },
     logged_out_player: {
-      tableName: "logged_out_player",
+      tableName: "logged_out_player" as const,
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
       primaryKeyInfo: {
@@ -888,7 +933,7 @@ const REMOTE_MODULE = {
       },
     },
     person: {
-      tableName: "person",
+      tableName: "person" as const,
       rowType: Person.getTypeScriptAlgebraicType(),
       primaryKey: "id",
       primaryKeyInfo: {
@@ -897,7 +942,7 @@ const REMOTE_MODULE = {
       },
     },
     pk_multi_identity: {
-      tableName: "pk_multi_identity",
+      tableName: "pk_multi_identity" as const,
       rowType: PkMultiIdentity.getTypeScriptAlgebraicType(),
       primaryKey: "id",
       primaryKeyInfo: {
@@ -906,7 +951,7 @@ const REMOTE_MODULE = {
       },
     },
     player: {
-      tableName: "player",
+      tableName: "player" as const,
       rowType: Player.getTypeScriptAlgebraicType(),
       primaryKey: "identity",
       primaryKeyInfo: {
@@ -915,15 +960,15 @@ const REMOTE_MODULE = {
       },
     },
     points: {
-      tableName: "points",
+      tableName: "points" as const,
       rowType: Point.getTypeScriptAlgebraicType(),
     },
     private_table: {
-      tableName: "private_table",
+      tableName: "private_table" as const,
       rowType: PrivateTable.getTypeScriptAlgebraicType(),
     },
     repeating_test_arg: {
-      tableName: "repeating_test_arg",
+      tableName: "repeating_test_arg" as const,
       rowType: RepeatingTestArg.getTypeScriptAlgebraicType(),
       primaryKey: "scheduledId",
       primaryKeyInfo: {
@@ -932,15 +977,15 @@ const REMOTE_MODULE = {
       },
     },
     test_a: {
-      tableName: "test_a",
+      tableName: "test_a" as const,
       rowType: TestA.getTypeScriptAlgebraicType(),
     },
     test_d: {
-      tableName: "test_d",
+      tableName: "test_d" as const,
       rowType: TestD.getTypeScriptAlgebraicType(),
     },
     test_e: {
-      tableName: "test_e",
+      tableName: "test_e" as const,
       rowType: TestE.getTypeScriptAlgebraicType(),
       primaryKey: "id",
       primaryKeyInfo: {
@@ -949,7 +994,7 @@ const REMOTE_MODULE = {
       },
     },
     test_f: {
-      tableName: "test_f",
+      tableName: "test_f" as const,
       rowType: TestFoobar.getTypeScriptAlgebraicType(),
     },
   },
@@ -1328,62 +1373,62 @@ export class SetReducerFlags {
 export class RemoteTables {
   constructor(private connection: __DbConnectionImpl) {}
 
-  get hasSpecialStuff(): HasSpecialStuffTableHandle {
+  get hasSpecialStuff(): HasSpecialStuffTableHandle<'has_special_stuff'> {
     // clientCache is a private property
     return new HasSpecialStuffTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<HasSpecialStuff>(REMOTE_MODULE.tables.has_special_stuff));
   }
 
-  get loggedOutPlayer(): LoggedOutPlayerTableHandle {
+  get loggedOutPlayer(): LoggedOutPlayerTableHandle<'logged_out_player'> {
     // clientCache is a private property
     return new LoggedOutPlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.logged_out_player));
   }
 
-  get person(): PersonTableHandle {
+  get person(): PersonTableHandle<'person'> {
     // clientCache is a private property
     return new PersonTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Person>(REMOTE_MODULE.tables.person));
   }
 
-  get pkMultiIdentity(): PkMultiIdentityTableHandle {
+  get pkMultiIdentity(): PkMultiIdentityTableHandle<'pk_multi_identity'> {
     // clientCache is a private property
     return new PkMultiIdentityTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<PkMultiIdentity>(REMOTE_MODULE.tables.pk_multi_identity));
   }
 
-  get player(): PlayerTableHandle {
+  get player(): PlayerTableHandle<'player'> {
     // clientCache is a private property
     return new PlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.player));
   }
 
-  get points(): PointsTableHandle {
+  get points(): PointsTableHandle<'points'> {
     // clientCache is a private property
     return new PointsTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Point>(REMOTE_MODULE.tables.points));
   }
 
-  get privateTable(): PrivateTableTableHandle {
+  get privateTable(): PrivateTableTableHandle<'private_table'> {
     // clientCache is a private property
     return new PrivateTableTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<PrivateTable>(REMOTE_MODULE.tables.private_table));
   }
 
-  get repeatingTestArg(): RepeatingTestArgTableHandle {
+  get repeatingTestArg(): RepeatingTestArgTableHandle<'repeating_test_arg'> {
     // clientCache is a private property
     return new RepeatingTestArgTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<RepeatingTestArg>(REMOTE_MODULE.tables.repeating_test_arg));
   }
 
-  get testA(): TestATableHandle {
+  get testA(): TestATableHandle<'test_a'> {
     // clientCache is a private property
     return new TestATableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestA>(REMOTE_MODULE.tables.test_a));
   }
 
-  get testD(): TestDTableHandle {
+  get testD(): TestDTableHandle<'test_d'> {
     // clientCache is a private property
     return new TestDTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestD>(REMOTE_MODULE.tables.test_d));
   }
 
-  get testE(): TestETableHandle {
+  get testE(): TestETableHandle<'test_e'> {
     // clientCache is a private property
     return new TestETableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestE>(REMOTE_MODULE.tables.test_e));
   }
 
-  get testF(): TestFTableHandle {
+  get testF(): TestFTableHandle<'test_f'> {
     // clientCache is a private property
     return new TestFTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<TestFoobar>(REMOTE_MODULE.tables.test_f));
   }
@@ -1433,11 +1478,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type ListOverAge = {
   age: number,
 };
+let _cached_ListOverAge_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -1447,11 +1495,12 @@ export const ListOverAge = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
-      ]
-    });
+    if (_cached_ListOverAge_type_value) return _cached_ListOverAge_type_value;
+    _cached_ListOverAge_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_ListOverAge_type_value.value.elements.push(
+      { name: "age", algebraicType: __AlgebraicTypeValue.U8 },
+    );
+    return _cached_ListOverAge_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ListOverAge): void {
@@ -1495,9 +1544,12 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type LogModuleIdentity = {};
+let _cached_LogModuleIdentity_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -1507,10 +1559,11 @@ export const LogModuleIdentity = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_LogModuleIdentity_type_value) return _cached_LogModuleIdentity_type_value;
+    _cached_LogModuleIdentity_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_LogModuleIdentity_type_value.value.elements.push(
+    );
+    return _cached_LogModuleIdentity_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: LogModuleIdentity): void {
@@ -1554,6 +1607,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1569,7 +1623,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.loggedOutPlayer.on_insert(...)`.
  */
-export class LoggedOutPlayerTableHandle {
+export class LoggedOutPlayerTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Player>;
 
   constructor(tableCache: __TableCache<Player>) {
@@ -1675,6 +1731,84 @@ export class LoggedOutPlayerTableHandle {
     return this.tableCache.removeOnUpdate(cb);
   }}
 '''
+"my_player_table.ts" = '''
+// THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
+// WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
+
+/* eslint-disable */
+/* tslint:disable */
+import {
+  AlgebraicType as __AlgebraicTypeValue,
+  BinaryReader as __BinaryReader,
+  BinaryWriter as __BinaryWriter,
+  ClientCache as __ClientCache,
+  ConnectionId as __ConnectionId,
+  DbConnectionBuilder as __DbConnectionBuilder,
+  DbConnectionImpl as __DbConnectionImpl,
+  Identity as __Identity,
+  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
+  TableCache as __TableCache,
+  TimeDuration as __TimeDuration,
+  Timestamp as __Timestamp,
+  deepEqual as __deepEqual,
+  type AlgebraicType as __AlgebraicTypeType,
+  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type CallReducerFlags as __CallReducerFlags,
+  type ErrorContextInterface as __ErrorContextInterface,
+  type Event as __Event,
+  type EventContextInterface as __EventContextInterface,
+  type ReducerEventContextInterface as __ReducerEventContextInterface,
+  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
+} from "spacetimedb";
+import { Player } from "./player_type";
+import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
+declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
+
+/**
+ * Table handle for the table `my_player`.
+ *
+ * Obtain a handle from the [`myPlayer`] property on [`RemoteTables`],
+ * like `ctx.db.myPlayer`.
+ *
+ * Users are encouraged not to explicitly reference this type,
+ * but to directly chain method calls,
+ * like `ctx.db.myPlayer.on_insert(...)`.
+ */
+export class MyPlayerTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
+  tableCache: __TableCache<Player>;
+
+  constructor(tableCache: __TableCache<Player>) {
+    this.tableCache = tableCache;
+  }
+
+  count(): number {
+    return this.tableCache.count();
+  }
+
+  iter(): Iterable<Player> {
+    return this.tableCache.iter();
+  }
+
+  onInsert = (cb: (ctx: EventContext, row: Player) => void) => {
+    return this.tableCache.onInsert(cb);
+  }
+
+  removeOnInsert = (cb: (ctx: EventContext, row: Player) => void) => {
+    return this.tableCache.removeOnInsert(cb);
+  }
+
+  onDelete = (cb: (ctx: EventContext, row: Player) => void) => {
+    return this.tableCache.onDelete(cb);
+  }
+
+  removeOnDelete = (cb: (ctx: EventContext, row: Player) => void) => {
+    return this.tableCache.removeOnDelete(cb);
+  }
+}
+'''
 "namespace_test_c_type.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
@@ -1703,12 +1837,15 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import * as NamespaceTestCVariants from './namespace_test_c_variants'
 
 // The tagged union or sum type for the algebraic type `NamespaceTestC`.
 export type NamespaceTestC = NamespaceTestCVariants.Foo |
   NamespaceTestCVariants.Bar;
+
+let _cached_NamespaceTestC_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const NamespaceTestC = {
@@ -1722,12 +1859,13 @@ export const NamespaceTestC = {
   Bar: { tag: "Bar" } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-      ]
-    });
+    if (_cached_NamespaceTestC_type_value) return _cached_NamespaceTestC_type_value;
+    _cached_NamespaceTestC_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_NamespaceTestC_type_value.value.variants.push(
+      { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+    );
+    return _cached_NamespaceTestC_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: NamespaceTestC): void {
@@ -1772,6 +1910,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Foo = { tag: "Foo" };
@@ -1806,6 +1945,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import * as NamespaceTestFVariants from './namespace_test_f_variants'
 
@@ -1813,6 +1953,8 @@ import * as NamespaceTestFVariants from './namespace_test_f_variants'
 export type NamespaceTestF = NamespaceTestFVariants.Foo |
   NamespaceTestFVariants.Bar |
   NamespaceTestFVariants.Baz;
+
+let _cached_NamespaceTestF_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const NamespaceTestF = {
@@ -1824,16 +1966,17 @@ export const NamespaceTestF = {
   // ```
   Foo: { tag: "Foo" } as const,
   Bar: { tag: "Bar" } as const,
-  Baz: (value: string): NamespaceTestF => ({ tag: "Baz", value }),
+  Baz: (value: string): NamespaceTestFVariants.Baz => ({ tag: "Baz", value }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
-        { name: "Baz", algebraicType: __AlgebraicTypeValue.String },
-      ]
-    });
+    if (_cached_NamespaceTestF_type_value) return _cached_NamespaceTestF_type_value;
+    _cached_NamespaceTestF_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_NamespaceTestF_type_value.value.variants.push(
+      { name: "Foo", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Bar", algebraicType: __AlgebraicTypeValue.Product({ elements: [] }) },
+      { name: "Baz", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_NamespaceTestF_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: NamespaceTestF): void {
@@ -1878,6 +2021,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Foo = { tag: "Foo" };
@@ -1913,6 +2057,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Person } from "./person_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -1928,7 +2073,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.person.on_insert(...)`.
  */
-export class PersonTableHandle {
+export class PersonTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Person>;
 
   constructor(tableCache: __TableCache<Person>) {
@@ -2018,6 +2165,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Person = {
@@ -2025,6 +2173,8 @@ export type Person = {
   name: string,
   age: number,
 };
+let _cached_Person_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2034,13 +2184,14 @@ export const Person = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-        { name: "age", algebraicType: __AlgebraicTypeValue.U8},
-      ]
-    });
+    if (_cached_Person_type_value) return _cached_Person_type_value;
+    _cached_Person_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Person_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+      { name: "age", algebraicType: __AlgebraicTypeValue.U8 },
+    );
+    return _cached_Person_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Person): void {
@@ -2085,6 +2236,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { PkMultiIdentity } from "./pk_multi_identity_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2100,7 +2252,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.pkMultiIdentity.on_insert(...)`.
  */
-export class PkMultiIdentityTableHandle {
+export class PkMultiIdentityTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<PkMultiIdentity>;
 
   constructor(tableCache: __TableCache<PkMultiIdentity>) {
@@ -2212,12 +2366,15 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type PkMultiIdentity = {
   id: number,
   other: number,
 };
+let _cached_PkMultiIdentity_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2227,12 +2384,13 @@ export const PkMultiIdentity = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "other", algebraicType: __AlgebraicTypeValue.U32},
-      ]
-    });
+    if (_cached_PkMultiIdentity_type_value) return _cached_PkMultiIdentity_type_value;
+    _cached_PkMultiIdentity_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_PkMultiIdentity_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "other", algebraicType: __AlgebraicTypeValue.U32 },
+    );
+    return _cached_PkMultiIdentity_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: PkMultiIdentity): void {
@@ -2277,6 +2435,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Player } from "./player_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2292,7 +2451,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.player.on_insert(...)`.
  */
-export class PlayerTableHandle {
+export class PlayerTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Player>;
 
   constructor(tableCache: __TableCache<Player>) {
@@ -2426,6 +2587,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Player = {
@@ -2433,6 +2595,8 @@ export type Player = {
   playerId: bigint,
   name: string,
 };
+let _cached_Player_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2442,13 +2606,14 @@ export const Player = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType()},
-        { name: "playerId", algebraicType: __AlgebraicTypeValue.U64},
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_Player_type_value) return _cached_Player_type_value;
+    _cached_Player_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Player_type_value.value.elements.push(
+      { name: "identity", algebraicType: __AlgebraicTypeValue.createIdentityType() },
+      { name: "playerId", algebraicType: __AlgebraicTypeValue.U64 },
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_Player_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Player): void {
@@ -2493,12 +2658,15 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type Point = {
   x: bigint,
   y: bigint,
 };
+let _cached_Point_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2508,12 +2676,13 @@ export const Point = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "x", algebraicType: __AlgebraicTypeValue.I64},
-        { name: "y", algebraicType: __AlgebraicTypeValue.I64},
-      ]
-    });
+    if (_cached_Point_type_value) return _cached_Point_type_value;
+    _cached_Point_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Point_type_value.value.elements.push(
+      { name: "x", algebraicType: __AlgebraicTypeValue.I64 },
+      { name: "y", algebraicType: __AlgebraicTypeValue.I64 },
+    );
+    return _cached_Point_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Point): void {
@@ -2558,6 +2727,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Point } from "./point_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2573,7 +2743,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.points.on_insert(...)`.
  */
-export class PointsTableHandle {
+export class PointsTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<Point>;
 
   constructor(tableCache: __TableCache<Point>) {
@@ -2633,6 +2805,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { PrivateTable } from "./private_table_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2648,7 +2821,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.privateTable.on_insert(...)`.
  */
-export class PrivateTableTableHandle {
+export class PrivateTableTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<PrivateTable>;
 
   constructor(tableCache: __TableCache<PrivateTable>) {
@@ -2708,11 +2883,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type PrivateTable = {
   name: string,
 };
+let _cached_PrivateTable_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2722,11 +2900,12 @@ export const PrivateTable = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_PrivateTable_type_value) return _cached_PrivateTable_type_value;
+    _cached_PrivateTable_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_PrivateTable_type_value.value.elements.push(
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_PrivateTable_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: PrivateTable): void {
@@ -2771,9 +2950,12 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type QueryPrivate = {};
+let _cached_QueryPrivate_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2783,10 +2965,11 @@ export const QueryPrivate = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_QueryPrivate_type_value) return _cached_QueryPrivate_type_value;
+    _cached_QueryPrivate_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_QueryPrivate_type_value.value.elements.push(
+    );
+    return _cached_QueryPrivate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: QueryPrivate): void {
@@ -2830,6 +3013,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { RepeatingTestArg } from "./repeating_test_arg_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -2845,7 +3029,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.repeatingTestArg.on_insert(...)`.
  */
-export class RepeatingTestArgTableHandle {
+export class RepeatingTestArgTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<RepeatingTestArg>;
 
   constructor(tableCache: __TableCache<RepeatingTestArg>) {
@@ -2935,6 +3121,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type RepeatingTestArg = {
@@ -2942,6 +3129,8 @@ export type RepeatingTestArg = {
   scheduledAt: { tag: "Interval", value: __TimeDuration } | { tag: "Time", value: __Timestamp },
   prevTime: __Timestamp,
 };
+let _cached_RepeatingTestArg_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -2951,13 +3140,14 @@ export const RepeatingTestArg = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "scheduledId", algebraicType: __AlgebraicTypeValue.U64},
-        { name: "scheduledAt", algebraicType: __AlgebraicTypeValue.createScheduleAtType()},
-        { name: "prevTime", algebraicType: __AlgebraicTypeValue.createTimestampType()},
-      ]
-    });
+    if (_cached_RepeatingTestArg_type_value) return _cached_RepeatingTestArg_type_value;
+    _cached_RepeatingTestArg_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_RepeatingTestArg_type_value.value.elements.push(
+      { name: "scheduledId", algebraicType: __AlgebraicTypeValue.U64 },
+      { name: "scheduledAt", algebraicType: __AlgebraicTypeValue.createScheduleAtType() },
+      { name: "prevTime", algebraicType: __AlgebraicTypeValue.createTimestampType() },
+    );
+    return _cached_RepeatingTestArg_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RepeatingTestArg): void {
@@ -3002,6 +3192,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 import { RepeatingTestArg } from "./repeating_test_arg_type";
@@ -3011,6 +3202,8 @@ declare type __keep_RepeatingTestArg = RepeatingTestArg;
 export type RepeatingTest = {
   arg: RepeatingTestArg,
 };
+let _cached_RepeatingTest_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3020,11 +3213,12 @@ export const RepeatingTest = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "arg", algebraicType: RepeatingTestArg.getTypeScriptAlgebraicType()},
-      ]
-    });
+    if (_cached_RepeatingTest_type_value) return _cached_RepeatingTest_type_value;
+    _cached_RepeatingTest_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_RepeatingTest_type_value.value.elements.push(
+      { name: "arg", algebraicType: RepeatingTestArg.getTypeScriptAlgebraicType() },
+    );
+    return _cached_RepeatingTest_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RepeatingTest): void {
@@ -3040,6 +3234,7 @@ export const RepeatingTest = {
 export default RepeatingTest;
 
 '''
+"return_value_procedure.ts" = ''
 "say_hello_reducer.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
@@ -3068,9 +3263,12 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type SayHello = {};
+let _cached_SayHello_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3080,10 +3278,11 @@ export const SayHello = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_SayHello_type_value) return _cached_SayHello_type_value;
+    _cached_SayHello_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_SayHello_type_value.value.elements.push(
+    );
+    return _cached_SayHello_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SayHello): void {
@@ -3099,6 +3298,7 @@ export const SayHello = {
 export default SayHello;
 
 '''
+"sleep_one_second_procedure.ts" = ''
 "test_a_table.ts" = '''
 // THIS FILE IS AUTOMATICALLY GENERATED BY SPACETIMEDB. EDITS TO THIS FILE
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
@@ -3127,6 +3327,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestA } from "./test_a_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -3142,7 +3343,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testA.on_insert(...)`.
  */
-export class TestATableHandle {
+export class TestATableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestA>;
 
   constructor(tableCache: __TableCache<TestA>) {
@@ -3202,6 +3405,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestA = {
@@ -3209,6 +3413,8 @@ export type TestA = {
   y: number,
   z: string,
 };
+let _cached_TestA_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3218,13 +3424,14 @@ export const TestA = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "x", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "y", algebraicType: __AlgebraicTypeValue.U32},
-        { name: "z", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_TestA_type_value) return _cached_TestA_type_value;
+    _cached_TestA_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestA_type_value.value.elements.push(
+      { name: "x", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "y", algebraicType: __AlgebraicTypeValue.U32 },
+      { name: "z", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_TestA_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestA): void {
@@ -3269,11 +3476,14 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestB = {
   foo: string,
 };
+let _cached_TestB_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3283,11 +3493,12 @@ export const TestB = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "foo", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_TestB_type_value) return _cached_TestB_type_value;
+    _cached_TestB_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestB_type_value.value.elements.push(
+      { name: "foo", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_TestB_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestB): void {
@@ -3332,9 +3543,12 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestBtreeIndexArgs = {};
+let _cached_TestBtreeIndexArgs_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3344,10 +3558,11 @@ export const TestBtreeIndexArgs = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-      ]
-    });
+    if (_cached_TestBtreeIndexArgs_type_value) return _cached_TestBtreeIndexArgs_type_value;
+    _cached_TestBtreeIndexArgs_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestBtreeIndexArgs_type_value.value.elements.push(
+    );
+    return _cached_TestBtreeIndexArgs_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestBtreeIndexArgs): void {
@@ -3391,6 +3606,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestD } from "./test_d_type";
 import { NamespaceTestC } from "./namespace_test_c_type";
@@ -3410,7 +3626,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testD.on_insert(...)`.
  */
-export class TestDTableHandle {
+export class TestDTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestD>;
 
   constructor(tableCache: __TableCache<TestD>) {
@@ -3470,6 +3688,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { NamespaceTestC } from "./namespace_test_c_type";
 // Mark import as potentially unused
@@ -3479,6 +3698,8 @@ declare type __keep_NamespaceTestC = NamespaceTestC;
 export type TestD = {
   testC: NamespaceTestC | undefined,
 };
+let _cached_TestD_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3488,11 +3709,12 @@ export const TestD = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "testC", algebraicType: __AlgebraicTypeValue.createOptionType(NamespaceTestC.getTypeScriptAlgebraicType())},
-      ]
-    });
+    if (_cached_TestD_type_value) return _cached_TestD_type_value;
+    _cached_TestD_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestD_type_value.value.elements.push(
+      { name: "testC", algebraicType: __AlgebraicTypeValue.createOptionType(NamespaceTestC.getTypeScriptAlgebraicType()) },
+    );
+    return _cached_TestD_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestD): void {
@@ -3537,6 +3759,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestE } from "./test_e_type";
 import { type EventContext, type Reducer, RemoteReducers, RemoteTables } from ".";
@@ -3552,7 +3775,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testE.on_insert(...)`.
  */
-export class TestETableHandle {
+export class TestETableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestE>;
 
   constructor(tableCache: __TableCache<TestE>) {
@@ -3642,12 +3867,15 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 export type TestE = {
   id: bigint,
   name: string,
 };
+let _cached_TestE_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3657,12 +3885,13 @@ export const TestE = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "id", algebraicType: __AlgebraicTypeValue.U64},
-        { name: "name", algebraicType: __AlgebraicTypeValue.String},
-      ]
-    });
+    if (_cached_TestE_type_value) return _cached_TestE_type_value;
+    _cached_TestE_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestE_type_value.value.elements.push(
+      { name: "id", algebraicType: __AlgebraicTypeValue.U64 },
+      { name: "name", algebraicType: __AlgebraicTypeValue.String },
+    );
+    return _cached_TestE_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestE): void {
@@ -3707,6 +3936,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { TestFoobar } from "./test_foobar_type";
 import { Foobar } from "./foobar_type";
@@ -3726,7 +3956,9 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.testF.on_insert(...)`.
  */
-export class TestFTableHandle {
+export class TestFTableHandle<TableName extends string> implements __TableHandle<TableName> {
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<TestFoobar>;
 
   constructor(tableCache: __TableCache<TestFoobar>) {
@@ -3786,6 +4018,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 import { Foobar } from "./foobar_type";
 // Mark import as potentially unused
@@ -3795,6 +4028,8 @@ declare type __keep_Foobar = Foobar;
 export type TestFoobar = {
   field: Foobar,
 };
+let _cached_TestFoobar_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3804,11 +4039,12 @@ export const TestFoobar = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "field", algebraicType: Foobar.getTypeScriptAlgebraicType()},
-      ]
-    });
+    if (_cached_TestFoobar_type_value) return _cached_TestFoobar_type_value;
+    _cached_TestFoobar_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_TestFoobar_type_value.value.elements.push(
+      { name: "field", algebraicType: Foobar.getTypeScriptAlgebraicType() },
+    );
+    return _cached_TestFoobar_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TestFoobar): void {
@@ -3853,6 +4089,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from "spacetimedb";
 
 import { TestA } from "./test_a_type";
@@ -3874,6 +4111,8 @@ export type Test = {
   arg3: NamespaceTestC,
   arg4: NamespaceTestF,
 };
+let _cached_Test_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -3883,14 +4122,15 @@ export const Test = {
   * This function is derived from the AlgebraicType used to generate this type.
   */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: "arg", algebraicType: TestA.getTypeScriptAlgebraicType()},
-        { name: "arg2", algebraicType: TestB.getTypeScriptAlgebraicType()},
-        { name: "arg3", algebraicType: NamespaceTestC.getTypeScriptAlgebraicType()},
-        { name: "arg4", algebraicType: NamespaceTestF.getTypeScriptAlgebraicType()},
-      ]
-    });
+    if (_cached_Test_type_value) return _cached_Test_type_value;
+    _cached_Test_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_Test_type_value.value.elements.push(
+      { name: "arg", algebraicType: TestA.getTypeScriptAlgebraicType() },
+      { name: "arg2", algebraicType: TestB.getTypeScriptAlgebraicType() },
+      { name: "arg3", algebraicType: NamespaceTestC.getTypeScriptAlgebraicType() },
+      { name: "arg4", algebraicType: NamespaceTestF.getTypeScriptAlgebraicType() },
+    );
+    return _cached_Test_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Test): void {

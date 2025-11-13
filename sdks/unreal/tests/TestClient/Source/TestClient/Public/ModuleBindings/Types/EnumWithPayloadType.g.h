@@ -45,10 +45,10 @@ struct TESTCLIENT_API FEnumWithPayloadType
 public:
     FEnumWithPayloadType() = default;
 
-    TVariant<TArray<FString>, uint64, TArray<int32>, TArray<ESimpleEnumType>, int8, FSpacetimeDBIdentity, uint8, FSpacetimeDBUInt256, int32, FSpacetimeDBUInt128, float, FSpacetimeDBTimestamp, uint16, double, FSpacetimeDBInt256, bool, uint32, int64, FSpacetimeDBInt128, FString, int16, FSpacetimeDBConnectionId, TArray<uint8>> MessageData;
+    TVariant<uint32, double, int16, int32, bool, uint16, int8, int64, FSpacetimeDBUInt256, FSpacetimeDBInt128, TArray<uint8>, uint8, TArray<ESimpleEnumType>, FSpacetimeDBTimestamp, FSpacetimeDBConnectionId, TArray<int32>, float, FSpacetimeDBUInt128, uint64, FSpacetimeDBInt256, FString, FSpacetimeDBIdentity, TArray<FString>> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
-    EEnumWithPayloadTag Tag;
+    EEnumWithPayloadTag Tag = static_cast<EEnumWithPayloadTag>(0);
 
     static FEnumWithPayloadType U8(const uint8& Value)
     {

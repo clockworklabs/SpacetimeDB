@@ -52,14 +52,7 @@ import { stdbLogger } from './logger.ts';
 import { type ReducerRuntimeTypeInfo } from './spacetime_module.ts';
 import { fromByteArray } from 'base64-js';
 
-export {
-  BinaryReader,
-  BinaryWriter,
-  DbConnectionBuilder,
-  SubscriptionBuilderImpl,
-  TableCache,
-  type Event,
-};
+export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
 
 export type {
   DbContext,
@@ -300,10 +293,10 @@ export class DbConnectionImpl<
       const reader = new BinaryReader(buffer);
       const rows: Operation[] = [];
       const rowType = this.#remoteModule.tables[tableName]!.rowType;
+      let previousOffset = 0;
       const primaryKeyInfo =
         this.#remoteModule.tables[tableName]!.primaryKeyInfo;
-      while (reader.offset < buffer.length + buffer.byteOffset) {
-        const initialOffset = reader.offset;
+      while (reader.remaining > 0) {
         const row = AlgebraicType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
         if (primaryKeyInfo !== undefined) {
@@ -313,14 +306,12 @@ export class DbConnectionImpl<
           );
         } else {
           // Get a view of the bytes for this row.
-          const rowBytes = buffer.subarray(
-            initialOffset - buffer.byteOffset,
-            reader.offset - buffer.byteOffset
-          );
+          const rowBytes = buffer.subarray(previousOffset, reader.offset);
           // Convert it to a base64 string, so we can use it as a map key.
           const asBase64 = fromByteArray(rowBytes);
           rowId = asBase64;
         }
+        previousOffset = reader.offset;
 
         rows.push({
           type,

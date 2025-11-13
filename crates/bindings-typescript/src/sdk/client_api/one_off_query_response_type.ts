@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { OneOffTable } from './one_off_table_type';
 // Mark import as potentially unused
@@ -36,6 +37,8 @@ export type OneOffQueryResponse = {
   tables: OneOffTable[];
   totalHostExecutionDuration: __TimeDuration;
 };
+let _cached_OneOffQueryResponse_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -45,30 +48,34 @@ export const OneOffQueryResponse = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'messageId',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-        },
-        {
-          name: 'error',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.String
-          ),
-        },
-        {
-          name: 'tables',
-          algebraicType: __AlgebraicTypeValue.Array(
-            OneOffTable.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'totalHostExecutionDuration',
-          algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
-        },
-      ],
+    if (_cached_OneOffQueryResponse_type_value)
+      return _cached_OneOffQueryResponse_type_value;
+    _cached_OneOffQueryResponse_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_OneOffQueryResponse_type_value.value.elements.push(
+      {
+        name: 'messageId',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
+      },
+      {
+        name: 'error',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.String
+        ),
+      },
+      {
+        name: 'tables',
+        algebraicType: __AlgebraicTypeValue.Array(
+          OneOffTable.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'totalHostExecutionDuration',
+        algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
+      }
+    );
+    return _cached_OneOffQueryResponse_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: OneOffQueryResponse): void {

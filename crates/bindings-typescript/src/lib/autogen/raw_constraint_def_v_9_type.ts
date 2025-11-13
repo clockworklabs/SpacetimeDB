@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawConstraintDataV9 } from './raw_constraint_data_v_9_type';
 // Mark import as potentially unused
@@ -23,6 +24,8 @@ export type RawConstraintDefV9 = {
   name: string | undefined;
   data: RawConstraintDataV9;
 };
+let _cached_RawConstraintDefV9_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -32,20 +35,24 @@ export const RawConstraintDefV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'name',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.String
-          ),
-        },
-        {
-          name: 'data',
-          algebraicType: RawConstraintDataV9.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_RawConstraintDefV9_type_value)
+      return _cached_RawConstraintDefV9_type_value;
+    _cached_RawConstraintDefV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawConstraintDefV9_type_value.value.elements.push(
+      {
+        name: 'name',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.String
+        ),
+      },
+      {
+        name: 'data',
+        algebraicType: RawConstraintDataV9.getTypeScriptAlgebraicType(),
+      }
+    );
+    return _cached_RawConstraintDefV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawConstraintDefV9): void {

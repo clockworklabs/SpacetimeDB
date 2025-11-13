@@ -2,6 +2,7 @@
 # change crates/{standalone,bench}/Dockerfile, and the docker image tag in
 # .github/workflows/benchmarks.yml:jobs/callgrind_benchmark/container/image
 # maybe also the rust-version in Cargo.toml
-channel = "1.88.0"
+channel = "1.90.0"
 profile = "default"
 targets = ["wasm32-unknown-unknown"]
+components = ["rust-src"]

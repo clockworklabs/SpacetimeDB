@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.4.0",
+  "version": "1.8.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -19,7 +19,10 @@
   "license": "ISC",
   "author": "Clockwork Labs",
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/server/polyfills.ts",
+    "./src/server/register_hooks.ts"
+  ],
   "scripts": {
     "build:js": "tsup",
     "build:types": "tsc -p tsconfig.build.json",
@@ -98,19 +101,19 @@
     },
     {
       "name": "esm min (brotli)",
-      "path": "dist/min/index.mjs",
+      "path": "dist/min/index.browser.mjs",
       "brotli": true,
-      "limit": "10 kB"
+      "limit": "12 kB"
     },
     {
       "name": "esm min (gzip)",
-      "path": "dist/min/index.mjs",
+      "path": "dist/min/index.browser.mjs",
       "gzip": true,
       "limit": "15 kB"
     },
     {
       "name": "esm min (uncompressed)",
-      "path": "dist/min/index.mjs",
+      "path": "dist/min/index.browser.mjs",
       "brotli": false,
       "limit": "60 kB"
     },
@@ -151,6 +154,7 @@
   ],
   "dependencies": {
     "base64-js": "^1.5.1",
+    "fast-text-encoding": "^1.0.0",
     "prettier": "^3.3.3"
   },
   "peerDependencies": {
@@ -168,6 +172,7 @@
   "devDependencies": {
     "@eslint/js": "^9.17.0",
     "@size-limit/file": "^11.2.0",
+    "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "^19.1.13",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
@@ -178,7 +183,7 @@
     "size-limit": "^11.2.0",
     "ts-node": "^10.9.2",
     "tsup": "^8.1.0",
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.18.2",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"

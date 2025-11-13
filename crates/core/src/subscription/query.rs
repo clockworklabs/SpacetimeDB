@@ -5,6 +5,8 @@ use crate::sql::compiler::compile_sql;
 use crate::subscription::subscription::SupportedQuery;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_execution::Datastore;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::expr::{self, Crud, CrudExpr, QueryExpr};
@@ -87,13 +89,13 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
-    let hash = QueryHash::from_string(input, auth.caller, has_param);
+    let hash = QueryHash::from_string(input, auth.caller(), has_param);
     Ok(Plan::new(plans, hash, input.to_owned()))
 }
 
 /// Compile a string into a single read-only query.
 /// This returns an error if the string has multiple queries or mutations.
-pub fn compile_query_with_hashes(
+pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
     auth: &AuthCtx,
     tx: &Tx,
     input: &str,
@@ -107,7 +109,7 @@ pub fn compile_query_with_hashes(
     let tx = SchemaViewer::new(tx, auth);
     let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
 
-    if auth.is_owner() || has_param {
+    if auth.bypass_rls() || has_param {
         // Note that when generating hashes for queries from owners,
         // we always treat them as if they were parameterized by :sender.
         // This is because RLS is not applicable to owners.
@@ -232,7 +234,7 @@ mod tests {
         row: &ProductValue,
         access: StAccess,
     ) -> ResultTest<(Arc<TableSchema>, MemTable, DatabaseTableUpdate, QueryExpr)> {
-        let schema = create_table_with_rows(db, tx, table_name, head.clone(), &[row.clone()], access)?;
+        let schema = create_table_with_rows(db, tx, table_name, head.clone(), std::slice::from_ref(row), access)?;
         let table = mem_table(schema.table_id, schema.get_row_type().clone(), [row.clone()]);
 
         let data = DatabaseTableUpdate {

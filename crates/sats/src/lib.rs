@@ -34,7 +34,7 @@ pub mod typespace;
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;
 
-#[cfg(feature = "serde")]
+#[cfg(any(test, feature = "serde"))]
 pub mod serde {
     pub use crate::de::serde::{deserialize_from as deserialize, SerdeDeserializer};
     pub use crate::ser::serde::{serialize_to as serialize, SerdeSerializer};

@@ -227,7 +227,7 @@ impl<Key: Into<u64> + From<u64>> IndexFileMut<Key> {
     }
 
     /// Obtain an iterator over the entries of the index.
-    pub fn entries(&self) -> Entries<Key> {
+    pub fn entries(&self) -> Entries<'_, Key> {
         Entries {
             mmap: &self.inner,
             pos: 0,
@@ -277,7 +277,7 @@ impl<Key: Into<u64> + From<u64>> IndexFile<Key> {
     }
 
     /// Obtain an iterator over the entries of the index.
-    pub fn entries(&self) -> Entries<Key> {
+    pub fn entries(&self) -> Entries<'_, Key> {
         self.inner.entries()
     }
 }

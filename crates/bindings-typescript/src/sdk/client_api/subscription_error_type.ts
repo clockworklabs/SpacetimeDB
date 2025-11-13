@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type SubscriptionError = {
@@ -34,6 +35,8 @@ export type SubscriptionError = {
   tableId: number | undefined;
   error: string;
 };
+let _cached_SubscriptionError_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -43,33 +46,37 @@ export const SubscriptionError = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'totalHostExecutionDurationMicros',
-          algebraicType: __AlgebraicTypeValue.U64,
-        },
-        {
-          name: 'requestId',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.U32
-          ),
-        },
-        {
-          name: 'queryId',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.U32
-          ),
-        },
-        {
-          name: 'tableId',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.U32
-          ),
-        },
-        { name: 'error', algebraicType: __AlgebraicTypeValue.String },
-      ],
+    if (_cached_SubscriptionError_type_value)
+      return _cached_SubscriptionError_type_value;
+    _cached_SubscriptionError_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_SubscriptionError_type_value.value.elements.push(
+      {
+        name: 'totalHostExecutionDurationMicros',
+        algebraicType: __AlgebraicTypeValue.U64,
+      },
+      {
+        name: 'requestId',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.U32
+        ),
+      },
+      {
+        name: 'queryId',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.U32
+        ),
+      },
+      {
+        name: 'tableId',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.U32
+        ),
+      },
+      { name: 'error', algebraicType: __AlgebraicTypeValue.String }
+    );
+    return _cached_SubscriptionError_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SubscriptionError): void {

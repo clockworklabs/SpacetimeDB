@@ -22,9 +22,10 @@ use spacetimedb_client_api_messages::websocket::{
 use spacetimedb_data_structures::map::{Entry, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_durability::TxOffset;
+use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -51,6 +52,14 @@ pub struct Plan {
     hash: QueryHash,
     sql: String,
     plans: Vec<SubscriptionPlan>,
+}
+
+impl CollectViews for Plan {
+    fn collect_views(&self, views: &mut std::collections::HashSet<ViewId>) {
+        for plan in &self.plans {
+            plan.collect_views(views);
+        }
+    }
 }
 
 impl Plan {
@@ -788,20 +797,20 @@ impl SubscriptionManager {
             .get_mut(&client_id)
             .filter(|ci| !ci.dropped.load(Ordering::Acquire))
         else {
-            return Err(anyhow::anyhow!("Client not found: {:?}", client_id).into());
+            return Err(anyhow::anyhow!("Client not found: {client_id:?}").into());
         };
 
         #[cfg(test)]
         ci.assert_ref_count_consistency();
 
         let Some(query_hashes) = ci.subscriptions.remove(&subscription_id) else {
-            return Err(anyhow::anyhow!("Subscription not found: {:?}", subscription_id).into());
+            return Err(anyhow::anyhow!("Subscription not found: {subscription_id:?}").into());
         };
         let mut queries_to_return = Vec::new();
         for hash in query_hashes {
             let remaining_refs = {
                 let Some(count) = ci.subscription_ref_count.get_mut(&hash) else {
-                    return Err(anyhow::anyhow!("Query count not found for query hash: {:?}", hash).into());
+                    return Err(anyhow::anyhow!("Query count not found for query hash: {hash:?}").into());
                 };
                 *count -= 1;
                 *count
@@ -813,7 +822,7 @@ impl SubscriptionManager {
             // The client is no longer subscribed to this query.
             ci.subscription_ref_count.remove(&hash);
             let Some(query_state) = self.queries.get_mut(&hash) else {
-                return Err(anyhow::anyhow!("Query state not found for query hash: {:?}", hash).into());
+                return Err(anyhow::anyhow!("Query state not found for query hash: {hash:?}").into());
             };
             queries_to_return.push(query_state.query.clone());
             query_state.subscriptions.remove(&client_id);
@@ -870,9 +879,7 @@ impl SubscriptionManager {
         let hash_set = match ci.subscriptions.try_insert(subscription_id, HashSet::new()) {
             Err(OccupiedError { .. }) => {
                 return Err(anyhow::anyhow!(
-                    "Subscription with id {:?} already exists for client: {:?}",
-                    query_id,
-                    client_id
+                    "Subscription with id {query_id:?} already exists for client: {client_id:?}"
                 )
                 .into());
             }
@@ -1670,7 +1677,7 @@ mod tests {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller, has_param);
+            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
             Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })
     }
