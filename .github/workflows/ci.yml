@@ -97,7 +97,7 @@ jobs:
 
     # Add this for isolation:
     container:
-      image: spacetimedb-ci:latest
+      image: localhost/spacetimedb-ci:latest
       options: >-
         --user runner
         -v /var/run/docker.sock:/var/run/docker.sock
