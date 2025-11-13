@@ -28,7 +28,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     
     # Add container only for Linux runner
-    container: ${{ matrix.use_container && fromJSON('{"image":"localhost:5000/spacetimedb-ci:latest","options":"--privileged -v /opt/github-runner/cargo-cache:/home/runner/.cargo/registry -v /opt/github-runner/cargo-git:/home/runner/.cargo/git"}') || null }}
+    container: ${{ matrix.use_container && fromJSON('{
+      "image": "localhost:5000/spacetimedb-ci:latest",
+      "options": "--privileged"
+    }') || null }}
     
     steps:
       - name: Find Git ref
@@ -48,9 +51,7 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
-      # Only install .NET on Windows (not in container where it's pre-installed)
       - uses: actions/setup-dotnet@v4
-        if: ${{ !matrix.use_container }}
         with:
           global-json-file: global.json
 
@@ -99,15 +100,11 @@ jobs:
   test:
     name: Test Suite
     runs-on: spacetimedb-new-runner
-
-    # Add this for isolation:
     container:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
         --privileged
         -v /var/run/docker.sock:/var/run/docker.sock
-        -v /opt/github-runner/cargo-cache:/home/runner/.cargo/registry
-        -v /opt/github-runner/cargo-git:/home/runner/.cargo/git
     steps:
       - name: Find Git ref
         env:
@@ -126,10 +123,11 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - name: Verify .NET
-        run: dotnet --version
-
       - uses: dsherret/rust-toolchain-file@v1
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -139,6 +137,11 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           run_install: true
+
+      - name: Create /stdb dir
+        run: |
+          sudo mkdir /stdb
+          sudo chmod 777 /stdb
 
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript
@@ -165,7 +168,12 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        -v /var/run/docker.sock:/var/run/docker.sock
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -204,7 +212,12 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        -v /var/run/docker.sock:/var/run/docker.sock
     steps:
       - uses: actions/checkout@v3
 
@@ -229,7 +242,12 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        -v /var/run/docker.sock:/var/run/docker.sock
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
