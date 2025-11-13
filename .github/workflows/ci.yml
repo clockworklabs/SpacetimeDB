@@ -74,6 +74,9 @@ jobs:
         shell: powershell
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
         run: docker compose up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
