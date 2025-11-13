@@ -855,6 +855,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ci"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap 4.5.50",
+ "duct",
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "ciborium"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
