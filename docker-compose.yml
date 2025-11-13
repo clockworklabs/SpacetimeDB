@@ -21,6 +21,7 @@ services:
       - ./crates/client-api-messages:/usr/src/app/crates/client-api-messages
       - ./Cargo.toml:/usr/src/app/Cargo.toml
       - ./flamegraphs:/usr/src/app/flamegraphs
+      - ./target:/usr/src/app/target
       - key_files:/etc/spacetimedb
       - /stdb
     ports:
@@ -29,7 +30,7 @@ services:
       - "5432:5432"
       # Tracy
       - "8086:8086"
-    entrypoint: start --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa --pg-port 5432
+    entrypoint: target/debug/spacetimedb-cli --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa --pg-port 5432
     privileged: true
     environment:
       RUST_BACKTRACE: 1
