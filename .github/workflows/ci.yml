@@ -121,11 +121,10 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
 
-      - uses: dsherret/rust-toolchain-file@v1
+      - name: Verify .NET
+        run: dotnet --version
 
-      - uses: actions/setup-dotnet@v3
-        with:
-          global-json-file: global.json
+      - uses: dsherret/rust-toolchain-file@v1
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -135,11 +134,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           run_install: true
-
-      - name: Create /stdb dir
-        run: |
-          sudo mkdir /stdb
-          sudo chmod 777 /stdb
 
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript
