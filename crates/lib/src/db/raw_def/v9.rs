@@ -484,6 +484,25 @@ pub struct RawViewDefV9 {
     pub return_type: AlgebraicType,
 }
 
+#[derive(Debug, Clone, SpacetimeType)]
+// TODO: Is there a module-only crate I can use?
+#[sats(crate = crate)]
+pub enum ViewReturnValue {
+    RowData,
+    RawSql(String),
+    ParameterizedQuery(ParameterizedQuery),
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+// TODO: Is there a module-only crate I can use?
+#[sats(crate = crate)]
+pub struct ParameterizedQuery {
+    pub template: String,
+    pub parameter_values: Vec<u8>,
+    // This is optional to support parameter inference in the future.
+    pub parameter_types: Option<ProductType>,
+}
+
 /// A reducer definition.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]
