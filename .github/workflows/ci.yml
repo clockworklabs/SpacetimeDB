@@ -54,6 +54,20 @@ jobs:
           cache-on-failure: true
           cache-all-crates: true
 
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # nodejs and pnpm are required for the typescript quickstart smoketest
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
