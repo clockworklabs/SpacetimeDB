@@ -23,13 +23,18 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: spacetimedb-new-runner, smoketest_args: --docker, use_container: true }
-          - { runner: windows-latest, smoketest_args: --no-build-cli, use_container: false }
-    runs-on: ${{ matrix.runner }}
-    
-    # Add container only for Linux runner
-    container: ${{ matrix.use_container && fromJSON('{"image":"localhost:5000/spacetimedb-ci:latest","options":"--privileged"}') || null }}
+          - runner: spacetimedb-new-runner
+            smoketest_args: --docker
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
+          - runner: windows-latest
+            smoketest_args: --no-build-cli
+            container: null
 
+    runs-on: ${{ matrix.runner }}
+
+    container: ${{ matrix.container }}
     
     steps:
       - name: Find Git ref
