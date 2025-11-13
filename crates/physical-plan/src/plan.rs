@@ -574,6 +574,7 @@ impl PhysicalPlan {
                     lhs_field,
                     rhs_field,
                     unique,
+                    outer,
                 },
                 semi,
             ) => Self::HashJoin(
@@ -583,6 +584,7 @@ impl PhysicalPlan {
                     lhs_field,
                     rhs_field,
                     unique,
+                    outer,
                 },
                 semi,
             ),
@@ -642,6 +644,7 @@ impl PhysicalPlan {
                     lhs_field,
                     rhs_field,
                     unique,
+                    outer,
                 },
                 semi,
             ) if rhs.has_label(&lhs_field.label) || lhs.has_label(&rhs_field.label) => Self::HashJoin(
@@ -651,6 +654,7 @@ impl PhysicalPlan {
                     lhs_field: rhs_field,
                     rhs_field: lhs_field,
                     unique,
+                    outer,
                 },
                 semi,
             ),
@@ -771,15 +775,18 @@ impl PhysicalPlan {
                     lhs_field: lhs_field @ TupleField { label: u, .. },
                     rhs_field: rhs_field @ TupleField { label: v, .. },
                     unique,
+                    outer,
                 },
                 Semi::All,
             ) => {
-                let semi = reqs
-                    .iter()
-                    .all(|label| lhs.has_label(label))
-                    .then_some(Semi::Lhs)
-                    .or_else(|| reqs.iter().all(|label| rhs.has_label(label)).then_some(Semi::Rhs))
-                    .unwrap_or(Semi::All);
+                let semi = if !outer {
+                    reqs
+                        .iter()
+                        .all(|label| lhs.has_label(label))
+                        .then_some(Semi::Lhs)
+                        .or_else(|| reqs.iter().all(|label| rhs.has_label(label)).then_some(Semi::Rhs))
+                        .unwrap_or(Semi::All)
+                } else { Semi::All };
                 let mut lhs_reqs = vec![u];
                 let mut rhs_reqs = vec![v];
                 for var in reqs {
@@ -797,6 +804,7 @@ impl PhysicalPlan {
                         lhs_field,
                         rhs_field,
                         unique,
+                        outer,
                     },
                     semi,
                 )
@@ -1170,6 +1178,7 @@ pub struct HashJoin {
     pub lhs_field: TupleField,
     pub rhs_field: TupleField,
     pub unique: bool,
+    pub outer: bool,
 }
 
 /// An index join is a left deep join tree,
@@ -1887,6 +1896,7 @@ mod tests {
                     lhs_field: TupleField { field_pos: 1, .. },
                     rhs_field: TupleField { field_pos: 1, .. },
                     unique: true,
+                    outer: false,
                 },
                 Semi::Rhs,
             ) => (*rhs, *lhs),
