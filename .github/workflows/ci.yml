@@ -75,7 +75,9 @@ jobs:
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
-        run: docker compose up -d
+        run: |
+          find target/
+          docker compose up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
