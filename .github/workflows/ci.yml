@@ -23,10 +23,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: spacetimedb-runner, smoketest_args: --docker }
+          - { runner: spacetimedb-new-runner, smoketest_args: --docker }
           - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
     runs-on: ${{ matrix.runner }}
+    
+    # Add container only for Linux runner
+    container: ${{ matrix.runner == 'spacetimedb-new-runner' && 'localhost:5000/spacetimedb-ci:latest' || '' }}
+    runs-on: ${{ matrix.runner }}
+
     steps:
       - name: Find Git ref
         env:
