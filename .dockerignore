@@ -1,3 +1,0 @@
-**/target
-# we do our own version pinning in the Dockerfile
-rust-toolchain.toml
