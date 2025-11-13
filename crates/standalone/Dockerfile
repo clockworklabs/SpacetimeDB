@@ -3,8 +3,8 @@ FROM debian:bookworm-slim AS builder
 
 WORKDIR /usr/src/app
 COPY . .
-RUN find ./
-RUN find /usr/src/app/
+RUN pwd
+RUN find ./ -maxdepth 1
 
 FROM debian:bookworm-slim
 
