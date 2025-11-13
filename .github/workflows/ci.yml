@@ -86,6 +86,7 @@ jobs:
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: |
-          docker ps || true
+          set -x
+          docker ps -a || true
           docker logs node || true
           docker compose down
