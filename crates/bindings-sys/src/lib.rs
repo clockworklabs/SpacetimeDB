@@ -919,6 +919,7 @@ unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T> {
 /// Assuming the call to `f` returns 0, `Ok(())` is returned,
 /// and otherwise `Err(err)` is returned.
 #[inline]
+#[cfg(feature = "unstable")]
 fn call_no_ret(f: impl FnOnce() -> u16) -> Result<()> {
     let f_code = f();
     cvt(f_code)?;
