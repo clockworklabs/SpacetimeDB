@@ -5,6 +5,7 @@ WORKDIR /usr/src/app
 COPY . .
 RUN pwd
 RUN find ./ -maxdepth 1
+RUN find ./ -type f -executable
 
 FROM debian:bookworm-slim
 
