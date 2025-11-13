@@ -1,17 +1,10 @@
-FROM ubuntu:24.04
+FROM rust:1.90.0
+RUN mkdir -p /stdb/data
+COPY ./target/debug/spacetimedb-standalone ./target/debug/spacetimedb-cli /usr/local/bin/
+COPY ./crates/standalone/config.toml /stdb/data/config.toml
 
-# Copy over SpacetimeDB
-COPY --chmod=755 ./spacetimedb-standalone ./spacetimedb-cli /opt/spacetime/
-RUN ln -s /opt/spacetime/spacetimedb-cli /usr/local/bin/spacetime
-
-RUN mkdir /stdb && chmod 777 /stdb
-
-# Create and switch to a non-root user
-RUN useradd -m spacetime
-USER spacetime
-
-# Set working directory
-WORKDIR /app
-
-# Expose the necessary port
 EXPOSE 3000
+
+ENV RUST_BACKTRACE=1
+ENTRYPOINT ["spacetimedb-standalone"]
+CMD ["start", "--data-dir=/stdb/data", "--jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub", "--jwt-priv-key-path=/etc/spacetimedb/id_ecdsa"]
