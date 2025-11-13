@@ -1491,7 +1491,7 @@ impl ModuleHost {
     pub async fn call_scheduled_reducer(
         &self,
         call_reducer_params: impl FnOnce(&MutTxId) -> anyhow::Result<Option<CallReducerParams>> + Send + 'static,
-    ) -> Result<ReducerCallResult, ReducerCallError> {
+    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
         let db = self.module.replica_ctx().relational_db.clone();
         // scheduled reducer name not fetched yet, anyway this is only for logging purpose
         const REDUCER: &str = "scheduled_reducer";
@@ -1518,8 +1518,9 @@ impl ModuleHost {
                             arg_bsatn: params.args.get_bsatn().clone(),
                         }),
                     );
+                    let timestamp = params.timestamp;
 
-                    Ok(inst.call_reducer(Some(tx), params))
+                    Ok((inst.call_reducer(Some(tx), params), timestamp))
                 }
                 Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
                 Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
