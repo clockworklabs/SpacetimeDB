@@ -10,7 +10,6 @@ FROM debian:bookworm-slim
 
 # Copy over SpacetimeDB
 COPY --from=builder --chmod=755 /usr/src/app/target/debug/spacetimedb-standalone /usr/src/app/target/debug/spacetimedb-cli /opt/spacetime/
-COPY --chmod=755 ./target/debug/spacetimedb-standalone ./target/debug/spacetimedb-cli /opt/spacetime/
 RUN ln -s /opt/spacetime/spacetimedb-cli /usr/local/bin/spacetime
 
 # Create and switch to a non-root user
