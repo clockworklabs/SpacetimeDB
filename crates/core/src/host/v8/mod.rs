@@ -43,7 +43,6 @@ use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
@@ -252,8 +251,8 @@ impl JsInstanceEnv {
 /// which will cause the worker's loop to terminate
 /// and cleanup the isolate and friends.
 pub struct JsInstance {
-    request_tx: Sender<JsWorkerRequest>,
-    reply_rx: Receiver<(JsWorkerReply, bool)>,
+    request_tx: flume::Sender<JsWorkerRequest>,
+    reply_rx: flume::Receiver<(JsWorkerReply, bool)>,
     trapped: bool,
 }
 
@@ -270,14 +269,14 @@ impl JsInstance {
     ) -> (T, Box<Self>) {
         // Send the request.
         self.request_tx
-            .send(request)
+            .send_async(request)
             .await
             .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
 
         // Wait for the response.
         let (reply, trapped) = self
             .reply_rx
-            .recv()
+            .recv_async()
             .await
             .expect("worker's `reply_tx` should be live as `JsInstance::drop` hasn't happened");
 
@@ -495,9 +494,9 @@ fn spawn_instance_worker(
     // The use-case is SPSC and all channels are rendezvous channels
     // where each `.send` blocks until it's received.
     // The Instance --Request-> Worker channel:
-    let (request_tx, mut request_rx) = channel(1);
+    let (request_tx, request_rx) = flume::bounded(0);
     // The Worker --Reply-> Instance channel:
-    let (reply_tx, reply_rx) = channel(1);
+    let (reply_tx, reply_rx) = flume::bounded(0);
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -547,13 +546,13 @@ fn spawn_instance_worker(
         // The loop is terminated when a `JsInstance` is dropped.
         // This will cause channels, scopes, and the isolate to be cleaned up.
         let reply = |ctx: &str, reply: JsWorkerReply, trapped| {
-            if let Err(e) = reply_tx.blocking_send((reply, trapped)) {
+            if let Err(e) = reply_tx.send((reply, trapped)) {
                 // This should never happen as `JsInstance::$function` immediately
                 // does `.recv` on the other end of the channel.
                 unreachable!("should have receiver for `{ctx}` response, {e}");
             }
         };
-        while let Some(request) = request_rx.blocking_recv() {
+        for request in request_rx.iter() {
             let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
 
             use JsWorkerReply::*;
