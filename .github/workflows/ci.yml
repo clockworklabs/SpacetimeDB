@@ -23,14 +23,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: spacetimedb-new-runner, smoketest_args: --docker }
-          - { runner: windows-latest, smoketest_args: --no-build-cli }
+          - { runner: spacetimedb-new-runner, smoketest_args: --docker, use_container: true }
+          - { runner: windows-latest, smoketest_args: --no-build-cli, use_container: false }
     runs-on: ${{ matrix.runner }}
     
     # Add container only for Linux runner
-    container: ${{ matrix.runner == 'spacetimedb-new-runner' && 'localhost:5000/spacetimedb-ci:latest' || '' }}
-    runs-on: ${{ matrix.runner }}
-
+    container: ${{ matrix.use_container && fromJSON('{"image":"localhost:5000/spacetimedb-ci:latest","options":"--privileged -v /opt/github-runner/cargo-cache:/home/runner/.cargo/registry -v /opt/github-runner/cargo-git:/home/runner/.cargo/git"}') || null }}
+    
     steps:
       - name: Find Git ref
         env:
@@ -49,7 +48,9 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      # Only install .NET on Windows (not in container where it's pre-installed)
       - uses: actions/setup-dotnet@v4
+        if: ${{ !matrix.use_container }}
         with:
           global-json-file: global.json
 
@@ -103,7 +104,6 @@ jobs:
     container:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
-        --user runner
         --privileged
         -v /var/run/docker.sock:/var/run/docker.sock
         -v /opt/github-runner/cargo-cache:/home/runner/.cargo/registry
