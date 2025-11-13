@@ -3,7 +3,8 @@ FROM debian:bookworm-slim AS builder
 
 WORKDIR /usr/src/app
 COPY . .
-RUN find /usr/src/app/target
+RUN find ./target/
+RUN find /usr/src/app/
 
 FROM debian:bookworm-slim
 
