@@ -21,7 +21,6 @@ services:
       - ./crates/client-api-messages:/usr/src/app/crates/client-api-messages
       - ./Cargo.toml:/usr/src/app/Cargo.toml
       - ./flamegraphs:/usr/src/app/flamegraphs
-      - ./target:/usr/src/app/target
       - key_files:/etc/spacetimedb
       - /stdb
     ports:
