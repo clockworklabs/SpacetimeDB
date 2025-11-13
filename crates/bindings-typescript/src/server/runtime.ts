@@ -237,7 +237,8 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    // return retBuf.getBuffer();
+    return { 'data': retBuf.getBuffer() };
   },
   __call_view_anon__(id, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
@@ -255,7 +256,8 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    // return retBuf.getBuffer();
+    return { 'data': retBuf.getBuffer()};
   },
 };
 

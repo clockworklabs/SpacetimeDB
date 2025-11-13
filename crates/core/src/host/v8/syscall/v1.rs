@@ -19,6 +19,8 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, Tim
 use crate::host::AbiCall;
 use anyhow::Context;
 use bytes::Bytes;
+use log::info;
+use spacetimedb_lib::db::raw_def::v9::ViewReturnValue;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::{errno, ColId, IndexId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::Serialize;
@@ -421,6 +423,7 @@ pub(super) fn call_call_view(
     hooks: &HookFunctions<'_>,
     op: ViewOp<'_>,
 ) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+    info!("call_call_view");
     let fun = hooks.call_view.context("`__call_view__` was never defined")?;
 
     let ViewOp {
@@ -441,8 +444,39 @@ pub(super) fn call_call_view(
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
 
-    // Deserialize the user result.
-    let ret = cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view__`").map_err(|e| e.throw(scope))?;
+    if ret.is_typed_array() && ret.is_uint8_array() {
+        log::info!("Returning with the original version");
+        // This is the original format, which just returns the raw bytes.
+        let ret =
+            cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+        let bytes = ret.get_contents(&mut []);
+        let modified_return_value = ViewReturnValue::RowData(bytes.to_vec());
+
+        let as_expected = bsatn::to_vec(&modified_return_value).map_err(|e| ErrorOrException::Err(e.into()))?;
+
+        let b = Bytes::from_owner(as_expected);
+        // We are pretending this was sent with the new format.
+        return Ok(b);
+
+        // TODO: We should do something to convert this into the new result format.
+        // return Ok(Bytes::copy_from_slice(bytes))
+    };
+
+    log::info!("Using the object version");
+
+    // let ret = v8::Local::<v8::Object>::try_from(ret)?;
+    let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+
+    let data_key = v8::String::new(scope, "data").unwrap();
+    let data_val = ret.get(scope, data_key.into()).unwrap();
+
+    let ret = cast!(
+        scope,
+        data_val,
+        v8::Uint8Array,
+        "bytes in the `data` field returned from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
     let bytes = ret.get_contents(&mut []);
 
     Ok(Bytes::copy_from_slice(bytes))
@@ -454,6 +488,7 @@ pub(super) fn call_call_view_anon(
     hooks: &HookFunctions<'_>,
     op: AnonymousViewOp<'_>,
 ) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+    info!("call_call_view_anon");
     let fun = hooks.call_view_anon.context("`__call_view__` was never defined")?;
 
     let AnonymousViewOp {
@@ -472,9 +507,38 @@ pub(super) fn call_call_view_anon(
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
 
-    // Deserialize the user result.
-    let ret =
-        cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+    if ret.is_typed_array() && ret.is_uint8_array() {
+        log::info!("Returning with the original version");
+        // This is the original format, which just returns the raw bytes.
+        let ret =
+            cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+        let bytes = ret.get_contents(&mut []);
+
+        // TODO: We should do something to convert this into the new result format.
+        return Ok(Bytes::copy_from_slice(bytes));
+    };
+
+    log::info!("Using the object version");
+
+    // let ret = v8::Local::<v8::Object>::try_from(ret)?;
+    let ret = cast!(
+        scope,
+        ret,
+        v8::Object,
+        "bytes or object return from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let data_key = v8::String::new(scope, "data_v1").unwrap();
+    let data_val = ret.get(scope, data_key.into()).unwrap();
+
+    let ret = cast!(
+        scope,
+        data_val,
+        v8::Uint8Array,
+        "bytes in the `data` field returned from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
     let bytes = ret.get_contents(&mut []);
 
     Ok(Bytes::copy_from_slice(bytes))

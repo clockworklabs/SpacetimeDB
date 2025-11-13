@@ -488,7 +488,7 @@ pub struct RawViewDefV9 {
 // TODO: Is there a module-only crate I can use?
 #[sats(crate = crate)]
 pub enum ViewReturnValue {
-    RowData,
+    RowData(Vec<u8>),
     RawSql(String),
     ParameterizedQuery(ParameterizedQuery),
 }
