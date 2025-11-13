@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { Typespace } from './typespace_type';
 // Mark import as potentially unused
@@ -34,6 +35,8 @@ export type RawModuleDefV8 = {
   reducers: ReducerDef[];
   miscExports: MiscModuleExport[];
 };
+let _cached_RawModuleDefV8_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -43,32 +46,36 @@ export const RawModuleDefV8 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'typespace',
-          algebraicType: Typespace.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'tables',
-          algebraicType: __AlgebraicTypeValue.Array(
-            TableDesc.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'reducers',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ReducerDef.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'miscExports',
-          algebraicType: __AlgebraicTypeValue.Array(
-            MiscModuleExport.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_RawModuleDefV8_type_value)
+      return _cached_RawModuleDefV8_type_value;
+    _cached_RawModuleDefV8_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawModuleDefV8_type_value.value.elements.push(
+      {
+        name: 'typespace',
+        algebraicType: Typespace.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'tables',
+        algebraicType: __AlgebraicTypeValue.Array(
+          TableDesc.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'reducers',
+        algebraicType: __AlgebraicTypeValue.Array(
+          ReducerDef.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'miscExports',
+        algebraicType: __AlgebraicTypeValue.Array(
+          MiscModuleExport.getTypeScriptAlgebraicType()
+        ),
+      }
+    );
+    return _cached_RawModuleDefV8_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawModuleDefV8): void {

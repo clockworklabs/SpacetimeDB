@@ -22,6 +22,7 @@ macro_rules! errnos {
             SCHEDULE_AT_DELAY_TOO_LONG(13, "Specified delay in scheduling row was too long"),
             INDEX_NOT_UNIQUE(14, "The index was not unique"),
             NO_SUCH_ROW(15, "The row was not found, e.g., in an update call"),
+            AUTO_INC_OVERFLOW(16, "The auto-increment sequence overflowed"),
         );
     };
 }

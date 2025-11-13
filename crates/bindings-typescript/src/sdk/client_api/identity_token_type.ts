@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type IdentityToken = {
@@ -32,6 +33,8 @@ export type IdentityToken = {
   token: string;
   connectionId: __ConnectionId;
 };
+let _cached_IdentityToken_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -41,19 +44,23 @@ export const IdentityToken = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'identity',
-          algebraicType: __AlgebraicTypeValue.createIdentityType(),
-        },
-        { name: 'token', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'connectionId',
-          algebraicType: __AlgebraicTypeValue.createConnectionIdType(),
-        },
-      ],
+    if (_cached_IdentityToken_type_value)
+      return _cached_IdentityToken_type_value;
+    _cached_IdentityToken_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_IdentityToken_type_value.value.elements.push(
+      {
+        name: 'identity',
+        algebraicType: __AlgebraicTypeValue.createIdentityType(),
+      },
+      { name: 'token', algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'connectionId',
+        algebraicType: __AlgebraicTypeValue.createConnectionIdType(),
+      }
+    );
+    return _cached_IdentityToken_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: IdentityToken): void {

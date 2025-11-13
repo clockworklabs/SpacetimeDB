@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import * as RowSizeHintVariants from './row_size_hint_variants';
 
@@ -32,6 +33,8 @@ import * as RowSizeHintVariants from './row_size_hint_variants';
 export type RowSizeHint =
   | RowSizeHintVariants.FixedSize
   | RowSizeHintVariants.RowOffsets;
+
+let _cached_RowSizeHint_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const RowSizeHint = {
@@ -41,19 +44,26 @@ export const RowSizeHint = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  FixedSize: (value: number): RowSizeHint => ({ tag: 'FixedSize', value }),
-  RowOffsets: (value: bigint[]): RowSizeHint => ({ tag: 'RowOffsets', value }),
+  FixedSize: (value: number): RowSizeHintVariants.FixedSize => ({
+    tag: 'FixedSize',
+    value,
+  }),
+  RowOffsets: (value: bigint[]): RowSizeHintVariants.RowOffsets => ({
+    tag: 'RowOffsets',
+    value,
+  }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        { name: 'FixedSize', algebraicType: __AlgebraicTypeValue.U16 },
-        {
-          name: 'RowOffsets',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U64),
-        },
-      ],
-    });
+    if (_cached_RowSizeHint_type_value) return _cached_RowSizeHint_type_value;
+    _cached_RowSizeHint_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_RowSizeHint_type_value.value.variants.push(
+      { name: 'FixedSize', algebraicType: __AlgebraicTypeValue.U16 },
+      {
+        name: 'RowOffsets',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U64),
+      }
+    );
+    return _cached_RowSizeHint_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RowSizeHint): void {

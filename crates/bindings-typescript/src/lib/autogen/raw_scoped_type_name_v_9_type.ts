@@ -14,12 +14,15 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type RawScopedTypeNameV9 = {
   scope: string[];
   name: string;
 };
+let _cached_RawScopedTypeNameV9_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -29,17 +32,19 @@ export const RawScopedTypeNameV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'scope',
-          algebraicType: __AlgebraicTypeValue.Array(
-            __AlgebraicTypeValue.String
-          ),
-        },
-        { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-      ],
+    if (_cached_RawScopedTypeNameV9_type_value)
+      return _cached_RawScopedTypeNameV9_type_value;
+    _cached_RawScopedTypeNameV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawScopedTypeNameV9_type_value.value.elements.push(
+      {
+        name: 'scope',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.String),
+      },
+      { name: 'name', algebraicType: __AlgebraicTypeValue.String }
+    );
+    return _cached_RawScopedTypeNameV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawScopedTypeNameV9): void {

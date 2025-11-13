@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawModuleDefV8 } from './raw_module_def_v_8_type';
 // Mark import as potentially unused
@@ -29,6 +30,8 @@ export type RawModuleDef =
   | RawModuleDefVariants.V8BackCompat
   | RawModuleDefVariants.V9;
 
+let _cached_RawModuleDef_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const RawModuleDef = {
   // Helper functions for constructing each variant of the tagged union.
@@ -37,25 +40,28 @@ export const RawModuleDef = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  V8BackCompat: (value: RawModuleDefV8): RawModuleDef => ({
+  V8BackCompat: (value: RawModuleDefV8): RawModuleDefVariants.V8BackCompat => ({
     tag: 'V8BackCompat',
     value,
   }),
-  V9: (value: RawModuleDefV9): RawModuleDef => ({ tag: 'V9', value }),
+  V9: (value: RawModuleDefV9): RawModuleDefVariants.V9 => ({
+    tag: 'V9',
+    value,
+  }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'V8BackCompat',
-          algebraicType: RawModuleDefV8.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'V9',
-          algebraicType: RawModuleDefV9.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_RawModuleDef_type_value) return _cached_RawModuleDef_type_value;
+    _cached_RawModuleDef_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_RawModuleDef_type_value.value.variants.push(
+      {
+        name: 'V8BackCompat',
+        algebraicType: RawModuleDefV8.getTypeScriptAlgebraicType(),
+      },
+      { name: 'V9', algebraicType: RawModuleDefV9.getTypeScriptAlgebraicType() }
+    );
+    return _cached_RawModuleDef_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawModuleDef): void {

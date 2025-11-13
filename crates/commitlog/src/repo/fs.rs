@@ -1,5 +1,7 @@
+use std::fmt;
 use std::fs::{self, File};
 use std::io;
+use std::sync::Arc;
 
 use log::{debug, warn};
 use spacetimedb_fs_utils::compression::{compress_with_zstd, CompressReader};
@@ -19,25 +21,78 @@ const SEGMENT_FILE_EXT: &str = ".stdb.log";
 // Experiment:
 //
 // - O_DIRECT | O_DSYNC
-// - preallocation of disk space
 // - io_uring
 //
 
+pub type OnNewSegmentFn = dyn Fn() + Send + Sync + 'static;
+
+/// Size on disk of a [Fs] repo.
+///
+/// Created by [Fs::size_on_disk].
+#[derive(Clone, Copy, Default)]
+pub struct SizeOnDisk {
+    /// The total size in bytes of all segments and offset indexes in the repo.
+    pub total_bytes: u64,
+    /// The total number of 512-bytes blocks allocated by all segments and
+    /// offset indexes in the repo.
+    ///
+    /// Only available on unix platforms.
+    ///
+    /// For other platforms, the number computed from the number of 4096-bytes
+    /// pages that would be needed to store `total_bytes`. This may or may not
+    /// reflect that actual storage allocation.
+    ///
+    /// The number of allocated blocks is typically larger than the number of
+    /// actually written bytes.
+    ///
+    /// When the `fallocate` feature is enabled, the number can diverge
+    /// substantially. Use `total_blocks` in this case to monitor disk space.
+    pub total_blocks: u64,
+}
+
+impl SizeOnDisk {
+    #[cfg(unix)]
+    fn add(&mut self, stat: std::fs::Metadata) {
+        self.total_bytes += stat.len();
+        self.total_blocks += std::os::unix::fs::MetadataExt::blocks(&stat);
+    }
+
+    #[cfg(not(unix))]
+    fn add(&mut self, stat: std::fs::Metadata) {
+        let imaginary_blocks = (self.total_bytes > 0)
+            .then(|| 8 * self.total_bytes.div_ceil(4096))
+            .unwrap_or_default();
+        self.total_blocks = imaginary_blocks;
+    }
+}
+
 /// A commitlog repository [`Repo`] which stores commits in ordinary files on
 /// disk.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Fs {
     /// The base directory within which segment files will be stored.
     root: CommitLogDir,
+
+    /// Channel through which to send a message whenever we create a new segment.
+    ///
+    /// The other end of this channel will be a `SnapshotWorker`,
+    /// which will capture a snapshot each time we rotate segments.
+    on_new_segment: Option<Arc<OnNewSegmentFn>>,
+}
+
+impl std::fmt::Debug for Fs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fs").field("root", &self.root).finish_non_exhaustive()
+    }
 }
 
 impl Fs {
     /// Create a commitlog repository which stores segments in the directory `root`.
     ///
     /// `root` must name an extant, accessible, writeable directory.
-    pub fn new(root: CommitLogDir) -> io::Result<Self> {
+    pub fn new(root: CommitLogDir, on_new_segment: Option<Arc<OnNewSegmentFn>>) -> io::Result<Self> {
         root.create()?;
-        Ok(Self { root })
+        Ok(Self { root, on_new_segment })
     }
 
     /// Get the filename for a segment starting with `offset` within this
@@ -46,18 +101,37 @@ impl Fs {
         self.root.segment(offset)
     }
 
-    /// Determine the size on disk as the sum of the sizes of all segments.
+    /// Determine the size on disk as the sum of the sizes of all segments, as
+    /// well as offset indexes.
     ///
     /// Note that the actively written-to segment (if any) is included.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
-        let mut sz = 0;
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        let mut size = SizeOnDisk::default();
+
         for offset in self.existing_offsets()? {
-            sz += self.segment_path(offset).metadata()?.len();
-            // Add the size of the offset index file if present
-            sz += self.root.index(offset).metadata().map(|m| m.len()).unwrap_or(0);
+            let segment = self.segment_path(offset);
+            let stat = segment.metadata()?;
+            size.add(stat);
+
+            // Add the size of the offset index file if present.
+            let index = self.root.index(offset);
+            let Some(stat) = index.metadata().map(Some).or_else(|e| match e.kind() {
+                io::ErrorKind::NotFound => Ok(None),
+                _ => Err(e),
+            })?
+            else {
+                continue;
+            };
+            size.add(stat);
         }
 
-        Ok(sz)
+        Ok(size)
+    }
+}
+
+impl fmt::Display for Fs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.root.display())
     }
 }
 
@@ -70,6 +144,11 @@ impl FileLike for NamedTempFile {
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> io::Result<()> {
         self.as_file_mut().ftruncate(tx_offset, size)
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.as_file_mut().fallocate(size)
     }
 }
 
@@ -86,14 +165,29 @@ impl Repo for Fs {
             .or_else(|e| {
                 if e.kind() == io::ErrorKind::AlreadyExists {
                     debug!("segment {offset} already exists");
+                    // If the segment is completely empty, we can resume writing.
                     let file = self.open_segment_writer(offset)?;
                     if file.metadata()?.len() == 0 {
                         debug!("segment {offset} is empty");
                         return Ok(file);
                     }
+
+                    // Otherwise, provide some context.
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        format!("repo {}: segment {} already exists and is non-empty", self, offset),
+                    ));
                 }
 
                 Err(e)
+            })
+            .inspect(|_| {
+                // We're rotating commitlog segments, so we should also take a snapshot at the earliest opportunity.
+                if let Some(on_new_segment) = self.on_new_segment.as_ref() {
+                    // No need to handle the error here: if the snapshot worker is closed we'll eventually close too,
+                    // and we don't want to die prematurely if there are still TXes to write.
+                    on_new_segment();
+                }
             })
     }
 
@@ -108,7 +202,10 @@ impl Repo for Fs {
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
         let _ = self.remove_offset_index(offset).map_err(|e| {
-            warn!("failed to remove offset index for segment {offset}, error: {e}");
+            warn!(
+                "repo {}: failed to remove offset index for segment {}: {}",
+                self, offset, e
+            );
         });
         fs::remove_file(self.segment_path(offset))
     }
@@ -126,6 +223,7 @@ impl Repo for Fs {
         let max_frame_size = 0x1000;
         compress_with_zstd(&mut src, &mut dst, Some(max_frame_size))?;
         dst.persist(self.segment_path(offset))?;
+
         Ok(())
     }
 

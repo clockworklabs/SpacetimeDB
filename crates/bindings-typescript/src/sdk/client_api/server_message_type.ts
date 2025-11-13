@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { InitialSubscription } from './initial_subscription_type';
 // Mark import as potentially unused
@@ -72,6 +73,8 @@ export type ServerMessage =
   | ServerMessageVariants.SubscribeMultiApplied
   | ServerMessageVariants.UnsubscribeMultiApplied;
 
+let _cached_ServerMessage_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const ServerMessage = {
   // Helper functions for constructing each variant of the tagged union.
@@ -80,92 +83,113 @@ export const ServerMessage = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  InitialSubscription: (value: InitialSubscription): ServerMessage => ({
+  InitialSubscription: (
+    value: InitialSubscription
+  ): ServerMessageVariants.InitialSubscription => ({
     tag: 'InitialSubscription',
     value,
   }),
-  TransactionUpdate: (value: TransactionUpdate): ServerMessage => ({
+  TransactionUpdate: (
+    value: TransactionUpdate
+  ): ServerMessageVariants.TransactionUpdate => ({
     tag: 'TransactionUpdate',
     value,
   }),
-  TransactionUpdateLight: (value: TransactionUpdateLight): ServerMessage => ({
+  TransactionUpdateLight: (
+    value: TransactionUpdateLight
+  ): ServerMessageVariants.TransactionUpdateLight => ({
     tag: 'TransactionUpdateLight',
     value,
   }),
-  IdentityToken: (value: IdentityToken): ServerMessage => ({
-    tag: 'IdentityToken',
-    value,
-  }),
-  OneOffQueryResponse: (value: OneOffQueryResponse): ServerMessage => ({
+  IdentityToken: (
+    value: IdentityToken
+  ): ServerMessageVariants.IdentityToken => ({ tag: 'IdentityToken', value }),
+  OneOffQueryResponse: (
+    value: OneOffQueryResponse
+  ): ServerMessageVariants.OneOffQueryResponse => ({
     tag: 'OneOffQueryResponse',
     value,
   }),
-  SubscribeApplied: (value: SubscribeApplied): ServerMessage => ({
+  SubscribeApplied: (
+    value: SubscribeApplied
+  ): ServerMessageVariants.SubscribeApplied => ({
     tag: 'SubscribeApplied',
     value,
   }),
-  UnsubscribeApplied: (value: UnsubscribeApplied): ServerMessage => ({
+  UnsubscribeApplied: (
+    value: UnsubscribeApplied
+  ): ServerMessageVariants.UnsubscribeApplied => ({
     tag: 'UnsubscribeApplied',
     value,
   }),
-  SubscriptionError: (value: SubscriptionError): ServerMessage => ({
+  SubscriptionError: (
+    value: SubscriptionError
+  ): ServerMessageVariants.SubscriptionError => ({
     tag: 'SubscriptionError',
     value,
   }),
-  SubscribeMultiApplied: (value: SubscribeMultiApplied): ServerMessage => ({
+  SubscribeMultiApplied: (
+    value: SubscribeMultiApplied
+  ): ServerMessageVariants.SubscribeMultiApplied => ({
     tag: 'SubscribeMultiApplied',
     value,
   }),
-  UnsubscribeMultiApplied: (value: UnsubscribeMultiApplied): ServerMessage => ({
+  UnsubscribeMultiApplied: (
+    value: UnsubscribeMultiApplied
+  ): ServerMessageVariants.UnsubscribeMultiApplied => ({
     tag: 'UnsubscribeMultiApplied',
     value,
   }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'InitialSubscription',
-          algebraicType: InitialSubscription.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'TransactionUpdate',
-          algebraicType: TransactionUpdate.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'TransactionUpdateLight',
-          algebraicType: TransactionUpdateLight.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'IdentityToken',
-          algebraicType: IdentityToken.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'OneOffQueryResponse',
-          algebraicType: OneOffQueryResponse.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'SubscribeApplied',
-          algebraicType: SubscribeApplied.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'UnsubscribeApplied',
-          algebraicType: UnsubscribeApplied.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'SubscriptionError',
-          algebraicType: SubscriptionError.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'SubscribeMultiApplied',
-          algebraicType: SubscribeMultiApplied.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'UnsubscribeMultiApplied',
-          algebraicType: UnsubscribeMultiApplied.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_ServerMessage_type_value)
+      return _cached_ServerMessage_type_value;
+    _cached_ServerMessage_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_ServerMessage_type_value.value.variants.push(
+      {
+        name: 'InitialSubscription',
+        algebraicType: InitialSubscription.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'TransactionUpdate',
+        algebraicType: TransactionUpdate.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'TransactionUpdateLight',
+        algebraicType: TransactionUpdateLight.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'IdentityToken',
+        algebraicType: IdentityToken.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'OneOffQueryResponse',
+        algebraicType: OneOffQueryResponse.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'SubscribeApplied',
+        algebraicType: SubscribeApplied.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'UnsubscribeApplied',
+        algebraicType: UnsubscribeApplied.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'SubscriptionError',
+        algebraicType: SubscriptionError.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'SubscribeMultiApplied',
+        algebraicType: SubscribeMultiApplied.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'UnsubscribeMultiApplied',
+        algebraicType: UnsubscribeMultiApplied.getTypeScriptAlgebraicType(),
+      }
+    );
+    return _cached_ServerMessage_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ServerMessage): void {

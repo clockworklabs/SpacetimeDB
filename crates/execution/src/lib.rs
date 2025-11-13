@@ -3,73 +3,44 @@ use std::{
     ops::RangeBounds,
 };
 
-use anyhow::{anyhow, Result};
-use iter::PlanIter;
+use anyhow::Result;
 use spacetimedb_lib::{
     bsatn::{EncodeError, ToBsatn},
     query::Delta,
     sats::impl_serialize,
     AlgebraicValue, ProductValue,
 };
-use spacetimedb_physical_plan::plan::{ProjectField, ProjectPlan, TupleField};
+use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
 use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::{
-    blob_store::BlobStore,
-    static_assert_size,
-    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableScanIter},
-};
+use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
-pub mod iter;
 pub mod pipelined;
 
-/// The datastore interface required for building an executor
 pub trait Datastore {
-    fn table(&self, table_id: TableId) -> Option<&Table>;
-    fn blob_store(&self) -> &dyn BlobStore;
+    /// Iterator type for table scans
+    type TableIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
 
-    fn table_or_err(&self, table_id: TableId) -> Result<&Table> {
-        self.table(table_id)
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-    }
+    /// Iterator type for ranged index scans
+    type IndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
 
-    fn table_scan(&self, table_id: TableId) -> Result<TableScanIter> {
-        self.table(table_id)
-            .map(|table| table.scan_rows(self.blob_store()))
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-    }
+    /// Returns the number of rows in this table
+    fn row_count(&self, table_id: TableId) -> u64;
 
-    fn index_scan_point(
-        &self,
-        table_id: TableId,
-        index_id: IndexId,
-        key: &AlgebraicValue,
-    ) -> Result<IndexScanPointIter> {
-        self.table(table_id)
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-            .and_then(|table| {
-                table
-                    .get_index_by_id_with_table(self.blob_store(), index_id)
-                    .map(|i| i.seek_point(key))
-                    .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
-            })
-    }
+    /// Scans and returns all of the rows in a table
+    fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;
 
-    fn index_scan_range(
-        &self,
+    /// Scans a range of keys from an index returning a [`RowRef`] iterator
+    fn index_scan<'a>(
+        &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<IndexScanRangeIter> {
-        self.table(table_id)
-            .ok_or_else(|| anyhow!("TableId `{table_id}` does not exist"))
-            .and_then(|table| {
-                table
-                    .get_index_by_id_with_table(self.blob_store(), index_id)
-                    .map(|i| i.seek_range(range))
-                    .ok_or_else(|| anyhow!("IndexId `{index_id}` does not exist"))
-            })
-    }
+    ) -> Result<Self::IndexIter<'a>>;
 }
 
 pub trait DeltaStore {
@@ -93,7 +64,7 @@ pub trait DeltaStore {
         index_id: IndexId,
         delta: Delta,
         range: impl RangeBounds<AlgebraicValue>,
-    ) -> impl Iterator<Item = Row>;
+    ) -> impl Iterator<Item = Row<'_>>;
 
     fn index_scan_point_for_delta(
         &self,
@@ -101,9 +72,9 @@ pub trait DeltaStore {
         index_id: IndexId,
         delta: Delta,
         point: &AlgebraicValue,
-    ) -> impl Iterator<Item = Row>;
+    ) -> impl Iterator<Item = Row<'_>>;
 
-    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter {
+    fn delta_scan(&self, table_id: TableId, inserts: bool) -> DeltaScanIter<'_> {
         match inserts {
             true => DeltaScanIter {
                 iter: self.inserts_for_table(table_id),
@@ -251,13 +222,4 @@ impl<'a> Iterator for DeltaScanIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.as_mut().and_then(|iter| iter.next())
     }
-}
-
-/// Execute a query plan.
-/// The actual execution is driven by `f`.
-pub fn execute_plan<T, R>(plan: &ProjectPlan, tx: &T, f: impl Fn(PlanIter<'_>) -> R) -> Result<R>
-where
-    T: Datastore + DeltaStore,
-{
-    PlanIter::build(plan, tx).map(f)
 }

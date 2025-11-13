@@ -7,6 +7,7 @@ import {
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
 import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
+import type { TableNamesFromDb } from '../sdk/table_handle';
 
 export interface UseQueryCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
@@ -212,8 +213,9 @@ type ColumnsFromRow<R> = {
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends keyof DbConnection['db'] &
-    string = keyof DbConnection['db'] & string,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   where: Expr<ColumnsFromRow<RowType>>,
@@ -256,8 +258,9 @@ export function useTable<
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends keyof DbConnection['db'] &
-    string = keyof DbConnection['db'] & string,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   callbacks?: UseQueryCallbacks<RowType>
@@ -266,8 +269,9 @@ export function useTable<
 export function useTable<
   DbConnection extends DbConnectionImpl,
   RowType extends Record<string, any>,
-  TableName extends keyof DbConnection['db'] &
-    string = keyof DbConnection['db'] & string,
+  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
+    DbConnection['db']
+  >,
 >(
   tableName: TableName,
   whereClauseOrCallbacks?:
@@ -288,7 +292,6 @@ export function useTable<
       | undefined;
   }
   const [subscribeApplied, setSubscribeApplied] = useState(false);
-  const [isActive, setIsActive] = useState(false);
   let spacetime: DbConnection | undefined;
   try {
     spacetime = useSpacetimeDB<DbConnection>();
@@ -325,27 +328,7 @@ export function useTable<
   }, [client, tableName, whereKey, subscribeApplied]);
 
   useEffect(() => {
-    const onConnect = () => {
-      setIsActive(client.isActive);
-    };
-    const onDisconnect = () => {
-      setIsActive(client.isActive);
-    };
-    const onConnectError = () => {
-      setIsActive(client.isActive);
-    };
-    client['on']('connect', onConnect);
-    client['on']('disconnect', onDisconnect);
-    client['on']('connectError', onConnectError);
-    return () => {
-      client['off']('connect', onConnect);
-      client['off']('disconnect', onDisconnect);
-      client['off']('connectError', onConnectError);
-    };
-  }, [client]);
-
-  useEffect(() => {
-    if (isActive) {
+    if (client.isActive) {
       const cancel = client
         .subscriptionBuilder()
         .onApplied(() => {
@@ -356,16 +339,13 @@ export function useTable<
         cancel.unsubscribe();
       };
     }
-  }, [query, isActive, client]);
+  }, [query, client.isActive, client]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
       const onInsert = (ctx: any, row: RowType) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
-        }
-        if (tableName === 'message') {
-          console.log('onInsert for messages table:', row);
         }
         callbacks?.onInsert?.(row);
         if (
@@ -381,9 +361,6 @@ export function useTable<
       const onDelete = (ctx: any, row: RowType) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
-        }
-        if (tableName === 'message') {
-          console.log('onDelete for messages table:', row);
         }
         callbacks?.onDelete?.(row);
         if (

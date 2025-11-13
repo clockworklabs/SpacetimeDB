@@ -14,11 +14,14 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import * as IndexTypeVariants from './index_type_variants';
 
 // The tagged union or sum type for the algebraic type `IndexType`.
 export type IndexType = IndexTypeVariants.BTree | IndexTypeVariants.Hash;
+
+let _cached_IndexType_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const IndexType = {
@@ -32,18 +35,19 @@ export const IndexType = {
   Hash: { tag: 'Hash' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'BTree',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'Hash',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    if (_cached_IndexType_type_value) return _cached_IndexType_type_value;
+    _cached_IndexType_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_IndexType_type_value.value.variants.push(
+      {
+        name: 'BTree',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'Hash',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      }
+    );
+    return _cached_IndexType_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: IndexType): void {

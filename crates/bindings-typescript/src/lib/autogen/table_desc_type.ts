@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawTableDefV8 } from './raw_table_def_v_8_type';
 // Mark import as potentially unused
@@ -23,6 +24,8 @@ export type TableDesc = {
   schema: RawTableDefV8;
   data: number;
 };
+let _cached_TableDesc_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -32,15 +35,18 @@ export const TableDesc = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'schema',
-          algebraicType: RawTableDefV8.getTypeScriptAlgebraicType(),
-        },
-        { name: 'data', algebraicType: __AlgebraicTypeValue.U32 },
-      ],
+    if (_cached_TableDesc_type_value) return _cached_TableDesc_type_value;
+    _cached_TableDesc_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_TableDesc_type_value.value.elements.push(
+      {
+        name: 'schema',
+        algebraicType: RawTableDefV8.getTypeScriptAlgebraicType(),
+      },
+      { name: 'data', algebraicType: __AlgebraicTypeValue.U32 }
+    );
+    return _cached_TableDesc_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TableDesc): void {

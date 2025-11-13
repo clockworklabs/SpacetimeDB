@@ -57,7 +57,7 @@ class CLIENT_UNREAL_API UPlayerPlayerIdUniqueIndex : public UObject
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FPlayerType, uint32, FTableCache<FPlayerType>> PlayerIdIndexHelper;
+    FUniqueIndexHelper<FPlayerType, int32, FTableCache<FPlayerType>> PlayerIdIndexHelper;
 
 public:
     UPlayerPlayerIdUniqueIndex()
@@ -70,8 +70,8 @@ public:
      * @param Key The playerid to search for.
      * @return The found FPlayerType, or a default-constructed FPlayerType if not found.
      */
-    // NOTE: Not exposed to Blueprint because uint32 types are not Blueprint-compatible
-    FPlayerType Find(uint32 Key)
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|PlayerIndex")
+    FPlayerType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
         return PlayerIdIndexHelper.FindUniqueIndex(Key);

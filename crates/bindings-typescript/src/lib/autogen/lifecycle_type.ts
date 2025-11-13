@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import * as LifecycleVariants from './lifecycle_variants';
 
@@ -22,6 +23,8 @@ export type Lifecycle =
   | LifecycleVariants.Init
   | LifecycleVariants.OnConnect
   | LifecycleVariants.OnDisconnect;
+
+let _cached_Lifecycle_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const Lifecycle = {
@@ -36,22 +39,23 @@ export const Lifecycle = {
   OnDisconnect: { tag: 'OnDisconnect' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'Init',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'OnConnect',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'OnDisconnect',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    if (_cached_Lifecycle_type_value) return _cached_Lifecycle_type_value;
+    _cached_Lifecycle_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_Lifecycle_type_value.value.variants.push(
+      {
+        name: 'Init',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'OnConnect',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'OnDisconnect',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      }
+    );
+    return _cached_Lifecycle_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: Lifecycle): void {

@@ -108,11 +108,7 @@ impl Lang for TypeScript {
         }
     }
 
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("Failed to generate table due to validation errors");
-
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
 
@@ -167,10 +163,12 @@ impl Lang for TypeScript {
  * but to directly chain method calls,
  * like `ctx.db.{accessor_method}.on_insert(...)`.
  */
-export class {table_handle} {{
+export class {table_handle}<TableName extends string> implements __TableHandle<TableName> {{
 "
         );
         out.indent(1);
+        writeln!(out, "// phantom type to track the table name");
+        writeln!(out, "readonly tableName!: TableName;");
         writeln!(out, "tableCache: __TableCache<{row_type}>;");
         writeln!(out);
         writeln!(out, "constructor(tableCache: __TableCache<{row_type}>) {{");
@@ -312,6 +310,18 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         }
     }
 
+    fn generate_procedure_file(
+        &self,
+        _module: &ModuleDef,
+        procedure: &spacetimedb_schema::def::ProcedureDef,
+    ) -> OutputFile {
+        // TODO(procedure-typescript-client): implement this
+        OutputFile {
+            filename: procedure_module_name(&procedure.name) + ".ts",
+            code: "".to_string(),
+        }
+    }
+
     fn generate_global_files(&self, module: &ModuleDef) -> Vec<OutputFile> {
         let mut output = CodeIndenter::new(String::new(), INDENT);
         let out = &mut output;
@@ -364,7 +374,7 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
                 .expect("Failed to generate table due to validation errors");
             writeln!(out, "{}: {{", table.name);
             out.indent(1);
-            writeln!(out, "tableName: \"{}\",", table.name);
+            writeln!(out, "tableName: \"{}\" as const,", table.name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
                 // This is left here so we can release the codegen change before releasing a new
@@ -610,7 +620,7 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
         let type_ref = table.product_type_ref;
         let row_type = type_ref_name(module, type_ref);
-        writeln!(out, "get {table_name_camelcase}(): {table_handle} {{");
+        writeln!(out, "get {table_name_camelcase}(): {table_handle}<'{table_name}'> {{");
         out.with_indent(|out| {
             writeln!(out, "// clientCache is a private property");
             writeln!(
@@ -687,6 +697,7 @@ fn print_spacetimedb_imports(out: &mut Indenter) {
         "DbConnectionBuilder as __DbConnectionBuilder",
         "TableCache as __TableCache",
         "BinaryWriter as __BinaryWriter",
+        "type TableHandle as __TableHandle",
         "type CallReducerFlags as __CallReducerFlags",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
@@ -725,6 +736,7 @@ fn print_lint_suppression(output: &mut Indenter) {
 fn write_get_algebraic_type_for_product(
     module: &ModuleDef,
     out: &mut Indenter,
+    type_cache_name: &str,
     elements: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(
@@ -737,9 +749,18 @@ fn write_get_algebraic_type_for_product(
     writeln!(out, "getTypeScriptAlgebraicType(): __AlgebraicTypeType {{");
     {
         out.indent(1);
-        write!(out, "return ");
-        convert_product_type(module, out, elements, "");
-        writeln!(out, ";");
+        writeln!(out, "if ({type_cache_name}) return {type_cache_name};");
+        // initialization is split in two because of recursive types
+        writeln!(
+            out,
+            "{type_cache_name} = __AlgebraicTypeValue.Product({{ elements: [] }});"
+        );
+        writeln!(out, "{type_cache_name}.value.elements.push(");
+        out.indent(1);
+        convert_product_type_elements(module, out, elements, "");
+        out.dedent(1);
+        writeln!(out, ");");
+        writeln!(out, "return {type_cache_name};");
         out.dedent(1);
     }
     writeln!(out, "}},");
@@ -760,6 +781,10 @@ fn define_body_for_product(
         writeln!(out, "}};");
     }
 
+    let type_cache_name = &*format!("_cached_{name}_type_value");
+    writeln!(out, "let {type_cache_name}: __AlgebraicTypeType | null = null;");
+    out.newline();
+
     writeln!(
         out,
         "/**
@@ -768,7 +793,7 @@ fn define_body_for_product(
     );
     writeln!(out, "export const {name} = {{");
     out.indent(1);
-    write_get_algebraic_type_for_product(module, out, elements);
+    write_get_algebraic_type_for_product(module, out, type_cache_name, elements);
     writeln!(out);
 
     writeln!(out, "serialize(writer: __BinaryWriter, value: {name}): void {{");
@@ -893,21 +918,31 @@ fn write_variant_constructors(
         let variant_name = ident.deref().to_case(Case::Pascal);
         write!(out, "{variant_name}: (value: ");
         write_type(module, out, ty, None, None).unwrap();
-        writeln!(out, "): {name} => ({{ tag: \"{variant_name}\", value }}),");
+        writeln!(
+            out,
+            "): {name}Variants.{variant_name} => ({{ tag: \"{variant_name}\", value }}),"
+        );
     }
 }
 
 fn write_get_algebraic_type_for_sum(
     module: &ModuleDef,
     out: &mut Indenter,
+    type_cache_name: &str,
     variants: &[(Identifier, AlgebraicTypeUse)],
 ) {
     writeln!(out, "getTypeScriptAlgebraicType(): __AlgebraicTypeType {{");
     {
         indent_scope!(out);
-        write!(out, "return ");
-        convert_sum_type(module, &mut out, variants, "");
-        writeln!(out, ";");
+        writeln!(out, "if ({type_cache_name}) return {type_cache_name};");
+        // initialization is split in two because of recursive types
+        writeln!(out, "{type_cache_name} = __AlgebraicTypeValue.Sum({{ variants: [] }});");
+        writeln!(out, "{type_cache_name}.value.variants.push(");
+        out.indent(1);
+        convert_sum_type_variants(module, &mut out, variants, "");
+        out.dedent(1);
+        writeln!(out, ");");
+        writeln!(out, "return {type_cache_name};");
     }
     writeln!(out, "}},");
 }
@@ -935,6 +970,10 @@ fn define_body_for_sum(
 
     out.newline();
 
+    let type_cache_name = &*format!("_cached_{name}_type_value");
+    writeln!(out, "let {type_cache_name}: __AlgebraicTypeType | null = null;");
+    out.newline();
+
     // Write the runtime value with helper functions
     writeln!(out, "// A value with helper functions to construct the type.");
     writeln!(out, "export const {name} = {{");
@@ -954,7 +993,7 @@ fn define_body_for_sum(
     writeln!(out);
 
     // Write the function that generates the algebraic type.
-    write_get_algebraic_type_for_sum(module, out, variants);
+    write_get_algebraic_type_for_sum(module, out, type_cache_name, variants);
     writeln!(out);
 
     writeln!(
@@ -1018,6 +1057,10 @@ fn reducer_module_name(reducer_name: &Identifier) -> String {
 
 fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.name.deref().to_case(Case::Camel)
+}
+
+fn procedure_module_name(procedure_name: &Identifier) -> String {
+    procedure_name.deref().to_case(Case::Snake) + "_procedure"
 }
 
 pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
@@ -1153,37 +1196,25 @@ fn convert_algebraic_type<'a>(
     }
 }
 
-fn convert_sum_type<'a>(
+fn convert_sum_type_variants<'a>(
     module: &'a ModuleDef,
     out: &mut Indenter,
     variants: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
 ) {
-    writeln!(out, "__AlgebraicTypeValue.Sum({{");
-    out.indent(1);
-    writeln!(out, "variants: [");
-    out.indent(1);
     for (ident, ty) in variants {
         write!(out, "{{ name: \"{ident}\", algebraicType: ",);
         convert_algebraic_type(module, out, ty, ref_prefix);
         writeln!(out, " }},");
     }
-    out.dedent(1);
-    writeln!(out, "]");
-    out.dedent(1);
-    write!(out, "}})")
 }
 
-fn convert_product_type<'a>(
+fn convert_product_type_elements<'a>(
     module: &'a ModuleDef,
     out: &mut Indenter,
     elements: &'a [(Identifier, AlgebraicTypeUse)],
     ref_prefix: &'a str,
 ) {
-    writeln!(out, "__AlgebraicTypeValue.Product({{");
-    out.indent(1);
-    writeln!(out, "elements: [");
-    out.indent(1);
     for (ident, ty) in elements {
         write!(
             out,
@@ -1191,12 +1222,8 @@ fn convert_product_type<'a>(
             ident.deref().to_case(Case::Camel)
         );
         convert_algebraic_type(module, out, ty, ref_prefix);
-        writeln!(out, "}},");
+        writeln!(out, " }},");
     }
-    out.dedent(1);
-    writeln!(out, "]");
-    out.dedent(1);
-    write!(out, "}})")
 }
 
 /// Print imports for each of the `imports`.

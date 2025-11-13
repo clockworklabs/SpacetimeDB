@@ -3,9 +3,10 @@ import re
 import shutil
 from pathlib import Path
 import tempfile
+import xmltodict
 
 import smoketests
-from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML
+from .. import Smoketest, STDB_DIR, run_cmd, TEMPLATE_CARGO_TOML, TYPESCRIPT_BINDINGS_PATH, build_typescript_sdk, pnpm
 
 
 def _write_file(path: Path, content: str):
@@ -18,12 +19,13 @@ def _append_to_file(path: Path, content: str):
         f.write(content)
 
 
-def _parse_quickstart(doc_path: Path, language: str) -> str:
+def _parse_quickstart(doc_path: Path, language: str, module_name: str) -> str:
     """Extract code blocks from `quickstart.md` docs.
     This will replicate the steps in the quickstart guide, so if it fails the quickstart guide is broken.
     """
     content = Path(doc_path).read_text()
-    blocks = re.findall(rf"```{language}\n(.*?)\n```", content, re.DOTALL)
+    codeblock_lang = "ts" if language == "typescript" else language
+    blocks = re.findall(rf"```{codeblock_lang}\n(.*?)\n```", content, re.DOTALL)
 
     end = ""
     if language == "csharp":
@@ -41,25 +43,67 @@ def _parse_quickstart(doc_path: Path, language: str) -> str:
             filtered_blocks.append(block)
         blocks = filtered_blocks
     # So we could have a different db for each language
-    return "\n".join(blocks).replace("quickstart-chat", f"quickstart-chat-{language}") + end
+    return "\n".join(blocks).replace("quickstart-chat", module_name) + end
 
+def load_nuget_config(p: Path):
+    if p.exists():
+        with p.open("rb") as f:
+            return xmltodict.parse(f.read(), force_list=["add", "packageSource", "package"])
+    return {}
 
-def _dotnet_add_package(project_path: Path, package_name: str, source_path: Path):
-    """Add a local NuGet package to a .NET project"""
-    sources = run_cmd("dotnet", "nuget", "list", "source", cwd=project_path, capture_stderr=True)
-    # Is the source already added?
-    if package_name in sources:
-        run_cmd("dotnet", "nuget", "remove", "source", package_name, cwd=project_path, capture_stderr=True)
-    run_cmd("dotnet", "nuget", "add", "source", source_path, "--name", package_name, cwd=project_path,
-            capture_stderr=True)
-    run_cmd("dotnet", "add", "package", package_name, cwd=project_path, capture_stderr=True)
+def save_nuget_config(p: Path, doc: dict):
+    # Write back (pretty, UTF-8, no BOM)
+    xml = xmltodict.unparse(doc, pretty=True)
+    p.write_text(xml, encoding="utf-8")
 
+def add_source(doc: dict, *, key: str, path: str) -> None:
+    cfg = doc.setdefault("configuration", {})
+    sources = cfg.setdefault("packageSources", {})
+    source_entries = sources.setdefault("add", [])
+    source = {"@key": key, "@value": path}
+    source_entries.append(source)
+
+def add_mapping(doc: dict, *, key: str, pattern: str) -> None:
+    cfg = doc.setdefault("configuration", {})
+
+    psm = cfg.setdefault("packageSourceMapping", {})
+    mapping_sources = psm.setdefault("packageSource", [])
+
+    # Find or create the target <packageSource key="...">
+    target = next((s for s in mapping_sources if s.get("@key") == key), None)
+    if target is None:
+        target = {"@key": key, "package": []}
+        mapping_sources.append(target)
+
+    pkgs = target.setdefault("package", [])
+
+    existing = {pkg.get("@pattern") for pkg in pkgs if "@pattern" in pkg}
+    if pattern not in existing:
+        pkgs.append({"@pattern": pattern})
+
+def override_nuget_package(*, project_dir: Path, package: str, source_dir: Path, build_subdir: str):
+    """Override nuget config to use a local NuGet package on a .NET project"""
+    # Make sure the local package is built
+    run_cmd("dotnet", "pack", cwd=source_dir)
+
+    p = Path(project_dir) / "nuget.config"
+    doc = load_nuget_config(p)
+    add_source(doc, key=package, path=source_dir/build_subdir)
+    add_mapping(doc, key=package, pattern=package)
+    # Fallback for other packages
+    add_mapping(doc, key="nuget.org", pattern="*")
+    save_nuget_config(p, doc)
+
+    # Clear any caches for nuget packages
+    run_cmd("dotnet", "nuget", "locals", "--clear", "all", capture_stderr=True)
 
 class BaseQuickstart(Smoketest):
     AUTOPUBLISH = False
     MODULE_CODE = ""
 
     lang = None
+    client_lang = None
+    codeblock_langs = None
     server_doc = None
     client_doc = None
     server_file = None
@@ -77,24 +121,36 @@ class BaseQuickstart(Smoketest):
     def sdk_setup(self, path: Path):
         raise NotImplementedError
 
+    @property
+    def _module_name(self):
+        return f"quickstart-chat-{self.lang}"
+
     def _publish(self) -> Path:
         base_path = Path(self.enterClassContext(tempfile.TemporaryDirectory()))
         server_path = base_path / "server"
-        self.project_path = server_path
 
         self.generate_server(server_path)
-        self.publish_module(f"quickstart-chat-{self.lang}", capture_stderr=True, clear=True)
+        self.publish_module(self._module_name, capture_stderr=True, clear=True)
         return base_path / "client"
 
     def generate_server(self, server_path: Path):
         """Generate the server code from the quickstart documentation."""
         logging.info(f"Generating server code {self.lang}: {server_path}...")
-        self.spacetime("init", "--lang", self.lang, server_path, capture_stderr=True)
-        shutil.copy2(STDB_DIR / "rust-toolchain.toml", server_path)
-        # Replay the quickstart guide steps
-        _write_file(server_path / self.server_file, _parse_quickstart(self.server_doc, self.lang))
-        self.server_postprocess(server_path)
-        self.spacetime("build", "-d", "-p", server_path, capture_stderr=True)
+        self.spacetime(
+            "init",
+            "--non-interactive",
+            "--lang",
+            self.lang,
+            "--project-path",
+            server_path,
+            "spacetimedb-project",
+            capture_stderr=True,
+        )
+        self.project_path = server_path / "spacetimedb"
+        shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
+        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name))
+        self.server_postprocess(self.project_path)
+        self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
 
     def server_postprocess(self, server_path: Path):
         """Optional per-language hook."""
@@ -114,13 +170,14 @@ class BaseQuickstart(Smoketest):
 
         run_cmd(*self.build_cmd, cwd=client_path, capture_stderr=True)
 
+        client_lang = self.client_lang or self.lang
         self.spacetime(
-            "generate", "--lang", self.lang,
+            "generate", "--lang", client_lang,
             "--out-dir", client_path / self.module_bindings,
             "--project-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
-        main = _parse_quickstart(self.client_doc, self.lang)
+        main = _parse_quickstart(self.client_doc, client_lang, self._module_name)
         for src, dst in self.replacements.items():
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
@@ -137,8 +194,8 @@ class BaseQuickstart(Smoketest):
 
 class Rust(BaseQuickstart):
     lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/modules/rust/quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/sdks/rust/quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/02-rust-quickstart.md"
+    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/04-rust-quickstart.md"
     server_file = "src/lib.rs"
     client_file = "src/main.rs"
     module_bindings = "src/module_bindings"
@@ -186,8 +243,8 @@ fn user_input_direct(ctx: &DbConnection) {
 
 class CSharp(BaseQuickstart):
     lang = "csharp"
-    server_doc = STDB_DIR / "docs/docs/modules/c-sharp/quickstart.md"
-    client_doc = STDB_DIR / "docs/docs/sdks/c-sharp/quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/04-csharp-quickstart.md"
+    client_doc = STDB_DIR / "docs/docs/07-Client SDK Languages/02-csharp-quickstart.md"
     server_file = "Lib.cs"
     client_file = "Program.cs"
     module_bindings = "module_bindings"
@@ -246,14 +303,70 @@ Main();
         run_cmd("dotnet", "new", "console", "--name", "QuickstartChatClient", "--output", path, capture_stderr=True)
 
     def sdk_setup(self, path: Path):
-        _dotnet_add_package(path, "SpacetimeDB.ClientSDK", (STDB_DIR / "sdks/csharp").absolute())
+        override_nuget_package(
+            project_dir=STDB_DIR/"sdks/csharp",
+            package="SpacetimeDB.BSATN.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
+        # This one is only needed because the regression-tests subdir uses it
+        override_nuget_package(
+            project_dir=STDB_DIR/"sdks/csharp",
+            package="SpacetimeDB.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
+        override_nuget_package(
+            project_dir=path,
+            package="SpacetimeDB.BSATN.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
+        override_nuget_package(
+            project_dir=path,
+            package="SpacetimeDB.ClientSDK",
+            source_dir=(STDB_DIR / "sdks/csharp").absolute(),
+            build_subdir="bin~/Release"
+        )
+        run_cmd("dotnet", "add", "package", "SpacetimeDB.ClientSDK", cwd=path, capture_stderr=True)
 
     def server_postprocess(self, server_path: Path):
-        _dotnet_add_package(server_path, "SpacetimeDB.Runtime",
-                            (STDB_DIR / "crates/bindings-csharp/Runtime").absolute())
+        override_nuget_package(
+            project_dir=server_path,
+            package="SpacetimeDB.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
+        override_nuget_package(
+            project_dir=server_path,
+            package="SpacetimeDB.BSATN.Runtime",
+            source_dir=(STDB_DIR / "crates/bindings-csharp/BSATN.Runtime").absolute(),
+            build_subdir="bin/Release"
+        )
 
     def test_quickstart(self):
         """Run the C# quickstart guides for server and client."""
         if not smoketests.HAVE_DOTNET:
             self.skipTest("C# SDK requires .NET to be installed.")
+        self._test_quickstart()
+
+# We use the Rust client for testing the TypeScript server quickstart because
+# the TypeScript client quickstart is a React app, which is difficult to
+# smoketest.
+class TypeScript(Rust):
+    lang = "typescript"
+    client_lang = "rust"
+    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/05-typescript-quickstart.md"
+    server_file = "src/index.ts"
+
+    def server_postprocess(self, server_path: Path):
+        build_typescript_sdk()
+        # We already have spacetimedb as a depencency, but it's expecting to fetch from npm.
+        # If we don't uninstall before installing, pnpm can panic because it can't find
+        # the specified version on npm (even though we're about to override it anyway).
+        pnpm("uninstall", 'spacetimedb', cwd=server_path)
+        pnpm("install", TYPESCRIPT_BINDINGS_PATH, cwd=server_path)
+
+    def test_quickstart(self):
+        """Run the TypeScript quickstart guides for server."""
         self._test_quickstart()

@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { TypeAlias } from './type_alias_type';
 // Mark import as potentially unused
@@ -24,6 +25,8 @@ import * as MiscModuleExportVariants from './misc_module_export_variants';
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
 export type MiscModuleExport = MiscModuleExportVariants.TypeAlias;
 
+let _cached_MiscModuleExport_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const MiscModuleExport = {
   // Helper functions for constructing each variant of the tagged union.
@@ -32,20 +35,22 @@ export const MiscModuleExport = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  TypeAlias: (value: TypeAlias): MiscModuleExport => ({
+  TypeAlias: (value: TypeAlias): MiscModuleExportVariants.TypeAlias => ({
     tag: 'TypeAlias',
     value,
   }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'TypeAlias',
-          algebraicType: TypeAlias.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_MiscModuleExport_type_value)
+      return _cached_MiscModuleExport_type_value;
+    _cached_MiscModuleExport_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_MiscModuleExport_type_value.value.variants.push({
+      name: 'TypeAlias',
+      algebraicType: TypeAlias.getTypeScriptAlgebraicType(),
+    });
+    return _cached_MiscModuleExport_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: MiscModuleExport): void {

@@ -1,7 +1,7 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
+    CompilationMode, CompiledModule, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust, TypeScript,
     DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
@@ -101,6 +101,12 @@ fn test_calling_a_reducer_csharp() {
 
 #[test]
 #[serial]
+fn test_calling_a_reducer_typescript() {
+    test_calling_a_reducer_in_module("module-test-ts");
+}
+
+#[test]
+#[serial]
 fn test_calling_a_reducer_with_private_table() {
     init();
 
@@ -122,6 +128,50 @@ fn test_calling_a_reducer_with_private_table() {
             assert_eq!(logs, ["Private, Tyrion!", "Private, World!",].map(String::from));
         },
     );
+}
+
+fn test_calling_a_procedure_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "sleep_one_second",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // It sleeps one second, but we'll wait two just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let logs = read_logs(&module).await;
+            let logs = logs
+                .into_iter()
+                // Filter out log lines from the `repeating_test` reducer,
+                // which runs frequently enough to appear in our logs after we've slept a second.
+                .filter(|line| !line.starts_with("Timestamp: Timestamp { __timestamp_micros_since_unix_epoch__: "))
+                .collect::<Vec<_>>();
+            let [log_sleep] = &logs[..] else {
+                panic!("Expected a single log message but found {logs:#?}");
+            };
+
+            assert!(log_sleep.starts_with("Slept from "));
+            assert!(log_sleep.contains("a total of"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_a_procedure() {
+    test_calling_a_procedure_in_module("module-test");
 }
 
 /// Invoke the `module-test` module,
@@ -317,6 +367,12 @@ fn test_calling_bench_db_circles_csharp() {
     test_calling_bench_db_circles::<Csharp>();
 }
 
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_typescript() {
+    test_calling_bench_db_circles::<TypeScript>();
+}
+
 fn test_calling_bench_db_ia_loop<L: ModuleLanguage>() {
     L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
         #[rustfmt::skip]
@@ -345,4 +401,10 @@ fn test_calling_bench_db_ia_loop_rust() {
 #[serial]
 fn test_calling_bench_db_ia_loop_csharp() {
     test_calling_bench_db_ia_loop::<Csharp>();
+}
+
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_typescript() {
+    test_calling_bench_db_ia_loop::<TypeScript>();
 }

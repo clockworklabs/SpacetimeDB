@@ -588,6 +588,7 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
+
     }
 
     // See comment on previous `extern "C"` block re: ABI version.
@@ -617,6 +618,51 @@ pub mod raw {
         ///
         /// If this function returns an error, `out` is not written.
         pub fn bytes_source_remaining_length(source: BytesSource, out: *mut u32) -> i16;
+    }
+
+    // See comment on previous `extern "C"` block re: ABI version.
+    #[link(wasm_import_module = "spacetime_10.2")]
+    extern "C" {
+        /// Finds the JWT payload associated with `connection_id`.
+        /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
+        /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
+        ///
+        /// This must be called inside a transaction (because it reads from a system table).
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - `connection_id` does not point to a valid little-endian `ConnectionId`.
+        /// - `target_ptr` is NULL or `target_ptr[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///  - The `ByteSourceId` to be written to `target_ptr` would overflow [`u32::MAX`].
+        pub fn get_jwt(connection_id_ptr: *const u8, bytes_source_id: *mut BytesSource) -> u16;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.3")]
+    extern "C" {
+        /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
+        ///
+        /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
+        ///
+        /// Upon resuming, returns the current timestamp as microseconds since the Unix epoch.
+        ///
+        /// Not particularly useful, except for testing SpacetimeDB internals related to suspending procedure execution.
+        /// # Traps
+        ///
+        /// Traps if:
+        ///
+        /// - The calling WASM instance is holding open a transaction.
+        /// - The calling WASM instance is not executing a procedure.
+        // TODO(procedure-sleep-until): remove this
+        #[cfg(feature = "unstable")]
+        pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
     }
 
     /// What strategy does the database index use?
@@ -1118,6 +1164,29 @@ pub fn identity() -> [u8; 32] {
     buf
 }
 
+/// Finds the JWT payload associated with `connection_id`.
+/// If nothing is found for the connection, this returns None.
+/// If a payload is found, this will return a valid [`raw::BytesSource`].
+///
+/// This must be called inside a transaction (because it reads from a system table).
+///
+/// # Errors
+///
+/// This panics on any error. You can see details about errors in [`raw::get_jwt`].
+#[inline]
+pub fn get_jwt(connection_id: [u8; 16]) -> Option<raw::BytesSource> {
+    let source = unsafe {
+        call(|out| raw::get_jwt(connection_id.as_ptr(), out))
+            .unwrap_or_else(|errno: Errno| panic!("Error getting jwt: {errno}"))
+    };
+
+    if source == raw::BytesSource::INVALID {
+        None // No JWT found.
+    } else {
+        Some(source)
+    }
+}
+
 pub struct RowIter {
     raw: raw::RowIter,
 }
@@ -1167,5 +1236,16 @@ impl Drop for RowIter {
         unsafe {
             raw::row_iter_bsatn_close(self.raw);
         }
+    }
+}
+
+pub mod procedure {
+    //! Side-effecting or asynchronous operations which only procedures are allowed to perform.
+    #[inline]
+    #[cfg(feature = "unstable")]
+    pub fn sleep_until(wake_at_timestamp: i64) -> i64 {
+        // Safety: Just calling an `extern "C"` function.
+        // Nothing weird happening here.
+        unsafe { super::raw::procedure_sleep_until(wake_at_timestamp) }
     }
 }

@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { QueryId } from './query_id_type';
 // Mark import as potentially unused
@@ -39,6 +40,8 @@ export type SubscribeApplied = {
   queryId: QueryId;
   rows: SubscribeRows;
 };
+let _cached_SubscribeApplied_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -48,23 +51,24 @@ export const SubscribeApplied = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-        {
-          name: 'totalHostExecutionDurationMicros',
-          algebraicType: __AlgebraicTypeValue.U64,
-        },
-        {
-          name: 'queryId',
-          algebraicType: QueryId.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'rows',
-          algebraicType: SubscribeRows.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_SubscribeApplied_type_value)
+      return _cached_SubscribeApplied_type_value;
+    _cached_SubscribeApplied_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_SubscribeApplied_type_value.value.elements.push(
+      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
+      {
+        name: 'totalHostExecutionDurationMicros',
+        algebraicType: __AlgebraicTypeValue.U64,
+      },
+      { name: 'queryId', algebraicType: QueryId.getTypeScriptAlgebraicType() },
+      {
+        name: 'rows',
+        algebraicType: SubscribeRows.getTypeScriptAlgebraicType(),
+      }
+    );
+    return _cached_SubscribeApplied_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SubscribeApplied): void {

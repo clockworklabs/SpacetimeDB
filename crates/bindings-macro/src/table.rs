@@ -40,7 +40,7 @@ impl TableAccess {
 
 struct ScheduledArg {
     span: Span,
-    reducer: Path,
+    reducer_or_procedure: Path,
     at: Option<Ident>,
 }
 
@@ -113,7 +113,7 @@ impl TableArgs {
 impl ScheduledArg {
     fn parse_meta(meta: ParseNestedMeta) -> syn::Result<Self> {
         let span = meta.path.span();
-        let mut reducer = None;
+        let mut reducer_or_procedure = None;
         let mut at = None;
 
         meta.parse_nested_meta(|meta| {
@@ -126,16 +126,26 @@ impl ScheduledArg {
                     }
                 })
             } else {
-                check_duplicate_msg(&reducer, &meta, "can only specify one scheduled reducer")?;
-                reducer = Some(meta.path);
+                check_duplicate_msg(
+                    &reducer_or_procedure,
+                    &meta,
+                    "can only specify one scheduled reducer or procedure",
+                )?;
+                reducer_or_procedure = Some(meta.path);
             }
             Ok(())
         })?;
 
-        let reducer = reducer.ok_or_else(|| {
-            meta.error("must specify scheduled reducer associated with the table: scheduled(reducer_name)")
+        let reducer_or_procedure = reducer_or_procedure.ok_or_else(|| {
+            meta.error(
+                "must specify scheduled reducer or procedure associated with the table: scheduled(function_name)",
+            )
         })?;
-        Ok(Self { span, reducer, at })
+        Ok(Self {
+            span,
+            reducer_or_procedure,
+            at,
+        })
     }
 }
 
@@ -275,6 +285,41 @@ impl IndexArg {
     }
 }
 
+enum AccessorType {
+    Read,
+    ReadWrite,
+}
+
+impl AccessorType {
+    fn unique(&self) -> proc_macro2::TokenStream {
+        match self {
+            AccessorType::Read => quote!(spacetimedb::UniqueColumnReadOnly),
+            AccessorType::ReadWrite => quote!(spacetimedb::UniqueColumn),
+        }
+    }
+
+    fn range(&self) -> proc_macro2::TokenStream {
+        match self {
+            AccessorType::Read => quote!(spacetimedb::RangedIndexReadOnly),
+            AccessorType::ReadWrite => quote!(spacetimedb::RangedIndex),
+        }
+    }
+
+    fn unique_doc_typename(&self) -> &'static str {
+        match self {
+            AccessorType::Read => "UniqueColumnReadOnly",
+            AccessorType::ReadWrite => "UniqueColumn",
+        }
+    }
+
+    fn range_doc_typename(&self) -> &'static str {
+        match self {
+            AccessorType::Read => "RangedIndexReadOnly",
+            AccessorType::ReadWrite => "RangedIndex",
+        }
+    }
+}
+
 struct ValidatedIndex<'a> {
     index_name: String,
     accessor_name: &'a Ident,
@@ -312,46 +357,71 @@ impl ValidatedIndex<'_> {
         })
     }
 
-    fn accessor(&self, vis: &syn::Visibility, row_type_ident: &Ident) -> TokenStream {
+    fn accessor(
+        &self,
+        vis: &syn::Visibility,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        flavor: AccessorType,
+    ) -> TokenStream {
         let cols = match &self.kind {
             ValidatedIndexType::BTree { cols } => &**cols,
             ValidatedIndexType::Direct { col } => slice::from_ref(col),
         };
         if self.is_unique {
             assert_eq!(cols.len(), 1);
-            let col = cols[0];
-            self.accessor_unique(col, row_type_ident)
+            self.unique_accessor(cols[0], row_type_ident, tbl_type_ident, flavor)
         } else {
-            self.accessor_general(vis, row_type_ident, cols)
+            self.range_accessor(vis, row_type_ident, tbl_type_ident, cols, flavor)
         }
     }
 
-    fn accessor_unique(&self, col: &Column<'_>, row_type_ident: &Ident) -> TokenStream {
+    fn unique_accessor(
+        &self,
+        col: &Column<'_>,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        flavor: AccessorType,
+    ) -> TokenStream {
         let index_ident = self.accessor_name;
         let vis = col.vis;
         let col_ty = col.ty;
         let column_ident = col.ident;
 
+        let unique_ty = flavor.unique();
+        let tbl_token = quote!(#tbl_type_ident);
+        let doc_type = flavor.unique_doc_typename();
+
         let doc = format!(
-            "Gets the [`UniqueColumn`][spacetimedb::UniqueColumn] for the \
+            "Gets the [`{doc_type}`][spacetimedb::{doc_type}] for the \
              [`{column_ident}`][{row_type_ident}::{column_ident}] column."
         );
         quote! {
             #[doc = #doc]
-            #vis fn #column_ident(&self) -> spacetimedb::UniqueColumn<Self, #col_ty, __indices::#index_ident> {
-                spacetimedb::UniqueColumn::__NEW
+            #vis fn #column_ident(&self) -> #unique_ty<#tbl_token, #col_ty, __indices::#index_ident> {
+                #unique_ty::__NEW
             }
         }
     }
 
-    fn accessor_general(&self, vis: &syn::Visibility, row_type_ident: &Ident, cols: &[&Column<'_>]) -> TokenStream {
+    fn range_accessor(
+        &self,
+        vis: &syn::Visibility,
+        row_type_ident: &Ident,
+        tbl_type_ident: &Ident,
+        cols: &[&Column<'_>],
+        flavor: AccessorType,
+    ) -> TokenStream {
         let index_ident = self.accessor_name;
-        let col_tys = cols.iter().map(|col| col.ty);
+        let col_tys = cols.iter().map(|c| c.ty);
+
+        let range_ty = flavor.range();
+        let tbl_token = quote!(#tbl_type_ident);
+        let doc_type = flavor.range_doc_typename();
+
         let mut doc = format!(
-            "Gets the `{index_ident}` [`RangedIndex`][spacetimedb::RangedIndex] as defined \
-             on this table. \n\
-             \n\
-             This B-tree index is defined on the following columns, in order:\n"
+            "Gets the `{index_ident}` [`{doc_type}`][spacetimedb::{doc_type}] as defined \
+             on this table.\n\nThis B-tree index is defined on the following columns, in order:\n"
         );
         for col in cols {
             use std::fmt::Write;
@@ -363,10 +433,11 @@ impl ValidatedIndex<'_> {
             )
             .unwrap();
         }
+
         quote! {
             #[doc = #doc]
-            #vis fn #index_ident(&self) -> spacetimedb::RangedIndex<Self, (#(#col_tys,)*), __indices::#index_ident> {
-                spacetimedb::RangedIndex::__NEW
+            #vis fn #index_ident(&self) -> #range_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
+                #range_ty::__NEW
             }
         }
     }
@@ -521,6 +592,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.name;
+    let view_trait_ident = format_ident!("{}__view", table_ident);
     let table_name = table_ident.unraw().to_string();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
@@ -656,9 +728,15 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     indices.sort_by_key(|index| !index.is_unique);
 
     let tablehandle_ident = format_ident!("{}__TableHandle", table_ident);
+    let viewhandle_ident = format_ident!("{}__ViewHandle", table_ident);
 
     let index_descs = indices.iter().map(|index| index.desc());
-    let index_accessors = indices.iter().map(|index| index.accessor(vis, original_struct_ident));
+    let index_accessors_rw = indices
+        .iter()
+        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::ReadWrite));
+    let index_accessors_ro = indices
+        .iter()
+        .map(|index| index.accessor(vis, original_struct_ident, &tablehandle_ident, AccessorType::Read));
     let index_marker_types = indices.iter().map(|index| index.marker_type(vis, &tablehandle_ident));
 
     // Generate `integrate_generated_columns`
@@ -750,17 +828,20 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 )
             })?;
 
-            let reducer = &sched.reducer;
+            let reducer_or_procedure = &sched.reducer_or_procedure;
             let scheduled_at_id = scheduled_at_column.index;
             let desc = quote!(spacetimedb::table::ScheduleDesc {
-                reducer_name: <#reducer as spacetimedb::rt::ReducerInfo>::NAME,
+                reducer_or_procedure_name: <#reducer_or_procedure as spacetimedb::rt::FnInfo>::NAME,
                 scheduled_at_column: #scheduled_at_id,
             });
 
             let primary_key_ty = primary_key_column.ty;
             let scheduled_at_ty = scheduled_at_column.ty;
             let typecheck = quote! {
-                spacetimedb::rt::scheduled_reducer_typecheck::<#original_struct_ident>(#reducer);
+                spacetimedb::rt::scheduled_typecheck::<
+                    #original_struct_ident,
+                    <#reducer_or_procedure as spacetimedb::rt::FnInfo>::FnKind,
+                >(#reducer_or_procedure);
                 spacetimedb::rt::assert_scheduled_table_primary_key::<#primary_key_ty>();
                 let _ = |x: #scheduled_at_ty| { let _: spacetimedb::ScheduleAt = x; };
             };
@@ -831,10 +912,29 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let trait_def_view = quote_spanned! {table_ident.span()=>
+        #[allow(non_camel_case_types, dead_code)]
+        #vis trait #view_trait_ident {
+            fn #table_ident(&self) -> &#viewhandle_ident;
+        }
+        impl #view_trait_ident for spacetimedb::LocalReadOnly {
+            #[inline]
+            fn #table_ident(&self) -> &#viewhandle_ident {
+                &#viewhandle_ident {}
+            }
+        }
+    };
+
     let tablehandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
         #vis struct #tablehandle_ident {}
+    };
+
+    let viewhandle_def = quote! {
+        #[allow(non_camel_case_types)]
+        #[non_exhaustive]
+        #vis struct #viewhandle_ident {}
     };
 
     let emission = quote! {
@@ -845,12 +945,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         };
 
         #trait_def
+        #trait_def_view
 
         #tablehandle_def
+        #viewhandle_def
 
         const _: () = {
             impl #tablehandle_ident {
-                #(#index_accessors)*
+                #(#index_accessors_rw)*
+            }
+
+            impl #viewhandle_ident {
+                #(#index_accessors_ro)*
             }
 
             #tabletype_impl

@@ -3,21 +3,21 @@ use std::time::Duration;
 
 use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
-use wasmtime::{Engine, Linker, Module, StoreContext, StoreContextMut};
+use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
-use crate::energy::{EnergyQuanta, ReducerBudget};
+use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
-use crate::host::module_host::ModuleRuntime;
+use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
 
 mod wasm_instance_env;
 mod wasmtime_module;
 
-use wasmtime_module::WasmtimeModule;
+use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
 use self::wasm_instance_env::WasmInstanceEnv;
 
-use super::wasm_common::module_host_actor::InitializationError;
+use super::wasm_common::module_host_actor::{InitializationError, WasmModuleInstance};
 use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
 pub struct WasmtimeRuntime {
@@ -52,7 +52,17 @@ impl WasmtimeRuntime {
             .cranelift_opt_level(wasmtime::OptLevel::Speed)
             .consume_fuel(true)
             .epoch_interruption(true)
-            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
+            .wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable)
+            // We need async support to enable suspending execution of procedures
+            // when waiting for e.g. HTTP responses or the transaction lock.
+            // We don't enable either fuel-based or epoch-based yielding
+            // (see https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.epoch_deadline_async_yield_and_update
+            // and https://docs.wasmtime.dev/api/wasmtime/struct.Store.html#method.fuel_async_yield_interval)
+            // so reducers will always execute to completion during the first `Future::poll` call,
+            // and procedures will only yield when performing an asynchronous operation.
+            // These futures are executed on a separate single-threaded executor not related to the "global" Tokio runtime,
+            // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
+            .async_support(true);
 
         // Offer a compile-time flag for enabling perfmap generation,
         // so `perf` can display JITted symbol names.
@@ -96,9 +106,16 @@ impl WasmtimeRuntime {
     }
 }
 
+pub type Module = WasmModuleHostActor<WasmtimeModule>;
+pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
+
 impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<impl super::module_host::Module> {
-        let module = Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
+    fn make_actor(
+        &self,
+        mcc: ModuleCreationContext,
+    ) -> anyhow::Result<(super::module_host::Module, super::module_host::Instance)> {
+        let module =
+            wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
         let func_imports = module
             .imports()
@@ -114,7 +131,11 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        WasmModuleHostActor::new(mcc, module).map_err(Into::into)
+        let (module, init_inst) = WasmModuleHostActor::new(mcc.into_limited(), module)?;
+        let module = super::module_host::Module::Wasm(module);
+        let init_inst = Instance::Wasm(Box::new(init_inst));
+
+        Ok((module, init_inst))
     }
 }
 
@@ -133,8 +154,8 @@ impl WasmtimeFuel {
     const QUANTA_MULTIPLIER: u64 = 1_000;
 }
 
-impl From<ReducerBudget> for WasmtimeFuel {
-    fn from(v: ReducerBudget) -> Self {
+impl From<FunctionBudget> for WasmtimeFuel {
+    fn from(v: FunctionBudget) -> Self {
         // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
@@ -143,9 +164,9 @@ impl From<ReducerBudget> for WasmtimeFuel {
     }
 }
 
-impl From<WasmtimeFuel> for ReducerBudget {
+impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        ReducerBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
     }
 }
 
@@ -189,6 +210,18 @@ impl WasmPointee for spacetimedb_lib::Identity {
     }
     fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
         Ok(Self::from_byte_array(*mem.deref_array(ptr)?))
+    }
+}
+
+impl WasmPointee for spacetimedb_lib::ConnectionId {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.as_le_byte_array();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self::from_le_byte_array(*mem.deref_array(ptr)?))
     }
 }
 
@@ -253,7 +286,7 @@ impl MemView {
 
     /// Lossily get a utf8 slice of wasm memory given a pointer and a length, converting any
     /// non-utf8 bytes to `U+FFFD REPLACEMENT CHARACTER`.
-    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<str>, MemError> {
+    fn deref_str_lossy(&self, offset: WasmPtr<u8>, len: u32) -> Result<Cow<'_, str>, MemError> {
         self.deref_slice(offset, len).map(String::from_utf8_lossy)
     }
 

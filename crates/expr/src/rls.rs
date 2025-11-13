@@ -18,7 +18,7 @@ pub fn resolve_views_for_sub(
     has_param: &mut bool,
 ) -> anyhow::Result<Vec<ProjectName>> {
     // RLS does not apply to the database owner
-    if auth.is_owner() {
+    if auth.bypass_rls() {
         return Ok(vec![expr]);
     }
 
@@ -56,7 +56,7 @@ pub fn resolve_views_for_sub(
 /// Mainly a wrapper around [resolve_views_for_expr].
 pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &AuthCtx) -> anyhow::Result<ProjectList> {
     // RLS does not apply to the database owner
-    if auth.is_owner() {
+    if auth.bypass_rls() {
         return Ok(expr);
     }
     // The subscription language is a subset of the sql language.
@@ -476,7 +476,7 @@ mod tests {
     use spacetimedb_primitives::TableId;
     use spacetimedb_schema::{
         def::ModuleDef,
-        schema::{Schema, TableSchema},
+        schema::{Schema, TableOrViewSchema, TableSchema},
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
@@ -499,7 +499,7 @@ mod tests {
             }
         }
 
-        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableSchema>> {
+        fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
             match table_id.idx() {
                 0 => Some((TableId(0), "users")),
                 1 => Some((TableId(1), "admins")),
@@ -510,6 +510,8 @@ mod tests {
                 self.0
                     .table(name)
                     .map(|def| Arc::new(TableSchema::from_module_def(&self.0, def, (), table_id)))
+                    .map(TableOrViewSchema::from)
+                    .map(Arc::new)
             })
         }
 

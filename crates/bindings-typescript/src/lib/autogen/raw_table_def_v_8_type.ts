@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawColumnDefV8 } from './raw_column_def_v_8_type';
 // Mark import as potentially unused
@@ -38,6 +39,8 @@ export type RawTableDefV8 = {
   tableAccess: string;
   scheduled: string | undefined;
 };
+let _cached_RawTableDefV8_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -47,43 +50,47 @@ export const RawTableDefV8 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'columns',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawColumnDefV8.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'indexes',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawIndexDefV8.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'constraints',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawConstraintDefV8.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'sequences',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawSequenceDefV8.getTypeScriptAlgebraicType()
-          ),
-        },
-        { name: 'tableType', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'tableAccess', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'scheduled',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.String
-          ),
-        },
-      ],
+    if (_cached_RawTableDefV8_type_value)
+      return _cached_RawTableDefV8_type_value;
+    _cached_RawTableDefV8_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawTableDefV8_type_value.value.elements.push(
+      { name: 'tableName', algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'columns',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawColumnDefV8.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'indexes',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawIndexDefV8.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'constraints',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawConstraintDefV8.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'sequences',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawSequenceDefV8.getTypeScriptAlgebraicType()
+        ),
+      },
+      { name: 'tableType', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'tableAccess', algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'scheduled',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.String
+        ),
+      }
+    );
+    return _cached_RawTableDefV8_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawTableDefV8): void {

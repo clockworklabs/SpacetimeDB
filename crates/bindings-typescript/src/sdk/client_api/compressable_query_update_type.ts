@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { QueryUpdate } from './query_update_type';
 // Mark import as potentially unused
@@ -38,6 +39,9 @@ export type CompressableQueryUpdate =
   | CompressableQueryUpdateVariants.Brotli
   | CompressableQueryUpdateVariants.Gzip;
 
+let _cached_CompressableQueryUpdate_type_value: __AlgebraicTypeType | null =
+  null;
+
 // A value with helper functions to construct the type.
 export const CompressableQueryUpdate = {
   // Helper functions for constructing each variant of the tagged union.
@@ -46,36 +50,42 @@ export const CompressableQueryUpdate = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  Uncompressed: (value: QueryUpdate): CompressableQueryUpdate => ({
+  Uncompressed: (
+    value: QueryUpdate
+  ): CompressableQueryUpdateVariants.Uncompressed => ({
     tag: 'Uncompressed',
     value,
   }),
-  Brotli: (value: Uint8Array): CompressableQueryUpdate => ({
+  Brotli: (value: Uint8Array): CompressableQueryUpdateVariants.Brotli => ({
     tag: 'Brotli',
     value,
   }),
-  Gzip: (value: Uint8Array): CompressableQueryUpdate => ({
+  Gzip: (value: Uint8Array): CompressableQueryUpdateVariants.Gzip => ({
     tag: 'Gzip',
     value,
   }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'Uncompressed',
-          algebraicType: QueryUpdate.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'Brotli',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-        },
-        {
-          name: 'Gzip',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-        },
-      ],
+    if (_cached_CompressableQueryUpdate_type_value)
+      return _cached_CompressableQueryUpdate_type_value;
+    _cached_CompressableQueryUpdate_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_CompressableQueryUpdate_type_value.value.variants.push(
+      {
+        name: 'Uncompressed',
+        algebraicType: QueryUpdate.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'Brotli',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
+      },
+      {
+        name: 'Gzip',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
+      }
+    );
+    return _cached_CompressableQueryUpdate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: CompressableQueryUpdate): void {

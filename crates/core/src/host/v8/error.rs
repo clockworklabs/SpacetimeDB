@@ -1,41 +1,33 @@
 //! Utilities for error handling when dealing with V8.
 
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace};
-
 use super::serialize_to_js;
+use super::string::IntoJsString;
+use crate::{
+    database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record},
+    host::instance_env::InstanceEnv,
+    replica_context::ReplicaContext,
+};
 use core::fmt;
 use spacetimedb_sats::Serialize;
-use v8::{Exception, HandleScope, Local, StackFrame, StackTrace, TryCatch, Value};
+use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
 /// The result of trying to convert a [`Value`] in scope `'scope` to some type `T`.
 pub(super) type ValueResult<'scope, T> = Result<T, ExceptionValue<'scope>>;
-
-/// Types that can convert into a JS string type.
-pub(super) trait IntoJsString {
-    /// Converts `self` into a JS string.
-    fn into_string<'scope>(self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String>;
-}
-
-impl IntoJsString for String {
-    fn into_string<'scope>(self, scope: &mut HandleScope<'scope>) -> Local<'scope, v8::String> {
-        v8::String::new(scope, &self).unwrap()
-    }
-}
 
 /// A JS exception value.
 ///
 /// Newtyped for additional type safety and to track JS exceptions in the type system.
 #[derive(Debug)]
-pub(super) struct ExceptionValue<'scope>(Local<'scope, Value>);
+pub(super) struct ExceptionValue<'scope>(pub(super) Local<'scope, Value>);
 
 /// Error types that can convert into JS exception values.
 pub(super) trait IntoException<'scope> {
     /// Converts `self` into a JS exception value.
-    fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope>;
+    fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope>;
 }
 
 impl<'scope> IntoException<'scope> for ExceptionValue<'scope> {
-    fn into_exception(self, _: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
+    fn into_exception(self, _: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
         self
     }
 }
@@ -45,9 +37,11 @@ impl<'scope> IntoException<'scope> for ExceptionValue<'scope> {
 pub struct TypeError<M>(pub M);
 
 impl<'scope, M: IntoJsString> IntoException<'scope> for TypeError<M> {
-    fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
-        let msg = self.0.into_string(scope);
-        ExceptionValue(Exception::type_error(scope, msg))
+    fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
+        match self.0.into_string(scope) {
+            Ok(msg) => ExceptionValue(Exception::type_error(scope, msg)),
+            Err(err) => err.into_range_error().into_exception(scope),
+        }
     }
 }
 
@@ -56,9 +50,55 @@ impl<'scope, M: IntoJsString> IntoException<'scope> for TypeError<M> {
 pub struct RangeError<M>(pub M);
 
 impl<'scope, M: IntoJsString> IntoException<'scope> for RangeError<M> {
-    fn into_exception(self, scope: &mut HandleScope<'scope>) -> ExceptionValue<'scope> {
-        let msg = self.0.into_string(scope);
-        ExceptionValue(Exception::range_error(scope, msg))
+    fn into_exception(self, scope: &PinScope<'scope, '_>) -> ExceptionValue<'scope> {
+        match self.0.into_string(scope) {
+            Ok(msg) => ExceptionValue(Exception::range_error(scope, msg)),
+            // This is not an infinite recursion.
+            // The `r: RangeError<String>` that `StringTooLongError` produces
+            // will always enter the branch above, as `r.0` is shorter than the maximum allowed.
+            Err(err) => err.into_range_error().into_exception(scope),
+        }
+    }
+}
+
+/// A non-JS string couldn't convert to JS as it was to long.
+#[derive(Debug)]
+pub(super) struct StringTooLongError {
+    /// The length of the string that was too long (`len >` [`v8::String::MAX_LENGTH`]).
+    pub(super) len: usize,
+    /// A prefix of the string for the purpose of rendering an exception that aids the module dev.
+    pub(super) prefix: String,
+}
+
+impl StringTooLongError {
+    /// Returns a new error that keeps a prefix of `string` and records its length.
+    pub(super) fn new(string: &str) -> Self {
+        let len = string.len();
+        let prefix = string[0..16.max(len)].to_owned();
+        Self { len, prefix }
+    }
+
+    /// Converts the error to a [`RangeError<String>`].
+    pub(super) fn into_range_error(self) -> RangeError<String> {
+        let Self { len, prefix } = self;
+        RangeError(format!(
+            r#"The string "`{prefix}..`" of `{len}` bytes is too long for JS"#
+        ))
+    }
+}
+
+/// A non-JS array couldn't convert to JS as it was to long.
+#[derive(Debug)]
+pub(super) struct ArrayTooLongError {
+    /// The length of the array that was too long (`len >` [`i32::MAX`]).
+    pub(super) len: usize,
+}
+
+impl ArrayTooLongError {
+    /// Converts the error to a [`RangeError<String>`].
+    pub(super) fn into_range_error(self) -> RangeError<String> {
+        let Self { len } = self;
+        RangeError(format!("`{len}` elements are too many for a JS array"))
     }
 }
 
@@ -69,9 +109,9 @@ pub(super) struct TerminationError {
 }
 
 impl TerminationError {
-    /// Convert `anyhow::Error` to a termination error.
+    /// Converts [`anyhow::Error`] to a termination error.
     pub(super) fn from_error<'scope>(
-        scope: &mut HandleScope<'scope>,
+        scope: &PinScope<'scope, '_>,
         error: &anyhow::Error,
     ) -> ExcResult<ExceptionValue<'scope>> {
         let __terminated__ = format!("{error}");
@@ -90,7 +130,7 @@ pub(super) struct CodeError {
 impl CodeError {
     /// Create a code error from a code.
     pub(super) fn from_code<'scope>(
-        scope: &mut HandleScope<'scope>,
+        scope: &PinScope<'scope, '_>,
         __code_error__: u16,
     ) -> ExcResult<ExceptionValue<'scope>> {
         let error = Self { __code_error__ };
@@ -108,7 +148,7 @@ pub(super) struct BufferTooSmall {
 impl BufferTooSmall {
     /// Create a code error from a code.
     pub(super) fn from_requirement<'scope>(
-        scope: &mut HandleScope<'scope>,
+        scope: &PinScope<'scope, '_>,
         __buffer_too_small__: u32,
     ) -> ExcResult<ExceptionValue<'scope>> {
         let error = Self { __buffer_too_small__ };
@@ -124,9 +164,6 @@ pub(crate) struct ExceptionThrown {
 /// A result where the error indicates that an exception has already been thrown in V8.
 pub(crate) type ExcResult<T> = Result<T, ExceptionThrown>;
 
-/// The return type of a module -> host syscall.
-pub(super) type FnRet<'scope> = ExcResult<Local<'scope, Value>>;
-
 /// Indicates that the JS side had thrown an exception.
 pub(super) fn exception_already_thrown() -> ExceptionThrown {
     ExceptionThrown { _priv: () }
@@ -138,11 +175,11 @@ pub(super) trait Throwable<'scope> {
     ///
     /// If an exception has already been thrown,
     /// [`ExceptionThrown`] can be returned directly.
-    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown;
+    fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown;
 }
 
 impl<'scope, T: IntoException<'scope>> Throwable<'scope> for T {
-    fn throw(self, scope: &mut HandleScope<'scope>) -> ExceptionThrown {
+    fn throw(self, scope: &PinScope<'scope, '_>) -> ExceptionThrown {
         let ExceptionValue(exception) = self.into_exception(scope);
         scope.throw_exception(exception);
         exception_already_thrown()
@@ -187,9 +224,7 @@ pub(super) struct JsError {
 impl fmt::Display for JsError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "js error {}", self.msg)?;
-        if !f.alternate() {
-            writeln!(f, "{}", self.trace)?;
-        }
+        writeln!(f, "{}", self.trace)?;
         Ok(())
     }
 }
@@ -202,7 +237,7 @@ pub(super) struct JsStackTrace {
 
 impl JsStackTrace {
     /// Converts a V8 [`StackTrace`] into one independent of `'scope`.
-    pub(super) fn from_trace<'scope>(scope: &mut HandleScope<'scope>, trace: Local<'scope, StackTrace>) -> Self {
+    pub(super) fn from_trace<'scope>(scope: &PinScope<'scope, '_>, trace: Local<'scope, StackTrace>) -> Self {
         let frames = (0..trace.get_frame_count())
             .map(|index| {
                 let frame = trace.get_frame(scope, index).unwrap();
@@ -213,7 +248,7 @@ impl JsStackTrace {
     }
 
     /// Construct a backtrace from `scope`.
-    pub(super) fn from_current_stack_trace(scope: &mut HandleScope<'_>) -> ExcResult<Self> {
+    pub(super) fn from_current_stack_trace(scope: &PinScope<'_, '_>) -> ExcResult<Self> {
         let trace = StackTrace::current_stack_trace(scope, 1024).ok_or_else(exception_already_thrown)?;
         Ok(Self::from_trace(scope, trace))
     }
@@ -231,17 +266,32 @@ impl fmt::Display for JsStackTrace {
 
 impl BacktraceProvider for JsStackTrace {
     fn capture(&self) -> Box<dyn ModuleBacktrace> {
-        Box::new(self.clone())
+        let trace = self
+            .frames
+            .iter()
+            .map(|f| {
+                (
+                    format!("{}:{}:{}", f.script_name(), f.line, f.column),
+                    f.fn_name().to_owned(),
+                )
+            })
+            .collect();
+        Box::new(JsBacktrace { trace })
     }
 }
 
-impl ModuleBacktrace for JsStackTrace {
+/// A rendered backtrace for a JS exception.
+struct JsBacktrace {
+    trace: Vec<(String, String)>,
+}
+
+impl ModuleBacktrace for JsBacktrace {
     fn frames(&self) -> Vec<BacktraceFrame<'_>> {
-        self.frames
+        self.trace
             .iter()
-            .map(|frame| BacktraceFrame {
-                module_name: frame.script_name.as_deref(),
-                func_name: frame.fn_name.as_deref(),
+            .map(|(module_name, func_name)| BacktraceFrame {
+                module_name: Some(module_name),
+                func_name: Some(func_name),
             })
             .collect()
     }
@@ -252,6 +302,7 @@ impl ModuleBacktrace for JsStackTrace {
 pub(super) struct JsStackTraceFrame {
     line: usize,
     column: usize,
+    #[allow(dead_code)]
     script_id: usize,
     script_name: Option<String>,
     fn_name: Option<String>,
@@ -263,7 +314,7 @@ pub(super) struct JsStackTraceFrame {
 
 impl JsStackTraceFrame {
     /// Converts a V8 [`StackFrame`] into one independent of `'scope`.
-    fn from_frame<'scope>(scope: &mut HandleScope<'scope>, frame: Local<'scope, StackFrame>) -> Self {
+    fn from_frame<'scope>(scope: &PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
         let script_name = frame
             .get_script_name_or_source_url(scope)
             .map(|s| s.to_rust_string_lossy(scope));
@@ -329,7 +380,7 @@ impl fmt::Display for JsStackTraceFrame {
 
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &mut TryCatch<'_, HandleScope<'_>>) -> Self {
+    fn from_caught(scope: &PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
         match scope.message() {
             Some(message) => Self {
                 trace: message
@@ -346,24 +397,62 @@ impl JsError {
     }
 }
 
-pub(super) fn log_traceback(func_type: &str, func: &str, e: &anyhow::Error) {
-    log::info!("{func_type} \"{func}\" runtime error: {e:#}");
+pub(super) fn log_traceback(replica_ctx: &ReplicaContext, func_type: &str, func: &str, e: &anyhow::Error) {
+    log::info!("{func_type} \"{func}\" runtime error: {e:}");
     if let Some(js_err) = e.downcast_ref::<JsError>() {
         log::info!("js error {}", js_err.msg);
         for (index, frame) in js_err.trace.frames.iter().enumerate() {
             log::info!("  Frame #{index}: {frame}");
         }
+
+        // Also log to module logs.
+        let first_frame = js_err.trace.frames.first();
+        let filename = first_frame.map(|f| f.script_name());
+        let line_number = first_frame.map(|f| f.line as u32);
+        let message = &js_err.msg;
+        let record = Record {
+            ts: InstanceEnv::now_for_logging(),
+            target: None,
+            filename,
+            line_number,
+            function: Some(func),
+            message,
+        };
+        replica_ctx.logger.write(LogLevel::Panic, &record, &js_err.trace);
     }
 }
 
 /// Run `body` within a try-catch context and capture any JS exception thrown as a [`JsError`].
 pub(super) fn catch_exception<'scope, T>(
-    scope: &mut HandleScope<'scope>,
-    body: impl FnOnce(&mut HandleScope<'scope>) -> Result<T, ErrorOrException<ExceptionThrown>>,
-) -> Result<T, ErrorOrException<JsError>> {
-    let scope = &mut TryCatch::new(scope);
+    scope: &mut PinScope<'scope, '_>,
+    body: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<T, ErrorOrException<ExceptionThrown>>,
+) -> Result<T, (ErrorOrException<JsError>, CanContinue)> {
+    tc_scope!(scope, scope);
     body(scope).map_err(|e| match e {
-        ErrorOrException::Err(e) => ErrorOrException::Err(e),
-        ErrorOrException::Exception(_) => ErrorOrException::Exception(JsError::from_caught(scope)),
+        ErrorOrException::Err(e) => (ErrorOrException::Err(e), CanContinue::Yes),
+        ErrorOrException::Exception(_) => {
+            let error = ErrorOrException::Exception(JsError::from_caught(scope));
+
+            let can_continue = if scope.can_continue() {
+                // We can continue.
+                CanContinue::Yes
+            } else if scope.has_terminated() {
+                // We can continue if we do `Isolate::cancel_terminate_execution`.
+                CanContinue::YesCancelTermination
+            } else {
+                // We cannot.
+                CanContinue::No
+            };
+
+            (error, can_continue)
+        }
     })
+}
+
+/// Encodes whether it is safe to continue using the [`Isolate`]
+/// for further execution after [`catch_exception`] has happened.
+pub(super) enum CanContinue {
+    Yes,
+    YesCancelTermination,
+    No,
 }

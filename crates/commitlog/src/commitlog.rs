@@ -61,7 +61,25 @@ impl<R: Repo, T> Generic<R, T> {
         }
         let head = if let Some(last) = tail.pop() {
             debug!("resuming last segment: {last}");
+            // Resume the last segment for writing, or create a new segment
+            // starting from the last good commit + 1.
             repo::resume_segment_writer(&repo, opts, last)?.or_else(|meta| {
+                // The first commit in the last segment being corrupt is an
+                // edge case: we'd try to start a new segment with an offset
+                // equal to the already existing one, which would fail.
+                //
+                // We cannot just skip it either, as we don't know the reason
+                // for the corruption (there could be more, potentially
+                // recoverable commits in the segment).
+                //
+                // Thus, provide some context about what is wrong and refuse to
+                // start.
+                if meta.tx_range.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("repo {}: first commit in resumed segment {} is corrupt", repo, last),
+                    ));
+                }
                 tail.push(meta.tx_range.start);
                 repo::create_segment_writer(&repo, opts, meta.max_epoch, meta.tx_range.end)
             })?
@@ -909,7 +927,7 @@ mod tests {
     use super::*;
     use crate::{
         payload::{ArrayDecodeError, ArrayDecoder},
-        tests::helpers::{fill_log, mem_log},
+        tests::helpers::{enable_logging, fill_log, mem_log},
     };
 
     #[test]
@@ -1143,6 +1161,8 @@ mod tests {
 
     #[test]
     fn reset_to_offset() {
+        enable_logging();
+
         let mut log = mem_log::<[u8; 32]>(128);
         let total_txs = fill_log(&mut log, 50, repeat(1)) as u64;
 
@@ -1225,7 +1245,7 @@ mod tests {
 
     #[test]
     fn set_same_epoch_does_nothing() {
-        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::unlimited(), <_>::default()).unwrap();
         assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
         let committed = log.set_epoch(Commit::DEFAULT_EPOCH).unwrap();
         assert_eq!(committed, None);
@@ -1233,7 +1253,7 @@ mod tests {
 
     #[test]
     fn set_new_epoch_commits() {
-        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::unlimited(), <_>::default()).unwrap();
         assert_eq!(log.epoch(), Commit::DEFAULT_EPOCH);
         log.append(<_>::default()).unwrap();
         let committed = log
@@ -1246,7 +1266,7 @@ mod tests {
 
     #[test]
     fn set_lower_epoch_returns_error() {
-        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::new(), <_>::default()).unwrap();
+        let mut log = Generic::<_, [u8; 32]>::open(repo::Memory::unlimited(), <_>::default()).unwrap();
         log.set_epoch(42).unwrap();
         assert_eq!(log.epoch(), 42);
         assert_matches!(log.set_epoch(7), Err(e) if e.kind() == io::ErrorKind::InvalidInput)
