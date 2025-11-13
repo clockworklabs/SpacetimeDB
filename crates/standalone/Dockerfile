@@ -13,6 +13,3 @@ WORKDIR /app
 
 # Expose the necessary port
 EXPOSE 3000
-
-# Define the entrypoint
-ENTRYPOINT ["spacetime"]

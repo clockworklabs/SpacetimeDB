@@ -29,7 +29,7 @@ services:
       - "5432:5432"
       # Tracy
       - "8086:8086"
-    entrypoint: target/debug/spacetimedb-cli --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa --pg-port 5432
+    entrypoint: spacetime start --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa --pg-port 5432
     privileged: true
     environment:
       RUST_BACKTRACE: 1
