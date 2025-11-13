@@ -50,11 +50,11 @@ bower_components
 build/Release
 
 # Dependency directories
-node_modules/
-jspm_packages/
+node_modules
+jspm_packages
 
 # Snowpack dependency directory (https://snowpack.dev/)
-web_modules/
+web_modules
 
 # TypeScript cache
 *.tsbuildinfo
@@ -166,6 +166,7 @@ linux-target/
 
 ### VisualStudioCode ###
 .vscode/*
+.vscode
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -219,3 +220,9 @@ new.json
 
 # Test data
 !crates/core/testdata/
+
+# Temporary templates dir for CLI's init command
+/crates/cli/.templates
+
+# Symlinked output from `nix build`
+result

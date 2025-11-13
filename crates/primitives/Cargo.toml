@@ -12,6 +12,7 @@ memory-usage = ["dep:spacetimedb-memory-usage"]
 [dependencies]
 bitflags.workspace = true
 either.workspace = true
+enum-as-inner.workspace = true
 nohash-hasher.workspace = true
 itertools.workspace = true
 spacetimedb-memory-usage = { workspace = true, optional = true, default-features = false }

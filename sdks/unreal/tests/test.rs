@@ -83,7 +83,10 @@ fn make_test(test_name: &str) -> Test {
     // Run automation test
 
     let run_command = format!(
-        "\"{editor_exe}\" \"{uproject_path}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -DDC-ForceMemoryCache -ddc=InstalledNoZenLocalFallback -ExecCmds=\"Automation RunTests SpacetimeDB.TestClient.{test_name}; Quit\""
+		// Updated to -NoZen and -dcc=InstalledNoZenLocalFallback to stop Unreal from trying to install Zen Server in CI
+		// This is failing during tests as each test tries to install Zen and create a race condition where two tests try to handle this at the same time
+		// Zen Server and the Derived Cache seem like a good idea during tests but they were not designed with mutli-threaded tests in mind, it is suggested to allow each test to run in isolation
+        "\"{editor_exe}\" \"{uproject_path}\" -NullRHI -Unattended -NoSound -nop4 -NoSplash -NoZen -ddc=InstalledNoZenLocalFallback -nocore -ExecCmds=\"Automation RunTests SpacetimeDB.TestClient.{test_name}; Quit\""
     );
 
     Test::builder()

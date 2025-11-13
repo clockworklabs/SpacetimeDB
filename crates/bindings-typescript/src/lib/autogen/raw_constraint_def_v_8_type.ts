@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type RawConstraintDefV8 = {
@@ -21,6 +22,8 @@ export type RawConstraintDefV8 = {
   constraints: number;
   columns: number[];
 };
+let _cached_RawConstraintDefV8_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -30,16 +33,20 @@ export const RawConstraintDefV8 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'constraintName', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'constraints', algebraicType: __AlgebraicTypeValue.U8 },
-        {
-          name: 'columns',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-        },
-      ],
+    if (_cached_RawConstraintDefV8_type_value)
+      return _cached_RawConstraintDefV8_type_value;
+    _cached_RawConstraintDefV8_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawConstraintDefV8_type_value.value.elements.push(
+      { name: 'constraintName', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'constraints', algebraicType: __AlgebraicTypeValue.U8 },
+      {
+        name: 'columns',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
+      }
+    );
+    return _cached_RawConstraintDefV8_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawConstraintDefV8): void {

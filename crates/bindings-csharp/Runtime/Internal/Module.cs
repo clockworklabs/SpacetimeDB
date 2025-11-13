@@ -1,6 +1,7 @@
 namespace SpacetimeDB.Internal;
 
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using SpacetimeDB;
 using SpacetimeDB.BSATN;
@@ -36,23 +37,54 @@ partial class RawModuleDefV9
 
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
 
+    internal void RegisterView(RawViewDefV9 view)
+    {
+        MiscExports.Add(new RawMiscModuleExportV9.View(view));
+    }
+
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
+
+    internal void RegisterTableDefaultValue(string table, ushort colId, byte[] value)
+    {
+        var byteList = new List<byte>(value);
+        MiscExports.Add(
+            new RawMiscModuleExportV9.ColumnDefaultValue(
+                new RawColumnDefaultValueV9(table, colId, byteList)
+            )
+        );
+    }
 }
 
 public static class Module
 {
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
+    private static readonly List<Action<BytesSink>> viewDefs = [];
+    private static readonly List<IView> viewDispatchers = [];
+    private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
 
-    private static Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext>? newContext =
-        null;
+    private static Func<
+        Identity,
+        ConnectionId?,
+        Random,
+        Timestamp,
+        IReducerContext
+    >? newReducerContext = null;
+    private static Func<Identity, IViewContext>? newViewContext = null;
+    private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
 
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
-    ) => newContext = ctor;
+    ) => newReducerContext = ctor;
 
-    readonly struct TypeRegistrar() : ITypeRegistrar
+    public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
+        newViewContext = ctor;
+
+    public static void SetAnonymousViewContextConstructor(Func<IAnonymousViewContext> ctor) =>
+        newAnonymousViewContext = ctor;
+
+    public readonly struct TypeRegistrar() : ITypeRegistrar
     {
         private readonly Dictionary<Type, AlgebraicType.Ref> types = [];
 
@@ -93,9 +125,25 @@ public static class Module
 
     public static void RegisterTable<T, View>()
         where T : IStructuralReadWrite, new()
-        where View : ITableView<View, T>, new()
-    {
+        where View : ITableView<View, T>, new() =>
         moduleDef.RegisterTable(View.MakeTableDesc(typeRegistrar));
+
+    public static void RegisterView<TDispatcher>()
+        where TDispatcher : IView, new()
+    {
+        var dispatcher = new TDispatcher();
+        var def = dispatcher.MakeViewDef(typeRegistrar);
+        viewDispatchers.Add(dispatcher);
+        moduleDef.RegisterView(def);
+    }
+
+    public static void RegisterAnonymousView<TDispatcher>()
+        where TDispatcher : IAnonymousView, new()
+    {
+        var dispatcher = new TDispatcher();
+        var def = dispatcher.MakeAnonymousViewDef(typeRegistrar);
+        anonymousViewDispatchers.Add(dispatcher);
+        moduleDef.RegisterView(def);
     }
 
     public static void RegisterClientVisibilityFilter(Filter rlsFilter)
@@ -110,20 +158,42 @@ public static class Module
         }
     }
 
-    private static byte[] Consume(this BytesSource source)
+    public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
+        moduleDef.RegisterTableDefaultValue(table, colId, value);
+
+    public static byte[] Consume(this BytesSource source)
     {
         if (source == BytesSource.INVALID)
         {
             return [];
         }
-        var buffer = new byte[0x20_000];
+
+        var len = (uint)0;
+        var ret = FFI.bytes_source_remaining_length(source, ref len);
+        switch (ret)
+        {
+            case Errno.OK:
+                break;
+            case Errno.NO_SUCH_BYTES:
+                throw new NoSuchBytesException();
+            default:
+                throw new UnknownException(ret);
+        }
+
+        var buffer = new byte[len];
         var written = 0U;
+        // Because we've reserved space in our buffer already, this loop should be unnecessary.
+        // We expect the first call to `bytes_source_read` to always return `-1`.
+        // I (pgoldman 2025-09-26) am leaving the loop here because there's no downside to it,
+        // and in the future we may want to support `BytesSource`s which don't have a known length ahead of time
+        // (i.e. put arbitrary streams in `BytesSource` on the host side rather than just `Bytes` buffers),
+        // at which point the loop will become useful again.
         while (true)
         {
             // Write into the spare capacity of the buffer.
             var spare = buffer.AsSpan((int)written);
             var buf_len = (uint)spare.Length;
-            var ret = FFI.bytes_source_read(source, spare, ref buf_len);
+            ret = FFI.bytes_source_read(source, spare, ref buf_len);
             written += buf_len;
             switch (ret)
             {
@@ -172,6 +242,10 @@ public static class Module
             RawModuleDef versioned = new RawModuleDef.V9(moduleDef);
             var moduleBytes = IStructuralReadWrite.ToBytes(new RawModuleDef.BSATN(), versioned);
             description.Write(moduleBytes);
+            foreach (var writeView in viewDefs)
+            {
+                writeView(description);
+            }
         }
         catch (Exception e)
         {
@@ -203,7 +277,7 @@ public static class Module
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
-            var ctx = newContext!(senderIdentity, connectionId, random, time);
+            var ctx = newReducerContext!(senderIdentity, connectionId, random, time);
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
@@ -222,4 +296,63 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
+
+    public static Errno __call_view__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        BytesSource args,
+        BytesSink rows
+    )
+    {
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var ctx = newViewContext!(sender);
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = viewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    public static Errno __call_anonymous_view__(uint id, BytesSource args, BytesSink rows)
+    {
+        try
+        {
+            var ctx = newAnonymousViewContext!();
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = anonymousViewDispatchers[(int)id].Invoke(reader, ctx);
+            rows.Write(bytes);
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Error while invoking anonymous view: {e}");
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+}
+
+/// <summary>
+/// Read-only database access for view contexts.
+/// The code generator will extend this partial class to add table accessors.
+/// </summary>
+public sealed partial class LocalReadOnly
+{
+    // This class is intentionally empty - the code generator will add
+    // read-only table accessors for each table in the module.
+    // Example generated code:
+    // public Internal.ViewHandles.UserReadOnly User => new();
 }

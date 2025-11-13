@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { ProductTypeElement } from './product_type_element_type';
 // Mark import as potentially unused
@@ -23,6 +24,8 @@ export type ReducerDef = {
   name: string;
   args: ProductTypeElement[];
 };
+let _cached_ReducerDef_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -32,17 +35,20 @@ export const ReducerDef = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'args',
-          algebraicType: __AlgebraicTypeValue.Array(
-            ProductTypeElement.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_ReducerDef_type_value) return _cached_ReducerDef_type_value;
+    _cached_ReducerDef_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_ReducerDef_type_value.value.elements.push(
+      { name: 'name', algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'args',
+        algebraicType: __AlgebraicTypeValue.Array(
+          ProductTypeElement.getTypeScriptAlgebraicType()
+        ),
+      }
+    );
+    return _cached_ReducerDef_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: ReducerDef): void {

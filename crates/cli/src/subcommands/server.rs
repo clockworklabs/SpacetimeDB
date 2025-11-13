@@ -134,7 +134,7 @@ async fn exec_subcommand(
         "ping" => exec_ping(config, args).await,
         "edit" => exec_edit(config, args).await,
         "clear" => exec_clear(config, paths, args).await,
-        unknown => Err(anyhow::anyhow!("Invalid subcommand: {}", unknown)),
+        unknown => Err(anyhow::anyhow!("Invalid subcommand: {unknown}")),
     }
 }
 
@@ -181,7 +181,7 @@ pub async fn exec_set_default(mut config: Config, args: &ArgMatches) -> Result<(
 
 fn valid_protocol_or_error(protocol: &str) -> anyhow::Result<()> {
     if !VALID_PROTOCOLS.contains(&protocol) {
-        Err(anyhow::anyhow!("Invalid protocol: {}", protocol))
+        Err(anyhow::anyhow!("Invalid protocol: {protocol}"))
     } else {
         Ok(())
     }
@@ -196,7 +196,7 @@ pub async fn exec_add(mut config: Config, args: &ArgMatches) -> Result<(), anyho
     let no_fingerprint = *args.get_one::<bool>("no-fingerprint").unwrap();
 
     let (host, protocol) = host_or_url_to_host_and_protocol(url);
-    let protocol = protocol.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", url))?;
+    let protocol = protocol.ok_or_else(|| anyhow::anyhow!("Invalid url: {url}"))?;
 
     valid_protocol_or_error(protocol)?;
 
@@ -313,7 +313,7 @@ pub async fn exec_edit(mut config: Config, args: &ArgMatches) -> Result<(), anyh
         None => (None, None),
         Some(new_url) => {
             let (new_host, new_proto) = host_or_url_to_host_and_protocol(new_url);
-            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {}", new_url))?;
+            let new_proto = new_proto.ok_or_else(|| anyhow::anyhow!("Invalid url: {new_url}"))?;
             (Some(new_host), Some(new_proto))
         }
     };

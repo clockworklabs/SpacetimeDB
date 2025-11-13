@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type RawScheduleDefV9 = {
@@ -21,6 +22,8 @@ export type RawScheduleDefV9 = {
   reducerName: string;
   scheduledAtColumn: number;
 };
+let _cached_RawScheduleDefV9_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -30,18 +33,22 @@ export const RawScheduleDefV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'name',
-          algebraicType: __AlgebraicTypeValue.createOptionType(
-            __AlgebraicTypeValue.String
-          ),
-        },
-        { name: 'reducerName', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'scheduledAtColumn', algebraicType: __AlgebraicTypeValue.U16 },
-      ],
+    if (_cached_RawScheduleDefV9_type_value)
+      return _cached_RawScheduleDefV9_type_value;
+    _cached_RawScheduleDefV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawScheduleDefV9_type_value.value.elements.push(
+      {
+        name: 'name',
+        algebraicType: __AlgebraicTypeValue.createOptionType(
+          __AlgebraicTypeValue.String
+        ),
+      },
+      { name: 'reducerName', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'scheduledAtColumn', algebraicType: __AlgebraicTypeValue.U16 }
+    );
+    return _cached_RawScheduleDefV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawScheduleDefV9): void {

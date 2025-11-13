@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 
 export type RawColumnDefaultValueV9 = {
@@ -21,6 +22,9 @@ export type RawColumnDefaultValueV9 = {
   colId: number;
   value: Uint8Array;
 };
+let _cached_RawColumnDefaultValueV9_type_value: __AlgebraicTypeType | null =
+  null;
+
 /**
  * An object for generated helper functions.
  */
@@ -30,16 +34,20 @@ export const RawColumnDefaultValueV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        { name: 'table', algebraicType: __AlgebraicTypeValue.String },
-        { name: 'colId', algebraicType: __AlgebraicTypeValue.U16 },
-        {
-          name: 'value',
-          algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-        },
-      ],
+    if (_cached_RawColumnDefaultValueV9_type_value)
+      return _cached_RawColumnDefaultValueV9_type_value;
+    _cached_RawColumnDefaultValueV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawColumnDefaultValueV9_type_value.value.elements.push(
+      { name: 'table', algebraicType: __AlgebraicTypeValue.String },
+      { name: 'colId', algebraicType: __AlgebraicTypeValue.U16 },
+      {
+        name: 'value',
+        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
+      }
+    );
+    return _cached_RawColumnDefaultValueV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawColumnDefaultValueV9): void {

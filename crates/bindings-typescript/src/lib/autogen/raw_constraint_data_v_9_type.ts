@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { RawUniqueConstraintDataV9 } from './raw_unique_constraint_data_v_9_type';
 // Mark import as potentially unused
@@ -24,6 +25,8 @@ import * as RawConstraintDataV9Variants from './raw_constraint_data_v_9_variants
 // The tagged union or sum type for the algebraic type `RawConstraintDataV9`.
 export type RawConstraintDataV9 = RawConstraintDataV9Variants.Unique;
 
+let _cached_RawConstraintDataV9_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const RawConstraintDataV9 = {
   // Helper functions for constructing each variant of the tagged union.
@@ -32,20 +35,21 @@ export const RawConstraintDataV9 = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  Unique: (value: RawUniqueConstraintDataV9): RawConstraintDataV9 => ({
-    tag: 'Unique',
-    value,
-  }),
+  Unique: (
+    value: RawUniqueConstraintDataV9
+  ): RawConstraintDataV9Variants.Unique => ({ tag: 'Unique', value }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'Unique',
-          algebraicType: RawUniqueConstraintDataV9.getTypeScriptAlgebraicType(),
-        },
-      ],
+    if (_cached_RawConstraintDataV9_type_value)
+      return _cached_RawConstraintDataV9_type_value;
+    _cached_RawConstraintDataV9_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_RawConstraintDataV9_type_value.value.variants.push({
+      name: 'Unique',
+      algebraicType: RawUniqueConstraintDataV9.getTypeScriptAlgebraicType(),
+    });
+    return _cached_RawConstraintDataV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawConstraintDataV9): void {

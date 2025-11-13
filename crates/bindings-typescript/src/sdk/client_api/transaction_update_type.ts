@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { UpdateStatus } from './update_status_type';
 // Mark import as potentially unused
@@ -45,6 +46,8 @@ export type TransactionUpdate = {
   energyQuantaUsed: EnergyQuanta;
   totalHostExecutionDuration: __TimeDuration;
 };
+let _cached_TransactionUpdate_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -54,38 +57,42 @@ export const TransactionUpdate = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'status',
-          algebraicType: UpdateStatus.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'timestamp',
-          algebraicType: __AlgebraicTypeValue.createTimestampType(),
-        },
-        {
-          name: 'callerIdentity',
-          algebraicType: __AlgebraicTypeValue.createIdentityType(),
-        },
-        {
-          name: 'callerConnectionId',
-          algebraicType: __AlgebraicTypeValue.createConnectionIdType(),
-        },
-        {
-          name: 'reducerCall',
-          algebraicType: ReducerCallInfo.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'energyQuantaUsed',
-          algebraicType: EnergyQuanta.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'totalHostExecutionDuration',
-          algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
-        },
-      ],
+    if (_cached_TransactionUpdate_type_value)
+      return _cached_TransactionUpdate_type_value;
+    _cached_TransactionUpdate_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_TransactionUpdate_type_value.value.elements.push(
+      {
+        name: 'status',
+        algebraicType: UpdateStatus.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'timestamp',
+        algebraicType: __AlgebraicTypeValue.createTimestampType(),
+      },
+      {
+        name: 'callerIdentity',
+        algebraicType: __AlgebraicTypeValue.createIdentityType(),
+      },
+      {
+        name: 'callerConnectionId',
+        algebraicType: __AlgebraicTypeValue.createConnectionIdType(),
+      },
+      {
+        name: 'reducerCall',
+        algebraicType: ReducerCallInfo.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'energyQuantaUsed',
+        algebraicType: EnergyQuanta.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'totalHostExecutionDuration',
+        algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
+      }
+    );
+    return _cached_TransactionUpdate_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TransactionUpdate): void {

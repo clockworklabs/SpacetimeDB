@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { DatabaseUpdate } from './database_update_type';
 // Mark import as potentially unused
@@ -38,6 +39,8 @@ export type UpdateStatus =
   | UpdateStatusVariants.Failed
   | UpdateStatusVariants.OutOfEnergy;
 
+let _cached_UpdateStatus_type_value: __AlgebraicTypeType | null = null;
+
 // A value with helper functions to construct the type.
 export const UpdateStatus = {
   // Helper functions for constructing each variant of the tagged union.
@@ -46,27 +49,33 @@ export const UpdateStatus = {
   // assert!(foo.tag === "A");
   // assert!(foo.value === 42);
   // ```
-  Committed: (value: DatabaseUpdate): UpdateStatus => ({
+  Committed: (value: DatabaseUpdate): UpdateStatusVariants.Committed => ({
     tag: 'Committed',
     value,
   }),
-  Failed: (value: string): UpdateStatus => ({ tag: 'Failed', value }),
+  Failed: (value: string): UpdateStatusVariants.Failed => ({
+    tag: 'Failed',
+    value,
+  }),
   OutOfEnergy: { tag: 'OutOfEnergy' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'Committed',
-          algebraicType: DatabaseUpdate.getTypeScriptAlgebraicType(),
-        },
-        { name: 'Failed', algebraicType: __AlgebraicTypeValue.String },
-        {
-          name: 'OutOfEnergy',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
+    if (_cached_UpdateStatus_type_value) return _cached_UpdateStatus_type_value;
+    _cached_UpdateStatus_type_value = __AlgebraicTypeValue.Sum({
+      variants: [],
     });
+    _cached_UpdateStatus_type_value.value.variants.push(
+      {
+        name: 'Committed',
+        algebraicType: DatabaseUpdate.getTypeScriptAlgebraicType(),
+      },
+      { name: 'Failed', algebraicType: __AlgebraicTypeValue.String },
+      {
+        name: 'OutOfEnergy',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      }
+    );
+    return _cached_UpdateStatus_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: UpdateStatus): void {

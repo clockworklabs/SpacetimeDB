@@ -57,7 +57,7 @@ class CLIENT_UNREAL_API UPlayerPlayerIdUniqueIndex : public UObject
 private:
     // Declare an instance of your templated helper.
     // It's private because the UObject wrapper will expose its functionality.
-    FUniqueIndexHelper<FPlayerType, uint32, FTableCache<FPlayerType>> PlayerIdIndexHelper;
+    FUniqueIndexHelper<FPlayerType, int32, FTableCache<FPlayerType>> PlayerIdIndexHelper;
 
 public:
     UPlayerPlayerIdUniqueIndex()
@@ -70,8 +70,8 @@ public:
      * @param Key The playerid to search for.
      * @return The found FPlayerType, or a default-constructed FPlayerType if not found.
      */
-    // NOTE: Not exposed to Blueprint because uint32 types are not Blueprint-compatible
-    FPlayerType Find(uint32 Key)
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|PlayerIndex")
+    FPlayerType Find(int32 Key)
     {
         // Simply delegate the call to the internal helper
         return PlayerIdIndexHelper.FindUniqueIndex(Key);
@@ -100,7 +100,7 @@ public:
 
     void PostInitialize();
 
-    /** Update function for player table*/
+    /** Update function for logged_out_player table*/
     FTableAppliedDiff<FPlayerType> Update(TArray<FWithBsatn<FPlayerType>> InsertsRef, TArray<FWithBsatn<FPlayerType>> DeletesRef);
 
     /** Number of subscribed rows currently in the cache */
@@ -138,7 +138,7 @@ public:
     FOnPlayerDelete OnDelete;
 
 private:
-    const FString TableName = TEXT("player");
+    const FString TableName = TEXT("logged_out_player");
 
     TSharedPtr<UClientCache<FPlayerType>> Data;
 };

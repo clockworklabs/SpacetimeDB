@@ -37,6 +37,16 @@ pub fn cli() -> clap::Command {
                 .help("The system path (absolute or relative) to the compiled wasm binary we should inspect"),
         )
         .arg(
+            Arg::new("js_file")
+                .value_parser(clap::value_parser!(PathBuf))
+                .long("js-path")
+                .short('j')
+                .group("source")
+                .conflicts_with("project_path")
+                .conflicts_with("build_options")
+                .help("The system path (absolute or relative) to the bundled javascript file we should inspect"),
+        )
+        .arg(
             Arg::new("project_path")
                 .value_parser(clap::value_parser!(PathBuf))
                 .default_value(".")
@@ -120,6 +130,7 @@ pub async fn exec_ex(
 ) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
     let wasm_file = args.get_one::<PathBuf>("wasm_file").cloned();
+    let js_file = args.get_one::<PathBuf>("js_file").cloned();
     let json_module = args.get_many::<PathBuf>("json_module");
     let lang = *args.get_one::<Language>("lang").unwrap();
     let namespace = args.get_one::<String>("namespace").unwrap();
@@ -144,16 +155,20 @@ pub async fn exec_ex(
         };
         module.try_into()?
     } else {
-        let wasm_path = if let Some(path) = wasm_file {
+        let path = if let Some(path) = wasm_file {
+            println!("Skipping build. Instead we are inspecting {}", path.display());
+            path.clone()
+        } else if let Some(path) = js_file {
             println!("Skipping build. Instead we are inspecting {}", path.display());
             path.clone()
         } else {
-            build::exec_with_argstring(config.clone(), project_path, build_options).await?
+            let (path, _) = build::exec_with_argstring(config.clone(), project_path, build_options).await?;
+            path
         };
         let spinner = indicatif::ProgressBar::new_spinner();
         spinner.enable_steady_tick(std::time::Duration::from_millis(60));
-        spinner.set_message("Extracting schema from wasm...");
-        extract_descriptions(&wasm_path).context("could not extract schema")?
+        spinner.set_message(format!("Extracting schema from {}...", path.display()));
+        extract_descriptions(&path).context("could not extract schema")?
     };
 
     fs::create_dir_all(out_dir)?;
@@ -247,7 +262,7 @@ pub async fn exec_ex(
     Ok(())
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Language {
     Csharp,
     TypeScript,

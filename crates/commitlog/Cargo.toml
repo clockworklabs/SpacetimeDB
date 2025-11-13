@@ -9,19 +9,23 @@ description = "Implementation of the SpacetimeDB commitlog."
 
 [features]
 default = ["serde"]
+# Enable streaming reads + writes
 streaming = ["dep:async-stream", "dep:bytes", "dep:futures", "dep:tokio", "dep:tokio-util"]
 # Enable types + impls useful for testing
 test = ["dep:env_logger"]
+# Enable `fallocate` of segments
+fallocate = ["dep:nix"]
 
 [dependencies]
 async-stream = { workspace = true, optional = true }
 bitflags.workspace = true
 bytes= { workspace = true, optional = true }
 crc32c.workspace = true
-futures = { workspace = true, optional = true}
+futures = { workspace = true, optional = true }
 itertools.workspace = true
 log.workspace = true
 memmap2 = "0.9.4"
+nix = { workspace = true, optional = true, features = ["fs"] }
 serde = { workspace = true, optional = true }
 spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true

@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import { Typespace } from './typespace_type';
 // Mark import as potentially unused
@@ -42,6 +43,8 @@ export type RawModuleDefV9 = {
   miscExports: RawMiscModuleExportV9[];
   rowLevelSecurity: RawRowLevelSecurityDefV9[];
 };
+let _cached_RawModuleDefV9_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -51,44 +54,48 @@ export const RawModuleDefV9 = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'typespace',
-          algebraicType: Typespace.getTypeScriptAlgebraicType(),
-        },
-        {
-          name: 'tables',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawTableDefV9.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'reducers',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawReducerDefV9.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'types',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawTypeDefV9.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'miscExports',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawMiscModuleExportV9.getTypeScriptAlgebraicType()
-          ),
-        },
-        {
-          name: 'rowLevelSecurity',
-          algebraicType: __AlgebraicTypeValue.Array(
-            RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_RawModuleDefV9_type_value)
+      return _cached_RawModuleDefV9_type_value;
+    _cached_RawModuleDefV9_type_value = __AlgebraicTypeValue.Product({
+      elements: [],
     });
+    _cached_RawModuleDefV9_type_value.value.elements.push(
+      {
+        name: 'typespace',
+        algebraicType: Typespace.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'tables',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawTableDefV9.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'reducers',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawReducerDefV9.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'types',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawTypeDefV9.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'miscExports',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawMiscModuleExportV9.getTypeScriptAlgebraicType()
+        ),
+      },
+      {
+        name: 'rowLevelSecurity',
+        algebraicType: __AlgebraicTypeValue.Array(
+          RawRowLevelSecurityDefV9.getTypeScriptAlgebraicType()
+        ),
+      }
+    );
+    return _cached_RawModuleDefV9_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: RawModuleDefV9): void {

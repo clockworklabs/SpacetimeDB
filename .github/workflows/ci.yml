@@ -13,6 +13,10 @@ on:
 
 name: CI
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.event.inputs.pr_number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
+
 jobs:
   docker_smoketests:
     name: Smoketests
@@ -43,7 +47,18 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
+
+      # nodejs and pnpm are required for the typescript quickstart smoketest
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
+
       - name: Install psql (Windows)
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
@@ -54,8 +69,12 @@ jobs:
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
+          # Fail properly if any individual command fails
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+
           cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-          Start-Process target/debug/spacetimedb-cli.exe start
+          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
@@ -63,11 +82,11 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
-      - name: Install psycopg2
-        run: python -m pip install psycopg2-binary
+      - name: Install python deps
+        run: python -m pip install psycopg2-binary xmltodict
       - name: Run smoketests
         # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose down
@@ -97,16 +116,32 @@ jobs:
 
       - uses: actions/setup-dotnet@v3
         with:
-          global-json-file: modules/global.json
+          global-json-file: global.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: true
 
       - name: Create /stdb dir
         run: |
           sudo mkdir /stdb
           sudo chmod 777 /stdb
-      
+
+      - name: Build typescript module sdk
+        working-directory: crates/bindings-typescript
+        run: pnpm build
+
       - name: Run cargo test
         #Note: Unreal tests will be run separately
         run: cargo test --all -- --skip unreal
+
+      - name: Run fallocate tests
+        run: cargo test -p spacetimedb-durability --features fallocate
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
@@ -129,6 +164,10 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
 
       - name: Run cargo fmt
         run: cargo fmt --all -- --check
@@ -164,6 +203,9 @@ jobs:
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
 
+      - name: Run bindgen tests
+        run: cargo test -p spacetimedb-codegen
+
       # Make sure the `Cargo.lock` file reflects the latest available versions.
       # This is what users would end up with on a fresh module, so we want to
       # catch any compile errors arising from a different transitive closure
@@ -176,8 +218,6 @@ jobs:
       - name: Build module-test
         run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
 
-      - name: Run bindgen tests
-        run: cargo test -p spacetimedb-codegen
 
   publish_checks:
     name: Check that packages are publishable
@@ -227,7 +267,7 @@ jobs:
       - name: Install packages
         if: ${{ matrix.runner == 'arm-runner' }}
         shell: bash
-        run: sudo apt install libssl-dev
+        run: sudo apt install -y libssl-dev
 
       - name: Build spacetimedb-update
         run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
@@ -249,6 +289,8 @@ jobs:
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
     runs-on: spacetimedb-runner
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:
@@ -386,4 +428,3 @@ jobs:
             echo "It looks like the CLI docs have changed:"
             exit 1
           fi
-

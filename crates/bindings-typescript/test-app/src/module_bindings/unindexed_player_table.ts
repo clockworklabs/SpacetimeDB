@@ -25,6 +25,7 @@ import {
   type EventContextInterface as __EventContextInterface,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
+  type TableHandle as __TableHandle,
 } from '../../../src/index';
 import { UnindexedPlayer } from './unindexed_player_type';
 import { Point } from './point_type';
@@ -49,7 +50,11 @@ declare type __keep = [EventContext, Reducer, RemoteReducers, RemoteTables];
  * but to directly chain method calls,
  * like `ctx.db.unindexedPlayer.on_insert(...)`.
  */
-export class UnindexedPlayerTableHandle {
+export class UnindexedPlayerTableHandle<TableName extends string>
+  implements __TableHandle<TableName>
+{
+  // phantom type to track the table name
+  readonly tableName!: TableName;
   tableCache: __TableCache<UnindexedPlayer>;
 
   constructor(tableCache: __TableCache<UnindexedPlayer>) {

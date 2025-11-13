@@ -25,7 +25,7 @@ public:
     TVariant<TArray<uint64>, uint16> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
-    ERowSizeHintTag Tag;
+    ERowSizeHintTag Tag = static_cast<ERowSizeHintTag>(0);
 
     static FRowSizeHintType FixedSize(const uint16& Value)
     {

@@ -2,15 +2,16 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment, print_auto_generated_version_comment,
+    iter_procedures, iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment,
+    print_auto_generated_version_comment,
 };
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
-use spacetimedb_schema::def::{ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
-use spacetimedb_schema::schema::{Schema, TableSchema};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse};
 use std::collections::BTreeSet;
 use std::fmt::{self, Write};
@@ -70,11 +71,7 @@ impl __sdk::InModule for {type_name} {{
             code: output.into_inner(),
         }]
     }
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
-        let schema = TableSchema::from_module_def(module, table, (), 0.into())
-            .validated()
-            .expect("Failed to generate table due to validation errors");
-
+    fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let type_ref = table.product_type_ref;
 
         let mut output = CodeIndenter::new(String::new(), INDENT);
@@ -200,7 +197,7 @@ pub(super) fn register_table(client_cache: &mut __sdk::ClientCache<super::Remote
             "}",
         );
 
-        if schema.pk().is_some() {
+        if table.primary_key.is_some() {
             let update_callback_id = table_name_pascalcase.clone() + "UpdateCallbackId";
             write!(
                 out,
@@ -317,7 +314,7 @@ pub(super) fn parse_table_update(
         let reducer_name = reducer.name.deref();
         let func_name = reducer_function_name(reducer);
         let set_reducer_flags_trait = reducer_flags_trait_name(reducer);
-        let args_type = reducer_args_type_name(&reducer.name);
+        let args_type = function_args_type_name(&reducer.name);
         let enum_variant_name = reducer_variant_name(&reducer.name);
 
         // Define an "args struct" for the reducer.
@@ -342,26 +339,11 @@ pub(super) fn parse_table_update(
 
         let callback_id = reducer_callback_id_name(&reducer.name);
 
-        // The reducer arguments as `ident: ty, ident: ty, ident: ty,`,
-        // like an argument list.
-        let mut arglist = String::new();
-        write_arglist_no_delimiters(module, &mut arglist, &reducer.params_for_generate.elements, None).unwrap();
-
-        // The reducer argument types as `&ty, &ty, &ty`,
-        // for use as the params in a `FnMut` closure type.
-        let mut arg_types_ref_list = String::new();
-        // The reducer argument names as `ident, ident, ident`,
-        // for passing to function call and struct literal expressions.
-        let mut arg_names_list = String::new();
-        for (arg_ident, arg_ty) in &reducer.params_for_generate.elements[..] {
-            arg_types_ref_list += "&";
-            write_type(module, &mut arg_types_ref_list, arg_ty).unwrap();
-            arg_types_ref_list += ", ";
-
-            let arg_name = arg_ident.deref().to_case(Case::Snake);
-            arg_names_list += &arg_name;
-            arg_names_list += ", ";
-        }
+        let FormattedArglist {
+            arglist_no_delimiters,
+            arg_type_refs,
+            arg_names,
+        } = FormattedArglist::for_arguments(module, &reducer.params_for_generate.elements);
 
         write!(out, "impl From<{args_type}> for super::Reducer ");
         out.delimited_block(
@@ -416,7 +398,7 @@ pub trait {func_name} {{
     /// This method returns immediately, and errors only if we are unable to send the request.
     /// The reducer will run asynchronously in the future,
     ///  and its status can be observed by listening for [`Self::on_{func_name}`] callbacks.
-    fn {func_name}(&self, {arglist}) -> __sdk::Result<()>;
+    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()>;
     /// Register a callback to run whenever we are notified of an invocation of the reducer `{reducer_name}`.
     ///
     /// Callbacks should inspect the [`__sdk::ReducerEvent`] contained in the [`super::ReducerEventContext`]
@@ -424,19 +406,19 @@ pub trait {func_name} {{
     ///
     /// The returned [`{callback_id}`] can be passed to [`Self::remove_on_{func_name}`]
     /// to cancel the callback.
-    fn on_{func_name}(&self, callback: impl FnMut(&super::ReducerEventContext, {arg_types_ref_list}) + Send + 'static) -> {callback_id};
+    fn on_{func_name}(&self, callback: impl FnMut(&super::ReducerEventContext, {arg_type_refs}) + Send + 'static) -> {callback_id};
     /// Cancel a callback previously registered by [`Self::on_{func_name}`],
     /// causing it not to run in the future.
     fn remove_on_{func_name}(&self, callback: {callback_id});
 }}
 
 impl {func_name} for super::RemoteReducers {{
-    fn {func_name}(&self, {arglist}) -> __sdk::Result<()> {{
-        self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names_list} }})
+    fn {func_name}(&self, {arglist_no_delimiters}) -> __sdk::Result<()> {{
+        self.imp.call_reducer({reducer_name:?}, {args_type} {{ {arg_names} }})
     }}
     fn on_{func_name}(
         &self,
-        mut callback: impl FnMut(&super::ReducerEventContext, {arg_types_ref_list}) + Send + 'static,
+        mut callback: impl FnMut(&super::ReducerEventContext, {arg_type_refs}) + Send + 'static,
     ) -> {callback_id} {{
         {callback_id}(self.imp.on_reducer(
             {reducer_name:?},
@@ -444,13 +426,13 @@ impl {func_name} for super::RemoteReducers {{
                 let super::ReducerEventContext {{
                     event: __sdk::ReducerEvent {{
                         reducer: super::Reducer::{enum_variant_name} {{
-                            {arg_names_list}
+                            {arg_names}
                         }},
                         ..
                     }},
                     ..
                 }} = ctx else {{ unreachable!() }};
-                callback(ctx, {arg_names_list})
+                callback(ctx, {arg_names})
             }}),
         ))
     }}
@@ -483,6 +465,93 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
 
         OutputFile {
             filename: reducer_module_name(&reducer.name) + ".rs",
+            code: output.into_inner(),
+        }
+    }
+
+    fn generate_procedure_file(&self, module: &ModuleDef, procedure: &ProcedureDef) -> OutputFile {
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+
+        print_file_header(out, false);
+
+        out.newline();
+
+        let mut imports = Imports::new();
+        gen_imports(&mut imports, &procedure.params_for_generate.elements);
+        add_one_import(&mut imports, &procedure.return_type_for_generate);
+        print_imports(module, out, imports);
+
+        out.newline();
+
+        let procedure_name = procedure.name.deref();
+        let func_name = procedure_function_name(procedure);
+        let func_name_with_callback = procedure_function_with_callback_name(procedure);
+        let args_type = function_args_type_name(&procedure.name);
+        let res_ty_name = type_name(module, &procedure.return_type_for_generate);
+
+        // Define an "args struct" as a serialization helper.
+        // This is not user-facing, it's not used outside this file.
+        // Unlike with reducers, we don't have to deserialize procedure args to build events,
+        // as we don't broadcast procedure args.
+        define_struct_for_product(
+            module,
+            out,
+            &args_type,
+            &procedure.params_for_generate.elements,
+            // non-pub visibility.
+            "",
+        );
+
+        out.newline();
+
+        let FormattedArglist {
+            arglist_no_delimiters,
+            arg_names,
+            ..
+        } = FormattedArglist::for_arguments(module, &procedure.params_for_generate.elements);
+
+        writeln!(
+            out,
+            "
+impl __sdk::InModule for {args_type} {{
+    type Module = super::RemoteModule;
+}}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for access to the procedure `{procedure_name}`.
+///
+/// Implemented for [`super::RemoteProcedures`].
+pub trait {func_name} {{
+    fn {func_name}(&self, {arglist_no_delimiters}) {{
+        self.{func_name_with_callback}({arg_names} |_, _| {{}});
+    }}
+
+    fn {func_name_with_callback}(
+        &self,
+        {arglist_no_delimiters}
+        __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
+    );
+}}
+
+impl {func_name} for super::RemoteProcedures {{
+    fn {func_name_with_callback}(
+        &self,
+        {arglist_no_delimiters}
+        __callback: impl FnOnce(&super::ProcedureEventContext, Result<{res_ty_name}, __sdk::InternalError>) + Send + 'static,
+    ) {{
+        self.imp.invoke_procedure_with_callback::<_, {res_ty_name}>(
+            {procedure_name:?},
+            {args_type} {{ {arg_names} }},
+            __callback,
+        );
+    }}
+}}
+"
+        );
+
+        OutputFile {
+            filename: procedure_module_name(&procedure.name) + ".rs",
             code: output.into_inner(),
         }
     }
@@ -520,7 +589,8 @@ impl {set_reducer_flags_trait} for super::SetReducerFlags {{
 
         out.newline();
 
-        // Define `RemoteModule`, `DbConnection`, `EventContext`, `RemoteTables`, `RemoteReducers` and `SubscriptionHandle`.
+        // Define `RemoteModule`, `DbConnection`, `EventContext`, `RemoteTables`,
+        // `RemoteReducers`, `RemoteProcedures` and `SubscriptionHandle`.
         // Note that these do not change based on the module.
         print_const_db_context_types(out);
 
@@ -585,6 +655,51 @@ pub fn type_name(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
     let mut s = String::new();
     write_type(module, &mut s, ty).unwrap();
     s
+}
+
+/// Arguments to a reducer or procedure pretty-printed in various ways that are convenient to compute together.
+struct FormattedArglist {
+    /// The arguments as `ident: ty, ident: ty, ident: ty,`,
+    /// like an argument list.
+    ///
+    /// Always carries a trailing comma, unless it's zero elements.
+    arglist_no_delimiters: String,
+    /// The argument types as `&ty, &ty, &ty,`,
+    /// for use as the params in a function/closure type.
+    ///
+    /// Always carries a trailing comma, unless it's zero elements.
+    arg_type_refs: String,
+    /// The argument names as `ident, ident, ident,`,
+    /// for passing to function call and struct literal expressions.
+    ///
+    /// Always carries a trailing comma, unless it's zero elements.
+    arg_names: String,
+}
+
+impl FormattedArglist {
+    fn for_arguments(module: &ModuleDef, params: &[(Identifier, AlgebraicTypeUse)]) -> Self {
+        let mut arglist_no_delimiters = String::new();
+        write_arglist_no_delimiters(module, &mut arglist_no_delimiters, params, None)
+            .expect("Writing to a String failed... huh?");
+
+        let mut arg_type_refs = String::new();
+        let mut arg_names = String::new();
+        for (arg_ident, arg_ty) in params {
+            arg_type_refs += "&";
+            write_type(module, &mut arg_type_refs, arg_ty).expect("Writing to a String failed... huh?");
+            arg_type_refs += ", ";
+
+            let arg_name = arg_ident.deref().to_case(Case::Snake);
+            arg_names += &arg_name;
+            arg_names += ", ";
+        }
+
+        Self {
+            arglist_no_delimiters,
+            arg_type_refs,
+            arg_names,
+        }
+    }
 }
 
 const ALLOW_LINTS: &str = "#![allow(unused, clippy::all)]";
@@ -779,8 +894,8 @@ fn table_access_trait_name(table_name: &Identifier) -> String {
     table_name.deref().to_case(Case::Pascal) + "TableAccess"
 }
 
-fn reducer_args_type_name(reducer_name: &Identifier) -> String {
-    reducer_name.deref().to_case(Case::Pascal) + "Args"
+fn function_args_type_name(function_name: &Identifier) -> String {
+    function_name.deref().to_case(Case::Pascal) + "Args"
 }
 
 fn reducer_variant_name(reducer_name: &Identifier) -> String {
@@ -799,6 +914,18 @@ fn reducer_function_name(reducer: &ReducerDef) -> String {
     reducer.name.deref().to_case(Case::Snake)
 }
 
+fn procedure_module_name(procedure_name: &Identifier) -> String {
+    procedure_name.deref().to_case(Case::Snake) + "_procedure"
+}
+
+fn procedure_function_name(procedure: &ProcedureDef) -> String {
+    procedure.name.deref().to_case(Case::Snake)
+}
+
+fn procedure_function_with_callback_name(procedure: &ProcedureDef) -> String {
+    procedure_function_name(procedure) + "_then"
+}
+
 fn reducer_flags_trait_name(reducer: &ReducerDef) -> String {
     format!("set_flags_for_{}", reducer_function_name(reducer))
 }
@@ -809,6 +936,7 @@ fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
         iter_types(module).map(|ty| type_module_name(&ty.name)),
         iter_reducers(module).map(|r| reducer_module_name(&r.name)),
         iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
+        iter_procedures(module).map(|proc| procedure_module_name(&proc.name)),
     )
 }
 
@@ -844,6 +972,11 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
             out,
             "pub use {mod_name}::{{{reducer_trait_name}, {flags_trait_name}, {callback_id_name}}};"
         );
+    }
+    for procedure in iter_procedures(module) {
+        let mod_name = procedure_module_name(&procedure.name);
+        let trait_name = procedure_function_name(procedure);
+        writeln!(out, "pub use {mod_name}::{trait_name};");
     }
 }
 
@@ -909,6 +1042,10 @@ impl __sdk::InModule for Reducer {{
                                 }
                                 writeln!(out, " => {:?},", reducer.name.deref());
                             }
+                            // Write a catch-all pattern to handle the case where the module defines zero reducers,
+                            // 'cause references are always considered inhabited,
+                            // even references to uninhabited types.
+                            writeln!(out, "_ => unreachable!(),");
                         },
                         "}\n",
                     );
@@ -950,7 +1087,7 @@ impl __sdk::InModule for Reducer {{
                                     "{:?} => Ok(__sdk::parse_reducer_args::<{}::{}>({:?}, &value.args)?.into()),",
                                     reducer.name.deref(),
                                     reducer_module_name(&reducer.name),
-                                    reducer_args_type_name(&reducer.name),
+                                    function_args_type_name(&reducer.name),
                                     reducer.name.deref(),
                                 );
                             }
@@ -1086,6 +1223,10 @@ fn print_applied_diff_defn(module: &ModuleDef, out: &mut Indenter) {
                     type_ref_name(module, table.product_type_ref),
                 );
             }
+            // Also write a `PhantomData` field which uses the lifetime `r`,
+            // in case the module defines zero tables,
+            // as unused lifetime params are an error.
+            writeln!(out, "__unused: std::marker::PhantomData<&'r ()>,",);
         },
         "}\n",
     );
@@ -1134,6 +1275,7 @@ fn print_impl_spacetime_module(module: &ModuleDef, out: &mut Indenter) {
 type DbConnection = DbConnection;
 type EventContext = EventContext;
 type ReducerEventContext = ReducerEventContext;
+type ProcedureEventContext = ProcedureEventContext;
 type SubscriptionEventContext = SubscriptionEventContext;
 type ErrorContext = ErrorContext;
 type Reducer = Reducer;
@@ -1177,6 +1319,16 @@ pub struct RemoteReducers {{
 }}
 
 impl __sdk::InModule for RemoteReducers {{
+    type Module = RemoteModule;
+}}
+
+/// The `procedures` field of [`DbConnection`] and other [`DbContext`] types,
+/// with methods provided by extension traits for each procedure defined by the module.
+pub struct RemoteProcedures {{
+    imp: __sdk::DbContextImpl<RemoteModule>,
+}}
+
+impl __sdk::InModule for RemoteProcedures {{
     type Module = RemoteModule;
 }}
 
@@ -1232,6 +1384,9 @@ pub struct DbConnection {{
     /// This type is currently unstable and may be removed without a major version bump.
     pub set_reducer_flags: SetReducerFlags,
 
+    /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
+    pub procedures: RemoteProcedures,
+
     imp: __sdk::DbContextImpl<RemoteModule>,
 }}
 
@@ -1242,6 +1397,7 @@ impl __sdk::InModule for DbConnection {{
 impl __sdk::DbContext for DbConnection {{
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
+    type Procedures = RemoteProcedures;
     type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {{
@@ -1249,6 +1405,9 @@ impl __sdk::DbContext for DbConnection {{
     }}
     fn reducers(&self) -> &Self::Reducers {{
         &self.reducers
+    }}
+    fn procedures(&self) -> &Self::Procedures {{
+        &self.procedures
     }}
     fn set_reducer_flags(&self) -> &Self::SetReducerFlags {{
         &self.set_reducer_flags
@@ -1355,6 +1514,7 @@ impl __sdk::DbConnection for DbConnection {{
         Self {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
+            procedures: RemoteProcedures {{ imp: imp.clone() }},
             set_reducer_flags: SetReducerFlags {{ imp: imp.clone() }},
             imp,
         }}
@@ -1437,6 +1597,14 @@ impl<Ctx: __sdk::DbContext<
 
     define_event_context(
         out,
+        "ProcedureEventContext",
+        None, // ProcedureEventContexts  have no additional `event` info, so they don't even get that field.
+        "procedure callbacks", // There's no single trait or method for procedure callbacks, so we can't usefully link to them.
+        None,
+    );
+
+    define_event_context(
+        out,
         "SubscriptionEventContext",
         None, // SubscriptionEventContexts have no additional `event` info, so they don't even get that field.
         "[`__sdk::SubscriptionBuilder::on_applied`] and [`SubscriptionHandle::unsubscribe_then`] callbacks",
@@ -1492,6 +1660,8 @@ pub struct {struct_and_trait_name} {{
     ///
     /// This type is currently unstable and may be removed without a major version bump.
     pub set_reducer_flags: SetReducerFlags,
+    /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
+    pub procedures: RemoteProcedures,
     /// The event which caused these callbacks to run.
     pub event: {event_type},
     imp: __sdk::DbContextImpl<RemoteModule>,
@@ -1507,6 +1677,7 @@ impl __sdk::AbstractEventContext for {struct_and_trait_name} {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
             set_reducer_flags: SetReducerFlags {{ imp: imp.clone() }},
+            procedures: RemoteProcedures {{ imp: imp.clone() }},
             event,
             imp,
         }}
@@ -1530,6 +1701,8 @@ pub struct {struct_and_trait_name} {{
     ///
     /// This type is currently unstable and may be removed without a major version bump.
     pub set_reducer_flags: SetReducerFlags,
+    /// Access to procedures defined by the module via extension traits implemented for [`RemoteProcedures`].
+    pub procedures: RemoteProcedures,
     imp: __sdk::DbContextImpl<RemoteModule>,
 }}
 
@@ -1542,6 +1715,7 @@ impl __sdk::AbstractEventContext for {struct_and_trait_name} {{
         Self {{
             db: RemoteTables {{ imp: imp.clone() }},
             reducers: RemoteReducers {{ imp: imp.clone() }},
+            procedures: RemoteProcedures {{ imp: imp.clone() }},
             set_reducer_flags: SetReducerFlags {{ imp: imp.clone() }},
             imp,
         }}
@@ -1561,6 +1735,7 @@ impl __sdk::InModule for {struct_and_trait_name} {{
 impl __sdk::DbContext for {struct_and_trait_name} {{
     type DbView = RemoteTables;
     type Reducers = RemoteReducers;
+    type Procedures = RemoteProcedures;
     type SetReducerFlags = SetReducerFlags;
 
     fn db(&self) -> &Self::DbView {{
@@ -1568,6 +1743,9 @@ impl __sdk::DbContext for {struct_and_trait_name} {{
     }}
     fn reducers(&self) -> &Self::Reducers {{
         &self.reducers
+    }}
+    fn procedures(&self) -> &Self::Procedures {{
+        &self.procedures
     }}
     fn set_reducer_flags(&self) -> &Self::SetReducerFlags {{
         &self.set_reducer_flags
@@ -1612,6 +1790,24 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports) {
     }
 }
 
+fn add_one_import(imports: &mut Imports, import: &AlgebraicTypeUse) {
+    import.for_each_ref(|r| {
+        imports.insert(r);
+    })
+}
+
+fn gen_imports(imports: &mut Imports, roots: &[(Identifier, AlgebraicTypeUse)]) {
+    for (_, ty) in roots {
+        add_one_import(imports, ty);
+    }
+}
+
+fn remove_skipped_imports(imports: &mut Imports, dont_import: &[AlgebraicTypeRef]) {
+    for skip in dont_import {
+        imports.remove(skip);
+    }
+}
+
 /// Use `search_function` on `roots` to detect required imports, then print them with `print_imports`.
 ///
 /// `this_file` is passed and excluded for the case of recursive types:
@@ -1625,14 +1821,8 @@ fn gen_and_print_imports(
 ) {
     let mut imports = BTreeSet::new();
 
-    for (_, ty) in roots {
-        ty.for_each_ref(|r| {
-            imports.insert(r);
-        });
-    }
-    for skip in dont_import {
-        imports.remove(skip);
-    }
+    gen_imports(&mut imports, roots);
+    remove_skipped_imports(&mut imports, dont_import);
 
     print_imports(module, out, imports);
 }

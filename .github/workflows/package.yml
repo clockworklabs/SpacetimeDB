@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: bare-metal, container: 'debian:bookworm' }
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-latest }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
           # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
           # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
@@ -67,6 +67,7 @@ jobs:
 
       - name: Package (windows)
         if: ${{ runner.os == 'Windows' }}
+        shell: bash
         run: |
           mkdir build
           cd target/${{matrix.target}}/release

@@ -15,4 +15,8 @@
     <ProjectReference Include="../../../SpacetimeDB.ClientSDK.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="spacetimedb/**" />
+  </ItemGroup>
+
 </Project>

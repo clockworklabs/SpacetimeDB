@@ -17,7 +17,7 @@ struct SPACETIMEDBSDK_API FInitialSubscriptionType
     FDatabaseUpdateType DatabaseUpdate;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 RequestId;
+    uint32 RequestId = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBTimeDuration TotalHostExecutionDuration;

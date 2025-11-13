@@ -20,26 +20,6 @@ error: scheduled table missing required columns; add these to your struct:
 28 | #[spacetimedb::table(name = scheduled_table_missing_rows, scheduled(scheduled_table_missing_rows_reducer))]
    |                                                           ^^^^^^^^^
 
-error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
-  --> tests/ui/reducers.rs:37:56
-   |
-37 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_reducer))]
-   | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^^^^---
-   | |                                                      |
-   | |                                                      expected function that takes 2 arguments
-   | required by a bound introduced by this call
-...
-48 | fn scheduled_table_reducer(_ctx: &ReducerContext, _x: u8, _y: u8) {}
-   | ----------------------------------------------------------------- takes 3 arguments
-   |
-   = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `Reducer<'_, (ScheduledTable,)>`
-   = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `ReducerForScheduledTable<'_, ScheduledTable>`
-note: required by a bound in `scheduled_reducer_typecheck`
-  --> src/rt.rs
-   |
-   | pub const fn scheduled_reducer_typecheck<'de, Row>(_x: impl ReducerForScheduledTable<'de, Row>)
-   |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_reducer_typecheck`
-
 error[E0277]: invalid reducer signature
  --> tests/ui/reducers.rs:6:4
   |
@@ -57,8 +37,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
  --> src/rt.rs
   |
-  | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
-  |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+  | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
+  |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: the reducer argument `Test` does not implement `SpacetimeType`
  --> tests/ui/reducers.rs:6:40
@@ -118,8 +98,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
  --> src/rt.rs
   |
-  | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
-  |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+  | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
+  |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: `Test` is not a valid reducer return type
  --> tests/ui/reducers.rs:9:46
@@ -171,8 +151,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
   --> src/rt.rs
    |
-   | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
-   |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+   | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
+   |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: the first argument of a reducer must be `&ReducerContext`
   --> tests/ui/reducers.rs:23:20
@@ -222,8 +202,8 @@ error[E0277]: invalid reducer signature
 note: required by a bound in `register_reducer`
   --> src/rt.rs
    |
-   | pub fn register_reducer<'a, A: Args<'a>, I: ReducerInfo>(_: impl Reducer<'a, A>) {
-   |                                                                  ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
+   | pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl Reducer<'a, A>) {
+   |                                                                                 ^^^^^^^^^^^^^^ required by this bound in `register_reducer`
 
 error[E0277]: the first argument of a reducer must be `&ReducerContext`
   --> tests/ui/reducers.rs:26:21
@@ -255,3 +235,23 @@ note: required by a bound in `invoke_reducer`
    |        -------------- required by a bound in this function
    |     reducer: impl Reducer<'a, A>,
    |                   ^^^^^^^^^^^^^^ required by this bound in `invoke_reducer`
+
+error[E0593]: function is expected to take 2 arguments, but it takes 3 arguments
+  --> tests/ui/reducers.rs:37:56
+   |
+37 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_reducer))]
+   | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^^^^---
+   | |                                                      |
+   | |                                                      expected function that takes 2 arguments
+   | required by a bound introduced by this call
+...
+48 | fn scheduled_table_reducer(_ctx: &ReducerContext, _x: u8, _y: u8) {}
+   | ----------------------------------------------------------------- takes 3 arguments
+   |
+   = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `Reducer<'_, (ScheduledTable,)>`
+   = note: required for `for<'a> fn(&'a ReducerContext, u8, u8) {scheduled_table_reducer}` to implement `ExportFunctionForScheduledTable<'_, ScheduledTable, FnKindReducer>`
+note: required by a bound in `scheduled_typecheck`
+  --> src/rt.rs
+   |
+   | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
+   |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`

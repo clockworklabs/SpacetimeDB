@@ -72,8 +72,9 @@ for path in "${CRATES[@]}"; do
         fi
     fi
 
+    crate="$(basename "$path")"
     # Add owners
-    echo "INFO: Adding owners for $crate..."
+    echo "Adding owners for $crate..."
     for owner in "${NEW_CRATE_OWNERS[@]}"; do
         if ! OUTPUT=$(cargo owner --add "$owner" 2>&1); then
           if echo "$OUTPUT" | grep -q "already" ; then
@@ -84,7 +85,7 @@ for path in "${CRATES[@]}"; do
             exit 1
           fi
         else
-          echo "INFO: Added $owner as an owner of $crate."
+          echo "Added $owner as an owner of $crate."
         fi
     done
     echo

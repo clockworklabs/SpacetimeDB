@@ -14,6 +14,7 @@ import {
   deepEqual as __deepEqual,
   type AlgebraicType as __AlgebraicTypeType,
   type AlgebraicTypeVariants as __AlgebraicTypeVariants,
+  type TableHandle as __TableHandle,
 } from '../../index';
 import * as TableAccessVariants from './table_access_variants';
 
@@ -21,6 +22,8 @@ import * as TableAccessVariants from './table_access_variants';
 export type TableAccess =
   | TableAccessVariants.Public
   | TableAccessVariants.Private;
+
+let _cached_TableAccess_type_value: __AlgebraicTypeType | null = null;
 
 // A value with helper functions to construct the type.
 export const TableAccess = {
@@ -34,18 +37,19 @@ export const TableAccess = {
   Private: { tag: 'Private' } as const,
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Sum({
-      variants: [
-        {
-          name: 'Public',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-        {
-          name: 'Private',
-          algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-        },
-      ],
-    });
+    if (_cached_TableAccess_type_value) return _cached_TableAccess_type_value;
+    _cached_TableAccess_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
+    _cached_TableAccess_type_value.value.variants.push(
+      {
+        name: 'Public',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      },
+      {
+        name: 'Private',
+        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
+      }
+    );
+    return _cached_TableAccess_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: TableAccess): void {

@@ -69,6 +69,23 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       }
     },
     {/*
+    [Unique]
+    public int? UniqueField;
+                ^^^^^^^^^^^
+
+*/
+      Message: Field UniqueField is marked as Unique but it has a type int? which is not an equatable primitive.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0003,
+        Title: Unique fields must be equatable,
+        MessageFormat: Field {0} is marked as Unique but it has a type {1} which is not an equatable primitive.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
 {
     [SpacetimeDB.Index.BTree(Name = "TestUnexpectedColumns", Columns = ["UnexpectedColumn"])]
      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -254,6 +271,90 @@ public partial struct TestScheduleIssues
       }
     },
     {/*
+    // Invalid: View definition missing Public=true
+    [SpacetimeDB.View(Name = "view_def_no_public")]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static List<Player> ViewDefNoPublic(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return new List<Player>();
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefNoPublic' must have Public = true. Views are always public in SpacetimeDB.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0023,
+        Title: Views must be public,
+        MessageFormat: View '{0}' must have Public = true. Views are always public in SpacetimeDB.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Name = "view_def_no_context", Public = true)]
+    public static List<Player> ViewDefNoContext()
+                                               ^^
+    {
+*/
+      Message: View method ViewDefNoContext must have a first parameter of type ViewContext or AnonymousViewContext.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0020,
+        Title: Views must start with ViewContext or AnonymousViewContext,
+        MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Name = "view_def_wrong_context", Public = true)]
+    public static List<Player> ViewDefWrongContext(ReducerContext ctx)
+                                                  ^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+      Message: View method ViewDefWrongContext must have a first parameter of type ViewContext or AnonymousViewContext.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0020,
+        Title: Views must start with ViewContext or AnonymousViewContext,
+        MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    [SpacetimeDB.View(Name = "view_def_wrong_return", Public = true)]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static Player ViewDefWrongReturn(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return new Player { Identity = new() };
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefWrongReturn' must return Vec<T> or Option<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0022,
+        Title: Views must return Vec<T> or Option<T>,
+        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
     [SpacetimeDB.Reducer]
     public static int TestReducerReturnType(ReducerContext ctx) => 0;
                   ^^^
@@ -350,6 +451,19 @@ public partial struct TestScheduleIssues
     {
       Location: ,
       Message: Table with the same export name TestDuplicateTableName is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {
+      Location: ,
+      Message: TableReadOnly with the same export name TestDuplicateTableNameReadOnly is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
       Severity: Error,
       Descriptor: {
         Id: STDB0007,

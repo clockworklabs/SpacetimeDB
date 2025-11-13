@@ -4,10 +4,11 @@
 use crate::{
     energy::EnergyMonitor,
     host::{
-        module_host::{DynModule, ModuleInfo},
+        module_host::ModuleInfo,
+        wasm_common::{module_host_actor::DescribeError, DESCRIBE_MODULE_DUNDER},
         Scheduler,
     },
-    module_host_context::ModuleCreationContext,
+    module_host_context::ModuleCreationContextLimited,
     replica_context::ReplicaContext,
 };
 use spacetimedb_lib::{Identity, RawModuleDef};
@@ -16,7 +17,7 @@ use std::sync::Arc;
 
 /// Builds a [`ModuleCommon`] from a [`RawModuleDef`].
 pub fn build_common_module_from_raw(
-    mcc: ModuleCreationContext,
+    mcc: ModuleCreationContextLimited,
     raw_def: RawModuleDef,
 ) -> Result<ModuleCommon, ValidationErrors> {
     // Perform a bunch of validation on the raw definition.
@@ -30,7 +31,7 @@ pub fn build_common_module_from_raw(
         def,
         replica_ctx.owner_identity,
         replica_ctx.database_identity,
-        mcc.program.hash,
+        mcc.program_hash,
         log_tx,
         replica_ctx.subscriptions.clone(),
     );
@@ -79,12 +80,32 @@ impl ModuleCommon {
     }
 }
 
-impl DynModule for ModuleCommon {
-    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+impl ModuleCommon {
+    pub fn replica_ctx(&self) -> &Arc<ReplicaContext> {
         &self.replica_context
     }
 
-    fn scheduler(&self) -> &Scheduler {
+    pub fn scheduler(&self) -> &Scheduler {
         &self.scheduler
     }
+}
+
+/// Runs the describer of modules in `run` and does some logging around it.
+pub(crate) fn run_describer<T>(
+    log_traceback: impl Copy + FnOnce(&str, &str, &anyhow::Error),
+    run: impl FnOnce() -> anyhow::Result<T>,
+) -> Result<T, DescribeError> {
+    let describer_func_name = DESCRIBE_MODULE_DUNDER;
+
+    let start = std::time::Instant::now();
+    log::trace!("Start describer \"{describer_func_name}\"...");
+
+    let result = run();
+
+    let duration = start.elapsed();
+    log::trace!("Describer \"{}\" ran: {} us", describer_func_name, duration.as_micros());
+
+    result
+        .inspect_err(|err| log_traceback("describer", describer_func_name, err))
+        .map_err(DescribeError::RuntimeError)
 }

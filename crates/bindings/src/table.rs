@@ -149,7 +149,7 @@ pub enum IndexAlgo<'a> {
 }
 
 pub struct ScheduleDesc<'a> {
-    pub reducer_name: &'a str,
+    pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
 }
 
@@ -318,16 +318,6 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    #[inline]
-    fn get_args(&self, col_val: &Col::ColType) -> IndexScanRangeArgs {
-        IndexScanRangeArgs {
-            data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
-            prefix_elems: 0,
-            rstart_idx: 0,
-            rend_idx: None,
-        }
-    }
-
     /// Finds and returns the row where the value in the unique column matches the supplied `col_val`,
     /// or `None` if no such row is present in the database state.
     //
@@ -341,26 +331,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     where
         for<'a> &'a Col::ColType: FilterableValue,
     {
-        self._find(col_val.borrow())
-    }
-
-    fn _find(&self, col_val: &Col::ColType) -> Option<Tbl::Row> {
-        // Find the row with a match.
-        let index_id = Col::index_id();
-        let args = self.get_args(col_val);
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-
-        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
-        let mut iter = TableIter::new_with_buf(iter, args.data);
-
-        // We will always find either 0 or 1 rows here due to the unique constraint.
-        let row = iter.next();
-        assert!(
-            iter.is_exhausted(),
-            "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
-        );
-        row
+        find::<Tbl, Col>(col_val.borrow())
     }
 
     /// Deletes the row where the value in the unique column matches the supplied `col_val`,
@@ -375,7 +346,7 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 
     fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
         let index_id = Col::index_id();
-        let args = self.get_args(col_val);
+        let args = get_args::<Tbl, Col>(col_val);
         let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
 
         let n_del = sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
@@ -430,6 +401,63 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     #[cfg(feature = "unstable")]
     pub fn insert_or_update(&self, new_row: Tbl::Row) -> Tbl::Row {
         self.try_insert_or_update(new_row).unwrap_or_else(|e| panic!("{e}"))
+    }
+}
+
+#[inline]
+fn get_args<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) -> IndexScanRangeArgs {
+    IndexScanRangeArgs {
+        data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
+        prefix_elems: 0,
+        rstart_idx: 0,
+        rend_idx: None,
+    }
+}
+
+#[inline]
+fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) -> Option<Tbl::Row> {
+    // Find the row with a match.
+    let index_id = Col::index_id();
+    let args = get_args::<Tbl, Col>(col_val);
+    let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+
+    let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+        .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
+    let mut iter = TableIter::new_with_buf(iter, args.data);
+
+    // We will always find either 0 or 1 rows here due to the unique constraint.
+    let row = iter.next();
+    assert!(
+        iter.is_exhausted(),
+        "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
+    );
+    row
+}
+
+/// A read-only handle to a unique (single-column) index.
+///
+/// This is the read-only version of [`UniqueColumn`].
+/// It mirrors [`UniqueColumn`] but only exposes read APIs.
+/// It cannot insert or delete rows.
+/// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
+///
+/// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
+/// This is because read-only indexes still need [`Table`] metadata.
+/// The view handle itself deliberately does not implement `Table`.
+pub struct UniqueColumnReadOnly<Tbl, ColType, Col> {
+    _marker: PhantomData<(Tbl, ColType, Col)>,
+}
+
+impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumnReadOnly<Tbl, Col::ColType, Col> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    #[inline]
+    pub fn find(&self, col_val: impl Borrow<Col::ColType>) -> Option<Tbl::Row>
+    where
+        for<'a> &'a Col::ColType: FilterableValue,
+    {
+        find::<Tbl, Col>(col_val.borrow())
     }
 }
 
@@ -573,12 +601,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
-        let index_id = Idx::index_id();
-        let args = b.get_args();
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
-        TableIter::new(iter)
+        filter::<Tbl, Idx, IndexType, B, K>(b)
     }
 
     /// Deletes all rows in the database state where the indexed column(s) match the bounds `b`.
@@ -658,6 +681,45 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
         sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
             .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
             .into()
+    }
+}
+
+fn filter<Tbl, Idx, IndexType, B, K>(b: B) -> impl Iterator<Item = Tbl::Row>
+where
+    Tbl: Table,
+    Idx: Index,
+    B: IndexScanRangeBounds<IndexType, K>,
+{
+    let index_id = Idx::index_id();
+    let args = b.get_args();
+    let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+    let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+        .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
+    TableIter::new(iter)
+}
+
+/// A read-only handle to a B-tree index.
+///
+/// This is the read-only version of [`RangedIndex`].
+/// It mirrors [`RangedIndex`] but exposes only `.filter(..)`, not `.delete(..)`.
+/// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
+///
+/// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
+/// This is because read-only indexes still need [`Table`] metadata.
+/// The view handle itself deliberately does not implement `Table`.
+pub struct RangedIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    where
+        B: IndexScanRangeBounds<IndexType, K>,
+    {
+        filter::<Tbl, Idx, IndexType, B, K>(b)
     }
 }
 
@@ -947,7 +1009,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
             sys::Errno::UNIQUE_ALREADY_EXISTS => {
                 T::UniqueConstraintViolation::get().map(TryInsertError::UniqueConstraintViolation)
             }
-            // sys::Errno::AUTO_INC_OVERFLOW => Tbl::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
+            sys::Errno::AUTO_INC_OVERFLOW => T::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
             _ => None,
         };
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))
