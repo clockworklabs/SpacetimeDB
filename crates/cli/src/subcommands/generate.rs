@@ -200,7 +200,9 @@ pub async fn exec_ex(
             fs::create_dir_all(out_dir.join(parent))?;
         }
         let path = out_dir.join(fname);
-        fs::write(&path, code)?;
+        if !path.exists() || fs::read_to_string(&path)? != code {
+            fs::write(&path, code)?;
+        }
         paths.insert(path);
     }
 
