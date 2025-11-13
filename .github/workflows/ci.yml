@@ -28,7 +28,7 @@ jobs:
         runner: [ spacetimedb-runner, windows-latest ]
     runs-on: ${{ matrix.runner }}
     env:
-      CARGO_TARGET_DIR: target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
