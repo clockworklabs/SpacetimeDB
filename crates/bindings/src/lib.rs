@@ -1138,6 +1138,7 @@ impl ProcedureContext {
     /// e.g., due to a conflict with a concurrent transaction,
     /// this method will re-invoke `body` with a new transaction in order to retry.
     /// This is done once. On the second failure, a panic will occur.
+    #[cfg(feature = "unstable")]
     pub fn with_tx<R: IsOk>(&mut self, body: impl Fn(&TxContext) -> R) -> R {
         let run = || {
             // Start the transaction.
