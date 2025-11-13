@@ -75,6 +75,11 @@ jobs:
       - name: Start Docker daemon
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
+
+      - name: Debug - Check files exist
+        run: |
+          ls -la /__w/SpacetimeDB/SpacetimeDB/Cargo.toml
+          pwd
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: docker compose up -d
