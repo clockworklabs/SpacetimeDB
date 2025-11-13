@@ -94,6 +94,16 @@ jobs:
   test:
     name: Test Suite
     runs-on: spacetimedb-new-runner
+
+    # Add this for isolation:
+    container:
+      image: spacetimedb-ci:latest
+      options: >-
+        --user runner
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v /opt/github-runner/cargo-cache:/home/runner/.cargo/registry
+        -v /opt/github-runner/cargo-git:/home/runner/.cargo/git
+
     steps:
       - name: Find Git ref
         env:
