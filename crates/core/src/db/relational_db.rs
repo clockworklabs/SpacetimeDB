@@ -2368,6 +2368,7 @@ mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::time::Instant;
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
@@ -2387,6 +2388,7 @@ mod tests {
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
     use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2418,6 +2420,27 @@ mod tests {
         let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
         TableSchema::from_module_def(&def, table, (), TableId::SENTINEL)
+    }
+
+    fn view_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("b", AlgebraicType::U8)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            false,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        let raw = builder.finish();
+        raw.try_into().expect("table validation failed")
     }
 
     fn table_auto_inc() -> TableSchema {
@@ -2500,6 +2523,94 @@ mod tests {
                 }
             },
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_views() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+        let module_def = view_module_def();
+        let view_def = module_def.view("my_view").unwrap();
+
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        let to_bstan = |pv: &ProductValue| {
+            Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
+        };
+        let row_pv = |v: u8| ProductValue::from_iter(vec![AlgebraicValue::U8(v)]);
+
+        let project_views = |stdb: &TestDB, table_id: TableId, sender: Identity| {
+            let tx = begin_tx(stdb);
+            stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+                .unwrap()
+                .map(|row| ProductValue {
+                    elements: row.to_product_value().elements.iter().skip(1).cloned().collect(),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        // Create the view
+        let mut tx = begin_mut_tx(&stdb);
+        let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        stdb.commit_tx(tx)?;
+
+        let apply_view_update = |sender: Identity, val: u8| -> ResultTest<()> {
+            let mut tx = begin_mut_tx(&stdb);
+            tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+            stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bstan(&row_pv(val)), typespace)?;
+            stdb.commit_tx(tx)?;
+            Ok(())
+        };
+
+        // Sender 1
+        let sender1 = Identity::ONE;
+        apply_view_update(sender1, 42)?;
+        let mut tx = begin_mut_tx(&stdb);
+        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender1)?;
+        stdb.commit_tx(tx)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender1)[0],
+            row_pv(42),
+            "Materialized view row does not match inserted row"
+        );
+
+        // Sender 2
+        let sender2 = Identity::ZERO;
+        let before_sender2 = Instant::now();
+        apply_view_update(sender2, 84)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            row_pv(84),
+            "Materialized view row does not match inserted row"
+        );
+
+        // Clear expired views
+        let mut tx = begin_mut_tx(&stdb);
+        tx.clear_expired_views(Instant::now().saturating_duration_since(before_sender2))?;
+        stdb.commit_tx(tx)?;
+
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 rows should be cleared"
+        );
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            row_pv(84),
+            "Sender 2 rows should not be cleared"
+        );
+
+        // Validate st_view_subs state
+        let tx = begin_mut_tx(&stdb);
+        let st_view_row = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_view_row.len(), 1, "Sender 1 should be removed from st_view_subs");
+        assert_eq!(
+            st_view_row[0].identity.0, sender2,
+            "Sender 1 should be removed from st_view_subs"
+        );
 
         Ok(())
     }

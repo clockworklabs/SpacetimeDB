@@ -1999,7 +1999,7 @@ impl MutTxId {
             .collect();
 
         // For each expired view subscription, clear the backing table and delete the subscription
-        for (row, ptr) in expired_sub_rows {
+        for (row, sub_row_ptr) in expired_sub_rows {
             let view_id = row.view_id;
             let sender: Identity = row.identity.into();
             // Get the view's backing table_id from st_view
@@ -2013,7 +2013,7 @@ impl MutTxId {
                 self.drop_view_from_committed_read_set(view_id);
             } else {
                 let rows_to_delete = self
-                    .iter_by_col_eq(table_id, StViewSubFields::Identity, &sender.into())?
+                    .iter_by_col_eq(table_id, 0, &sender.into())?
                     .map(|res| res.pointer())
                     .collect::<Vec<_>>();
 
@@ -2025,7 +2025,7 @@ impl MutTxId {
             }
 
             // Finally, delete the st_view_sub row
-            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
         }
         Ok(())
     }
