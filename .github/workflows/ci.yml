@@ -72,11 +72,11 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
-      - name: Build and start database (Linux)
-        if: runner.os == 'Linux'
       - name: Start Docker daemon
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
+      - name: Build and start database (Linux)
+        if: runner.os == 'Linux'
         run: docker compose up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
