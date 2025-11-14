@@ -131,22 +131,22 @@ describe('BinaryReader/Writer', () => {
       username: 'sally',
     };
     const binary = [...encodeUser(user1)].concat([...encodeUser(user2)]);
-    const transactionUpdate = ServerMessage.create('TransactionUpdate', {
-      status: UpdateStatus.create('Committed', {
+    const transactionUpdate = ServerMessage.TransactionUpdate({
+      status: UpdateStatus.Committed({
         tables: [
           {
             tableId: 35,
             tableName: 'user',
             numRows: BigInt(1),
             updates: [
-              CompressableQueryUpdate.create('Uncompressed', {
+              CompressableQueryUpdate.Uncompressed({
                 deletes: {
-                  sizeHint: RowSizeHint.create('FixedSize', 0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([]),
                 },
                 // FIXME: this test is evil: an initial subscription can never contain deletes or updates.
                 inserts: {
-                  sizeHint: RowSizeHint.create('FixedSize', 0), // not used
+                  sizeHint: RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array(binary),
                 },
               }),
