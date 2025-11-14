@@ -31,9 +31,7 @@ jobs:
           - runner: windows-latest
             smoketest_args: --no-build-cli
             container: null
-
     runs-on: ${{ matrix.runner }}
-
     container: ${{ matrix.container }}
     
     steps:
