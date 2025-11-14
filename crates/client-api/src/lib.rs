@@ -201,28 +201,29 @@ pub trait ControlStateDelegate: ControlStateReadAccess + ControlStateWriteAccess
 impl<T: ControlStateReadAccess + ControlStateWriteAccess + Send + Sync> ControlStateDelegate for T {}
 
 /// Query API of the SpacetimeDB control plane.
+#[async_trait]
 pub trait ControlStateReadAccess {
     // Nodes
-    fn get_node_id(&self) -> Option<u64>;
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
+    async fn get_node_id(&self) -> Option<u64>;
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
+    async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -281,53 +282,54 @@ pub trait ControlStateWriteAccess: Send + Sync {
     ) -> anyhow::Result<SetDomainsResult>;
 }
 
-impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
+#[async_trait]
+impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAccess for Arc<T> {
     // Nodes
-    fn get_node_id(&self) -> Option<u64> {
-        (**self).get_node_id()
+    async fn get_node_id(&self) -> Option<u64> {
+        (**self).get_node_id().await
     }
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
-        (**self).get_node_by_id(node_id)
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
+        (**self).get_node_by_id(node_id).await
     }
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
-        (**self).get_nodes()
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+        (**self).get_nodes().await
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_id(id)
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_id(id).await
     }
-    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_identity(identity)
+    async fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity).await
     }
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
-        (**self).get_databases()
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+        (**self).get_databases().await
     }
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
-        (**self).get_replica_by_id(id)
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        (**self).get_replica_by_id(id).await
     }
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
-        (**self).get_replicas()
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        (**self).get_replicas().await
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
-        (**self).get_energy_balance(identity)
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+        (**self).get_energy_balance(identity).await
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
-        (**self).lookup_identity(domain)
+    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_identity(domain).await
     }
 
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(database_identity)
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity).await
     }
 
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        (**self).get_leader_replica_by_database(database_id)
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id).await
     }
 }
 
