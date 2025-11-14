@@ -1,13 +1,16 @@
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
-use crate::subscription::ExecutionCounters;
+use crate::sql::ast::SchemaViewer;
+use crate::sql::compiler::compile_sql;
+use crate::subscription::{execute_plan, ExecutionCounters};
 use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use enum_map::EnumMap;
 use fs2::FileExt;
+use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
@@ -33,25 +36,30 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability as durability;
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
-use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::db::raw_def::v9::{btree, ParameterizedThing, RawModuleDefV9Builder, RawSql, ViewReturnValue};
 use spacetimedb_lib::de::DeserializeSeed;
+use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, ConnectionId};
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
+use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
-    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace, WithTypespace,
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, Deserialize, ProductType, ProductValue, Typespace, WithTypespace,
 };
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
+use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
 use spacetimedb_table::table::RowRef;
@@ -1533,7 +1541,7 @@ impl RelationalDB {
         tx: &mut MutTxId,
         table_id: TableId,
         sender: Identity,
-        row_type: AlgebraicTypeRef,
+        row_type_ref: AlgebraicTypeRef,
         bytes: Bytes,
         typespace: &Typespace,
     ) -> Result<(), DBError> {
@@ -1543,38 +1551,136 @@ impl RelationalDB {
             .map(|res| res.pointer())
             .collect::<Vec<_>>();
         self.delete(tx, table_id, rows_to_delete);
+        let row_type = typespace.resolve(row_type_ref);
 
+        // let bufReader = &bytes[..];
+        // let deserializer = bsatn::Deserializer::new(&mut &bytes[..]);
+        let mut reader = &bytes[..];
+        let deserializer = bsatn::Deserializer::new(&mut reader);
+        let rt: ViewReturnValue = ViewReturnValue::deserialize(deserializer).unwrap();
+        match rt {
+            ViewReturnValue::RowData => {
+                // let row_type = typespace.resolve(row_type_ref);
+                let ret_type = AlgebraicType::array(row_type.ty().clone());
+                let seed = WithTypespace::new(typespace, &ret_type);
+                let rows = seed
+                    .deserialize(bsatn::Deserializer::new(&mut reader))
+                    // .deserialize(deserializer)
+                    .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
+
+                // Insert new rows into the backing table
+                for product in rows
+                    .into_array()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?
+                    .into_iter()
+                {
+                    let product = product
+                        .into_product()
+                        .map_err(|_| ViewError::SerializeRow)
+                        .map_err(DatastoreError::from)?;
+
+                    self.insert(
+                        tx,
+                        table_id,
+                        &ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements))
+                            .to_bsatn_vec()
+                            .map_err(|_| ViewError::SerializeRow)
+                            .map_err(DatastoreError::from)?,
+                    )?;
+                }
+            }
+            ViewReturnValue::RawSql(query) => {
+                info!("Running raw sql for view");
+                let rows = self
+                    .run_sql_against_table(tx, &query, &row_type.ty().as_product().unwrap())
+                    .unwrap();
+                for row in rows.into_iter() {
+                    // TODO: push this down into the query execution, so we don't materialize two copies at the same time.
+                    self.insert(
+                        tx,
+                        table_id,
+                        &ProductValue::from_iter(std::iter::once(sender.into()).chain(row.elements))
+                            .to_bsatn_vec()
+                            .map_err(|_| ViewError::SerializeRow)
+                            .map_err(DatastoreError::from)?,
+                    )?;
+                }
+            }
+            ViewReturnValue::ParameterizedQuery(parameterized_query) => todo!(),
+        }
         // Deserialize the return rows.
         // The return type is expected to be an array of products.
-        let row_type = typespace.resolve(row_type);
-        let ret_type = AlgebraicType::array(row_type.ty().clone());
-        let seed = WithTypespace::new(typespace, &ret_type);
-        let rows = seed
-            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
-            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
-
-        // Insert new rows into the backing table
-        for product in rows
-            .into_array()
-            .map_err(|_| ViewError::SerializeRow)
-            .map_err(DatastoreError::from)?
-            .into_iter()
-        {
-            let product = product
-                .into_product()
-                .map_err(|_| ViewError::SerializeRow)
-                .map_err(DatastoreError::from)?;
-            self.insert(
-                tx,
-                table_id,
-                &ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements))
-                    .to_bsatn_vec()
-                    .map_err(|_| ViewError::SerializeRow)
-                    .map_err(DatastoreError::from)?,
-            )?;
-        }
 
         Ok(())
+    }
+
+    fn run_sql_against_table(
+        &self,
+        tx: &mut MutTx,
+        the_query: &str,
+        expected_row_type: &ProductType,
+    ) -> anyhow::Result<Vec<ProductValue>> {
+        if the_query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let auth = AuthCtx::for_current(self.owner_identity);
+        // TODO: Figure out to reject this if it involves another view.
+        let (plans, return_table_id, _, has_params) = {
+            let schema_view = SchemaViewer::new(&*tx, &auth);
+            compile_subscription(the_query, &schema_view, &auth)?
+        };
+
+        if plans.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        for plan in &plans {
+            let Some(source_schema) = plan.return_table() else {
+                anyhow::bail!("query does not return plain table rows");
+            };
+            if source_schema.row_type != *expected_row_type {
+                anyhow::bail!(
+                    "query returns `{}` but view expects `{}`",
+                    fmt_algebraic_type(&AlgebraicType::Product(source_schema.row_type.clone())),
+                    fmt_algebraic_type(&AlgebraicType::Product(expected_row_type.clone())),
+                );
+            }
+        }
+
+        anyhow::ensure!(
+            !has_params,
+            "parameterized SQL is not supported for view materialization yet"
+        );
+        // if return_table_id != expected_table {
+        //     let actual_name = self
+        //         .table_name_from_id_mut(tx, return_table_id)?
+        //         .unwrap_or_else(|| Cow::Borrowed("<unknown>"));
+        //     let expected_name = self
+        //         .table_name_from_id_mut(tx, expected_table)?
+        //         .unwrap_or_else(|| Cow::Borrowed("<unknown>"));
+        //     anyhow::bail!(
+        //         "SQL query returns rows for table {return_table_id:?} ({actual_name}), expected {expected_table:?} ({expected_name})"
+        //     );
+        // }
+
+        let optimized_plans = plans
+            .into_iter()
+            .map(|plan| plan.optimize(&auth))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut metrics = ExecutionMetrics::default();
+        let mut rows = Vec::new();
+        for plan in optimized_plans {
+            let pipelined = PipelinedProject::from(plan);
+            pipelined.execute(&*tx, &mut metrics, &mut |row| {
+                rows.push(row.to_product_value());
+                Ok(())
+            })?;
+        }
+
+        Ok(rows)
     }
 
     /// Write `bytes` into an anonymous view's backing table.

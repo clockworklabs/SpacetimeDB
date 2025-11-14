@@ -124,6 +124,7 @@ where
     Ok((list, count, metrics))
 }
 
+// Reuse this?
 /// Execute a subscription query
 pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
 where

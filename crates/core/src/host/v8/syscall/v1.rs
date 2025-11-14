@@ -450,7 +450,8 @@ pub(super) fn call_call_view(
         let ret =
             cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
         let bytes = ret.get_contents(&mut []);
-        let modified_return_value = ViewReturnValue::RowData(bytes.to_vec());
+        // let modified_return_value = ViewReturnValue::RowData(bytes.to_vec());
+        let modified_return_value = ViewReturnValue::RowData;
 
         let as_expected = bsatn::to_vec(&modified_return_value).map_err(|e| ErrorOrException::Err(e.into()))?;
 

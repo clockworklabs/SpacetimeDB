@@ -36,6 +36,7 @@ import {
   type ViewCtx,
 } from './views';
 import { bsatnBaseSize } from './util';
+import ViewReturnValue from '../lib/autogen/view_return_value_type';
 
 const { freeze } = Object;
 
@@ -236,9 +237,20 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
+    ViewReturnValue.serialize(retBuf, ViewReturnValue.RowData);
+    // AlgebraicType.serializeValue(retBuf, ViewReturnValue.)
+    // ViewReturnValue.RowData(retBuf.getBuffer())
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
+
+    const fakeRetVal = ViewReturnValue.RawSql('select * from order');
+
+    const retBuf2 = new BinaryWriter(returnTypeBaseSize);
+    ViewReturnValue.RawSql;
+    ViewReturnValue.serialize(retBuf2, fakeRetVal);
+    return { data: retBuf2.getBuffer() };
+
     // return retBuf.getBuffer();
-    return { 'data': retBuf.getBuffer() };
+    // return { 'data': retBuf.getBuffer() };
   },
   __call_view_anon__(id, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
@@ -257,7 +269,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
     // return retBuf.getBuffer();
-    return { 'data': retBuf.getBuffer()};
+    return { data: retBuf.getBuffer() };
   },
 };
 
