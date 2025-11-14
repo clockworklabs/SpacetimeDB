@@ -576,9 +576,11 @@ impl InstanceCommon {
                 WORKER_METRICS
                     .wasm_instance_errors
                     .with_label_values(
+                        &self.info.database_identity,
                         &caller_identity,
                         &self.info.module_hash,
                         &caller_connection_id,
+                        &false,
                         procedure_name,
                     )
                     .inc();
@@ -691,6 +693,7 @@ impl InstanceCommon {
                     &caller_identity,
                     &Some(caller_connection_id),
                     reducer_name,
+                    trapped,
                 )
             }
             Err(ExecutionError::User(err)) => {
@@ -772,13 +775,16 @@ impl InstanceCommon {
         caller_identity: &Identity,
         caller_connection_id: &Option<ConnectionId>,
         reducer_name: &str,
+        trapped: bool,
     ) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
             .with_label_values(
+                &self.info.database_identity,
                 caller_identity,
                 &self.info.module_hash,
                 &caller_connection_id.unwrap_or(ConnectionId::ZERO),
+                &trapped,
                 reducer_name,
             )
             .inc();
@@ -903,13 +909,13 @@ impl InstanceCommon {
         let outcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
+                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name, trapped)
                     .into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
+                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name, trapped)
                     .into()
             }
             // Materialize anonymous view
