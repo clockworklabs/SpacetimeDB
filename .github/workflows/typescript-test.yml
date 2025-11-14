@@ -83,6 +83,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
+          workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
