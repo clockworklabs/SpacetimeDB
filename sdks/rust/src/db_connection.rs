@@ -47,6 +47,7 @@ use std::{
 use tokio::{
     runtime::{self, Runtime},
     sync::Mutex as TokioMutex,
+    sync::mpsc::UnboundedSender as TokioSender,
 };
 
 pub(crate) type SharedCell<T> = Arc<StdMutex<T>>;
@@ -82,6 +83,9 @@ pub struct DbContextImpl<M: SpacetimeModule> {
     /// from which [Self::apply_pending_mutations] and friends read mutations.
     pending_mutations_recv: Arc<TokioMutex<mpsc::UnboundedReceiver<PendingMutation<M>>>>,
 
+    /// Send channel for all database updates
+    update_send: Option<TokioSender<M::DbUpdate>>,
+
     /// This connection's `Identity`.
     ///
     /// May be `None` if we connected anonymously
@@ -107,6 +111,7 @@ impl<M: SpacetimeModule> Clone for DbContextImpl<M> {
             recv: Arc::clone(&self.recv),
             pending_mutations_send: self.pending_mutations_send.clone(),
             pending_mutations_recv: Arc::clone(&self.pending_mutations_recv),
+            update_send: self.update_send.clone(),
             identity: Arc::clone(&self.identity),
             connection_id: Arc::clone(&self.connection_id),
         }
@@ -253,7 +258,12 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
         // so that it will be unlocked when callbacks run.
         let applied_diff = {
             let mut cache = self.cache.lock().unwrap();
-            update.apply_to_client_cache(&mut *cache)
+            if let Some(update_send) = &self.update_send {
+                update_send.send(update).unwrap();
+                Default::default()
+            } else {
+                update.apply_to_client_cache(&mut *cache)
+            }
         };
         let mut inner = self.inner.lock().unwrap();
 
@@ -841,6 +851,8 @@ pub struct DbConnectionBuilder<M: SpacetimeModule> {
     on_connect_error: Option<OnConnectErrorCallback<M>>,
     on_disconnect: Option<OnDisconnectCallback<M>>,
 
+    update_send: Option<TokioSender<M::DbUpdate>>,
+
     params: WsParams,
 }
 
@@ -888,6 +900,7 @@ impl<M: SpacetimeModule> DbConnectionBuilder<M> {
             on_connect: None,
             on_connect_error: None,
             on_disconnect: None,
+            update_send: None,
             params: <_>::default(),
         }
     }
@@ -975,6 +988,7 @@ but you must call one of them, or else the connection will never progress.
             recv: Arc::new(TokioMutex::new(parsed_recv_chan)),
             pending_mutations_send,
             pending_mutations_recv: Arc::new(TokioMutex::new(pending_mutations_recv)),
+            update_send: self.update_send,
             identity: Arc::new(StdMutex::new(None)),
             connection_id: Arc::new(StdMutex::new(connection_id_override)),
         };
@@ -1053,6 +1067,15 @@ but you must call one of them, or else the connection will never progress.
     /// If this method is not called, the server chooses the default.
     pub fn with_confirmed_reads(mut self, confirmed: bool) -> Self {
         self.params.confirmed = Some(confirmed);
+        self
+    }
+
+    /// Register a channel that receives all database updates instead of the
+    /// client cache. If you use this method, none of the [`TableHandle`]
+    /// callbacks will ever fire, and no data is stored in the [`ClientCache`].
+    #[doc(hidden)]
+    pub fn with_update_channel(mut self, sender: TokioSender<M::DbUpdate>) -> Self {
+        self.update_send = Some(sender);
         self
     }
 
