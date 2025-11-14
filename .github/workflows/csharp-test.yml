@@ -17,6 +17,7 @@ jobs:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
         --privileged
+        --cgroupns=host
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}
@@ -163,6 +164,9 @@ jobs:
 
       - name: Start Docker daemon
         run: /usr/local/bin/start-docker.sh
+      - name: Debug Docker info
+        run: |
+          docker info
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
