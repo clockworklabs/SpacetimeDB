@@ -403,6 +403,10 @@ jobs:
     name: Check CLI docs
     permissions: read-all
     runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       - name: Find Git ref
         env:
