@@ -231,6 +231,7 @@ jobs:
           venv/bin/pip3 install argparse toml
       - name: Run checks
         run: |
+          set -ueo pipefail
           FAILED=0
           # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
           ROOTS=(bindings sdk cli standalone)
