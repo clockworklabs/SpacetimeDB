@@ -443,7 +443,7 @@ export const SumType = {
       const variant = value['tag'];
       const index = ty.variants.findIndex(v => v.name === variant);
       if (index < 0) {
-        throw `Can't serialize a sum type, couldn't find ${value.tag} tag`;
+        throw `Can't serialize a sum type, couldn't find ${value.tag} tag ${JSON.stringify(value)} in variants ${JSON.stringify(ty)}`;
       }
       writer.writeU8(index);
       AlgebraicType.serializeValue(

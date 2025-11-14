@@ -1236,9 +1236,14 @@ export class ProductBuilder<Elements extends ElementsObj>
   readonly elements: Elements;
   constructor(elements: Elements, name?: string) {
     function elementsArrayFromElementsObj<Obj extends ElementsObj>(obj: Obj) {
-      return Object.entries(obj).map(([name, value]) => ({
-        name,
-        algebraicType: value.algebraicType,
+      return Object.keys(obj).map(key => ({
+        name: key,
+        // Lazily resolve the underlying object's algebraicType.
+        // This will call obj[key].algebraicType only when someone
+        // actually reads this property.
+        get algebraicType() {
+          return obj[key].algebraicType;
+        },
       }));
     }
     super(
@@ -1321,12 +1326,16 @@ class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
     function variantsArrayFromVariantsObj<Variants extends VariantsObj>(
       variants: Variants
     ) {
-      return Object.entries(variants).map(([name, value]) => ({
-        name,
-        algebraicType: value.algebraicType,
+      return (Object.keys(variants) as Array<keyof Variants>).map(key => ({
+        name: key as string,
+        // Lazily resolve the underlying object's algebraicType.
+        // This will call obj[key].algebraicType only when someone
+        // actually reads this property.
+        get algebraicType() {
+          return variants[key].algebraicType;
+        },
       }));
     }
-
     super(
       AlgebraicType.Sum({
         variants: variantsArrayFromVariantsObj(variants),
@@ -1336,48 +1345,56 @@ class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
     this.variants = variants;
     this.typeName = name;
 
-    // ---- Runtime unit detection ----
-    // Adjust this to your real shape if needed.
-    // From your code, you have `value.algebraicType` available.
-    function isUnitRuntime(v: any): boolean {
-      // common patterns — tweak as necessary:
-      if (!v || !v.algebraicType) return false;
-      const t = v.algebraicType;
-      return t.tag === 'Unit' || t.kind === 'Unit' || t.type === 'Unit';
-    }
+    // // ---- Runtime unit detection ----
+    // // Adjust this to your real shape if needed.
+    // // From your code, you have `value.algebraicType` available.
+    // function isUnitRuntime(v: TypeBuilder<any, AlgebraicType>): boolean {
+    //   const t = v.algebraicType;
+    //   return t.tag === 'Product' && t.value.elements.length === 0;
+    // }
 
-    // wire dynamic per-variant methods
-    // e.g. mySumBuilder.Foo(value)
-    for (const key of Object.keys(variants) as Array<keyof Variants & string>) {
-      const variant = variants[key];
+    // for (const key of Object.keys(variants) as Array<keyof Variants & string>) {
+    //   const desc = Object.getOwnPropertyDescriptor(variants, key);
 
-      if (isUnitRuntime(variant)) {
-        // Unit: expose a read-only VALUE (no call)
-        const constant = this.create(key as any) as EnumValue<
-          typeof key,
-          Variants[typeof key]
-        >;
-        Object.defineProperty(this, key, {
-          value: constant,
-          writable: false,
-          enumerable: true,
-          configurable: false,
-        });
-      } else {
-        // Payload: expose a function(value) -> EnumValue
-        const fn = ((value: any) =>
-          this.create(key as any, value)) as VariantConstructor<
-          typeof key & string,
-          Variants[typeof key]
-        >;
-        Object.defineProperty(this, key, {
-          value: fn,
-          writable: false,
-          enumerable: true,
-          configurable: false,
-        });
-      }
-    }
+    //   const isAccessor =
+    //     !!desc && (typeof desc.get === 'function' || typeof desc.set === 'function');
+
+    //   let isUnit = false;
+
+    //   if (!isAccessor) {
+    //     // Only read variants[key] if it's a *data* property
+    //     // otherwise assume non-unit because it's a getter
+    //     const variant = variants[key];
+    //     isUnit = isUnitRuntime(variant);
+    //   }
+
+    //   if (isUnit) {
+    //     // Unit: expose a read-only VALUE (no call)
+    //     const constant = this.create(key as any) as EnumValue<
+    //       typeof key,
+    //       Variants[typeof key]
+    //     >;
+    //     Object.defineProperty(this, key, {
+    //       value: constant,
+    //       writable: false,
+    //       enumerable: true,
+    //       configurable: false,
+    //     });
+    //   } else {
+    //     const fn = ((value: any) =>
+    //       this.create(key as any, value)) as VariantConstructor<
+    //         typeof key & string,
+    //         Variants[typeof key]
+    //       >;
+
+    //     Object.defineProperty(this, key, {
+    //       value: fn,
+    //       writable: false,
+    //       enumerable: true,
+    //       configurable: false,
+    //     });
+    //   }
+    // }
   }
 
   /**
