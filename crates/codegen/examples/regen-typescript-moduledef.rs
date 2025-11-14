@@ -4,6 +4,7 @@
 use fs_err as fs;
 use regex::Regex;
 use spacetimedb_codegen::{generate, typescript, OutputFile};
+use spacetimedb_lib::db::raw_def::v9::ViewResultHeader;
 use spacetimedb_lib::{RawModuleDef, RawModuleDefV8};
 use spacetimedb_schema::def::ModuleDef;
 use std::path::Path;
@@ -20,6 +21,7 @@ macro_rules! regex_replace {
 fn main() -> anyhow::Result<()> {
     let module = RawModuleDefV8::with_builder(|module| {
         module.add_type::<RawModuleDef>();
+        module.add_type::<ViewResultHeader>();
     });
 
     let dir = &Path::new(concat!(

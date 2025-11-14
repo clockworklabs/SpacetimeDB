@@ -485,20 +485,26 @@ pub struct RawViewDefV9 {
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
-// TODO: Is there a module-only crate I can use?
 #[sats(crate = crate)]
-pub enum ViewReturnValue {
-    RowData(Vec<u8>),
+pub enum ViewResultHeader {
+    // This means the row data will follow, as a bsatn-encoded Vec<RowType>.
+    // We could make RowData contain an Vec<u8> of the bytes, but that forces us to make an extra copy when we serialize and
+    // when we deserialize.
+    RowData,
+    // This means we the view wants to return the results of the sql query.
     RawSql(String),
+    // This means we the view wants to return the results of a sql query.
+    // Any query parameters will follow the header.
     ParameterizedQuery(ParameterizedQuery),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]
-// TODO: Is there a module-only crate I can use?
+// A header for a parameterized query. This should be followed by a bsatn encoding of any parameters.
 #[sats(crate = crate)]
-pub struct ParameterizedQuery {
+pub struct ParameterizedQueryHeader {
+    // The sql query template. Add details on parameter syntax when it is supported.
     pub template: String,
-    pub parameter_values: Vec<u8>,
+    // If set, these are the types of the parameters.
     // This is optional to support parameter inference in the future.
     pub parameter_types: Option<ProductType>,
 }
