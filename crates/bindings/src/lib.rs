@@ -1137,7 +1137,14 @@ impl ProcedureContext {
     /// If the transaction fails to commit after `body` returns,
     /// e.g., due to a conflict with a concurrent transaction,
     /// this method will re-invoke `body` with a new transaction in order to retry.
-    /// This is done once. On the second failure, a panic will occur.
+    /// The transaction will be retried at most once.
+    /// If it fails to commit a second time, this method will panic.
+    ///
+    /// Because `body` may be run multiple times,
+    /// and is expected to perform the same set of database operations
+    /// and return the same result on each invocation,
+    /// callers should avoid writing to any captured mutable state within `body`,
+    /// This includes interior mutability through types like [`std::cell::Cell`].
     #[cfg(feature = "unstable")]
     pub fn with_tx<R: IsOk>(&mut self, body: impl Fn(&TxContext) -> R) -> R {
         let run = || {
