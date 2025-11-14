@@ -1,23 +1,5 @@
-use bytes::Bytes;
-use prometheus::{Histogram, IntCounter, IntGauge};
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
-use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_primitives::ProcedureId;
-use spacetimedb_primitives::TableId;
-use spacetimedb_primitives::ViewFnPtr;
-use spacetimedb_primitives::ViewId;
-use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
-use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::def::ViewDef;
-use std::future::Future;
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::span::EnteredSpan;
-
 use super::instrumentation::CallTimes;
-use crate::client::ClientConnectionSender;
+use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::host::instance_env::InstanceEnv;
@@ -26,12 +8,13 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::ViewCallResult;
 use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
-    CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
-    ModuleFunctionCall, ModuleInfo,
+    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
 };
+use crate::host::scheduler::QueueItem;
 use crate::host::{
-    ArgsTuple, ProcedureCallError, ProcedureCallResult, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
-    UpdateDatabaseResult,
+    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -40,13 +23,27 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
+use prometheus::{Histogram, IntCounter, IntGauge};
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
+use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::span::EnteredSpan;
 
 use super::*;
 
@@ -314,7 +311,76 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
+        let (res, trapped) = self.call_reducer_with_tx(tx, params);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.common.clear_all_clients()
+    }
+
+    pub fn call_identity_connected(
+        &mut self,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = call_identity_connected(caller_auth, caller_connection_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_identity_disconnected(
+        &mut self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::call_identity_disconnected_inner(
+            caller_identity,
+            caller_connection_id,
+            module,
+            drop_view_subscribers,
+            call_reducer,
+            &mut trapped,
+        );
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::disconnect_client_inner(client_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(crate) fn call_scheduled_reducer(
+        &mut self,
+        item: QueueItem,
+    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let module_def = &self.common.info.clone().module_def;
+        let replica_ctx = &self.instance.replica_ctx().clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        self.trapped = trapped;
+        res
     }
 
     pub async fn call_procedure(
@@ -331,10 +397,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.common.call_reducer_with_tx(tx, params, &mut self.instance);
-        self.trapped = trapped;
-        res
+    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+        })
     }
 
     pub fn call_view_with_tx(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
@@ -386,7 +452,7 @@ impl InstanceCommon {
             Ok(plan) => plan,
             Err(e) => {
                 return match e {
-                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e)),
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
                 }
             }
@@ -1014,6 +1080,11 @@ impl InstanceCommon {
         }
 
         (out, trapped)
+    }
+
+    /// Empty the system tables tracking clients without running any lifecycle reducers.
+    pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.info.relational_db().clear_all_clients().map_err(Into::into)
     }
 }
 /// VM-related metrics for reducer execution.
