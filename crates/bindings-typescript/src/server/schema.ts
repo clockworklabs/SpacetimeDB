@@ -29,6 +29,7 @@ import {
   type ViewOpts,
   type ViewReturnTypeBuilder,
 } from './views';
+import { procedure, type ProcedureFn } from './procedures';
 
 /**
  * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
@@ -347,6 +348,32 @@ class Schema<S extends UntypedSchemaDef> {
   //     defineView(name, true, paramsOrRet as Params, retOrFn, maybeFn!);
   //   }
   // }
+
+  procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
+    name: string,
+    params: Params,
+    ret: Ret,
+    fn: ProcedureFn<S, Params, Ret>
+  ): ProcedureFn<S, Params, Ret>;
+  procedure<Ret extends TypeBuilder<any, any>>(
+    name: string,
+    ret: Ret,
+    fn: ProcedureFn<S, {}, Ret>
+  ): ProcedureFn<S, {}, Ret>;
+  procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
+    name: string,
+    paramsOrRet: Ret | Params,
+    retOrFn: ProcedureFn<S, {}, Ret> | Ret,
+    maybeFn?: ProcedureFn<S, Params, Ret>
+  ): ProcedureFn<S, Params, Ret> {
+    if (typeof retOrFn === 'function') {
+      procedure(name, {}, paramsOrRet as Ret, retOrFn);
+      return retOrFn;
+    } else {
+      procedure(name, paramsOrRet as Params, retOrFn, maybeFn!);
+      return maybeFn!;
+    }
+  }
 
   clientVisibilityFilter = {
     sql(filter: string): void {

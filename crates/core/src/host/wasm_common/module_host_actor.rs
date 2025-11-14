@@ -159,6 +159,14 @@ pub struct ExecutionResult<T> {
     pub call_result: T,
 }
 
+impl<T> ExecutionResult<T> {
+    pub fn map_result<U>(self, f: impl FnOnce(T) -> U) -> ExecutionResult<U> {
+        let Self { stats, call_result } = self;
+        let call_result = f(call_result);
+        ExecutionResult { stats, call_result }
+    }
+}
+
 pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
 
 pub type ViewExecuteResult = ExecutionResult<Result<Bytes, ExecutionError>>;
@@ -510,7 +518,7 @@ impl InstanceCommon {
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
-    async fn call_procedure<I: WasmInstance>(
+    pub(crate) async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,

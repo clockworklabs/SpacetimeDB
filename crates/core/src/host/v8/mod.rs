@@ -6,8 +6,8 @@ use self::error::{
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks, resolve_sys_module, FnRet,
-    HookFunctions,
+    call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
+    resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
@@ -22,20 +22,21 @@ use crate::host::wasm_common::module_host_actor::{
     WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ReducerCallResult, Scheduler};
+use crate::host::{ProcedureCallError, ProcedureCallResult, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
 use crate::util::asyncify;
 use anyhow::Context as _;
 use core::str;
+use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::{mpsc, Arc, LazyLock};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::oneshot;
 use v8::script_compiler::{compile_module, Source};
@@ -245,10 +246,11 @@ impl JsInstanceEnv {
 /// which will cause the worker's loop to terminate
 /// and cleanup the isolate and friends.
 pub struct JsInstance {
-    request_tx: SyncSender<JsWorkerRequest>,
+    request_tx: flume::Sender<JsWorkerRequest>,
     update_response_rx: Receiver<anyhow::Result<UpdateDatabaseResult>>,
     call_reducer_response_rx: Receiver<(ReducerCallResult, bool)>,
     call_view_response_rx: Receiver<(ViewCallResult, bool)>,
+    call_procedure_response_rx: flume::Receiver<Result<ProcedureCallResult, ProcedureCallError>>,
     trapped: bool,
 }
 
@@ -299,9 +301,25 @@ impl JsInstance {
 
     pub async fn call_procedure(
         &mut self,
-        _params: CallProcedureParams,
+        params: CallProcedureParams,
     ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
-        todo!("JS/TS module procedure support")
+        let request = JsWorkerRequest::CallProcedure { params };
+
+        self.request_tx
+            .send_async(request)
+            .await
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        // Wait for the response.
+        let response = self
+            .call_procedure_response_rx
+            .recv_async()
+            .await
+            .expect("worker's `call_view_response_tx` should be live as `JsInstance::drop` hasn't happened");
+
+        self.trapped = response.is_err();
+
+        response
     }
 
     pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
@@ -341,6 +359,8 @@ enum JsWorkerRequest {
     },
     /// See [`JsInstance::call_view`].
     CallView { tx: MutTxId, params: CallViewParams },
+    /// See [`JsInstance::call_procedure`].
+    CallProcedure { params: CallProcedureParams },
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -397,13 +417,15 @@ fn spawn_instance_worker(
     // The use-case is SPSC and all channels are rendezvous channels
     // where each `.send` blocks until it's received.
     // The Instance --Request-> Worker channel:
-    let (request_tx, request_rx) = mpsc::sync_channel(0);
+    let (request_tx, request_rx) = flume::bounded(0);
     // The Worker --UpdateResponse-> Instance channel:
     let (update_response_tx, update_response_rx) = mpsc::sync_channel(0);
     // The Worker --ReducerCallResult-> Instance channel:
     let (call_reducer_response_tx, call_reducer_response_rx) = mpsc::sync_channel(0);
     // The Worker --ViewCallResult-> Instance channel:
     let (call_view_response_tx, call_view_response_rx) = mpsc::sync_channel(0);
+    // The Worker --ProcedureCallResult-> Instance channel:
+    let (call_procedure_response_tx, call_procedure_response_rx) = flume::bounded(0);
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -490,6 +512,16 @@ fn spawn_instance_worker(
                         unreachable!("should have receiver for `call_view` response, {e}");
                     }
                 }
+                JsWorkerRequest::CallProcedure { params } => {
+                    let res = instance_common
+                        .call_procedure(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+
+                    if let Err(e) = call_procedure_response_tx.send(res) {
+                        unreachable!("should have receiver for `call_procedure` response, {e}");
+                    }
+                }
             }
         }
     });
@@ -502,6 +534,7 @@ fn spawn_instance_worker(
             update_response_rx,
             call_reducer_response_rx,
             call_view_response_rx,
+            call_procedure_response_rx,
             trapped: false,
         };
         (opt_mc, inst)
@@ -631,11 +664,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        let ExecutionResult { stats, call_result } = common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op)?)
-        });
-        let call_result = call_result.and_then(|res| res.map_err(ExecutionError::User));
-        ExecutionResult { stats, call_result }
+        })
+        .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
@@ -654,8 +686,16 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         log_traceback(self.replica_ctx, func_type, func, trap)
     }
 
-    async fn call_procedure(&mut self, _op: ProcedureOp, _budget: FunctionBudget) -> ProcedureExecuteResult {
-        todo!("JS/TS module procedure support")
+    async fn call_procedure(&mut self, op: ProcedureOp, budget: FunctionBudget) -> ProcedureExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_procedure(scope, self.hooks, op)
+        })
+        .map_result(|call_result| {
+            call_result.map_err(|e| match e {
+                ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
+            })
+        })
     }
 }
 
