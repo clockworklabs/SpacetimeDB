@@ -23,8 +23,15 @@ cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish  --server local -p "$SDK_PATH/examples~/regression-tests/republishing/server-republish" --break-clients republish-test
 cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" call --server local republish-test Insert 2
 
+# Publish module for procedure tests
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- publish -c -y --server local -p "$STDB_PATH/modules/sdk-test-procedure" procedure-tests
+
+
 # Run client for btree test
 cd "$SDK_PATH/examples~/regression-tests/client" && dotnet run -c Debug
 
 # Run client for republishing module test
 cd "$SDK_PATH/examples~/regression-tests/republishing/client" && dotnet run -c Debug
+
+# Run client for btree test
+cd "$SDK_PATH/examples~/regression-tests/procedure-client" && dotnet run -c Debug

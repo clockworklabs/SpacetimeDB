@@ -114,6 +114,12 @@ namespace SpacetimeDB
         internal Task<T[]> RemoteQuery<T>(string query) where T : IStructuralReadWrite, new();
         void InternalCallReducer<T>(T args, CallReducerFlags flags)
             where T : IReducerArgs, new();
+
+        void InternalCallProcedure<TArgs, TReturn>(
+            TArgs args, 
+            ProcedureCallback<TReturn> callback)
+            where TArgs : IProcedureArgs, new()
+            where TReturn : IStructuralReadWrite, new();
     }
 
     public abstract class DbConnectionBase<DbConnection, Tables, Reducer> : IDbConnection
@@ -158,9 +164,12 @@ namespace SpacetimeDB
         protected abstract IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent);
         protected abstract ISubscriptionEventContext MakeSubscriptionEventContext();
         protected abstract IErrorContext ToErrorContext(Exception errorContext);
+        protected abstract IProcedureEventContext ToProcedureEventContext(ProcedureEvent procedureEvent);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
+        private readonly ProcedureCallbacks procedureCallbacks = new();
+        
         private bool isClosing;
         private readonly Thread networkMessageParseThread;
         public readonly Stats stats = new();
@@ -223,6 +232,7 @@ namespace SpacetimeDB
             public DateTime receiveTimestamp;
             public uint applyQueueTrackerId;
             public ReducerEvent<Reducer>? reducerEvent;
+            public ProcedureEvent? procedureEvent;
         }
 
         private readonly BlockingCollection<UnparsedMessage> _parseQueue =
@@ -370,6 +380,7 @@ namespace SpacetimeDB
                 var parseStart = DateTime.UtcNow;
 
                 ReducerEvent<Reducer>? reducerEvent = default;
+                ProcedureEvent? procedureEvent = default;
 
                 switch (message)
                 {
@@ -453,7 +464,22 @@ namespace SpacetimeDB
                     case ServerMessage.OneOffQueryResponse(var resp):
                         ParseOneOffQuery(resp);
                         break;
+                    case ServerMessage.ProcedureResult(var procedureResult):
+                        procedureEvent = new ProcedureEvent(
+                            procedureResult.Timestamp,
+                            procedureResult.Status,
+                            Identity ?? throw new InvalidOperationException("Identity not set"),
+                            ConnectionId,
+                            procedureResult.TotalHostExecutionDuration,
+                            procedureResult.RequestId
+                        );
 
+                        if (!stats.ProcedureRequestTracker.FinishTrackingRequest(procedureResult.RequestId, unparsed.timestamp))
+                        {
+                            Log.Warn($"Failed to finish tracking procedure request: {procedureResult.RequestId}");
+                        }
+
+                        break;
                     default:
                         throw new InvalidOperationException();
                 }
@@ -461,7 +487,7 @@ namespace SpacetimeDB
                 stats.ParseMessageTracker.InsertRequest(parseStart, trackerMetadata);
                 var applyTracker = stats.ApplyMessageQueueTracker.StartTrackingRequest(trackerMetadata);
 
-                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent };
+                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent, procedureEvent = procedureEvent };
             }
         }
 
@@ -702,7 +728,13 @@ namespace SpacetimeDB
                 case ServerMessage.OneOffQueryResponse:
                     /* OneOffQuery is async and handles its own responses */
                     break;
-
+                case ServerMessage.ProcedureResult(var procedureResult):
+                    var procedureEventContext = ToProcedureEventContext(parsed.procedureEvent!);
+                    if (!procedureCallbacks.TryResolveCallback(procedureEventContext, procedureResult.RequestId, procedureResult))
+                    {
+                        Log.Warn($"Received ProcedureResult for unknown request ID: {procedureResult.RequestId}");
+                    }
+                    break;
                 default:
                     throw new InvalidOperationException();
             }
@@ -733,6 +765,28 @@ namespace SpacetimeDB
             )));
         }
 
+        // TODO: Replace with an internal interface 
+        void IDbConnection.InternalCallProcedure<TArgs, TReturn>(
+            TArgs args,
+            ProcedureCallback<TReturn> callback)
+        {
+            if (!webSocket.IsConnected)
+            {
+                Log.Error("Cannot call procedure, not connected to server!");
+                return;
+            }
+
+            var requestId = stats.ProcedureRequestTracker.StartTrackingRequest(args.ProcedureName);
+            procedureCallbacks.RegisterCallback(requestId, callback);
+
+            webSocket.Send(new ClientMessage.CallProcedure(new CallProcedure(
+                args.ProcedureName,
+                IStructuralReadWrite.ToBytes(args).ToList(),
+                requestId,
+                0 // flags - assuming default for now
+            )));
+        }
+        
         void IDbConnection.LegacySubscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
