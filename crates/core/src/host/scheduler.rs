@@ -396,11 +396,19 @@ impl SchedulerActor {
             // the ScheduledReducer in the database for when the module restarts
             Ok(Err(ReducerCallError::NoSuchModule(_)) | Err(ReducerCallError::ScheduleReducerNotFound)) => {}
 
+            Ok(Ok((_, ts))) => {
+                if let Some(id) = id {
+                    let _ = self.delete_scheduled_reducer_row(&db, id, module_host_clone, ts).await;
+                }
+            }
+
             // delete the scheduled reducer row if its not repeated reducer
             Ok(_) | Err(_) => {
                 if let Some(id) = id {
                     // TODO: Handle errors here?
-                    let _ = self.delete_scheduled_reducer_row(&db, id, module_host_clone).await;
+                    let _ = self
+                        .delete_scheduled_reducer_row(&db, id, module_host_clone, Timestamp::now())
+                        .await;
                 }
             }
         }
@@ -415,6 +423,7 @@ impl SchedulerActor {
         db: &RelationalDB,
         id: ScheduledReducerId,
         module_host: ModuleHost,
+        ts: Timestamp,
     ) -> anyhow::Result<()> {
         let host_clone = module_host.clone();
         let db = db.clone();
@@ -455,10 +464,7 @@ impl SchedulerActor {
         // If this was repeated, we need to add it back to the queue.
         if let Some(ScheduleAt::Interval(dur)) = schedule_at {
             let key = self.queue.insert(
-                QueueItem::Id {
-                    id,
-                    at: Timestamp::now() + dur,
-                },
+                QueueItem::Id { id, at: ts + dur },
                 dur.to_duration().unwrap_or(Duration::ZERO),
             );
             self.key_map.insert(id, key);

@@ -258,11 +258,12 @@ jobs:
           venv/bin/pip3 install argparse toml
       - name: Run checks
         run: |
+          set -ueo pipefail
           FAILED=0
-          # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
-          ROOTS=(bindings sdk cli standalone)
-          for crate in $(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}"); do
-            if ! venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
+          ROOTS=(spacetimedb spacetimedb-sdk)
+          CRATES=$(venv/bin/python3 tools/find-publish-list.py --recursive --directories --quiet "${ROOTS[@]}")
+          for crate_dir in $CRATES; do
+            if ! venv/bin/python3 tools/crate-publish-checks.py "${crate_dir}"; then
               FAILED=$(( $FAILED + 1 ))
             fi
           done
@@ -394,7 +395,7 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test --test-threads=1
+              cargo test -p sdk-unreal-test-harness --test test -- --test-threads=1 --nocapture
             '
 
   cli_docs:
