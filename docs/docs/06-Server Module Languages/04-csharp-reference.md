@@ -1079,7 +1079,7 @@ The following changes are forbidden without a manual migration:
 - ❌ **Changing whether a table is used for [scheduling](#scheduled-reducers).** <!-- TODO: update this if we ever actually implement it... -->
 - ❌ **Adding `[Unique]` or `[PrimaryKey]` constraints.** This could result in existing tables being in an invalid state.
 
-Currently, manual migration support is limited. The `spacetime publish --clear-database <DATABASE_IDENTITY>` command can be used to **COMPLETELY DELETE** and reinitialize your database, but naturally it should be used with EXTREME CAUTION.
+Currently, manual migration support is limited. The `spacetime publish --delete-data <DATABASE_IDENTITY>` command can be used to **COMPLETELY DELETE** and reinitialize your database, but naturally it should be used with EXTREME CAUTION.
 
 ## Other infrastructure
 

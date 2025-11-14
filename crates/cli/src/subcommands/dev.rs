@@ -1,3 +1,4 @@
+use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
 use crate::subcommands::init;
@@ -71,6 +72,7 @@ pub fn cli() -> Command {
         )
         .arg(common_args::server().help("The nickname, host name or URL of the server to publish to"))
         .arg(common_args::yes())
+        .arg(common_args::clear_database())
 }
 
 #[derive(Deserialize)]
@@ -89,6 +91,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let spacetimedb_project_path = args.get_one::<PathBuf>("module-project-path").unwrap();
     let module_bindings_path = args.get_one::<PathBuf>("module-bindings-path").unwrap();
     let client_language = args.get_one::<Language>("client-lang");
+    let clear_database = args
+        .get_one::<ClearMode>("clear-database")
+        .copied()
+        .unwrap_or(ClearMode::Never);
     let force = args.get_flag("force");
 
     // If you don't specify a server, we default to your default server
@@ -236,6 +242,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         &database_name,
         client_language,
         resolved_server,
+        clear_database,
     )
     .await?;
 
@@ -284,6 +291,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 &database_name,
                 client_language,
                 resolved_server,
+                clear_database,
             )
             .await
             {
@@ -339,6 +347,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn generate_build_and_publish(
     config: &Config,
     project_dir: &Path,
@@ -347,6 +356,7 @@ async fn generate_build_and_publish(
     database_name: &str,
     client_language: Option<&Language>,
     server: &str,
+    clear_database: ClearMode,
 ) -> Result<(), anyhow::Error> {
     let module_language = detect_module_language(spacetimedb_dir)?;
     let client_language = client_language.unwrap_or(match module_language {
@@ -394,7 +404,20 @@ async fn generate_build_and_publish(
 
     let project_path_str = spacetimedb_dir.to_str().unwrap();
 
-    let mut publish_args = vec!["publish", database_name, "--project-path", project_path_str, "--yes"];
+    let clear_flag = match clear_database {
+        ClearMode::Always => "always",
+        ClearMode::Never => "never",
+        ClearMode::OnConflict => "on-conflict",
+    };
+    let mut publish_args = vec![
+        "publish",
+        database_name,
+        "--project-path",
+        project_path_str,
+        "--yes",
+        "--delete-data",
+        clear_flag,
+    ];
     publish_args.extend_from_slice(&["--server", server]);
 
     let publish_cmd = publish::cli();
