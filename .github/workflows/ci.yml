@@ -23,10 +23,17 @@ jobs:
     strategy:
       matrix:
         include:
-          - { runner: spacetimedb-runner, smoketest_args: --docker }
-          - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
+          - runner: spacetimedb-new-runner
+            smoketest_args: --docker
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
+          - runner: windows-latest
+            smoketest_args: --no-build-cli
+            container: null
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    
     steps:
       - name: Find Git ref
         env:
@@ -63,6 +70,10 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
+
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: docker compose up -d
@@ -93,7 +104,11 @@ jobs:
 
   test:
     name: Test Suite
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       - name: Find Git ref
         env:
@@ -157,7 +172,11 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -196,7 +215,11 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       - uses: actions/checkout@v3
 
@@ -221,7 +244,11 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -289,7 +316,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
@@ -368,13 +395,17 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test
+              cargo test -p sdk-unreal-test-harness --test test -- --test-threads=1 --nocapture
             '
 
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       - name: Find Git ref
         env:
