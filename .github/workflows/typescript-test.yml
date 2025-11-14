@@ -15,7 +15,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     env:
-      CARGO_TARGET_DIR: target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
     steps:
       - name: Checkout repository

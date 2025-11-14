@@ -19,7 +19,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 30
     env:
-      CARGO_TARGET_DIR: target
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout repository
         id: checkout-stdb
