@@ -233,8 +233,7 @@ jobs:
         run: |
           set -ueo pipefail
           FAILED=0
-          # This definition of ROOTS and invocation of find-publish-list.py is copied from publish-crates.sh
-          ROOTS=(bindings sdk cli standalone)
+          ROOTS=(spacetimedb spacetimedb-sdk spacetimedb-cli spacetimedb-standalone)
           CRATES=$(venv/bin/python3 tools/find-publish-list.py --recursive --quiet "${ROOTS[@]}")
           for crate in $CRATES; do
             if ! venv/bin/python3 tools/crate-publish-checks.py "crates/$crate"; then
