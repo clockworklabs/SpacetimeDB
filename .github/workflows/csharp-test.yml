@@ -164,9 +164,6 @@ jobs:
 
       - name: Start Docker daemon
         run: /usr/local/bin/start-docker.sh
-      - name: Debug Docker info
-        run: |
-          docker info
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
