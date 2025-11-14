@@ -111,7 +111,6 @@ jobs:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
         --privileged
-        -v /var/run/docker.sock:/var/run/docker.sock
     steps:
       - name: Find Git ref
         env:
@@ -180,7 +179,6 @@ jobs:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
         --privileged
-        -v /var/run/docker.sock:/var/run/docker.sock
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
@@ -224,7 +222,6 @@ jobs:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
         --privileged
-        -v /var/run/docker.sock:/var/run/docker.sock
     steps:
       - uses: actions/checkout@v3
 
@@ -254,7 +251,6 @@ jobs:
       image: localhost:5000/spacetimedb-ci:latest
       options: >-
         --privileged
-        -v /var/run/docker.sock:/var/run/docker.sock
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
