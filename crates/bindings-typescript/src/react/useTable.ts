@@ -6,10 +6,13 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { useSpacetimeDB } from './useSpacetimeDB';
-import { DbConnectionImpl, TableCache } from '../sdk/db_connection_impl';
-import type { TableNamesFromDb } from '../sdk/table_handle';
+import { type EventContextInterface } from '../sdk/db_connection_impl';
+import type { ConnectionState } from './connection_state';
+import type { UntypedRemoteModule } from '../sdk/spacetime_module';
+import type { RowType, UntypedTableDef } from '../lib/table';
+import type { Prettify } from '../lib/type_util';
 
-export interface UseQueryCallbacks<RowType> {
+export interface UseTableCallbacks<RowType> {
   onInsert?: (row: RowType) => void;
   onDelete?: (row: RowType) => void;
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
@@ -67,11 +70,9 @@ export const isOr = <Column extends string>(
   e: Expr<Column>
 ): e is Extract<Expr<Column>, { type: 'or' }> => e.type === 'or';
 
-type RecordLike<Column extends string> = Record<Column, unknown>;
-
 export function evaluate<Column extends string>(
   expr: Expr<Column>,
-  row: RecordLike<Column>
+  row: Record<Column, any>
 ): boolean {
   switch (expr.type) {
     case 'eq': {
@@ -136,11 +137,6 @@ export function toString<Column extends string>(expr: Expr<Column>): string {
 export function where<Column extends string>(expr: Expr<Column>): Expr<Column> {
   return expr;
 }
-
-type Snapshot<RowType> = {
-  readonly rows: readonly RowType[];
-  readonly state: 'loading' | 'ready';
-};
 
 type MembershipChange = 'enter' | 'leave' | 'stayIn' | 'stayOut';
 
@@ -210,17 +206,11 @@ type ColumnsFromRow<R> = {
  * });
  * ```
  */
-export function useTable<
-  DbConnection extends DbConnectionImpl,
-  RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
-    DbConnection['db']
-  >,
->(
-  tableName: TableName,
-  where: Expr<ColumnsFromRow<RowType>>,
-  callbacks?: UseQueryCallbacks<RowType>
-): Snapshot<RowType>;
+export function useTable<TableDef extends UntypedTableDef>(
+  tableDef: TableDef,
+  where: Expr<ColumnsFromRow<RowType<TableDef>>>,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): [readonly Prettify<RowType<TableDef>>[], boolean];
 
 /**
  * React hook to subscribe to a table in SpacetimeDB and receive live updates as rows are inserted, updated, or deleted.
@@ -255,46 +245,38 @@ export function useTable<
  * });
  * ```
  */
-export function useTable<
-  DbConnection extends DbConnectionImpl,
-  RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
-    DbConnection['db']
-  >,
->(
-  tableName: TableName,
-  callbacks?: UseQueryCallbacks<RowType>
-): Snapshot<RowType>;
+export function useTable<TableDef extends UntypedTableDef>(
+  tableDef: TableDef,
+  callbacks?: UseTableCallbacks<Prettify<RowType<TableDef>>>
+): [readonly Prettify<RowType<TableDef>>[], boolean];
 
-export function useTable<
-  DbConnection extends DbConnectionImpl,
-  RowType extends Record<string, any>,
-  TableName extends TableNamesFromDb<DbConnection['db']> = TableNamesFromDb<
-    DbConnection['db']
-  >,
->(
-  tableName: TableName,
+export function useTable<TableDef extends UntypedTableDef>(
+  tableDef: TableDef,
   whereClauseOrCallbacks?:
-    | Expr<ColumnsFromRow<RowType>>
-    | UseQueryCallbacks<RowType>,
-  callbacks?: UseQueryCallbacks<RowType>
-): Snapshot<RowType> {
-  let whereClause: Expr<ColumnsFromRow<RowType>> | undefined;
+    | Expr<ColumnsFromRow<RowType<TableDef>>>
+    | UseTableCallbacks<RowType<TableDef>>,
+  callbacks?: UseTableCallbacks<RowType<TableDef>>
+): [readonly Prettify<RowType<TableDef>>[], boolean] {
+  type UseTableRowType = RowType<TableDef>;
+  const tableName = tableDef.name;
+  let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
   if (
     whereClauseOrCallbacks &&
     typeof whereClauseOrCallbacks === 'object' &&
     'type' in whereClauseOrCallbacks
   ) {
-    whereClause = whereClauseOrCallbacks as Expr<ColumnsFromRow<RowType>>;
+    whereClause = whereClauseOrCallbacks as Expr<
+      ColumnsFromRow<UseTableRowType>
+    >;
   } else {
     callbacks = whereClauseOrCallbacks as
-      | UseQueryCallbacks<RowType>
+      | UseTableCallbacks<UseTableRowType>
       | undefined;
   }
   const [subscribeApplied, setSubscribeApplied] = useState(false);
-  let spacetime: DbConnection | undefined;
+  let connectionState: ConnectionState | undefined;
   try {
-    spacetime = useSpacetimeDB<DbConnection>();
+    connectionState = useSpacetimeDB();
   } catch {
     throw new Error(
       'Could not find SpacetimeDB client! Did you forget to add a ' +
@@ -302,34 +284,40 @@ export function useTable<
         'under a `SpacetimeDBProvider` component.'
     );
   }
-  const client = spacetime;
 
   const query =
     `SELECT * FROM ${tableName}` +
     (whereClause ? ` WHERE ${toString(whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
-  const lastSnapshotRef = useRef<Snapshot<RowType> | null>(null);
+  const lastSnapshotRef = useRef<
+    [readonly Prettify<UseTableRowType>[], boolean] | null
+  >(null);
 
   const whereKey = whereClause ? toString(whereClause) : '';
 
-  const computeSnapshot = useCallback((): Snapshot<RowType> => {
-    const table = client.db[
-      tableName as keyof typeof client.db
-    ] as unknown as TableCache<RowType>;
-    const result: readonly RowType[] = whereClause
-      ? table.iter().filter(row => evaluate(whereClause, row))
-      : table.iter();
-    return {
-      rows: result,
-      state: subscribeApplied ? 'ready' : 'loading',
-    };
+  const computeSnapshot = useCallback((): [
+    readonly Prettify<UseTableRowType>[],
+    boolean,
+  ] => {
+    const connection = connectionState.getConnection();
+    if (!connection) {
+      return [[], false];
+    }
+    const table = connection.db[tableName];
+    const result: readonly Prettify<UseTableRowType>[] = whereClause
+      ? (Array.from(table.iter()).filter(row =>
+          evaluate(whereClause, row as UseTableRowType)
+        ) as Prettify<UseTableRowType>[])
+      : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
+    return [result, subscribeApplied];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, tableName, whereKey, subscribeApplied]);
+  }, [connectionState, tableName, whereKey, subscribeApplied]);
 
   useEffect(() => {
-    if (client.isActive) {
-      const cancel = client
+    const connection = connectionState.getConnection()!;
+    if (connectionState.isActive && connection) {
+      const cancel = connection
         .subscriptionBuilder()
         .onApplied(() => {
           setSubscribeApplied(true);
@@ -339,11 +327,14 @@ export function useTable<
         cancel.unsubscribe();
       };
     }
-  }, [query, client.isActive, client]);
+  }, [query, connectionState.isActive, connectionState]);
 
   const subscribe = useCallback(
     (onStoreChange: () => void) => {
-      const onInsert = (ctx: any, row: RowType) => {
+      const onInsert = (
+        ctx: EventContextInterface<UntypedRemoteModule>,
+        row: any
+      ) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
@@ -358,7 +349,10 @@ export function useTable<
         }
       };
 
-      const onDelete = (ctx: any, row: RowType) => {
+      const onDelete = (
+        ctx: EventContextInterface<UntypedRemoteModule>,
+        row: any
+      ) => {
         if (whereClause && !evaluate(whereClause, row)) {
           return;
         }
@@ -373,7 +367,11 @@ export function useTable<
         }
       };
 
-      const onUpdate = (ctx: any, oldRow: RowType, newRow: RowType) => {
+      const onUpdate = (
+        ctx: EventContextInterface<UntypedRemoteModule>,
+        oldRow: any,
+        newRow: any
+      ) => {
         const change = classifyMembership(whereClause, oldRow, newRow);
 
         switch (change) {
@@ -400,9 +398,12 @@ export function useTable<
         }
       };
 
-      const table = client.db[
-        tableName as keyof typeof client.db
-      ] as unknown as TableCache<RowType>;
+      const connection = connectionState.getConnection();
+      if (!connection) {
+        return () => {};
+      }
+
+      const table = connection.db[tableName];
       table.onInsert(onInsert);
       table.onDelete(onDelete);
       table.onUpdate?.(onUpdate);
@@ -415,7 +416,7 @@ export function useTable<
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      client,
+      connectionState,
       tableName,
       whereKey,
       callbacks?.onDelete,
@@ -424,7 +425,10 @@ export function useTable<
     ]
   );
 
-  const getSnapshot = useCallback((): Snapshot<RowType> => {
+  const getSnapshot = useCallback((): [
+    readonly Prettify<UseTableRowType>[],
+    boolean,
+  ] => {
     if (!lastSnapshotRef.current) {
       lastSnapshotRef.current = computeSnapshot();
     }

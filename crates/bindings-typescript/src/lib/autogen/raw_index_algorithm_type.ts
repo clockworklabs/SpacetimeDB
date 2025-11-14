@@ -4,83 +4,17 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import * as RawIndexAlgorithmVariants from './raw_index_algorithm_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
 // The tagged union or sum type for the algebraic type `RawIndexAlgorithm`.
-export type RawIndexAlgorithm =
-  | RawIndexAlgorithmVariants.BTree
-  | RawIndexAlgorithmVariants.Hash
-  | RawIndexAlgorithmVariants.Direct;
-
-let _cached_RawIndexAlgorithm_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const RawIndexAlgorithm = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  BTree: (value: number[]): RawIndexAlgorithmVariants.BTree => ({
-    tag: 'BTree',
-    value,
-  }),
-  Hash: (value: number[]): RawIndexAlgorithmVariants.Hash => ({
-    tag: 'Hash',
-    value,
-  }),
-  Direct: (value: number): RawIndexAlgorithmVariants.Direct => ({
-    tag: 'Direct',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawIndexAlgorithm_type_value)
-      return _cached_RawIndexAlgorithm_type_value;
-    _cached_RawIndexAlgorithm_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_RawIndexAlgorithm_type_value.value.variants.push(
-      {
-        name: 'BTree',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-      },
-      {
-        name: 'Hash',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U16),
-      },
-      { name: 'Direct', algebraicType: __AlgebraicTypeValue.U16 }
-    );
-    return _cached_RawIndexAlgorithm_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawIndexAlgorithm): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawIndexAlgorithm.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawIndexAlgorithm {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawIndexAlgorithm.getTypeScriptAlgebraicType()
-    );
-  },
-};
+const RawIndexAlgorithm = __t.enum('RawIndexAlgorithm', {
+  BTree: __t.array(__t.u16()),
+  Hash: __t.array(__t.u16()),
+  Direct: __t.u16(),
+});
 
 export default RawIndexAlgorithm;

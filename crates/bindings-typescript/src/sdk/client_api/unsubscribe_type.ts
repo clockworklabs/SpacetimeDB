@@ -4,73 +4,16 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { QueryId } from './query_id_type';
-// Mark import as potentially unused
-declare type __keep_QueryId = QueryId;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import QueryId from './query_id_type';
 
-export type Unsubscribe = {
-  requestId: number;
-  queryId: QueryId;
-};
-let _cached_Unsubscribe_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const Unsubscribe = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_Unsubscribe_type_value) return _cached_Unsubscribe_type_value;
-    _cached_Unsubscribe_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_Unsubscribe_type_value.value.elements.push(
-      { name: 'requestId', algebraicType: __AlgebraicTypeValue.U32 },
-      { name: 'queryId', algebraicType: QueryId.getTypeScriptAlgebraicType() }
-    );
-    return _cached_Unsubscribe_type_value;
+export default __t.object('Unsubscribe', {
+  requestId: __t.u32(),
+  get queryId() {
+    return QueryId;
   },
-
-  serialize(writer: __BinaryWriter, value: Unsubscribe): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Unsubscribe.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Unsubscribe {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Unsubscribe.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default Unsubscribe;
+});

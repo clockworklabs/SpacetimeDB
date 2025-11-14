@@ -482,7 +482,7 @@ namespace SpacetimeDB
         /// <summary>
         /// Connect to a remote spacetime instance.
         /// </summary>
-        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
+        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://maincloud.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
         void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
         {

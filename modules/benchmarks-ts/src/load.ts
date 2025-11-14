@@ -16,6 +16,6 @@ export function newLoad(initialLoad: number): Load {
   };
 }
 
-export function blackBox(x: any) {
+export function blackBox(_x: any) {
   // TODO: actually do something to defeat optimizations?
 }
