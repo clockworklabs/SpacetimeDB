@@ -1051,13 +1051,6 @@ impl IsOk for () {
 }
 
 #[cfg(feature = "unstable")]
-impl<T> IsOk for Option<T> {
-    fn is_ok(&self) -> bool {
-        self.is_some()
-    }
-}
-
-#[cfg(feature = "unstable")]
 impl<T, E> IsOk for Result<T, E> {
     fn is_ok(&self) -> bool {
         self.is_ok()
