@@ -48,6 +48,9 @@ declare type __keep_UnsubscribeType = UnsubscribeType;
 import { UnsubscribeMulti as UnsubscribeMultiType } from './unsubscribe_multi_type';
 // Mark import as potentially unused
 declare type __keep_UnsubscribeMultiType = UnsubscribeMultiType;
+import { CallProcedure as CallProcedureType } from './call_procedure_type';
+// Mark import as potentially unused
+declare type __keep_CallProcedureType = CallProcedureType;
 
 export type CallReducer = { tag: 'CallReducer'; value: CallReducerType };
 export type Subscribe = { tag: 'Subscribe'; value: SubscribeType };
@@ -65,3 +68,4 @@ export type UnsubscribeMulti = {
   tag: 'UnsubscribeMulti';
   value: UnsubscribeMultiType;
 };
+export type CallProcedure = { tag: 'CallProcedure'; value: CallProcedureType };

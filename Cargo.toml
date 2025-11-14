@@ -50,6 +50,9 @@ members = [
   "sdks/rust/tests/procedure-client",
   "tools/upgrade-version",
   "tools/license-check",
+  "tools/replace-spacetimedb",
+  "tools/generate-client-api",
+  "tools/gen-bindings",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
 ]

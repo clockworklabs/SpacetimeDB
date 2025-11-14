@@ -57,6 +57,9 @@ declare type __keep_SubscribeMultiAppliedType = SubscribeMultiAppliedType;
 import { UnsubscribeMultiApplied as UnsubscribeMultiAppliedType } from './unsubscribe_multi_applied_type';
 // Mark import as potentially unused
 declare type __keep_UnsubscribeMultiAppliedType = UnsubscribeMultiAppliedType;
+import { ProcedureResult as ProcedureResultType } from './procedure_result_type';
+// Mark import as potentially unused
+declare type __keep_ProcedureResultType = ProcedureResultType;
 
 export type InitialSubscription = {
   tag: 'InitialSubscription';
@@ -94,4 +97,8 @@ export type SubscribeMultiApplied = {
 export type UnsubscribeMultiApplied = {
   tag: 'UnsubscribeMultiApplied';
   value: UnsubscribeMultiAppliedType;
+};
+export type ProcedureResult = {
+  tag: 'ProcedureResult';
+  value: ProcedureResultType;
 };

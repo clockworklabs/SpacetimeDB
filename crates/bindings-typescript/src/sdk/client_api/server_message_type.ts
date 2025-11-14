@@ -57,6 +57,9 @@ declare type __keep_SubscribeMultiApplied = SubscribeMultiApplied;
 import { UnsubscribeMultiApplied } from './unsubscribe_multi_applied_type';
 // Mark import as potentially unused
 declare type __keep_UnsubscribeMultiApplied = UnsubscribeMultiApplied;
+import { ProcedureResult } from './procedure_result_type';
+// Mark import as potentially unused
+declare type __keep_ProcedureResult = ProcedureResult;
 
 import * as ServerMessageVariants from './server_message_variants';
 
@@ -71,7 +74,8 @@ export type ServerMessage =
   | ServerMessageVariants.UnsubscribeApplied
   | ServerMessageVariants.SubscriptionError
   | ServerMessageVariants.SubscribeMultiApplied
-  | ServerMessageVariants.UnsubscribeMultiApplied;
+  | ServerMessageVariants.UnsubscribeMultiApplied
+  | ServerMessageVariants.ProcedureResult;
 
 let _cached_ServerMessage_type_value: __AlgebraicTypeType | null = null;
 
@@ -140,6 +144,12 @@ export const ServerMessage = {
     tag: 'UnsubscribeMultiApplied',
     value,
   }),
+  ProcedureResult: (
+    value: ProcedureResult
+  ): ServerMessageVariants.ProcedureResult => ({
+    tag: 'ProcedureResult',
+    value,
+  }),
 
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
     if (_cached_ServerMessage_type_value)
@@ -187,6 +197,10 @@ export const ServerMessage = {
       {
         name: 'UnsubscribeMultiApplied',
         algebraicType: UnsubscribeMultiApplied.getTypeScriptAlgebraicType(),
+      },
+      {
+        name: 'ProcedureResult',
+        algebraicType: ProcedureResult.getTypeScriptAlgebraicType(),
       }
     );
     return _cached_ServerMessage_type_value;
