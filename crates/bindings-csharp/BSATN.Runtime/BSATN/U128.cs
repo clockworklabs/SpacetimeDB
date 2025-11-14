@@ -90,4 +90,20 @@ public readonly record struct U128 : IEquatable<U128>, IComparable, IComparable<
 
     /// <inheritdoc cref="object.ToString()" />
     public override string ToString() => AsBigInt().ToString();
+
+    public Guid ToGuid()
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        if (BitConverter.IsLittleEndian)
+        {
+            BitConverter.TryWriteBytes(bytes, _lower);
+            BitConverter.TryWriteBytes(bytes[8..], _upper);
+        }
+        else
+        {
+            BitConverter.TryWriteBytes(bytes, _upper);
+            BitConverter.TryWriteBytes(bytes[8..], _lower);
+        }
+        return new Guid(bytes);
+    }
 }

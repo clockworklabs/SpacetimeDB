@@ -175,7 +175,8 @@ record ColumnDeclaration : MemberDeclaration
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None => type.ToString()
                         is "SpacetimeDB.ConnectionId"
-                            or "SpacetimeDB.Identity",
+                            or "SpacetimeDB.Identity"
+                            or "SpacetimeDB.Uuid",
                     _ => false,
                 }
             )
@@ -1464,12 +1465,54 @@ public class Module : IIncrementalGenerator
                                 Timestamp = time;
                                 SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
                             }
+
+                            /// <summary>
+                            /// Create a new UUIDv4 using the built-in RNG.
+                            /// </summary>
+                            /// <remarks>
+                            /// This method fills 16 random bytes using the context RNG,
+                            /// sets version and variant bits for UUIDv4, and returns the result.
+                            /// </remarks>
+                            /// <example>
+                            /// <code>
+                            /// var uuid = ctx.NewUuidV4();
+                            /// Console.WriteLine(uuid);
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV4()
+                            {
+                                var bytes = new byte[16];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromRandomBytesV4(bytes);
+                            }
+                            
+                            /// <summary>
+                            /// Create a new UUIDv7 using the provided <see cref="ClockGenerator"/>.
+                            /// </summary>
+                            /// <remarks>
+                            /// To preserve monotonicity guarantees, do not call this from multiple
+                            /// threads or contexts sharing the same <see cref="ClockGenerator"/>.
+                            /// Use a dedicated instance per logical context.
+                            /// </remarks>
+                            /// <example>
+                            /// <code>
+                            /// var clock = new ClockGenerator(ctx.Timestamp);
+                            /// var uuid = ctx.NewUuidV7(clock);
+                            /// Console.WriteLine(uuid);
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV7(ClockGenerator clock)
+                            {
+                                var bytes = new byte[10];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromClockV7(clock, bytes);
+                            }
                         }
-                        
-                        public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
+
+                        public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
                         {
                             public Identity Sender { get; }
-                        
+
                             internal ViewContext(Identity sender, Internal.LocalReadOnly db)
                                 : base(db)
                             {
@@ -1477,12 +1520,12 @@ public class Module : IIncrementalGenerator
                             }
                         }
 
-                        public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext 
+                        public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext
                         {
                             internal AnonymousViewContext(Internal.LocalReadOnly db)
                                 : base(db) { }
                         }
-                    
+
                         namespace Internal.TableHandles {
                             {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
                         }
