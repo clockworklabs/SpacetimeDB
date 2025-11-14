@@ -1,0 +1,14 @@
+﻿Write a SpacetimeDB backend module in Rust that defines a struct type and uses it in a table.
+
+TYPES
+- Struct: Position
+  - Fields:
+    - x: i32
+    - y: i32
+
+TABLE
+- entities
+  - Struct: Entity
+  - Fields:
+    - id: i32 (primary key)
+    - pos: Position
