@@ -13,6 +13,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -30,6 +31,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -47,6 +49,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -64,6 +67,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -86,6 +90,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -104,6 +109,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -126,6 +132,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -144,6 +151,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -162,6 +170,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -185,6 +194,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -203,6 +213,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -221,6 +232,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -239,6 +251,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -257,6 +270,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -276,6 +290,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -294,6 +309,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -312,6 +328,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -330,6 +347,7 @@
         Db: {Scrubbed},
         Reducers: {Scrubbed},
         SetReducerFlags: {},
+        Procedures: {},
         IsActive: false,
         Identity: Identity_1,
         ConnectionId: Guid_1
@@ -385,6 +403,7 @@
     ReducerRequestTracker: {
       requestsAwaitingResponse: 9
     },
+    ProcedureRequestTracker: {},
     SubscriptionRequestTracker: {},
     OneOffRequestTracker: {},
     AllReducersTracker: {
