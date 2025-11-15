@@ -1802,6 +1802,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
 }
 
 fn generate_reducer_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, api_macro: &str, module_name: &str) {
+    let reducer_count: usize = iter_reducers(module).count();
     // ---------------------------------------------------------------------
     // Per-module typed Reducer tagged union + typed Event
     // ---------------------------------------------------------------------
@@ -1820,6 +1821,10 @@ fn generate_reducer_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, 
             write!(output, "    {reducer_pascal}");
         }
         writeln!(output);
+    }
+    if reducer_count == 0 {
+        writeln!(output, "    // (No reducers defined in module)");
+        writeln!(output, "    None");
     }
     writeln!(output, "}};");
     writeln!(output);
@@ -1846,6 +1851,9 @@ fn generate_reducer_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, 
             }
             write!(output, "F{reducer_pascal}Args");
         }
+    }
+    if reducer_count == 0 {
+        write!(output, "FSpacetimeDBUnit");
     }
     writeln!(output, "> Data;");
     writeln!(output);
@@ -1901,6 +1909,11 @@ fn generate_reducer_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, 
             "            return GetAs{reducer_pascal}() == Other.GetAs{reducer_pascal}();"
         );
     }
+    if reducer_count == 0 {
+        writeln!(output, "        case EReducerTag::None:");
+        writeln!(output, "            return true;");
+    }
+
     writeln!(output, "        default: return false;");
     writeln!(output, "        }}");
     writeln!(output, "    }}");
@@ -2047,173 +2060,177 @@ fn generate_reducer_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, 
 }
 
 fn generate_procedure_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, api_macro: &str, module_name: &str) {
-    // ---------------------------------------------------------------------
-    // Per-module typed Procedure tagged union + typed Event
-    // ---------------------------------------------------------------------
-    writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
-    writeln!(output, "enum class EProcedureTag : uint8");
-    writeln!(output, "{{");
-    {
-        let mut first = true;
+    let procedure_count: usize = iter_procedures(module).count();
+    if procedure_count > 0 {
+        // ---------------------------------------------------------------------
+        // Per-module typed Procedure tagged union + typed Event
+        // ---------------------------------------------------------------------
+        writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
+        writeln!(output, "enum class EProcedureTag : uint8");
+        writeln!(output, "{{");
+        {
+            let mut first = true;
+            for procedure in iter_procedures(module) {
+                let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+                if !first {
+                    writeln!(output, ",");
+                } else {
+                    first = false;
+                }
+                write!(output, "    {procedure_pascal}");
+            }
+            writeln!(output);
+        }
+        writeln!(output, "}};");
+        writeln!(output);
+
+        // FProcedure: tagged union over procedure args, with optional metadata
+        writeln!(output, "USTRUCT(BlueprintType)");
+        writeln!(output, "struct {api_macro} FProcedure");
+        writeln!(output, "{{");
+        writeln!(output, "    GENERATED_BODY()");
+        writeln!(output);
+        writeln!(output, "public:");
+        writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+        writeln!(output, "    EProcedureTag Tag = static_cast<EProcedureTag>(0);");
+        writeln!(output);
+        write!(output, "    TVariant<");
+        {
+            let mut first = true;
+            for procedure in iter_procedures(module) {
+                let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+                if !first {
+                    write!(output, ", ");
+                } else {
+                    first = false;
+                }
+                write!(output, "F{procedure_pascal}Args");
+            }
+        }
+        writeln!(output, "> Data;");
+        writeln!(output);
+        writeln!(output, "    // Optional metadata");
+        writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+        writeln!(output, "    FString ProcedureName;");
+        writeln!(output, "    uint32 ProcedureId = 0;");
+        writeln!(output, "    uint32 RequestId = 0;");
+        writeln!(output);
+
+        // Static constructors, Is*, GetAs*
         for procedure in iter_procedures(module) {
             let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
-            if !first {
-                writeln!(output, ",");
-            } else {
-                first = false;
-            }
-            write!(output, "    {procedure_pascal}");
-        }
-        writeln!(output);
-    }
-    writeln!(output, "}};");
-    writeln!(output);
-
-    // FProcedure: tagged union over procedure args, with optional metadata
-    writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {api_macro} FProcedure");
-    writeln!(output, "{{");
-    writeln!(output, "    GENERATED_BODY()");
-    writeln!(output);
-    writeln!(output, "public:");
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "    EProcedureTag Tag = static_cast<EProcedureTag>(0);");
-    writeln!(output);
-    write!(output, "    TVariant<");
-    {
-        let mut first = true;
-        for procedure in iter_procedures(module) {
-            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
-            if !first {
-                write!(output, ", ");
-            } else {
-                first = false;
-            }
-            write!(output, "F{procedure_pascal}Args");
-        }
-    }
-    writeln!(output, "> Data;");
-    writeln!(output);
-    writeln!(output, "    // Optional metadata");
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "    FString ProcedureName;");
-    writeln!(output, "    uint32 ProcedureId = 0;");
-    writeln!(output, "    uint32 RequestId = 0;");
-    writeln!(output);
-
-    // Static constructors, Is*, GetAs*
-    for procedure in iter_procedures(module) {
-        let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
-        writeln!(
-            output,
-            "    static FProcedure {procedure_pascal}(const F{procedure_pascal}Args& Value)"
-        );
-        writeln!(output, "    {{");
-        writeln!(output, "        FProcedure Out;");
-        writeln!(output, "        Out.Tag = EProcedureTag::{procedure_pascal};");
-        writeln!(output, "        Out.Data.Set<F{procedure_pascal}Args>(Value);");
-        writeln!(
-            output,
-            "        Out.ProcedureName = TEXT(\"{}\");",
-            procedure.name.deref()
-        );
-        writeln!(output, "        return Out;");
-        writeln!(output, "    }}");
-        writeln!(output);
-        writeln!(
+            writeln!(
+                output,
+                "    static FProcedure {procedure_pascal}(const F{procedure_pascal}Args& Value)"
+            );
+            writeln!(output, "    {{");
+            writeln!(output, "        FProcedure Out;");
+            writeln!(output, "        Out.Tag = EProcedureTag::{procedure_pascal};");
+            writeln!(output, "        Out.Data.Set<F{procedure_pascal}Args>(Value);");
+            writeln!(
+                output,
+                "        Out.ProcedureName = TEXT(\"{}\");",
+                procedure.name.deref()
+            );
+            writeln!(output, "        return Out;");
+            writeln!(output, "    }}");
+            writeln!(output);
+            writeln!(
             output,
             "    FORCEINLINE bool Is{procedure_pascal}() const {{ return Tag == EProcedureTag::{procedure_pascal}; }}"
         );
-        writeln!(
-            output,
-            "    FORCEINLINE F{procedure_pascal}Args GetAs{procedure_pascal}() const"
-        );
+            writeln!(
+                output,
+                "    FORCEINLINE F{procedure_pascal}Args GetAs{procedure_pascal}() const"
+            );
+            writeln!(output, "    {{");
+            writeln!(
+                output,
+                "        ensureMsgf(Is{procedure_pascal}(), TEXT(\"Procedure does not hold {procedure_pascal}!\"));"
+            );
+            writeln!(output, "        return Data.Get<F{procedure_pascal}Args>();");
+            writeln!(output, "    }}");
+            writeln!(output);
+        }
+        writeln!(output, "    FORCEINLINE bool operator==(const FProcedure& Other) const");
         writeln!(output, "    {{");
-        writeln!(
-            output,
-            "        ensureMsgf(Is{procedure_pascal}(), TEXT(\"Procedure does not hold {procedure_pascal}!\"));"
-        );
-        writeln!(output, "        return Data.Get<F{procedure_pascal}Args>();");
+        writeln!(output, "        if (Tag != Other.Tag || ProcedureId != Other.ProcedureId || RequestId != Other.RequestId || ProcedureName != Other.ProcedureName) return false;");
+        writeln!(output, "        switch (Tag)");
+        writeln!(output, "        {{");
+        for procedure in iter_procedures(module) {
+            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+            writeln!(output, "        case EProcedureTag::{procedure_pascal}:");
+            writeln!(
+                output,
+                "            return GetAs{procedure_pascal}() == Other.GetAs{procedure_pascal}();"
+            );
+        }
+        writeln!(output, "        default: return false;");
+        writeln!(output, "        }}");
         writeln!(output, "    }}");
+        writeln!(
+            output,
+            "    FORCEINLINE bool operator!=(const FProcedure& Other) const {{ return !(*this == Other); }}"
+        );
+        writeln!(output, "}};");
         writeln!(output);
+
+        // BPLib for FProcedure
+        writeln!(output, "UCLASS()");
+        writeln!(
+            output,
+            "class {api_macro} UProcedureBpLib : public UBlueprintFunctionLibrary"
+        );
+        writeln!(output, "{{");
+        writeln!(output, "    GENERATED_BODY()");
+        writeln!(output);
+        writeln!(output, "private:");
+
+        for procedure in iter_procedures(module) {
+            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+            // ---- Static constructors ----
+            writeln!(output);
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|Procedure\")"
+            );
+            writeln!(
+                output,
+                "    static FProcedure {procedure_pascal}(const F{procedure_pascal}Args& Value) {{"
+            );
+            writeln!(output, "        return FProcedure::{procedure_pascal}(Value);");
+            writeln!(output, "    }}");
+            writeln!(output);
+
+            // Is*
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Procedure\")"
+            );
+            writeln!(
+                output,
+                "    static bool Is{procedure_pascal}(const FProcedure& Procedure) {{ return Procedure.Is{procedure_pascal}(); }}"
+            );
+            writeln!(output);
+
+            // GetAs*
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Procedure\")"
+            );
+            writeln!(
+                output,
+                "    static F{procedure_pascal}Args GetAs{procedure_pascal}(const FProcedure& Procedure) {{"
+            );
+            writeln!(output, "        return Procedure.GetAs{procedure_pascal}();");
+            writeln!(output, "    }}");
+        }
+
+        writeln!(output, "}};");
+        writeln!(output);
+    } else {
+        writeln!(output, "// No procedures defined in this module.");
     }
-    writeln!(output, "    FORCEINLINE bool operator==(const FProcedure& Other) const");
-    writeln!(output, "    {{");
-    writeln!(output, "        if (Tag != Other.Tag || ProcedureId != Other.ProcedureId || RequestId != Other.RequestId || ProcedureName != Other.ProcedureName) return false;");
-    writeln!(output, "        switch (Tag)");
-    writeln!(output, "        {{");
-    for procedure in iter_procedures(module) {
-        let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
-        writeln!(output, "        case EProcedureTag::{procedure_pascal}:");
-        writeln!(
-            output,
-            "            return GetAs{procedure_pascal}() == Other.GetAs{procedure_pascal}();"
-        );
-    }
-    writeln!(output, "        default: return false;");
-    writeln!(output, "        }}");
-    writeln!(output, "    }}");
-    writeln!(
-        output,
-        "    FORCEINLINE bool operator!=(const FProcedure& Other) const {{ return !(*this == Other); }}"
-    );
-    writeln!(output, "}};");
-    writeln!(output);
-
-    // BPLib for FProcedure
-    writeln!(output, "UCLASS()");
-    writeln!(
-        output,
-        "class {api_macro} UProcedureBpLib : public UBlueprintFunctionLibrary"
-    );
-    writeln!(output, "{{");
-    writeln!(output, "    GENERATED_BODY()");
-    writeln!(output);
-    writeln!(output, "private:");
-
-    for procedure in iter_procedures(module) {
-        let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
-        // ---- Static constructors ----
-        writeln!(output);
-        writeln!(
-            output,
-            "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|Procedure\")"
-        );
-        writeln!(
-            output,
-            "    static FProcedure {procedure_pascal}(const F{procedure_pascal}Args& Value) {{"
-        );
-        writeln!(output, "        return FProcedure::{procedure_pascal}(Value);");
-        writeln!(output, "    }}");
-        writeln!(output);
-
-        // Is*
-        writeln!(
-            output,
-            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Procedure\")"
-        );
-        writeln!(
-            output,
-            "    static bool Is{procedure_pascal}(const FProcedure& Procedure) {{ return Procedure.Is{procedure_pascal}(); }}"
-        );
-        writeln!(output);
-
-        // GetAs*
-        writeln!(
-            output,
-            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Procedure\")"
-        );
-        writeln!(
-            output,
-            "    static F{procedure_pascal}Args GetAs{procedure_pascal}(const FProcedure& Procedure) {{"
-        );
-        writeln!(output, "        return Procedure.GetAs{procedure_pascal}();");
-        writeln!(output, "    }}");
-    }
-
-    writeln!(output, "}};");
-    writeln!(output);
-
     // FProcedureEvent: metadata about a procedure invocation, with typed args
     writeln!(output, "/** Metadata describing a procedure run. */");
     writeln!(output, "USTRUCT(BlueprintType)");
