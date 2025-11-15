@@ -27,13 +27,13 @@ namespace SpacetimeDB
     internal sealed class ProcedureCallbacks
     {
         private readonly Dictionary<uint, IProcedureCallbackWrapper> callbacks = new();
-        
+
         public void RegisterCallback<T>(uint requestId, ProcedureCallback<T> callback)
             where T : IStructuralReadWrite, new()
         {
             callbacks[requestId] = new ProcedureCallbackWrapper<T>(callback);
         }
-        
+
         public bool TryResolveCallback(IProcedureEventContext ctx, uint requestId, ProcedureResult result)
         {
             if (callbacks.Remove(requestId, out var wrapper))

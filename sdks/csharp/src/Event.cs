@@ -112,7 +112,7 @@ namespace SpacetimeDB
     {
         string ProcedureName { get; }
     }
-    
+
     [Type]
     public partial record Status : TaggedEnum<(
         Unit Committed,

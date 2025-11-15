@@ -116,7 +116,7 @@ namespace SpacetimeDB
             where T : IReducerArgs, new();
 
         void InternalCallProcedure<TArgs, TReturn>(
-            TArgs args, 
+            TArgs args,
             ProcedureCallback<TReturn> callback)
             where TArgs : IProcedureArgs, new()
             where TReturn : IStructuralReadWrite, new();
@@ -169,7 +169,7 @@ namespace SpacetimeDB
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
 
         private readonly ProcedureCallbacks procedureCallbacks = new();
-        
+
         private bool isClosing;
         private readonly Thread networkMessageParseThread;
         public readonly Stats stats = new();
@@ -786,7 +786,7 @@ namespace SpacetimeDB
                 0 // flags - assuming default for now
             )));
         }
-        
+
         void IDbConnection.LegacySubscribe(ISubscriptionHandle handle, string[] querySqls)
         {
             if (!webSocket.IsConnected)
