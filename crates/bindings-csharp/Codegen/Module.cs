@@ -2,10 +2,10 @@ namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Text.RegularExpressions;
 using SpacetimeDB.Internal;
 using static Utils;
 
