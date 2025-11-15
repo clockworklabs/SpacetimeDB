@@ -3,6 +3,7 @@
 //! slowing down compilation for every spacetime module.
 
 #[test]
+#[cfg_attr(target_family = "windows", ignore)] // dependency structure is different on windows
 fn deptree_snapshot() -> std::io::Result<()> {
     let cmd_common = "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown";
     let cmd = &format!("{cmd_common} -f {{lib}}");
