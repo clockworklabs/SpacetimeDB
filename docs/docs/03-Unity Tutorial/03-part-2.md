@@ -510,7 +510,7 @@ The `spacetime` CLI has built in functionality to let us generate C# types that 
 </Tabs>
 
 ```sh
-spacetime generate --lang csharp --out-dir ../client-unity/Assets/autogen # you can call this anything, I have chosen `autogen`
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings # you can call this anything, I have chosen `autogen`
 ```
 
 This will generate a set of files in the `client-unity/Assets/autogen` directory which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
