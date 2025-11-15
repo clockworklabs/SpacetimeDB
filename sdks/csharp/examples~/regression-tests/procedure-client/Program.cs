@@ -83,11 +83,11 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
     Log.Debug("Calling return_struct");
     waiting++;
-    context.Procedures.ReturnStruct(42, "Hello, World!", (ctx, result) =>
+    context.Procedures.ReturnStruct(42, "Hello, SpacetimeDB!", (ctx, result) =>
     {
         if (result.IsSuccess)
         {
-            Debug.Assert(result.Value!.A == 42 && result.Value!.B == "Hello, World!");
+            Debug.Assert(result.Value!.A == 42 && result.Value!.B == "Hello, SpacetimeDB!");
             Log.Debug("return_struct callback success");
         }
         else
@@ -124,7 +124,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     
     Log.Debug("Calling return_enum_b");
     waiting++;
-    context.Procedures.ReturnEnumB("Hello, World!", (ctx, result) =>
+    context.Procedures.ReturnEnumB("Hello, SpacetimeDB!", (ctx, result) =>
     {
         if (result.IsSuccess)
         {
@@ -136,7 +136,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
                 _ => throw new Exception("Unknown variant")
             };
 
-            Debug.Assert(extracted == "Hello, World!");
+            Debug.Assert(extracted == "Hello, SpacetimeDB!");
             Log.Debug("return_enum_b callback success");
         }
         else

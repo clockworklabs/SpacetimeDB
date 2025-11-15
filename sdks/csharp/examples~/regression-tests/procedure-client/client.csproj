@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <!-- Disable warning for unused reducer handlers due to no reducers with this test -->
+    <NoWarn>$(NoWarn);CS0067</NoWarn> 
   </PropertyGroup>
 
   <ItemGroup>
