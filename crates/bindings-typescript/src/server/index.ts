@@ -1,6 +1,7 @@
 export * from './type_builders';
 export { schema, type InferSchema } from './schema';
 export { table } from './table';
+export { from } from './query';
 export * as errors from './errors';
 export { SenderError } from './errors';
 export { type Reducer, type ReducerCtx } from './reducers';

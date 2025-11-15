@@ -13,6 +13,7 @@ import type {
   ReadonlyIndexes,
 } from './indexes';
 import { MODULE_DEF, splitName } from './schema';
+import type { TableRef } from './query';
 import {
   RowBuilder,
   type ColumnBuilder,
@@ -149,6 +150,9 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
   iter(): IterableIterator<RowType<TableDef>>;
   [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+
+  /** Return a typed reference that can be used with the query builder. */
+  ref(): TableRef<TableDef>;
 }
 
 /**
