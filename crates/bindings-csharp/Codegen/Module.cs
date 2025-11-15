@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Text.RegularExpressions;
 using SpacetimeDB.Internal;
 using static Utils;
 
@@ -997,10 +998,11 @@ record ViewDeclaration
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
-                ReturnType: new {{{ReturnType.BSATNName.Replace(
-                "Module.",
-                "global::Module."
-            )}}}().GetAlgebraicType(registrar)
+                ReturnType: new {{{Regex.Replace(
+                    ReturnType.BSATNName,
+                    @"(?<=^|[<,\s])Module\.",
+                    "global::Module."
+                )}}}().GetAlgebraicType(registrar)
             );
             """;
 
