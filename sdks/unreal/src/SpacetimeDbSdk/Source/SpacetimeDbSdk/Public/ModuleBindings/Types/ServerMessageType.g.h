@@ -4,17 +4,18 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/UnsubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/UnsubscribeMultiAppliedType.g.h"
-#include "ModuleBindings/Types/SubscribeAppliedType.g.h"
-#include "ModuleBindings/Types/TransactionUpdateLightType.g.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
 #include "ModuleBindings/Types/SubscribeMultiAppliedType.g.h"
-#include "ModuleBindings/Types/IdentityTokenType.g.h"
-#include "ModuleBindings/Types/OneOffQueryResponseType.g.h"
-#include "ModuleBindings/Types/InitialSubscriptionType.g.h"
+#include "ModuleBindings/Types/TransactionUpdateLightType.g.h"
 #include "ModuleBindings/Types/TransactionUpdateType.g.h"
+#include "ModuleBindings/Types/InitialSubscriptionType.g.h"
+#include "ModuleBindings/Types/UnsubscribeAppliedType.g.h"
 #include "ModuleBindings/Types/SubscriptionErrorType.g.h"
+#include "ModuleBindings/Types/OneOffQueryResponseType.g.h"
+#include "ModuleBindings/Types/SubscribeAppliedType.g.h"
+#include "ModuleBindings/Types/IdentityTokenType.g.h"
+#include "ModuleBindings/Types/UnsubscribeMultiAppliedType.g.h"
+#include "ModuleBindings/Types/ProcedureResultType.g.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
 #include "ServerMessageType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -29,7 +30,8 @@ enum class EServerMessageTag : uint8
     UnsubscribeApplied,
     SubscriptionError,
     SubscribeMultiApplied,
-    UnsubscribeMultiApplied
+    UnsubscribeMultiApplied,
+    ProcedureResult
 };
 
 USTRUCT(BlueprintType)
@@ -40,7 +42,7 @@ struct SPACETIMEDBSDK_API FServerMessageType
 public:
     FServerMessageType() = default;
 
-    TVariant<FIdentityTokenType, FUnsubscribeMultiAppliedType, FTransactionUpdateLightType, FOneOffQueryResponseType, FSubscribeAppliedType, FTransactionUpdateType, FSubscriptionErrorType, FSubscribeMultiAppliedType, FUnsubscribeAppliedType, FInitialSubscriptionType> MessageData;
+    TVariant<FInitialSubscriptionType, FOneOffQueryResponseType, FSubscribeMultiAppliedType, FUnsubscribeAppliedType, FTransactionUpdateType, FIdentityTokenType, FSubscribeAppliedType, FSubscriptionErrorType, FTransactionUpdateLightType, FUnsubscribeMultiAppliedType, FProcedureResultType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EServerMessageTag Tag = static_cast<EServerMessageTag>(0);
@@ -125,6 +127,14 @@ public:
         return Obj;
     }
 
+    static FServerMessageType ProcedureResult(const FProcedureResultType& Value)
+    {
+        FServerMessageType Obj;
+        Obj.Tag = EServerMessageTag::ProcedureResult;
+        Obj.MessageData.Set<FProcedureResultType>(Value);
+        return Obj;
+    }
+
     FORCEINLINE bool IsInitialSubscription() const { return Tag == EServerMessageTag::InitialSubscription; }
 
     FORCEINLINE FInitialSubscriptionType GetAsInitialSubscription() const
@@ -205,6 +215,14 @@ public:
         return MessageData.Get<FUnsubscribeMultiAppliedType>();
     }
 
+    FORCEINLINE bool IsProcedureResult() const { return Tag == EServerMessageTag::ProcedureResult; }
+
+    FORCEINLINE FProcedureResultType GetAsProcedureResult() const
+    {
+        ensureMsgf(IsProcedureResult(), TEXT("MessageData does not hold ProcedureResult!"));
+        return MessageData.Get<FProcedureResultType>();
+    }
+
     // Inline equality operators
     FORCEINLINE bool operator==(const FServerMessageType& Other) const
     {
@@ -232,6 +250,8 @@ public:
                 return GetAsSubscribeMultiApplied() == Other.GetAsSubscribeMultiApplied();
             case EServerMessageTag::UnsubscribeMultiApplied:
                 return GetAsUnsubscribeMultiApplied() == Other.GetAsUnsubscribeMultiApplied();
+            case EServerMessageTag::ProcedureResult:
+                return GetAsProcedureResult() == Other.GetAsProcedureResult();
             default:
                 return false;
         }
@@ -264,6 +284,7 @@ FORCEINLINE uint32 GetTypeHash(const FServerMessageType& ServerMessage)
         case EServerMessageTag::SubscriptionError: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscriptionError()));
         case EServerMessageTag::SubscribeMultiApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsSubscribeMultiApplied()));
         case EServerMessageTag::UnsubscribeMultiApplied: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsUnsubscribeMultiApplied()));
+        case EServerMessageTag::ProcedureResult: return HashCombine(TagHash, ::GetTypeHash(ServerMessage.GetAsProcedureResult()));
         default: return TagHash;
     }
 }
@@ -285,7 +306,8 @@ namespace UE::SpacetimeDB
         UnsubscribeApplied, FUnsubscribeAppliedType,
         SubscriptionError, FSubscriptionErrorType,
         SubscribeMultiApplied, FSubscribeMultiAppliedType,
-        UnsubscribeMultiApplied, FUnsubscribeMultiAppliedType
+        UnsubscribeMultiApplied, FUnsubscribeMultiAppliedType,
+        ProcedureResult, FProcedureResultType
     );
 }
 
@@ -443,6 +465,21 @@ private:
     static FUnsubscribeMultiAppliedType GetAsUnsubscribeMultiApplied(const FServerMessageType& InValue)
     {
         return InValue.GetAsUnsubscribeMultiApplied();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ServerMessage")
+    static FServerMessageType ProcedureResult(const FProcedureResultType& InValue)
+    {
+        return FServerMessageType::ProcedureResult(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static bool IsProcedureResult(const FServerMessageType& InValue) { return InValue.IsProcedureResult(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ServerMessage")
+    static FProcedureResultType GetAsProcedureResult(const FServerMessageType& InValue)
+    {
+        return InValue.GetAsProcedureResult();
     }
 
 };

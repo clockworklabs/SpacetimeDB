@@ -4,9 +4,9 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "Types/UnitType.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "ModuleBindings/Types/DatabaseUpdateType.g.h"
+#include "Types/UnitType.h"
 #include "UpdateStatusType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -25,7 +25,7 @@ struct SPACETIMEDBSDK_API FUpdateStatusType
 public:
     FUpdateStatusType() = default;
 
-    TVariant<FSpacetimeDBUnit, FDatabaseUpdateType, FString> MessageData;
+    TVariant<FString, FSpacetimeDBUnit, FDatabaseUpdateType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EUpdateStatusTag Tag = static_cast<EUpdateStatusTag>(0);

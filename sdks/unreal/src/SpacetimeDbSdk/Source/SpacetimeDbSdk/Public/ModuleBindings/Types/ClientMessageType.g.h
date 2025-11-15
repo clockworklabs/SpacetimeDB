@@ -4,14 +4,15 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/UnsubscribeType.g.h"
-#include "ModuleBindings/Types/SubscribeSingleType.g.h"
-#include "ModuleBindings/Types/OneOffQueryType.g.h"
-#include "Kismet/BlueprintFunctionLibrary.h"
-#include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
 #include "ModuleBindings/Types/SubscribeMultiType.g.h"
 #include "ModuleBindings/Types/CallReducerType.g.h"
+#include "ModuleBindings/Types/OneOffQueryType.g.h"
+#include "ModuleBindings/Types/CallProcedureType.g.h"
+#include "ModuleBindings/Types/UnsubscribeType.g.h"
 #include "ModuleBindings/Types/SubscribeType.g.h"
+#include "Kismet/BlueprintFunctionLibrary.h"
+#include "ModuleBindings/Types/SubscribeSingleType.g.h"
+#include "ModuleBindings/Types/UnsubscribeMultiType.g.h"
 #include "ClientMessageType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -23,7 +24,8 @@ enum class EClientMessageTag : uint8
     SubscribeSingle,
     SubscribeMulti,
     Unsubscribe,
-    UnsubscribeMulti
+    UnsubscribeMulti,
+    CallProcedure
 };
 
 USTRUCT(BlueprintType)
@@ -34,7 +36,7 @@ struct SPACETIMEDBSDK_API FClientMessageType
 public:
     FClientMessageType() = default;
 
-    TVariant<FCallReducerType, FSubscribeMultiType, FUnsubscribeType, FUnsubscribeMultiType, FSubscribeType, FOneOffQueryType, FSubscribeSingleType> MessageData;
+    TVariant<FUnsubscribeMultiType, FSubscribeMultiType, FSubscribeType, FCallReducerType, FCallProcedureType, FOneOffQueryType, FUnsubscribeType, FSubscribeSingleType> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EClientMessageTag Tag = static_cast<EClientMessageTag>(0);
@@ -95,6 +97,14 @@ public:
         return Obj;
     }
 
+    static FClientMessageType CallProcedure(const FCallProcedureType& Value)
+    {
+        FClientMessageType Obj;
+        Obj.Tag = EClientMessageTag::CallProcedure;
+        Obj.MessageData.Set<FCallProcedureType>(Value);
+        return Obj;
+    }
+
     FORCEINLINE bool IsCallReducer() const { return Tag == EClientMessageTag::CallReducer; }
 
     FORCEINLINE FCallReducerType GetAsCallReducer() const
@@ -151,6 +161,14 @@ public:
         return MessageData.Get<FUnsubscribeMultiType>();
     }
 
+    FORCEINLINE bool IsCallProcedure() const { return Tag == EClientMessageTag::CallProcedure; }
+
+    FORCEINLINE FCallProcedureType GetAsCallProcedure() const
+    {
+        ensureMsgf(IsCallProcedure(), TEXT("MessageData does not hold CallProcedure!"));
+        return MessageData.Get<FCallProcedureType>();
+    }
+
     // Inline equality operators
     FORCEINLINE bool operator==(const FClientMessageType& Other) const
     {
@@ -172,6 +190,8 @@ public:
                 return GetAsUnsubscribe() == Other.GetAsUnsubscribe();
             case EClientMessageTag::UnsubscribeMulti:
                 return GetAsUnsubscribeMulti() == Other.GetAsUnsubscribeMulti();
+            case EClientMessageTag::CallProcedure:
+                return GetAsCallProcedure() == Other.GetAsCallProcedure();
             default:
                 return false;
         }
@@ -201,6 +221,7 @@ FORCEINLINE uint32 GetTypeHash(const FClientMessageType& ClientMessage)
         case EClientMessageTag::SubscribeMulti: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsSubscribeMulti()));
         case EClientMessageTag::Unsubscribe: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsUnsubscribe()));
         case EClientMessageTag::UnsubscribeMulti: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsUnsubscribeMulti()));
+        case EClientMessageTag::CallProcedure: return HashCombine(TagHash, ::GetTypeHash(ClientMessage.GetAsCallProcedure()));
         default: return TagHash;
     }
 }
@@ -219,7 +240,8 @@ namespace UE::SpacetimeDB
         SubscribeSingle, FSubscribeSingleType,
         SubscribeMulti, FSubscribeMultiType,
         Unsubscribe, FUnsubscribeType,
-        UnsubscribeMulti, FUnsubscribeMultiType
+        UnsubscribeMulti, FUnsubscribeMultiType,
+        CallProcedure, FCallProcedureType
     );
 }
 
@@ -332,6 +354,21 @@ private:
     static FUnsubscribeMultiType GetAsUnsubscribeMulti(const FClientMessageType& InValue)
     {
         return InValue.GetAsUnsubscribeMulti();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ClientMessage")
+    static FClientMessageType CallProcedure(const FCallProcedureType& InValue)
+    {
+        return FClientMessageType::CallProcedure(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static bool IsCallProcedure(const FClientMessageType& InValue) { return InValue.IsCallProcedure(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ClientMessage")
+    static FCallProcedureType GetAsCallProcedure(const FClientMessageType& InValue)
+    {
+        return InValue.GetAsCallProcedure();
     }
 
 };

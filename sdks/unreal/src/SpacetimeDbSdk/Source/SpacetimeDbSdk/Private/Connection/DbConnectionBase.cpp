@@ -13,12 +13,14 @@
 #include "Misc/ScopeLock.h"
 #include "Async/Async.h"
 #include "BSATN/UEBSATNHelpers.h"
+#include "Connection/ProcedureFlags.h"
 
 UDbConnectionBase::UDbConnectionBase(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	NextRequestId = 1;
 	NextSubscriptionId = 1;
+	ProcedureCallbacks = CreateDefaultSubobject<UProcedureCallbacks>(TEXT("ProcedureCallbacks"));
 }
 
 void UDbConnectionBase::Disconnect()
@@ -336,6 +338,34 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 		}
 		break;
 	}
+	case EServerMessageTag::ProcedureResult:
+	{
+			const FProcedureResultType Payload = Message.GetAsProcedureResult();
+			FProcedureEvent ProcEvent;
+			ProcEvent.Status = Payload.Status;
+			ProcEvent.Timestamp = Payload.Timestamp;
+			ProcEvent.TotalHostExecutionDuration = Payload.TotalHostExecutionDuration;
+			ProcEvent.Success = ProcEvent.Status.IsReturned(); 
+			TArray<uint8> PayloadData;
+			FString ErrorMessage = "";
+			if (ProcEvent.Success)
+				PayloadData = ProcEvent.Status.GetAsReturned();
+			if (Payload.Status.IsOutOfEnergy())
+			{
+				ErrorMessage = TEXT("Out of energy");
+			}
+			else if (Payload.Status.IsInternalError())
+			{
+				ErrorMessage = Payload.Status.GetAsInternalError();
+			}
+			
+			ProcedureCallbacks->ResolveCallback(Payload.RequestId, FSpacetimeDBEvent::Procedure(ProcEvent), PayloadData, ProcEvent.Success);
+			if (!ProcEvent.Success)
+			{
+				ProcedureEventFailed(ProcEvent, ErrorMessage);
+			}
+		break;
+	}
 	default:
 		// Unknown tag - bail out
 		UE_LOG(LogTemp, Warning, TEXT("Unknown server-message tag"));
@@ -601,7 +631,6 @@ void UDbConnectionBase::UnsubscribeInternal(USubscriptionHandleBase* Handle)
 
 void UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uint8> Args, USetReducerFlagsBase* Flags)
 {
-
 	if (!WebSocket || !WebSocket->IsConnected())
 	{
 		UE_LOG(LogTemp, Error, TEXT("Cannot call reducer, not connected to server!"));
@@ -625,7 +654,24 @@ void UDbConnectionBase::InternalCallReducer(const FString& Reducer, TArray<uint8
 	FClientMessageType Msg = FClientMessageType::CallReducer(MsgData);
 	TArray<uint8> Data = UE::SpacetimeDB::Serialize(Msg);
 	SendRawMessage(Data);
+}
 
+void UDbConnectionBase::InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args, const FOnProcedureCompleteDelegate& Callback)
+{
+	if (!WebSocket || !WebSocket->IsConnected())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot call proceduer, not connected to server!"));
+		return;
+	}
+	FCallProcedureType MsgData;
+	MsgData.Procedure = ProcedureName;
+	MsgData.Args = Args;
+	MsgData.RequestId = ProcedureCallbacks->RegisterCallback(Callback);
+	MsgData.Flags = static_cast<uint8>(EProcedureFlags::Default);
+
+	FClientMessageType Msg = FClientMessageType::CallProcedure(MsgData);
+	TArray<uint8> Data = UE::SpacetimeDB::Serialize(Msg);
+	SendRawMessage(Data);
 }
 
 void UDbConnectionBase::ApplyRegisteredTableUpdates(const FDatabaseUpdateType& Update, void* Context)
