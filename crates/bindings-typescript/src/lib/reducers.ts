@@ -6,7 +6,11 @@ import type { Identity } from './identity';
 import type { Timestamp } from './timestamp';
 import type { UntypedReducersDef } from '../sdk/reducers';
 import type { DbView } from '../server/db_view';
-import { MODULE_DEF, type UntypedSchemaDef } from './schema';
+import {
+  MODULE_DEF,
+  registerTypesRecursively,
+  type UntypedSchemaDef,
+} from './schema';
 import {
   ColumnBuilder,
   RowBuilder,
@@ -135,6 +139,12 @@ export function pushReducer(
     throw new TypeError(`There is already a reducer with the name '${name}'`);
   }
   existingReducers.add(name);
+
+  if (!(params instanceof RowBuilder)) {
+    params = new RowBuilder(params);
+  }
+
+  registerTypesRecursively(params);
 
   const paramType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
