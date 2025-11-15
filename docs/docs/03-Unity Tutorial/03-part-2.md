@@ -510,10 +510,10 @@ The `spacetime` CLI has built in functionality to let us generate C# types that 
 </Tabs>
 
 ```sh
-spacetime generate --lang csharp --out-dir ../Assets/module_bindings # you can call this anything, I have chosen `autogen`
+spacetime generate --lang csharp --out-dir ../Assets/module_bindings # you can call this anything, I have chosen `module_bindings`
 ```
 
-This will generate a set of files in the `client-unity/Assets/autogen` directory which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
+This will generate a set of files in the `blackholio/Assets/module_bindings` directory which contain the code generated types and reducer functions that are defined in your module, but usable on the client.
 
 ```
 ├── Reducers
@@ -534,7 +534,7 @@ This will generate a set of files in the `client-unity/Assets/autogen` directory
 └── SpacetimeDBClient.g.cs
 ```
 
-This will also generate a file in the `client-unity/Assets/autogen/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your database from Unity.
+This will also generate a file in the `Assets/module_bindings/SpacetimeDBClient.g.cs` directory with a type aware `DbConnection` class. We will use this class to connect to your database from Unity.
 
 > IMPORTANT! At this point there will be an error in your Unity project. Due to a [known issue](https://docs.unity3d.com/6000.0/Documentation/Manual/csharp-compiler.html) with Unity and C# 9 you need to insert the following code into your Unity project.
 >
