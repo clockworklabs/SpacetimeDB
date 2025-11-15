@@ -329,10 +329,11 @@ pub fn print_persons(ctx: &ReducerContext, prefix: String) {
             msg=f"Unexpected disconnect counts: {disconnect_count}",
         )
 
-        # Validate all subscribers received only single update before disconnect
+        # Validate all subscribers were disconnected after first upgrade
+        # they should 2 updates: one for initial insertion and one for table drop during migration
         for i in range(NUM_SUBSCRIBERS):
             sub = subs[i]()
-            self.assertEqual(len(sub), 1, msg=f"Subscriber {i} received unexpected rows: {sub}")
+            self.assertEqual(len(sub), 2, msg=f"Subscriber {i} received unexpected rows: {sub}")
 
 
         # Second upgrade
