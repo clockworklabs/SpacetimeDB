@@ -903,7 +903,7 @@ impl Lang for Csharp<'_> {
             autogen_csharp_proc_return(
                 module,
                 output,
-                format!("{}", procedure.name.deref().to_case(Case::Pascal)),
+                procedure.name.deref().to_case(Case::Pascal).to_string(),
                 &procedure.return_type_for_generate,
                 self.namespace,
             );
