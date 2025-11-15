@@ -26,7 +26,7 @@ jobs:
           script: |
             const targetOwner = 'clockworklabs';
             const targetRepo = 'SpacetimeDBPrivate';
-            const workflowId = 'internal-tests.yml';
+            const workflowId = 'ci.yml';
             const targetRef = 'master';
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
@@ -63,7 +63,7 @@ jobs:
                 per_page: 50,
               });
 
-              const expectedName = `Internal Tests [${publicRef}]`;
+              const expectedName = `CI [public_ref=${publicRef}]`;
               const candidates = runsResp.data.workflow_runs
                 .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
