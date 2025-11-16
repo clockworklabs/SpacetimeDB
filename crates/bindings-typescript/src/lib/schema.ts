@@ -1,17 +1,19 @@
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type Typespace from './autogen/typespace_type';
 import {
+  ArrayBuilder,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   ColumnBuilder,
+  OptionBuilder,
   ProductBuilder,
   RefBuilder,
   RowBuilder,
   SumBuilder,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  TypeBuilder,
   type ElementsObj,
   type Infer,
   type RowObj,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  type TypeBuilder,
   type VariantsObj,
 } from './type_builders';
 import type { UntypedTableDef } from './table';
@@ -32,7 +34,7 @@ import {
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
 import type { TableSchema } from './table_schema';
-import { toCamelCase } from './util';
+import { toCamelCase, toPascalCase } from './util';
 import {
   defineView,
   type AnonymousViewFn,
@@ -187,7 +189,30 @@ export function registerTypesRecursively(
     | RowBuilder<RowObj>
 ): RefBuilder {
   const ty = typeBuilder.algebraicType;
-  const name = typeBuilder.typeName;
+  // NB! You must ensure that all TypeBuilder passed into this function
+  // have a name. This function ensures that nested types always have a
+  // name by assigning them one if they are missing it.
+  let name = typeBuilder.typeName;
+  if (name === undefined) {
+    if (typeBuilder instanceof RowBuilder) {
+      throw new Error(
+        `Missing type name for RowBuilder ${JSON.stringify(typeBuilder)}`
+      );
+    }
+    if (typeBuilder instanceof ProductBuilder) {
+      throw new Error(
+        `Missing type name for ProductBuilder ${JSON.stringify(typeBuilder)}`
+      );
+    }
+    if (typeBuilder instanceof SumBuilder) {
+      throw new Error(
+        `Missing type name for SumBuilder ${JSON.stringify(typeBuilder)}`
+      );
+    }
+    throw new Error(
+      `Missing type name for TypeBuilder ${JSON.stringify(typeBuilder)}`
+    );
+  }
 
   let r = COMPOUND_TYPES.get(ty);
   if (r != null) {
@@ -206,6 +231,9 @@ export function registerTypesRecursively(
         )
       ) {
         continue;
+      }
+      if (elem instanceof RowBuilder && !elem.typeName) {
+        throw new Error(`Missing type name for nested RowBuilder ${name}`);
       }
       typeBuilder.row[name] = new ColumnBuilder(
         registerTypesRecursively(elem),
@@ -240,17 +268,16 @@ export function registerTypesRecursively(
     }
   }
 
-  // Add to typespace and return a Ref type
   r = new RefBuilder(MODULE_DEF.typespace.types.length);
   MODULE_DEF.typespace.types.push(ty);
 
   COMPOUND_TYPES.set(ty, r);
-  if (name !== undefined)
-    MODULE_DEF.types.push({
-      name: splitName(name),
-      ty: r.ref,
-      customOrdering: true,
-    });
+  MODULE_DEF.types.push({
+    name: splitName(name),
+    ty: r.ref,
+    customOrdering: true,
+  });
+
   return r;
 }
 

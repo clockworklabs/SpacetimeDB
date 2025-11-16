@@ -29,6 +29,7 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import type { Prettify } from './type_util';
+import { toPascalCase } from './util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -224,6 +225,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   if (!(row instanceof RowBuilder)) {
     row = new RowBuilder(row);
+  }
+
+  if (row.typeName === undefined) {
+    row.typeName = toPascalCase(name);
   }
 
   const rowTypeRef = registerTypesRecursively(row);

@@ -6,10 +6,22 @@ import {
 import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from './reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from './schema';
+import {
+  MODULE_DEF,
+  registerTypesRecursively,
+  type UntypedSchemaDef,
+} from './schema';
 import type { ReadonlyTable } from './table';
-import type { Infer, InferTypeOfRow, TypeBuilder } from './type_builders';
-import { bsatnBaseSize } from './util';
+import {
+  ArrayBuilder,
+  OptionBuilder,
+  ProductBuilder,
+  RowBuilder,
+  type Infer,
+  type InferTypeOfRow,
+  type TypeBuilder,
+} from './type_builders';
+import { bsatnBaseSize, toPascalCase } from './util';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -65,6 +77,21 @@ export function defineView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
+  const paramsBuilder = new RowBuilder(params, toPascalCase(opts.name));
+
+  registerTypesRecursively(paramsBuilder);
+
+  // Register return types if they are product types
+  if (ret instanceof ArrayBuilder) {
+    if (ret.element instanceof ProductBuilder) {
+      ret.element = registerTypesRecursively(ret.element);
+    }
+  } else if (ret instanceof OptionBuilder) {
+    if (ret.value instanceof ProductBuilder) {
+      ret.value = registerTypesRecursively(ret.value);
+    }
+  }
+
   const paramType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,

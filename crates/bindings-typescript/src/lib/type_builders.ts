@@ -1143,7 +1143,7 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
   /**
    * The phantom element type of the array for TypeScript
    */
-  readonly element!: Element;
+  element!: Element;
 
   constructor(element: Element) {
     super(AlgebraicType.Array(element.algebraicType));
@@ -1194,7 +1194,7 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
   /**
    * The phantom value type of the option for TypeScript
    */
-  readonly value!: Value;
+  value!: Value;
 
   constructor(value: Value) {
     let innerType: InferSpacetimeTypeOfTypeBuilder<Value>;
@@ -1275,7 +1275,7 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
   }
 > {
   readonly row: CoerceRow<Row>;
-  readonly typeName: string | undefined;
+  typeName: string | undefined;
   constructor(row: Row, name?: string) {
     const mappedRow = Object.fromEntries(
       Object.entries(row).map(([colName, builder]) => [

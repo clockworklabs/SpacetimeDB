@@ -1,4 +1,4 @@
-import type { ProductType } from './algebraic_type';
+import { AlgebraicType, type ProductType } from './algebraic_type';
 import Lifecycle from './autogen/lifecycle_type';
 import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from './connection_id';
@@ -9,6 +9,7 @@ import type { DbView } from '../server/db_view';
 import {
   MODULE_DEF,
   registerTypesRecursively,
+  resolveType,
   type UntypedSchemaDef,
 } from './schema';
 import {
@@ -20,7 +21,7 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import type { ReducerSchema } from './reducer_schema';
-import { toCamelCase } from './util';
+import { toCamelCase, toPascalCase } from './util';
 import type { CamelCase } from './type_util';
 
 /**
@@ -144,18 +145,15 @@ export function pushReducer(
     params = new RowBuilder(params);
   }
 
-  registerTypesRecursively(params);
+  if (params.typeName === undefined) {
+    params.typeName = toPascalCase(name);
+  }
 
-  const paramType: ProductType = {
-    elements: Object.entries(params).map(([n, c]) => ({
-      name: n,
-      algebraicType: c.algebraicType,
-    })),
-  };
+  registerTypesRecursively(params);
 
   MODULE_DEF.reducers.push({
     name,
-    params: paramType,
+    params: params.algebraicType.value,
     lifecycle, // <- lifecycle flag lands here
   });
 
