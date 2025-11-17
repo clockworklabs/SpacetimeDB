@@ -22,6 +22,7 @@ jobs:
     name: Smoketests
     strategy:
       matrix:
+        runner: [spacetimedb-new-runner, windows-latest]
         include:
           - runner: spacetimedb-new-runner
             smoketest_args: --docker
