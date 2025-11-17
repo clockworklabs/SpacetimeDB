@@ -821,18 +821,18 @@ impl RelationalDB {
             Txdata,
         };
 
-        let is_ephemeral_table = |table_id: &TableId| -> bool {
+        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
             tx_data
                 .ephemeral_tables()
-                .map(|etables| etables.contains(table_id))
-                .unwrap_or(false)
+                .map(|etables| !etables.contains(table_id))
+                .unwrap_or(true)
         };
 
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
                 // Skip ephemeral tables
-                .filter(|(table_id, _)| !is_ephemeral_tables(table_id))
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -843,7 +843,7 @@ impl RelationalDB {
 
             let deletes: Box<_> = tx_data
                 .durable_deletes()
-                .filter(|(table_id, _)| !is_ephemeral_tables(table_id))
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -852,10 +852,7 @@ impl RelationalDB {
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
-            let truncates = truncates
-                .into_iter()
-                .filter(|table_id| !is_ephemeral_tables(table_id))
-                .collect();
+            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
 
@@ -2527,7 +2524,7 @@ mod tests {
         sender: Identity,
         v: u8,
     ) -> ResultTest<()> {
-        let to_bstan = |pv: &ProductValue| {
+        let to_bsatn = |pv: &ProductValue| {
             Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
         };
 
@@ -2535,7 +2532,7 @@ mod tests {
 
         let mut tx = begin_mut_tx(stdb);
         tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-        stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bstan(&row_pv(v)), typespace)?;
+        stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bsatn(&row_pv(v)), typespace)?;
         stdb.commit_tx(tx)?;
 
         Ok(())
