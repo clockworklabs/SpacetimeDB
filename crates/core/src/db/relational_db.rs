@@ -821,9 +821,18 @@ impl RelationalDB {
             Txdata,
         };
 
+        let is_ephemeral_tables = |table_id: &TableId| -> bool {
+            tx_data
+                .ephermal_tables()
+                .map(|etables| etables.contains(table_id))
+                .unwrap_or(false)
+        };
+
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
+                // Skip ephemeral tables
+                .filter(|(table_id, _)| !is_ephemeral_tables(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -833,13 +842,19 @@ impl RelationalDB {
             let truncates: IntSet<TableId> = tx_data.truncates().collect();
 
             let deletes: Box<_> = tx_data
-                .deletes()
+                .durable_deletes()
+                .filter(|(table_id, _)| !is_ephemeral_tables(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
                 })
                 // filter out deletes for tables that are truncated in the same transaction.
                 .filter(|ops| !truncates.contains(&ops.table_id))
+                .collect();
+
+            let truncates = truncates
+                .into_iter()
+                .filter(|table_id| !is_ephemeral_tables(table_id))
                 .collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
@@ -850,7 +865,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates: truncates.into_iter().collect(),
+                    truncates,
                 }),
             };
 
