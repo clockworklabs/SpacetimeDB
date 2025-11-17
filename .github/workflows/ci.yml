@@ -78,7 +78,10 @@ jobs:
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
-        run: docker compose -f .github/docker-compose.yml up -d
+        run: |
+          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
+          rm .dockerignore
+          docker compose -f .github/docker-compose.yml up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
