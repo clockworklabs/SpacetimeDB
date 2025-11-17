@@ -81,7 +81,7 @@ pub struct CommittedState {
     /// and its read set will be updated accordingly.
     read_sets: ViewReadSets,
 
-    /// Tables which do not needs to be made persistent.
+    /// Tables which do not need to be made persistent.
     /// These include:
     ///     - system tables: `st_view_sub`, `st_view_arg`
     ///     - Tables which back views.

@@ -821,7 +821,7 @@ impl RelationalDB {
             Txdata,
         };
 
-        let is_ephemeral_tables = |table_id: &TableId| -> bool {
+        let is_ephemeral_table = |table_id: &TableId| -> bool {
             tx_data
                 .ephemeral_tables()
                 .map(|etables| etables.contains(table_id))
@@ -2531,7 +2531,7 @@ mod tests {
             Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
         };
 
-        let row_pv = |v: u8| ProductValue::from_iter(vec![AlgebraicValue::U8(v)]);
+        let row_pv = |v: u8| product![v];
 
         let mut tx = begin_mut_tx(stdb);
         tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
