@@ -5,17 +5,11 @@ services:
     build:
       context: ../
       dockerfile: .github/Dockerfile
-    volumes:
-      - key_files:/etc/spacetimedb
-      - /stdb
     ports:
       - "3000:3000"
       # Postgres
       - "5432:5432"
-    entrypoint: spacetimedb-standalone start --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa --pg-port 5432
+    entrypoint: spacetime start --pg-port 5432
     privileged: true
     environment:
       RUST_BACKTRACE: 1
-
-volumes:
-  key_files:
