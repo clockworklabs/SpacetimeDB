@@ -30,6 +30,8 @@ jobs:
           script: |
             const workflowId = 'ci.yml';
             const targetRef = 'master';
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const preDispatch = new Date().toISOString();
@@ -41,8 +43,8 @@ jobs:
 
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
-              owner: env.TARGET_OWNER,
-              repo: env.TARGET_REPO,
+              owner: targetOwner,
+              repo: targetRepo,
               workflow_id: workflowId,
               ref: targetRef,
               inputs: { public_ref: publicRef }
@@ -55,8 +57,8 @@ jobs:
             for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
               await sleep(5000);
               const runsResp = await github.rest.actions.listWorkflowRuns({
-                owner: env.TARGET_OWNER,
-                repo: env.TARGET_REPO,
+                owner: targetOwner,
+                repo: targetRepo,
                 workflow_id: workflowId,
                 event: 'workflow_dispatch',
                 branch: targetRef,
@@ -80,7 +82,7 @@ jobs:
             }
 
             // Provide direct link and context prior to waiting
-            const runUrl = `https://github.com/${env.TARGET_OWNER}/${env.TARGET_REPO}/actions/runs/${runId}`;
+            const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.info(`View run: ${runUrl}`);
 
             core.setOutput('run_id', String(runId));
@@ -91,6 +93,8 @@ jobs:
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
             const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
             const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -100,8 +104,8 @@ jobs:
             let conclusion = null;
             for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
               const runResp = await github.rest.actions.getWorkflowRun({
-                owner: env.TARGET_OWNER,
-                repo: env.TARGET_REPO,
+                owner: targetOwner,
+                repo: targetRepo,
                 run_id: runId
               });
               const { status, conclusion: c } = runResp.data;
@@ -128,15 +132,17 @@ jobs:
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
             const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
             if (!runId) {
               core.warning('No run_id available to cancel.');
               return;
             }
-            core.info(`Cancelling private workflow run ${runId} in ${process.env.TARGET_OWNER}/${process.env.TARGET_REPO}...`);
+            core.info(`Cancelling private workflow run ${runId} in ${targetOwner}/${targetRepo}...`);
             await github.rest.actions.cancelWorkflowRun({
-              owner: process.env.TARGET_OWNER,
-              repo: process.env.TARGET_REPO,
+              owner: targetOwner,
+              repo: targetRepo,
               run_id: runId,
             });
             core.info('Cancellation requested.');
