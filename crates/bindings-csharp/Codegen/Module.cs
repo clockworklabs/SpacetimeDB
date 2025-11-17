@@ -2,7 +2,6 @@ namespace SpacetimeDB.Codegen;
 
 using System.Collections.Immutable;
 using System.Linq;
-using System.Text.RegularExpressions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -998,11 +997,7 @@ record ViewDeclaration
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
-                ReturnType: new {{{Regex.Replace(
-                    ReturnType.BSATNName,
-                    @"(?<=^|[<,\s])Module\.",
-                    "global::Module."
-                )}}}().GetAlgebraicType(registrar)
+                ReturnType: new {{{ReturnType.BSATNName}}}().GetAlgebraicType(registrar)
             );
             """;
 
