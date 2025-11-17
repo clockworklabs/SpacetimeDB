@@ -5,7 +5,6 @@ use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace,
 use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-use crate::host::wasm_common::instrumentation::noop::CallSpanStart;
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
@@ -295,7 +294,7 @@ impl WasmInstanceEnv {
     }
 
     /// Record a span with `start`.
-    fn end_span(mut caller: Caller<'_, Self>, start: CallSpanStart) {
+    fn end_span(mut caller: Caller<'_, Self>, start: span::CallSpanStart) {
         let span = start.end();
         span::record_span(&mut caller.data_mut().call_times, span);
     }
