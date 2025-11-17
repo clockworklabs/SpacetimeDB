@@ -738,6 +738,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
+#[cfg(feature = "unstable")]
 pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
@@ -1017,6 +1018,8 @@ impl ReducerContext {
 ///
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
+#[non_exhaustive]
+#[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     pub sender: Identity,
@@ -1033,6 +1036,7 @@ pub struct ProcedureContext {
     // as it could actually be seeded by OS randomness rather than a deterministic source.
 }
 
+#[cfg(feature = "unstable")]
 impl ProcedureContext {
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
