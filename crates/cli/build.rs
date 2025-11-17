@@ -160,10 +160,10 @@ fn generate_template_files() {
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
-    let (git_files, resolved_base) = get_git_tracked_files(template_path, manifest_dir);
+    let (template_files, resolved_base) = list_all_files(template_path, manifest_dir);
 
-    if git_files.is_empty() {
-        panic!("Template '{}' has no git-tracked files! Check that the directory exists and contains files tracked by git.", source);
+    if template_files.is_empty() {
+        panic!("Template '{}' has no files, check if the path is correct", source);
     }
 
     // Example: /Users/user/SpacetimeDB
@@ -196,7 +196,7 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     code.push_str("    {\n");
     code.push_str("        let mut files = HashMap::new();\n");
 
-    for file_path in git_files {
+    for file_path in template_files {
         // Example file_path: modules/quickstart-chat/src/lib.rs (relative to repo root)
         // Example resolved_base: modules/quickstart-chat
         // Example relative_path: src/lib.rs
@@ -257,18 +257,6 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
 
     code.push_str(&format!("        templates.insert(\"{}\", files);\n", source));
     code.push_str("    }\n\n");
-}
-
-/// Get a list of files tracked by git from a given directory
-fn get_git_tracked_files(path: &Path, manifest_dir: &Path) -> (Vec<PathBuf>, PathBuf) {
-    if is_nix_build() {
-        // When building in Nix, we already know that there are no untracked files in our source tree,
-        // so we just list all of the files.
-        list_all_files(path, manifest_dir)
-    } else {
-        // When building outside of Nix, we invoke `git` to list all the tracked files.
-        get_git_tracked_files_via_cli(path, manifest_dir)
-    }
 }
 
 fn list_all_files(path: &Path, manifest_dir: &Path) -> (Vec<PathBuf>, PathBuf) {
@@ -344,37 +332,6 @@ fn make_repo_root_relative(full_path: &Path, repo_root: &Path) -> PathBuf {
                 repo_root.display()
             )
         })
-}
-
-fn get_git_tracked_files_via_cli(path: &Path, manifest_dir: &Path) -> (Vec<PathBuf>, PathBuf) {
-    let repo_root = get_repo_root();
-    let repo_root = repo_root.canonicalize().unwrap_or_else(|err| {
-        panic!(
-            "Failed to canonicalize repo_root path {}: {err:#?}",
-            repo_root.display(),
-        )
-    });
-
-    let resolved_path = make_repo_root_relative(&get_full_path_within_manifest_dir(path, manifest_dir), &repo_root);
-
-    let output = Command::new("git")
-        .args(["ls-files", resolved_path.to_str().unwrap()])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to execute git ls-files");
-
-    if !output.status.success() {
-        return (Vec::new(), resolved_path);
-    }
-
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let files: Vec<PathBuf> = stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect();
-
-    (files, resolved_path)
 }
 
 fn get_repo_root() -> PathBuf {
