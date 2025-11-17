@@ -48,7 +48,7 @@ USE_SPACETIME_LOGIN = False
 REMOTE_SERVER = False
 
 # default value can be overridden by `--compose-file` flag
-COMPOSE_FILE = ".github/docker-compose.yml"
+COMPOSE_FILE = "./docker-compose.yml"
 
 # this will be initialized by main()
 STDB_CONFIG = ''

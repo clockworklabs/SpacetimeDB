@@ -81,7 +81,7 @@ jobs:
         run: |
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
-          docker compose -f .github/docker-compose.yml up -d
+          docker compose up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -104,7 +104,7 @@ jobs:
         run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
-        run: docker compose -f .github/docker-compose.yml down
+        run: docker compose down
 
   test:
     name: Test Suite
