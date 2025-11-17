@@ -109,7 +109,6 @@ type ObjectType<Elements extends ElementsObj> = {
 };
 
 export type VariantsObj = Record<string, TypeBuilder<any, any>>;
-type UnitBuilder = ProductBuilder<{}>;
 type SimpleVariantsObj = Record<string, UnitBuilder>;
 
 type IsUnit<B> = B extends UnitBuilder ? true : false;
@@ -1140,13 +1139,11 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
   >
   implements Defaultable<Array<InferTypeOfTypeBuilder<Element>>, any>
 {
-  /**
-   * The phantom element type of the array for TypeScript
-   */
-  element!: Element;
+  element: Element;
 
   constructor(element: Element) {
     super(AlgebraicType.Array(element.algebraicType));
+    this.element = element;
   }
   default(
     value: Array<InferTypeOfTypeBuilder<Element>>
@@ -1191,19 +1188,11 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
       OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>
     >
 {
-  /**
-   * The phantom value type of the option for TypeScript
-   */
-  value!: Value;
+  value: Value;
 
   constructor(value: Value) {
-    let innerType: InferSpacetimeTypeOfTypeBuilder<Value>;
-    if (value instanceof ColumnBuilder) {
-      innerType = value.typeBuilder.algebraicType;
-    } else {
-      innerType = value.algebraicType;
-    }
-    super(Option.getAlgebraicType(innerType));
+    super(Option.getAlgebraicType(value.algebraicType));
+    this.value = value;
   }
   default(
     value: InferTypeOfTypeBuilder<Value> | undefined
@@ -1267,6 +1256,15 @@ export class ProductBuilder<Elements extends ElementsObj>
   }
 }
 
+class UnitBuilder extends TypeBuilder<
+  {},
+  { tag: 'Product'; value: { elements: [] } }
+> {
+  constructor() {
+    super({ tag: 'Product', value: { elements: [] } });
+  }
+}
+
 export class RowBuilder<Row extends RowObj> extends TypeBuilder<
   RowType<Row>,
   {
@@ -1286,9 +1284,11 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
       ])
     ) as CoerceRow<Row>;
 
-    const elements = Object.entries(mappedRow).map(([name, builder]) => ({
+    const elements = Object.keys(mappedRow).map(name => ({
       name,
-      algebraicType: builder.typeBuilder.algebraicType,
+      get algebraicType() {
+        return mappedRow[name].typeBuilder.algebraicType;
+      },
     }));
 
     super(AlgebraicType.Product({ elements }));
@@ -1345,14 +1345,6 @@ class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
     this.variants = variants;
     this.typeName = name;
 
-    // ---- Runtime unit detection ----
-    // Adjust this to your real shape if needed.
-    // From your code, you have `value.algebraicType` available.
-    function isUnitRuntime(v: TypeBuilder<any, AlgebraicType>): boolean {
-      const t = v.algebraicType;
-      return t.tag === 'Product' && t.value.elements.length === 0;
-    }
-
     for (const key of Object.keys(variants) as Array<keyof Variants & string>) {
       const desc = Object.getOwnPropertyDescriptor(variants, key);
 
@@ -1366,7 +1358,7 @@ class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
         // Only read variants[key] if it's a *data* property
         // otherwise assume non-unit because it's a getter
         const variant = variants[key];
-        isUnit = isUnitRuntime(variant);
+        isUnit = variant instanceof UnitBuilder;
       }
 
       if (isUnit) {
@@ -1431,7 +1423,8 @@ export const SumBuilder: {
   new <Variants extends VariantsObj>(
     variants: Variants,
     name?: string
-  ): SumBuilderImpl<Variants> & SumBuilderVariantConstructors<Variants>;
+  ): SumBuilder<Variants>;
+  [Symbol.hasInstance](x: any): x is SumBuilder<VariantsObj>;
 } = SumBuilderImpl as any;
 
 class SimpleSumBuilderImpl<Variants extends SimpleVariantsObj>
@@ -2910,8 +2903,13 @@ export class TimeDurationColumnBuilder<
   }
 }
 
-export class RefBuilder extends TypeBuilder<number, AlgebraicTypeVariants.Ref> {
+export class RefBuilder<Type, SpacetimeType> extends TypeBuilder<
+  Type,
+  AlgebraicTypeVariants.Ref
+> {
   readonly ref: number;
+  /** The phantom type of the pointee of this ref. */
+  private readonly __spacetimeType!: SpacetimeType;
   constructor(ref: number) {
     super(AlgebraicType.Ref(ref));
     this.ref = ref;
@@ -2973,7 +2971,7 @@ const enumImpl = ((nameOrObj: any, maybeObj?: any) => {
   if (Array.isArray(obj)) {
     const simpleVariantsObj: Record<string, UnitBuilder> = {};
     for (const variant of obj) {
-      simpleVariantsObj[variant] = new ProductBuilder({});
+      simpleVariantsObj[variant] = new UnitBuilder();
     }
     return new SimpleSumBuilderImpl(simpleVariantsObj, name);
   }
@@ -3196,7 +3194,7 @@ export const t = {
    * @returns A new {@link ProductBuilder} instance with no fields.
    */
   unit(): UnitBuilder {
-    return new ProductBuilder({});
+    return new UnitBuilder();
   },
 
   /**

@@ -13,6 +13,7 @@ import {
   TypeBuilder,
   type ElementsObj,
   type Infer,
+  type InferSpacetimeTypeOfTypeBuilder,
   type RowObj,
   type VariantsObj,
 } from './type_builders';
@@ -28,13 +29,15 @@ import {
 import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
 import {
   AlgebraicType,
+  ProductType,
+  SumType,
   type AlgebraicTypeType,
   type AlgebraicTypeVariants,
 } from './algebraic_type';
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
 import type { TableSchema } from './table_schema';
-import { toCamelCase, toPascalCase } from './util';
+import { toCamelCase } from './util';
 import {
   defineView,
   type AnonymousViewFn,
@@ -155,7 +158,7 @@ export const MODULE_DEF: Infer<typeof RawModuleDefV9> = {
 
 const COMPOUND_TYPES = new Map<
   AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
-  RefBuilder
+  RefBuilder<any, any>
 >();
 
 /**
@@ -166,7 +169,7 @@ const COMPOUND_TYPES = new Map<
  */
 export function resolveType<AT extends AlgebraicTypeType>(
   typespace: Infer<typeof Typespace>,
-  typeBuilder: TypeBuilder<any, AT>
+  typeBuilder: RefBuilder<any, AT>
 ): AT {
   let ty: AlgebraicType = typeBuilder.algebraicType;
   while (ty.tag === 'Ref') {
@@ -182,35 +185,46 @@ export function resolveType<AT extends AlgebraicTypeType>(
  * @param ty
  * @returns
  */
-export function registerTypesRecursively(
-  typeBuilder:
+export function registerTypesRecursively<
+  T extends TypeBuilder<any, AlgebraicType>,
+>(
+  typeBuilder: T
+): T extends SumBuilder<any> | ProductBuilder<any> | RowBuilder<any>
+  ? RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>>
+  : T {
+  if (
+    (typeBuilder instanceof ProductBuilder && !isUnit(typeBuilder)) ||
+    typeBuilder instanceof SumBuilder ||
+    typeBuilder instanceof RowBuilder
+  ) {
+    return registerCompoundTypeRecursively(typeBuilder) as any;
+  } else if (typeBuilder instanceof OptionBuilder) {
+    return new OptionBuilder(
+      registerTypesRecursively(typeBuilder.value)
+    ) as any;
+  } else if (typeBuilder instanceof ArrayBuilder) {
+    return new ArrayBuilder(
+      registerTypesRecursively(typeBuilder.element)
+    ) as any;
+  } else {
+    return typeBuilder as any;
+  }
+}
+
+function registerCompoundTypeRecursively<
+  T extends
     | SumBuilder<VariantsObj>
     | ProductBuilder<ElementsObj>
-    | RowBuilder<RowObj>
-): RefBuilder {
+    | RowBuilder<RowObj>,
+>(typeBuilder: T): RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>> {
   const ty = typeBuilder.algebraicType;
   // NB! You must ensure that all TypeBuilder passed into this function
   // have a name. This function ensures that nested types always have a
   // name by assigning them one if they are missing it.
-  let name = typeBuilder.typeName;
+  const name = typeBuilder.typeName;
   if (name === undefined) {
-    if (typeBuilder instanceof RowBuilder) {
-      throw new Error(
-        `Missing type name for RowBuilder ${JSON.stringify(typeBuilder)}`
-      );
-    }
-    if (typeBuilder instanceof ProductBuilder) {
-      throw new Error(
-        `Missing type name for ProductBuilder ${JSON.stringify(typeBuilder)}`
-      );
-    }
-    if (typeBuilder instanceof SumBuilder) {
-      throw new Error(
-        `Missing type name for SumBuilder ${JSON.stringify(typeBuilder)}`
-      );
-    }
     throw new Error(
-      `Missing type name for TypeBuilder ${JSON.stringify(typeBuilder)}`
+      `Missing type name for ${typeBuilder.constructor.name ?? 'TypeBuilder'} ${JSON.stringify(typeBuilder)}`
     );
   }
 
@@ -221,57 +235,42 @@ export function registerTypesRecursively(
   }
 
   // Recursively register nested compound types
+  const newTy =
+    typeBuilder instanceof RowBuilder || typeBuilder instanceof ProductBuilder
+      ? ({
+          tag: 'Product',
+          value: { elements: [] },
+        } as AlgebraicTypeVariants.Product)
+      : ({ tag: 'Sum', value: { variants: [] } } as AlgebraicTypeVariants.Sum);
+
+  r = new RefBuilder(MODULE_DEF.typespace.types.length);
+  MODULE_DEF.typespace.types.push(newTy);
+
+  COMPOUND_TYPES.set(ty, r);
+
   if (typeBuilder instanceof RowBuilder) {
     for (const [name, elem] of Object.entries(typeBuilder.row)) {
-      if (
-        !(
-          elem instanceof ProductBuilder ||
-          elem instanceof SumBuilder ||
-          elem instanceof RowBuilder
-        )
-      ) {
-        continue;
-      }
-      if (elem instanceof RowBuilder && !elem.typeName) {
-        throw new Error(`Missing type name for nested RowBuilder ${name}`);
-      }
-      typeBuilder.row[name] = new ColumnBuilder(
-        registerTypesRecursively(elem),
-        {}
-      );
+      (newTy.value as ProductType).elements.push({
+        name,
+        algebraicType: registerTypesRecursively(elem.typeBuilder).algebraicType,
+      });
     }
   } else if (typeBuilder instanceof ProductBuilder) {
     for (const [name, elem] of Object.entries(typeBuilder.elements)) {
-      if (
-        !(
-          elem instanceof ProductBuilder ||
-          elem instanceof SumBuilder ||
-          elem instanceof RowBuilder
-        )
-      ) {
-        continue;
-      }
-      typeBuilder.elements[name] = registerTypesRecursively(elem);
+      (newTy.value as ProductType).elements.push({
+        name,
+        algebraicType: registerTypesRecursively(elem).algebraicType,
+      });
     }
   } else if (typeBuilder instanceof SumBuilder) {
     for (const [name, variant] of Object.entries(typeBuilder.variants)) {
-      if (
-        !(
-          variant instanceof ProductBuilder ||
-          variant instanceof SumBuilder ||
-          variant instanceof RowBuilder
-        )
-      ) {
-        continue;
-      }
-      typeBuilder.variants[name] = registerTypesRecursively(variant);
+      (newTy.value as SumType).variants.push({
+        name,
+        algebraicType: registerTypesRecursively(variant).algebraicType,
+      });
     }
   }
 
-  r = new RefBuilder(MODULE_DEF.typespace.types.length);
-  MODULE_DEF.typespace.types.push(ty);
-
-  COMPOUND_TYPES.set(ty, r);
   MODULE_DEF.types.push({
     name: splitName(name),
     ty: r.ref,
@@ -279,6 +278,13 @@ export function registerTypesRecursively(
   });
 
   return r;
+}
+
+function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
+  return (
+    typeBuilder.typeName == null &&
+    typeBuilder.algebraicType.value.elements.length === 0
+  );
 }
 
 export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {

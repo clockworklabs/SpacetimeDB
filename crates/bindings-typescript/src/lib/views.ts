@@ -9,13 +9,11 @@ import type { ParamsObj } from './reducers';
 import {
   MODULE_DEF,
   registerTypesRecursively,
+  resolveType,
   type UntypedSchemaDef,
 } from './schema';
 import type { ReadonlyTable } from './table';
 import {
-  ArrayBuilder,
-  OptionBuilder,
-  ProductBuilder,
   RowBuilder,
   type Infer,
   type InferTypeOfRow,
@@ -79,26 +77,13 @@ export function defineView<
 ) {
   const paramsBuilder = new RowBuilder(params, toPascalCase(opts.name));
 
-  registerTypesRecursively(paramsBuilder);
-
   // Register return types if they are product types
-  if (ret instanceof ArrayBuilder) {
-    if (ret.element instanceof ProductBuilder) {
-      ret.element = registerTypesRecursively(ret.element);
-    }
-  } else if (ret instanceof OptionBuilder) {
-    if (ret.value instanceof ProductBuilder) {
-      ret.value = registerTypesRecursively(ret.value);
-    }
-  }
+  let returnType = registerTypesRecursively(ret).algebraicType;
 
-  const paramType = {
-    elements: Object.entries(params).map(([n, c]) => ({
-      name: n,
-      algebraicType:
-        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
-    })),
-  };
+  const { value: paramType } = resolveType(
+    MODULE_DEF.typespace,
+    registerTypesRecursively(paramsBuilder)
+  );
 
   MODULE_DEF.miscExports.push({
     tag: 'View',
@@ -108,11 +93,10 @@ export function defineView<
       isPublic: opts.public,
       isAnonymous: anon,
       params: paramType,
-      returnType: ret.algebraicType,
+      returnType,
     },
   });
 
-  let returnType = ret.algebraicType;
   if (returnType.tag == 'Sum') {
     const originalFn = fn;
     fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {

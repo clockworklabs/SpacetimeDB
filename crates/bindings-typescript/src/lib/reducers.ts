@@ -1,4 +1,4 @@
-import { AlgebraicType, type ProductType } from './algebraic_type';
+import { ProductType } from './algebraic_type';
 import Lifecycle from './autogen/lifecycle_type';
 import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from './connection_id';
@@ -149,11 +149,12 @@ export function pushReducer(
     params.typeName = toPascalCase(name);
   }
 
-  registerTypesRecursively(params);
+  const ref = registerTypesRecursively(params);
+  const paramsType = resolveType(MODULE_DEF.typespace, ref).value;
 
   MODULE_DEF.reducers.push({
     name,
-    params: params.algebraicType.value,
+    params: paramsType,
     lifecycle, // <- lifecycle flag lands here
   });
 

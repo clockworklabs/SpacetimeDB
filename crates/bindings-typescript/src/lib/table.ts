@@ -12,12 +12,7 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
 } from './indexes';
-import {
-  registerTypesRecursively,
-  MODULE_DEF,
-  resolveType,
-  splitName,
-} from './schema';
+import { registerTypesRecursively } from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
@@ -365,20 +360,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  if (row.typeName === undefined) {
-    MODULE_DEF.types.push({
-      customOrdering: true,
-      name: splitName(name),
-      ty: rowTypeRef.ref,
-    });
-  }
-
   const productType = {
-    elements: resolveType(MODULE_DEF.typespace, row).value.elements.map(
-      elem => {
-        return { name: elem.name, algebraicType: elem.algebraicType };
-      }
-    ),
+    elements: row.algebraicType.value.elements.map(elem => {
+      return { name: elem.name, algebraicType: elem.algebraicType };
+    }),
   };
 
   return {
