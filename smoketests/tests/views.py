@@ -421,7 +421,6 @@ class SubscribeViews(Smoketest):
     MODULE_CODE = """
 use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
 
-#[derive(Copy, Clone)]
 #[spacetimedb::table(name = player_state)]
 pub struct PlayerState {
     #[primary_key]
