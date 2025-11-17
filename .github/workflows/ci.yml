@@ -86,6 +86,7 @@ jobs:
       - name: Start Docker daemon
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
+
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
