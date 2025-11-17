@@ -101,7 +101,7 @@ jobs:
         run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
-        run: docker compose down
+        run: docker compose -f .github/docker-compose.yml down
 
   test:
     name: Test Suite
