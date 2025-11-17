@@ -5,22 +5,7 @@ services:
     build:
       context: ../
       dockerfile: ./Dockerfile
-      args:
-        CARGO_PROFILE: dev
     volumes:
-      - ./crates/standalone:/usr/src/app/crates/standalone
-      - ./crates/core:/usr/src/app/crates/core
-      - ./crates/client-api:/usr/src/app/crates/client-api
-      - ./crates/lib:/usr/src/app/crates/lib
-      - ./crates/sats:/usr/src/app/crates/sats
-      - ./crates/bindings:/usr/src/app/crates/bindings
-      - ./crates/bindings-macro:/usr/src/app/crates/bindings-macro
-      - ./crates/bindings-sys:/usr/src/app/crates/bindings-sys
-      - ./crates/vm:/usr/src/app/crates/vm
-      - ./crates/metrics:/usr/src/app/crates/metrics
-      - ./crates/client-api-messages:/usr/src/app/crates/client-api-messages
-      - ./Cargo.toml:/usr/src/app/Cargo.toml
-      - ./flamegraphs:/usr/src/app/flamegraphs
       - key_files:/etc/spacetimedb
       - /stdb
     ports:
@@ -31,12 +16,6 @@ services:
     privileged: true
     environment:
       RUST_BACKTRACE: 1
-      ENV: dev
-    networks:
-      - spacetimedb_default
 
-networks:
-  spacetimedb_default:
-    name: spacetimedb_default
 volumes:
   key_files:
