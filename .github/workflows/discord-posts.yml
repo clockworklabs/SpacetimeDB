@@ -36,18 +36,18 @@ jobs:
               ' |
               jq -r '"\(.workflow) / \(.name): \(.state)"'
           )"
+
           # Lookup PR author's Discord ID from the provided JSON map (if any)
-          author_discord_id=""
-          if [[ -n "${PR_AUTHOR}" ]]; then
-            author_discord_id="$(
-              jq -r \
-                --arg u "${{ github.event.pull_request.user.login }}" \
-                'try .[$u] catch empty' \
-                <<<"${{ secrets.DISCORD_USER_MAP }}"
-            )"
-          else
+          author_discord_id="$(
+            jq -r \
+              --arg u "${{ github.event.pull_request.user.login }}" \
+              'try .[$u] catch empty' \
+              <<<"${{ secrets.DISCORD_USER_MAP }}"
+          )"
+          if [ -z "${author_discord_id}" ]; then
             echo "Warning: PR author not found not found in USER_LOOKUP_JSON"
           fi
+
           message+=$'\n'
           if [[ -z "${FAILED_CHECKS}" ]]; then
             message+='All checks passed.'
