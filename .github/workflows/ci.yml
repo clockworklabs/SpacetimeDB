@@ -397,7 +397,7 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test -p sdk-unreal-test-harness --test test -- --test-threads=1 --nocapture
+              cargo test -- --test-threads=1
             '
 
   cli_docs:
