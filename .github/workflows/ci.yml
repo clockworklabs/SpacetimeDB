@@ -157,7 +157,7 @@ jobs:
 
         # The fallocate tests have been flakely when running in parallel
       - name: Run fallocate tests
-        run: cargo test -p spacetimedb-durability --features fallocate --test-threads=1
+        run: cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
