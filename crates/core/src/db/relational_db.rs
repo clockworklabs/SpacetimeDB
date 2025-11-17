@@ -821,7 +821,7 @@ impl RelationalDB {
 
         let is_ephemeral_tables = |table_id: &TableId| -> bool {
             tx_data
-                .ephermal_tables()
+                .ephemeral_tables()
                 .map(|etables| etables.contains(table_id))
                 .unwrap_or(false)
         };
@@ -2542,46 +2542,68 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_views() -> ResultTest<()> {
-        let stdb = TestDB::durable()?;
+    fn setup_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId, ModuleDef, ViewDef)> {
         let module_def = view_module_def();
         let view_def = module_def.view("my_view").unwrap();
 
-        let row_type = view_def.product_type_ref;
-        let typespace = module_def.typespace();
-
-        let to_bstan = |pv: &ProductValue| {
-            Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
-        };
-        let row_pv = |v: u8| ProductValue::from_iter(vec![AlgebraicValue::U8(v)]);
-
-        let project_views = |stdb: &TestDB, table_id: TableId, sender: Identity| {
-            let tx = begin_tx(stdb);
-            stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
-                .unwrap()
-                .map(|row| ProductValue {
-                    elements: row.to_product_value().elements.iter().skip(1).cloned().collect(),
-                })
-                .collect::<Vec<_>>()
-        };
-
-        // Create the view
-        let mut tx = begin_mut_tx(&stdb);
+        let mut tx = begin_mut_tx(stdb);
         let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
         stdb.commit_tx(tx)?;
 
-        let apply_view_update = |sender: Identity, val: u8| -> ResultTest<()> {
-            let mut tx = begin_mut_tx(&stdb);
-            tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-            stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bstan(&row_pv(val)), typespace)?;
-            stdb.commit_tx(tx)?;
-            Ok(())
+        Ok((view_id, table_id, module_def.clone(), view_def.clone()))
+    }
+
+    fn insert_view_row(
+        stdb: &TestDB,
+        view_id: ViewId,
+        table_id: TableId,
+        typespace: &Typespace,
+        row_type: AlgebraicTypeRef,
+        sender: Identity,
+        v: u8,
+    ) -> ResultTest<()> {
+        let to_bstan = |pv: &ProductValue| {
+            Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
         };
+
+        let row_pv = |v: u8| ProductValue::from_iter(vec![AlgebraicValue::U8(v)]);
+
+        let mut tx = begin_mut_tx(stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bstan(&row_pv(v)), typespace)?;
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    fn project_views(stdb: &TestDB, table_id: TableId, sender: Identity) -> Vec<ProductValue> {
+        let tx = begin_tx(stdb);
+
+        stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+            .unwrap()
+            .map(|row| {
+                let pv = row.to_product_value();
+                ProductValue {
+                    elements: pv.elements.iter().skip(1).cloned().collect(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_views() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        let row_pv = |v: u8| ProductValue::from_iter(vec![AlgebraicValue::U8(v)]);
 
         // Sender 1
         let sender1 = Identity::ONE;
-        apply_view_update(sender1, 42)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender1, 42)?;
+
         let mut tx = begin_mut_tx(&stdb);
         tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender1)?;
         stdb.commit_tx(tx)?;
@@ -2595,7 +2617,7 @@ mod tests {
         // Sender 2
         let sender2 = Identity::ZERO;
         let before_sender2 = Instant::now();
-        apply_view_update(sender2, 84)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 84)?;
 
         assert_eq!(
             project_views(&stdb, table_id, sender2)[0],
@@ -2622,11 +2644,43 @@ mod tests {
         let tx = begin_mut_tx(&stdb);
         let st_view_row = tx.lookup_st_view_subs(view_id)?;
         assert_eq!(st_view_row.len(), 1, "Sender 1 should be removed from st_view_subs");
-        assert_eq!(
-            st_view_row[0].identity.0, sender2,
-            "Sender 1 should be removed from st_view_subs"
+        assert_eq!(st_view_row[0].identity.0, sender2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_tables_are_ephemeral() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        // Write some rows (reusing the same helper)
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ONE, 10)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ZERO, 20)?;
+
+        assert!(
+            !project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should NOT be empty after insert"
         );
 
+        // Reopen the database — view tables must not persist
+        let stdb = stdb.reopen()?;
+
+        // Validate that the view's backing table has been removed
+        assert!(
+            project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should be empty after reopening the database"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        assert!(
+            subs_rows.is_empty(),
+            "st_view_subs should be empty after reopening the database"
+        );
         Ok(())
     }
 

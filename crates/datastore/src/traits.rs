@@ -197,7 +197,7 @@ pub struct TxData {
     /// Set of ephemeral tables modified in this transaction (only populated when a view is executed).
     /// These tables do not need to be persisted to disk.
     /// Every table listed here must appear in either `inserts` or `deletes`.
-    ephermal_tables: Option<EphemeralTables>,
+    ephemeral_tables: Option<EphemeralTables>,
 }
 
 impl TxData {
@@ -241,15 +241,15 @@ impl TxData {
     pub fn set_ephemeral_tables(&mut self, all_ephemeral_tables: &EphemeralTables) {
         for tid in self.tables.keys() {
             if all_ephemeral_tables.contains(tid) {
-                self.ephermal_tables
+                self.ephemeral_tables
                     .get_or_insert_with(EphemeralTables::default)
                     .insert(*tid);
             }
         }
     }
 
-    pub fn ephermal_tables(&self) -> Option<&EphemeralTables> {
-        self.ephermal_tables.as_ref()
+    pub fn ephemeral_tables(&self) -> Option<&EphemeralTables> {
+        self.ephemeral_tables.as_ref()
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -286,7 +286,7 @@ impl TxData {
     pub fn durable_deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
         self.deletes.iter().filter(move |(table_id, _)| {
             !self
-                .ephermal_tables
+                .ephemeral_tables
                 .as_ref()
                 .is_some_and(|etables| etables.contains(*table_id))
         })
