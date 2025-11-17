@@ -24,6 +24,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
+          DISCORD_USER_MAP: ${{ secrets.DISCORD_USER_MAP }}
         run: |
           message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](<${PR_URL}>)"
           # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
@@ -42,7 +43,7 @@ jobs:
             jq -r \
               --arg u "${{ github.event.pull_request.user.login }}" \
               'try .[$u] catch empty' \
-              <<<"${{ secrets.DISCORD_USER_MAP }}"
+              <<<"${DISCORD_USER_MAP}"
           )"
           if [ -z "${author_discord_id}" ]; then
             echo "Warning: PR author not found not found in USER_LOOKUP_JSON"
