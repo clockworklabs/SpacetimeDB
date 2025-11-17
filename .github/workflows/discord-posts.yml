@@ -39,6 +39,18 @@ jobs:
               ' |
               jq -r '"\(.workflow) / \(.name): \(.state)"'
           )"
+          # Lookup PR author's Discord ID from the provided JSON map (if any)
+          author_discord_id=""
+          if [[ -n "${PR_AUTHOR}" ]]; then
+            author_discord_id="$(
+              jq -r \
+                --arg u "${{ github.event.pull_request.user.login }}" \
+                'try .[$u] catch empty' \
+                <<<"${{ secrets.DISCORD_USER_MAP }}"
+            )"
+          else
+            echo "Warning: PR author not found not found in USER_LOOKUP_JSON"
+          fi
           message+=$'\n'
           if [[ -z "${FAILED_CHECKS}" ]]; then
             message+='All checks passed.'
@@ -47,7 +59,11 @@ jobs:
             message+=$'\n'
             # This uses special Discord syntax for pinging a particular role.
             # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
-            message+=" (cc <@&${MENTION_ON_FAILURE}>)"
+            message+=" (cc <@&${MENTION_ON_FAILURE}>"
+            if [[ -n "${author_discord_id}" ]]; then
+              message+=" <@${author_discord_id}>"
+            fi
+            message+=")"
           fi
           # Use `jq` to construct the json data blob in the format required by the webhook.
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
