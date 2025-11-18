@@ -213,6 +213,13 @@ impl ModuleSubscriptions {
         )
     }
 
+    /// Returns the [`RelationalDB`] of this [`ModuleSubscriptions`].
+    ///
+    /// This is used by [`ModuleInfo`] and in turn by `InstanceCommon`.
+    pub fn relational_db(&self) -> &Arc<RelationalDB> {
+        &self.relational_db
+    }
+
     // Recompute gauges to update metrics.
     pub fn update_gauges(&self) {
         let num_queries = self.subscriptions.read().calculate_gauge_stats();
