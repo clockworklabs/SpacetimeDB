@@ -1,4 +1,4 @@
-use spacetimedb::{procedure, ProcedureContext, SpacetimeType};
+use spacetimedb::{procedure, table, ProcedureContext, SpacetimeType, Table, TxContext};
 
 #[derive(SpacetimeType)]
 struct ReturnStruct {
@@ -45,8 +45,42 @@ fn will_panic(_ctx: &mut ProcedureContext) {
 // and returns some value derived from the error.
 // Then write a test which invokes it in the Rust client SDK test suite.
 
-// TODO(procedure-tx): Add a procedure here which acquires a transaction, inserts a row, commits, then returns.
-// Then write a test which invokes it and asserts observing the row in the Rust client SDK test suite.
+#[table(public, name = my_table)]
+struct MyTable {
+    field: ReturnStruct,
+}
 
-// TODO(procedure-tx): Add a procedure here which acquires a transaction, inserts a row, rolls back, then returns.
-// Then write a test which invokes it and asserts not observing the row in the Rust client SDK test suite.
+fn insert_my_table(ctx: &TxContext) {
+    ctx.db.my_table().insert(MyTable {
+        field: ReturnStruct {
+            a: 42,
+            b: "magic".into(),
+        },
+    });
+}
+
+fn assert_row_count(ctx: &mut ProcedureContext, count: u64) {
+    ctx.with_tx(|ctx| {
+        assert_eq!(count, ctx.db.my_table().count());
+    });
+}
+
+#[procedure]
+fn insert_with_tx_commit(ctx: &mut ProcedureContext) {
+    // Insert a row and commit.
+    ctx.with_tx(insert_my_table);
+
+    // Assert that there's a row.
+    assert_row_count(ctx, 1);
+}
+
+#[procedure]
+fn insert_with_tx_rollback(ctx: &mut ProcedureContext) {
+    let _: Result<(), u32> = ctx.try_with_tx(|ctx| {
+        insert_my_table(ctx);
+        Err(24)
+    });
+
+    // Assert that there's not a row.
+    assert_row_count(ctx, 0);
+}

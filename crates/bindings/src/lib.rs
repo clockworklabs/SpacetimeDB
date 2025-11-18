@@ -1186,6 +1186,8 @@ impl ProcedureContext {
 
         let run = || {
             // Start the transaction.
+
+            use core::mem;
             let timestamp = sys::procedure::procedure_start_mut_tx().expect(
                 "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
             );
@@ -1207,7 +1209,7 @@ impl ProcedureContext {
             let abort_guard = DoOnDrop(abort);
             let res = body(&tx);
             // Defuse the bomb.
-            let DoOnDrop(_) = abort_guard;
+            mem::forget(abort_guard);
             res
         };
 
