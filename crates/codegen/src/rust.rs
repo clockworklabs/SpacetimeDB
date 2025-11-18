@@ -2,8 +2,8 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_procedures, iter_tables, iter_types, iter_unique_cols, print_auto_generated_file_comment,
-    print_auto_generated_version_comment,
+    iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
+    print_auto_generated_file_comment, print_auto_generated_version_comment,
 };
 use crate::OutputFile;
 use convert_case::{Case, Casing};
@@ -930,12 +930,13 @@ fn reducer_flags_trait_name(reducer: &ReducerDef) -> String {
     format!("set_flags_for_{}", reducer_function_name(reducer))
 }
 
-/// Iterate over all of the Rust `mod`s for types, reducers and tables in the `module`.
+/// Iterate over all of the Rust `mod`s for types, reducers, views, and tables in the `module`.
 fn iter_module_names(module: &ModuleDef) -> impl Iterator<Item = String> + '_ {
     itertools::chain!(
         iter_types(module).map(|ty| type_module_name(&ty.name)),
         iter_reducers(module).map(|r| reducer_module_name(&r.name)),
         iter_tables(module).map(|tbl| table_module_name(&tbl.name)),
+        iter_views(module).map(|view| table_module_name(&view.name)),
         iter_procedures(module).map(|proc| procedure_module_name(&proc.name)),
     )
 }
@@ -954,8 +955,8 @@ fn print_module_reexports(module: &ModuleDef, out: &mut Indenter) {
         let type_name = collect_case(Case::Pascal, ty.name.name_segments());
         writeln!(out, "pub use {mod_name}::{type_name};")
     }
-    for table in iter_tables(module) {
-        let mod_name = table_module_name(&table.name);
+    for (table_name, _) in iter_table_names_and_types(module) {
+        let mod_name = table_module_name(table_name);
         // TODO: More precise reexport: we want:
         // - The trait name.
         // - The insert, delete and possibly update callback ids.
@@ -1113,12 +1114,12 @@ fn print_db_update_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "pub struct DbUpdate {",
         |out| {
-            for table in iter_tables(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
                 writeln!(
                     out,
                     "{}: __sdk::TableUpdate<{}>,",
-                    table_method_name(&table.name),
-                    type_ref_name(module, table.product_type_ref),
+                    table_method_name(table_name),
+                    type_ref_name(module, product_type_ref),
                 );
             }
         },
@@ -1137,13 +1138,13 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
             match &table_update.table_name[..] {
 ",
         |out| {
-            for table in iter_tables(module) {
+            for (table_name, _) in iter_table_names_and_types(module) {
                 writeln!(
                     out,
                     "{:?} => db_update.{}.append({}::parse_table_update(table_update)?),",
-                    table.name.deref(),
-                    table_method_name(&table.name),
-                    table_module_name(&table.name),
+                    table_name.deref(),
+                    table_method_name(table_name),
+                    table_module_name(table_name),
                 );
             }
         },
@@ -1181,21 +1182,28 @@ impl __sdk::InModule for DbUpdate {{
                     let mut diff = AppliedDiff::default();
                 ",
                 |out| {
-                    for table in iter_tables(module) {
-                        let with_updates = table
-                            .primary_key
-                            .map(|col| {
-                                let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
-                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
-                            })
-                            .unwrap_or_default();
-
-                        let field_name = table_method_name(&table.name);
+                    for (table_name, product_type_ref, with_updates) in itertools::chain!(
+                        iter_tables(module).map(|table| {
+                            (
+                                &table.name,
+                                table.product_type_ref,
+                                table
+                                    .primary_key
+                                    .map(|col| {
+                                        let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
+                                        format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                                    })
+                                    .unwrap_or_default(),
+                            )
+                        }),
+                        iter_views(module).map(|view| (&view.name, view.product_type_ref, "".into()))
+                    ) {
+                        let field_name = table_method_name(table_name);
                         writeln!(
                             out,
                             "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
-                            type_ref_name(module, table.product_type_ref),
-                            table.name.deref(),
+                            type_ref_name(module, product_type_ref),
+                            table_name.deref(),
                         );
                     }
                 },
@@ -1215,12 +1223,12 @@ fn print_applied_diff_defn(module: &ModuleDef, out: &mut Indenter) {
     out.delimited_block(
         "pub struct AppliedDiff<'r> {",
         |out| {
-            for table in iter_tables(module) {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
                 writeln!(
                     out,
                     "{}: __sdk::TableAppliedDiff<'r, {}>,",
-                    table_method_name(&table.name),
-                    type_ref_name(module, table.product_type_ref),
+                    table_method_name(table_name),
+                    type_ref_name(module, product_type_ref),
                 );
             }
             // Also write a `PhantomData` field which uses the lifetime `r`,
@@ -1248,13 +1256,13 @@ impl __sdk::InModule for AppliedDiff<'_> {{
             out.delimited_block(
                 "fn invoke_row_callbacks(&self, event: &EventContext, callbacks: &mut __sdk::DbCallbacks<RemoteModule>) {",
                 |out| {
-                    for table in iter_tables(module) {
+                    for (table_name, product_type_ref) in iter_table_names_and_types(module) {
                         writeln!(
                             out,
                             "callbacks.invoke_table_row_callbacks::<{}>({:?}, &self.{}, event);",
-                            type_ref_name(module, table.product_type_ref),
-                            table.name.deref(),
-                            table_method_name(&table.name),
+                            type_ref_name(module, product_type_ref),
+                            table_name.deref(),
+                            table_method_name(table_name),
                         );
                     }
                 },
@@ -1290,8 +1298,8 @@ type SubscriptionHandle = SubscriptionHandle;
             out.delimited_block(
                 "fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {",
                 |out| {
-                    for table in iter_tables(module) {
-                        writeln!(out, "{}::register_table(client_cache);", table_module_name(&table.name));
+                    for (table_name, _) in iter_table_names_and_types(module) {
+                        writeln!(out, "{}::register_table(client_cache);", table_module_name(table_name));
                     }
                 },
                 "}\n",

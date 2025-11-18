@@ -1011,6 +1011,7 @@ namespace SpacetimeDB
         {
             AddTable(HasSpecialStuff = new(conn));
             AddTable(LoggedOutPlayer = new(conn));
+            AddTable(MyPlayer = new(conn));
             AddTable(Person = new(conn));
             AddTable(PkMultiIdentity = new(conn));
             AddTable(Player = new(conn));
