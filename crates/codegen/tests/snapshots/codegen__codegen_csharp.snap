@@ -2,6 +2,7 @@
 source: crates/codegen/tests/codegen.rs
 expression: outfiles
 ---
+"Procedures/GetMySchemaViaHttp.g.cs" = ''
 "Procedures/ReturnValue.g.cs" = ''
 "Procedures/SleepOneSecond.g.cs" = ''
 "Reducers/Add.g.cs" = '''
