@@ -440,12 +440,6 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
 }
 """
 
-    def assertSql(self, sql, expected):
-        self.maxDiff = None
-        sql_out = self.spacetime("sql", self.database_identity, sql)
-        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
-        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
-
     def _test_subscribing_with_different_identities(self):
         """Tests different clients subscribing to a client-specific view"""
 
