@@ -110,9 +110,6 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
 
 pub(crate) fn dotnet_format(project_dir: &Path, files: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<()> {
     let cwd = std::env::current_dir().expect("Failed to retrieve current directory");
-    // Resolve absolute paths for all of the files, because we receive them as relative paths to cwd, but
-    // `dotnet format` will interpret those paths relative to `project_dir`.
-    let files = files.into_iter().map(|f| if f.is_absolute() { f } else { cwd.join(f) });
     duct::cmd(
         "dotnet",
         itertools::chain(
@@ -130,7 +127,12 @@ pub(crate) fn dotnet_format(project_dir: &Path, files: impl IntoIterator<Item = 
             ]
             .into_iter()
             .map_into::<OsString>(),
-            files.map_into(),
+            // Resolve absolute paths for all of the files, because we receive them as relative paths to cwd, but
+            // `dotnet format` will interpret those paths relative to `project_dir`.
+            files
+                .into_iter()
+                .map(|f| if f.is_absolute() { f } else { cwd.join(f) })
+                .map_into(),
         ),
     )
     .run()?;
