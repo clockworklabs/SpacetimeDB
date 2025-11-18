@@ -7,7 +7,7 @@ public class CameraController : MonoBehaviour
 {
     public static float WorldSize = 0.0f;
 
-    private void LateUpdate()
+	private void LateUpdate()
     {
         var arenaCenterTransform = new Vector3(WorldSize / 2, WorldSize / 2, -10.0f);
         if (PlayerController.Local == null || !GameManager.IsConnected() || PlayerController.Local.NumberOfOwnedCircles == 0)
@@ -29,20 +29,18 @@ public class CameraController : MonoBehaviour
                 y = centerOfMass.Value.y,
                 z = transform.position.z
             };
-        }
-        else
-        {
+        } else {
             transform.position = arenaCenterTransform;
         }
 
-        float targetCameraSize = CalculateCameraSize(PlayerController.Local);
-        Camera.main.orthographicSize = Mathf.Lerp(Camera.main.orthographicSize, targetCameraSize, Time.deltaTime * 2);
-    }
+		float targetCameraSize = CalculateCameraSize(PlayerController.Local);
+		Camera.main.orthographicSize = Mathf.Lerp(Camera.main.orthographicSize, targetCameraSize, Time.deltaTime * 2);
+	}
 
-    private float CalculateCameraSize(PlayerController player)
-    {
-        return 50f + //Base size
+	private float CalculateCameraSize(PlayerController player)
+	{
+		return 50f + //Base size
             Mathf.Min(50, player.TotalMass() / 5) + //Increase camera size with mass
             Mathf.Min(player.NumberOfOwnedCircles - 1, 1) * 30; //Zoom out when player splits
-    }
+	}
 }

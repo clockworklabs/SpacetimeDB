@@ -9,8 +9,8 @@ public class LeaderboardRow : MonoBehaviour
     public TextMeshProUGUI MassText;
 
     public void SetData(string username, int mass)
-    {
-        UsernameText.text = username;
-        MassText.text = mass.ToString();
-    }
+	{
+		UsernameText.text = username;
+		MassText.text = mass.ToString();
+	}
 }

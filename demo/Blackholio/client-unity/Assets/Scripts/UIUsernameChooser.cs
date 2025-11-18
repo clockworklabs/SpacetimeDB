@@ -11,7 +11,7 @@ public class UIUsernameChooser : MonoBehaviour
     // The elements that compose the username chooser UI
     public GameObject[] elements;
     public TMPro.TMP_InputField UsernameInputField;
-
+    
     private void Start()
     {
         Instance = this;
@@ -19,16 +19,16 @@ public class UIUsernameChooser : MonoBehaviour
 
     public void PlayPressed()
     {
-        Debug.Log("Creating player");
+		Debug.Log("Creating player");
 
         var name = UsernameInputField.text.Trim();
         if (string.IsNullOrEmpty(name))
         {
             name = "<No Name>";
         }
-        GameManager.Conn.Reducers.EnterGame(name);
-        Show(false);
-    }
+		GameManager.Conn.Reducers.EnterGame(name);
+		Show(false);
+	}
 
     public void Show(bool showing)
     {

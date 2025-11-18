@@ -20,7 +20,7 @@ public class LeaderboardController : MonoBehaviour
             Rows[i] = go;
         }
     }
-
+    
     private void Update()
     {
         var players = GameManager.Players.Values
@@ -30,22 +30,22 @@ public class LeaderboardController : MonoBehaviour
             .Take(10)
             .ToList();
         var localPlayer = PlayerController.Local;
-        if (localPlayer != null && !players.Any(p => p.player == localPlayer) && localPlayer.NumberOfOwnedCircles > 0)
+		if (localPlayer != null && !players.Any(p => p.player == localPlayer) && localPlayer.NumberOfOwnedCircles > 0)
         {
             players.Add((localPlayer, localPlayer.TotalMass()));
-        }
+		}
 
         int i;
         for (i = 0; i < players.Count; i++)
-        {
+		{
             var player = players[i];
-            var row = Rows[i];
+			var row = Rows[i];
             row.SetData(player.player.Username, player.mass);
             row.gameObject.SetActive(true);
-        }
+		}
         for (; i < MAX_ROW_COUNT; i++)
-        {
-            Rows[i].gameObject.SetActive(false);
-        }
+		{
+			Rows[i].gameObject.SetActive(false);
+		}
     }
 }
