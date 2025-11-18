@@ -18,6 +18,7 @@ pub mod query;
 pub mod scheduler;
 pub mod st_var;
 pub mod version;
+pub mod http;
 
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};

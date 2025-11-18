@@ -7,6 +7,8 @@ use spacetimedb_lib::bsatn;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
+#[cfg(feature = "unstable")]
+pub mod http;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand08")]
@@ -1031,6 +1033,9 @@ pub struct ProcedureContext {
     ///
     /// Will be `None` for certain scheduled procedures.
     pub connection_id: Option<ConnectionId>,
+
+    /// Methods for performing HTTP requests.
+    pub http: crate::http::HttpClient,
     // TODO: Add rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.

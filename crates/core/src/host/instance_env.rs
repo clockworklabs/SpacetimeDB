@@ -204,6 +204,11 @@ impl InstanceEnv {
         self.tx.get()
     }
 
+    /// True if `self` is holding an open transaction, or false if it is not.
+    pub fn in_tx(&self) -> bool {
+        self.get_tx().is_ok()
+    }
+
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
         let tx = &mut *self.get_tx()?;
         Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)

@@ -178,4 +178,5 @@ pub enum AbiCall {
     VolatileNonatomicScheduleImmediate,
 
     ProcedureSleepUntil,
+    ProcedureHttpRequest,
 }

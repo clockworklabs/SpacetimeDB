@@ -466,3 +466,17 @@ fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
         field: format!("{foo}"),
     }
 }
+
+/// Hit SpacetimeDB's schema HTTP route and return its result as a string.
+///
+/// This is a silly thing to do, but an effective test of the procedure HTTP API.
+#[spacetimedb::procedure]
+fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
+    let module_identity = ctx.identity();
+    match ctx.http.get(format!(
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+    )) {
+        Ok(result) => String::from_utf8_lossy(result.body().as_bytes()).to_string(),
+        Err(e) => format!("{e}"),
+    }
+}

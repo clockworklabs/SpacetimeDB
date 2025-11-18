@@ -192,6 +192,7 @@ hex = "0.4.3"
 home = "0.5"
 hostname = "^0.3"
 http = "1.0"
+http-body-util= "0.1.3"
 humantime = "2.1.0"
 hyper = "1.0"
 hyper-util = { version = "0.1", features = ["tokio"] }

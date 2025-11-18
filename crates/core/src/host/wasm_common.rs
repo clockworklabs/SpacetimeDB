@@ -354,6 +354,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::IndexRowNotFound => Some(errno::NO_SUCH_ROW),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
+        NodesError::WouldBlockTransaction(_) => Some(errno::WOULD_BLOCK_TRANSACTION),
         NodesError::Internal(internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {
@@ -422,6 +423,7 @@ macro_rules! abi_funcs {
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
+            "spacetime_10.3"::procedure_http_request,
         }
     };
 }

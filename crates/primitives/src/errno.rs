@@ -23,6 +23,8 @@ macro_rules! errnos {
             INDEX_NOT_UNIQUE(14, "The index was not unique"),
             NO_SUCH_ROW(15, "The row was not found, e.g., in an update call"),
             AUTO_INC_OVERFLOW(16, "The auto-increment sequence overflowed"),
+            HTTP_ERROR(17, "The HTTP request failed"),
+            WOULD_BLOCK_TRANSACTION(18, "ABI call must not be made while in a transaction"),
         );
     };
 }

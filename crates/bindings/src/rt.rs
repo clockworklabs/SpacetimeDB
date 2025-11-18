@@ -16,7 +16,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
-use sys::raw::{BytesSink, BytesSource};
+pub use sys::raw::{BytesSink, BytesSource};
 
 #[cfg(feature = "unstable")]
 use crate::{ProcedureContext, ProcedureResult};
@@ -1011,6 +1011,7 @@ extern "C" fn __call_procedure__(
         connection_id: conn_id,
         sender,
         timestamp,
+        http: crate::http::HttpClient {},
     };
 
     // Grab the list of procedures, which is populated by the preinit functions.
@@ -1115,7 +1116,7 @@ pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
 }
 
 /// Read `source` from the host fully into `buf`.
-fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
+pub(crate) fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
     const INVALID: i16 = NO_SUCH_BYTES as i16;
 
     // For reducer arguments, the `buf` will almost certainly already be large enough,

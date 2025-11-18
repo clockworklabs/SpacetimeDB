@@ -27,6 +27,7 @@ spacetimedb-primitives.workspace = true
 
 bytemuck.workspace = true
 derive_more.workspace = true
+http.workspace = true
 log.workspace = true
 scoped-tls.workspace = true
 
