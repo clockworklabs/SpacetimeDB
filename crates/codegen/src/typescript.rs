@@ -1,6 +1,6 @@
 use crate::util::{
-    is_reducer_invokable, iter_reducers, iter_tables, iter_types, iter_unique_cols,
-    print_auto_generated_version_comment,
+    is_reducer_invokable, iter_reducers, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols,
+    iter_views, print_auto_generated_version_comment,
 };
 use crate::{indent_scope, OutputFile};
 
@@ -341,10 +341,9 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
 
         writeln!(out);
         writeln!(out, "// Import and reexport all table handle types");
-        for table in iter_tables(module) {
-            let table_name = &table.name;
+        for (table_name, _) in iter_table_names_and_types(module) {
             let table_module_name = table_module_name(table_name) + ".ts";
-            let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
+            let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             let table_handle = table_name_pascalcase.clone() + "TableHandle";
             writeln!(out, "import {{ {table_handle} }} from \"./{table_module_name}\";");
             writeln!(out, "export {{ {table_handle} }};");
@@ -366,15 +365,31 @@ removeOnUpdate = (cb: (ctx: EventContext, onRow: {row_type}, newRow: {row_type})
         out.indent(1);
         writeln!(out, "tables: {{");
         out.indent(1);
-        for table in iter_tables(module) {
-            let type_ref = table.product_type_ref;
+        for (table_name, product_type_ref, schema) in itertools::chain!(
+            iter_tables(module).map(|def| {
+                (
+                    &def.name,
+                    def.product_type_ref,
+                    TableSchema::from_module_def(module, def, (), 0.into()),
+                )
+            }),
+            iter_views(module).map(|def| {
+                (
+                    &def.name,
+                    def.product_type_ref,
+                    TableSchema::from_view_def_for_codegen(module, def),
+                )
+            })
+        ) {
+            let table_name = table_name.deref();
+            let type_ref = product_type_ref;
             let row_type = type_ref_name(module, type_ref);
-            let schema = TableSchema::from_module_def(module, table, (), 0.into())
+            let schema = schema
                 .validated()
                 .expect("Failed to generate table due to validation errors");
-            writeln!(out, "{}: {{", table.name);
+            writeln!(out, "{}: {{", table_name);
             out.indent(1);
-            writeln!(out, "tableName: \"{}\" as const,", table.name);
+            writeln!(out, "tableName: \"{}\" as const,", table_name);
             writeln!(out, "rowType: {row_type}.getTypeScriptAlgebraicType(),");
             if let Some(pk) = schema.pk() {
                 // This is left here so we can release the codegen change before releasing a new
@@ -612,13 +627,13 @@ fn print_remote_tables(module: &ModuleDef, out: &mut Indenter) {
     out.indent(1);
     writeln!(out, "constructor(private connection: __DbConnectionImpl) {{}}");
 
-    for table in iter_tables(module) {
+    for (table_name, product_type_ref) in iter_table_names_and_types(module) {
         writeln!(out);
-        let table_name = table.name.deref();
-        let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
-        let table_name_camelcase = table.name.deref().to_case(Case::Camel);
+        let table_name = table_name.deref();
+        let table_name_pascalcase = table_name.to_case(Case::Pascal);
+        let table_name_camelcase = table_name.to_case(Case::Camel);
         let table_handle = table_name_pascalcase.clone() + "TableHandle";
-        let type_ref = table.product_type_ref;
+        let type_ref = product_type_ref;
         let row_type = type_ref_name(module, type_ref);
         writeln!(out, "get {table_name_camelcase}(): {table_handle}<'{table_name}'> {{");
         out.with_indent(|out| {

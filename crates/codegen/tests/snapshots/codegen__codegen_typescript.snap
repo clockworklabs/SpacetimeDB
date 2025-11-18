@@ -862,6 +862,8 @@ import { HasSpecialStuffTableHandle } from "./has_special_stuff_table.ts";
 export { HasSpecialStuffTableHandle };
 import { LoggedOutPlayerTableHandle } from "./logged_out_player_table.ts";
 export { LoggedOutPlayerTableHandle };
+import { MyPlayerTableHandle } from "./my_player_table.ts";
+export { MyPlayerTableHandle };
 import { PersonTableHandle } from "./person_table.ts";
 export { PersonTableHandle };
 import { PkMultiIdentityTableHandle } from "./pk_multi_identity_table.ts";
@@ -996,6 +998,10 @@ const REMOTE_MODULE = {
     test_f: {
       tableName: "test_f" as const,
       rowType: TestFoobar.getTypeScriptAlgebraicType(),
+    },
+    my_player: {
+      tableName: "my_player" as const,
+      rowType: Player.getTypeScriptAlgebraicType(),
     },
   },
   reducers: {
@@ -1381,6 +1387,11 @@ export class RemoteTables {
   get loggedOutPlayer(): LoggedOutPlayerTableHandle<'logged_out_player'> {
     // clientCache is a private property
     return new LoggedOutPlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.logged_out_player));
+  }
+
+  get myPlayer(): MyPlayerTableHandle<'my_player'> {
+    // clientCache is a private property
+    return new MyPlayerTableHandle((this.connection as unknown as { clientCache: __ClientCache }).clientCache.getOrCreateTable<Player>(REMOTE_MODULE.tables.my_player));
   }
 
   get person(): PersonTableHandle<'person'> {

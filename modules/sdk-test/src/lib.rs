@@ -9,7 +9,7 @@
 use anyhow::{anyhow, Context, Result};
 use spacetimedb::{
     sats::{i256, u256},
-    ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp,
+    ConnectionId, Identity, ReducerContext, SpacetimeType, Table, TimeDuration, Timestamp, ViewContext,
 };
 
 #[derive(PartialEq, Eq, Hash, SpacetimeType)]
@@ -794,6 +794,11 @@ struct Users {
 fn insert_user(ctx: &ReducerContext, name: String, identity: Identity) -> anyhow::Result<()> {
     ctx.db.users().insert(Users { name, identity });
     Ok(())
+}
+
+#[spacetimedb::view(name = my_user, public)]
+fn my_user(ctx: &ViewContext) -> Option<Users> {
+    ctx.db.users().identity().find(ctx.sender)
 }
 
 #[spacetimedb::table(name = indexed_simple_enum, public)]
