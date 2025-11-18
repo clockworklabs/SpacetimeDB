@@ -664,7 +664,7 @@ fn common_call<'scope, R, O, F>(
     budget: FunctionBudget,
     op: O,
     call: F,
-) -> ExecutionResult<Result<R, ExecutionError>>
+) -> ExecutionResult<R, ExecutionError>
 where
     O: InstanceOp,
     F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,

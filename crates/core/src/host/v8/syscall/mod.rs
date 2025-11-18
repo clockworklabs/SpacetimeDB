@@ -1,11 +1,10 @@
-use bytes::Bytes;
 use spacetimedb_lib::{RawModuleDef, VersionTuple};
 use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
 
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
 use crate::host::wasm_common::abi::parse_abi_version;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp};
+use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData};
 
 mod hooks;
 mod v1;
@@ -84,7 +83,7 @@ pub(super) fn call_call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     op: ViewOp<'_>,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view(scope, hooks, op),
     }
@@ -97,7 +96,7 @@ pub(super) fn call_call_view_anon(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     op: AnonymousViewOp<'_>,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view_anon(scope, hooks, op),
     }

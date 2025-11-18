@@ -495,7 +495,7 @@ pub enum ViewResultHeader {
     RawSql(String),
     // This means we the view wants to return the results of a sql query.
     // Any query parameters will follow the header.
-    ParameterizedQuery(ParameterizedQuery),
+    ParameterizedQuery(ParameterizedQueryHeader),
 }
 
 #[derive(Debug, Clone, SpacetimeType)]

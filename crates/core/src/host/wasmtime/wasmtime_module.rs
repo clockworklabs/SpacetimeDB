@@ -9,6 +9,7 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, InitializationError, InstanceOp, ViewOp,
+    ViewReturnData,
 };
 use crate::host::wasm_common::*;
 use crate::replica_context::ReplicaContext;
@@ -452,7 +453,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let call_result = call_result
             .map_err(ExecutionError::Trap)
             .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| r.into());
+            .map(|r| ViewReturnData::new(module_host_actor::ViewResultFormat::Rows, r.into()));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
@@ -491,7 +492,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         let call_result = call_result
             .map_err(ExecutionError::Trap)
             .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| r.into());
+            .map(|r| ViewReturnData::new(module_host_actor::ViewResultFormat::Rows, r.into()));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }

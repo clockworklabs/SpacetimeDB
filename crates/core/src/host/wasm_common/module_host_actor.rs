@@ -153,17 +153,57 @@ pub enum ExecutionError {
 }
 
 #[derive(derive_more::AsRef)]
-pub struct ExecutionResult<T> {
+pub struct ExecutionResult<T, E> {
     #[as_ref]
     pub stats: ExecutionStats,
-    pub call_result: T,
+    pub call_result: Result<T, E>,
 }
 
-pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
+// pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
+pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
 
-pub type ViewExecuteResult = ExecutionResult<Result<Bytes, ExecutionError>>;
+// What format is the view using?
+// In the initial version of views, they returned the rows directly.
+// Views can now return multiple formats (rows or queries), so we use this to determine how to interpret the view result.
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum ViewResultFormat {
+    // This view returns a Vec of rows (bsatn encoded).
+    Rows,
+    // This view returns a ViewResultHeader, potentially followed by more data.
+    HeaderFirst,
+}
 
-pub type ProcedureExecuteResult = ExecutionResult<anyhow::Result<Bytes>>;
+pub struct ViewReturnData {
+    // How the bytes returned by the view should be interpreted.
+    pub format: ViewResultFormat,
+    // The actual bytes returned by the view.
+    pub data: Bytes,
+}
+
+impl ViewReturnData {
+    pub fn new(format: ViewResultFormat, data: Bytes) -> Self {
+        Self { format, data }
+    }
+
+    pub fn from_raw_rows(data: Bytes) -> Self {
+        Self {
+            format: ViewResultFormat::Rows,
+            data,
+        }
+    }
+
+    pub fn with_header(data: Bytes) -> Self {
+        Self {
+            format: ViewResultFormat::HeaderFirst,
+            data,
+        }
+    }
+}
+
+// pub type ViewExecuteResult = ExecutionResult<Bytes, ExecutionError>;
+pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
+
+pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
@@ -914,21 +954,33 @@ impl InstanceCommon {
             }
             // Materialize anonymous view
             (Ok(bytes), None) => {
-                stdb.materialize_anonymous_view(&mut tx, table_id, row_type, bytes, self.info.module_def.typespace())
-                    .inspect_err(|err| {
-                        log::error!("Fatal error materializing view `{view_name}`: {err}");
-                    })
-                    .expect("Fatal error materializing view");
+                if bytes.format != ViewResultFormat::Rows {
+                    unimplemented!("View returned a non-rows format");
+                }
+                stdb.materialize_anonymous_view(
+                    &mut tx,
+                    table_id,
+                    row_type,
+                    bytes.data,
+                    self.info.module_def.typespace(),
+                )
+                .inspect_err(|err| {
+                    log::error!("Fatal error materializing view `{view_name}`: {err}");
+                })
+                .expect("Fatal error materializing view");
                 ViewOutcome::Success
             }
             // Materialize sender view
             (Ok(bytes), Some(sender)) => {
+                if bytes.format != ViewResultFormat::Rows {
+                    unimplemented!("View returned a non-rows format");
+                }
                 stdb.materialize_view(
                     &mut tx,
                     table_id,
                     sender,
                     row_type,
-                    bytes,
+                    bytes.data,
                     self.info.module_def.typespace(),
                 )
                 .inspect_err(|err| {
