@@ -116,7 +116,9 @@ pub(crate) fn dotnet_format(project_dir: &Path, files: impl IntoIterator<Item = 
         .into_iter()
         .map(|f| {
             let p = if f.is_absolute() { f } else { cwd.join(f) };
-            p.canonicalize().unwrap_or(p).into_os_string()
+            p.canonicalize()
+                .expect("Failed to canonicalize a file path")
+                .into_os_string()
         })
         .collect();
     duct::cmd(
