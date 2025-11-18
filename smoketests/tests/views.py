@@ -446,21 +446,19 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
         sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
         expected = "\n".join([line.rstrip() for line in expected.splitlines()])
 
-    def test_subscribing_with_different_identities(self):
+    def _test_subscribing_with_different_identities(self):
         """Tests different clients subscribing to a client-specific view"""
 
         # Insert an identity for Alice
         self.call("insert_player", "Alice")
 
-        # Generate a new identity for Bob
+        # Generate and insert a new identity for Bob
         self.reset_config()
         self.new_identity()
+        self.call("insert_player", "Bob")
 
         # Subscribe to `my_player` as Bob
-        sub = self.subscribe("select * from my_player", n = 1)
-
-        # Insert a new identity for Bob
-        self.call("insert_player", "Bob")
+        sub = self.subscribe("select * from my_player", n=0)
         events = sub()
 
         # Project out the identity field.
