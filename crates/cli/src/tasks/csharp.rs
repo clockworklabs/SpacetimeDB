@@ -128,6 +128,7 @@ pub(crate) fn dotnet_format(project_dir: &PathBuf, files: impl IntoIterator<Item
             files.into_iter().map_into(),
         ),
     )
+    // This is important because we're running with `--folder`. We want to format the right folder!
     .dir(project_dir)
     .run()?;
     Ok(())
