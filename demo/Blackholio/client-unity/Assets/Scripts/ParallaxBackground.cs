@@ -6,10 +6,10 @@ public class ParallaxBackground : MonoBehaviour
 {
     public float Multiplier;
 
-	private void LateUpdate()
-	{
-		var pos = Camera.main.transform.position * Multiplier;
-		pos.z = 0;
-		transform.position = pos;
-	}
+    private void LateUpdate()
+    {
+        var pos = Camera.main.transform.position * Multiplier;
+        pos.z = 0;
+        transform.position = pos;
+    }
 }
