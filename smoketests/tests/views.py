@@ -452,13 +452,15 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
         # Insert an identity for Alice
         self.call("insert_player", "Alice")
 
-        # Insert a new identity for Bob
+        # Generate a new identity for Bob
         self.reset_config()
         self.new_identity()
-        self.call("insert_player", "Bob")
 
         # Subscribe to `my_player` as Bob
-        sub = self.subscribe("select * from my_player", n = 0)
+        sub = self.subscribe("select * from my_player", n = 1)
+
+        # Insert a new identity for Bob
+        self.call("insert_player", "Bob")
         events = sub()
 
         # Project out the identity field.
