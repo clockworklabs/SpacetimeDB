@@ -200,7 +200,6 @@ impl ViewReturnData {
     }
 }
 
-// pub type ViewExecuteResult = ExecutionResult<Bytes, ExecutionError>;
 pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
 
 pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
