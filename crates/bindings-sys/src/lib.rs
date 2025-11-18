@@ -681,10 +681,10 @@ pub mod raw {
         /// Returns an error:
         ///
         /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
-        ///                             In this case, `out` is not written.
+        ///   In this case, `out` is not written.
         /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
-        ///                In this case, a [`BytesSource`] is written to `out`
-        ///                containing a BSATN-encoded `spacetimedb_lib::http::Error` object.
+        ///   In this case, a [`BytesSource`] is written to `out`
+        ///   containing a BSATN-encoded `spacetimedb_lib::http::Error` object.
         ///
         /// # Traps
         ///

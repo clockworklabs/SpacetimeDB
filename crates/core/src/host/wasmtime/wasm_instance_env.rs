@@ -1456,10 +1456,10 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
-    ///                             In this case, `out` is not written.
+    ///   In this case, `out` is not written.
     /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
-    ///                In this case, a [`BytesSource`] is written to `out`
-    ///                containing a BSATN-encoded `spacetimedb_lib::http::Error` object.
+    ///   In this case, a [`BytesSource`] is written to `out`
+    ///   containing a BSATN-encoded `spacetimedb_lib::http::Error` object.
     ///
     /// # Traps
     ///
@@ -1477,6 +1477,9 @@ impl WasmInstanceEnv {
         Self::async_with_span(caller, AbiCall::ProcedureHttpRequest, move |mut caller| async move {
             let (mem, env) = Self::mem_env(&mut caller);
 
+            // Yes clippy, I'm calling a closure at its definition site *on purpose*,
+            // as a hacky-but-stable `try` block.
+            #[allow(clippy::redundant_closure_call)]
             let res = (async move || {
                 if env.instance_env.in_tx() {
                     // If we're holding a transaction open, refuse to perform this blocking operation.
@@ -1611,7 +1614,7 @@ impl WasmInstanceEnv {
                 let response = st_http::Response::from(response);
 
                 // Write the request across the WASM boundary.
-                return write_result(
+                write_result(
                     &response,
                     0u32,
                     // If serializing the response fails (which I'm not sure it can, but the types allow it to),
@@ -1620,7 +1623,7 @@ impl WasmInstanceEnv {
                     mem,
                     out,
                     env,
-                );
+                )
             })()
             .await;
 

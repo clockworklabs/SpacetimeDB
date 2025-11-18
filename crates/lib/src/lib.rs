@@ -11,6 +11,7 @@ pub mod db;
 mod direct_index_key;
 pub mod error;
 mod filterable_value;
+pub mod http;
 pub mod identity;
 pub mod metrics;
 pub mod operator;
@@ -18,7 +19,6 @@ pub mod query;
 pub mod scheduler;
 pub mod st_var;
 pub mod version;
-pub mod http;
 
 pub mod type_def {
     pub use spacetimedb_sats::{AlgebraicType, ProductType, ProductTypeElement, SumType};
