@@ -131,7 +131,10 @@ pub(crate) fn dotnet_format(project_dir: &Path, files: impl IntoIterator<Item = 
             // `dotnet format` will interpret those paths relative to `project_dir`.
             files
                 .into_iter()
-                .map(|f| if f.is_absolute() { f } else { cwd.join(f) })
+                .map(|f| {
+                    let f = if f.is_absolute() { f } else { cwd.join(f) };
+                    f.canonicalize().expect("Failed to canonicalize path: {f}")
+                })
                 .map_into(),
         ),
     )
