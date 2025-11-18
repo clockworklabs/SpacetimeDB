@@ -109,8 +109,6 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
 }
 
 pub(crate) fn dotnet_format(project_dir: &PathBuf, files: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<()> {
-    println!("Running in {project_dir:?}");
-    println!("files:");
     let cwd = std::env::current_dir().unwrap_or_else(|_| project_dir.clone());
     let files: Vec<OsString> = files
         .into_iter()
@@ -119,9 +117,6 @@ pub(crate) fn dotnet_format(project_dir: &PathBuf, files: impl IntoIterator<Item
             p.canonicalize().unwrap_or(p).into_os_string()
         })
         .collect();
-    for file in &files {
-        println!("file: {file:?}");
-    }
     duct::cmd(
         "dotnet",
         itertools::chain(
