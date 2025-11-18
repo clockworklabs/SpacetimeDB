@@ -108,7 +108,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     anyhow::bail!("Built project successfully but couldn't find the output file.");
 }
 
-pub(crate) fn dotnet_format(files: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<()> {
+pub(crate) fn dotnet_format(project_dir: &PathBuf, files: impl IntoIterator<Item = PathBuf>) -> anyhow::Result<()> {
     duct::cmd(
         "dotnet",
         itertools::chain(
@@ -128,6 +128,7 @@ pub(crate) fn dotnet_format(files: impl IntoIterator<Item = PathBuf>) -> anyhow:
             files.into_iter().map_into(),
         ),
     )
+    .dir(project_dir)
     .run()?;
     Ok(())
 }
