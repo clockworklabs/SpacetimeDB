@@ -45,7 +45,7 @@ jobs:
           author_discord_id="$(
             jq -r \
               --arg u "${{ github.event.pull_request.user.login }}" \
-              'try .[$u] catch empty' \
+              '.[$u] // empty' \
               <<<"${DISCORD_USER_MAP}"
           )"
           if [ -z "${author_discord_id}" ]; then
