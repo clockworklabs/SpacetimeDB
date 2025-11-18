@@ -110,6 +110,17 @@ fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Execut
     }
 }
 
+/// Handle the return code from a view function using a result sink.
+/// For views, we treat the return code 2 as a successful return using the header format.
+fn handle_view_result_sink_code(code: i32, result: Vec<u8>) -> Result<ViewReturnData, ExecutionError> {
+    match code {
+        0 => Ok(ViewReturnData::from_raw_rows(result.into())),
+        2 => Ok(ViewReturnData::with_header(result.into())),
+        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
+        _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
+    }
+}
+
 const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 
 /// Invoke `typed_func` and assert that it doesn't yield.
@@ -452,8 +463,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| ViewReturnData::new(module_host_actor::ViewResultFormat::Rows, r.into()));
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
@@ -491,8 +501,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| ViewReturnData::new(module_host_actor::ViewResultFormat::Rows, r.into()));
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
