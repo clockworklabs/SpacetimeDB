@@ -71,7 +71,7 @@ impl SpaceDb {
         self.conn.with_read_only(Workload::Sql, |tx| {
             let ast = compile_sql(&self.conn, &AuthCtx::for_testing(), tx, sql)?;
             let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(self.conn.db.clone()));
-            let result = execute_sql(&self.conn, sql, ast, self.auth, Some(&subs))?;
+            let result = execute_sql(&self.conn, sql, ast, self.auth.clone(), Some(&subs))?;
             //remove comments to see which SQL worked. Can't collect it outside from lack of a hook in the external `sqllogictest` crate... :(
             //append_file(&std::path::PathBuf::from(".ok.sql"), sql)?;
             Ok(result)

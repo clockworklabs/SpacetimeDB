@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
 use spacetimedb_sql_parser::{
     ast::{
         sql::{SqlAst, SqlDelete, SqlInsert, SqlSelect, SqlSet, SqlShow, SqlUpdate},
@@ -14,7 +14,7 @@ use thiserror::Error;
 
 use crate::{
     check::Relvars,
-    errors::InvalidLiteral,
+    errors::{DmlOnView, InvalidLiteral},
     expr::{FieldProject, ProjectList, RelExpr, Relvar},
     type_limit,
 };
@@ -39,7 +39,7 @@ pub enum DML {
 
 impl DML {
     /// Returns the schema of the table on which this mutation applies
-    pub fn table_schema(&self) -> &TableSchema {
+    pub fn table_schema(&self) -> &TableOrViewSchema {
         match self {
             Self::Insert(insert) => &insert.table,
             Self::Delete(delete) => &delete.table,
@@ -59,17 +59,17 @@ impl DML {
 }
 
 pub struct TableInsert {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub rows: Box<[ProductValue]>,
 }
 
 pub struct TableDelete {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub filter: Option<Expr>,
 }
 
 pub struct TableUpdate {
-    pub table: Arc<TableSchema>,
+    pub table: Arc<TableOrViewSchema>,
     pub columns: Box<[(ColId, AlgebraicValue)]>,
     pub filter: Option<Expr>,
 }
@@ -96,13 +96,17 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
         .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
 
+    if schema.is_view() {
+        return Err(TypingError::DmlOnView(DmlOnView { view_name: table_name }));
+    }
+
     // Expect n fields
-    let n = schema.columns().len();
-    if fields.len() != schema.columns().len() {
+    let n = schema.public_columns().len();
+    if fields.len() != schema.public_columns().len() {
         return Err(TypingError::from(InsertFieldsError {
             table: table_name.into_string(),
             nfields: fields.len(),
-            ncols: schema.columns().len(),
+            ncols: schema.public_columns().len(),
         }));
     }
 
@@ -120,7 +124,7 @@ pub fn type_insert(insert: SqlInsert, tx: &impl SchemaView) -> TypingResult<Tabl
         for (value, ty) in row.into_iter().zip(
             schema
                 .as_ref()
-                .columns()
+                .public_columns()
                 .iter()
                 .map(|ColumnSchema { col_type, .. }| col_type),
         ) {
@@ -159,6 +163,10 @@ pub fn type_delete(delete: SqlDelete, tx: &impl SchemaView) -> TypingResult<Tabl
         .schema(&table_name)
         .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
+
+    if from.is_view() {
+        return Err(TypingError::DmlOnView(DmlOnView { view_name: table_name }));
+    }
     let mut vars = Relvars::default();
     vars.insert(table_name.clone(), from.clone());
     let expr = filter
@@ -181,6 +189,10 @@ pub fn type_update(update: SqlUpdate, tx: &impl SchemaView) -> TypingResult<Tabl
         .schema(&table_name)
         .ok_or_else(|| Unresolved::table(&table_name))
         .map_err(TypingError::from)?;
+
+    if schema.is_view() {
+        return Err(TypingError::DmlOnView(DmlOnView { view_name: table_name }));
+    }
     let mut values = Vec::new();
     for SqlSet(SqlIdent(field), lit) in assignments {
         let ColumnSchema {
@@ -312,7 +324,7 @@ pub fn type_and_rewrite_show(show: SqlShow, tx: &impl SchemaView) -> TypingResul
 
     let value_col_ty = table_schema
         .as_ref()
-        .get_column(1)
+        .get_column_by_name(VALUE_COLUMN)
         .map(|ColumnSchema { col_type, .. }| col_type)
         .ok_or_else(|| Unresolved::field(ST_VAR_NAME, VALUE_COLUMN))?;
 
@@ -428,7 +440,7 @@ impl TypeChecker for SqlChecker {
 }
 
 pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
-    match parse_sql(sql)?.resolve_sender(auth.caller) {
+    match parse_sql(sql)?.resolve_sender(auth.caller()) {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
         SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),
@@ -450,6 +462,8 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) 
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::Statement;
     use crate::ast::LogOp;
     use crate::check::{
@@ -457,8 +471,11 @@ mod tests {
         Relvars, SchemaView, TypingResult,
     };
     use crate::type_expr;
+    use spacetimedb::TableId;
+    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
     use spacetimedb_schema::def::ModuleDef;
+    use spacetimedb_schema::schema::{TableOrViewSchema, TableSchema};
     use spacetimedb_sql_parser::ast::{SqlExpr, SqlLiteral};
 
     fn module_def() -> ModuleDef {
@@ -542,5 +559,96 @@ mod tests {
         assert_eq!(build_query(2_501, ','), Err("Recursion limit exceeded".to_string()));
 
         assert!(build_query(2_500, ',').is_ok());
+    }
+
+    #[test]
+    fn views() {
+        struct SchemaViewer {
+            module_def: ModuleDef,
+        }
+
+        impl SchemaViewer {
+            fn schema_for_view(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
+                self.module_def
+                    .view(name)
+                    .map(|def| TableSchema::from_view_def_for_datastore(&self.module_def, def))
+                    .map(Arc::new)
+                    .map(TableOrViewSchema::from)
+                    .map(Arc::new)
+            }
+        }
+
+        impl SchemaView for SchemaViewer {
+            fn table_id(&self, _: &str) -> Option<TableId> {
+                None
+            }
+
+            fn schema(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
+                self.schema_for_view(name)
+            }
+
+            fn schema_for_table(&self, _: TableId) -> Option<Arc<TableOrViewSchema>> {
+                self.schema_for_view("v")
+            }
+
+            fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
+                Ok(vec![])
+            }
+        }
+
+        fn build_view_def(
+            builder: &mut RawModuleDefV9Builder,
+            name: &str,
+            columns: impl Into<ProductType>,
+            is_anonymous: bool,
+        ) {
+            let product_type = AlgebraicType::from(columns.into());
+            let type_ref = builder.add_algebraic_type([], name, product_type, true);
+            let return_type = AlgebraicType::array(AlgebraicType::Ref(type_ref));
+            builder.add_view(name, 0, true, is_anonymous, ProductType::unit(), return_type);
+        }
+
+        let mut builder = RawModuleDefV9Builder::new();
+        build_view_def(&mut builder, "v", [("a", AlgebraicType::String)], true);
+        let module_def: ModuleDef = builder.finish().try_into().expect("failed to generate module def");
+
+        let tx = SchemaViewer { module_def };
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select a from v",
+                msg: "Column projection on view",
+            },
+            TestCase {
+                sql: "select * from v where a = 'hello'",
+                msg: "Column selection on view",
+            },
+        ] {
+            let result = parse_and_type_sql(sql, &tx);
+            assert!(result.is_ok(), "{msg}");
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select b from v",
+                msg: "`v` does not have a column named `b`",
+            },
+            TestCase {
+                sql: "select sender from v",
+                msg: "`v` does not have a column named `sender`",
+            },
+            TestCase {
+                sql: "select arg_id from v",
+                msg: "`v` does not have a column named `arg_id`",
+            },
+        ] {
+            let result = parse_and_type_sql(sql, &tx);
+            assert!(result.is_err(), "{msg}");
+        }
     }
 }

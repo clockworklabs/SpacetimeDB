@@ -14,6 +14,12 @@ use spacetimedb_table::table::UniqueConstraintViolation;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
 
+pub const CALL_PROCEDURE_DUNDER: &str = "__call_procedure__";
+
+pub const CALL_VIEW_DUNDER: &str = "__call_view__";
+
+pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";
+
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like
@@ -384,8 +390,8 @@ pub struct AbiRuntimeError {
 }
 
 macro_rules! abi_funcs {
-    ($mac:ident) => {
-        $mac! {
+    ($link_sync:ident,  $link_async:ident) => {
+        $link_sync! {
             "spacetime_10.0"::table_id_from_name,
             "spacetime_10.0"::datastore_table_row_count,
             "spacetime_10.0"::datastore_table_scan_bsatn,
@@ -410,6 +416,12 @@ macro_rules! abi_funcs {
             "spacetime_10.0"::volatile_nonatomic_schedule_immediate,
 
             "spacetime_10.1"::bytes_source_remaining_length,
+
+            "spacetime_10.2"::get_jwt,
+        }
+
+        $link_async! {
+            "spacetime_10.3"::procedure_sleep_until,
         }
     };
 }

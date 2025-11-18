@@ -149,7 +149,7 @@ pub enum IndexAlgo<'a> {
 }
 
 pub struct ScheduleDesc<'a> {
-    pub reducer_name: &'a str,
+    pub reducer_or_procedure_name: &'a str,
     pub scheduled_at_column: u16,
 }
 
@@ -1009,7 +1009,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
             sys::Errno::UNIQUE_ALREADY_EXISTS => {
                 T::UniqueConstraintViolation::get().map(TryInsertError::UniqueConstraintViolation)
             }
-            // sys::Errno::AUTO_INC_OVERFLOW => Tbl::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
+            sys::Errno::AUTO_INC_OVERFLOW => T::AutoIncOverflow::get().map(TryInsertError::AutoIncOverflow),
             _ => None,
         };
         err.unwrap_or_else(|| panic!("unexpected insertion error: {e}"))

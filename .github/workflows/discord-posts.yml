@@ -10,7 +10,6 @@ jobs:
     if: github.event.pull_request.merged == true &&
       github.event.pull_request.base.ref == 'master'
     env:
-      CHECK_NAME: Internal Tests
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Set up GitHub CLI
@@ -21,34 +20,51 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Fetch Check Run Results
-        run: |
-          RESULT="$(gh pr checks "${{github.event.pull_request.html_url}}" --json 'name,state' |
-            jq -r ".[] | select(.name==\"${CHECK_NAME}\").state")"
-
-          if [ -z "$RESULT" ]; then
-            RESULT="The check did not run!"
-          fi
-
-          echo "CHECK_RESULT=${RESULT}" >> $GITHUB_ENV
-
       - name: Send Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-          CHECK_RESULT: ${{ env.CHECK_RESULT }}
           MENTION_ON_FAILURE: ${{ secrets.DEV_OPS_ROLE_ID }}
+          DISCORD_USER_MAP: ${{ secrets.DISCORD_USER_MAP }}
         run: |
-          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](${PR_URL})"
-          message+=$'\n'
-          message+="${CHECK_NAME} result: ${CHECK_RESULT}"
+          message="PR merged: [(#${PR_NUMBER}) ${PR_TITLE}](<${PR_URL}>)"
           # Note that anything besides success is treated as a failure (e.g. if the check did not run at all, or if it is still pending).
-          if [[ "${CHECK_RESULT}" != "SUCCESS" ]]; then
+          FAILED_CHECKS="$(
+            gh pr checks "${{github.event.pull_request.html_url}}" \
+              --json 'workflow,state,name' |
+              jq '.[]
+                | select(.workflow != "Discord notifications")
+                | select(.state != "SUCCESS" and .state != "NEUTRAL")
+              ' |
+              jq -r '"\(.workflow) / \(.name): \(.state)"'
+          )"
+
+          # Lookup PR author's Discord ID from the provided JSON map (if any)
+          author_discord_id="$(
+            jq -r \
+              --arg u "${{ github.event.pull_request.user.login }}" \
+              'try .[$u] catch empty' \
+              <<<"${DISCORD_USER_MAP}"
+          )"
+          if [ -z "${author_discord_id}" ]; then
+            echo "Warning: PR author not found not found in USER_LOOKUP_JSON"
+          fi
+
+          message+=$'\n'
+          if [[ -z "${FAILED_CHECKS}" ]]; then
+            message+='All checks passed.'
+          else
+            message+="${FAILED_CHECKS}"
+            message+=$'\n'
             # This uses special Discord syntax for pinging a particular role.
             # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
-            message+=" (cc <@&${MENTION_ON_FAILURE}>)"
+            message+=" (cc <@&${MENTION_ON_FAILURE}>"
+            if [[ -n "${author_discord_id}" ]]; then
+              message+=" <@${author_discord_id}>"
+            fi
+            message+=")"
           fi
           # Use `jq` to construct the json data blob in the format required by the webhook.
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"

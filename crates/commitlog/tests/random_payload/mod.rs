@@ -1,5 +1,7 @@
 use std::num::NonZeroU16;
 
+use log::info;
+use spacetimedb_commitlog::tests::helpers::enable_logging;
 use spacetimedb_commitlog::{payload, Commitlog, Options};
 use spacetimedb_paths::server::CommitLogDir;
 use spacetimedb_paths::FromPathUnchecked;
@@ -19,6 +21,7 @@ fn smoke() {
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
+        None,
     )
     .unwrap();
 
@@ -48,6 +51,7 @@ fn resets() {
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
+        None,
     )
     .unwrap();
 
@@ -77,6 +81,8 @@ fn resets() {
 
 #[test]
 fn compression() {
+    enable_logging();
+
     let root = tempdir().unwrap();
     let clog = Commitlog::open(
         CommitLogDir::from_path_unchecked(root.path()),
@@ -85,6 +91,7 @@ fn compression() {
             max_records_in_commit: NonZeroU16::MIN,
             ..Options::default()
         },
+        None,
     )
     .unwrap();
 
@@ -98,11 +105,13 @@ fn compression() {
 
     let uncompressed_size = clog.size_on_disk().unwrap();
 
-    let mut segments_to_compress = clog.existing_segment_offsets().unwrap();
-    segments_to_compress.retain(|&off| off < 20);
-    clog.compress_segments(&segments_to_compress).unwrap();
+    let segments = clog.existing_segment_offsets().unwrap();
+    let segments_to_compress = &segments[..segments.len() / 2];
+    info!("segments: {segments:?} compressing: {segments_to_compress:?}");
+    clog.compress_segments(segments_to_compress).unwrap();
 
-    assert!(clog.size_on_disk().unwrap() < uncompressed_size);
+    let compressed_size = clog.size_on_disk().unwrap();
+    assert!(compressed_size.total_bytes < uncompressed_size.total_bytes);
 
     assert!(clog
         .transactions(&payload::ArrayDecoder)

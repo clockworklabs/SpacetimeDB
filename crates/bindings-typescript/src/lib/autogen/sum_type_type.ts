@@ -23,6 +23,8 @@ declare type __keep_SumTypeVariant = SumTypeVariant;
 export type SumType = {
   variants: SumTypeVariant[];
 };
+let _cached_SumType_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -32,16 +34,15 @@ export const SumType = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
-      elements: [
-        {
-          name: 'variants',
-          algebraicType: __AlgebraicTypeValue.Array(
-            SumTypeVariant.getTypeScriptAlgebraicType()
-          ),
-        },
-      ],
+    if (_cached_SumType_type_value) return _cached_SumType_type_value;
+    _cached_SumType_type_value = __AlgebraicTypeValue.Product({ elements: [] });
+    _cached_SumType_type_value.value.elements.push({
+      name: 'variants',
+      algebraicType: __AlgebraicTypeValue.Array(
+        SumTypeVariant.getTypeScriptAlgebraicType()
+      ),
     });
+    return _cached_SumType_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: SumType): void {

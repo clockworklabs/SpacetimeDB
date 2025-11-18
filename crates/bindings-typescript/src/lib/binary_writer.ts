@@ -29,6 +29,10 @@ export default class BinaryWriter {
     return this.#buffer.slice(0, this.#offset);
   }
 
+  get offset(): number {
+    return this.#offset;
+  }
+
   writeUInt8Array(value: Uint8Array): void {
     const length = value.length;
 

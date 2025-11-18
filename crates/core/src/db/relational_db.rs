@@ -5,19 +5,23 @@ use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
 use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
+use bytes::Bytes;
 use enum_map::EnumMap;
 use fs2::FileExt;
-use spacetimedb_commitlog as commitlog;
+use spacetimedb_commitlog::repo::OnNewSegmentFn;
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
-use spacetimedb_datastore::error::{DatastoreError, TableError};
+use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
+use spacetimedb_datastore::system_tables::{
+    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -31,17 +35,21 @@ use spacetimedb_datastore::{
     traits::TxData,
 };
 use spacetimedb_durability as durability;
+use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::st_var::StVarValue;
-use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
+use spacetimedb_lib::{bsatn, ConnectionId};
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
-use spacetimedb_schema::def::{ModuleDef, TableDef};
+use spacetimedb_sats::{
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace, WithTypespace,
+};
+use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
 };
@@ -56,7 +64,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fs::File;
 use std::io;
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -623,11 +631,15 @@ impl RelationalDB {
         self.database_identity
     }
 
+    pub fn owner_identity(&self) -> Identity {
+        self.owner_identity
+    }
+
     /// The number of bytes on disk occupied by the durability layer.
     ///
     /// If this is an in-memory instance, `Ok(0)` is returned.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
-        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        self.disk_size_fn.as_ref().map_or(Ok(<_>::default()), |f| f())
     }
 
     /// The size in bytes of all of the in-memory data in this database.
@@ -1054,6 +1066,32 @@ impl RelationalDB {
         Ok(self.inner.create_table_mut_tx(tx, schema)?)
     }
 
+    pub fn drop_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
+        let table_name = self
+            .table_name_from_id_mut(tx, table_id)?
+            .map(|name| name.to_string())
+            .unwrap_or_default();
+        Ok(self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
+            DB_METRICS
+                .rdb_num_table_rows
+                .with_label_values(&self.database_identity, &table_id.into(), &table_name)
+                .set(0)
+        })?)
+    }
+
+    pub fn create_view(
+        &self,
+        tx: &mut MutTx,
+        module_def: &ModuleDef,
+        view_def: &ViewDef,
+    ) -> Result<(ViewId, TableId), DBError> {
+        Ok(tx.create_view(module_def, view_def)?)
+    }
+
+    pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
+        Ok(tx.drop_view(view_id)?)
+    }
+
     pub fn create_table_for_test_with_the_works(
         &self,
         name: &str,
@@ -1131,19 +1169,6 @@ impl RelationalDB {
         self.create_table_for_test_with_the_works(name, schema, &indexes[..], &[], StAccess::Public)
     }
 
-    pub fn drop_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<(), DBError> {
-        let table_name = self
-            .table_name_from_id_mut(tx, table_id)?
-            .map(|name| name.to_string())
-            .unwrap_or_default();
-        Ok(self.inner.drop_table_mut_tx(tx, table_id).map(|_| {
-            DB_METRICS
-                .rdb_num_table_rows
-                .with_label_values(&self.database_identity, &table_id.into(), &table_name)
-                .set(0)
-        })?)
-    }
-
     /// Rename a table.
     ///
     /// Sets the name of the table to `new_name` regardless of the previous value. This is a
@@ -1152,6 +1177,10 @@ impl RelationalDB {
     /// If the table is not found or is a system table, an error is returned.
     pub fn rename_table(&self, tx: &mut MutTx, table_id: TableId, new_name: &str) -> Result<(), DBError> {
         Ok(self.inner.rename_table_mut_tx(tx, table_id, new_name)?)
+    }
+
+    pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewId>, DBError> {
+        Ok(self.inner.view_id_from_name_mut_tx(tx, view_name)?)
     }
 
     pub fn table_id_from_name_mut(&self, tx: &MutTx, table_name: &str) -> Result<Option<TableId>, DBError> {
@@ -1335,7 +1364,15 @@ impl RelationalDB {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(TableId, impl Iterator<Item = RowRef<'a>>), DBError> {
+    ) -> Result<
+        (
+            TableId,
+            Bound<AlgebraicValue>,
+            Bound<AlgebraicValue>,
+            impl Iterator<Item = RowRef<'a>>,
+        ),
+        DBError,
+    > {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
     }
 
@@ -1371,10 +1408,26 @@ impl RelationalDB {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
-    /// Clear all rows from a table without dropping it.
+    /// Clears all rows from a table without dropping it.
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
+    }
+
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
+        Ok(tx.clear_all_views()?)
+    }
+
+    /// Empties the system tables tracking clients.
+    pub fn clear_all_clients(&self) -> Result<(), DBError> {
+        self.with_auto_commit(Workload::Internal, |mut_tx| {
+            self.clear_all_views(mut_tx)?;
+            self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+            self.clear_table(mut_tx, ST_CLIENT_ID)?;
+            self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
+            Ok(())
+        })
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
@@ -1472,8 +1525,128 @@ impl RelationalDB {
             .into()
         })
     }
-}
 
+    /// Write `bytes` into a (sender) view's backing table.
+    ///
+    /// # Process
+    /// 1. Delete all rows for `sender` from the view's backing table
+    /// 2. Deserialize `bytes`
+    /// 3. Insert the new rows into the backing table
+    ///
+    /// # Arguments
+    /// * `tx` - Mutable transaction context
+    /// * `table_id` - The id of the view's backing table
+    /// * `sender` - The calling identity of the view being updated
+    /// * `row_type` - Expected return type of the view
+    /// * `bytes` - An array of product values (bsatn encoded)
+    /// * `typespace` - Type information for deserialization
+    #[allow(clippy::too_many_arguments)]
+    pub fn materialize_view(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        sender: Identity,
+        row_type: AlgebraicTypeRef,
+        bytes: Bytes,
+        typespace: &Typespace,
+    ) -> Result<(), DBError> {
+        // Delete rows for `sender` from the backing table
+        let rows_to_delete = self
+            .iter_by_col_eq_mut(tx, table_id, ColId(0), &sender.into())?
+            .map(|res| res.pointer())
+            .collect::<Vec<_>>();
+        self.delete(tx, table_id, rows_to_delete);
+
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
+        let rows = seed
+            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
+
+        // Insert new rows into the backing table
+        for product in rows
+            .into_array()
+            .map_err(|_| ViewError::SerializeRow)
+            .map_err(DatastoreError::from)?
+            .into_iter()
+        {
+            let product = product
+                .into_product()
+                .map_err(|_| ViewError::SerializeRow)
+                .map_err(DatastoreError::from)?;
+            self.insert(
+                tx,
+                table_id,
+                &ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements))
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    /// Write `bytes` into an anonymous view's backing table.
+    ///
+    /// # Process
+    /// 1. Clear the view's backing table
+    /// 2. Deserialize `bytes`
+    /// 3. Insert the new rows into the backing table
+    ///
+    /// # Arguments
+    /// * `tx` - Mutable transaction context
+    /// * `table_id` - The id of the view's backing table
+    /// * `row_type` - Expected return type of the view
+    /// * `bytes` - An array of product values (bsatn encoded)
+    /// * `typespace` - Type information for deserialization
+    #[allow(clippy::too_many_arguments)]
+    pub fn materialize_anonymous_view(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        row_type: AlgebraicTypeRef,
+        bytes: Bytes,
+        typespace: &Typespace,
+    ) -> Result<(), DBError> {
+        // Clear entire backing table
+        self.clear_table(tx, table_id)?;
+
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
+        let rows = seed
+            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
+
+        // Insert new rows into the backing table
+        for product in rows
+            .into_array()
+            .map_err(|_| ViewError::SerializeRow)
+            .map_err(DatastoreError::from)?
+            .into_iter()
+        {
+            self.insert(
+                tx,
+                table_id,
+                &product
+                    .into_product()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
+        }
+
+        Ok(())
+    }
+}
 #[allow(unused)]
 #[derive(Clone)]
 struct LockFile {
@@ -1563,9 +1736,20 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 ///
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
-pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalDurability, DiskSizeFn)> {
+pub async fn local_durability(
+    commitlog_dir: CommitLogDir,
+    snapshot_worker: Option<&SnapshotWorker>,
+) -> io::Result<(LocalDurability, DiskSizeFn)> {
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
+    let on_new_segment = snapshot_worker.map(|snapshot_worker| {
+        let snapshot_worker = snapshot_worker.clone();
+        Arc::new(move || {
+            // Ignore errors: we don't want our durability to die and start throwing away queued TXes
+            // just because the snapshot worker shut down.
+            snapshot_worker.request_snapshot_ignore_closed();
+        }) as Arc<OnNewSegmentFn>
+    });
     let local = spawn_rayon(move || {
         durability::Local::open(
             commitlog_dir,
@@ -1577,6 +1761,9 @@ pub async fn local_durability(commitlog_dir: CommitLogDir) -> io::Result<(LocalD
                 },
                 ..Default::default()
             },
+            // Give the durability a handle to request a new snapshot run,
+            // which it will send down whenever we rotate commitlog segments.
+            on_new_segment,
         )
     })
     .await
@@ -1819,14 +2006,15 @@ pub mod tests_utils {
             owner_identity: Identity,
             want_snapshot_repo: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
-            let history = local.clone();
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), db_identity, replica_id)
                         .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
                 })
                 .transpose()?;
+
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log(), snapshots.as_ref()))?;
+            let history = local.clone();
 
             let persistence = Persistence {
                 durability: local.clone(),
@@ -1957,17 +2145,18 @@ pub mod tests_utils {
             rt: tokio::runtime::Handle,
             want_snapshot_repo: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log()))?;
+            let snapshots = want_snapshot_repo
+                .then(|| {
+                    open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)
+                        .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
+                })
+                .transpose()?;
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log(), snapshots.as_ref()))?;
             let history = local.clone();
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
-                snapshots: want_snapshot_repo
-                    .then(|| {
-                        open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)
-                            .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
-                    })
-                    .transpose()?,
+                snapshots,
             };
             let db = Self::open_db(root, history, Some(persistence), None, 0)?;
 
@@ -2044,6 +2233,57 @@ pub mod tests_utils {
         let (gen_cols, row_ref, _) = db.insert(tx, table_id, &to_vec(row).unwrap())?;
         let gen_cols = row_ref.project(&gen_cols).unwrap();
         Ok((gen_cols, row_ref))
+    }
+
+    /// Allocate a backing table in the datastore for a view
+    pub fn create_view_for_test(
+        db: &RelationalDB,
+        name: &str,
+        schema: &[(&str, AlgebraicType)],
+        is_anonymous: bool,
+    ) -> Result<(ViewId, TableId), DBError> {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        // Add the view's product type to the typespace
+        let type_ref = builder.add_algebraic_type(
+            [],
+            name,
+            AlgebraicType::Product(ProductType::from_iter(schema.iter().cloned())),
+            true,
+        );
+
+        builder.add_view(
+            name,
+            0,
+            true,
+            is_anonymous,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(type_ref)),
+        );
+
+        let module_def: ModuleDef = builder.finish().try_into()?;
+        let view_def: &ViewDef = module_def.view(name).expect("view not found");
+
+        // Allocate a backing table and return its table id
+        db.with_auto_commit(Workload::Internal, |tx| db.create_view(tx, &module_def, view_def))
+    }
+
+    /// Insert a row into a view's backing table
+    pub fn insert_into_view<'a>(
+        db: &'a RelationalDB,
+        tx: &'a mut MutTx,
+        table_id: TableId,
+        sender: Option<Identity>,
+        row: ProductValue,
+    ) -> Result<RowRef<'a>, DBError> {
+        let meta_cols = match sender {
+            Some(identity) => vec![identity.into()],
+            None => vec![],
+        };
+        let cols = meta_cols.into_iter().chain(row.elements);
+        let row = ProductValue::from_iter(cols);
+        db.insert(tx, table_id, &to_vec(&row).unwrap())
+            .map(|(_, row_ref, _)| row_ref)
     }
 
     /// An in-memory commitlog used for tests that want to replay a known history.
@@ -2123,7 +2363,6 @@ mod tests {
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
     use anyhow::bail;
-    use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
@@ -2823,43 +3062,37 @@ mod tests {
         let stdb = TestDB::durable().expect("failed to create TestDB");
 
         let timestamp = Timestamp::now();
-        let ctx = ReducerContext {
-            name: "abstract_concrete_proxy_factory_impl".into(),
-            caller_identity: Identity::__dummy(),
-            caller_connection_id: ConnectionId::ZERO,
-            timestamp,
-            arg_bsatn: Bytes::new(),
+        let workload = |name: &str| {
+            Workload::Reducer(ReducerContext {
+                name: name.into(),
+                caller_identity: Identity::__dummy(),
+                caller_connection_id: ConnectionId::ZERO,
+                timestamp,
+                arg_bsatn: Bytes::new(),
+            })
         };
+        let workload1 = workload("abstract_concrete_proxy_factory_impl");
 
         let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
         let schema = table("test_table", row_ty.clone(), |builder| builder);
 
         // Create an empty transaction
         {
-            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx.clone()));
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1.clone());
             stdb.commit_tx(tx).expect("failed to commit empty transaction");
         }
 
         // Create an empty transaction pretending to be an
         // `__identity_connected__` call.
         {
-            let tx = stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                Workload::Reducer(ReducerContext {
-                    name: "__identity_connected__".into(),
-                    caller_identity: Identity::__dummy(),
-                    caller_connection_id: ConnectionId::ZERO,
-                    timestamp,
-                    arg_bsatn: Bytes::new(),
-                }),
-            );
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload("__identity_connected__"));
             stdb.commit_tx(tx)
                 .expect("failed to commit empty __identity_connected__ transaction");
         }
 
         // Create a non-empty transaction including reducer info
         let table_id = {
-            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx));
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1);
             let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
             insert(&stdb, &mut tx, table_id, &product!(AlgebraicValue::I32(0))).expect("failed to insert row");
             stdb.commit_tx(tx).expect("failed to commit tx");
@@ -2994,7 +3227,8 @@ mod tests {
             row_ty,
         }));
         {
-            let clog = Commitlog::<()>::open(dir.commit_log(), Default::default()).expect("failed to open commitlog");
+            let clog =
+                Commitlog::<()>::open(dir.commit_log(), Default::default(), None).expect("failed to open commitlog");
             let decoder = Decoder(Rc::clone(&inputs));
             clog.fold_transactions(decoder).unwrap();
         }

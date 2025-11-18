@@ -7,7 +7,7 @@ use spacetimedb_sats::{bsatn::DecodeError, AlgebraicType, AlgebraicTypeRef};
 use std::borrow::Cow;
 use std::fmt;
 
-use crate::def::ScopedTypeName;
+use crate::def::{FunctionKind, ScopedTypeName};
 use crate::identifier::Identifier;
 use crate::type_for_generate::ClientCodegenError;
 
@@ -82,6 +82,11 @@ pub enum ValidationError {
         start: Option<i128>,
         max_value: Option<i128>,
     },
+    #[error("View {view} has invalid return type {ty}")]
+    InvalidViewReturnType {
+        view: RawIdentifier,
+        ty: PrettyAlgebraicType,
+    },
     #[error("Table {table} has invalid product_type_ref {ref_}")]
     InvalidProductTypeRef {
         table: RawIdentifier,
@@ -108,11 +113,12 @@ pub enum ValidationError {
     MissingPrimaryKeyUniqueConstraint { column: RawColumnName },
     #[error("Table {table} should have a type definition for its product_type_element, but does not")]
     TableTypeNameMismatch { table: Identifier },
-    #[error("Schedule {schedule} refers to a scheduled reducer {reducer} that does not exist")]
-    MissingScheduledReducer { schedule: Box<str>, reducer: Identifier },
-    #[error("Scheduled reducer {reducer} expected to have type {expected}, but has type {actual}")]
-    IncorrectScheduledReducerParams {
-        reducer: RawIdentifier,
+    #[error("Schedule {schedule} refers to a scheduled reducer or procedure {function} that does not exist")]
+    MissingScheduledFunction { schedule: Box<str>, function: Identifier },
+    #[error("Scheduled {function_kind} {function_name} expected to have type {expected}, but has type {actual}")]
+    IncorrectScheduledFunctionParams {
+        function_name: RawIdentifier,
+        function_kind: FunctionKind,
         expected: PrettyAlgebraicType,
         actual: PrettyAlgebraicType,
     },
@@ -130,6 +136,8 @@ pub enum ValidationError {
     MultipleColumnDefaultValues { table: RawIdentifier, col_id: ColId },
     #[error("Table {table} not found")]
     TableNotFound { table: RawIdentifier },
+    #[error("Name {name} is used for multiple reducers, procedures and/or views")]
+    DuplicateFunctionName { name: Identifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.
@@ -173,6 +181,22 @@ pub enum TypeLocation<'a> {
         position: usize,
         arg_name: Option<Cow<'a, str>>,
     },
+    /// A procedure argument.
+    ProcedureArg {
+        procedure_name: Cow<'a, str>,
+        position: usize,
+        arg_name: Option<Cow<'a, str>>,
+    },
+    /// A view argument.
+    ViewArg {
+        view_name: Cow<'a, str>,
+        position: usize,
+        arg_name: Option<Cow<'a, str>>,
+    },
+    /// A procedure return type.
+    ProcedureReturn { procedure_name: Cow<'a, str> },
+    /// A view return type.
+    ViewReturn { view_name: Cow<'a, str> },
     /// A type in the typespace.
     InTypespace {
         /// The reference to the type within the typespace.
@@ -193,6 +217,30 @@ impl TypeLocation<'_> {
                 position,
                 arg_name: arg_name.map(|s| s.to_string().into()),
             },
+            TypeLocation::ProcedureArg {
+                procedure_name,
+                position,
+                arg_name,
+            } => TypeLocation::ProcedureArg {
+                procedure_name: procedure_name.to_string().into(),
+                position,
+                arg_name: arg_name.map(|s| s.to_string().into()),
+            },
+            TypeLocation::ViewArg {
+                view_name,
+                position,
+                arg_name,
+            } => TypeLocation::ViewArg {
+                view_name: view_name.to_string().into(),
+                position,
+                arg_name: arg_name.map(|s| s.to_string().into()),
+            },
+            Self::ProcedureReturn { procedure_name } => TypeLocation::ProcedureReturn {
+                procedure_name: procedure_name.to_string().into(),
+            },
+            Self::ViewReturn { view_name } => TypeLocation::ViewReturn {
+                view_name: view_name.to_string().into(),
+            },
             // needed to convince rustc this is allowed.
             TypeLocation::InTypespace { ref_ } => TypeLocation::InTypespace { ref_ },
         }
@@ -212,6 +260,34 @@ impl fmt::Display for TypeLocation<'_> {
                     write!(f, " (`{arg_name}`)")?;
                 }
                 Ok(())
+            }
+            TypeLocation::ProcedureArg {
+                procedure_name,
+                position,
+                arg_name,
+            } => {
+                write!(f, "procedure `{procedure_name}` argument {position}")?;
+                if let Some(arg_name) = arg_name {
+                    write!(f, " (`{arg_name}`)")?;
+                }
+                Ok(())
+            }
+            TypeLocation::ViewArg {
+                view_name,
+                position,
+                arg_name,
+            } => {
+                write!(f, "view `{view_name}` argument {position}")?;
+                if let Some(arg_name) = arg_name {
+                    write!(f, " (`{arg_name}`)")?;
+                }
+                Ok(())
+            }
+            TypeLocation::ProcedureReturn { procedure_name } => {
+                write!(f, "procedure `{procedure_name}` return value")
+            }
+            TypeLocation::ViewReturn { view_name } => {
+                write!(f, "view `{view_name}` return value")
             }
             TypeLocation::InTypespace { ref_ } => {
                 write!(f, "typespace ref `{ref_}`")

@@ -1,28 +1,57 @@
 {
-  "name": "spacetime-docs",
-  "version": "1.0.0",
-  "description": "This repository contains the markdown files which are used to display documentation on our [website](https://spacetimedb.com/docs).",
-  "main": "index.js",
+  "name": "docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "docusaurus": "docusaurus",
+    "dev": "docusaurus start",
+    "build": "docusaurus build",
+    "swizzle": "docusaurus swizzle",
+    "deploy": "docusaurus deploy",
+    "clear": "docusaurus clear",
+    "serve": "docusaurus serve",
+    "write-translations": "docusaurus write-translations",
+    "write-heading-ids": "docusaurus write-heading-ids",
+    "typecheck": "tsc"
+  },
   "dependencies": {
-    "github-slugger": "^2.0.0"
+    "@docusaurus/core": "3.9.1",
+    "@docusaurus/plugin-content-docs": "^3.9.2",
+    "@docusaurus/preset-classic": "3.9.1",
+    "@docusaurus/theme-common": "^3.9.1",
+    "@easyops-cn/docusaurus-search-local": "^0.49.2",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/source-code-pro": "^5.2.7",
+    "@inkeep/cxkit-docusaurus": "^0.5.98",
+    "@inkeep/cxkit-react": "^0.5.101",
+    "@inkeep/widgets": "^0.2.292",
+    "@mdx-js/react": "^3.0.0",
+    "@shikijs/rehype": "^3.3.0",
+    "clsx": "^2.0.0",
+    "prism-react-renderer": "^2.3.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "shiki": "^3.3.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.2",
-    "prettier": "^3.3.3",
-    "remark-parse": "^11.0.0",
-    "remark-stringify": "^11.0.0",
-    "tsx": "^4.19.2",
-    "typescript": "^5.6.3",
-    "unified": "^11.0.5",
-    "unist-util-visit": "^5.0.0"
+    "@docusaurus/module-type-aliases": "3.9.1",
+    "@docusaurus/tsconfig": "3.9.1",
+    "@docusaurus/types": "3.9.1",
+    "typescript": "~5.6.2"
   },
-  "scripts": {
-    "build": "tsc --project ./tsconfig.build.json && pnpm fix-markdown && prettier --write docs/nav.js",
-    "fix-markdown": "node scripts/markdown-fix.mjs docs/cli-reference.md",
-    "format": "pnpm fix-markdown && prettier . --write --ignore-path .prettierignore",
-    "lint": "eslint . && prettier . --check --ignore-path .prettierignore",
-    "check-links": "tsx scripts/checkLinks.ts"
+  "browserslist": {
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
   },
-  "author": "Clockwork Labs",
-  "license": "ISC"
+  "engines": {
+    "node": ">=18.0"
+  }
 }

@@ -8,10 +8,12 @@
 //
 // (private documentation for the macro authors is totally fine here and you SHOULD write that!)
 
+mod procedure;
 mod reducer;
 mod sats;
 mod table;
 mod util;
+mod view;
 
 use proc_macro::TokenStream as StdTokenStream;
 use proc_macro2::TokenStream;
@@ -105,10 +107,26 @@ mod sym {
 }
 
 #[proc_macro_attribute]
+pub fn procedure(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = procedure::ProcedureArgs::parse(args)?;
+        procedure::procedure_impl(args, original_function)
+    })
+}
+
+#[proc_macro_attribute]
 pub fn reducer(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
     cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
         let args = reducer::ReducerArgs::parse(args)?;
         reducer::reducer_impl(args, original_function)
+    })
+}
+
+#[proc_macro_attribute]
+pub fn view(args: StdTokenStream, item: StdTokenStream) -> StdTokenStream {
+    cvt_attr::<ItemFn>(args, item, quote!(), |args, original_function| {
+        let args = view::ViewArgs::parse(args, &original_function.sig.ident)?;
+        view::view_impl(args, original_function)
     })
 }
 

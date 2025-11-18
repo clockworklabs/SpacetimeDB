@@ -5,9 +5,9 @@ use anyhow::Context;
 use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
-use crate::energy::{EnergyQuanta, ReducerBudget};
+use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
-use crate::host::module_host::ModuleRuntime;
+use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
 
 mod wasm_instance_env;
@@ -110,7 +110,10 @@ pub type Module = WasmModuleHostActor<WasmtimeModule>;
 pub type ModuleInstance = WasmModuleInstance<WasmtimeInstance>;
 
 impl ModuleRuntime for WasmtimeRuntime {
-    fn make_actor(&self, mcc: ModuleCreationContext) -> anyhow::Result<super::module_host::Module> {
+    fn make_actor(
+        &self,
+        mcc: ModuleCreationContext,
+    ) -> anyhow::Result<(super::module_host::Module, super::module_host::Instance)> {
         let module =
             wasmtime::Module::new(&self.engine, &mcc.program.bytes).map_err(ModuleCreationError::WasmCompileError)?;
 
@@ -128,9 +131,11 @@ impl ModuleRuntime for WasmtimeRuntime {
 
         let module = WasmtimeModule::new(module);
 
-        WasmModuleHostActor::new(mcc, module)
-            .map_err(Into::into)
-            .map(super::module_host::Module::Wasm)
+        let (module, init_inst) = WasmModuleHostActor::new(mcc.into_limited(), module)?;
+        let module = super::module_host::Module::Wasm(module);
+        let init_inst = Instance::Wasm(Box::new(init_inst));
+
+        Ok((module, init_inst))
     }
 }
 
@@ -149,8 +154,8 @@ impl WasmtimeFuel {
     const QUANTA_MULTIPLIER: u64 = 1_000;
 }
 
-impl From<ReducerBudget> for WasmtimeFuel {
-    fn from(v: ReducerBudget) -> Self {
+impl From<FunctionBudget> for WasmtimeFuel {
+    fn from(v: FunctionBudget) -> Self {
         // ReducerBudget being u64 is load-bearing here - if it was u128 and v was ReducerBudget::MAX,
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
@@ -159,9 +164,9 @@ impl From<ReducerBudget> for WasmtimeFuel {
     }
 }
 
-impl From<WasmtimeFuel> for ReducerBudget {
+impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        ReducerBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
     }
 }
 
@@ -205,6 +210,18 @@ impl WasmPointee for spacetimedb_lib::Identity {
     }
     fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
         Ok(Self::from_byte_array(*mem.deref_array(ptr)?))
+    }
+}
+
+impl WasmPointee for spacetimedb_lib::ConnectionId {
+    type Pointer = u32;
+    fn write_to(self, mem: &mut MemView, ptr: Self::Pointer) -> Result<(), MemError> {
+        let bytes = self.as_le_byte_array();
+        mem.deref_slice_mut(ptr, bytes.len() as u32)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+    fn read_from(mem: &mut MemView, ptr: Self::Pointer) -> Result<Self, MemError> {
+        Ok(Self::from_le_byte_array(*mem.deref_array(ptr)?))
     }
 }
 

@@ -6,9 +6,18 @@ on:
       - master
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
+
 jobs:
   unity-testsuite:
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        --cgroupns=host
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}
@@ -77,7 +86,7 @@ jobs:
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
         env:
           # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
           CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
@@ -153,6 +162,9 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
+        # We need this to support "Docker in Docker"
+      - name: Start Docker daemon
+        run: /usr/local/bin/start-docker.sh
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
@@ -167,4 +179,4 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
         # Skip if this is an external contribution.
         # The license secrets will be empty, so the step would fail anyway.
-        if: ${{ !github.event.pull_request.head.repo.fork }}
+        if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}

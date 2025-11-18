@@ -55,13 +55,13 @@ struct TESTCLIENT_API FLargeTableType
     FSpacetimeDBInt256 L;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    bool M = false;;
+    bool M = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    float N = 0.f;
+    float N = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    double O = 0.f;
+    double O = 0.0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FString P;

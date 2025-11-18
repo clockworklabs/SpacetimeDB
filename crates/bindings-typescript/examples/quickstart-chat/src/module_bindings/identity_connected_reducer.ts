@@ -29,6 +29,8 @@ import {
 } from 'spacetimedb';
 
 export type IdentityConnected = {};
+let _cached_IdentityConnected_type_value: __AlgebraicTypeType | null = null;
+
 /**
  * An object for generated helper functions.
  */
@@ -38,9 +40,13 @@ export const IdentityConnected = {
    * This function is derived from the AlgebraicType used to generate this type.
    */
   getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    return __AlgebraicTypeValue.Product({
+    if (_cached_IdentityConnected_type_value)
+      return _cached_IdentityConnected_type_value;
+    _cached_IdentityConnected_type_value = __AlgebraicTypeValue.Product({
       elements: [],
     });
+    _cached_IdentityConnected_type_value.value.elements.push();
+    return _cached_IdentityConnected_type_value;
   },
 
   serialize(writer: __BinaryWriter, value: IdentityConnected): void {

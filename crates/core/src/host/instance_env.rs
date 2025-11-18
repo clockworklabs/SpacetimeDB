@@ -4,11 +4,13 @@ use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::{Identity, Timestamp};
+use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -17,8 +19,10 @@ use spacetimedb_sats::{
 };
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
+use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::Instant;
 use std::vec::IntoIter;
 
 #[derive(Clone)]
@@ -26,8 +30,14 @@ pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
-    /// The timestamp the current reducer began running.
+    /// The timestamp the current function began running.
     pub start_time: Timestamp,
+    /// The instant the current function began running.
+    pub start_instant: Instant,
+    /// The type of the last, including current, function to be executed by this environment.
+    pub func_type: FuncCallType,
+    /// The name of the last, including current, function to be executed by this environment.
+    pub func_name: String,
 }
 
 #[derive(Clone, Default)]
@@ -169,6 +179,11 @@ impl InstanceEnv {
             scheduler,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
+            start_instant: Instant::now(),
+            // arbitrary - change if we need to recognize that an `InstanceEnv` has never
+            // run a function
+            func_type: FuncCallType::Reducer,
+            func_name: String::from("<initializing>"),
         }
     }
 
@@ -177,13 +192,21 @@ impl InstanceEnv {
         &self.replica_ctx.database.database_identity
     }
 
-    /// Signal to this `InstanceEnv` that a reducer call is beginning.
-    pub fn start_reducer(&mut self, ts: Timestamp) {
+    /// Signal to this `InstanceEnv` that a function call is beginning.
+    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
+        self.start_instant = Instant::now();
+        self.func_type = func_type;
+        name.clone_into(&mut self.func_name);
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
+    }
+
+    pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
+        let tx = &mut *self.get_tx()?;
+        Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -215,7 +238,7 @@ impl InstanceEnv {
         }
 
         let record = Record {
-            ts: chrono::Utc::now(),
+            ts: Self::now_for_logging(),
             target: None,
             filename: None,
             line_number: None,
@@ -223,6 +246,12 @@ impl InstanceEnv {
             message: &message,
         };
         self.console_log(LogLevel::Info, &record, &Noop);
+    }
+
+    /// Returns the current time suitable for logging.
+    pub fn now_for_logging() -> DateTime<Utc> {
+        // TODO: figure out whether to use walltime now or logical reducer now (env.reducer_start).
+        chrono::Utc::now()
     }
 
     /// Project `cols` in `row_ref` encoded in BSATN to `buffer`
@@ -361,7 +390,7 @@ impl InstanceEnv {
         let tx = &mut *self.tx.get()?;
 
         // Find all rows in the table to delete.
-        let (table_id, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
         // Re. `SmallVec`, `delete_by_field` only cares about 1 element, so optimize for that.
         let rows_to_delete = iter.map(|row_ref| row_ref.pointer()).collect::<SmallVec<[_; 1]>>();
 
@@ -446,7 +475,11 @@ impl InstanceEnv {
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
-        stdb.table_row_count_mut(tx, table_id).ok_or(NodesError::TableNotFound)
+        stdb.table_row_count_mut(tx, table_id)
+            .ok_or(NodesError::TableNotFound)
+            .inspect(|_| {
+                tx.record_table_scan(&self.func_type, table_id);
+            })
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -469,6 +502,8 @@ impl InstanceEnv {
             &mut rows_scanned,
             &mut bytes_scanned,
         );
+
+        tx.record_table_scan(&self.func_type, table_id);
 
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -494,10 +529,12 @@ impl InstanceEnv {
         let mut bytes_scanned = 0;
 
         // Open index iterator
-        let (_, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
+        let (table_id, lower, upper, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
 
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
+
+        tx.record_index_scan(&self.func_type, table_id, index_id, lower, upper);
 
         tx.metrics.index_seeks += 1;
         tx.metrics.rows_scanned += rows_scanned;
@@ -562,6 +599,13 @@ impl From<GetTxError> for NodesError {
     }
 }
 
+impl Display for GetTxError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not in a transaction")
+    }
+}
+impl std::error::Error for GetTxError {}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -621,15 +665,7 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        Ok((
-            InstanceEnv {
-                replica_ctx: Arc::new(replica_context),
-                scheduler,
-                tx: TxSlot::default(),
-                start_time: Timestamp::now(),
-            },
-            runtime,
-        ))
+        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
     }
 
     /// An in-memory `RelationalDB` for testing.
