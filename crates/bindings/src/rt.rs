@@ -61,8 +61,6 @@ pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // TODO(procedure-async): get a future out of `procedure.invoke` and call `FutureExt::now_or_never` on it?
-    // Or maybe do that within the `Procedure::invoke` method?
     let res = procedure.invoke(&mut ctx, args);
 
     res.to_result()
@@ -143,7 +141,11 @@ pub trait FnInfo {
     /// The type of function to invoke.
     type Invoke;
 
-    /// One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`].
+    #[cfg_attr(
+        feature = "unstable",
+        doc = "One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`]."
+    )]
+    #[cfg_attr(not(feature = "unstable"), doc = "Either [`FnKindReducer`] or [`FnKindView`].")]
     ///
     /// Used as a type argument to [`ExportFunctionForScheduledTable`] and [`scheduled_typecheck`].
     /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
@@ -420,15 +422,22 @@ pub struct FnKindView {
 ///
 /// The `FnKind` parameter here is a coherence-defeating marker, which Will Crichton calls a "tacit parameter."
 /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
-/// It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully.
+#[cfg_attr(
+    feature = "unstable",
+    doc = "It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully."
+)]
+#[cfg_attr(
+    not(feature = "unstable"),
+    doc = "It will be [`FnKindReducer`] in modules that compile successfully."
+)]
+///
 /// It may be [`FnKindView`], but that will always fail to typecheck, as views cannot be used as scheduled functions.
 #[diagnostic::on_unimplemented(
     message = "invalid signature for scheduled table reducer or procedure",
     note = "views cannot be scheduled",
     note = "the scheduled function must take `{TableRow}` as its sole argument",
     note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`",
-    // TODO(procedure-async): amend this to `async fn` once procedures are `async`-ified
-    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`",
+    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
 )]
 pub trait ExportFunctionForScheduledTable<'de, TableRow, FnKind> {}
 impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de, (TableRow,)>>
