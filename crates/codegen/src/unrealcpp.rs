@@ -688,7 +688,7 @@ impl Lang for UnrealCpp<'_> {
         }
 
         // Collect includes for types used in delegates and contexts
-        // FSpacetimeDBIdentity is used in FOnConnectDelegate and context methods
+        // FSpacetimeDBIdentity is used in F{module_prefix}OnConnectDelegate and context methods
         collect_includes_for_type(
             self.module_prefix,
             module,
@@ -1097,13 +1097,13 @@ fn generate_delegates(output: &mut UnrealCppAutogen, module_prefix: &str) {
         "// U{module_prefix}DbConnection without manual casting in user code."
     );
     writeln!(output, "DECLARE_DYNAMIC_DELEGATE_ThreeParams(");
-    writeln!(output, "\tFOnConnectDelegate,");
+    writeln!(output, "\tF{module_prefix}OnConnectDelegate,");
     writeln!(output, "\tU{module_prefix}DbConnection*, Connection,");
     writeln!(output, "\tFSpacetimeDBIdentity, Identity,");
     writeln!(output, "\tconst FString&, Token);");
     writeln!(output);
     writeln!(output, "DECLARE_DYNAMIC_DELEGATE_TwoParams(");
-    writeln!(output, "\tFOnDisconnectDelegate,");
+    writeln!(output, "\tF{module_prefix}OnDisconnectDelegate,");
     writeln!(output, "\tU{module_prefix}DbConnection*, Connection,");
     writeln!(output, "\tconst FString&, Error);");
     writeln!(output);
@@ -1943,11 +1943,11 @@ fn generate_context_structs(
     writeln!(output, "}};");
     writeln!(output);
     writeln!(output, "DECLARE_DYNAMIC_DELEGATE_OneParam(");
-    writeln!(output, "\tFOnSubscriptionApplied,");
+    writeln!(output, "\tF{module_prefix}OnSubscriptionApplied,");
     writeln!(output, "\tF{module_prefix}SubscriptionEventContext, Context);");
     writeln!(output);
     writeln!(output, "DECLARE_DYNAMIC_DELEGATE_OneParam(");
-    writeln!(output, "\tFOnSubscriptionError,");
+    writeln!(output, "\tF{module_prefix}OnSubscriptionError,");
     writeln!(output, "\tF{module_prefix}ErrorContext, Context);");
     writeln!(output);
 }
@@ -2199,13 +2199,13 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_pre
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
         output,
-        "    U{module_prefix}SubscriptionBuilder* OnApplied(FOnSubscriptionApplied Callback);"
+        "    U{module_prefix}SubscriptionBuilder* OnApplied(F{module_prefix}OnSubscriptionApplied Callback);"
     );
     writeln!(output);
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
         output,
-        "    U{module_prefix}SubscriptionBuilder* OnError(FOnSubscriptionError Callback);"
+        "    U{module_prefix}SubscriptionBuilder* OnError(F{module_prefix}OnSubscriptionError Callback);"
     );
     writeln!(output);
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")");
@@ -2236,8 +2236,8 @@ fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, module_pre
         output,
         "    // Delegates stored so Subscribe() can bind forwarding callbacks"
     );
-    writeln!(output, "    FOnSubscriptionApplied OnAppliedDelegateInternal;");
-    writeln!(output, "    FOnSubscriptionError OnErrorDelegateInternal;");
+    writeln!(output, "    F{module_prefix}OnSubscriptionApplied OnAppliedDelegateInternal;");
+    writeln!(output, "    F{module_prefix}OnSubscriptionError OnErrorDelegateInternal;");
     writeln!(output, "}};");
     writeln!(output);
 }
@@ -2271,8 +2271,8 @@ fn generate_subscription_handle_class(output: &mut UnrealCppAutogen, module_pref
         output,
         "    // Delegates that expose subscription events with connection aware contexts"
     );
-    writeln!(output, "    FOnSubscriptionApplied OnAppliedDelegate;");
-    writeln!(output, "    FOnSubscriptionError OnErrorDelegate;");
+    writeln!(output, "    F{module_prefix}OnSubscriptionApplied OnAppliedDelegate;");
+    writeln!(output, "    F{module_prefix}OnSubscriptionError OnErrorDelegate;");
     writeln!(output);
     writeln!(output, "    UFUNCTION()");
     writeln!(
@@ -2322,7 +2322,7 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
         output,
-        "    U{module_prefix}DbConnectionBuilder* OnConnect(FOnConnectDelegate Callback);"
+        "    U{module_prefix}DbConnectionBuilder* OnConnect(F{module_prefix}OnConnectDelegate Callback);"
     );
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
@@ -2332,7 +2332,7 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(
         output,
-        "    U{module_prefix}DbConnectionBuilder* OnDisconnect(FOnDisconnectDelegate Callback);"
+        "    U{module_prefix}DbConnectionBuilder* OnDisconnect(F{module_prefix}OnDisconnectDelegate Callback);"
     );
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB\")");
     writeln!(output, "    U{module_prefix}DbConnection* Build();");
@@ -2343,8 +2343,8 @@ fn generate_db_connection_builder_class(output: &mut UnrealCppAutogen, module_pr
         output,
         "    // Stored delegates which will be forwarded when the connection events occur."
     );
-    writeln!(output, "    FOnConnectDelegate OnConnectDelegateInternal;");
-    writeln!(output, "    FOnDisconnectDelegate OnDisconnectDelegateInternal;");
+    writeln!(output, "    F{module_prefix}OnConnectDelegate OnConnectDelegateInternal;");
+    writeln!(output, "    F{module_prefix}OnDisconnectDelegate OnDisconnectDelegateInternal;");
     writeln!(output, "}};");
     writeln!(output);
 }
@@ -2385,8 +2385,8 @@ fn generate_db_connection_class(
         output,
         "    // Delegates that allow users to bind with the concrete connection type."
     );
-    writeln!(output, "    FOnConnectDelegate OnConnectDelegate;");
-    writeln!(output, "    FOnDisconnectDelegate OnDisconnectDelegate;");
+    writeln!(output, "    F{module_prefix}OnConnectDelegate OnConnectDelegate;");
+    writeln!(output, "    F{module_prefix}OnDisconnectDelegate OnDisconnectDelegate;");
     writeln!(output);
     writeln!(output, "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")");
     writeln!(
@@ -2902,7 +2902,7 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::OnApplied(FOnSubscriptionApplied Callback)"
+        "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::OnApplied(F{module_prefix}OnSubscriptionApplied Callback)"
     );
     writeln!(output, "{{");
     writeln!(output, "\tOnAppliedDelegateInternal = Callback;");
@@ -2910,7 +2910,7 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::OnError(FOnSubscriptionError Callback)"
+        "U{module_prefix}SubscriptionBuilder* U{module_prefix}SubscriptionBuilder::OnError(F{module_prefix}OnSubscriptionError Callback)"
     );
     writeln!(output, "{{");
     writeln!(output, "\tOnErrorDelegateInternal = Callback;");
@@ -3034,7 +3034,7 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnConnect(FOnConnectDelegate Callback)"
+        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnConnect(F{module_prefix}OnConnectDelegate Callback)"
     );
     writeln!(output, "{{");
     writeln!(output, "\tOnConnectDelegateInternal = Callback;");
@@ -3052,7 +3052,7 @@ fn generate_client_implementation(
     writeln!(output, "}}");
     writeln!(
         output,
-        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnDisconnect(FOnDisconnectDelegate Callback)"
+        "U{module_prefix}DbConnectionBuilder* U{module_prefix}DbConnectionBuilder::OnDisconnect(F{module_prefix}OnDisconnectDelegate Callback)"
     );
     writeln!(output, "{{");
     writeln!(output, "\tOnDisconnectDelegateInternal = Callback;");
