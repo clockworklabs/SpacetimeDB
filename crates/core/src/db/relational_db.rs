@@ -842,7 +842,7 @@ impl RelationalDB {
             let truncates: IntSet<TableId> = tx_data.truncates().collect();
 
             let deletes: Box<_> = tx_data
-                .durable_deletes()
+                .deletes()
                 .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
@@ -2420,6 +2420,27 @@ mod tests {
         TableSchema::from_module_def(&def, table, (), TableId::SENTINEL)
     }
 
+    fn view_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("b", AlgebraicType::U8)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            false,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        let raw = builder.finish();
+        raw.try_into().expect("table validation failed")
+    }
+
     fn table_auto_inc() -> TableSchema {
         table(
             "MyTable",
@@ -2525,7 +2546,7 @@ mod tests {
         v: u8,
     ) -> ResultTest<()> {
         let to_bsatn = |pv: &ProductValue| {
-            Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
+            Bytes::from(bsatn::to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
         };
 
         let row_pv = |v: u8| product![v];
@@ -2551,7 +2572,6 @@ mod tests {
             })
             .collect()
     }
-
 
     #[test]
     fn test_view_tables_are_ephemeral() -> ResultTest<()> {
