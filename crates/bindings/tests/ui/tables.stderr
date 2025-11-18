@@ -25,7 +25,7 @@ error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
             Alpha
             Arc<T>
             ArrayType
-            Box<T>
+            Body
           and $N others
 
 error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
@@ -113,7 +113,7 @@ error[E0277]: the column type `Test` does not implement `SpacetimeType`
             Alpha
             Arc<T>
             ArrayType
-            Box<T>
+            Body
           and $N others
   = note: required for `Test` to implement `TableColumn`
 

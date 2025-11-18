@@ -137,8 +137,9 @@ error[E0599]: no method named `try_insert` found for reference `&test__ViewHandl
    |                         ^^^^^^^^^^
    |
    = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
+   = note: the following traits define an item `try_insert`, perhaps you need to implement one of them:
            candidate #1: `Table`
+           candidate #2: `http::header::map::into_header_name::Sealed`
 help: there is a method `try_into` with a similar name, but with different arguments
   --> $RUST/core/src/convert/mod.rs
    |
@@ -274,8 +275,8 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               AlgebraicTypeRef
               Arc<T>
               ArrayType
+              Body
               Box<T>
-              ColId
             and $N others
     = note: required for `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}` to implement `AnonymousView<'_, (), NotSpacetimeType>`
 note: required by a bound in `ViewRegistrar::<AnonymousViewContext>::register`
@@ -329,8 +330,8 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               AlgebraicTypeRef
               Arc<T>
               ArrayType
+              Body
               Box<T>
-              ColId
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `ViewReturn`
 
@@ -348,8 +349,8 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               AlgebraicTypeRef
               Arc<T>
               ArrayType
+              Body
               Box<T>
-              ColId
             and $N others
     = note: required for `for<'a> fn(&'a AnonymousViewContext) -> Option<NotSpacetimeType> {view_def_returns_not_a_spacetime_type}` to implement `AnonymousView<'_, (), NotSpacetimeType>`
 note: required by a bound in `ViewDispatcher::<AnonymousViewContext>::invoke`
@@ -403,7 +404,33 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
               AlgebraicTypeRef
               Arc<T>
               ArrayType
+              Body
               Box<T>
-              ColId
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
+
+error[E0631]: type mismatch in function arguments
+   --> tests/ui/views.rs:142:56
+    |
+142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
+    | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^---
+    | |                                                      |
+    | |                                                      expected due to this
+    | required by a bound introduced by this call
+...
+154 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+    | ------------------------------------------------------------------------------ found signature defined here
+    |
+    = note: expected function signature `for<'a> fn(&'a ReducerContext, ScheduledTable) -> _`
+               found function signature `fn(&ViewContext, ScheduledTable) -> _`
+    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `Reducer<'_, (ScheduledTable,)>`
+    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `ExportFunctionForScheduledTable<'_, ScheduledTable, {type error}>`
+note: required by a bound in `scheduled_typecheck`
+   --> src/rt.rs
+    |
+    | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
+    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`
+help: consider wrapping the function in a closure
+    |
+142 | #[spacetimedb::table(name = scheduled_table, scheduled(|arg0: &ReducerContext, arg1: ScheduledTable| scheduled_table_view(/* &ViewContext */, arg1)))]
+    |                                                        +++++++++++++++++++++++++++++++++++++++++++++                     ++++++++++++++++++++++++++
