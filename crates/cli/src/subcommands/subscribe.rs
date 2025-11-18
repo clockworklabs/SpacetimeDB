@@ -6,7 +6,7 @@ use reqwest::Url;
 use serde_json::Value;
 use spacetimedb_client_api_messages::websocket::{self as ws, JsonFormat};
 use spacetimedb_data_structures::map::HashMap;
-use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
+use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::de::serde::{DeserializeWrapper, SeedWrapper};
 use spacetimedb_lib::ser::serde::SerializeWrapper;
 use std::io;
@@ -86,33 +86,11 @@ fn reformat_update<'a>(
     msg.tables
         .iter()
         .map(|upd| {
-            let product_type_ref = schema
-                .tables
-                .iter()
-                .find(|tbl| tbl.name == upd.table_name)
-                .map(|table_def| table_def.product_type_ref)
-                .or_else(|| {
-                    schema
-                        .misc_exports
-                        .iter()
-                        .filter_map(|misc_export| match misc_export {
-                            RawMiscModuleExportV9::View(view_def) => Some(view_def),
-                            _ => None,
-                        })
-                        .find(|view_def| view_def.name == upd.table_name)
-                        .map(|view_def| view_def.return_type.clone())
-                        .and_then(|return_type| {
-                            return_type
-                                .as_option()
-                                .map(|inner| inner.clone().into_ref())
-                                .or_else(|| return_type.as_array().map(|inner| inner.elem_ty.clone().into_ref()))
-                                .transpose()
-                                .expect("views must return an option or a vec")
-                        })
-                })
-                .context("table not found in schema")?;
-
-            let table_ty = schema.typespace.resolve(product_type_ref);
+            let table_ty = schema.typespace.resolve(
+                schema
+                    .type_ref_for_table_like(&upd.table_name)
+                    .context("table not found in schema")?,
+            );
 
             let reformat_row = |row: &str| -> anyhow::Result<Value> {
                 // TODO: can the following two calls be merged into a single call to reduce allocations?

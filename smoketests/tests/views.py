@@ -458,7 +458,7 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
         self.call("insert_player", "Bob")
 
         # Subscribe to `my_player` as Bob
-        sub = self.subscribe("select * from my_player", n=1)
+        sub = self.subscribe("select * from my_player")
         events = sub()
 
         # Project out the identity field.
