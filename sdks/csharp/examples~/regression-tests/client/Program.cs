@@ -133,6 +133,15 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         ValidateBTreeIndexes(ctx);
         waiting--;
     });
+    
+    // Views test
+    Log.Debug("Calling View");
+    var viewRows = context.Db.GetUserByContext.Iter().FirstOrDefault();
+    Debug.Assert(viewRows != null && viewRows.IdentityString == context.Identity?.ToString());
+    
+    Log.Debug("Calling Anonymous View");
+    var anonViewRows = context.Db.GetUserByString.RemoteQuery("Where IdentityString = identityStringExample");
+    Debug.Assert(anonViewRows != null && anonViewRows.Result.Length > 0);
 }
 
 System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
