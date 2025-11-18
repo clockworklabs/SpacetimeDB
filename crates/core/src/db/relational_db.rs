@@ -840,7 +840,7 @@ impl RelationalDB {
             let truncates: IntSet<TableId> = tx_data.truncates().collect();
 
             let deletes: Box<_> = tx_data
-                .durable_deletes()
+                .deletes()
                 .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,

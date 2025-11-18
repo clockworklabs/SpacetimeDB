@@ -281,17 +281,6 @@ impl TxData {
         self.deletes.iter()
     }
 
-    /// Obtain an iterator over the deleted rows per table,
-    /// excluding ephemeral tables.
-    pub fn durable_deletes(&self) -> impl Iterator<Item = (&TableId, &Arc<[ProductValue]>)> + '_ {
-        self.deletes.iter().filter(move |(table_id, _)| {
-            !self
-                .ephemeral_tables
-                .as_ref()
-                .is_some_and(|etables| etables.contains(*table_id))
-        })
-    }
-
     /// Get the `i`th deleted row for `table_id` if it exists
     pub fn get_ith_delete(&self, table_id: TableId, i: usize) -> Option<&ProductValue> {
         self.deletes.get(&table_id).and_then(|rows| rows.get(i))
