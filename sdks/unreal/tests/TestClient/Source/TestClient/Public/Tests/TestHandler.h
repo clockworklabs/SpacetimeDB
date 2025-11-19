@@ -525,16 +525,3 @@ public:
 	UFUNCTION()
 	void OnUpdatePkU8(const FEventContext& Context, const FPkU8Type& OldValue, const FPkU8Type& NewValue);
 };
-
-/** Handler used for my-user-view test. */
-UCLASS()
-class UMyUserViewHandler : public UTestHandler {
-	GENERATED_BODY()
-public:
-	int32 Data1;
-	int32 Data2;
-	ESimpleEnumType A;
-
-	UFUNCTION()
-	void OnInsertMyUser(const FEventContext& Context, const FPkSimpleEnumType& Value);
-};
