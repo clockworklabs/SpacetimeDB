@@ -1,14 +1,19 @@
 #![allow(clippy::too_many_arguments)]
 
 use super::{Mem, MemView, NullableMemOp, WasmError, WasmPointee, WasmPtr};
-use crate::database_logger::{BacktraceFrame, BacktraceProvider, ModuleBacktrace, Record};
+use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::{ChunkPool, InstanceEnv};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::wasm_common::instrumentation::{span, CallTimes};
 use crate::host::wasm_common::module_host_actor::ExecutionTimings;
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, RowIters, TimingSpan, TimingSpanIdx, TimingSpanSet};
 use crate::host::AbiCall;
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
+use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
+use crate::util::asyncify;
 use anyhow::Context as _;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
@@ -114,6 +119,12 @@ pub(super) struct WasmInstanceEnv {
     /// A pool of unused allocated chunks that can be reused.
     // TODO(Centril): consider using this pool for `console_timer_start` and `bytes_sink_write`.
     chunk_pool: ChunkPool,
+
+    /// Are we in an anonymous tx context?
+    in_anon_tx: bool,
+
+    /// A procedure's last known transaction offset.
+    procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
 const STANDARD_BYTES_SINK: u32 = 1;
@@ -136,6 +147,8 @@ impl WasmInstanceEnv {
             timing_spans: Default::default(),
             call_times: CallTimes::new(),
             chunk_pool: <_>::default(),
+            in_anon_tx: false,
+            procedure_last_tx_offset: None,
         }
     }
 
@@ -233,6 +246,8 @@ impl WasmInstanceEnv {
 
         self.instance_env.start_funcall(name, ts, func_type);
 
+        self.in_anon_tx = false;
+
         (args, errors)
     }
 
@@ -280,6 +295,11 @@ impl WasmInstanceEnv {
         self.next_bytes_source_id = NonZeroU32::new(1).unwrap();
 
         (timings, self.take_standard_bytes_sink())
+    }
+
+    /// After a procedure has finished, take its known last tx offset, if any.
+    pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
+        self.procedure_last_tx_offset.take()
     }
 
     /// Record a span with `start`.
@@ -1410,14 +1430,12 @@ impl WasmInstanceEnv {
     /// - The calling WASM instance is not executing a procedure.
     // TODO(procedure-sleep-until): remove this
     pub fn procedure_sleep_until<'caller>(
-        mut caller: Caller<'caller, Self>,
+        caller: Caller<'caller, Self>,
         (wake_at_micros_since_unix_epoch,): (i64,),
-    ) -> Box<dyn Future<Output = i64> + Send + 'caller> {
-        Box::new(async move {
+    ) -> Fut<'caller, i64> {
+        Self::async_with_span(caller, AbiCall::ProcedureSleepUntil, move |caller| async move {
             use std::time::SystemTime;
-            let span_start = span::CallSpanStart::new(AbiCall::ProcedureSleepUntil);
-
-            let get_current_time = || Timestamp::now().to_micros_since_unix_epoch();
+            let get_current_time = || (caller, Timestamp::now().to_micros_since_unix_epoch());
 
             if wake_at_micros_since_unix_epoch < 0 {
                 return get_current_time();
@@ -1430,13 +1448,213 @@ impl WasmInstanceEnv {
 
             tokio::time::sleep(duration).await;
 
-            let res = get_current_time();
-
-            let span = span_start.end();
-            span::record_span(&mut caller.data_mut().call_times, span);
-
-            res
+            get_current_time()
         })
+    }
+
+    /// Starts a mutable transaction,
+    /// suspending execution of this WASM instance until
+    /// a mutable transaction lock is aquired.
+    ///
+    /// Upon resuming, returns `0` on success,
+    /// enabling further calls that require a pending transaction,
+    /// or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    /// - `out` is NULL or `out[..size_of::<i64>()]` is not in bounds of WASM memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
+    pub fn procedure_start_mut_tx<'caller>(
+        caller: Caller<'caller, Self>,
+        (out,): (WasmPtr<u64>,),
+    ) -> Fut<'caller, RtResult<u32>> {
+        Self::async_with_span(
+            caller,
+            AbiCall::ProcedureStartMutTransaction,
+            move |mut caller| async move {
+                let (mem, env) = Self::mem_env(&mut caller);
+                let res = env.instance_env.start_mutable_tx().await.map_err(Into::into);
+                let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+                let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
+
+                let result = res
+                    .map(|()| {
+                        env.in_anon_tx = true;
+                        0u16.into()
+                    })
+                    .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err));
+
+                (caller, result)
+            },
+        )
+    }
+
+    /// Finishes an anonymous transaction,
+    /// returning `Some(_)` if there was no ongoing one,
+    /// in which case the caller should return early.
+    fn finish_anon_tx(&mut self) -> Option<RtResult<u32>> {
+        if self.in_anon_tx {
+            self.in_anon_tx = false;
+            None
+        } else {
+            // Not in an anon tx context.
+            // This can happen if a reducer calls this ABI
+            // and tries to commit its own transaction early.
+            // We refuse to do this, as it would cause a later panic in the host.
+            Some(Ok(errno::TRANSACTION_NOT_ANONYMOUS.get().into()))
+        }
+    }
+
+    /// Commits a mutable transaction,
+    /// suspending execution of this WASM instance until
+    /// the transaction has been committed
+    /// and subscription queries have been run and broadcast.
+    ///
+    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `TRANSACTION_NOT_ANONYMOUS`,
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
+    ///   This can happen if this syscall is erroneously called by a reducer.
+    ///   The code `NOT_IN_TRANSACTION` does not happen,
+    ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+    /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+    ///   This currently does not happen as anonymous read transactions
+    ///   are not exposed to modules.
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
+        Self::async_with_span(
+            caller,
+            AbiCall::ProcedureCommitMutTransaction,
+            |mut caller| async move {
+                let (_, env) = Self::mem_env(&mut caller);
+
+                if let Some(ret) = env.finish_anon_tx() {
+                    return (caller, ret);
+                }
+
+                let inst = env.instance_env();
+                let stdb = inst.relational_db().clone();
+                let tx = inst.take_tx();
+                let subs = inst.replica_ctx.subscriptions.clone();
+
+                let res = async move {
+                    let tx = tx?;
+                    let event = ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: stdb.database_identity(),
+                        caller_connection_id: None,
+                        function_call: ModuleFunctionCall::default(),
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        request_id: None,
+                        timer: None,
+                        // The procedure will pick up the tab for the energy.
+                        energy_quanta_used: EnergyQuanta { quanta: 0 },
+                        host_execution_duration: Duration::from_millis(0),
+                    };
+                    // Commit the tx and broadcast it.
+                    // This is somewhat expensive,
+                    // and can block for a while,
+                    // so we need to asyncify it.
+                    let event = asyncify(move || commit_and_broadcast_event(&subs, None, event, tx)).await;
+                    env.procedure_last_tx_offset = Some(event.tx_offset);
+
+                    Ok::<_, NodesError>(0u16.into())
+                }
+                .await
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err.into()));
+
+                (caller, res)
+            },
+        )
+    }
+
+    /// Aborts a mutable transaction,
+    /// suspending execution of this WASM instance until
+    /// the transaction has been rolled back.
+    ///
+    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    ///
+    /// # Traps
+    ///
+    /// This function does not trap.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `TRANSACTION_NOT_ANONYMOUS`,
+    ///   if the transaction was not started in [`procedure_start_mut_tx`].
+    ///   This can happen if this syscall is erroneously called by a reducer.
+    ///   The code `NOT_IN_TRANSACTION` does not happen,
+    ///   as it is subsumed by `TRANSACTION_NOT_ANONYMOUS`.
+    /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
+    ///   This currently does not happen as anonymous read transactions
+    ///   are not exposed to modules.
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
+        Self::async_with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| async move {
+            let (_, env) = Self::mem_env(&mut caller);
+            let ret = env.procedure_abort_mut_tx_inner();
+            (caller, ret)
+        })
+    }
+
+    /// See [`WasmInstanceEnv::procedure_abort_mut_tx`] for details.
+    pub fn procedure_abort_mut_tx_inner(&mut self) -> RtResult<u32> {
+        if let Some(ret) = self.finish_anon_tx() {
+            return ret;
+        }
+
+        let inst = self.instance_env();
+        let stdb = inst.relational_db().clone();
+        let tx = inst.take_tx();
+
+        tx.map(|tx| {
+            // Roll back the tx; this isn't that expensive, so we don't need to `asyncify`.
+            let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
+            self.procedure_last_tx_offset = Some(from_tx_offset(offset));
+            0u16.into()
+        })
+        .map_err(NodesError::from)
+        .map_err(WasmError::from)
+        .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureAbortMutTransaction, err))
+    }
+
+    /// In-case there is a anonymous tx at the end of a procedure,
+    /// it must be terminated.
+    ///
+    /// This represents a misuse by the module author of the module ABI.
+    pub fn terminate_dangling_anon_tx(&mut self) {
+        const NOT_ANON: u32 = errno::TRANSACTION_NOT_ANONYMOUS.get() as u32;
+
+        // Try to abort the anon tx.
+        match self.procedure_abort_mut_tx_inner() {
+            // There was no dangling anon tx. Yay!
+            Ok(NOT_ANON) => {}
+            // There was one, which has been aborted.
+            // The module is using the ABI wrong! 😭
+            Ok(0) => {
+                let message = format!(
+                    "aborting dangling anonymous transaction in procedure {}",
+                    self.funcall_name()
+                );
+                self.instance_env()
+                    .console_log_simple_message(LogLevel::Error, None, &message);
+            }
+            res => unreachable!("should've had a tx to close; {res:?}"),
+        }
     }
 
     /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,

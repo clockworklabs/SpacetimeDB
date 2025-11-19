@@ -467,6 +467,11 @@ fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
     }
 }
 
+#[spacetimedb::procedure]
+fn with_tx(ctx: &mut ProcedureContext) {
+    ctx.with_tx(|tx| say_hello(tx));
+}
+
 /// Hit SpacetimeDB's schema HTTP route and return its result as a string.
 ///
 /// This is a silly thing to do, but an effective test of the procedure HTTP API.

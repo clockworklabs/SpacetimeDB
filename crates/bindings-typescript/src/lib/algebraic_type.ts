@@ -4,21 +4,15 @@ import { ConnectionId } from './connection_id';
 import type BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
 import { Identity } from './identity';
-import { Option } from './option';
-import {
-  AlgebraicType as AlgebraicTypeType,
-  AlgebraicType as AlgebraicTypeValue,
-} from './autogen/algebraic_type_type';
-import {
-  type ProductType as ProductTypeType,
-  ProductType as ProductTypeValue,
-} from './autogen/product_type_type';
-import {
-  type SumType as SumTypeType,
-  SumType as SumTypeValue,
-} from './autogen/sum_type_type';
-import ScheduleAt from './schedule_at';
-import type Typespace from './autogen/typespace_type';
+import * as AlgebraicTypeVariants from './algebraic_type_variants';
+
+type TypespaceType = {
+  types: AlgebraicTypeType[];
+};
+
+export type ProductTypeType = {
+  elements: ProductTypeElement[];
+};
 
 /**
  * A factor / element of a product type.
@@ -28,7 +22,14 @@ import type Typespace from './autogen/typespace_type';
  * NOTE: Each element has an implicit element tag based on its order.
  * Uniquely identifies an element similarly to protobuf tags.
  */
-export * from './autogen/product_type_element_type';
+export type ProductTypeElement = {
+  name: string | undefined;
+  algebraicType: AlgebraicTypeType;
+};
+
+export type SumTypeType = {
+  variants: SumTypeVariant[];
+};
 
 /**
  * A variant of a sum type.
@@ -36,93 +37,81 @@ export * from './autogen/product_type_element_type';
  * NOTE: Each element has an implicit element tag based on its order.
  * Uniquely identifies an element similarly to protobuf tags.
  */
-export * from './autogen/sum_type_variant_type';
+export type SumTypeVariant = {
+  name: string | undefined;
+  algebraicType: AlgebraicTypeType;
+};
+
+export type AlgebraicTypeType =
+  | AlgebraicTypeVariants.Ref
+  | AlgebraicTypeVariants.Sum
+  | AlgebraicTypeVariants.Product
+  | AlgebraicTypeVariants.Array
+  | AlgebraicTypeVariants.String
+  | AlgebraicTypeVariants.Bool
+  | AlgebraicTypeVariants.I8
+  | AlgebraicTypeVariants.U8
+  | AlgebraicTypeVariants.I16
+  | AlgebraicTypeVariants.U16
+  | AlgebraicTypeVariants.I32
+  | AlgebraicTypeVariants.U32
+  | AlgebraicTypeVariants.I64
+  | AlgebraicTypeVariants.U64
+  | AlgebraicTypeVariants.I128
+  | AlgebraicTypeVariants.U128
+  | AlgebraicTypeVariants.I256
+  | AlgebraicTypeVariants.U256
+  | AlgebraicTypeVariants.F32
+  | AlgebraicTypeVariants.F64;
+
+export type AlgebraicType = AlgebraicTypeType;
 
 /**
  * The variant types of the Algebraic Type tagged union.
  */
-export type * as AlgebraicTypeVariants from './autogen/algebraic_type_variants';
+export { AlgebraicTypeVariants };
 
-/**
- * The SpacetimeDB Algebraic Type System (SATS) is a structural type system in
- * which a nominal type system can be constructed.
- *
- * The type system unifies the concepts sum types, product types, and built-in
- * primitive types into a single type system.
- */
-export type AlgebraicType = AlgebraicTypeType;
-
-/**
- * Algebraic Type utilities.
- */
-export const AlgebraicType: {
-  Sum<T extends SumType>(value: T): { tag: 'Sum'; value: T };
-  Product<T extends ProductType>(value: T): { tag: 'Product'; value: T };
-  Array<T extends AlgebraicType>(value: T): { tag: 'Array'; value: T };
-
-  createOptionType(innerType: AlgebraicTypeType): AlgebraicTypeType;
-  createIdentityType(): AlgebraicTypeType;
-  createConnectionIdType(): AlgebraicTypeType;
-  createScheduleAtType(): AlgebraicTypeType;
-  createTimestampType(): AlgebraicTypeType;
-  createTimeDurationType(): AlgebraicTypeType;
+// A value with helper functions to construct the type.
+export const AlgebraicType = {
+  Ref: (value: number): AlgebraicTypeVariants.Ref => ({ tag: 'Ref', value }),
+  Sum: <T extends SumTypeType>(value: T): { tag: 'Sum'; value: T } => ({
+    tag: 'Sum',
+    value,
+  }),
+  Product: <T extends ProductTypeType>(
+    value: T
+  ): { tag: 'Product'; value: T } => ({
+    tag: 'Product',
+    value,
+  }),
+  Array: <T extends AlgebraicTypeType>(
+    value: T
+  ): { tag: 'Array'; value: T } => ({
+    tag: 'Array',
+    value,
+  }),
+  String: { tag: 'String' } as const,
+  Bool: { tag: 'Bool' } as const,
+  I8: { tag: 'I8' } as const,
+  U8: { tag: 'U8' } as const,
+  I16: { tag: 'I16' } as const,
+  U16: { tag: 'U16' } as const,
+  I32: { tag: 'I32' } as const,
+  U32: { tag: 'U32' } as const,
+  I64: { tag: 'I64' } as const,
+  U64: { tag: 'U64' } as const,
+  I128: { tag: 'I128' } as const,
+  U128: { tag: 'U128' } as const,
+  I256: { tag: 'I256' } as const,
+  U256: { tag: 'U256' } as const,
+  F32: { tag: 'F32' } as const,
+  F64: { tag: 'F64' } as const,
   serializeValue(
     writer: BinaryWriter,
     ty: AlgebraicTypeType,
     value: any,
-    typespace?: Typespace
-  ): void;
-  deserializeValue(
-    reader: BinaryReader,
-    ty: AlgebraicTypeType,
-    typespace?: Typespace
-  ): any;
-  /**
-   * Convert a value of the algebraic type into something that can be used as a key in a map.
-   * There are no guarantees about being able to order it.
-   * This is only guaranteed to be comparable to other values of the same type.
-   * @param value A value of the algebraic type
-   * @returns Something that can be used as a key in a map.
-   */
-  intoMapKey(ty: AlgebraicTypeType, value: any): ComparablePrimitive;
-} & typeof AlgebraicTypeValue = {
-  ...AlgebraicTypeValue,
-  Sum: <T extends SumType>(value: T): { tag: 'Sum'; value: T } => ({
-    tag: 'Sum',
-    value,
-  }),
-  Product: <T extends ProductType>(value: T): { tag: 'Product'; value: T } => ({
-    tag: 'Product',
-    value,
-  }),
-  Array: <T extends AlgebraicType>(value: T): { tag: 'Array'; value: T } => ({
-    tag: 'Array',
-    value,
-  }),
-  createOptionType: function (innerType: AlgebraicTypeType): AlgebraicTypeType {
-    return Option.getAlgebraicType(innerType);
-  },
-  createIdentityType: function (): AlgebraicTypeType {
-    return Identity.getAlgebraicType();
-  },
-  createConnectionIdType: function (): AlgebraicTypeType {
-    return ConnectionId.getAlgebraicType();
-  },
-  createScheduleAtType: function (): AlgebraicTypeType {
-    return ScheduleAt.getAlgebraicType();
-  },
-  createTimestampType: function (): AlgebraicTypeType {
-    return Timestamp.getAlgebraicType();
-  },
-  createTimeDurationType: function (): AlgebraicTypeType {
-    return TimeDuration.getAlgebraicType();
-  },
-  serializeValue: function (
-    writer: BinaryWriter,
-    ty: AlgebraicTypeType,
-    value: any,
-    typespace?: Typespace
-  ): void {
+    typespace?: TypespaceType
+  ) {
     if (ty.tag === 'Ref') {
       if (!typespace)
         throw new Error('cannot serialize refs without a typespace');
@@ -199,7 +188,7 @@ export const AlgebraicType: {
   deserializeValue: function (
     reader: BinaryReader,
     ty: AlgebraicTypeType,
-    typespace?: Typespace
+    typespace?: TypespaceType
   ): any {
     if (ty.tag === 'Ref') {
       if (!typespace)
@@ -327,26 +316,12 @@ export const AlgebraicType: {
  */
 export type ProductType = ProductTypeType;
 
-export const ProductType: {
+export const ProductType = {
   serializeValue(
     writer: BinaryWriter,
     ty: ProductTypeType,
     value: any,
-    typespace?: Typespace
-  ): void;
-  deserializeValue(
-    reader: BinaryReader,
-    ty: ProductTypeType,
-    typespace?: Typespace
-  ): any;
-  intoMapKey(ty: ProductTypeType, value: any): ComparablePrimitive;
-} = {
-  ...ProductTypeValue,
-  serializeValue(
-    writer: BinaryWriter,
-    ty: ProductTypeType,
-    value: any,
-    typespace?: Typespace
+    typespace?: TypespaceType
   ): void {
     for (const element of ty.elements) {
       AlgebraicType.serializeValue(
@@ -360,7 +335,7 @@ export const ProductType: {
   deserializeValue(
     reader: BinaryReader,
     ty: ProductTypeType,
-    typespace?: Typespace
+    typespace?: TypespaceType
   ): any {
     const result: { [key: string]: any } = {};
     if (ty.elements.length === 1) {
@@ -441,25 +416,12 @@ export type SumType = SumTypeType;
  *
  * [structural]: https://en.wikipedia.org/wiki/Structural_type_system
  */
-export const SumType: {
-  serializeValue(
-    writer: BinaryWriter,
-    ty: SumTypeType,
-    value: any,
-    typespace?: Typespace
-  ): void;
-  deserializeValue(
-    reader: BinaryReader,
-    ty: SumTypeType,
-    typespace?: Typespace
-  ): any;
-} = {
-  ...SumTypeValue,
+export const SumType = {
   serializeValue: function (
     writer: BinaryWriter,
     ty: SumTypeType,
     value: any,
-    typespace?: Typespace
+    typespace?: TypespaceType
   ): void {
     if (
       ty.variants.length == 2 &&
@@ -481,7 +443,7 @@ export const SumType: {
       const variant = value['tag'];
       const index = ty.variants.findIndex(v => v.name === variant);
       if (index < 0) {
-        throw `Can't serialize a sum type, couldn't find ${value.tag} tag`;
+        throw `Can't serialize a sum type, couldn't find ${value.tag} tag ${JSON.stringify(value)} in variants ${JSON.stringify(ty)}`;
       }
       writer.writeU8(index);
       AlgebraicType.serializeValue(
@@ -495,7 +457,7 @@ export const SumType: {
   deserializeValue: function (
     reader: BinaryReader,
     ty: SumTypeType,
-    typespace?: Typespace
+    typespace?: TypespaceType
   ): any {
     const tag = reader.readU8();
     // In TypeScript we handle Option values as a special case

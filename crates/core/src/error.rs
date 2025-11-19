@@ -267,6 +267,8 @@ pub enum NodesError {
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
     NotInTransaction,
+    #[error("ABI call not allowed while holding open a transaction: {0}")]
+    WouldBlockTransaction(AbiCall),
     #[error("table with name {0:?} already exists")]
     AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
@@ -279,8 +281,6 @@ pub enum NodesError {
     BadIndexType(u8),
     #[error("Failed to scheduled timer: {0}")]
     ScheduleError(#[source] ScheduleError),
-    #[error("ABI call not allowed while holding open a transaction: {0}")]
-    WouldBlockTransaction(AbiCall),
 }
 
 impl From<DBError> for NodesError {

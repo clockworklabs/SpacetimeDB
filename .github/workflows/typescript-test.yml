@@ -14,6 +14,8 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
     steps:
       - name: Checkout repository
@@ -81,10 +83,10 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            modules/quickstart-chat
-          shared-key: quickstart-chat-test
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
