@@ -11,7 +11,7 @@ use crate::host::module_host::{
     ViewOutcome,
 };
 use crate::host::{ArgsTuple, ModuleHost};
-use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
@@ -146,10 +146,8 @@ pub fn execute_sql(
                 request_id: None,
                 timer: None,
             };
-            match subs.unwrap().commit_and_broadcast_event(None, event, tx).unwrap() {
-                Ok(_) => res,
-                Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
-            }
+            commit_and_broadcast_event(subs.unwrap(), None, event, tx);
+            res
         } else {
             db.finish_tx(tx, res)
         }
@@ -308,38 +306,27 @@ pub async fn run(
             // Note, we get the delta by downgrading the tx.
             // Hence we just pass a default `DatabaseUpdate` here.
             // It will ultimately be replaced with the correct one.
-            match subs
-                .unwrap()
-                .commit_and_broadcast_event(
-                    None,
-                    ModuleEvent {
-                        timestamp: Timestamp::now(),
-                        caller_identity: auth.caller(),
-                        caller_connection_id: None,
-                        function_call: ModuleFunctionCall {
-                            reducer: String::new(),
-                            reducer_id: u32::MAX.into(),
-                            args: ArgsTuple::default(),
-                        },
-                        status: EventStatus::Committed(DatabaseUpdate::default()),
-                        energy_quanta_used: EnergyQuanta::ZERO,
-                        host_execution_duration: Duration::ZERO,
-                        request_id: None,
-                        timer: None,
-                    },
-                    tx,
-                )
-                .unwrap()
-            {
-                Err(WriteConflict) => {
-                    todo!("See module_host_actor::call_reducer_with_tx")
-                }
-                Ok(res) => Ok(SqlResult {
-                    tx_offset: res.tx_offset,
-                    rows: vec![],
-                    metrics,
-                }),
-            }
+            let event = ModuleEvent {
+                timestamp: Timestamp::now(),
+                caller_identity: auth.caller(),
+                caller_connection_id: None,
+                function_call: ModuleFunctionCall {
+                    reducer: String::new(),
+                    reducer_id: u32::MAX.into(),
+                    args: ArgsTuple::default(),
+                },
+                status: EventStatus::Committed(DatabaseUpdate::default()),
+                energy_quanta_used: EnergyQuanta::ZERO,
+                host_execution_duration: Duration::ZERO,
+                request_id: None,
+                timer: None,
+            };
+            let res = commit_and_broadcast_event(subs.unwrap(), None, event, tx);
+            Ok(SqlResult {
+                tx_offset: res.tx_offset,
+                rows: vec![],
+                metrics,
+            })
         }
     }
 }
