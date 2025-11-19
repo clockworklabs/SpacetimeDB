@@ -26,7 +26,7 @@ BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 BUILD_DIR = STDB_DIR / "target"
 SPACETIME_BIN = None
 def update_spacetime_bin_path():
-    SPACETIME_BIN = BUILD_DIR / "debug/spacetime" + exe_suffix
+    SPACETIME_BIN = BUILD_DIR / ("debug/spacetime" + exe_suffix)
 update_spacetime_bin_path()
 
 # the contents of files for the base smoketest project template
