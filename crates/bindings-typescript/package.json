@@ -158,7 +158,10 @@
   "dependencies": {
     "base64-js": "^1.5.1",
     "fast-text-encoding": "^1.0.0",
-    "prettier": "^3.3.3"
+    "headers-polyfill": "^4.0.3",
+    "prettier": "^3.3.3",
+    "statuses": "^2.0.2",
+    "url-polyfill": "^1.1.14"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
@@ -177,6 +180,7 @@
     "@size-limit/file": "^11.2.0",
     "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "^19.1.13",
+    "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "@vitest/coverage-v8": "^3.2.4",

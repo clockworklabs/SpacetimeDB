@@ -2,6 +2,7 @@ import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
+import type { HttpClient } from '../server/http_internal';
 import type { ParamsObj } from './reducers';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { Infer, InferTypeOfRow, TypeBuilder } from './type_builders';
@@ -19,6 +20,7 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
+  readonly http: HttpClient;
 }
 
 export function procedure<

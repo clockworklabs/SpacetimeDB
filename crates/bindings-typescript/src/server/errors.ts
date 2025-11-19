@@ -8,7 +8,7 @@
 export class SpacetimeHostError extends Error {
   public readonly code: number;
   public readonly message: string;
-  constructor(code: number) {
+  constructor(code: number, message?: string) {
     super();
     const proto = Object.getPrototypeOf(this);
     let cls;
@@ -24,7 +24,7 @@ export class SpacetimeHostError extends Error {
     }
     Object.setPrototypeOf(this, cls.prototype);
     this.code = cls.CODE;
-    this.message = cls.MESSAGE;
+    this.message = message ?? cls.MESSAGE;
   }
   get name(): string {
     return errnoToClass.get(this.code)?.name ?? 'SpacetimeHostError';
@@ -151,6 +151,8 @@ const errorData = {
     20,
     'ABI call can only be made while within a read-only transaction',
   ],
+
+  HttpError: [21, 'The HTTP request failed'],
 } as const;
 
 function mapEntries<const T extends Record<string, any>, U>(
