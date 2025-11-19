@@ -3970,7 +3970,7 @@ fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_nam
         "ConnectionId" => "FSpacetimeDBConnectionId".to_string(),
         "Timestamp" => "FSpacetimeDBTimestamp".to_string(),
         "TimeDuration" => "FSpacetimeDBTimeDuration".to_string(),
-        "Uuid" => "FGuid".to_string(),
+        "Uuid" => "FSpacetimeDBUuid".to_string(),
         "ScheduleAt" => "FSpacetimeDBScheduleAt".to_string(),
         _ if elem_type_str.starts_with("Int32") => {
             // Handle nested optionals like Int32 from OptionalInt32
@@ -4092,6 +4092,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
         "Timestamp" => "FSpacetimeDBTimestamp".to_string(),
         "TimeDuration" => "FSpacetimeDBTimeDuration".to_string(),
         "ScheduleAt" => "FSpacetimeDBScheduleAt".to_string(),
+        "Uuid" => "FSpacetimeDBUuid".to_string(),
         "Array" => "TArray<uint8>".to_string(), // Fallback for generic array type (should not be used with new system)
         _ if inner_type_str.starts_with("Optional") => {
             // Handle nested optionals like OptionalOptionalString
@@ -4137,7 +4138,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     // Determine if we need extra includes
     let mut extra_includes = vec![];
     match inner_type_str {
-        "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" => {
+        "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" | "Uuid" => {
             extra_includes.push("Types/Builtins.h".to_string());
         }
         "Int128" | "UInt128" | "Int256" | "UInt256" => {
@@ -4472,7 +4473,7 @@ fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) 
         AlgebraicTypeUse::ConnectionId => false, // FSpacetimeDBConnectionId is a USTRUCT
         AlgebraicTypeUse::Timestamp => false,    // FSpacetimeDBTimestamp is a USTRUCT
         AlgebraicTypeUse::TimeDuration => false, // FSpacetimeDBTimeDuration is a USTRUCT
-        AlgebraicTypeUse::Uuid => false,         // FGuid is a USTRUCT
+        AlgebraicTypeUse::Uuid => false,         // FSpacetimeDBUuid is a USTRUCT
         // Custom structs/enums use const references
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
@@ -4974,7 +4975,7 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Timestamp => f.write_str("FSpacetimeDBTimestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("FSpacetimeDBTimeDuration"),
         AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
-        AlgebraicTypeUse::Uuid => f.write_str("FGuid"),
+        AlgebraicTypeUse::Uuid => f.write_str("FSpacetimeDBUuid"),
         AlgebraicTypeUse::Unit => f.write_str("FSpacetimeDBUnit"),
 
         // --------- references to user-defined types ---------
