@@ -22,11 +22,20 @@ jobs:
     name: Smoketests
     strategy:
       matrix:
+        runner: [spacetimedb-new-runner, windows-latest]
         include:
-          - { runner: spacetimedb-runner, smoketest_args: --docker }
-          - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
+          - runner: spacetimedb-new-runner
+            smoketest_args: --docker
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
+          - runner: windows-latest
+            smoketest_args: --no-build-cli
+            container: null
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -45,6 +54,15 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -63,9 +81,18 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+      - name: Build crates
+        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
+
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
-        run: docker compose up -d
+        run: |
+          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
+          rm .dockerignore
+          docker compose -f .github/docker-compose.yml up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -73,7 +100,6 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
@@ -83,17 +109,23 @@ jobs:
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
       - name: Install python deps
-        run: python -m pip install psycopg2-binary xmltodict
+        run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests
         # Note: clear_database and replication only work in private
         run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
-        run: docker compose down
+        run: docker compose -f .github/docker-compose.yml down
 
   test:
     name: Test Suite
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -113,6 +145,13 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -140,8 +179,9 @@ jobs:
         #Note: Unreal tests will be run separately
         run: cargo test --all -- --skip unreal
 
+        # The fallocate tests have been flakely when running in parallel
       - name: Run fallocate tests
-        run: cargo test -p spacetimedb-durability --features fallocate
+        run: cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
@@ -157,13 +197,27 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -196,12 +250,26 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-codegen
@@ -221,7 +289,11 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -289,7 +361,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
@@ -368,13 +440,19 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test
+              cargo test -- --test-threads=1
             '
 
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -417,6 +495,14 @@ jobs:
             ${{ runner.os }}-pnpm-store-
 
       - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - name: Check for docs change
         run: |
