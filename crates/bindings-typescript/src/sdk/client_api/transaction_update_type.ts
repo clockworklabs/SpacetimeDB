@@ -4,111 +4,27 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { UpdateStatus } from './update_status_type';
-// Mark import as potentially unused
-declare type __keep_UpdateStatus = UpdateStatus;
-import { ReducerCallInfo } from './reducer_call_info_type';
-// Mark import as potentially unused
-declare type __keep_ReducerCallInfo = ReducerCallInfo;
-import { EnergyQuanta } from './energy_quanta_type';
-// Mark import as potentially unused
-declare type __keep_EnergyQuanta = EnergyQuanta;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import UpdateStatus from './update_status_type';
+import ReducerCallInfo from './reducer_call_info_type';
+import EnergyQuanta from './energy_quanta_type';
 
-export type TransactionUpdate = {
-  status: UpdateStatus;
-  timestamp: __Timestamp;
-  callerIdentity: __Identity;
-  callerConnectionId: __ConnectionId;
-  reducerCall: ReducerCallInfo;
-  energyQuantaUsed: EnergyQuanta;
-  totalHostExecutionDuration: __TimeDuration;
-};
-let _cached_TransactionUpdate_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const TransactionUpdate = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_TransactionUpdate_type_value)
-      return _cached_TransactionUpdate_type_value;
-    _cached_TransactionUpdate_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_TransactionUpdate_type_value.value.elements.push(
-      {
-        name: 'status',
-        algebraicType: UpdateStatus.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'timestamp',
-        algebraicType: __AlgebraicTypeValue.createTimestampType(),
-      },
-      {
-        name: 'callerIdentity',
-        algebraicType: __AlgebraicTypeValue.createIdentityType(),
-      },
-      {
-        name: 'callerConnectionId',
-        algebraicType: __AlgebraicTypeValue.createConnectionIdType(),
-      },
-      {
-        name: 'reducerCall',
-        algebraicType: ReducerCallInfo.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'energyQuantaUsed',
-        algebraicType: EnergyQuanta.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'totalHostExecutionDuration',
-        algebraicType: __AlgebraicTypeValue.createTimeDurationType(),
-      }
-    );
-    return _cached_TransactionUpdate_type_value;
+export default __t.object('TransactionUpdate', {
+  get status() {
+    return UpdateStatus;
   },
-
-  serialize(writer: __BinaryWriter, value: TransactionUpdate): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      TransactionUpdate.getTypeScriptAlgebraicType(),
-      value
-    );
+  timestamp: __t.timestamp(),
+  callerIdentity: __t.identity(),
+  callerConnectionId: __t.connectionId(),
+  get reducerCall() {
+    return ReducerCallInfo;
   },
-
-  deserialize(reader: __BinaryReader): TransactionUpdate {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      TransactionUpdate.getTypeScriptAlgebraicType()
-    );
+  get energyQuantaUsed() {
+    return EnergyQuanta;
   },
-};
-
-export default TransactionUpdate;
+  totalHostExecutionDuration: __t.timeDuration(),
+});
