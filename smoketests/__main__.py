@@ -57,6 +57,15 @@ def _convert_select_pattern(pattern):
 
 
 TESTPREFIX = "smoketests.tests."
+
+def _iter_all_tests(suite_or_case):
+    """Yield all individual tests from possibly nested TestSuite structures."""
+    if isinstance(suite_or_case, unittest.TestSuite):
+        for t in suite_or_case:
+            yield from _iter_all_tests(t)
+    else:
+        yield suite_or_case
+
 def main():
     tests = [fname.removesuffix(".py") for fname in os.listdir(TEST_DIR / "tests") if fname.endswith(".py") and fname != "__init__.py"]
 
@@ -108,8 +117,9 @@ def main():
     tests = loader.loadTestsFromNames(testlist)
     if args.list:
         print("Selected tests:\n")
-        for test in itertools.chain(*itertools.chain(*tests)):
-            print(f"{test}")
+        for test in _iter_all_tests(tests):
+            name = test.id()
+            print(f"{name}")
         exit(0)
 
     if not args.no_build_cli:
