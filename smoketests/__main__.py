@@ -79,27 +79,6 @@ def main():
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
     args = parser.parse_args()
 
-    if not args.no_build_cli:
-        logging.info("Compiling spacetime cli...")
-        smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
-
-    update_bin_name = "spacetimedb-update" + exe_suffix
-    try:
-        bin_is_symlink = SPACETIME_BIN.readlink() == update_bin_name
-    except OSError:
-        bin_is_symlink = False
-    if not bin_is_symlink:
-        try:
-            os.remove(SPACETIME_BIN)
-        except FileNotFoundError:
-            pass
-        try:
-            os.symlink(update_bin_name, SPACETIME_BIN)
-        except OSError:
-            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
-
-    os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
-
     if args.docker:
         # have docker logs print concurrently with the test output
         if args.compose_file:
@@ -111,25 +90,6 @@ def main():
                 docker_container = check_docker()
                 subprocess.Popen(["docker", "logs", "-f", docker_container])
         smoketests.HAVE_DOCKER = True
-
-    with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0, delete_on_close=False) as config_file:
-        with BASE_STDB_CONFIG_PATH.open("rb") as src, config_file.file as dst:
-            shutil.copyfileobj(src, dst)
-
-        if args.remote_server is not None:
-            smoketests.spacetime("--config-path", config_file.name, "server", "edit", "localhost", "--url", args.remote_server, "--yes")
-            smoketests.REMOTE_SERVER = True
-
-        if args.spacetime_login:
-            smoketests.spacetime("--config-path", config_file.name, "logout")
-            smoketests.spacetime("--config-path", config_file.name, "login")
-            smoketests.USE_SPACETIME_LOGIN = True
-        else:
-            smoketests.new_identity(config_file.name)
-
-        smoketests.STDB_CONFIG = Path(config_file.name).read_text()
-
-    build_template_target()
 
     if not args.skip_dotnet:
         smoketests.HAVE_DOTNET = check_dotnet()
@@ -152,6 +112,45 @@ def main():
             print(f"{test}")
         exit(0)
 
+    if not args.no_build_cli:
+        logging.info("Compiling spacetime cli...")
+        smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
+
+    update_bin_name = "spacetimedb-update" + exe_suffix
+    try:
+        bin_is_symlink = SPACETIME_BIN.readlink() == update_bin_name
+    except OSError:
+        bin_is_symlink = False
+    if not bin_is_symlink:
+        try:
+            os.remove(SPACETIME_BIN)
+        except FileNotFoundError:
+            pass
+        try:
+            os.symlink(update_bin_name, SPACETIME_BIN)
+        except OSError:
+            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
+
+    os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
+
+    with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0, delete_on_close=False) as config_file:
+        with BASE_STDB_CONFIG_PATH.open("rb") as src, config_file.file as dst:
+            shutil.copyfileobj(src, dst)
+
+        if args.remote_server is not None:
+            smoketests.spacetime("--config-path", config_file.name, "server", "edit", "localhost", "--url", args.remote_server, "--yes")
+            smoketests.REMOTE_SERVER = True
+
+        if args.spacetime_login:
+            smoketests.spacetime("--config-path", config_file.name, "logout")
+            smoketests.spacetime("--config-path", config_file.name, "login")
+            smoketests.USE_SPACETIME_LOGIN = True
+        else:
+            smoketests.new_identity(config_file.name)
+
+        smoketests.STDB_CONFIG = Path(config_file.name).read_text()
+
+    build_template_target()
     buffer = not args.show_all_output
     verbosity = 2
 
