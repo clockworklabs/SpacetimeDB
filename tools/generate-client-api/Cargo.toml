@@ -1,0 +1,9 @@
+[package]
+name = "generate-client-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tempfile = "3"
+anyhow = "1"
+replace-spacetimedb = { path = "../replace-spacetimedb" } # use the library directly

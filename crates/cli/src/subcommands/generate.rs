@@ -200,7 +200,9 @@ pub async fn exec_ex(
             fs::create_dir_all(out_dir.join(parent))?;
         }
         let path = out_dir.join(fname);
-        fs::write(&path, code)?;
+        if !path.exists() || fs::read_to_string(&path)? != code {
+            fs::write(&path, code)?;
+        }
         paths.insert(path);
     }
 
@@ -285,7 +287,7 @@ impl clap::ValueEnum for Language {
 }
 
 impl Language {
-    fn format_files(&self, project_dir: &PathBuf, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+    fn format_files(&self, project_dir: &Path, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
         match self {
             Language::Rust => rustfmt(generated_files)?,
             Language::Csharp => dotnet_format(project_dir, generated_files)?,

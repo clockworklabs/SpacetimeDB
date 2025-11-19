@@ -12,8 +12,11 @@ use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::version;
 use spacetimedb_lib::{db::raw_def::v9::Lifecycle, sats::AlgebraicTypeRef};
 use spacetimedb_primitives::ColList;
-use spacetimedb_schema::{def::ProcedureDef, schema::TableSchema};
 use spacetimedb_schema::{def::ViewDef, type_for_generate::ProductTypeDef};
+use spacetimedb_schema::{
+    def::{ConstraintDef, ProcedureDef},
+    schema::TableSchema,
+};
 use spacetimedb_schema::{
     def::{IndexDef, TableDef, TypeDef},
     type_for_generate::TypespaceForGenerate,
@@ -112,8 +115,14 @@ pub(super) fn iter_tables(module: &ModuleDef) -> impl Iterator<Item = &TableDef>
     module.tables().sorted_by_key(|table| &table.name)
 }
 
-/// Iterate over all the table names defined by the module (in alphabetical order) and their product types.
-/// Note, this also includes view names because from the perspective of codegen, views are tables.
+/// Iterate over all the [`ViewDef`]s defined by the module, in alphabetical order by name.
+///
+/// Sorting is necessary to have deterministic reproducible codegen.
+pub(super) fn iter_views(module: &ModuleDef) -> impl Iterator<Item = &ViewDef> {
+    module.views().sorted_by_key(|view| &view.name)
+}
+
+/// Iterate over the names of all the tables and views defined by the module, in alphabetical order.
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
 pub(super) fn iter_table_names_and_types(module: &ModuleDef) -> impl Iterator<Item = (&Identifier, AlgebraicTypeRef)> {
@@ -122,13 +131,6 @@ pub(super) fn iter_table_names_and_types(module: &ModuleDef) -> impl Iterator<It
         .map(|def| (&def.name, def.product_type_ref))
         .chain(module.views().map(|def| (&def.name, def.product_type_ref)))
         .sorted_by_key(|(name, _)| *name)
-}
-
-/// Iterate over all the [`ViewDef`]s defined by the module, in alphabetical order by name.
-///
-/// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_views(module: &ModuleDef) -> impl Iterator<Item = &ViewDef> {
-    module.views().sorted_by_key(|view| &view.name)
 }
 
 pub(super) fn iter_unique_cols<'a>(
@@ -150,6 +152,10 @@ pub(super) fn iter_unique_cols<'a>(
 
 pub(super) fn iter_indexes(table: &TableDef) -> impl Iterator<Item = &IndexDef> {
     table.indexes.values().sorted_by_key(|index| &index.name)
+}
+
+pub(super) fn iter_constraints(table: &TableDef) -> impl Iterator<Item = &ConstraintDef> {
+    table.constraints.values().sorted_by_key(|constraint| &constraint.name)
 }
 
 /// Iterate over all the [`TypeDef`]s defined by the module, in alphabetical order by name.

@@ -4,69 +4,18 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { TypeAlias } from './type_alias_type';
-// Mark import as potentially unused
-declare type __keep_TypeAlias = TypeAlias;
-
-import * as MiscModuleExportVariants from './misc_module_export_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import TypeAlias from './type_alias_type';
 
 // The tagged union or sum type for the algebraic type `MiscModuleExport`.
-export type MiscModuleExport = MiscModuleExportVariants.TypeAlias;
-
-let _cached_MiscModuleExport_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const MiscModuleExport = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  TypeAlias: (value: TypeAlias): MiscModuleExportVariants.TypeAlias => ({
-    tag: 'TypeAlias',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_MiscModuleExport_type_value)
-      return _cached_MiscModuleExport_type_value;
-    _cached_MiscModuleExport_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_MiscModuleExport_type_value.value.variants.push({
-      name: 'TypeAlias',
-      algebraicType: TypeAlias.getTypeScriptAlgebraicType(),
-    });
-    return _cached_MiscModuleExport_type_value;
+const MiscModuleExport = __t.enum('MiscModuleExport', {
+  get TypeAlias() {
+    return TypeAlias;
   },
-
-  serialize(writer: __BinaryWriter, value: MiscModuleExport): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      MiscModuleExport.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): MiscModuleExport {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      MiscModuleExport.getTypeScriptAlgebraicType()
-    );
-  },
-};
+});
 
 export default MiscModuleExport;

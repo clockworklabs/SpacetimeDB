@@ -4,63 +4,13 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
-export type RawScopedTypeNameV9 = {
-  scope: string[];
-  name: string;
-};
-let _cached_RawScopedTypeNameV9_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawScopedTypeNameV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawScopedTypeNameV9_type_value)
-      return _cached_RawScopedTypeNameV9_type_value;
-    _cached_RawScopedTypeNameV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawScopedTypeNameV9_type_value.value.elements.push(
-      {
-        name: 'scope',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.String),
-      },
-      { name: 'name', algebraicType: __AlgebraicTypeValue.String }
-    );
-    return _cached_RawScopedTypeNameV9_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawScopedTypeNameV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawScopedTypeNameV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawScopedTypeNameV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawScopedTypeNameV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawScopedTypeNameV9;
+export default __t.object('RawScopedTypeNameV9', {
+  scope: __t.array(__t.string()),
+  name: __t.string(),
+});

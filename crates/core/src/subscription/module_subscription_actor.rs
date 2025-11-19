@@ -142,6 +142,20 @@ pub struct CommitAndBroadcastEventSuccess {
     pub metrics: ExecutionMetrics,
 }
 
+/// Commits `tx`
+/// and evaluates and broadcasts subscriptions updates.
+pub(crate) fn commit_and_broadcast_event(
+    subs: &ModuleSubscriptions,
+    client: Option<Arc<ClientConnectionSender>>,
+    event: ModuleEvent,
+    tx: MutTxId,
+) -> CommitAndBroadcastEventSuccess {
+    match subs.commit_and_broadcast_event(client, event, tx).unwrap() {
+        Ok(res) => res,
+        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+    }
+}
+
 type AssertTxFn = Arc<dyn Fn(&Tx) + Send + Sync + 'static>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
@@ -710,14 +724,9 @@ impl ModuleSubscriptions {
         &self,
         recipient: Arc<ClientConnectionSender>,
         message: ProcedureResultMessage,
+        tx_offset: Option<TransactionOffset>,
     ) -> Result<(), BroadcastError> {
-        self.broadcast_queue.send_client_message(
-            recipient,
-            // TODO(procedure-tx): We'll need some mechanism for procedures to report their last-referenced TxOffset,
-            // and to pass it here.
-            // This is currently moot, as procedures have no way to open a transaction yet.
-            None, message,
-        )
+        self.broadcast_queue.send_client_message(recipient, tx_offset, message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -940,6 +949,13 @@ impl ModuleSubscriptions {
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
     }
 
+    /// Rolls back `tx` and returns the offset as it was before `tx`.
+    pub(crate) fn rollback_mut_tx(stdb: &RelationalDB, tx: MutTxId) -> TxOffset {
+        let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+        stdb.report_tx_metrics(reducer, None, Some(tx_metrics), None);
+        tx_offset
+    }
+
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
     /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
@@ -978,9 +994,7 @@ impl ModuleSubscriptions {
                 // We don't need to do any subscription updates in this case, so we will exit early.
 
                 let event = Arc::new(event);
-                let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                self.relational_db
-                    .report_tx_metrics(reducer, None, Some(tx_metrics), None);
+                let tx_offset = Self::rollback_mut_tx(stdb, tx);
                 if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
                         event: Some(event.clone()),
@@ -1206,6 +1220,7 @@ mod tests {
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
     use crate::sql::execute::run;
+    use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
@@ -1677,9 +1692,7 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let Ok(Ok(success)) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
-            panic!("Encountered an error in `commit_and_broadcast_event`");
-        };
+        let success = commit_and_broadcast_event(subs, None, module_event(), tx);
         Ok(success.metrics)
     }
 

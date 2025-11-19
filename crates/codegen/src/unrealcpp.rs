@@ -39,7 +39,8 @@ impl UnrealCpp<'_> {
 impl Lang for UnrealCpp<'_> {
     fn generate_table_file_from_schema(&self, module: &ModuleDef, table: &TableDef, schema: TableSchema) -> OutputFile {
         let struct_name = type_ref_name(module, table.product_type_ref);
-        let self_header = struct_name.clone() + "Table";
+        let table_pascal = table.name.deref().to_case(Case::Pascal);
+        let self_header = table_pascal.clone() + "Table";
 
         let mut output = UnrealCppAutogen::new(
             &[
@@ -55,9 +56,8 @@ impl Lang for UnrealCpp<'_> {
         );
 
         let row_struct = format!("F{struct_name}Type"); // e.g. "FUserType", "FMessageType"
-        let handle_cls = format!("U{struct_name}Table"); // "UMessageTable"
+        let handle_cls = format!("U{table_pascal}Table"); // "UMessageTable"
         let table_name = table.name.deref().to_string();
-        let table_pascal = struct_name.clone();
 
         // Generate unique index classes first
         let product_type = module.typespace_for_generate()[table.product_type_ref].as_product();
@@ -375,7 +375,7 @@ impl Lang for UnrealCpp<'_> {
             filename: format!(
                 "Source/{}/Public/ModuleBindings/Tables/{}Table.g.h",
                 self.module_name,
-                type_ref_name(module, table.product_type_ref)
+                table.name.deref().to_case(Case::Pascal) //type_ref_name(module, table.product_type_ref)
             ),
             code: output.into_inner(),
         }
@@ -684,9 +684,8 @@ impl Lang for UnrealCpp<'_> {
         writeln!(client_h);
 
         writeln!(client_h, "/** Forward declaration for tables */");
-        for (_, product_type_ref) in iter_table_names_and_types(module) {
-            let table_pascal = type_ref_name(module, product_type_ref);
-            writeln!(client_h, "class U{table_pascal}Table;");
+        for (table_name, _) in iter_table_names_and_types(module) {
+            writeln!(client_h, "class U{}Table;", table_name.deref().to_case(Case::Pascal));
         }
         writeln!(client_h, "/***/");
         writeln!(client_h);
@@ -776,10 +775,10 @@ impl Lang for UnrealCpp<'_> {
 
         // Build table includes
         let table_includes: Vec<String> = iter_table_names_and_types(module)
-            .map(|(_, product_type_ref)| {
+            .map(|(table_name, _)| {
                 format!(
                     "ModuleBindings/Tables/{}Table.g.h",
-                    type_ref_name(module, product_type_ref)
+                    table_name.deref().to_case(Case::Pascal) //type_ref_name(module, product_type_ref)
                 )
             })
             .collect();
@@ -805,15 +804,34 @@ impl Lang for UnrealCpp<'_> {
 
         // Generate .cpp implementation files for each table
         for table in module.tables() {
-            let table_cpp_content = generate_table_cpp(module, table, self.module_name);
+            let schema = TableSchema::from_module_def(module, table, (), 0.into())
+                .validated()
+                .expect("table schema should validate");
+            let table_cpp_content = generate_table_cpp(module, table, self.module_name, &schema);
             let table_cpp_filename = format!(
                 "Source/{}/Private/ModuleBindings/Tables/{}Table.g.cpp",
                 self.module_name,
-                type_ref_name(module, table.product_type_ref)
+                table.name.deref().to_case(Case::Pascal) //type_ref_name(module, table.product_type_ref)
             );
             files.push(OutputFile {
                 filename: table_cpp_filename,
                 code: table_cpp_content,
+            });
+        }
+        for view in module.views() {
+            let tbl = TableDef::from(view.clone());
+            let schema = TableSchema::from_view_def_for_codegen(module, view)
+                .validated()
+                .expect("Failed to generate table due to validation errors");
+            let view_cpp_content = generate_table_cpp(module, &tbl, self.module_name, &schema);
+            let view_cpp_filename = format!(
+                "Source/{}/Private/ModuleBindings/Tables/{}Table.g.cpp",
+                self.module_name,
+                view.name.deref().to_case(Case::Pascal) //type_ref_name(module, view.product_type_ref)
+            );
+            files.push(OutputFile {
+                filename: view_cpp_filename,
+                code: view_cpp_content,
             });
         }
 
@@ -822,9 +840,10 @@ impl Lang for UnrealCpp<'_> {
 }
 
 // Helper function to generate table .cpp implementation files
-fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -> String {
-    let table_pascal = type_ref_name(module, table.product_type_ref);
-    let row_struct = format!("F{table_pascal}Type");
+fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str, schema: &TableSchema) -> String {
+    let table_pascal = table.name.deref().to_case(Case::Pascal);
+    let struct_name = type_ref_name(module, table.product_type_ref);
+    let row_struct = format!("F{struct_name}Type");
 
     // Include the table header and other necessary headers
     let table_header = format!("ModuleBindings/Tables/{table_pascal}Table.g.h");
@@ -837,10 +856,6 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str) -
     ];
 
     let mut output = UnrealCppAutogen::new_cpp(&includes);
-
-    let schema = TableSchema::from_module_def(module, table, (), 0.into())
-        .validated()
-        .expect("table schema should validate");
 
     // Get unique indexes and non-unique BTree indexes
     let product_type = module.typespace_for_generate()[table.product_type_ref].as_product();
@@ -1856,13 +1871,12 @@ fn generate_remote_tables_class(output: &mut UnrealCppAutogen, module: &ModuleDe
     writeln!(output);
 
     // Generate table handle properties
-    for (table_name, product_type_ref) in iter_table_names_and_types(module) {
-        let table_pascal = type_ref_name(module, product_type_ref);
-
+    for (table_name, _) in iter_table_names_and_types(module) {
         writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
         writeln!(
             output,
-            "    U{table_pascal}Table* {};",
+            "    U{}Table* {};",
+            table_name.deref().to_case(Case::Pascal),
             table_name.deref().to_case(Case::Pascal)
         );
         writeln!(output);
@@ -2358,13 +2372,13 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "\tReducers->Conn = this;");
     writeln!(output);
     for (table_name, product_type_ref) in iter_table_names_and_types(module) {
-        let table_pascal = type_ref_name(module, product_type_ref);
+        let struct_name = type_ref_name(module, product_type_ref);
         let table_name = table_name.deref();
         writeln!(
             output,
             "\tRegisterTable<F{}Type, U{}Table, FEventContext>(TEXT(\"{}\"), Db->{});",
-            table_pascal,
-            table_pascal,
+            struct_name,
+            table_name.to_case(Case::Pascal),
             table_name,
             table_name.to_case(Case::Pascal)
         );
@@ -2412,13 +2426,12 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "{{");
     writeln!(output);
     writeln!(output, "\t/** Creating tables */");
-    for (table_name, product_type_ref) in iter_table_names_and_types(module) {
-        let table_pascal = type_ref_name(module, product_type_ref);
+    for (table_name, _) in iter_table_names_and_types(module) {
         writeln!(
             output,
             "\t{} = NewObject<U{}Table>(this);",
             table_name.deref().to_case(Case::Pascal),
-            table_pascal
+            table_name.deref().to_case(Case::Pascal)
         );
     }
     writeln!(output, "\t/**/");
