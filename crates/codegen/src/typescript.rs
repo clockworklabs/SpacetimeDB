@@ -1,5 +1,5 @@
 use crate::util::{
-    is_reducer_invokable, iter_constraints, iter_indexes, iter_reducers, iter_table_and_view_names, iter_tables,
+    is_reducer_invokable, iter_constraints, iter_indexes, iter_reducers, iter_table_names_and_types, iter_tables,
     iter_types, iter_views, print_auto_generated_version_comment,
 };
 use crate::OutputFile;
@@ -195,7 +195,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "// Import and reexport all table handle types");
-        for table_name in iter_table_and_view_names(module) {
+        for (table_name, _) in iter_table_names_and_types(module) {
             let table_module_name = table_module_name(table_name);
             let table_name_pascalcase = table_name.deref().to_case(Case::Pascal);
             // TODO: This really shouldn't be necessary. We could also have `table()` accept

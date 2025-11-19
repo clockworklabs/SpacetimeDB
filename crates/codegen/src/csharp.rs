@@ -7,8 +7,8 @@ use std::ops::Deref;
 use super::code_indenter::CodeIndenter;
 use super::Lang;
 use crate::util::{
-    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_tables, print_auto_generated_file_comment,
-    print_auto_generated_version_comment, type_ref_name,
+    collect_case, is_reducer_invokable, iter_indexes, iter_reducers, iter_table_names_and_types,
+    print_auto_generated_file_comment, print_auto_generated_version_comment, type_ref_name,
 };
 use crate::{indent_scope, OutputFile};
 use convert_case::{Case, Casing};
@@ -745,11 +745,11 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             writeln!(output, "public RemoteTables(DbConnection conn)");
             indented_block(output, |output| {
-                for table in iter_tables(module) {
+                for (table_name, _) in iter_table_names_and_types(module) {
                     writeln!(
                         output,
                         "AddTable({} = new(conn));",
-                        table.name.deref().to_case(Case::Pascal)
+                        table_name.deref().to_case(Case::Pascal)
                     );
                 }
             });
