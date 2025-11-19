@@ -38,12 +38,6 @@ public static partial class Module
         public ulong Level;
     }
 
-    [Type]
-    public partial struct TransportData
-    {
-        public int TroopCount;
-    }
-
     [SpacetimeDB.Type]
     public partial struct PlayerAndLevel
     {

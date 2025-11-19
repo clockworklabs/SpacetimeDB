@@ -2063,7 +2063,7 @@ public static partial class Module
     [SpacetimeDB.View(Name = "my_user", Public = true)]
     public static Users? MyUser(ViewContext ctx)
     {
-        return ctx.Db.users.identity.Find(ctx.Sender) as Users;
+        return ctx.Db.users.identity.Find(ctx.Sender) as Users?;
     }
 
     [SpacetimeDB.Table(Name = "indexed_simple_enum", Public = true)]

@@ -38,7 +38,7 @@ DbConnection ConnectToDB()
 }
 
 uint waiting = 0;
-bool applied = false;
+var applied = false;
 SubscriptionHandle? handle = null;
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
@@ -133,21 +133,21 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         ValidateBTreeIndexes(ctx);
         waiting--;
     });
-    
-    
+
+
     // Views test
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
     Debug.Assert(viewIterRows != null && viewIterRows.Any());
-    
+
     Log.Debug("Calling RemoteQuery on View");
     var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");
     Debug.Assert(viewRemoteQueryRows != null && viewRemoteQueryRows.Result.Length > 0);
-    
+
     Log.Debug("Calling Iter on Anonymous View");
     var anonViewIterRows = context.Db.PlayersForLevel.Iter();
     Debug.Assert(anonViewIterRows != null && anonViewIterRows.Any());
-    
+
     Log.Debug("Calling RemoteQuery on Anonymous View");
     var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery($"WHERE Level = 1)");
     Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
