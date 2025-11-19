@@ -287,7 +287,7 @@ impl clap::ValueEnum for Language {
 }
 
 impl Language {
-    fn format_files(&self, project_dir: &PathBuf, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+    fn format_files(&self, project_dir: &Path, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
         match self {
             Language::Rust => rustfmt(generated_files)?,
             Language::Csharp => dotnet_format(project_dir, generated_files)?,
