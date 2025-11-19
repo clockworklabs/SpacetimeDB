@@ -23,11 +23,10 @@ exe_suffix = ".exe" if sys.platform == "win32" else ""
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
-BUILD_DIR = STDB_DIR / "target"
 SPACETIME_BIN = None
-def update_spacetime_bin_path():
-    SPACETIME_BIN = BUILD_DIR / ("debug/spacetime" + exe_suffix)
-update_spacetime_bin_path()
+def update_spacetime_bin_path(build_dir):
+    SPACETIME_BIN = build_dir / ("debug/spacetime" + exe_suffix)
+update_spacetime_bin_path(STDB_DIR / "target")
 
 # the contents of files for the base smoketest project template
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/templates/basic-rust/server/src/lib.rs").read()
