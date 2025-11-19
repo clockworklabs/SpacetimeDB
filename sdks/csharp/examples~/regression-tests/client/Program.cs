@@ -138,6 +138,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     // Views test
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
+    Log.Debug("MyPlayer Iter count: " + (viewIterRows != null ? viewIterRows.Count().ToString() : "null"));
     Debug.Assert(viewIterRows != null && viewIterRows.Any());
 
     Log.Debug("Calling RemoteQuery on View");
@@ -149,7 +150,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Debug.Assert(anonViewIterRows != null && anonViewIterRows.Any());
 
     Log.Debug("Calling RemoteQuery on Anonymous View");
-    var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery($"WHERE Level = 1)");
+    var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery("WHERE Level = 1");
     Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
 }
 
