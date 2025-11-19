@@ -33,7 +33,8 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
+    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
+    PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
@@ -959,17 +960,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             }
             .hash();
 
-            Ok(PrePublishResult {
+            Ok(PrePublishResult::AutoMigrate(PrePublishAutoMigrateResult {
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
-            })
+            }))
         }
-        MigratePlanResult::AutoMigrationError(e) => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Automatic migration is not possible: {e}"),
-        )
-            .into()),
+        MigratePlanResult::AutoMigrationError(e) => {
+            Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
+                reason: e.to_string(),
+            }))
+        }
     }
     .map(axum::Json)
 }

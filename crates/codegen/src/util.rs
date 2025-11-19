@@ -125,12 +125,12 @@ pub(super) fn iter_views(module: &ModuleDef) -> impl Iterator<Item = &ViewDef> {
 /// Iterate over the names of all the tables and views defined by the module, in alphabetical order.
 ///
 /// Sorting is necessary to have deterministic reproducible codegen.
-pub(super) fn iter_table_and_view_names(module: &ModuleDef) -> impl Iterator<Item = &Identifier> {
-    itertools::chain(
-        module.tables().map(|table| &table.name),
-        module.views().map(|view| &view.name),
-    )
-    .sorted()
+pub(super) fn iter_table_names_and_types(module: &ModuleDef) -> impl Iterator<Item = (&Identifier, AlgebraicTypeRef)> {
+    module
+        .tables()
+        .map(|def| (&def.name, def.product_type_ref))
+        .chain(module.views().map(|def| (&def.name, def.product_type_ref)))
+        .sorted_by_key(|(name, _)| *name)
 }
 
 pub(super) fn iter_unique_cols<'a>(
