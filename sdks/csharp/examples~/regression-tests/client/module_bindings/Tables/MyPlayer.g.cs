@@ -13,15 +13,15 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class GetUserByStringHandle : RemoteTableHandle<EventContext, User>
+        public sealed class MyPlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            protected override string RemoteTableName => "GetUserByString";
+            protected override string RemoteTableName => "MyPlayer";
 
-            internal GetUserByStringHandle(DbConnection conn) : base(conn)
+            internal MyPlayerHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly GetUserByStringHandle GetUserByString;
+        public readonly MyPlayerHandle MyPlayer;
     }
 }

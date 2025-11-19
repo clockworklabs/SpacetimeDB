@@ -50,7 +50,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         {
             throw err;
         })
-        .Subscribe(["SELECT * FROM ExampleData"]);
+        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer"]);
 
     conn.Reducers.OnAdd += (ReducerEventContext ctx, uint id, uint indexed) =>
     {
@@ -134,14 +134,23 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         waiting--;
     });
     
-    // Views test
-    Log.Debug("Calling View");
-    var viewRows = context.Db.GetUserByContext.Iter().FirstOrDefault();
-    Debug.Assert(viewRows != null && viewRows.IdentityString == context.Identity?.ToString());
     
-    Log.Debug("Calling Anonymous View");
-    var anonViewRows = context.Db.GetUserByString.RemoteQuery("Where IdentityString = identityStringExample");
-    Debug.Assert(anonViewRows != null && anonViewRows.Result.Length > 0);
+    // Views test
+    Log.Debug("Calling Iter on View");
+    var viewIterRows = context.Db.MyPlayer.Iter();
+    Debug.Assert(viewIterRows != null && viewIterRows.Any());
+    
+    Log.Debug("Calling RemoteQuery on View");
+    var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");
+    Debug.Assert(viewRemoteQueryRows != null && viewRemoteQueryRows.Result.Length > 0);
+    
+    Log.Debug("Calling Iter on Anonymous View");
+    var anonViewIterRows = context.Db.PlayersForLevel.Iter();
+    Debug.Assert(anonViewIterRows != null && anonViewIterRows.Any());
+    
+    Log.Debug("Calling RemoteQuery on Anonymous View");
+    var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery($"WHERE Level = 1)");
+    Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
 }
 
 System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>

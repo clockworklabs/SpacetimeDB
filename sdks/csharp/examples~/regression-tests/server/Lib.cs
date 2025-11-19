@@ -15,36 +15,68 @@ public static partial class Module
         public uint Indexed;
     }
     
-    [SpacetimeDB.Table(Name = "User", Public = true)]
-    public partial struct User
-    {
-        [PrimaryKey]
-        public string IdentityString;
-        public bool GeneratedByConnectedClient;
+    [SpacetimeDB.Table(Name = "Player", Public = true)]
+    public partial struct Player {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        [SpacetimeDB.Unique]
+        public Identity Identity;
+
+        public string Name;
     }
 
-    [SpacetimeDB.View(Name = "GetExampleDataById", Public = true)]
-    public static ExampleData? GetExampleDataById(ViewContext ctx)//, uint id)
-    {
-        return ctx.Db.ExampleData.Id.Find(0);
-    }
+    [SpacetimeDB.Table(Name = "PlayerLevel", Public = true)]
+    public partial struct PlayerLevel {
+        [SpacetimeDB.Unique]
+        public ulong PlayerId;
 
-    [SpacetimeDB.View(Name = "GetAnonymousExampleDataById", Public = true)]
-    public static ExampleData? GetAnonymousExampleDataById(AnonymousViewContext ctx) //, uint id)
-    {
-        return ctx.Db.ExampleData.Id.Find(0);
+        [SpacetimeDB.Index.BTree]
+        public ulong Level;
     }
     
-    [SpacetimeDB.View(Name = "GetUserByContext", Public = true)]
-    public static User? GetUserByContext(ViewContext ctx)
-    {
-        return ctx.Db.User.IdentityString.Find(ctx.Sender.ToString());
+    [Type]
+    public partial struct TransportData {
+        public int TroopCount;
     }
 
-    [SpacetimeDB.View(Name = "GetUserByString", Public = true)]
-    public static User? GetUserByString(AnonymousViewContext ctx) //, string identityString)
+    [SpacetimeDB.Type]
+    public partial struct PlayerAndLevel
     {
-        return ctx.Db.User.IdentityString.Find("identityStringExample");
+        public ulong Id;
+        public Identity Identity;
+        public string Name;
+        public ulong Level;
+    }
+
+    // At-most-one row: return T?
+    [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+    public static Player? MyPlayer(ViewContext ctx)
+    {
+        return ctx.Db.Player.Identity.Find(ctx.Sender) as Player?;
+    }
+    
+    // Multiple rows: return a list
+    [SpacetimeDB.View(Name = "PlayersForLevel", Public = true)]
+    public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
+    {
+        var rows = new List<PlayerAndLevel>();
+        foreach (var player in ctx.Db.PlayerLevel.Level.Filter(1))
+        {
+            if (ctx.Db.Player.Id.Find(player.PlayerId) is Player p)
+            {
+                var row = new PlayerAndLevel
+                {
+                    Id = p.Id,
+                    Identity = p.Identity,
+                    Name = p.Name,
+                    Level = player.Level
+                };
+                rows.Add(row);
+            }
+        }
+        return rows;
     }
 
     [SpacetimeDB.Reducer]
@@ -65,37 +97,21 @@ public static partial class Module
         throw new Exception(error);
     }
     
-    [SpacetimeDB.Reducer]
-    public static void CreateNewUser(ReducerContext ctx, string identityString)
-    {
-        ctx.Db.User.Insert(
-            new User
-            {
-                IdentityString = identityString,
-                GeneratedByConnectedClient = false,
-            }
-        );
-    }
-    
-    [SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+    [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
         Log.Info($"Connect {ctx.Sender}");
 
-        if (ctx.Db.User.IdentityString.Find(ctx.Sender.ToString()!) is User thisUser)
+        if (ctx.Db.Player.Identity.Find(ctx.Sender) is Player player)
         {
-            ctx.Db.User.IdentityString.Update(thisUser);
+            // We are not logging player login status, so do nothing
         }
         else
         {
-            // If this is a new User, create a `User` object for the `IdentityString`,
-            ctx.Db.User.Insert(
-                new User
-                {
-                    IdentityString = ctx.Sender.ToString()!,
-                    GeneratedByConnectedClient = true,
-                }
-            );
+            // Lets setup a new player with a level of 1
+            ctx.Db.Player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer"});
+            var playerId = (ctx.Db.Player.Identity.Find(ctx.Sender)!).Value.Id;
+            ctx.Db.PlayerLevel.Insert(new PlayerLevel { PlayerId = playerId, Level = 1});
         }
     }
 }
