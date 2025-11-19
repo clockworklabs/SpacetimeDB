@@ -146,7 +146,7 @@ def log_cmd(args):
     logging.debug(f"$ {' '.join(str(arg) for arg in args)}")
 
 
-def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
+def run_cmd(*args, capture_stdout=True, capture_stderr=True, check=True, full_output=False, cmd_name=None, log=True, **kwargs):
     if log:
         log_cmd(args if cmd_name is None else [cmd_name, *args[1:]])
 
@@ -166,7 +166,7 @@ def run_cmd(*args, capture_stderr=True, check=True, full_output=False, cmd_name=
         if capture_stderr and output.stderr.strip() != "":
             logging.debug(f"--- stderr ---\n{output.stderr.strip()}")
             needs_close = True
-        if output.stdout.strip() != "":
+        if capture_stdout and output.stdout.strip() != "":
             logging.debug(f"--- stdout ---\n{output.stdout.strip()}")
             needs_close = True
         if needs_close:
