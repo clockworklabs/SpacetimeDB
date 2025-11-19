@@ -1036,27 +1036,6 @@ impl Deref for TxContext {
     }
 }
 
-/// Values which knows whether they signify an ok state as opposed to error.
-#[cfg(feature = "unstable")]
-pub trait IsOk {
-    /// Returns whether the current state of `self` is "ok".
-    fn is_ok(&self) -> bool;
-}
-
-#[cfg(feature = "unstable")]
-impl IsOk for () {
-    fn is_ok(&self) -> bool {
-        true
-    }
-}
-
-#[cfg(feature = "unstable")]
-impl<T, E> IsOk for Result<T, E> {
-    fn is_ok(&self) -> bool {
-        self.is_ok()
-    }
-}
-
 /// The context that any procedure is provided with.
 ///
 /// Each procedure must accept `&mut ProcedureContext` as its first argument.
