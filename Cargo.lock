@@ -7098,6 +7098,7 @@ name = "spacetimedb"
 version = "1.8.0"
 dependencies = [
  "bytemuck",
+ "bytes",
  "derive_more 0.99.20",
  "getrandom 0.2.16",
  "http 1.3.1",

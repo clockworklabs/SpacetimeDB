@@ -481,7 +481,7 @@ fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
     match ctx.http.get(format!(
         "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
     )) {
-        Ok(result) => String::from_utf8_lossy(result.body().as_bytes()).to_string(),
+        Ok(result) => result.into_body().into_string_lossy(),
         Err(e) => format!("{e}"),
     }
 }

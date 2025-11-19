@@ -763,7 +763,13 @@ pub mod raw {
         /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
         /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
         #[cfg(feature = "unstable")]
-        pub fn procedure_http_request(request_ptr: *const u8, request_len: u32, out: *mut BytesSource) -> u16;
+        pub fn procedure_http_request(
+            request_ptr: *const u8,
+            request_len: u32,
+            body_ptr: *const u8,
+            body_len: u32,
+            out: *mut [BytesSource; 2],
+        ) -> u16;
     }
 
     /// What strategy does the database index use?
@@ -1443,22 +1449,27 @@ pub mod procedure {
     /// All HTTP response codes are treated as successful for these purposes;
     /// this method only returns an error if it is unable to produce any HTTP response whatsoever.
     /// In that case, this function returns `Err(bytes)`, where `bytes` contains a BSATN-serialized `spacetimedb_lib::http::Error`.
-    pub fn http_request(http_request_bsatn: &[u8]) -> Result<super::raw::BytesSource, super::raw::BytesSource> {
-        let mut out = super::raw::BytesSource::INVALID;
+    pub fn http_request(
+        http_request_bsatn: &[u8],
+        body: &[u8],
+    ) -> Result<(raw::BytesSource, raw::BytesSource), raw::BytesSource> {
+        let mut out = [raw::BytesSource::INVALID; 2];
 
         let res = unsafe {
             super::raw::procedure_http_request(
                 http_request_bsatn.as_ptr(),
                 http_request_bsatn.len() as u32,
-                &mut out as *mut super::raw::BytesSource,
+                body.as_ptr(),
+                body.len() as u32,
+                &mut out as *mut [raw::BytesSource; 2],
             )
         };
 
         match super::Errno::from_code(res) {
             // Success: `out` is a `spacetimedb_lib::http::Response`.
-            None => Ok(out),
+            None => Ok((out[0], out[1])),
             // HTTP_ERROR: `out` is a `spacetimedb_lib::http::Error`.
-            Some(errno) if errno == super::Errno::HTTP_ERROR => Err(out),
+            Some(errno) if errno == super::Errno::HTTP_ERROR => Err(out[0]),
             Some(errno) => panic!("{errno}"),
         }
     }

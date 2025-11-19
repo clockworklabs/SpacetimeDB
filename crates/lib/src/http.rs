@@ -28,91 +28,64 @@ pub struct Request {
     inner: HttpRequest,
 }
 
-impl<T: Into<Body>> From<http::Request<T>> for Request {
-    fn from(req: http::Request<T>) -> Request {
-        let (
-            http::request::Parts {
-                method,
-                uri,
-                version,
-                headers,
-                mut extensions,
-                ..
-            },
-            body,
-        ) = req.into_parts();
+impl From<http::request::Parts> for Request {
+    fn from(parts: http::request::Parts) -> Request {
+        let http::request::Parts {
+            method,
+            uri,
+            version,
+            headers,
+            mut extensions,
+            ..
+        } = parts;
 
         let timeout = extensions.remove::<Timeout>();
         if !extensions.is_empty() {
             log::warn!("Converting HTTP `Request` with unrecognized extensions");
         }
         Request {
-            inner: HttpRequest::V0(HttpRequestV0 {
-                body: body.into(),
+            inner: HttpRequest {
                 method: method.into(),
                 headers: headers.into(),
                 timeout,
                 uri: uri.to_string(),
                 version: version.into(),
-            }),
+            },
         }
     }
 }
 
-impl From<Request> for http::Request<Body> {
-    fn from(req: Request) -> http::Request<Body> {
+impl TryFrom<Request> for http::request::Parts {
+    type Error = http::Error;
+    fn try_from(req: Request) -> http::Result<http::request::Parts> {
         let Request {
             inner:
-                HttpRequest::V0(HttpRequestV0 {
-                    body,
+                HttpRequest {
                     method,
                     headers,
                     timeout,
                     uri,
                     version,
-                }),
-        } = req
-        else {
-            unreachable!("`HttpRequest::NonExhausitve` pseudo-variant encountered");
-        };
-        let mut builder = http::Request::builder()
-            .method::<http::Method>(method.into())
-            .uri(uri)
-            .version(version.into());
+                },
+        } = req;
+        let (mut request, ()) = http::Request::new(()).into_parts();
+        request.method = method.into();
+        request.uri = uri.try_into()?;
+        request.version = version.into();
+        request.headers = headers.try_into()?;
 
         if let Some(timeout) = timeout {
-            let extensions = builder.extensions_mut().expect("`http::request::Builder` has error");
-            extensions.insert(timeout);
+            request.extensions.insert(timeout);
         }
 
-        let Headers {
-            inner: HttpHeaders::V0(headers),
-        } = headers;
-        let new_headers = builder.headers_mut().expect("`http::request::Builder` has error");
-        for HttpHeaderPair { name, value } in headers {
-            new_headers.insert(
-                http::HeaderName::try_from(name).expect("Invalid `HeaderName` in `HttpHeaderPair`"),
-                value.into(),
-            );
-        }
-
-        builder
-            .body(body)
-            .expect("`http::request::Builder::body` returned error")
+        Ok(request)
     }
 }
 
+/// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate)]
-enum HttpRequest {
-    V0(HttpRequestV0),
-    NonExhaustive(Box<[u8]>),
-}
-
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-struct HttpRequestV0 {
-    body: Body,
+struct HttpRequest {
     method: Method,
     headers: Headers,
     timeout: Option<Timeout>,
@@ -141,69 +114,6 @@ impl From<Timeout> for TimeDuration {
     fn from(Timeout { timeout }: Timeout) -> TimeDuration {
         timeout
     }
-}
-
-/// Represents the body of an HTTP request or response.
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-pub struct Body {
-    inner: HttpBody,
-}
-
-impl Body {
-    pub fn as_bytes(&self) -> &[u8] {
-        match &self.inner {
-            HttpBody::Bytes(bytes) => bytes,
-        }
-    }
-
-    pub fn into_bytes(self) -> Box<[u8]> {
-        match self.inner {
-            HttpBody::Bytes(bytes) => bytes,
-        }
-    }
-
-    pub fn from_bytes(bytes: impl Into<Box<[u8]>>) -> Body {
-        Body {
-            inner: HttpBody::Bytes(bytes.into()),
-        }
-    }
-
-    /// An empty body, suitable for a `GET` request.
-    pub fn empty() -> Body {
-        ().into()
-    }
-
-    /// Is `self` exactly zero bytes?
-    pub fn is_empty(&self) -> bool {
-        self.as_bytes().is_empty()
-    }
-}
-
-macro_rules! impl_body_from_bytes {
-    ($bytes:ident : $t:ty => $conv:expr) => {
-        impl From<$t> for Body {
-            fn from($bytes: $t) -> Body {
-                Body::from_bytes($conv)
-            }
-        }
-    };
-    ($t:ty) => {
-        impl_body_from_bytes!(bytes : $t => bytes);
-    };
-}
-
-impl_body_from_bytes!(s: String => s.into_bytes());
-impl_body_from_bytes!(Vec<u8>);
-impl_body_from_bytes!(Box<[u8]>);
-impl_body_from_bytes!(&[u8]);
-impl_body_from_bytes!(s: &str => s.as_bytes());
-impl_body_from_bytes!(_unit: () => Box::<[u8; 0]>::new([]) as Box<[u8]>);
-
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-enum HttpBody {
-    Bytes(Box<[u8]>),
 }
 
 /// Represents an HTTP method.
@@ -326,7 +236,6 @@ impl From<Version> for http::Version {
             Version::HTTP_11 => http::Version::HTTP_11,
             Version::HTTP_2 => http::Version::HTTP_2,
             Version::HTTP_3 => http::Version::HTTP_3,
-            _ => unreachable!("Unknown HTTP version"),
         }
     }
 }
@@ -339,7 +248,6 @@ enum HttpVersion {
     Http11,
     Http2,
     Http3,
-    NonExhaustive(Box<[u8]>),
 }
 
 /// A set of HTTP headers.
@@ -348,30 +256,34 @@ enum HttpVersion {
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct Headers {
-    inner: HttpHeaders,
+    // SATS doesn't (and won't) have a multimap type, so just use an array of pairs for the ser/de format.
+    entries: Box<[HttpHeaderPair]>,
 }
 
 impl From<http::HeaderMap<http::HeaderValue>> for Headers {
     fn from(value: http::HeaderMap<http::HeaderValue>) -> Headers {
         Headers {
-            inner: HttpHeaders::V0(
-                value
-                    .into_iter()
-                    .map(|(name, value)| HttpHeaderPair {
-                        name: name.map(|name| name.to_string()).unwrap_or_default(),
-                        value: value.into(),
-                    })
-                    .collect(),
-            ),
+            entries: value
+                .into_iter()
+                .map(|(name, value)| HttpHeaderPair {
+                    name: name.map(|name| name.to_string()).unwrap_or_default(),
+                    value: value.into(),
+                })
+                .collect(),
         }
     }
 }
 
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-enum HttpHeaders {
-    // SATS doesn't (and won't) have a multimap type, so just use an array of pairs for the ser/de format.
-    V0(Box<[HttpHeaderPair]>),
+impl TryFrom<Headers> for http::HeaderMap {
+    type Error = http::Error;
+    fn try_from(headers: Headers) -> http::Result<Self> {
+        let Headers { entries } = headers;
+        let mut new_headers = http::HeaderMap::with_capacity(entries.len() / 2);
+        for HttpHeaderPair { name, value } in entries {
+            new_headers.insert(http::HeaderName::try_from(name)?, value.try_into()?);
+        }
+        Ok(new_headers)
+    }
 }
 
 #[derive(Clone, SpacetimeType)]
@@ -399,11 +311,12 @@ impl From<http::HeaderValue> for HeaderValue {
     }
 }
 
-impl From<HeaderValue> for http::HeaderValue {
-    fn from(value: HeaderValue) -> http::HeaderValue {
-        let mut new_value = http::HeaderValue::from_bytes(&value.bytes).expect("Invalid HTTP `HeaderValue`");
+impl TryFrom<HeaderValue> for http::HeaderValue {
+    type Error = http::Error;
+    fn try_from(value: HeaderValue) -> http::Result<http::HeaderValue> {
+        let mut new_value = http::HeaderValue::from_bytes(&value.bytes)?;
         new_value.set_sensitive(value.is_sensitive);
-        new_value
+        Ok(new_value)
     }
 }
 
@@ -413,79 +326,46 @@ pub struct Response {
     inner: HttpResponse,
 }
 
-impl From<Response> for http::Response<Body> {
-    fn from(response: Response) -> http::Response<Body> {
+impl TryFrom<Response> for http::response::Parts {
+    type Error = http::Error;
+    fn try_from(response: Response) -> http::Result<http::response::Parts> {
         let Response {
-            inner:
-                HttpResponse::V0(HttpResponseV0 {
-                    body,
-                    headers,
-                    version,
-                    code,
-                }),
-        } = response
-        else {
-            unreachable!("`HttpResponse::NonExhaustive` pseudo-variant encountered");
-        };
+            inner: HttpResponse { headers, version, code },
+        } = response;
 
-        let mut builder = http::Response::builder()
-            .version(version.into())
-            .status(http::StatusCode::from_u16(code).expect("Invalid `StatusCode` in `HttpResponse`"));
-
-        let Headers {
-            inner: HttpHeaders::V0(headers),
-        } = headers;
-        let new_headers = builder.headers_mut().expect("`http::response::Builder` has error");
-        for HttpHeaderPair { name, value } in headers {
-            new_headers.insert(
-                http::HeaderName::try_from(name).expect("Invalid `HeaderName` in `HttpHeaderPair`"),
-                value.into(),
-            );
-        }
-
-        builder
-            .body(body)
-            .expect("`http::response::Builder::body` returned error")
+        let (mut response, ()) = http::Response::new(()).into_parts();
+        response.version = version.into();
+        response.status = http::StatusCode::from_u16(code)?;
+        response.headers = headers.try_into()?;
+        Ok(response)
     }
 }
 
-impl<T: Into<Body>> From<http::Response<T>> for Response {
-    fn from(response: http::Response<T>) -> Response {
-        let (
-            http::response::Parts {
-                extensions,
-                headers,
-                status,
-                version,
-                ..
-            },
-            body,
-        ) = response.into_parts();
+impl From<http::response::Parts> for Response {
+    fn from(response: http::response::Parts) -> Response {
+        let http::response::Parts {
+            extensions,
+            headers,
+            status,
+            version,
+            ..
+        } = response;
         if !extensions.is_empty() {
             log::warn!("Converting HTTP `Response` with unrecognized extensions");
         }
         Response {
-            inner: HttpResponse::V0(HttpResponseV0 {
-                body: body.into(),
+            inner: HttpResponse {
                 headers: headers.into(),
                 version: version.into(),
                 code: status.as_u16(),
-            }),
+            },
         }
     }
 }
 
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate)]
-enum HttpResponse {
-    V0(HttpResponseV0),
-    NonExhaustive(Box<[u8]>),
-}
-
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-struct HttpResponseV0 {
-    body: Body,
+struct HttpResponse {
     headers: Headers,
     version: Version,
     /// A valid HTTP response status code, sourced from an already-validated [`http::StatusCode`].

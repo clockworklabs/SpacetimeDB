@@ -5,8 +5,9 @@
 //! The [`get`](HttpClient::get) helper can be used for simple `GET` requests,
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
+use bytes::Bytes;
 pub use http::{Request, Response};
-pub use spacetimedb_lib::http::{Body, Error, Timeout};
+pub use spacetimedb_lib::http::{Error, Timeout};
 
 use crate::{
     rt::{read_bytes_source_into, BytesSource},
@@ -24,6 +25,7 @@ impl HttpClient {
     /// For simple `GET` requests with no headers, use [`HttpClient::get`] instead.
     // TODO(docs): expand docs
     pub fn send<B: Into<Body>>(&self, request: Request<B>) -> Result<Response<Body>, Error> {
+        let (request, body) = request.map(Into::into).into_parts();
         let request = st_http::Request::from(request);
         let request = bsatn::to_vec(&request).expect("Failed to BSATN-serialize `spacetimedb_lib::http::Request`");
 
@@ -34,11 +36,16 @@ impl HttpClient {
                 .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
         }
 
-        match spacetimedb_bindings_sys::procedure::http_request(&request) {
-            Ok(response_source) => {
+        match spacetimedb_bindings_sys::procedure::http_request(&request, &body.into_bytes()) {
+            Ok((response_source, body_source)) => {
                 let response = read_output::<st_http::Response>(response_source);
-                let response = http::Response::<Body>::from(response);
-                Ok(response)
+                let response =
+                    http::response::Parts::try_from(response).expect("Invalid http response returned from host");
+                let mut buf = IterBuf::take();
+                read_bytes_source_into(body_source, &mut buf);
+                let body = Body::from_bytes(buf.clone());
+
+                Ok(http::Response::from_parts(response, body))
             }
             Err(err_source) => {
                 let error = read_output::<st_http::Error>(err_source);
@@ -63,4 +70,74 @@ impl HttpClient {
                 .map_err(|err| Error::from_display(&err))?,
         )
     }
+}
+
+/// Represents the body of an HTTP request or response.
+pub struct Body {
+    inner: BodyInner,
+}
+
+impl Body {
+    pub fn into_bytes(self) -> Bytes {
+        match self.inner {
+            BodyInner::Bytes(bytes) => bytes,
+        }
+    }
+
+    pub fn into_string(self) -> Result<String, std::string::FromUtf8Error> {
+        String::from_utf8(self.into_bytes().into())
+    }
+
+    pub fn into_string_lossy(self) -> String {
+        self.into_string()
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+    }
+
+    pub fn from_bytes(bytes: impl Into<Bytes>) -> Body {
+        Body {
+            inner: BodyInner::Bytes(bytes.into()),
+        }
+    }
+
+    /// An empty body, suitable for a `GET` request.
+    pub fn empty() -> Body {
+        ().into()
+    }
+
+    /// Is `self` exactly zero bytes?
+    pub fn is_empty(&self) -> bool {
+        match &self.inner {
+            BodyInner::Bytes(bytes) => bytes.is_empty(),
+        }
+    }
+}
+
+impl Default for Body {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+macro_rules! impl_body_from_bytes {
+    ($bytes:ident : $t:ty => $conv:expr) => {
+        impl From<$t> for Body {
+            fn from($bytes: $t) -> Body {
+                Body::from_bytes($conv)
+            }
+        }
+    };
+    ($t:ty) => {
+        impl_body_from_bytes!(bytes : $t => bytes);
+    };
+}
+
+impl_body_from_bytes!(String);
+impl_body_from_bytes!(Vec<u8>);
+impl_body_from_bytes!(Box<[u8]>);
+impl_body_from_bytes!(&'static [u8]);
+impl_body_from_bytes!(&'static str);
+impl_body_from_bytes!(_unit: () => Bytes::new());
+
+enum BodyInner {
+    Bytes(Bytes),
 }

@@ -1659,10 +1659,13 @@ impl WasmInstanceEnv {
 
     /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
     /// suspending execution until the request is complete,
-    /// then return its response via a [`BytesSource`] written to `out`.
+    /// then return its response details via a [`BytesSource`] written to `out[0]`
+    /// and its response body via a [`BytesSource`] written to `out[1]`.
     ///
     /// `request_ptr[..request_len]` should store a BSATN-serialized `spacetimedb_lib::http::Request` object
     /// containing the details of the request to be performed.
+    ///
+    /// `body_ptr[..body_len]` should store the body of the request to be performed;
     ///
     /// If the request is successful, a [`BytesSource`] is written to `out`
     /// containing a BSATN-encoded `spacetimedb_lib::http::Response` object.
@@ -1684,11 +1687,12 @@ impl WasmInstanceEnv {
     /// Traps if:
     ///
     /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
+    /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
     /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
     pub fn procedure_http_request<'caller>(
         caller: Caller<'caller, Self>,
-        (request_ptr, request_len, out): (WasmPtr<u8>, u32, WasmPtr<u32>),
+        (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),
     ) -> Fut<'caller, RtResult<u32>> {
         use spacetimedb_lib::http as st_http;
 
@@ -1735,16 +1739,39 @@ impl WasmInstanceEnv {
                     NodesError::DecodeValue(err)
                 })?;
 
+                let body_buf = mem.deref_slice(body_ptr, body_len)?;
+
                 // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
                 // and map its body into a type `reqwest` will like.
-                let mut request =
-                    http::Request::from(request).map(|body| reqwest::Body::from(Vec::<u8>::from(body.into_bytes())));
+                fn convert_request(request: st_http::Request, body: &[u8]) -> Result<reqwest::Request, st_http::Error> {
+                    let mut request: http::request::Parts =
+                        request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
 
-                // Pull our timeout extension, if any, out of the `http::Request` extensions.
-                // reqwest has its own timeout extension, which is where we'll provide this.
-                let timeout = request.extensions_mut().remove::<st_http::Timeout>();
+                    // Pull our timeout extension, if any, out of the `http::Request` extensions.
+                    // reqwest has its own timeout extension, which is where we'll provide this.
+                    let timeout = request.extensions.remove::<st_http::Timeout>();
 
-                let mut reqwest = match reqwest::Request::try_from(request) {
+                    let request = http::Request::from_parts(request, body.to_vec());
+
+                    let mut reqwest: reqwest::Request =
+                        request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
+
+                    // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+                    // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+                    // We'll use this same `timeout: Duration` in a `tokio::time::timeout`,
+                    // which will enclose both the initial request and downloading the body.
+                    // Supplying it to reqwest is just for redundancy.
+                    let timeout = timeout
+                        .map(|timeout| timeout.timeout.to_duration().unwrap_or(Duration::ZERO))
+                        .unwrap_or(HTTP_DEFAULT_TIMEOUT)
+                        .min(HTTP_DEFAULT_TIMEOUT);
+
+                    *reqwest.timeout_mut() = Some(timeout);
+
+                    Ok(reqwest)
+                }
+
+                let reqwest = match convert_request(request, body_buf) {
                     Ok(reqwest) => reqwest,
                     Err(err) => {
                         // If for whatever reason reqwest doesn't like our `http::Request`,
@@ -1762,21 +1789,6 @@ impl WasmInstanceEnv {
                 };
 
                 // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
-
-                // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-                // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-                // We'll use this same `timeout: Duration` in a `tokio::time::timeout`,
-                // which will enclose both the initial request and downloading the body.
-                // Supplying it to reqwest is just for redundancy.
-                let timeout = timeout
-                    .map(|timeout| timeout.timeout.to_duration().unwrap_or(Duration::ZERO))
-                    .unwrap_or(HTTP_DEFAULT_TIMEOUT)
-                    .min(HTTP_DEFAULT_TIMEOUT);
-
-                *reqwest.timeout_mut() = Some(timeout);
-
-                // Un-`mut`.
-                let reqwest = reqwest;
 
                 // Actually execute the HTTP request!
                 // We'll wrap this future in a `tokio::time::timeout` before `await`ing it.
@@ -1797,20 +1809,15 @@ impl WasmInstanceEnv {
 
                     // Map the collected body into our `spacetimedb_lib::http::Body` type,
                     // then wrap it back in an `http::Response`.
-                    Ok::<_, st_http::Error>(http::Response::from_parts(
-                        parts,
-                        st_http::Body::from_bytes(Vec::from(body.to_bytes())),
-                    ))
+                    Ok::<_, st_http::Error>((parts, body.to_bytes()))
                 };
 
-                let response_or_err = tokio::time::timeout(timeout, get_response_and_download_body)
+                let response_or_err = get_response_and_download_body
                     // TODO(perf): Evaluate whether it's better to run this future on the "global" I/O Tokio executor,
                     // rather than the thread-local database executors.
-                    .await
-                    .map_err(|_| st_http::Error::from_string(format!("HTTP request exceeded timeout of {timeout:?}")))
-                    .flatten();
+                    .await;
 
-                let response = match response_or_err {
+                let (response, body) = match response_or_err {
                     Ok(response) => response,
                     Err(err) => {
                         // If the request failed, surface that error to the guest so customer logic can handle it.
@@ -1830,6 +1837,11 @@ impl WasmInstanceEnv {
                 // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
                 // which has a stable BSATN encoding to pass across the WASM boundary.
                 let response = st_http::Response::from(response);
+
+                let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                bytes_source
+                    .0
+                    .write_to(mem, out.saturating_add(size_of::<u32>() as u32))?;
 
                 // Write the request across the WASM boundary.
                 write_result(
