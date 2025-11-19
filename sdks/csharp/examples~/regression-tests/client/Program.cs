@@ -50,7 +50,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         {
             throw err;
         })
-        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer"]);
+        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer", "SELECT * FROM PlayersForLevel"]);
 
     conn.Reducers.OnAdd += (ReducerEventContext ctx, uint id, uint indexed) =>
     {
