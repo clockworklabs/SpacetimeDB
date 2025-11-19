@@ -416,3 +416,72 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
  id | level
 ----+-------
 """)
+
+class SubscribeViews(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
+
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    identity: Identity,
+    #[unique]
+    name: String,
+}
+
+#[spacetimedb::view(name = my_player, public)]
+pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().identity().find(ctx.sender)
+}
+
+#[spacetimedb::reducer]
+pub fn insert_player(ctx: &ReducerContext, name: String) {
+    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender });
+}
+"""
+
+    def _test_subscribing_with_different_identities(self):
+        """Tests different clients subscribing to a client-specific view"""
+
+        # Insert an identity for Alice
+        self.call("insert_player", "Alice")
+
+        # Generate and insert a new identity for Bob
+        self.reset_config()
+        self.new_identity()
+        self.call("insert_player", "Bob")
+
+        # Subscribe to `my_player` as Bob
+        sub = self.subscribe("select * from my_player", n=0)
+        events = sub()
+
+        # Project out the identity field.
+        # TODO: Eventually we should be able to do this directly in the sql.
+        # But for now we implement it in python.
+        projection = [
+            {
+                'my_player': {
+                    'deletes': [
+                        {'name': row['name']}
+                        for row in event['my_player']['deletes']
+                    ],
+                    'inserts': [
+                        {'name': row['name']}
+                        for row in event['my_player']['inserts']
+                    ],
+                }
+            }
+            for event in events
+        ]
+
+        self.assertEqual(
+            [
+                {
+                    'my_player': {
+                        'deletes': [],
+                        'inserts': [{'name': 'Bob'}],
+                    }
+                },
+            ],
+            projection,
+        )

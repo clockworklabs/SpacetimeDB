@@ -4,158 +4,46 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { CallReducer } from './call_reducer_type';
-// Mark import as potentially unused
-declare type __keep_CallReducer = CallReducer;
-import { Subscribe } from './subscribe_type';
-// Mark import as potentially unused
-declare type __keep_Subscribe = Subscribe;
-import { OneOffQuery } from './one_off_query_type';
-// Mark import as potentially unused
-declare type __keep_OneOffQuery = OneOffQuery;
-import { SubscribeSingle } from './subscribe_single_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeSingle = SubscribeSingle;
-import { SubscribeMulti } from './subscribe_multi_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeMulti = SubscribeMulti;
-import { Unsubscribe } from './unsubscribe_type';
-// Mark import as potentially unused
-declare type __keep_Unsubscribe = Unsubscribe;
-import { UnsubscribeMulti } from './unsubscribe_multi_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeMulti = UnsubscribeMulti;
-
-import * as ClientMessageVariants from './client_message_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import CallReducer from './call_reducer_type';
+import Subscribe from './subscribe_type';
+import OneOffQuery from './one_off_query_type';
+import SubscribeSingle from './subscribe_single_type';
+import SubscribeMulti from './subscribe_multi_type';
+import Unsubscribe from './unsubscribe_type';
+import UnsubscribeMulti from './unsubscribe_multi_type';
+import CallProcedure from './call_procedure_type';
 
 // The tagged union or sum type for the algebraic type `ClientMessage`.
-export type ClientMessage =
-  | ClientMessageVariants.CallReducer
-  | ClientMessageVariants.Subscribe
-  | ClientMessageVariants.OneOffQuery
-  | ClientMessageVariants.SubscribeSingle
-  | ClientMessageVariants.SubscribeMulti
-  | ClientMessageVariants.Unsubscribe
-  | ClientMessageVariants.UnsubscribeMulti;
-
-let _cached_ClientMessage_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const ClientMessage = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  CallReducer: (value: CallReducer): ClientMessageVariants.CallReducer => ({
-    tag: 'CallReducer',
-    value,
-  }),
-  Subscribe: (value: Subscribe): ClientMessageVariants.Subscribe => ({
-    tag: 'Subscribe',
-    value,
-  }),
-  OneOffQuery: (value: OneOffQuery): ClientMessageVariants.OneOffQuery => ({
-    tag: 'OneOffQuery',
-    value,
-  }),
-  SubscribeSingle: (
-    value: SubscribeSingle
-  ): ClientMessageVariants.SubscribeSingle => ({
-    tag: 'SubscribeSingle',
-    value,
-  }),
-  SubscribeMulti: (
-    value: SubscribeMulti
-  ): ClientMessageVariants.SubscribeMulti => ({ tag: 'SubscribeMulti', value }),
-  Unsubscribe: (value: Unsubscribe): ClientMessageVariants.Unsubscribe => ({
-    tag: 'Unsubscribe',
-    value,
-  }),
-  UnsubscribeMulti: (
-    value: UnsubscribeMulti
-  ): ClientMessageVariants.UnsubscribeMulti => ({
-    tag: 'UnsubscribeMulti',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_ClientMessage_type_value)
-      return _cached_ClientMessage_type_value;
-    _cached_ClientMessage_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_ClientMessage_type_value.value.variants.push(
-      {
-        name: 'CallReducer',
-        algebraicType: CallReducer.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'Subscribe',
-        algebraicType: Subscribe.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'OneOffQuery',
-        algebraicType: OneOffQuery.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'SubscribeSingle',
-        algebraicType: SubscribeSingle.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'SubscribeMulti',
-        algebraicType: SubscribeMulti.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'Unsubscribe',
-        algebraicType: Unsubscribe.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'UnsubscribeMulti',
-        algebraicType: UnsubscribeMulti.getTypeScriptAlgebraicType(),
-      }
-    );
-    return _cached_ClientMessage_type_value;
+const ClientMessage = __t.enum('ClientMessage', {
+  get CallReducer() {
+    return CallReducer;
   },
-
-  serialize(writer: __BinaryWriter, value: ClientMessage): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ClientMessage.getTypeScriptAlgebraicType(),
-      value
-    );
+  get Subscribe() {
+    return Subscribe;
   },
-
-  deserialize(reader: __BinaryReader): ClientMessage {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ClientMessage.getTypeScriptAlgebraicType()
-    );
+  get OneOffQuery() {
+    return OneOffQuery;
   },
-};
+  get SubscribeSingle() {
+    return SubscribeSingle;
+  },
+  get SubscribeMulti() {
+    return SubscribeMulti;
+  },
+  get Unsubscribe() {
+    return Unsubscribe;
+  },
+  get UnsubscribeMulti() {
+    return UnsubscribeMulti;
+  },
+  get CallProcedure() {
+    return CallProcedure;
+  },
+});
 
 export default ClientMessage;

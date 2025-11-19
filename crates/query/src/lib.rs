@@ -45,9 +45,14 @@ pub fn compile_subscription(
     let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
         .into_iter()
         .map(compile_select)
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok((plan_fragments, return_id, return_name, has_param))
+    // Does this subscription read from a client-specific view?
+    // If so, it is as if the view is parameterized by `:sender`.
+    // We must know this in order to generate the correct query hash.
+    let reads_view = plan_fragments.iter().any(|plan| plan.reads_from_view(false));
+
+    Ok((plan_fragments, return_id, return_name, has_param || reads_view))
 }
 
 /// A utility for parsing and type checking a sql statement

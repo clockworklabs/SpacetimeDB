@@ -1,6 +1,6 @@
 //! STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 
-import { type Load, newLoad, blackBox } from './load';
+import { newLoad, blackBox } from './load';
 import { spacetimedb, type Entity, type Circle, type Food } from './schema';
 import { Timestamp } from 'spacetimedb';
 import { t } from 'spacetimedb/server';
@@ -117,7 +117,7 @@ const crossJoinCircleFood = spacetimedb.reducer(
 
         const foodEntity = entityId.find(food.entity_id);
         if (foodEntity == null) {
-          let string = JSON.stringify(circleEntity);
+          const string = JSON.stringify(circleEntity);
           throw new Error(`Entity not found: ${food.entity_id}`);
         }
 

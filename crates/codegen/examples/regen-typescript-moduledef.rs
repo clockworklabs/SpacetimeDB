@@ -41,7 +41,7 @@ fn main() -> anyhow::Result<()> {
             if filename == "index.ts" {
                 return Ok(());
             }
-            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../index";"#);
+            let code = regex_replace!(&code, r#"from "spacetimedb";"#, r#"from "../../lib/type_builders";"#);
 
             // Elide types which are related to client-side only things
             let code = regex_replace!(&code, r"type CallReducerFlags as __CallReducerFlags,", r"");
@@ -60,6 +60,7 @@ fn main() -> anyhow::Result<()> {
             );
             let code = regex_replace!(&code, r"DbConnectionBuilder as __DbConnectionBuilder,", r"");
             let code = regex_replace!(&code, r"DbConnectionImpl as __DbConnectionImpl,", r"");
+            let code = regex_replace!(&code, r"type DbConnectionConfig as __DbConnectionConfig,", r"");
             let code = regex_replace!(&code, r"SubscriptionBuilderImpl as __SubscriptionBuilderImpl,", r"");
             let code = regex_replace!(&code, r"TableCache as __TableCache,", r"");
             let code = regex_replace!(&code, r"ClientCache as __ClientCache,", r"");
