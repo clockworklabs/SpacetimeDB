@@ -3,6 +3,7 @@ use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
+use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
@@ -20,6 +21,7 @@ use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
@@ -79,7 +81,7 @@ pub trait WasmInstance {
         &mut self,
         op: ProcedureOp,
         budget: FunctionBudget,
-    ) -> impl Future<Output = ProcedureExecuteResult>;
+    ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
 }
 
 pub struct EnergyStats {
@@ -378,15 +380,12 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub async fn call_procedure(
-        &mut self,
-        params: CallProcedureParams,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let res = self.common.call_procedure(params, &mut self.instance).await;
-        if res.is_err() {
+    pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
+        let ret = self.common.call_procedure(params, &mut self.instance).await;
+        if ret.result.is_err() {
             self.trapped = true;
         }
-        res
+        ret
     }
 }
 
@@ -575,7 +574,7 @@ impl InstanceCommon {
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+    ) -> CallProcedureReturn {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -612,7 +611,7 @@ impl InstanceCommon {
         // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let result = inst.call_procedure(op, budget).await;
+        let (result, tx_offset) = inst.call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
             stats:
@@ -630,7 +629,7 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
-        match call_result {
+        let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
 
@@ -655,16 +654,17 @@ impl InstanceCommon {
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
                 let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
-                let return_val = seed
-                    .deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
-                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))?;
-                Ok(ProcedureCallResult {
-                    return_val,
-                    execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
-                    start_timestamp: timestamp,
-                })
+                seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
+                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
+                    .map(|return_val| ProcedureCallResult {
+                        return_val,
+                        execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
+                        start_timestamp: timestamp,
+                    })
             }
-        }
+        };
+
+        CallProcedureReturn { result, tx_offset }
     }
 
     /// Execute a reducer.

@@ -230,11 +230,8 @@ impl InstanceEnv {
         );
     }
 
-    /// End a console timer by logging the span at INFO level.
-    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
-        let elapsed = span.start.elapsed();
-        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
-
+    /// Logs a simple `message` at `level`.
+    pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
         /// A backtrace provider that provides nothing.
         struct Noop;
         impl BacktraceProvider for Noop {
@@ -254,9 +251,17 @@ impl InstanceEnv {
             filename: None,
             line_number: None,
             function,
-            message: &message,
+            message,
         };
-        self.console_log(LogLevel::Info, &record, &Noop);
+        self.console_log(level, &record, &Noop);
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        self.console_log_simple_message(LogLevel::Info, function, &message);
     }
 
     /// Returns the current time suitable for logging.
@@ -622,7 +627,7 @@ impl TxSlot {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
     }
 
-    /// Steals th tx from the slot.
+    /// Steals the tx from the slot.
     pub fn take(&self) -> Result<MutTxId, GetTxError> {
         self.inner.lock().take().ok_or(GetTxError)
     }

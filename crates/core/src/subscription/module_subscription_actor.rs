@@ -724,14 +724,9 @@ impl ModuleSubscriptions {
         &self,
         recipient: Arc<ClientConnectionSender>,
         message: ProcedureResultMessage,
+        tx_offset: Option<TransactionOffset>,
     ) -> Result<(), BroadcastError> {
-        self.broadcast_queue.send_client_message(
-            recipient,
-            // TODO(procedure-tx): We'll need some mechanism for procedures to report their last-referenced TxOffset,
-            // and to pass it here.
-            // This is currently moot, as procedures have no way to open a transaction yet.
-            None, message,
-        )
+        self.broadcast_queue.send_client_message(recipient, tx_offset, message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
