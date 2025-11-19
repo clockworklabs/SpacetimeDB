@@ -15,6 +15,7 @@ import itertools
 import tempfile
 from pathlib import Path
 import shutil
+import traceback
 
 def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
@@ -57,6 +58,15 @@ def _convert_select_pattern(pattern):
 
 
 TESTPREFIX = "smoketests.tests."
+
+def _iter_all_tests(suite_or_case):
+    """Yield all individual tests from possibly nested TestSuite structures."""
+    if isinstance(suite_or_case, unittest.TestSuite):
+        for t in suite_or_case:
+            yield from _iter_all_tests(t)
+    else:
+        yield suite_or_case
+
 def main():
     tests = [fname.removesuffix(".py") for fname in os.listdir(TEST_DIR / "tests") if fname.endswith(".py") and fname != "__init__.py"]
 
@@ -79,6 +89,51 @@ def main():
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
     args = parser.parse_args()
 
+    if args.docker:
+        # have docker logs print concurrently with the test output
+        if args.compose_file:
+            smoketests.COMPOSE_FILE = args.compose_file
+        if not args.no_docker_logs:
+            if args.compose_file:
+                subprocess.Popen(["docker", "compose", "-f", args.compose_file, "logs", "-f"])
+            else:
+                docker_container = check_docker()
+                subprocess.Popen(["docker", "logs", "-f", docker_container])
+        smoketests.HAVE_DOCKER = True
+
+    if not args.skip_dotnet:
+        smoketests.HAVE_DOTNET = check_dotnet()
+        if not smoketests.HAVE_DOTNET:
+            print("no suitable dotnet installation found")
+            exit(1)
+
+    add_prefix = lambda testlist: [TESTPREFIX + test for test in testlist]
+    import fnmatch
+    excludelist = add_prefix(args.exclude)
+    testlist = add_prefix(args.test)
+
+    loader = ExclusionaryTestLoader(excludelist)
+    loader.testNamePatterns = args.testNamePatterns
+
+    tests = loader.loadTestsFromNames(testlist)
+    if args.list:
+        failed_cls = getattr(unittest.loader, "_FailedTest", None)
+        any_failed = False
+        for test in _iter_all_tests(tests):
+            name = test.id()
+            if isinstance(test, failed_cls):
+                any_failed = True
+                print('')
+                print("Failed to construct %s:" % test.id())
+                exc = getattr(test, "_exception", None)
+                if exc is not None:
+                    tb = ''.join(traceback.format_exception(exc))
+                    print(tb.rstrip())
+                print('')
+            else:
+                print(f"{name}")
+        exit(1 if any_failed else 0)
+
     if not args.no_build_cli:
         logging.info("Compiling spacetime cli...")
         smoketests.run_cmd("cargo", "build", cwd=TEST_DIR.parent, capture_stderr=False)
@@ -100,18 +155,6 @@ def main():
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
-    if args.docker:
-        # have docker logs print concurrently with the test output
-        if args.compose_file:
-            smoketests.COMPOSE_FILE = args.compose_file
-        if not args.no_docker_logs:
-            if args.compose_file:
-                subprocess.Popen(["docker", "compose", "-f", args.compose_file, "logs", "-f"])
-            else:
-                docker_container = check_docker()
-                subprocess.Popen(["docker", "logs", "-f", docker_container])
-        smoketests.HAVE_DOCKER = True
-
     with tempfile.NamedTemporaryFile(mode="w+b", suffix=".toml", buffering=0, delete_on_close=False) as config_file:
         with BASE_STDB_CONFIG_PATH.open("rb") as src, config_file.file as dst:
             shutil.copyfileobj(src, dst)
@@ -130,28 +173,6 @@ def main():
         smoketests.STDB_CONFIG = Path(config_file.name).read_text()
 
     build_template_target()
-
-    if not args.skip_dotnet:
-        smoketests.HAVE_DOTNET = check_dotnet()
-        if not smoketests.HAVE_DOTNET:
-            print("no suitable dotnet installation found")
-            exit(1)
-
-    add_prefix = lambda testlist: [TESTPREFIX + test for test in testlist]
-    import fnmatch
-    excludelist = add_prefix(args.exclude)
-    testlist = add_prefix(args.test)
-
-    loader = ExclusionaryTestLoader(excludelist)
-    loader.testNamePatterns = args.testNamePatterns
-
-    tests = loader.loadTestsFromNames(testlist)
-    if args.list:
-        print("Selected tests:\n")
-        for test in itertools.chain(*itertools.chain(*tests)):
-            print(f"{test}")
-        exit(0)
-
     buffer = not args.show_all_output
     verbosity = 2
 
