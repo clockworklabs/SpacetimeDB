@@ -849,10 +849,10 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void RepeatingTestHandler(ReducerEventContext ctx, RepeatingTestArg arg);
+        public delegate void RepeatingTestHandler(ReducerEventContext ctx, SpacetimeDB.RepeatingTestArg arg);
         public event RepeatingTestHandler? OnRepeatingTest;
 
-        public void RepeatingTest(RepeatingTestArg arg)
+        public void RepeatingTest(SpacetimeDB.RepeatingTestArg arg)
         {
             conn.InternalCallReducer(new Reducer.RepeatingTest(arg), this.SetCallReducerFlags.RepeatingTestFlags);
         }
@@ -985,10 +985,10 @@ namespace SpacetimeDB
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void TestHandler(ReducerEventContext ctx, TestA arg, TestB arg2, NamespaceTestC arg3, NamespaceTestF arg4);
+        public delegate void TestHandler(ReducerEventContext ctx, SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.NamespaceTestC arg3, SpacetimeDB.NamespaceTestF arg4);
         public event TestHandler? OnTest;
 
-        public void Test(TestA arg, TestB arg2, NamespaceTestC arg3, NamespaceTestF arg4)
+        public void Test(SpacetimeDB.TestA arg, SpacetimeDB.TestB arg2, SpacetimeDB.NamespaceTestC arg3, SpacetimeDB.NamespaceTestF arg4)
         {
             conn.InternalCallReducer(new Reducer.Test(arg, arg2, arg3, arg4), this.SetCallReducerFlags.TestFlags);
         }

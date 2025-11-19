@@ -15,6 +15,7 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef, TypespaceForGenerate,
@@ -705,21 +706,8 @@ impl Lang for Csharp<'_> {
                 ", "
             };
 
-            let mut func_params: String = String::new();
-            let mut func_args: String = String::new();
-
-            for (arg_i, (arg_name, arg_ty)) in reducer.params_for_generate.into_iter().enumerate() {
-                if arg_i != 0 {
-                    func_params.push_str(", ");
-                    func_args.push_str(", ");
-                }
-
-                let arg_type_str = ty_fmt(module, arg_ty);
-                let arg_name = arg_name.deref().to_case(Case::Camel);
-
-                write!(func_params, "{arg_type_str} {arg_name}").unwrap();
-                write!(func_args, "{arg_name}").unwrap();
-            }
+            let (func_params, func_args) =
+                build_func_params_and_args(module, reducer.params_for_generate.into_iter(), self.namespace);
 
             writeln!(
                 output,
@@ -836,21 +824,8 @@ impl Lang for Csharp<'_> {
                 ", "
             };
 
-            let mut func_params: String = String::new();
-            let mut func_args: String = String::new();
-
-            for (arg_i, (arg_name, arg_ty)) in procedure.params_for_generate.into_iter().enumerate() {
-                if arg_i != 0 {
-                    func_params.push_str(", ");
-                    func_args.push_str(", ");
-                }
-
-                let arg_type_str = ty_fmt_with_ns(module, arg_ty, self.namespace);
-                let arg_name = arg_name.deref().to_case(Case::Camel);
-
-                write!(func_params, "{arg_type_str} {arg_name}").unwrap();
-                write!(func_args, "{arg_name}").unwrap();
-            }
+            let (func_params, func_args) =
+                build_func_params_and_args(module, procedure.params_for_generate.into_iter(), self.namespace);
             let return_type_str = ty_fmt_with_ns(module, &procedure.return_type_for_generate, self.namespace);
             // Generate the clean public API that users call to allow us of BSATN.Decode<> then reflect to the proper return type
             writeln!(
@@ -1152,6 +1127,7 @@ fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Disp
     })
 }
 
+/// Like `ty_fmt`, but prefixes type references with the provided namespace.
 fn ty_fmt_with_ns<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace: &'a str) -> impl fmt::Display + 'a {
     fmt_fn(move |f| match ty {
         AlgebraicTypeUse::Identity => f.write_str("SpacetimeDB.Identity"),
@@ -1456,4 +1432,28 @@ fn indented_block<R>(output: &mut CodeIndenter<String>, f: impl FnOnce(&mut Code
     let res = f(&mut output.indented(1));
     writeln!(output, "}}");
     res
+}
+
+/// Builds C# function parameter and argument lists from an iterator of parameter names and types.
+fn build_func_params_and_args<'a, I>(module: &ModuleDef, params_iter: I, namespace: &str) -> (String, String)
+where
+    I: Iterator<Item = &'a (Identifier, AlgebraicTypeUse)>,
+{
+    let mut func_params = String::new();
+    let mut func_args = String::new();
+
+    for (arg_i, (arg_name, arg_ty)) in params_iter.enumerate() {
+        if arg_i != 0 {
+            func_params.push_str(", ");
+            func_args.push_str(", ");
+        }
+
+        let arg_type_str = ty_fmt_with_ns(module, arg_ty, namespace);
+        let arg_name = arg_name.deref().to_case(Case::Camel);
+
+        write!(func_params, "{arg_type_str} {arg_name}").unwrap();
+        write!(func_args, "{arg_name}").unwrap();
+    }
+
+    (func_params, func_args)
 }
