@@ -114,8 +114,8 @@ fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Execut
 /// For views, we treat the return code 2 as a successful return using the header format.
 fn handle_view_result_sink_code(code: i32, result: Vec<u8>) -> Result<ViewReturnData, ExecutionError> {
     match code {
-        0 => Ok(ViewReturnData::from_raw_rows(result.into())),
-        2 => Ok(ViewReturnData::with_header(result.into())),
+        0 => Ok(ViewReturnData::Rows(result.into())),
+        2 => Ok(ViewReturnData::HeaderFirst(result.into())),
         CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
         _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
     }

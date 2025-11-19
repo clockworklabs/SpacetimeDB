@@ -159,42 +159,13 @@ pub struct ExecutionResult<T, E> {
 // pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
 pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
 
-// What format is the view using?
-// In the initial version of views, they returned the rows directly.
-// Views can now return multiple formats (rows or queries), so we use this to determine how to interpret the view result.
-#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
-pub enum ViewResultFormat {
+// The original version of views used a different return format (it returned the rows directly).
+// The newer version uses ViewReturnData to represent the different formats.
+pub enum ViewReturnData {
     // This view returns a Vec of rows (bsatn encoded).
-    Rows,
+    Rows(Bytes),
     // This view returns a ViewResultHeader, potentially followed by more data.
-    HeaderFirst,
-}
-
-pub struct ViewReturnData {
-    // How the bytes returned by the view should be interpreted.
-    pub format: ViewResultFormat,
-    // The actual bytes returned by the view.
-    pub data: Bytes,
-}
-
-impl ViewReturnData {
-    pub fn new(format: ViewResultFormat, data: Bytes) -> Self {
-        Self { format, data }
-    }
-
-    pub fn from_raw_rows(data: Bytes) -> Self {
-        Self {
-            format: ViewResultFormat::Rows,
-            data,
-        }
-    }
-
-    pub fn with_header(data: Bytes) -> Self {
-        Self {
-            format: ViewResultFormat::HeaderFirst,
-            data,
-        }
-    }
+    HeaderFirst(Bytes),
 }
 
 pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
@@ -1019,33 +990,27 @@ impl InstanceCommon {
             }
             // Materialize anonymous view
             (Ok(bytes), None) => {
-                if bytes.format != ViewResultFormat::Rows {
+                let ViewReturnData::Rows(bytes) = bytes else {
                     unimplemented!("View returned a non-rows format");
-                }
-                stdb.materialize_anonymous_view(
-                    &mut tx,
-                    table_id,
-                    row_type,
-                    bytes.data,
-                    self.info.module_def.typespace(),
-                )
-                .inspect_err(|err| {
-                    log::error!("Fatal error materializing view `{view_name}`: {err}");
-                })
-                .expect("Fatal error materializing view");
+                };
+                stdb.materialize_anonymous_view(&mut tx, table_id, row_type, bytes, self.info.module_def.typespace())
+                    .inspect_err(|err| {
+                        log::error!("Fatal error materializing view `{view_name}`: {err}");
+                    })
+                    .expect("Fatal error materializing view");
                 ViewOutcome::Success
             }
             // Materialize sender view
             (Ok(bytes), Some(sender)) => {
-                if bytes.format != ViewResultFormat::Rows {
+                let ViewReturnData::Rows(bytes) = bytes else {
                     unimplemented!("View returned a non-rows format");
-                }
+                };
                 stdb.materialize_view(
                     &mut tx,
                     table_id,
                     sender,
                     row_type,
-                    bytes.data,
+                    bytes,
                     self.info.module_def.typespace(),
                 )
                 .inspect_err(|err| {
