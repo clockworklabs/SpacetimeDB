@@ -13,6 +13,7 @@ use super::module_common::{build_common_module_from_raw, run_describer, ModuleCo
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
 use crate::client::ClientActorId;
+use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
     call_identity_connected, call_scheduled_reducer, init_database, CallViewParams, ClientConnectedError, Instance,
@@ -29,6 +30,7 @@ use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::asyncify;
 use anyhow::Context as _;
 use core::any::type_name;
@@ -380,10 +382,7 @@ impl JsInstance {
         .await
     }
 
-    pub async fn call_procedure(
-        &mut self,
-        _params: CallProcedureParams,
-    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
+    pub async fn call_procedure(&mut self, _params: CallProcedureParams) -> CallProcedureReturn {
         todo!("JS/TS module procedure support")
     }
 
@@ -781,7 +780,11 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         log_traceback(self.replica_ctx, func_type, func, trap)
     }
 
-    async fn call_procedure(&mut self, _op: ProcedureOp, _budget: FunctionBudget) -> ProcedureExecuteResult {
+    async fn call_procedure(
+        &mut self,
+        _op: ProcedureOp,
+        _budget: FunctionBudget,
+    ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
         todo!("JS/TS module procedure support")
     }
 }

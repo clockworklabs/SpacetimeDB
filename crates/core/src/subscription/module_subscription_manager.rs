@@ -1475,15 +1475,13 @@ impl SendWorker {
                     tx_offset,
                     message,
                 } => match tx_offset {
-                    None => {
-                        let _ = recipient.send_message(None, message);
-                    }
+                    None => send_to_client(&recipient, None, message),
                     Some(tx_offset) => {
                         let Ok(tx_offset) = tx_offset.await else {
                             tracing::error!("tx offset sender dropped, exiting send worker");
                             return;
                         };
-                        let _ = recipient.send_message(Some(tx_offset), message);
+                        send_to_client(&recipient, Some(tx_offset), message);
                     }
                 },
                 SendWorkerMessage::RemoveClient(client_id) => {

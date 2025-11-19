@@ -282,6 +282,7 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     let result = match module
         .call_procedure(caller_identity, Some(connection_id), None, &procedure, args)
         .await
+        .result
     {
         Ok(res) => Ok(res),
         Err(e) => {
