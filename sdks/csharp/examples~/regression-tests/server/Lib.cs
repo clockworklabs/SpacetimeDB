@@ -14,9 +14,10 @@ public static partial class Module
         [SpacetimeDB.Index.BTree]
         public uint Indexed;
     }
-    
+
     [SpacetimeDB.Table(Name = "Player", Public = true)]
-    public partial struct Player {
+    public partial struct Player
+    {
         [SpacetimeDB.PrimaryKey]
         [SpacetimeDB.AutoInc]
         public ulong Id;
@@ -28,16 +29,18 @@ public static partial class Module
     }
 
     [SpacetimeDB.Table(Name = "PlayerLevel", Public = true)]
-    public partial struct PlayerLevel {
+    public partial struct PlayerLevel
+    {
         [SpacetimeDB.Unique]
         public ulong PlayerId;
 
         [SpacetimeDB.Index.BTree]
         public ulong Level;
     }
-    
+
     [Type]
-    public partial struct TransportData {
+    public partial struct TransportData
+    {
         public int TroopCount;
     }
 
@@ -56,7 +59,7 @@ public static partial class Module
     {
         return ctx.Db.Player.Identity.Find(ctx.Sender) as Player?;
     }
-    
+
     // Multiple rows: return a list
     [SpacetimeDB.View(Name = "PlayersForLevel", Public = true)]
     public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
@@ -96,7 +99,7 @@ public static partial class Module
     {
         throw new Exception(error);
     }
-    
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -109,9 +112,9 @@ public static partial class Module
         else
         {
             // Lets setup a new player with a level of 1
-            ctx.Db.Player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer"});
+            ctx.Db.Player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
             var playerId = (ctx.Db.Player.Identity.Find(ctx.Sender)!).Value.Id;
-            ctx.Db.PlayerLevel.Insert(new PlayerLevel { PlayerId = playerId, Level = 1});
+            ctx.Db.PlayerLevel.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
     }
 }
