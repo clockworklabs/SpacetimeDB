@@ -21,6 +21,7 @@ namespace SpacetimeDB
         string? token;
         Compression? compression;
         bool light;
+        bool? confirmedReads;
 
         public DbConnection Build()
         {
@@ -32,7 +33,7 @@ namespace SpacetimeDB
             {
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
             }
-            conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light);
+            conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light, confirmedReads);
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
             {
@@ -72,6 +73,12 @@ namespace SpacetimeDB
             return this;
         }
 
+        public DbConnectionBuilder<DbConnection> WithConfirmedReads(bool confirmedReads)
+        {
+            this.confirmedReads = confirmedReads;
+            return this;
+        }
+
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
         public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
@@ -99,7 +106,7 @@ namespace SpacetimeDB
 
     public interface IDbConnection
     {
-        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light);
+        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads);
 
         internal void AddOnConnect(Action<Identity, string> cb);
         internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
@@ -184,7 +191,7 @@ namespace SpacetimeDB
                     SpacetimeDBNetworkManager._instance.RemoveConnection(this);
                 }
             };
-            
+
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (SpacetimeDBNetworkManager._instance != null)
                 SpacetimeDBNetworkManager._instance.StartCoroutine(ParseMessages());
@@ -482,9 +489,24 @@ namespace SpacetimeDB
         /// <summary>
         /// Connect to a remote spacetime instance.
         /// </summary>
-        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
+        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://maincloud.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
+        /// <param name="compression">The compression settings to use</param>
+        /// <param name="light">Whether or not to request light updates</param>
+        /// <param name="confirmedReads">
+        /// If set to true, instruct the server to send updates for transactions
+        /// only after they are confirmed to be durable.
+        ///
+        /// What durable means depends on the server configuration. In general,
+        /// a transaction is durable when it has been written to disk on one or
+        /// more servers.
+        ///
+        /// If set to false, instruct the server to send updates as soon as
+        /// transactions are committed in memory.
+        ///
+        /// If not set, the server chooses the default.
+        /// </param>
+        void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads)
         {
             isClosing = false;
 
@@ -509,7 +531,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light);
+                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light, confirmedReads);
                     }
                     catch (Exception e)
                     {
@@ -879,8 +901,8 @@ namespace SpacetimeDB
     /// Represents the result of parsing a database update message from SpacetimeDB.
     /// Contains updates for all tables affected by the update, with each entry mapping a table handle
     /// to its respective set of row changes (by primary key or row instance).
-    /// 
-    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/> 
+    ///
+    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/>
     /// to create new instances.
     /// Do not use the default constructor, as it will not initialize the Updates dictionary.
     /// </summary>

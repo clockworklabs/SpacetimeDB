@@ -5,7 +5,7 @@ pub mod version;
 
 use crate::control_db::ControlDb;
 use crate::subcommands::{extract_schema, start};
-use anyhow::{ensure, Context as _};
+use anyhow::Context as _;
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
 use spacetimedb::client::ClientActorIndex;
@@ -14,13 +14,13 @@ use spacetimedb::db;
 use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
 use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
-use spacetimedb::identity::Identity;
+use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::util::jobs::JobCores;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb_client_api::auth::{self, LOCALHOST};
 use spacetimedb_client_api::routes::subscribe::{HasWebSocketOptions, WebSocketOptions};
-use spacetimedb_client_api::{ControlStateReadAccess as _, DatabaseResetDef, Host, NodeDelegate};
+use spacetimedb_client_api::{ControlStateReadAccess, DatabaseResetDef, Host, NodeDelegate};
 use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, RegisterTldResult, SetDomainsResult, Tld};
 use spacetimedb_datastore::db_metrics::data_size::DATA_SIZE_METRICS;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
@@ -148,13 +148,14 @@ impl NodeDelegate for StandaloneEnv {
     }
 }
 
+#[async_trait]
 impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     // Nodes
-    fn get_node_id(&self) -> Option<u64> {
+    async fn get_node_id(&self) -> Option<u64> {
         Some(0)
     }
 
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
         if node_id == 0 {
             return Ok(Some(Node {
                 id: 0,
@@ -166,46 +167,46 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(None)
     }
 
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
-        Ok(vec![self.get_node_by_id(0)?.unwrap()])
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+        Ok(vec![self.get_node_by_id(0).await?.unwrap()])
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         Ok(self.control_db.get_database_by_id(id)?)
     }
 
-    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>> {
+    async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>> {
         Ok(self.control_db.get_database_by_identity(database_identity)?)
     }
 
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         Ok(self.control_db.get_databases()?)
     }
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
         Ok(self.control_db.get_replica_by_id(id)?)
     }
 
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
         Ok(self.control_db.get_replicas()?)
     }
 
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
         self.control_db.get_leader_replica_by_database(database_id)
     }
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         Ok(self.control_db.get_energy_balance(identity)?)
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
     }
 }
@@ -258,13 +259,6 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
             // The database already exists, so we'll try to update it.
             // If that fails, we'll keep the old one.
             Some(database) => {
-                ensure!(
-                    &database.owner_identity == publisher,
-                    "Permission denied: `{}` does not own database `{}`",
-                    publisher,
-                    spec.database_identity.to_abbreviated_hex()
-                );
-
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
@@ -353,19 +347,10 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
         }
     }
 
-    async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
+    async fn delete_database(&self, _caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         let Some(database) = self.control_db.get_database_by_identity(database_identity)? else {
             return Ok(());
         };
-        anyhow::ensure!(
-            &database.owner_identity == caller_identity,
-            // TODO: `PermissionDenied` should be a variant of `Error`,
-            //       so we can match on it and return better error responses
-            //       from HTTP endpoints.
-            "Permission denied: `{caller_identity}` does not own database `{}`",
-            database_identity.to_abbreviated_hex()
-        );
-
         self.control_db.delete_database(database.id)?;
 
         for instance in self.control_db.get_replicas_by_database(database.id)? {
@@ -462,7 +447,8 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         action: spacetimedb_client_api::Action,
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
         let database = self
-            .get_database_by_identity(&database)?
+            .get_database_by_identity(&database)
+            .await?
             .with_context(|| format!("database {database} not found"))
             .with_context(|| format!("Unable to authorize {subject} to perform {action:?})"))?;
         if subject == database.owner_identity {
@@ -475,6 +461,20 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
             database: database.database_identity.into(),
             source: None,
         })
+    }
+
+    async fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> Result<AuthCtx, spacetimedb_client_api::Unauthorized> {
+        let database = self
+            .get_database_by_identity(&database)
+            .await?
+            .with_context(|| format!("database {database} not found"))
+            .with_context(|| format!("Unable to authorize {subject} for SQL"))?;
+
+        Ok(AuthCtx::new(database.owner_identity, subject))
     }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -34,9 +34,12 @@
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
-    "generate:client-api": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-client-api-messages --example get_ws_schema > ws_schema.json && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/sdk/client_api --module-def ws_schema.json && rm ws_schema.json && find src/sdk/client_api -type f -exec perl -pi -e 's#spacetimedb#../../index#g' {} + && prettier --write src/sdk/client_api",
+    "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
-    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app",
+    "generate:examples:quickstart-chat": "pnpm --filter @clockworklabs/quickstart-chat generate",
+    "generate:examples:basic-react": "pnpm --filter @clockworklabs/basic-react generate",
+    "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
+    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:quickstart-chat && pnpm generate:examples:basic-react && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
   },
   "main": "dist/index.cjs",

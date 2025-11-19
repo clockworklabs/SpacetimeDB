@@ -19,7 +19,9 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
+use spacetimedb_datastore::system_tables::{
+    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -627,6 +629,10 @@ impl RelationalDB {
     /// Returns the identity for this database
     pub fn database_identity(&self) -> Identity {
         self.database_identity
+    }
+
+    pub fn owner_identity(&self) -> Identity {
+        self.owner_identity
     }
 
     /// The number of bytes on disk occupied by the durability layer.
@@ -1402,7 +1408,7 @@ impl RelationalDB {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
-    /// Clear all rows from a table without dropping it.
+    /// Clears all rows from a table without dropping it.
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
@@ -1411,6 +1417,17 @@ impl RelationalDB {
     /// Clear all rows from all view tables without dropping them.
     pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
         Ok(tx.clear_all_views()?)
+    }
+
+    /// Empties the system tables tracking clients.
+    pub fn clear_all_clients(&self) -> Result<(), DBError> {
+        self.with_auto_commit(Workload::Internal, |mut_tx| {
+            self.clear_all_views(mut_tx)?;
+            self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+            self.clear_table(mut_tx, ST_CLIENT_ID)?;
+            self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
+            Ok(())
+        })
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
@@ -3045,43 +3062,37 @@ mod tests {
         let stdb = TestDB::durable().expect("failed to create TestDB");
 
         let timestamp = Timestamp::now();
-        let ctx = ReducerContext {
-            name: "abstract_concrete_proxy_factory_impl".into(),
-            caller_identity: Identity::__dummy(),
-            caller_connection_id: ConnectionId::ZERO,
-            timestamp,
-            arg_bsatn: Bytes::new(),
+        let workload = |name: &str| {
+            Workload::Reducer(ReducerContext {
+                name: name.into(),
+                caller_identity: Identity::__dummy(),
+                caller_connection_id: ConnectionId::ZERO,
+                timestamp,
+                arg_bsatn: Bytes::new(),
+            })
         };
+        let workload1 = workload("abstract_concrete_proxy_factory_impl");
 
         let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
         let schema = table("test_table", row_ty.clone(), |builder| builder);
 
         // Create an empty transaction
         {
-            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx.clone()));
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1.clone());
             stdb.commit_tx(tx).expect("failed to commit empty transaction");
         }
 
         // Create an empty transaction pretending to be an
         // `__identity_connected__` call.
         {
-            let tx = stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                Workload::Reducer(ReducerContext {
-                    name: "__identity_connected__".into(),
-                    caller_identity: Identity::__dummy(),
-                    caller_connection_id: ConnectionId::ZERO,
-                    timestamp,
-                    arg_bsatn: Bytes::new(),
-                }),
-            );
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload("__identity_connected__"));
             stdb.commit_tx(tx)
                 .expect("failed to commit empty __identity_connected__ transaction");
         }
 
         // Create a non-empty transaction including reducer info
         let table_id = {
-            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx));
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1);
             let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
             insert(&stdb, &mut tx, table_id, &product!(AlgebraicValue::I32(0))).expect("failed to insert row");
             stdb.commit_tx(tx).expect("failed to commit tx");

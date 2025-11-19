@@ -1,22 +1,5 @@
-use bytes::Bytes;
-use prometheus::{Histogram, IntCounter, IntGauge};
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
-use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_primitives::ProcedureId;
-use spacetimedb_primitives::TableId;
-use spacetimedb_primitives::ViewFnPtr;
-use spacetimedb_primitives::ViewId;
-use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
-use spacetimedb_schema::def::ModuleDef;
-use std::future::Future;
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::span::EnteredSpan;
-
 use super::instrumentation::CallTimes;
-use crate::client::ClientConnectionSender;
+use crate::client::{ClientActorId, ClientConnectionSender};
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
 use crate::host::instance_env::InstanceEnv;
@@ -25,12 +8,13 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::ViewCallResult;
 use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
-    CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
-    ModuleFunctionCall, ModuleInfo,
+    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
 };
+use crate::host::scheduler::QueueItem;
 use crate::host::{
-    ArgsTuple, ProcedureCallError, ProcedureCallResult, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
-    UpdateDatabaseResult,
+    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -39,13 +23,27 @@ use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::WriteConflict;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
+use prometheus::{Histogram, IntCounter, IntGauge};
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
+use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use std::future::Future;
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::span::EnteredSpan;
 
 use super::*;
 
@@ -308,13 +306,81 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
     ) -> anyhow::Result<UpdateDatabaseResult> {
-        let replica_ctx = self.instance.replica_ctx();
         self.common
-            .update_database(replica_ctx, program, old_module_info, policy)
+            .update_database(program, old_module_info, policy, &mut self.instance)
     }
 
     pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
+        let (res, trapped) = self.call_reducer_with_tx(tx, params);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.common.clear_all_clients()
+    }
+
+    pub fn call_identity_connected(
+        &mut self,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = call_identity_connected(caller_auth, caller_connection_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_identity_disconnected(
+        &mut self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::call_identity_disconnected_inner(
+            caller_identity,
+            caller_connection_id,
+            module,
+            drop_view_subscribers,
+            call_reducer,
+            &mut trapped,
+        );
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::disconnect_client_inner(client_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(crate) fn call_scheduled_reducer(
+        &mut self,
+        item: QueueItem,
+    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let module_def = &self.common.info.clone().module_def;
+        let replica_ctx = &self.instance.replica_ctx().clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        self.trapped = trapped;
+        res
     }
 
     pub async fn call_procedure(
@@ -331,10 +397,10 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.common.call_reducer_with_tx(tx, params, &mut self.instance);
-        self.trapped = trapped;
-        res
+    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+        })
     }
 
     pub fn call_view_with_tx(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
@@ -365,13 +431,14 @@ impl InstanceCommon {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub(crate) fn update_database(
-        &self,
-        replica_ctx: &ReplicaContext,
+    pub(crate) fn update_database<I: WasmInstance>(
+        &mut self,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
+        inst: &mut I,
     ) -> Result<UpdateDatabaseResult, anyhow::Error> {
+        let replica_ctx = inst.replica_ctx().clone();
         let system_logger = replica_ctx.logger.system_logger();
         let stdb = &replica_ctx.relational_db;
 
@@ -385,7 +452,7 @@ impl InstanceCommon {
             Ok(plan) => plan,
             Err(e) => {
                 return match e {
-                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e)),
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
                 }
             }
@@ -398,6 +465,8 @@ impl InstanceCommon {
 
         let auth_ctx = AuthCtx::for_current(replica_ctx.database.owner_identity);
         let res = crate::db::update::update_database(stdb, &mut tx, auth_ctx, plan, system_logger);
+        let mut energy_quanta_used = FunctionBudget::ZERO;
+        let mut host_execution_duration = Duration::ZERO;
 
         match res {
             Err(e) => {
@@ -408,19 +477,103 @@ impl InstanceCommon {
                 Ok(UpdateDatabaseResult::ErrorExecutingMigration(e))
             }
             Ok(res) => {
-                if let Some((_tx_offset, tx_data, tx_metrics, reducer)) = stdb.commit_tx(tx)? {
-                    stdb.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                }
                 system_logger.info("Database updated");
                 log::info!("Database updated, {}", stdb.database_identity());
-                match res {
-                    crate::db::update::UpdateResult::Success => Ok(UpdateDatabaseResult::UpdatePerformed),
-                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
-                        Ok(UpdateDatabaseResult::UpdatePerformedWithClientDisconnect)
+                let res: UpdateDatabaseResult = match res {
+                    crate::db::update::UpdateResult::Success => UpdateDatabaseResult::UpdatePerformed,
+                    crate::db::update::UpdateResult::EvaluateSubscribedViews => {
+                        let (out, trapped) = self.evaluate_subscribed_views(tx, inst)?;
+                        tx = out.tx;
+                        energy_quanta_used = out.energy_used;
+                        host_execution_duration = out.total_duration;
+
+                        if trapped || out.outcome != ViewOutcome::Success {
+                            let msg = match trapped {
+                                true => "Trapped while evaluating views during database update".to_string(),
+                                false => format!(
+                                    "Views evaluation did not complete successfully during database update: {:?}",
+                                    out.outcome
+                                ),
+                            };
+
+                            UpdateDatabaseResult::ErrorExecutingMigration(anyhow::anyhow!(msg))
+                        } else {
+                            UpdateDatabaseResult::UpdatePerformed
+                        }
                     }
+                    crate::db::update::UpdateResult::RequiresClientDisconnect => {
+                        UpdateDatabaseResult::UpdatePerformedWithClientDisconnect
+                    }
+                };
+
+                if res.was_successful() {
+                    let event = ModuleEvent {
+                        timestamp: Timestamp::now(),
+                        caller_identity: self.info.owner_identity,
+                        caller_connection_id: None,
+                        function_call: ModuleFunctionCall::update(),
+                        status: EventStatus::Committed(DatabaseUpdate::default()),
+                        energy_quanta_used: energy_quanta_used.into(),
+                        host_execution_duration,
+                        request_id: None,
+                        timer: None,
+                    };
+                    //TODO: Return back event in `UpdateDatabaseResult`?
+                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                } else {
+                    let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+                    stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
                 }
+                Ok(res)
             }
         }
+    }
+
+    /// Re-evaluates all views which have entries in `st_view_subs`.
+    fn evaluate_subscribed_views<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        inst: &mut I,
+    ) -> Result<(ViewCallResult, bool), anyhow::Error> {
+        let views = self.info.module_def.views().collect::<Vec<_>>();
+        let owner_identity = self.info.owner_identity;
+
+        let mut view_calls = Vec::new();
+
+        for view in views {
+            let ViewDef {
+                name: view_name,
+                is_anonymous,
+                fn_ptr,
+                product_type_ref,
+                ..
+            } = view;
+
+            let st_view = tx
+                .view_from_name(view_name)?
+                .ok_or_else(|| anyhow::anyhow!("view {} not found in database", &view_name))?;
+
+            let view_id = st_view.view_id;
+            let table_id = st_view
+                .table_id
+                .ok_or_else(|| anyhow::anyhow!("view {} does not have a backing table in database", &view_name))?;
+
+            for sub in tx.lookup_st_view_subs(view_id)? {
+                view_calls.push(CallViewParams {
+                    view_name: view_name.to_owned().into(),
+                    view_id,
+                    table_id,
+                    fn_ptr: *fn_ptr,
+                    caller: owner_identity,
+                    sender: if *is_anonymous { None } else { Some(sub.identity.into()) },
+                    args: ArgsTuple::nullary(),
+                    row_type: *product_type_ref,
+                    timestamp: Timestamp::now(),
+                });
+            }
+        }
+
+        Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
     async fn call_procedure<I: WasmInstance>(
@@ -873,48 +1026,65 @@ impl InstanceCommon {
         inst: &mut I,
         timestamp: Timestamp,
     ) -> (ViewCallResult, bool) {
-        let mut trapped = false;
-        let mut out = ViewCallResult::default(tx);
-        for ViewCallInfo {
-            view_id,
-            table_id,
-            view_name,
-            sender,
-        } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
-        {
-            let view_def = module_def
-                .view(&*view_name)
-                .unwrap_or_else(|| panic!("view `{}` not found", view_name));
-            let fn_ptr = view_def.fn_ptr;
-            let args = ArgsTuple::nullary();
-            let row_type = view_def.product_type_ref;
-            let params = CallViewParams {
-                view_name,
-                view_id,
-                table_id,
-                fn_ptr,
-                caller,
-                sender,
-                args,
-                row_type,
-                timestamp,
-            };
-            let (result, ok) = self.call_view_with_tx(out.tx, params, inst);
+        let view_calls = tx
+            .view_for_update()
+            .cloned()
+            .map(|info| {
+                let view_def = module_def
+                    .view(&*info.view_name)
+                    .unwrap_or_else(|| panic!("view `{}` not found", info.view_name));
 
-            // Increment execution stats
+                CallViewParams {
+                    view_name: info.view_name,
+                    view_id: info.view_id,
+                    table_id: info.table_id,
+                    fn_ptr: view_def.fn_ptr,
+                    caller,
+                    sender: info.sender,
+                    args: ArgsTuple::nullary(),
+                    row_type: view_def.product_type_ref,
+                    timestamp,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        self.execute_view_calls(tx, view_calls, inst)
+    }
+
+    /// Executes view calls and accumulate results.
+    /// Returns early if any call traps or fails.
+    fn execute_view_calls<I: WasmInstance>(
+        &mut self,
+        tx: MutTxId,
+        view_calls: Vec<CallViewParams>,
+        inst: &mut I,
+    ) -> (ViewCallResult, bool) {
+        let mut out = ViewCallResult::default(tx);
+        let mut trapped = false;
+
+        for params in view_calls {
+            let (result, call_trapped) = self.call_view_with_tx(out.tx, params, inst);
+
             out.tx = result.tx;
             out.outcome = result.outcome;
             out.energy_used += result.energy_used;
             out.total_duration += result.total_duration;
             out.abi_duration += result.abi_duration;
-            trapped = trapped || ok;
+
+            trapped = trapped || call_trapped;
 
             // Terminate early if execution failed
             if trapped || !matches!(out.outcome, ViewOutcome::Success) {
                 break;
             }
         }
+
         (out, trapped)
+    }
+
+    /// Empty the system tables tracking clients without running any lifecycle reducers.
+    pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.info.relational_db().clear_all_clients().map_err(Into::into)
     }
 }
 /// VM-related metrics for reducer execution.

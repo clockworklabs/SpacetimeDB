@@ -29,7 +29,7 @@ use spacetimedb::host::UpdateDatabaseResult;
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
-use spacetimedb::identity::{AuthCtx, Identity};
+use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
@@ -448,6 +448,7 @@ where
 
     let replica = worker_ctx
         .get_leader_replica_by_database(database.id)
+        .await
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
 
@@ -507,6 +508,7 @@ pub(crate) async fn worker_ctx_find_database(
 ) -> axum::response::Result<Option<Database>> {
     worker_ctx
         .get_database_by_identity(database_identity)
+        .await
         .map_err(log_and_500)
 }
 
@@ -531,15 +533,16 @@ pub async fn sql_direct<S>(
     sql: String,
 ) -> axum::response::Result<Vec<SqlStmtResult<ProductValue>>>
 where
-    S: NodeDelegate + ControlStateDelegate,
+    S: NodeDelegate + ControlStateDelegate + Authorization,
 {
     // Anyone is authorized to execute SQL queries. The SQL engine will determine
     // which queries this identity is allowed to execute against the database.
 
     let (host, database) = find_leader_and_database(&worker_ctx, name_or_identity).await?;
 
-    let auth = AuthCtx::new(database.owner_identity, caller_identity);
-    log::debug!("auth: {auth:?}");
+    let auth = worker_ctx
+        .authorize_sql(caller_identity, database.database_identity)
+        .await?;
 
     host.exec_sql(auth, database, confirmed, sql).await
 }
@@ -552,7 +555,7 @@ pub async fn sql<S>(
     body: String,
 ) -> axum::response::Result<impl IntoResponse>
 where
-    S: NodeDelegate + ControlStateDelegate,
+    S: NodeDelegate + ControlStateDelegate + Authorization,
 {
     let json = sql_direct(worker_ctx, name_or_identity, params, auth.claims.identity, body).await?;
 
@@ -594,6 +597,7 @@ pub async fn get_names<S: ControlStateDelegate>(
 
     let names = ctx
         .reverse_lookup(&database_identity)
+        .await
         .map_err(log_and_500)?
         .into_iter()
         .filter_map(|x| String::from(x).try_into().ok())
@@ -697,7 +701,12 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
         if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)? {
-            if ctx.get_database_by_identity(&identity).map_err(log_and_500)?.is_some() {
+            if ctx
+                .get_database_by_identity(&identity)
+                .await
+                .map_err(log_and_500)?
+                .is_some()
+            {
                 return reset(
                     State(ctx),
                     Path(ResetDatabaseParams {
@@ -727,7 +736,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
     // Check if the database already exists.
-    let existing = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let existing = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?;
     match existing.as_ref() {
         // If not, check that the we caller is sufficiently authenticated.
         None => {
@@ -1055,7 +1067,10 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
 
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
-    let database = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let database = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?;
     let Some(database) = database else {
         return Ok((
             StatusCode::NOT_FOUND,
@@ -1077,7 +1092,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).unwrap().is_some() {
+        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

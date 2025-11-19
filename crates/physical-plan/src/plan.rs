@@ -115,6 +115,13 @@ impl ProjectPlan {
     pub fn returns_view_table(&self) -> bool {
         self.return_table().is_some_and(|schema| schema.is_view())
     }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
+        }
+    }
 }
 
 /// Physical plans always terminate with a projection.
@@ -212,6 +219,15 @@ impl ProjectListPlan {
     /// Does this plan select or return whole (unprojected) rows from a view?
     pub fn returns_view_table(&self) -> bool {
         self.return_table().is_some_and(|schema| schema.is_view())
+    }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_view(anonymous),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+        }
     }
 }
 
@@ -533,7 +549,7 @@ impl PhysicalPlan {
                     Box::new(Self::TableScan(scan, label)),
                     PhysicalExpr::BinOp(
                         BinOp::Eq,
-                        Box::new(PhysicalExpr::Value(auth.caller.into())),
+                        Box::new(PhysicalExpr::Value(auth.caller().into())),
                         Box::new(PhysicalExpr::Field(TupleField {
                             label,
                             label_pos: None,
@@ -1124,6 +1140,19 @@ impl PhysicalPlan {
     pub fn returns_view_table(&self) -> bool {
         self.return_table().is_some_and(|schema| schema.is_view())
     }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        self.any(&|plan| match plan {
+            Self::TableScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
+            Self::TableScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
+            Self::IxScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
+            Self::IxScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
+            Self::IxJoin(join, _) if anonymous => join.rhs.is_anonymous_view(),
+            Self::IxJoin(join, _) => join.rhs.is_view() && !join.rhs.is_anonymous_view(),
+            _ => false,
+        })
+    }
 }
 
 /// Scan a table row by row, returning row ids
@@ -1553,11 +1582,11 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1740,12 +1769,12 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///
