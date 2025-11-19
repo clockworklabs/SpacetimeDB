@@ -25,6 +25,7 @@ BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 SPACETIME_BIN = None
 def update_spacetime_bin_path(build_dir):
+    global SPACETIME_BIN
     SPACETIME_BIN = build_dir / ("debug/spacetime" + exe_suffix)
 update_spacetime_bin_path(STDB_DIR / "target")
 
