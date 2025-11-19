@@ -12,6 +12,7 @@ use crate::host::wasm_common::module_host_actor::{
 };
 use crate::host::wasm_common::*;
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
@@ -505,7 +506,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         &mut self,
         op: module_host_actor::ProcedureOp,
         budget: FunctionBudget,
-    ) -> module_host_actor::ProcedureExecuteResult {
+    ) -> (module_host_actor::ProcedureExecuteResult, Option<TransactionOffset>) {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
@@ -520,7 +521,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 .start_funcall(&op.name, op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
-            return module_host_actor::ProcedureExecuteResult {
+            let res = module_host_actor::ProcedureExecuteResult {
                 stats: zero_execution_stats(store),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
@@ -528,6 +529,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                     CALL_PROCEDURE_DUNDER,
                 )),
             };
+            return (res, None);
         };
         let call_result = call_procedure
             .call_async(
@@ -547,6 +549,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             )
             .await;
 
+        // Close any ongoing anonymous transactions by aborting them,
+        // in case of improper ABI use (start but no commit/abort).
+        store.data_mut().terminate_dangling_anon_tx();
+
         // Close the timing span for this procedure and get the BSATN bytes of its result.
         let (stats, result_bytes) = finish_opcall(store, budget);
 
@@ -558,7 +564,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             })
         });
 
-        module_host_actor::ProcedureExecuteResult { stats, call_result }
+        let res = module_host_actor::ProcedureExecuteResult { stats, call_result };
+
+        // Take the last tx offset.
+        // Only commits for anonymous transactions currently cause this to advance.
+        let tx_offset = store.data_mut().take_procedure_tx_offset();
+
+        (res, tx_offset)
     }
 }
 

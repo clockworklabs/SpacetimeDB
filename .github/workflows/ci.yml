@@ -111,7 +111,7 @@ jobs:
       - name: Install python deps
         run: |
           python -m venv venv
-          venv/pip install -r smoketests/requirements.txt
+          venv/bin/pip install -r smoketests/requirements.txt
       - name: Run smoketests
         # Note: clear_database and replication only work in private
         run: venv/bin/python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
