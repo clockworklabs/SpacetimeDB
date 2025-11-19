@@ -20,11 +20,11 @@ import functools
 TEST_DIR = Path(__file__).parent
 STDB_DIR = TEST_DIR.parent
 exe_suffix = ".exe" if sys.platform == "win32" else ""
-BUILD_DIR = STDB_DIR / "target"
-SPACETIME_BIN = ''
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
+BUILD_DIR = STDB_DIR / "target"
+SPACETIME_BIN = None
 def update_spacetime_bin_path():
     SPACETIME_BIN = BUILD_DIR / "debug/spacetime" + exe_suffix
 update_spacetime_bin_path()
