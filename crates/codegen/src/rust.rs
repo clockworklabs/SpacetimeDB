@@ -1182,28 +1182,21 @@ impl __sdk::InModule for DbUpdate {{
                     let mut diff = AppliedDiff::default();
                 ",
                 |out| {
-                    for (table_name, product_type_ref, with_updates) in itertools::chain!(
-                        iter_tables(module).map(|table| {
-                            (
-                                &table.name,
-                                table.product_type_ref,
-                                table
-                                    .primary_key
-                                    .map(|col| {
-                                        let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
-                                        format!(".with_updates_by_pk(|row| &row.{pk_field})")
-                                    })
-                                    .unwrap_or_default(),
-                            )
-                        }),
-                        iter_views(module).map(|view| (&view.name, view.product_type_ref, "".into()))
-                    ) {
-                        let field_name = table_method_name(table_name);
+                    for table in iter_tables(module) {
+                        let with_updates = table
+                            .primary_key
+                            .map(|col| {
+                                let pk_field = table.get_column(col).unwrap().name.deref().to_case(Case::Snake);
+                                format!(".with_updates_by_pk(|row| &row.{pk_field})")
+                            })
+                            .unwrap_or_default();
+
+                        let field_name = table_method_name(&table.name);
                         writeln!(
                             out,
                             "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name}){with_updates};",
-                            type_ref_name(module, product_type_ref),
-                            table_name.deref(),
+                            type_ref_name(module, table.product_type_ref),
+                            table.name.deref(),
                         );
                     }
                     for view in iter_views(module) {
