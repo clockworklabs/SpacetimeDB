@@ -623,7 +623,12 @@ function wrapSyscall<F extends (...args: any[]) => any>(
           hasOwn(e, '__code_error__') &&
           typeof e.__code_error__ == 'number'
         ) {
-          throw new SpacetimeHostError(e.__code_error__);
+          const message =
+            hasOwn(e, '__error_message__') &&
+            typeof e.__error_message__ === 'string'
+              ? e.__error_message__
+              : undefined;
+          throw new SpacetimeHostError(e.__code_error__, message);
         }
         throw e;
       }
