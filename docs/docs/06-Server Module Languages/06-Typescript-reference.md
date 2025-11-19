@@ -644,7 +644,7 @@ The following deletes all data stored in the database.
 To fully reset your database and clear all data, run:
 
 ```bash
-spacetime publish --clear-database <DATABASE_NAME>
+spacetime publish --delete-data <DATABASE_NAME>
 # or
 spacetime publish -c <DATABASE_NAME>
 ```
