@@ -1103,9 +1103,12 @@ impl ProcedureContext {
     /// Acquire a mutable transaction
     /// and execute `body` with read-write access to the database.
     ///
-    /// When a panic occurs,
-    /// the transaction will be rolled back and its mutations discarded.
+    /// If `body` panics, the transaction will be rolled back,
+    /// and the calling procedure terminated.
     /// Otherwise, the transaction will be committed and its mutations persisted.
+    /// Prefer calling [`Self::try_with_tx`]
+    /// and returning a `Result` for signaling errors
+    /// to allow the calling procedure to handle the transaction's failure.
     ///
     /// Regardless of the transaction's success or failure,
     /// the return value of `body` is not persisted to the commitlog
@@ -1135,10 +1138,15 @@ impl ProcedureContext {
     /// Acquire a mutable transaction
     /// and execute `body` with read-write access to the database.
     ///
-    /// When `body().is_ok()`,
+    /// When `body` returns `Ok`,
     /// the transaction will be committed and its mutations persisted.
-    /// When `!body().is_ok()` or a panic occurs in `body`,
+    /// When `body` returns `Err`,
     /// the transaction will be rolled back and its mutations discarded.
+    ///
+    /// If `body` panics, the transaction will be rolled back,
+    /// and the calling procedure terminated.
+    /// Prefer returning `Result` for signaling errors
+    /// to allow the calling procedure to handle the transaction's failure.
     ///
     /// Regardless of the transaction's success or failure,
     /// the return value of `body` is not persisted to the commitlog
