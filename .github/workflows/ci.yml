@@ -109,12 +109,10 @@ jobs:
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
       - name: Install python deps
-        run: |
-          python -m venv venv
-          venv/bin/pip install -r smoketests/requirements.txt
+        run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests
         # Note: clear_database and replication only work in private
-        run: venv/bin/python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
