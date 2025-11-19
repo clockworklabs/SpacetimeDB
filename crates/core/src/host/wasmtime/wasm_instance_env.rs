@@ -1703,31 +1703,6 @@ impl WasmInstanceEnv {
             // as a hacky-but-stable `try` block.
             #[allow(clippy::redundant_closure_call)]
             let res = (async move || {
-                if env.instance_env.in_tx() {
-                    // If we're holding a transaction open, refuse to perform this blocking operation.
-                    return Err(WasmError::Db(NodesError::WouldBlockTransaction(
-                        AbiCall::ProcedureHttpRequest,
-                    )));
-                }
-
-                /// Put `result` into a `BytesSource` and write its ID to `out` within `mem`, then return `errno_return`.
-                ///
-                /// If `result` is a `spacetimedb_lib::http::Response`, `errno_return` should be 0.
-                /// If `result` is a `spacetimedb_lib::http::Error`, `errno_return` should be `errnos::HTTP_ERROR`.
-                fn write_result(
-                    result: &impl spacetimedb_sats::Serialize,
-                    errno_return: u32,
-                    failed_serialize_context: impl FnOnce() -> String,
-                    mem: &mut MemView,
-                    out: WasmPtr<u32>,
-                    env: &mut WasmInstanceEnv,
-                ) -> Result<u32, WasmError> {
-                    let result = bsatn::to_vec(&result).with_context(failed_serialize_context)?;
-                    let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
-                    bytes_source.0.write_to(mem, out)?;
-                    Ok(errno_return)
-                }
-
                 // TODO(procedure-metrics): record size in bytes of request.
 
                 // Read the request from memory as a `spacetimedb_lib::http::Request`,
@@ -1740,120 +1715,40 @@ impl WasmInstanceEnv {
                 })?;
 
                 let body_buf = mem.deref_slice(body_ptr, body_len)?;
+                let body = bytes::Bytes::copy_from_slice(body_buf);
 
-                // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
-                // and map its body into a type `reqwest` will like.
-                fn convert_request(request: st_http::Request, body: &[u8]) -> Result<reqwest::Request, st_http::Error> {
-                    let mut request: http::request::Parts =
-                        request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
-
-                    // Pull our timeout extension, if any, out of the `http::Request` extensions.
-                    // reqwest has its own timeout extension, which is where we'll provide this.
-                    let timeout = request.extensions.remove::<st_http::Timeout>();
-
-                    let request = http::Request::from_parts(request, body.to_vec());
-
-                    let mut reqwest: reqwest::Request =
-                        request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
-
-                    // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-                    // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-                    // We'll use this same `timeout: Duration` in a `tokio::time::timeout`,
-                    // which will enclose both the initial request and downloading the body.
-                    // Supplying it to reqwest is just for redundancy.
-                    let timeout = timeout
-                        .map(|timeout| timeout.timeout.to_duration().unwrap_or(Duration::ZERO))
-                        .unwrap_or(HTTP_DEFAULT_TIMEOUT)
-                        .min(HTTP_DEFAULT_TIMEOUT);
-
-                    *reqwest.timeout_mut() = Some(timeout);
-
-                    Ok(reqwest)
-                }
-
-                let reqwest = match convert_request(request, body_buf) {
-                    Ok(reqwest) => reqwest,
-                    Err(err) => {
-                        // If for whatever reason reqwest doesn't like our `http::Request`,
-                        // surface that error to the guest so customers can debug and provide a more appropriate request.
-                        let err = st_http::Error::from_display(&err);
-                        return write_result(
-                            &err,
-                            errno::HTTP_ERROR.get() as _,
-                            || format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}"),
-                            mem,
-                            out,
-                            env,
-                        );
-                    }
-                };
-
-                // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
-
-                // Actually execute the HTTP request!
-                // We'll wrap this future in a `tokio::time::timeout` before `await`ing it.
-                let get_response_and_download_body = async {
-                    // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-                    let response = reqwest::Client::new()
-                        .execute(reqwest)
-                        .await
-                        .map_err(|err| st_http::Error::from_display(&err))?;
-
-                    // Download the response body, which in all likelihood will be a stream,
-                    // as reqwest seems to prefer that.
-                    // Note that this will be wrapped in the same `tokio::time::timeout` as the above `execute` call.
-                    let (parts, body) = http::Response::from(response).into_parts();
-                    let body = http_body_util::BodyExt::collect(body)
-                        .await
-                        .map_err(|err| st_http::Error::from_display(&err))?;
-
-                    // Map the collected body into our `spacetimedb_lib::http::Body` type,
-                    // then wrap it back in an `http::Response`.
-                    Ok::<_, st_http::Error>((parts, body.to_bytes()))
-                };
-
-                let response_or_err = get_response_and_download_body
+                let result = env
+                    .instance_env
+                    .http_request(request, body)
                     // TODO(perf): Evaluate whether it's better to run this future on the "global" I/O Tokio executor,
                     // rather than the thread-local database executors.
                     .await;
 
-                let (response, body) = match response_or_err {
-                    Ok(response) => response,
-                    Err(err) => {
-                        // If the request failed, surface that error to the guest so customer logic can handle it.
-                        return write_result(
-                            &err,
-                            errno::HTTP_ERROR.get() as _,
-                            // If serializing the error fails (which I'm not sure it can, but the types allow it to),
-                            // include the error message in the logs, so that at least they end up somewhere.
-                            || format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}"),
-                            mem,
-                            out,
-                            env,
-                        );
+                match result {
+                    Ok((response, body)) => {
+                        let result = bsatn::to_vec(&response)
+                            .with_context(|| "Failed to BSATN serialize `st_http::Response` object".to_string())?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                        bytes_source
+                            .0
+                            .write_to(mem, out.saturating_add(size_of::<u32>() as u32))?;
+
+                        Ok(0u32)
                     }
-                };
-
-                // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
-                // which has a stable BSATN encoding to pass across the WASM boundary.
-                let response = st_http::Response::from(response);
-
-                let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
-                bytes_source
-                    .0
-                    .write_to(mem, out.saturating_add(size_of::<u32>() as u32))?;
-
-                // Write the request across the WASM boundary.
-                write_result(
-                    &response,
-                    0u32,
-                    // If serializing the response fails (which I'm not sure it can, but the types allow it to),
-                    // don't include the body in logs - it may be large.
-                    || "Failed to BSATN serialize `st_http::Response` object".to_string(),
-                    mem,
-                    out,
-                    env,
-                )
+                    Err(NodesError::HttpError(err)) => {
+                        let result = bsatn::to_vec(&err).with_context(|| {
+                            format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}")
+                        })?;
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+                        Ok(errno::HTTP_ERROR.get() as u32)
+                    }
+                    Err(e) => Err(WasmError::Db(e)),
+                }
             })()
             .await;
 
@@ -1864,13 +1759,6 @@ impl WasmInstanceEnv {
         })
     }
 }
-
-/// Default / maximum timeout for HTTP requests performed by [`WasmInstanceEnv::procedure_http_request`].
-///
-/// If the user requests a timeout longer than this, we will clamp to this value.
-///
-/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
-const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
 
 type Fut<'caller, T> = Box<dyn Send + 'caller + Future<Output = T>>;
 
