@@ -15,6 +15,7 @@ import itertools
 import tempfile
 from pathlib import Path
 import shutil
+import traceback
 
 def check_docker():
     docker_ps = smoketests.run_cmd("docker", "ps", "--format=json")
@@ -116,11 +117,22 @@ def main():
 
     tests = loader.loadTestsFromNames(testlist)
     if args.list:
-        print("Selected tests:\n")
+        failed_cls = getattr(unittest.loader, "_FailedTest", None)
+        any_failed = False
         for test in _iter_all_tests(tests):
             name = test.id()
-            print(f"{name}")
-        exit(0)
+            if isinstance(test, failed_cls):
+                any_failed = True
+                print('')
+                print("Failed to construct %s:" % test.id())
+                exc = getattr(test, "_exception", None)
+                if exc is not None:
+                    tb = ''.join(traceback.format_exception(exc))
+                    print(tb.rstrip())
+                print('')
+            else:
+                print(f"{name}")
+        exit(1 if any_failed else 0)
 
     if not args.no_build_cli:
         logging.info("Compiling spacetime cli...")
