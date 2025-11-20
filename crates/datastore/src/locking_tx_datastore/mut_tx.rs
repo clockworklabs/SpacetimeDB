@@ -245,7 +245,7 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 432);
+static_assert_size!(MutTxId, 464);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
