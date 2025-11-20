@@ -77,8 +77,6 @@ def main():
     parser.add_argument("--no-docker-logs", action="store_true")
     parser.add_argument("--skip-dotnet", action="store_true", help="ignore tests which require dotnet")
     parser.add_argument("--show-all-output", action="store_true", help="show all stdout/stderr from the tests as they're running")
-    parser.add_argument("--parallel", action="store_true", help="run test classes in parallel")
-    parser.add_argument("-j", dest='jobs', help="Set number of jobs for parallel test runs. Default is `nproc`", type=int, default=0)
     parser.add_argument('-k', dest='testNamePatterns',
                         action='append', type=_convert_select_pattern,
                         help='Only run tests which match the given substring')
@@ -176,14 +174,9 @@ def main():
     buffer = not args.show_all_output
     verbosity = 2
 
-    if args.parallel:
-        print("parallel test running is under construction, this will probably not work correctly")
-        from . import unittest_parallel
-        unittest_parallel.main(buffer=buffer, verbose=verbosity, level="class", discovered_tests=tests, jobs=args.jobs)
-    else:
-        result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
-        if not result.wasSuccessful():
-            parser.exit(status=1)
+    result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
+    if not result.wasSuccessful():
+        parser.exit(status=1)
 
 
 if __name__ == '__main__':
