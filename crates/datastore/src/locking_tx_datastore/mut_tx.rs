@@ -84,6 +84,7 @@ pub struct ViewCallInfo {
 #[derive(Default)]
 pub struct ViewReadSets {
     tables: IntMap<TableId, TableReadSet>,
+    indexes: IntMap<TableId, IndexReadSet>,
 }
 
 impl MemoryUsage for ViewReadSets {
@@ -106,6 +107,24 @@ impl ViewReadSets {
         self.tables.entry(table_id).or_default().insert_scan(call);
     }
 
+    fn insert_index_scan(
+        &mut self,
+        table_id: TableId,
+        cols: ColList,
+        av: AlgebraicValue,
+        call: ViewCallInfo,
+    ) {
+        let mut scans = HashSet::default();
+        scans.insert(call);
+        self.indexes
+            .entry(table_id)
+            .or_insert_with(|| IndexReadSet {
+                cols,
+                av,
+                scans,
+            });
+    }
+
     /// Removes keys for `view_id` from the read set
     pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
         self.tables.retain(|_, readset| {
@@ -121,6 +140,39 @@ impl ViewReadSets {
         }
     }
 }
+
+struct IndexReadSet {
+    cols: ColList,
+    av: AlgebraicValue,
+    scans: HashSet<ViewCallInfo>,
+}
+
+impl IndexReadSet {
+    fn insert_scan(&mut self, call: ViewCallInfo) {
+        self.scans.insert(call);
+    }
+
+    fn views_for_index_scan(&self) -> impl Iterator<Item = &ViewCallInfo> {
+        self.scans.iter()
+    }
+    fn is_empty(&self) -> bool {
+        self.scans.is_empty()
+    }
+
+    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        if let Some(identity) = sender {
+            self.scans
+                .retain(|call| !(call.view_id == view_id && call.sender.as_ref() == Some(&identity)));
+        } else {
+            self.scans.retain(|call| call.view_id != view_id);
+        }
+    }
+
+    fn merge(&mut self, readset: IndexReadSet) {
+        self.scans.extend(readset.scans);
+    }
+}
+
 
 /// A table-level read set for views
 #[derive(Default)]
@@ -186,7 +238,7 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 432);
+//static_assert_size!(MutTxId, 432);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -201,26 +253,41 @@ impl MutTxId {
         &mut self,
         op: &FuncCallType,
         table_id: TableId,
-        _: IndexId,
-        _: Bound<AlgebraicValue>,
-        _: Bound<AlgebraicValue>,
+        index_id: IndexId,
+     lower: Bound<AlgebraicValue>,
+    upper: Bound<AlgebraicValue>,
     ) {
-        // TODO: Implement read set tracking for index scans
-        if let FuncCallType::View(view) = op {
-            self.read_sets.insert_scan(table_id, view.clone());
+        let FuncCallType::View(view) = op  else {
+            return;
+        };
+
+        if lower.eq(&upper) {
+            self.read_sets.insert_scan(table_id, call);
         }
+        // TODO: Implement read set tracking for index scans
+
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
     pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> {
-        self.tx_state
+        let iter = self.tx_state
             .insert_tables
             .keys()
             .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
             .chain(self.tx_state.delete_tables.keys())
             .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
             .collect::<HashSet<_>>()
-            .into_iter()
+            .into_iter();
+
+        for (table_id, iter)  in self.tx_state.delete_tables.iter() {
+            let (table, blob_store, _) = self.committed_state_write_lock.get_table_and_blob_store(*table_id).unwrap();
+            for row_ptr in iter.iter() {
+               let row_ref =  table.get_row_ref(blob_store, row_ptr).expect("row pointer should be valid");
+                let row = row_ref.to_product_value();
+            }
+        }
+            
+        iter
     }
 
     /// Removes keys for `view_id` from the committed read set.

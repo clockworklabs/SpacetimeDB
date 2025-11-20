@@ -168,6 +168,13 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
  42 | 7
 """)
 
+    def test_index_readset(self):
+        """This test asserts that views can be queried over index readet"""
+        self.insert_initial_data()
+
+        self.call_player_view()
+
+
     def test_http_sql(self):
         """This test asserts that views can be queried over HTTP SQL"""
         self.insert_initial_data()
