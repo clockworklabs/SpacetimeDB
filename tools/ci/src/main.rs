@@ -93,12 +93,12 @@ enum CiCmd {
     },
 }
 
-macro_rules! run {
+macro_rules! bash {
     ($cmdline:expr) => {
-        run_command($cmdline, &Vec::new())
+        run_bash($cmdline, &Vec::new())
     };
     ($cmdline:expr, $envs:expr) => {
-        run_command($cmdline, $envs)
+        run_bash($cmdline, $envs)
     };
 }
 
@@ -114,13 +114,13 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
             continue;
         }
         log::info!("executing cargo ci {subcmd}");
-        run!(&format!("cargo ci {subcmd}"))?;
+        bash!(&format!("cargo ci {subcmd}"))?;
     }
 
     Ok(())
 }
 
-fn run_command(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
+fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
     let mut env = env::vars().collect::<HashMap<_, _>>();
     env.extend(additional_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
     log::debug!("$ {cmdline}");
@@ -138,24 +138,24 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            run!("cargo test --all -- --skip unreal")?;
+            bash!("cargo test --all -- --skip unreal")?;
             // The fallocate tests have been flakely when running in parallel
-            run!("cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1")?;
-            run!("bash tools/check-diff.sh")?;
-            run!("cargo run -p spacetimedb-codegen --example regen-csharp-moduledef && bash tools/check-diff.sh crates/bindings-csharp")?;
-            run!("(cd crates/bindings-csharp && dotnet test -warnaserror)")?;
+            bash!("cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1")?;
+            bash!("bash tools/check-diff.sh")?;
+            bash!("cargo run -p spacetimedb-codegen --example regen-csharp-moduledef && bash tools/check-diff.sh crates/bindings-csharp")?;
+            bash!("(cd crates/bindings-csharp && dotnet test -warnaserror)")?;
         }
 
         Some(CiCmd::Lint) => {
-            run!("cargo fmt --all -- --check")?;
-            run!("cargo clippy --all --tests --benches -- -D warnings")?;
-            run!("(cd crates/bindings-csharp && dotnet tool restore && dotnet csharpier --check .)")?;
+            bash!("cargo fmt --all -- --check")?;
+            bash!("cargo clippy --all --tests --benches -- -D warnings")?;
+            bash!("(cd crates/bindings-csharp && dotnet tool restore && dotnet csharpier --check .)")?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
             // since we want everything reachable through it to also work.
             // This includes `sats` and `lib`.
-            run!(
+            bash!(
                 "cd crates/bindings && cargo doc",
                 // Make `cargo doc` exit with error on warnings, most notably broken links
                 &[("RUSTDOCFLAGS", "--deny warnings")]
@@ -163,13 +163,19 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::WasmBindings) => {
-            run!("cargo test -p spacetimedb-codegen")?;
-            run!("cargo update")?;
-            run!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
+            bash!("cargo test -p spacetimedb-codegen")?;
+            bash!("cargo update")?;
+            bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
         Some(CiCmd::Smoketests { args }) => {
-            run!(&format!("python -m smoketests {}", args.join(" ")))?;
+            // On some systems, there is no `python`, but there is `python3`.
+            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+                .run()
+                .map(|s| s.status.success())
+                .unwrap_or(false);
+            let python = if py3_available { "python3" } else { "python" };
+            bash!(&format!("{python} -m smoketests {}", args.join(" ")))?;
         }
 
         Some(CiCmd::UpdateFlow {
@@ -183,14 +189,14 @@ fn main() -> Result<()> {
                 ""
             };
 
-            run!(&format!("echo 'checking update flow for target: {target}'"))?;
-            run!(&format!(
+            bash!(&format!("echo 'checking update flow for target: {target}'"))?;
+            bash!(&format!(
                 "cargo build {github_token_auth_flag}{target} -p spacetimedb-update"
             ))?;
             // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
             // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
             // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
-            run!(&format!(
+            bash!(&format!(
                 r#"
 ROOT_DIR="$(mktemp -d)"
 cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install --root-dir="${{ROOT_DIR}}" --yes
@@ -211,11 +217,11 @@ cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install
                 );
             }
 
-            run!("pnpm install --recursive")?;
-            run!("cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md")?;
-            run!("pnpm format")?;
-            run!("git status")?;
-            run!(
+            bash!("pnpm install --recursive")?;
+            bash!("cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md")?;
+            bash!("pnpm format")?;
+            bash!("git status")?;
+            bash!(
                 r#"
 if git diff --exit-code HEAD; then
   echo "No docs changes detected"
