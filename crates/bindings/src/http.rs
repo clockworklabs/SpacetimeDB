@@ -6,14 +6,16 @@
 //! while [`send`](HttpClient::send) allows more complex requests with headers, bodies and other methods.
 
 use bytes::Bytes;
-pub use http::{Request, Response};
-pub use spacetimedb_lib::http::{Error, Timeout};
 
 use crate::{
     rt::{read_bytes_source_as, read_bytes_source_into},
     IterBuf,
 };
-use spacetimedb_lib::{bsatn, http as st_http};
+use spacetimedb_lib::{bsatn, http as st_http, TimeDuration};
+
+pub type Request<T = Body> = http::Request<T>;
+
+pub type Response<T = Body> = http::Response<T>;
 
 /// Allows performing HTTP requests via [`HttpClient::send`] and [`HttpClient::get`].
 ///
@@ -43,8 +45,7 @@ impl HttpClient {
     /// and a timeout of 100 milliseconds, then treat the response as a string and log it:
     ///
     /// ```norun
-    /// # use spacetimedb::{procedure, ProcedureContext};
-    /// # use spacetimedb::http::{Request, Timeout};
+    /// # use spacetimedb::{procedure, ProcedureContext, http::Timeout};
     /// # use std::time::Duration;
     /// # #[procedure]
     /// # fn post_somewhere(ctx: &mut ProcedureContext) {
@@ -73,16 +74,15 @@ impl HttpClient {
     /// # }
     ///
     /// ```
-    pub fn send<B: Into<Body>>(&self, request: Request<B>) -> Result<Response<Body>, Error> {
+    pub fn send<B: Into<Body>>(&self, request: http::Request<B>) -> Result<Response, Error> {
         let (request, body) = request.map(Into::into).into_parts();
-        let request = st_http::Request::from(request);
+        let request = convert_request(request);
         let request = bsatn::to_vec(&request).expect("Failed to BSATN-serialize `spacetimedb_lib::http::Request`");
 
         match spacetimedb_bindings_sys::procedure::http_request(&request, &body.into_bytes()) {
             Ok((response_source, body_source)) => {
                 let response = read_bytes_source_as::<st_http::Response>(response_source);
-                let response =
-                    http::response::Parts::try_from(response).expect("Invalid http response returned from host");
+                let response = convert_response(response).expect("Invalid http response returned from host");
                 let mut buf = IterBuf::take();
                 read_bytes_source_into(body_source, &mut buf);
                 let body = Body::from_bytes(buf.clone());
@@ -90,8 +90,8 @@ impl HttpClient {
                 Ok(http::Response::from_parts(response, body))
             }
             Err(err_source) => {
-                let error = read_bytes_source_as::<st_http::Error>(err_source);
-                Err(error)
+                let message = read_bytes_source_as::<String>(err_source);
+                Err(Error { message })
             }
         }
     }
@@ -121,15 +121,47 @@ impl HttpClient {
     /// }
     /// # }
     /// ```
-    pub fn get(&self, uri: impl TryInto<http::Uri, Error: Into<http::Error>>) -> Result<Response<Body>, Error> {
+    pub fn get(&self, uri: impl TryInto<http::Uri, Error: Into<http::Error>>) -> Result<Response, Error> {
         self.send(
             http::Request::builder()
-                .method("GET")
+                .method(http::Method::GET)
                 .uri(uri)
-                .body(Body::empty())
-                .map_err(|err| Error::from_display(&err))?,
+                .body(Body::empty())?,
         )
     }
+}
+
+fn convert_request(parts: http::request::Parts) -> st_http::Request {
+    let http::request::Parts {
+        method,
+        uri,
+        version,
+        headers,
+        mut extensions,
+        ..
+    } = parts;
+
+    let timeout = extensions.remove::<Timeout>();
+    if !extensions.is_empty() {
+        log::warn!("Converting HTTP `Request` with unrecognized extensions");
+    }
+    st_http::Request {
+        method: method.into(),
+        headers: headers.into(),
+        timeout: timeout.map(Into::into),
+        uri: uri.to_string(),
+        version: version.into(),
+    }
+}
+
+fn convert_response(response: st_http::Response) -> http::Result<http::response::Parts> {
+    let st_http::Response { headers, version, code } = response;
+
+    let (mut response, ()) = http::Response::new(()).into_parts();
+    response.version = version.into();
+    response.status = http::StatusCode::from_u16(code)?;
+    response.headers = headers.try_into()?;
+    Ok(response)
 }
 
 /// Represents the body of an HTTP request or response.
@@ -207,4 +239,59 @@ impl_body_from_bytes!(_unit: () => Bytes::new());
 
 enum BodyInner {
     Bytes(Bytes),
+}
+
+/// An HTTP extension to specify a timeout for requests made by a procedure running in a SpacetimeDB database.
+///
+/// Pass an instance of this type to [`http::request::Builder::extension`] to set a timeout on a request.
+///
+/// This timeout applies to the entire request,
+/// from when the headers are first sent to when the response body is fully downloaded.
+/// This is sometimes called a total timeout, the sum of the connect timeout and the read timeout.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Timeout(pub TimeDuration);
+
+impl From<TimeDuration> for Timeout {
+    fn from(timeout: TimeDuration) -> Timeout {
+        Timeout(timeout)
+    }
+}
+
+impl From<Timeout> for TimeDuration {
+    fn from(Timeout(timeout): Timeout) -> TimeDuration {
+        timeout
+    }
+}
+
+/// An error that may arise from an HTTP call.
+#[derive(Clone, Debug)]
+pub struct Error {
+    /// A string message describing the error.
+    ///
+    /// It would be nice if we could store a more interesting object here,
+    /// ideally a type-erased `dyn Trait` cause,
+    /// rather than just a string, similar to how `anyhow` does.
+    /// This is not possible because we need to serialize `Error` for transport to WASM,
+    /// meaning it must have a concrete static type.
+    /// `reqwest::Error`, which is the source for these,
+    /// is type-erased enough that the best we can do (at least, the best we can do easily)
+    /// is to eagerly string-ify the error.
+    message: String,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let Error { message } = self;
+        f.write_str(message)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<http::Error> for Error {
+    fn from(err: http::Error) -> Self {
+        Error {
+            message: err.to_string(),
+        }
+    }
 }

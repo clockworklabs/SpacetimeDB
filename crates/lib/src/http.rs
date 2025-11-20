@@ -26,93 +26,19 @@ use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
 /// Construct instances of this type by converting from [`http::Request`].
 /// Note that all extensions to [`http::Request`] save for [`Timeout`] are ignored.
 #[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpRequest")]
 pub struct Request {
-    method: Method,
-    headers: Headers,
-    timeout: Option<Timeout>,
+    pub method: Method,
+    pub headers: Headers,
+    pub timeout: Option<TimeDuration>,
     /// A valid URI, sourced from an already-validated [`http::Uri`].
-    uri: String,
-    version: Version,
-}
-
-impl From<http::request::Parts> for Request {
-    fn from(parts: http::request::Parts) -> Request {
-        let http::request::Parts {
-            method,
-            uri,
-            version,
-            headers,
-            mut extensions,
-            ..
-        } = parts;
-
-        let timeout = extensions.remove::<Timeout>();
-        if !extensions.is_empty() {
-            log::warn!("Converting HTTP `Request` with unrecognized extensions");
-        }
-        Request {
-            method: method.into(),
-            headers: headers.into(),
-            timeout,
-            uri: uri.to_string(),
-            version: version.into(),
-        }
-    }
-}
-
-impl TryFrom<Request> for http::request::Parts {
-    type Error = http::Error;
-    fn try_from(req: Request) -> http::Result<http::request::Parts> {
-        let Request {
-            method,
-            headers,
-            timeout,
-            uri,
-            version,
-        } = req;
-        let (mut request, ()) = http::Request::new(()).into_parts();
-        request.method = method.into();
-        request.uri = uri.try_into()?;
-        request.version = version.into();
-        request.headers = headers.try_into()?;
-
-        if let Some(timeout) = timeout {
-            request.extensions.insert(timeout);
-        }
-
-        Ok(request)
-    }
-}
-
-/// An HTTP extension to specify a timeout for requests made by a procedure running in a SpacetimeDB database.
-///
-/// Pass an instance of this type to [`http::request::Builder::extension`] to set a timeout on a request.
-///
-/// This timeout applies to the entire request,
-/// from when the headers are first sent to when the response body is fully downloaded.
-/// This is sometimes called a total timeout, the sum of the connect timeout and the read timeout.
-#[derive(Clone, SpacetimeType, Copy, PartialEq, Eq)]
-#[sats(crate = crate)]
-pub struct Timeout {
-    pub timeout: TimeDuration,
-}
-
-impl From<TimeDuration> for Timeout {
-    fn from(timeout: TimeDuration) -> Timeout {
-        Timeout { timeout }
-    }
-}
-
-impl From<Timeout> for TimeDuration {
-    fn from(Timeout { timeout }: Timeout) -> TimeDuration {
-        timeout
-    }
+    pub uri: String,
+    pub version: Version,
 }
 
 /// Represents an HTTP method.
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpMethod")]
 pub enum Method {
     Get,
     Head,
@@ -124,18 +50,6 @@ pub enum Method {
     Trace,
     Patch,
     Extension(String),
-}
-
-impl Method {
-    pub const GET: Method = Method::Get;
-    pub const HEAD: Method = Method::Head;
-    pub const POST: Method = Method::Post;
-    pub const PUT: Method = Method::Put;
-    pub const DELETE: Method = Method::Delete;
-    pub const CONNECT: Method = Method::Connect;
-    pub const OPTIONS: Method = Method::Options;
-    pub const TRACE: Method = Method::Trace;
-    pub const PATCH: Method = Method::Patch;
 }
 
 impl From<http::Method> for Method {
@@ -174,7 +88,7 @@ impl From<Method> for http::Method {
 
 /// An HTTP version.
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpVersion")]
 pub enum Version {
     Http09,
     Http10,
@@ -212,19 +126,52 @@ impl From<Version> for http::Version {
 ///
 /// Construct this by converting from a [`http::HeaderMap`].
 #[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpHeaders")]
 pub struct Headers {
     // SATS doesn't (and won't) have a multimap type, so just use an array of pairs for the ser/de format.
     entries: Box<[HttpHeaderPair]>,
 }
 
-impl From<http::HeaderMap<http::HeaderValue>> for Headers {
-    fn from(value: http::HeaderMap<http::HeaderValue>) -> Headers {
+// `http::header::IntoIter` only returns the `HeaderName` for the first
+// `HeaderValue` with that name, so we have to manually assign the names.
+struct HeaderMapIntoIter {
+    prev: Option<(http::HeaderName, http::HeaderValue)>,
+    inner: http::header::IntoIter<http::HeaderValue>,
+}
+
+impl From<http::header::HeaderMap> for HeaderMapIntoIter {
+    fn from(map: http::header::HeaderMap) -> Self {
+        let mut inner = map.into_iter();
+        Self {
+            prev: inner.next().map(|(k, v)| (k.unwrap(), v)),
+            inner,
+        }
+    }
+}
+
+impl Iterator for HeaderMapIntoIter {
+    type Item = (http::HeaderName, http::HeaderValue);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (prev_k, prev_v) = self.prev.take()?;
+        self.prev = self
+            .inner
+            .next()
+            .map(|(next_k, next_v)| (next_k.unwrap_or_else(|| prev_k.clone()), next_v));
+        Some((prev_k, prev_v))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl From<http::HeaderMap> for Headers {
+    fn from(value: http::HeaderMap) -> Headers {
         Headers {
-            entries: value
-                .into_iter()
+            entries: HeaderMapIntoIter::from(value)
                 .map(|(name, value)| HttpHeaderPair {
-                    name: name.map(|name| name.to_string()).unwrap_or_default(),
+                    name: name.to_string(),
                     value: value.into(),
                 })
                 .collect(),
@@ -245,7 +192,7 @@ impl TryFrom<Headers> for http::HeaderMap {
 }
 
 #[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpHeaderPair")]
 struct HttpHeaderPair {
     /// A valid HTTP header name, sourced from an already-validated [`http::HeaderName`].
     name: String,
@@ -254,7 +201,7 @@ struct HttpHeaderPair {
 
 /// A valid HTTP header value, sourced from an already-validated [`http::HeaderValue`].
 #[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpHeaderValue")]
 struct HeaderValue {
     bytes: Box<[u8]>,
     is_sensitive: bool,
@@ -279,89 +226,10 @@ impl TryFrom<HeaderValue> for http::HeaderValue {
 }
 
 #[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
+#[sats(crate = crate, name = "HttpResponse")]
 pub struct Response {
-    inner: HttpResponse,
-}
-
-impl TryFrom<Response> for http::response::Parts {
-    type Error = http::Error;
-    fn try_from(response: Response) -> http::Result<http::response::Parts> {
-        let Response {
-            inner: HttpResponse { headers, version, code },
-        } = response;
-
-        let (mut response, ()) = http::Response::new(()).into_parts();
-        response.version = version.into();
-        response.status = http::StatusCode::from_u16(code)?;
-        response.headers = headers.try_into()?;
-        Ok(response)
-    }
-}
-
-impl From<http::response::Parts> for Response {
-    fn from(response: http::response::Parts) -> Response {
-        let http::response::Parts {
-            extensions,
-            headers,
-            status,
-            version,
-            ..
-        } = response;
-        if !extensions.is_empty() {
-            log::warn!("Converting HTTP `Response` with unrecognized extensions");
-        }
-        Response {
-            inner: HttpResponse {
-                headers: headers.into(),
-                version: version.into(),
-                code: status.as_u16(),
-            },
-        }
-    }
-}
-
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-struct HttpResponse {
-    headers: Headers,
-    version: Version,
+    pub headers: Headers,
+    pub version: Version,
     /// A valid HTTP response status code, sourced from an already-validated [`http::StatusCode`].
-    code: u16,
-}
-
-/// Errors that may arise from HTTP calls.
-#[derive(Clone, SpacetimeType, Debug)]
-#[sats(crate = crate)]
-pub struct Error {
-    /// A string message describing the error.
-    ///
-    /// It would be nice if we could store a more interesting object here,
-    /// ideally a type-erased `dyn Trait` cause,
-    /// rather than just a string, similar to how `anyhow` does.
-    /// This is not possible because we need to serialize `Error` for transport to WASM,
-    /// meaning it must have a concrete static type.
-    /// `reqwest::Error`, which is the source for these,
-    /// is type-erased enough that the best we can do (at least, the best we can do easily)
-    /// is to eagerly string-ify the error.    
-    message: String,
-}
-
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let Error { message } = self;
-        f.write_str(message)
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl Error {
-    pub fn from_string(message: String) -> Self {
-        Error { message }
-    }
-
-    pub fn from_display(t: &impl std::fmt::Display) -> Self {
-        Self::from_string(format!("{t}"))
-    }
+    pub code: u16,
 }
