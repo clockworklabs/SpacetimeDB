@@ -136,6 +136,13 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
 
     // Views test
+    
+    Log.Debug("Checking Views are populated");
+    Debug.Assert(context.Db.MyPlayer != null, "context.Db.MyPlayer != null");
+    Debug.Assert(context.Db.PlayersForLevel != null, "context.Db.PlayersForLevel != null");
+    Debug.Assert(context.Db.MyPlayer.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}");
+    Debug.Assert(context.Db.PlayersForLevel.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.PlayersForLevel.Count}");
+    
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
     Log.Debug("MyPlayer Iter count: " + (viewIterRows != null ? viewIterRows.Count().ToString() : "null"));

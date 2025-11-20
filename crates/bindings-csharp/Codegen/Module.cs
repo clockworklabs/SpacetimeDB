@@ -1014,7 +1014,7 @@ record ViewDeclaration
             ? "SpacetimeDB.AnonymousViewContext"
             : "SpacetimeDB.ViewContext";
 
-        var isValueOption = ReturnType.BSATNName.StartsWith("SpacetimeDB.BSATN.ValueOption");
+        var isValueOption = ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption");
         var writeOutput = isValueOption
             ? $$$"""
                     var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
@@ -1057,13 +1057,6 @@ record ViewDeclaration
             }
             """;
     }
-
-    // public string GenerateClass()
-    // {
-    //     var builder = new Scope.Extensions(Scope, FullName);
-    //     builder.Contents.Append(GenerateDispatcherClass());
-    //     return builder.ToString();
-    // }
 }
 
 /// <summary>
