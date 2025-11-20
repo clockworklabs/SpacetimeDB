@@ -33,7 +33,8 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
+    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
+    PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
@@ -281,6 +282,7 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     let result = match module
         .call_procedure(caller_identity, Some(connection_id), None, &procedure, args)
         .await
+        .result
     {
         Ok(res) => Ok(res),
         Err(e) => {
@@ -447,6 +449,7 @@ where
 
     let replica = worker_ctx
         .get_leader_replica_by_database(database.id)
+        .await
         .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
     let replica_id = replica.id;
 
@@ -506,6 +509,7 @@ pub(crate) async fn worker_ctx_find_database(
 ) -> axum::response::Result<Option<Database>> {
     worker_ctx
         .get_database_by_identity(database_identity)
+        .await
         .map_err(log_and_500)
 }
 
@@ -594,6 +598,7 @@ pub async fn get_names<S: ControlStateDelegate>(
 
     let names = ctx
         .reverse_lookup(&database_identity)
+        .await
         .map_err(log_and_500)?
         .into_iter()
         .filter_map(|x| String::from(x).try_into().ok())
@@ -697,7 +702,12 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
         if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)? {
-            if ctx.get_database_by_identity(&identity).map_err(log_and_500)?.is_some() {
+            if ctx
+                .get_database_by_identity(&identity)
+                .await
+                .map_err(log_and_500)?
+                .is_some()
+            {
                 return reset(
                     State(ctx),
                     Path(ResetDatabaseParams {
@@ -727,7 +737,10 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     log::trace!("Publishing to the identity: {}", database_identity.to_hex());
 
     // Check if the database already exists.
-    let existing = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let existing = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?;
     match existing.as_ref() {
         // If not, check that the we caller is sufficiently authenticated.
         None => {
@@ -948,17 +961,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             }
             .hash();
 
-            Ok(PrePublishResult {
+            Ok(PrePublishResult::AutoMigrate(PrePublishAutoMigrateResult {
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
-            })
+            }))
         }
-        MigratePlanResult::AutoMigrationError(e) => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Automatic migration is not possible: {e}"),
-        )
-            .into()),
+        MigratePlanResult::AutoMigrationError(e) => {
+            Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
+                reason: e.to_string(),
+            }))
+        }
     }
     .map(axum::Json)
 }
@@ -1055,7 +1068,10 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
 
     let database_identity = name_or_identity.resolve(&ctx).await?;
 
-    let database = ctx.get_database_by_identity(&database_identity).map_err(log_and_500)?;
+    let database = ctx
+        .get_database_by_identity(&database_identity)
+        .await
+        .map_err(log_and_500)?;
     let Some(database) = database else {
         return Ok((
             StatusCode::NOT_FOUND,
@@ -1077,7 +1093,7 @@ pub async fn set_names<S: ControlStateDelegate + Authorization>(
         })?;
 
     for name in &validated_names {
-        if ctx.lookup_identity(name.as_str()).unwrap().is_some() {
+        if ctx.lookup_identity(name.as_str()).await.unwrap().is_some() {
             return Ok((
                 StatusCode::BAD_REQUEST,
                 axum::Json(name::SetDomainsResult::OtherError(format!(

@@ -10,11 +10,12 @@ use crate::db::{self, spawn_tx_metrics_recorder};
 use crate::energy::{EnergyMonitor, EnergyQuanta, NullEnergyMonitor};
 use crate::host::module_host::ModuleRuntime as _;
 use crate::host::v8::V8Runtime;
+use crate::host::ProcedureCallError;
 use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
-use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
+use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
 use crate::util::asyncify;
 use crate::util::jobs::{JobCores, SingleCoreExecutor};
 use crate::worker_metrics::WORKER_METRICS;
@@ -176,6 +177,11 @@ pub struct ProcedureCallResult {
     pub return_val: AlgebraicValue,
     pub execution_duration: Duration,
     pub start_timestamp: Timestamp,
+}
+
+pub struct CallProcedureReturn {
+    pub result: Result<ProcedureCallResult, ProcedureCallError>,
+    pub tx_offset: Option<TransactionOffset>,
 }
 
 impl HostController {
