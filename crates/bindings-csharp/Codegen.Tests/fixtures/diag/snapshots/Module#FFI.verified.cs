@@ -1864,6 +1864,9 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
 
+        // IMPORTANT: The order in which we register views matters.
+        // It must correspond to the order in which we call `GenerateDispatcherClass`.
+        // See the comment on `GenerateDispatcherClass` for more explanation.
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoContextViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoPublicViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongContextViewDispatcher>();

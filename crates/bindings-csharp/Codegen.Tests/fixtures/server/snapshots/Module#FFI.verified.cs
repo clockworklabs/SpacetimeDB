@@ -1656,6 +1656,9 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
 
+        // IMPORTANT: The order in which we register views matters.
+        // It must correspond to the order in which we call `GenerateDispatcherClass`.
+        // See the comment on `GenerateDispatcherClass` for more explanation.
         SpacetimeDB.Internal.Module.RegisterView<PublicTableByIdentityViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterAnonymousView<FindPublicTableByIdentityViewDispatcher>();
 
