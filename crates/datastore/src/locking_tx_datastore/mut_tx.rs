@@ -287,9 +287,9 @@ impl MutTxId {
         self.read_sets.insert_table_scan(table_id, view.clone());
     }
 
+    /// Returns the views whose read sets overlaps with this transaction's write set
     pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
-        let mut res = self
-            .tx_state
+        let mut res = self.tx_state
             .insert_tables
             .keys()
             .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
