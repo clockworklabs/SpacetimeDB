@@ -37,7 +37,8 @@ pub struct ReplaceStats {
 /// (works for both `import { ... } from ...` and `export { ... } from ...`).
 pub fn replace_in_tree(
     root: impl AsRef<Path>,
-    replacement: &str,
+    replacement_index_ts: &str,
+    replacement_other_ts: &str,
     options: &ReplaceOptions,
 ) -> io::Result<ReplaceStats> {
     let root = root.as_ref().to_path_buf();
@@ -48,7 +49,6 @@ pub fn replace_in_tree(
         ));
     }
 
-    // Match exactly the two forms you want. No backreferences needed.
     // We intentionally DO NOT include a trailing semicolon so we preserve it (or its absence).
     let re_single = Regex::new(r#"}\s*from\s*'spacetimedb'"#).unwrap();
     let re_double = Regex::new(r#"}\s*from\s*"spacetimedb""#).unwrap();
@@ -87,6 +87,21 @@ pub fn replace_in_tree(
             continue;
         }
 
+        // Only operate on .ts files.
+        // If you want .tsx too, add it here.
+        let is_ts = path.extension().and_then(|e| e.to_str()) == Some("ts");
+        if !is_ts {
+            continue;
+        }
+
+        // Decide which replacement to use for this file
+        let is_index_ts = path.file_name().and_then(|n| n.to_str()) == Some("index.ts");
+        let repl = if is_index_ts {
+            replacement_index_ts
+        } else {
+            replacement_other_ts
+        };
+
         let bytes = match fs::read(path) {
             Ok(b) => b,
             Err(err) => {
@@ -110,16 +125,18 @@ pub fn replace_in_tree(
         }
 
         // Do the replacements, preserving quote style
-        let updated1 = re_single.replace_all(&content, format!("}} from '{}'", replacement));
-        let updated = re_double.replace_all(&updated1, format!("}} from \"{}\"", replacement));
+        let updated1 = re_single.replace_all(&content, format!("}} from '{}'", repl));
+        let updated = re_double.replace_all(&updated1, format!("}} from \"{}\"", repl));
 
         if options.dry_run {
-            println!("[dry-run] {} ({} matches)", path.display(), matches);
+            let which = if is_index_ts { "index.ts" } else { "*.ts" };
+            println!("[dry-run] {} ({} matches, rule: {})", path.display(), matches, which);
         } else if let Err(err) = fs::write(path, updated.as_ref()) {
             eprintln!("write error {}: {err}", path.display());
             continue;
         } else {
-            println!("✔ {} ({} matches)", path.display(), matches);
+            let which = if is_index_ts { "index.ts" } else { "*.ts" };
+            println!("✔ {} ({} matches, rule: {})", path.display(), matches, which);
         }
 
         files_changed += 1;

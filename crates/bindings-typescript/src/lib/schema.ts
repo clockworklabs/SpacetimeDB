@@ -1,13 +1,23 @@
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
-import type Typespace from '../lib/autogen/typespace_type';
+import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type Typespace from './autogen/typespace_type';
 import {
+  ArrayBuilder,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  type ColumnBuilder,
+  ColumnBuilder,
+  OptionBuilder,
+  ProductBuilder,
+  RefBuilder,
+  RowBuilder,
+  SumBuilder,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  TypeBuilder,
+  type ElementsObj,
+  type Infer,
+  type InferSpacetimeTypeOfTypeBuilder,
   type RowObj,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  type TypeBuilder,
+  type VariantsObj,
 } from './type_builders';
-import type { TableSchema, UntypedTableDef } from './table';
+import type { UntypedTableDef } from './table';
 import {
   clientConnected,
   clientDisconnected,
@@ -16,12 +26,18 @@ import {
   type ParamsObj,
   type Reducer,
 } from './reducers';
-import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
+import type RawModuleDefV9 from './autogen/raw_module_def_v_9_type';
 import {
   AlgebraicType,
+  ProductType,
+  SumType,
+  type AlgebraicTypeType,
   type AlgebraicTypeVariants,
-} from '../lib/algebraic_type';
-import type RawScopedTypeNameV9 from '../lib/autogen/raw_scoped_type_name_v_9_type';
+} from './algebraic_type';
+import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
+import type { CamelCase } from './type_util';
+import type { TableSchema } from './table_schema';
+import { toCamelCase } from './util';
 import {
   defineView,
   type AnonymousViewFn,
@@ -29,54 +45,11 @@ import {
   type ViewOpts,
   type ViewReturnTypeBuilder,
 } from './views';
+import RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
+import type { IndexOpts } from './indexes';
 
-/**
- * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
- */
-export const MODULE_DEF: RawModuleDefV9 = {
-  typespace: { types: [] },
-  tables: [],
-  reducers: [],
-  types: [],
-  miscExports: [],
-  rowLevelSecurity: [],
-};
-
-const COMPOUND_TYPES = new Map<
-  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
-  AlgebraicTypeVariants.Ref
->();
-
-export function addType<T extends AlgebraicType>(
-  name: string | undefined,
-  ty: T
-): T | AlgebraicTypeVariants.Ref {
-  if (
-    (ty.tag === 'Product' && (ty.value.elements.length > 0 || name != null)) ||
-    (ty.tag === 'Sum' && (ty.value.variants.length > 0 || name != null))
-  ) {
-    let r = COMPOUND_TYPES.get(ty);
-    if (r == null) {
-      r = AlgebraicType.Ref(MODULE_DEF.typespace.types.length);
-      MODULE_DEF.typespace.types.push(ty);
-      COMPOUND_TYPES.set(ty, r);
-      if (name != null)
-        MODULE_DEF.types.push({
-          name: splitName(name),
-          ty: r.value,
-          customOrdering: true,
-        });
-    }
-    return r;
-  } else {
-    return ty;
-  }
-}
-
-export function splitName(name: string): RawScopedTypeNameV9 {
-  const scope = name.split('.');
-  return { name: scope.pop()!, scope };
-}
+export type TableNamesOf<S extends UntypedSchemaDef> =
+  S['tables'][number]['name'];
 
 /**
  * An untyped representation of the database schema.
@@ -93,11 +66,231 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
     /** @type {UntypedTableDef} */
     readonly [i in keyof T]: {
       name: T[i]['tableName'];
+      accessorName: CamelCase<T[i]['tableName']>;
       columns: T[i]['rowType']['row'];
+      rowType: T[i]['rowSpacetimeType'];
       indexes: T[i]['idxs'];
+      constraints: T[i]['constraints'];
     };
   };
 };
+
+export function tablesToSchema<
+  const T extends readonly TableSchema<any, any, readonly any[]>[],
+>(tables: T): TablesToSchema<T> {
+  const result = {
+    tables: tables.map(schema => {
+      const colNameList: string[] = [];
+      schema.rowType.algebraicType.value.elements.forEach(elem => {
+        colNameList.push(elem.name);
+      });
+
+      return {
+        name: schema.tableName,
+        accessorName: toCamelCase(schema.tableName),
+        columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
+        rowType: schema.rowSpacetimeType,
+        constraints: [
+          ...schema.tableDef.constraints.map(c => ({
+            name: c.name,
+            constraint: 'unique' as const,
+            columns: Array.from(c.data.value.columns.map(i => colNameList[i])),
+          })),
+        ],
+        // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
+        indexes: [
+          ...schema.idxs.map(
+            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> =>
+              ({
+                name: idx.accessorName,
+                unique: schema.tableDef.constraints
+                  .map(c => {
+                    if (idx.algorithm.tag == 'BTree') {
+                      return c.data.value.columns.every(col => {
+                        const idxColumns = idx.algorithm.value;
+                        if (Array.isArray(idxColumns)) {
+                          return idxColumns.includes(col);
+                        } else {
+                          return col === idxColumns;
+                        }
+                      });
+                    }
+                  })
+                  .includes(true),
+                algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
+                columns: (() => {
+                  const cols =
+                    idx.algorithm.tag === 'Direct'
+                      ? [idx.algorithm.value]
+                      : idx.algorithm.value;
+                  return cols.map(i => colNameList[i]);
+                })(),
+              }) as IndexOpts<any>
+          ),
+        ],
+      } as const;
+    }) as {
+      // preserve tuple indices so the return type matches `[i in keyof T]`
+      readonly [I in keyof T]: {
+        name: T[I]['tableName'];
+        accessorName: CamelCase<T[I]['tableName']>;
+        columns: T[I]['rowType']['row'];
+        rowType: T[I]['rowSpacetimeType'];
+        indexes: T[I]['idxs'];
+        constraints: T[I]['constraints'];
+      };
+    },
+  } satisfies TablesToSchema<T>;
+  return result;
+}
+
+/**
+ * The global module definition that gets populated by calls to `reducer()` and lifecycle hooks.
+ */
+export const MODULE_DEF: Infer<typeof RawModuleDefV9> = {
+  typespace: { types: [] },
+  tables: [],
+  reducers: [],
+  types: [],
+  miscExports: [],
+  rowLevelSecurity: [],
+};
+
+const COMPOUND_TYPES = new Map<
+  AlgebraicTypeVariants.Product | AlgebraicTypeVariants.Sum,
+  RefBuilder<any, any>
+>();
+
+/**
+ * Resolves the actual type of a TypeBuilder by following its references until it reaches a non-ref type.
+ * @param typespace The typespace to resolve types against.
+ * @param typeBuilder The TypeBuilder to resolve.
+ * @returns The resolved algebraic type.
+ */
+export function resolveType<AT extends AlgebraicTypeType>(
+  typespace: Infer<typeof Typespace>,
+  typeBuilder: RefBuilder<any, AT>
+): AT {
+  let ty: AlgebraicType = typeBuilder.algebraicType;
+  while (ty.tag === 'Ref') {
+    ty = typespace.types[ty.value];
+  }
+  return ty as AT;
+}
+
+/**
+ * Adds a type to the module definition's typespace as a `Ref` if it is a named compound type (Product or Sum).
+ * Otherwise, returns the type as is.
+ * @param name
+ * @param ty
+ * @returns
+ */
+export function registerTypesRecursively<
+  T extends TypeBuilder<any, AlgebraicType>,
+>(
+  typeBuilder: T
+): T extends SumBuilder<any> | ProductBuilder<any> | RowBuilder<any>
+  ? RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>>
+  : T {
+  if (
+    (typeBuilder instanceof ProductBuilder && !isUnit(typeBuilder)) ||
+    typeBuilder instanceof SumBuilder ||
+    typeBuilder instanceof RowBuilder
+  ) {
+    return registerCompoundTypeRecursively(typeBuilder) as any;
+  } else if (typeBuilder instanceof OptionBuilder) {
+    return new OptionBuilder(
+      registerTypesRecursively(typeBuilder.value)
+    ) as any;
+  } else if (typeBuilder instanceof ArrayBuilder) {
+    return new ArrayBuilder(
+      registerTypesRecursively(typeBuilder.element)
+    ) as any;
+  } else {
+    return typeBuilder as any;
+  }
+}
+
+function registerCompoundTypeRecursively<
+  T extends
+    | SumBuilder<VariantsObj>
+    | ProductBuilder<ElementsObj>
+    | RowBuilder<RowObj>,
+>(typeBuilder: T): RefBuilder<Infer<T>, InferSpacetimeTypeOfTypeBuilder<T>> {
+  const ty = typeBuilder.algebraicType;
+  // NB! You must ensure that all TypeBuilder passed into this function
+  // have a name. This function ensures that nested types always have a
+  // name by assigning them one if they are missing it.
+  const name = typeBuilder.typeName;
+  if (name === undefined) {
+    throw new Error(
+      `Missing type name for ${typeBuilder.constructor.name ?? 'TypeBuilder'} ${JSON.stringify(typeBuilder)}`
+    );
+  }
+
+  let r = COMPOUND_TYPES.get(ty);
+  if (r != null) {
+    // Already added to typespace
+    return r;
+  }
+
+  // Recursively register nested compound types
+  const newTy =
+    typeBuilder instanceof RowBuilder || typeBuilder instanceof ProductBuilder
+      ? ({
+          tag: 'Product',
+          value: { elements: [] },
+        } as AlgebraicTypeVariants.Product)
+      : ({ tag: 'Sum', value: { variants: [] } } as AlgebraicTypeVariants.Sum);
+
+  r = new RefBuilder(MODULE_DEF.typespace.types.length);
+  MODULE_DEF.typespace.types.push(newTy);
+
+  COMPOUND_TYPES.set(ty, r);
+
+  if (typeBuilder instanceof RowBuilder) {
+    for (const [name, elem] of Object.entries(typeBuilder.row)) {
+      (newTy.value as ProductType).elements.push({
+        name,
+        algebraicType: registerTypesRecursively(elem.typeBuilder).algebraicType,
+      });
+    }
+  } else if (typeBuilder instanceof ProductBuilder) {
+    for (const [name, elem] of Object.entries(typeBuilder.elements)) {
+      (newTy.value as ProductType).elements.push({
+        name,
+        algebraicType: registerTypesRecursively(elem).algebraicType,
+      });
+    }
+  } else if (typeBuilder instanceof SumBuilder) {
+    for (const [name, variant] of Object.entries(typeBuilder.variants)) {
+      (newTy.value as SumType).variants.push({
+        name,
+        algebraicType: registerTypesRecursively(variant).algebraicType,
+      });
+    }
+  }
+
+  MODULE_DEF.types.push({
+    name: splitName(name),
+    ty: r.ref,
+    customOrdering: true,
+  });
+
+  return r;
+}
+
+function isUnit(typeBuilder: ProductBuilder<ElementsObj>): boolean {
+  return (
+    typeBuilder.typeName == null &&
+    typeBuilder.algebraicType.value.elements.length === 0
+  );
+}
+
+export function splitName(name: string): Infer<typeof RawScopedTypeNameV9> {
+  const scope = name.split('.');
+  return { name: scope.pop()!, scope };
+}
 
 /**
  * The Schema class represents the database schema for a SpacetimeDB application.
@@ -134,13 +327,19 @@ type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
 class Schema<S extends UntypedSchemaDef> {
-  readonly tablesDef: { tables: RawTableDefV9[] };
-  readonly typespace: Typespace;
-  readonly schemaType!: S;
+  readonly tablesDef: { tables: Infer<typeof RawTableDefV9>[] };
+  readonly typespace: Infer<typeof Typespace>;
+  readonly schemaType: S;
 
-  constructor(tables: RawTableDefV9[], typespace: Typespace) {
+  constructor(
+    tables: Infer<typeof RawTableDefV9>[],
+    typespace: Infer<typeof Typespace>,
+    handles: readonly TableSchema<any, any, any>[]
+  ) {
     this.tablesDef = { tables };
     this.typespace = typespace;
+    // TODO: TableSchema and TableDef should really be unified
+    this.schemaType = tablesToSchema(handles) as S;
   }
 
   /**
@@ -178,13 +377,13 @@ class Schema<S extends UntypedSchemaDef> {
    * );
    * ```
    */
-  reducer<Params extends ParamsObj | RowObj>(
+  reducer<Params extends ParamsObj>(
     name: string,
     params: Params,
     fn: Reducer<S, Params>
   ): Reducer<S, Params>;
   reducer(name: string, fn: Reducer<S, {}>): Reducer<S, {}>;
-  reducer<Params extends ParamsObj | RowObj>(
+  reducer<Params extends ParamsObj>(
     name: string,
     paramsOrFn: Params | Reducer<S, any>,
     fn?: Reducer<S, Params>
@@ -315,7 +514,7 @@ class Schema<S extends UntypedSchemaDef> {
   //   }
   // }
 
-  anyonymousView<Ret extends ViewReturnTypeBuilder>(
+  anonymousView<Ret extends ViewReturnTypeBuilder>(
     opts: ViewOpts,
     ret: Ret,
     fn: AnonymousViewFn<S, {}, Ret>
@@ -324,18 +523,18 @@ class Schema<S extends UntypedSchemaDef> {
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
-  // anyonymousView<Ret extends ViewReturnTypeBuilder>(
+  // anonymousView<Ret extends ViewReturnTypeBuilder>(
   //   opts: ViewOpts,
   //   ret: Ret,
   //   fn: AnonymousViewFn<S, {}, Ret>
   // ): void;
-  // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
   //   opts: ViewOpts,
   //   params: Params,
   //   ret: Ret,
   //   fn: AnonymousViewFn<S, {}, Ret>
   // ): void;
-  // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
   //   opts: ViewOpts,
   //   paramsOrRet: Ret | Params,
   //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
@@ -378,22 +577,6 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
 ): Schema<TablesToSchema<H>>;
 
 /**
- * Creates a schema from table definitions
- * @param handles - Array of table handles created by table() function
- * @returns ColumnBuilder representing the complete database schema
- * @example
- * ```ts
- * const s = schema(
- *   table({ name: 'user' }, userType),
- *   table({ name: 'post' }, postType)
- * );
- * ```
- */
-export function schema<const H extends readonly TableSchema<any, any, any>[]>(
-  ...handles: H
-): Schema<TablesToSchema<H>>;
-
-/**
  * Creates a schema from table definitions (array overload)
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
@@ -414,14 +597,12 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
  * );
  * ```
  */
-export function schema(
-  ...args:
-    | [readonly TableSchema<any, any, any>[]]
-    | readonly TableSchema<any, any, any>[]
-): Schema<UntypedSchemaDef> {
-  const handles: readonly TableSchema<any, any, any>[] =
-    args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
-
+export function schema<const H extends readonly TableSchema<any, any, any>[]>(
+  ...args: [H] | H
+): Schema<TablesToSchema<H>> {
+  const handles = (
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  ) as H;
   const tableDefs = handles.map(h => h.tableDef);
 
   // Side-effect:
@@ -438,5 +619,19 @@ export function schema(
   //     .join('\n')
   // );
 
-  return new Schema(tableDefs, MODULE_DEF.typespace);
+  return new Schema(tableDefs, MODULE_DEF.typespace, handles);
+}
+
+type HasAccessor = { accessorName: PropertyKey };
+
+export type ConvertToAccessorMap<TableDefs extends readonly HasAccessor[]> = {
+  [Tbl in TableDefs[number] as Tbl['accessorName']]: Tbl;
+};
+
+export function convertToAccessorMap<T extends readonly HasAccessor[]>(
+  arr: T
+): ConvertToAccessorMap<T> {
+  return Object.fromEntries(
+    arr.map(v => [v.accessorName, v])
+  ) as ConvertToAccessorMap<T>;
 }

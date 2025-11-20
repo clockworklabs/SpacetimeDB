@@ -4,6 +4,7 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+<<<<<<< HEAD
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
@@ -81,3 +82,14 @@ export class PersonTableHandle<TableName extends string>
     return this.tableCache.removeOnDelete(cb);
   };
 }
+=======
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from 'spacetimedb';
+
+export default __t.row({
+  name: __t.string(),
+});
+>>>>>>> origin/master

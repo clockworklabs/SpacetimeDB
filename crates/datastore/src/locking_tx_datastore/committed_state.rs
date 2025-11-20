@@ -8,18 +8,18 @@ use super::{
 };
 use crate::{
     db_metrics::DB_METRICS,
-    error::{DatastoreError, IndexError, TableError},
+    error::{DatastoreError, IndexError, TableError, ViewError},
     execution_context::ExecutionContext,
     locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
-        StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
+        StTableRow, StViewRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
         ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
         ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
         ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
         ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
-    traits::TxData,
+    traits::{EphemeralTables, TxData},
 };
 use crate::{
     locking_tx_datastore::ViewCallInfo,
@@ -80,6 +80,12 @@ pub struct CommittedState {
     /// Any overlap will trigger a re-evaluation of the affected view,
     /// and its read set will be updated accordingly.
     read_sets: ViewReadSets,
+
+    /// Tables which do not need to be made persistent.
+    /// These include:
+    ///     - system tables: `st_view_sub`, `st_view_arg`
+    ///     - Tables which back views.
+    pub(super) ephemeral_tables: EphemeralTables,
 }
 
 impl CommittedState {
@@ -99,6 +105,7 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             table_dropped,
             read_sets,
+            ephemeral_tables,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -107,6 +114,7 @@ impl MemoryUsage for CommittedState {
             + index_id_map.heap_usage()
             + table_dropped.heap_usage()
             + read_sets.heap_usage()
+            + ephemeral_tables.heap_usage()
     }
 }
 
@@ -171,6 +179,7 @@ impl CommittedState {
             table_dropped: <_>::default(),
             read_sets: <_>::default(),
             page_pool,
+            ephemeral_tables: <_>::default(),
         }
     }
 
@@ -518,6 +527,32 @@ impl CommittedState {
         Ok(())
     }
 
+    pub(super) fn collect_ephemeral_tables(&mut self) -> Result<()> {
+        self.ephemeral_tables = self.ephemeral_tables()?.into_iter().collect();
+        Ok(())
+    }
+
+    fn ephemeral_tables(&self) -> Result<Vec<TableId>> {
+        let mut tables = vec![ST_VIEW_SUB_ID, ST_VIEW_ARG_ID];
+
+        let Some(st_view) = self.tables.get(&ST_VIEW_ID) else {
+            return Ok(tables);
+        };
+        let backing_tables = st_view
+            .scan_rows(&self.blob_store)
+            .map(|row_ref| {
+                let view_row = StViewRow::try_from(row_ref)?;
+                view_row
+                    .table_id
+                    .ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_row.view_id)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        tables.extend(backing_tables);
+
+        Ok(tables)
+    }
+
     /// After replaying all old transactions,
     /// inserts and deletes into the system tables
     /// might not be reflected in the schemas of the built tables.
@@ -634,8 +669,8 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId) {
-        self.read_sets.remove_view(view_id)
+    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        self.read_sets.remove_view(view_id, sender)
     }
 
     pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
@@ -674,6 +709,8 @@ impl CommittedState {
             tx_data.set_tx_offset(self.next_tx_offset);
             self.next_tx_offset += 1;
         }
+
+        tx_data.set_ephemeral_tables(&self.ephemeral_tables);
 
         tx_data
     }
@@ -847,10 +884,16 @@ impl CommittedState {
             }
             // A table was removed. Add it back.
             TableRemoved(table_id, table) => {
+                let is_view_table = table.schema.is_view();
                 // We don't need to deal with sub-components.
                 // That is, we don't need to add back indices and such.
                 // Instead, there will be separate pending schema changes like `IndexRemoved`.
                 self.tables.insert(table_id, table);
+
+                // Incase, the table was ephemeral, add it back to that set as well.
+                if is_view_table {
+                    self.ephemeral_tables.insert(table_id);
+                }
             }
             // A table was added. Remove it.
             TableAdded(table_id) => {
@@ -858,6 +901,8 @@ impl CommittedState {
                 // That is, we don't need to remove indices and such.
                 // Instead, there will be separate pending schema changes like `IndexAdded`.
                 self.tables.remove(&table_id);
+                // Incase, the table was ephemeral, remove it from that set as well.
+                self.ephemeral_tables.remove(&table_id);
             }
             // A table's access was changed. Change back to the old one.
             TableAlterAccess(table_id, access) => {

@@ -19,7 +19,9 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
+use spacetimedb_datastore::system_tables::{
+    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -819,9 +821,18 @@ impl RelationalDB {
             Txdata,
         };
 
+        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
+            tx_data
+                .ephemeral_tables()
+                .map(|etables| !etables.contains(table_id))
+                .unwrap_or(true)
+        };
+
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
+                // Skip ephemeral tables
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -832,6 +843,7 @@ impl RelationalDB {
 
             let deletes: Box<_> = tx_data
                 .deletes()
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -839,6 +851,8 @@ impl RelationalDB {
                 // filter out deletes for tables that are truncated in the same transaction.
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
+
+            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
 
@@ -848,7 +862,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates: truncates.into_iter().collect(),
+                    truncates,
                 }),
             };
 
@@ -1057,6 +1071,50 @@ impl RelationalDB {
             );
         }
     }
+}
+
+/// Duration after which expired unused views are cleaned up.
+/// Value is chosen arbitrarily; can be tuned later if needed.
+const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Duration to budget for each view cleanup job,
+/// so that it doesn't hold transaction lock for to long.
+//TODO: Make this value configurable
+const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Spawn a background task that periodically cleans up expired views
+pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
+    tokio::spawn(async move {
+        let db = &db;
+        loop {
+            match db.with_auto_commit(Workload::Internal, |tx| {
+                tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+                    .map_err(DBError::from)
+            }) {
+                Ok((cleared, total_expired)) => {
+                    if cleared != total_expired {
+                        //TODO: Report it as metric
+                        log::info!(
+                            "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                            db.database_identity(),
+                            cleared,
+                            total_expired - cleared
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "[{}] DATABASE: failed to clear expired views: {}",
+                        db.database_identity(),
+                        e
+                    );
+                }
+            }
+
+            tokio::time::sleep(VIEWS_EXPIRATION).await;
+        }
+    })
+    .abort_handle()
 }
 
 impl RelationalDB {
@@ -1406,7 +1464,7 @@ impl RelationalDB {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
-    /// Clear all rows from a table without dropping it.
+    /// Clears all rows from a table without dropping it.
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
@@ -1415,6 +1473,17 @@ impl RelationalDB {
     /// Clear all rows from all view tables without dropping them.
     pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
         Ok(tx.clear_all_views()?)
+    }
+
+    /// Empties the system tables tracking clients.
+    pub fn clear_all_clients(&self) -> Result<(), DBError> {
+        self.with_auto_commit(Workload::Internal, |mut_tx| {
+            self.clear_all_views(mut_tx)?;
+            self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+            self.clear_table(mut_tx, ST_CLIENT_ID)?;
+            self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
+            Ok(())
+        })
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
@@ -2343,6 +2412,7 @@ mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::time::Instant;
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
@@ -2393,6 +2463,27 @@ mod tests {
         let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
         TableSchema::from_module_def(&def, table, (), TableId::SENTINEL)
+    }
+
+    fn view_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("b", AlgebraicType::U8)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            false,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        let raw = builder.finish();
+        raw.try_into().expect("table validation failed")
     }
 
     fn table_auto_inc() -> TableSchema {
@@ -2479,6 +2570,171 @@ mod tests {
         Ok(())
     }
 
+    fn setup_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId, ModuleDef, ViewDef)> {
+        let module_def = view_module_def();
+        let view_def = module_def.view("my_view").unwrap();
+
+        let mut tx = begin_mut_tx(stdb);
+        let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        stdb.commit_tx(tx)?;
+
+        Ok((view_id, table_id, module_def.clone(), view_def.clone()))
+    }
+
+    fn insert_view_row(
+        stdb: &TestDB,
+        view_id: ViewId,
+        table_id: TableId,
+        typespace: &Typespace,
+        row_type: AlgebraicTypeRef,
+        sender: Identity,
+        v: u8,
+    ) -> ResultTest<()> {
+        let to_bsatn = |pv: &ProductValue| {
+            Bytes::from(bsatn::to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
+        };
+
+        let row_pv = |v: u8| product![v];
+
+        let mut tx = begin_mut_tx(stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bsatn(&row_pv(v)), typespace)?;
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    fn project_views(stdb: &TestDB, table_id: TableId, sender: Identity) -> Vec<ProductValue> {
+        let tx = begin_tx(stdb);
+
+        stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+            .unwrap()
+            .map(|row| {
+                let pv = row.to_product_value();
+                ProductValue {
+                    elements: pv.elements.iter().skip(1).cloned().collect(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_view_tables_are_ephemeral() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        // Write some rows (reusing the same helper)
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ONE, 10)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ZERO, 20)?;
+
+        assert!(
+            !project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should NOT be empty after insert"
+        );
+
+        // Reopen the database — view tables must not persist
+        let stdb = stdb.reopen()?;
+
+        // Validate that the view's backing table has been removed
+        assert!(
+            project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should be empty after reopening the database"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        assert!(
+            subs_rows.is_empty(),
+            "st_view_subs should be empty after reopening the database"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_views() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        let sender1 = Identity::ONE;
+
+        // Sender 1 insert
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender1, 42)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender1)[0],
+            product![42u8],
+            "View row not inserted correctly"
+        );
+
+        // Sender 2 insert
+        let sender2 = Identity::ZERO;
+        let before_sender2 = Instant::now();
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 84)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![84u8],
+            "Sender 2 view row not inserted correctly"
+        );
+
+        // Restart database (view rows should NOT persist)
+        let stdb = stdb.reopen()?;
+
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 rows should NOT persist after reopen"
+        );
+        assert!(
+            project_views(&stdb, table_id, sender2).is_empty(),
+            "Sender 2 rows should NOT persist after reopen"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st = tx.lookup_st_view_subs(view_id)?;
+        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        stdb.commit_tx(tx)?;
+
+        // Reinsert after restart
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 91)?;
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Post-restart inserted rows must appear"
+        );
+
+        // Clean expired rows
+        let mut tx = begin_mut_tx(&stdb);
+        tx.clear_expired_views(
+            Instant::now().saturating_duration_since(before_sender2),
+            VIEW_CLEANUP_BUDGET,
+        )?;
+        stdb.commit_tx(tx)?;
+
+        // Only sender2 exists after reinsertion
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 should remain empty"
+        );
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Sender 2 row should remain"
+        );
+
+        // And st_view_subs must reflect only sender2
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_after.len(), 1);
+        assert_eq!(st_after[0].identity.0, sender2);
+
+        Ok(())
+    }
     #[test]
     fn test_table_name() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
@@ -3049,43 +3305,37 @@ mod tests {
         let stdb = TestDB::durable().expect("failed to create TestDB");
 
         let timestamp = Timestamp::now();
-        let ctx = ReducerContext {
-            name: "abstract_concrete_proxy_factory_impl".into(),
-            caller_identity: Identity::__dummy(),
-            caller_connection_id: ConnectionId::ZERO,
-            timestamp,
-            arg_bsatn: Bytes::new(),
+        let workload = |name: &str| {
+            Workload::Reducer(ReducerContext {
+                name: name.into(),
+                caller_identity: Identity::__dummy(),
+                caller_connection_id: ConnectionId::ZERO,
+                timestamp,
+                arg_bsatn: Bytes::new(),
+            })
         };
+        let workload1 = workload("abstract_concrete_proxy_factory_impl");
 
         let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
         let schema = table("test_table", row_ty.clone(), |builder| builder);
 
         // Create an empty transaction
         {
-            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx.clone()));
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1.clone());
             stdb.commit_tx(tx).expect("failed to commit empty transaction");
         }
 
         // Create an empty transaction pretending to be an
         // `__identity_connected__` call.
         {
-            let tx = stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                Workload::Reducer(ReducerContext {
-                    name: "__identity_connected__".into(),
-                    caller_identity: Identity::__dummy(),
-                    caller_connection_id: ConnectionId::ZERO,
-                    timestamp,
-                    arg_bsatn: Bytes::new(),
-                }),
-            );
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload("__identity_connected__"));
             stdb.commit_tx(tx)
                 .expect("failed to commit empty __identity_connected__ transaction");
         }
 
         // Create a non-empty transaction including reducer info
         let table_id = {
-            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx));
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1);
             let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
             insert(&stdb, &mut tx, table_id, &product!(AlgebraicValue::I32(0))).expect("failed to insert row");
             stdb.commit_tx(tx).expect("failed to commit tx");

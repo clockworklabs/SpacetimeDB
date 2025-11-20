@@ -4,91 +4,17 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import * as ProcedureStatusVariants from './procedure_status_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
 // The tagged union or sum type for the algebraic type `ProcedureStatus`.
-export type ProcedureStatus =
-  | ProcedureStatusVariants.Returned
-  | ProcedureStatusVariants.OutOfEnergy
-  | ProcedureStatusVariants.InternalError;
-
-let _cached_ProcedureStatus_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const ProcedureStatus = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  Returned: (value: Uint8Array): ProcedureStatusVariants.Returned => ({
-    tag: 'Returned',
-    value,
-  }),
-  OutOfEnergy: { tag: 'OutOfEnergy' } as const,
-  InternalError: (value: string): ProcedureStatusVariants.InternalError => ({
-    tag: 'InternalError',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_ProcedureStatus_type_value)
-      return _cached_ProcedureStatus_type_value;
-    _cached_ProcedureStatus_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_ProcedureStatus_type_value.value.variants.push(
-      {
-        name: 'Returned',
-        algebraicType: __AlgebraicTypeValue.Array(__AlgebraicTypeValue.U8),
-      },
-      {
-        name: 'OutOfEnergy',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      },
-      { name: 'InternalError', algebraicType: __AlgebraicTypeValue.String }
-    );
-    return _cached_ProcedureStatus_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: ProcedureStatus): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ProcedureStatus.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): ProcedureStatus {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ProcedureStatus.getTypeScriptAlgebraicType()
-    );
-  },
-};
+const ProcedureStatus = __t.enum('ProcedureStatus', {
+  Returned: __t.byteArray(),
+  OutOfEnergy: __t.unit(),
+  InternalError: __t.string(),
+});
 
 export default ProcedureStatus;

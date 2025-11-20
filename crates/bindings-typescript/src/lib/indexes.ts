@@ -1,7 +1,7 @@
 import type { RowType, UntypedTableDef } from './table';
 import type { ColumnMetadata, IndexTypes } from './type_builders';
 import type { CollapseTuple, Prettify } from './type_util';
-import { Range } from './range';
+import { Range } from '../server/range';
 import type { ColumnIsUnique } from './constraints';
 
 /**
@@ -20,7 +20,7 @@ export type IndexOpts<AllowedCol extends string> = {
  */
 export type UntypedIndex<AllowedCol extends string> = {
   name: string;
-  unique: boolean;
+  unique?: boolean;
   algorithm: 'btree' | 'direct';
   columns: readonly AllowedCol[];
 };
@@ -46,13 +46,6 @@ export type Indexes<
   [k in keyof I]: Index<TableDef, I[k]>;
 };
 
-export type ReadonlyIndexes<
-  TableDef extends UntypedTableDef,
-  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
-> = {
-  [k in keyof I]: ReadonlyIndex<TableDef, I[k]>;
-};
-
 /**
  * A type representing a database index, which can be either unique or ranged.
  */
@@ -63,6 +56,20 @@ export type Index<
   ? UniqueIndex<TableDef, I>
   : RangedIndex<TableDef, I>;
 
+/**
+ * A type representing a collection of read-only indexes defined on a table.
+ */
+export type ReadonlyIndexes<
+  TableDef extends UntypedTableDef,
+  I extends Record<string, UntypedIndex<keyof TableDef['columns'] & string>>,
+> = {
+  [k in keyof I]: ReadonlyIndex<TableDef, I[k]>;
+};
+
+/**
+ * A type representing a read-only database index, which can be either unique or ranged.
+ * This type only exposes read-only operations.
+ */
 export type ReadonlyIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
@@ -70,12 +77,15 @@ export type ReadonlyIndex<
   ? ReadonlyUniqueIndex<TableDef, I>
   : ReadonlyRangedIndex<TableDef, I>;
 
-export interface ReadonlyUniqueIndex<
+/**
+ * A type representing a read-only unique index on a database table.
+ */
+export type ReadonlyUniqueIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
-> {
-  find(col_val: IndexVal<TableDef, I>): RowType<TableDef> | null;
-}
+> = {
+  find(colVal: IndexVal<TableDef, I>): RowType<TableDef> | null;
+};
 
 /**
  * A type representing a unique index on a database table.
@@ -85,17 +95,20 @@ export interface UniqueIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > extends ReadonlyUniqueIndex<TableDef, I> {
-  delete(col_val: IndexVal<TableDef, I>): boolean;
-  update(col_val: RowType<TableDef>): RowType<TableDef>;
+  delete(colVal: IndexVal<TableDef, I>): boolean;
+  update(colVal: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 }
 
+/**
+ * A type representing a read-only ranged index on a database table.
+ */
 export interface ReadonlyRangedIndex<
   TableDef extends UntypedTableDef,
   I extends UntypedIndex<keyof TableDef['columns'] & string>,
 > {
   filter(
     range: IndexScanRangeBounds<TableDef, I>
-  ): IterableIterator<RowType<TableDef>>;
+  ): IterableIterator<Prettify<RowType<TableDef>>>;
 }
 
 /**

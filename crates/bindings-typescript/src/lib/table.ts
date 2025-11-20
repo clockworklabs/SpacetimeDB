@@ -1,10 +1,10 @@
-import { AlgebraicType } from '../lib/algebraic_type';
-import type RawConstraintDefV9 from '../lib/autogen/raw_constraint_def_v_9_type';
-import RawIndexAlgorithm from '../lib/autogen/raw_index_algorithm_type';
-import type RawIndexDefV9 from '../lib/autogen/raw_index_def_v_9_type';
-import type RawSequenceDefV9 from '../lib/autogen/raw_sequence_def_v_9_type';
-import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
-import type { AllUnique } from './constraints';
+import { ProductType } from './algebraic_type';
+import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
+import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
+import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
+import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
+import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
   ColumnIndex,
   IndexColumns,
@@ -12,16 +12,19 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
 } from './indexes';
-import { MODULE_DEF, splitName } from './schema';
+import { registerTypesRecursively } from './schema';
+import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
   type ColumnBuilder,
   type ColumnMetadata,
+  type Infer,
   type InferTypeOfRow,
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
 import type { Prettify } from './type_util';
+import { toPascalCase } from './util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
@@ -40,7 +43,9 @@ export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
 export type CoerceColumn<
   Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
 > =
-  Col extends TypeBuilder<infer T, infer U> ? ColumnBuilder<T, U, object> : Col;
+  Col extends TypeBuilder<infer T, infer U>
+    ? ColumnBuilder<T, U, ColumnMetadata<any>>
+    : Col;
 
 /**
  * Coerces a RowObj where TypeBuilders are replaced with ColumnBuilders
@@ -59,8 +64,11 @@ type CoerceArray<X extends IndexOpts<any>[]> = X;
  */
 export type UntypedTableDef = {
   name: string;
+  accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
+  rowType: ProductType;
   indexes: readonly IndexOpts<any>[];
+  constraints: readonly ConstraintOpts<any>[];
 };
 
 /**
@@ -114,6 +122,7 @@ export type TableOpts<Row extends RowObj> = {
   name: string;
   public?: boolean;
   indexes?: IndexOpts<keyof Row & string>[]; // declarative multi‑column indexes
+  constraints?: ConstraintOpts<keyof Row & string>[];
   scheduled?: string;
 };
 
@@ -124,6 +133,15 @@ type OptsIndices<Opts extends TableOpts<any>> = Opts extends {
   indexes: infer Ixs extends NonNullable<any[]>;
 }
   ? Ixs
+  : CoerceArray<[]>;
+
+/**
+ * Extracts the constraints from TableOpts, defaulting to an empty array if none are provided.
+ */
+type OptsConstraints<Opts extends TableOpts<any>> = Opts extends {
+  constraints: infer Constraints extends NonNullable<any[]>;
+}
+  ? Constraints
   : CoerceArray<[]>;
 
 /**
@@ -147,8 +165,8 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
-  iter(): IterableIterator<RowType<TableDef>>;
-  [Symbol.iterator](): IterableIterator<RowType<TableDef>>;
+  iter(): IterableIterator<Prettify<RowType<TableDef>>>;
+  [Symbol.iterator](): IterableIterator<Prettify<RowType<TableDef>>>;
 }
 
 /**
@@ -163,42 +181,11 @@ export interface TableMethods<TableDef extends UntypedTableDef>
    * * If there are any unique or primary key columns in this table, may throw {@link UniqueAlreadyExists}.
    * * If there are any auto-incrementing columns in this table, may throw {@link AutoIncOverflow}.
    * */
-  insert(row: RowType<TableDef>): RowType<TableDef>;
+  insert(row: Prettify<RowType<TableDef>>): Prettify<RowType<TableDef>>;
 
   /** Delete a row equal to `row`. Returns true if something was deleted. */
-  delete(row: RowType<TableDef>): boolean;
+  delete(row: Prettify<RowType<TableDef>>): boolean;
 }
-
-/**
- * Represents a handle to a database table, including its name, row type, and row spacetime type.
- */
-export type TableSchema<
-  TableName extends string,
-  Row extends Record<string, ColumnBuilder<any, any, any>>,
-  Idx extends readonly IndexOpts<keyof Row & string>[],
-> = {
-  readonly rowType: RowBuilder<Row>;
-
-  /**
-   * The name of the table.
-   */
-  readonly tableName: TableName;
-
-  /**
-   * The {@link AlgebraicType} representing the structure of a row in the table.
-   */
-  readonly rowSpacetimeType: AlgebraicType;
-
-  /**
-   * The {@link RawTableDefV9} of the configured table
-   */
-  readonly tableDef: RawTableDefV9;
-
-  /**
-   * The indexes defined on the table.
-   */
-  readonly idxs: Idx;
-};
 
 /**
  * Defines a database table with schema and options
@@ -235,16 +222,22 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     row = new RowBuilder(row);
   }
 
-  row.resolveType().value.elements.forEach((elem, i) => {
+  if (row.typeName === undefined) {
+    row.typeName = toPascalCase(name);
+  }
+
+  const rowTypeRef = registerTypesRecursively(row);
+
+  row.algebraicType.value.elements.forEach((elem, i) => {
     colIds.set(elem.name, i);
     colNameList.push(elem.name);
   });
 
   // gather primary keys, per‑column indexes, uniques, sequences
   const pk: ColList = [];
-  const indexes: RawIndexDefV9[] = [];
-  const constraints: RawConstraintDefV9[] = [];
-  const sequences: RawSequenceDefV9[] = [];
+  const indexes: Infer<typeof RawIndexDefV9>[] = [];
+  const constraints: Infer<typeof RawConstraintDefV9>[] = [];
+  const sequences: Infer<typeof RawSequenceDefV9>[] = [];
 
   let scheduleAtCol: ColId | undefined;
 
@@ -261,7 +254,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     if (meta.indexType || isUnique) {
       const algo = meta.indexType ?? 'btree';
       const id = colIds.get(name)!;
-      let algorithm: RawIndexAlgorithm;
+      let algorithm: Infer<typeof RawIndexAlgorithm>;
       switch (algo) {
         case 'btree':
           algorithm = RawIndexAlgorithm.BTree([id]);
@@ -271,8 +264,8 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
           break;
       }
       indexes.push({
-        name: undefined,
-        accessorName: name,
+        name: undefined, // Unnamed indexes will be assigned a globally unique name
+        accessorName: name, // The name of this column will be used as the accessor name
         algorithm,
       });
     }
@@ -302,7 +295,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
 
   // convert explicit multi‑column indexes coming from options.indexes
   for (const indexOpts of userIndexes ?? []) {
-    let algorithm: RawIndexAlgorithm;
+    let algorithm: Infer<typeof RawIndexAlgorithm>;
     switch (indexOpts.algorithm) {
       case 'btree':
         algorithm = {
@@ -314,7 +307,26 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         algorithm = { tag: 'Direct', value: colIds.get(indexOpts.column)! };
         break;
     }
+    // unnamed indexes will be assigned a globally unique name
+    // The name users supply is actually the accessor name which will be used
+    // in TypeScript to access the index. This will be used verbatim.
+    // This is confusing because it is not the index name and there is
+    // no actual way for the user to set the actual index name.
+    // I think we should standardize: name and accessorName as the way to set
+    // the name and accessor name of an index across all SDKs.
     indexes.push({ name: undefined, accessorName: indexOpts.name, algorithm });
+  }
+
+  // add explicit constraints from options.constraints
+  for (const constraintOpts of opts.constraints ?? []) {
+    if (constraintOpts.constraint === 'unique') {
+      const data: Infer<typeof RawConstraintDefV9>['data'] = {
+        tag: 'Unique',
+        value: { columns: constraintOpts.columns.map(c => colIds.get(c)!) },
+      };
+      constraints.push({ name: constraintOpts.name, data });
+      continue;
+    }
   }
 
   for (const index of indexes) {
@@ -329,9 +341,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
 
-  const tableDef: RawTableDefV9 = {
+  const tableDef: Infer<typeof RawTableDefV9> = {
     name,
-    productTypeRef: row.algebraicType.value as number,
+    productTypeRef: rowTypeRef.ref,
     primaryKey: pk,
     indexes,
     constraints,
@@ -348,19 +360,11 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  if (!row.nameProvided) {
-    MODULE_DEF.types.push({
-      customOrdering: true,
-      name: splitName(name),
-      ty: row.algebraicType.value as number,
-    });
-  }
-
-  const productType = AlgebraicType.Product({
-    elements: row.resolveType().value.elements.map(elem => {
+  const productType = {
+    elements: row.algebraicType.value.elements.map(elem => {
       return { name: elem.name, algebraicType: elem.algebraicType };
     }),
-  });
+  };
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
@@ -368,5 +372,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     rowSpacetimeType: productType,
     tableDef,
     idxs: indexes as OptsIndices<Opts>,
+    constraints: constraints as OptsConstraints<Opts>,
   };
 }

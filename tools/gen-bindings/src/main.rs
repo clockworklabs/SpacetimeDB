@@ -20,6 +20,9 @@ struct Cli {
     /// Replacement for 'spacetimedb' (relative string used in imports)
     #[arg(long)]
     replacement: Option<String>,
+
+    #[arg(long)]
+    index_replacement: Option<String>,
 }
 
 fn run_inherit(cmd: &str, args: &[&str]) -> Result<()> {
@@ -62,7 +65,13 @@ fn main() -> Result<()> {
         ],
     )?;
 
-    if let Some(replacement) = &args.replacement {
+    if let Some(other_replacement) = &args.replacement {
+        let index_replacement = if let Some(index_replacement) = &args.index_replacement {
+            index_replacement
+        } else {
+            other_replacement
+        };
+
         // 5) Replace "spacetimedb" references
         let opts = ReplaceOptions {
             dry_run: false,
@@ -81,10 +90,10 @@ fn main() -> Result<()> {
             ignore_globs: vec!["**/node_modules/**".into(), "**/dist/**".into(), "**/target/**".into()],
         };
 
-        let stats = replace_in_tree(&args.out_dir, replacement, &opts)?;
+        let stats = replace_in_tree(&args.out_dir, index_replacement, other_replacement, &opts)?;
         println!(
             "Replaced 'spacetimedb' → '{}' in {} files ({} occurrences).",
-            replacement, stats.files_changed, stats.occurrences
+            other_replacement, stats.files_changed, stats.occurrences
         );
     }
     Ok(())

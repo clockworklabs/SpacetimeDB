@@ -8,8 +8,10 @@ use replace_spacetimedb::{replace_in_tree, ReplaceOptions};
 struct Args {
     /// Directory to process (recursively).
     target_dir: String,
-    /// Replacement string for 'spacetimedb'.
-    replacement: String,
+    /// Replacement string for 'spacetimedb' in index files.
+    index_replacement: String,
+    /// Replacement string for 'spacetimedb' in other files.
+    other_replacement: String,
 
     /// Only process given file extensions (comma-separated, e.g. "ts,tsx,js,json").
     #[arg(long)]
@@ -49,7 +51,12 @@ fn main() {
         ignore_globs: args.ignore,
     };
 
-    match replace_in_tree(&args.target_dir, &args.replacement, &opts) {
+    match replace_in_tree(
+        &args.target_dir,
+        &args.index_replacement,
+        &args.other_replacement,
+        &opts,
+    ) {
         Ok(stats) => {
             println!(
                 "✅ Replacement complete. Files changed: {} | Occurrences: {}",

@@ -6,10 +6,20 @@ import {
 import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from './reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from './schema';
+import {
+  MODULE_DEF,
+  registerTypesRecursively,
+  resolveType,
+  type UntypedSchemaDef,
+} from './schema';
 import type { ReadonlyTable } from './table';
-import type { Infer, InferTypeOfRow, TypeBuilder } from './type_builders';
-import { bsatnBaseSize } from './util';
+import {
+  RowBuilder,
+  type Infer,
+  type InferTypeOfRow,
+  type TypeBuilder,
+} from './type_builders';
+import { bsatnBaseSize, toPascalCase } from './util';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -65,12 +75,15 @@ export function defineView<
     ? AnonymousViewFn<S, Params, Ret>
     : ViewFn<S, Params, Ret>
 ) {
-  const paramType = {
-    elements: Object.entries(params).map(([n, c]) => ({
-      name: n,
-      algebraicType: c.algebraicType,
-    })),
-  };
+  const paramsBuilder = new RowBuilder(params, toPascalCase(opts.name));
+
+  // Register return types if they are product types
+  let returnType = registerTypesRecursively(ret).algebraicType;
+
+  const { value: paramType } = resolveType(
+    MODULE_DEF.typespace,
+    registerTypesRecursively(paramsBuilder)
+  );
 
   MODULE_DEF.miscExports.push({
     tag: 'View',
@@ -80,11 +93,10 @@ export function defineView<
       isPublic: opts.public,
       isAnonymous: anon,
       params: paramType,
-      returnType: ret.algebraicType,
+      returnType,
     },
   });
 
-  let returnType = ret.algebraicType;
   if (returnType.tag == 'Sum') {
     const originalFn = fn;
     fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {

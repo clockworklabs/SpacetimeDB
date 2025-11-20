@@ -38,3 +38,11 @@ export type ColumnIsUnique<M extends ColumnMetadata<any>> = M extends
   | { isPrimaryKey: true }
   ? true
   : false;
+
+/**
+ * Constraint helper type used *inside* {@link table} to enforce the type
+ * of constraint definitions.
+ */
+export type ConstraintOpts<AllowedCol extends string> = {
+  name?: string;
+} & { constraint: 'unique'; columns: [AllowedCol] };

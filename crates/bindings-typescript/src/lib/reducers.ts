@@ -1,28 +1,41 @@
-import type { ProductType } from '../lib/algebraic_type';
-import Lifecycle from '../lib/autogen/lifecycle_type';
-import type RawReducerDefV9 from '../lib/autogen/raw_reducer_def_v_9_type';
-import type { ConnectionId } from '../lib/connection_id';
-import type { Identity } from '../lib/identity';
-import type { Timestamp } from '../lib/timestamp';
-import { MODULE_DEF, type UntypedSchemaDef } from './schema';
-import type { Table } from './table';
-import type {
-  InferTypeOfRow,
+import { ProductType } from './algebraic_type';
+import Lifecycle from './autogen/lifecycle_type';
+import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
+import type { ConnectionId } from './connection_id';
+import type { Identity } from './identity';
+import type { Timestamp } from './timestamp';
+import type { UntypedReducersDef } from '../sdk/reducers';
+import type { DbView } from '../server/db_view';
+import {
+  MODULE_DEF,
+  registerTypesRecursively,
+  resolveType,
+  type UntypedSchemaDef,
+} from './schema';
+import {
+  ColumnBuilder,
   RowBuilder,
-  RowObj,
-  TypeBuilder,
+  type Infer,
+  type InferTypeOfRow,
+  type RowObj,
+  type TypeBuilder,
 } from './type_builders';
+import type { ReducerSchema } from './reducer_schema';
+import { toCamelCase, toPascalCase } from './util';
+import type { CamelCase } from './type_util';
 
 /**
  * Helper to extract the parameter types from an object type
  */
-export type ParamsObj = Record<string, TypeBuilder<any, any>>;
+export type ParamsObj = Record<
+  string,
+  TypeBuilder<any, any> | ColumnBuilder<any, any, any>
+>;
 
 /**
  * Helper to convert a ParamsObj or RowObj into an object type
  */
-type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
-  InferTypeOfRow<ParamDef>;
+type ParamsAsObject<ParamDef extends ParamsObj> = InferTypeOfRow<ParamDef>;
 
 /**
  * Defines a SpacetimeDB reducer function.
@@ -50,20 +63,10 @@ type ParamsAsObject<ParamDef extends ParamsObj | RowObj> =
  * );
  * ```
  */
-export type Reducer<
-  S extends UntypedSchemaDef,
-  Params extends ParamsObj | RowObj,
-> = (
+export type Reducer<S extends UntypedSchemaDef, Params extends ParamsObj> = (
   ctx: ReducerCtx<S>,
   payload: ParamsAsObject<Params>
 ) => void | { tag: 'ok' } | { tag: 'err'; value: string };
-
-/**
- * A type representing the database view, mapping table names to their corresponding Table handles.
- */
-export type DbView<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: Table<Tbl>;
-};
 
 /**
  * Authentication information for the caller of a reducer.
@@ -131,22 +134,27 @@ export function pushReducer(
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
-  lifecycle?: RawReducerDefV9['lifecycle']
+  lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
 ): void {
-  if (existingReducers.has(name))
+  if (existingReducers.has(name)) {
     throw new TypeError(`There is already a reducer with the name '${name}'`);
+  }
   existingReducers.add(name);
 
-  const paramType: ProductType = {
-    elements: Object.entries(params).map(([n, c]) => ({
-      name: n,
-      algebraicType: ('typeBuilder' in c ? c.typeBuilder : c).algebraicType,
-    })),
-  };
+  if (!(params instanceof RowBuilder)) {
+    params = new RowBuilder(params);
+  }
+
+  if (params.typeName === undefined) {
+    params.typeName = toPascalCase(name);
+  }
+
+  const ref = registerTypesRecursively(params);
+  const paramsType = resolveType(MODULE_DEF.typespace, ref).value;
 
   MODULE_DEF.reducers.push({
     name,
-    params: paramType,
+    params: paramsType,
     lifecycle, // <- lifecycle flag lands here
   });
 
@@ -191,10 +199,7 @@ export const REDUCERS: Reducer<any, any>[] = [];
  * );
  * ```
  */
-export function reducer<
-  S extends UntypedSchemaDef,
-  Params extends ParamsObj | RowObj,
->(
+export function reducer<S extends UntypedSchemaDef, Params extends ParamsObj>(
   name: string,
   params: Params,
   fn: (ctx: ReducerCtx<S>, payload: ParamsAsObject<Params>) => void
@@ -262,4 +267,111 @@ export function clientDisconnected<
   Params extends ParamsObj,
 >(name: string, params: Params, fn: Reducer<S, Params>): void {
   pushReducer(name, params, fn, Lifecycle.OnDisconnect);
+}
+
+class Reducers<ReducersDef extends UntypedReducersDef> {
+  reducersType: ReducersDef;
+
+  constructor(handles: readonly ReducerSchema<any, any>[]) {
+    this.reducersType = reducersToSchema(handles) as ReducersDef;
+  }
+}
+
+/**
+ * Helper type to convert an array of TableSchema into a schema definition
+ */
+type ReducersToSchema<T extends readonly ReducerSchema<any, any>[]> = {
+  reducers: {
+    /** @type {UntypedReducerDef} */
+    readonly [i in keyof T]: {
+      name: T[i]['reducerName'];
+      accessorName: CamelCase<T[i]['accessorName']>;
+      params: T[i]['params']['row'];
+      paramsType: T[i]['paramsSpacetimeType'];
+    };
+  };
+};
+
+export function reducersToSchema<
+  const T extends readonly ReducerSchema<any, any>[],
+>(reducers: T): ReducersToSchema<T> {
+  const mapped = reducers.map(r => {
+    const paramsRow = r.params.row;
+
+    return {
+      name: r.reducerName,
+      // Prefer the schema's own accessorName if present at runtime; otherwise derive it.
+      accessorName: r.accessorName,
+      params: paramsRow,
+      paramsType: r.paramsSpacetimeType,
+    } as const;
+  }) as {
+    readonly [I in keyof T]: {
+      name: T[I]['reducerName'];
+      accessorName: T[I]['accessorName'];
+      params: T[I]['params']['row'];
+      paramsType: T[I]['paramsSpacetimeType'];
+    };
+  };
+
+  const result = { reducers: mapped } satisfies ReducersToSchema<T>;
+  return result;
+}
+
+/**
+ * Creates a schema from table definitions
+ * @param handles - Array of table handles created by table() function
+ * @returns ColumnBuilder representing the complete database schema
+ * @example
+ * ```ts
+ * const s = schema(
+ *   table({ name: 'user' }, userType),
+ *   table({ name: 'post' }, postType)
+ * );
+ * ```
+ */
+export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
+  ...handles: H
+): Reducers<ReducersToSchema<H>>;
+
+/**
+ * Creates a schema from table definitions (array overload)
+ * @param handles - Array of table handles created by table() function
+ * @returns ColumnBuilder representing the complete database schema
+ */
+export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
+  handles: H
+): Reducers<ReducersToSchema<H>>;
+
+export function reducers<const H extends readonly ReducerSchema<any, any>[]>(
+  ...args: [H] | H
+): Reducers<ReducersToSchema<H>> {
+  const handles = (
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  ) as H;
+  return new Reducers(handles);
+}
+
+export function reducerSchema<
+  ReducerName extends string,
+  Params extends ParamsObj,
+>(name: ReducerName, params: Params): ReducerSchema<ReducerName, Params> {
+  const paramType: ProductType = {
+    elements: Object.entries(params).map(([n, c]) => ({
+      name: n,
+      algebraicType:
+        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
+    })),
+  };
+  return {
+    reducerName: name,
+    accessorName: toCamelCase(name),
+    params: new RowBuilder<Params>(params),
+    paramsSpacetimeType: paramType,
+    reducerDef: {
+      name,
+      params: paramType,
+      lifecycle: undefined,
+    },
+  };
 }

@@ -4,6 +4,7 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
+<<<<<<< HEAD
   AlgebraicType as __AlgebraicTypeValue,
   BinaryReader as __BinaryReader,
   BinaryWriter as __BinaryWriter,
@@ -68,3 +69,14 @@ export const Person = {
 };
 
 export default Person;
+=======
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from 'spacetimedb';
+
+export default __t.object('Person', {
+  name: __t.string(),
+});
+>>>>>>> origin/master

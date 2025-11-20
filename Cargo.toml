@@ -178,6 +178,7 @@ enum-map = "2.6.3"
 env_logger = "0.10"
 ethnum = { version = "1.5.0", features = ["serde"] }
 flate2 = "1.0.24"
+flume = { version = "0.11", default-features = false, features = ["async"] }
 foldhash = "0.1.4"
 fs-err = "2.9.0"
 fs_extra = "1.3.0"

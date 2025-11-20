@@ -13,7 +13,12 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
     steps:
       - name: Checkout repository
@@ -81,18 +86,18 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            modules/quickstart-chat
-          shared-key: quickstart-chat-test
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          rm -f $HOME/.cargo/bin/spacetime
-          ln -s $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
+          rm -f $CARGO_HOME/bin/spacetime
+          ln -s $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
           # Clear any existing information
           spacetime server clear -y
 

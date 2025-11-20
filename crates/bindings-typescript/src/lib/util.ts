@@ -1,6 +1,12 @@
 import BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
+import type { CamelCase } from './type_util';
 
+/**
+ * Converts a string to PascalCase (UpperCamelCase).
+ * @param str The string to convert
+ * @returns The converted string
+ */
 export function toPascalCase(s: string): string {
   const str = s.replace(/([-_][a-z])/gi, $1 => {
     return $1.toUpperCase().replace('-', '').replace('_', '');
@@ -97,4 +103,63 @@ export function u256ToUint8Array(data: bigint): Uint8Array {
 
 export function u256ToHexString(data: bigint): string {
   return uint8ArrayToHexString(u256ToUint8Array(data));
+}
+
+/**
+ * Type safe conversion from a string like "some_identifier-name" to "someIdentifierName".
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toCamelCase<T extends string>(str: T): CamelCase<T> {
+  return str
+    .replace(/[-_]+/g, '_') // collapse runs to a single separator (no backtracking issue)
+    .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
+}
+
+import type { AlgebraicType } from './algebraic_type';
+import type Typespace from './autogen/typespace_type';
+import type { Infer } from './type_builders';
+
+export function bsatnBaseSize(
+  typespace: Infer<typeof Typespace>,
+  ty: AlgebraicType
+): number {
+  const assumedArrayLength = 4;
+  while (ty.tag === 'Ref') ty = typespace.types[ty.value];
+  if (ty.tag === 'Product') {
+    let sum = 0;
+    for (const { algebraicType: elem } of ty.value.elements) {
+      sum += bsatnBaseSize(typespace, elem);
+    }
+    return sum;
+  } else if (ty.tag === 'Sum') {
+    let min = Infinity;
+    for (const { algebraicType: vari } of ty.value.variants) {
+      const vSize = bsatnBaseSize(typespace, vari);
+      if (vSize < min) min = vSize;
+    }
+    if (min === Infinity) min = 0;
+    return 4 + min;
+  } else if (ty.tag == 'Array') {
+    return 4 + assumedArrayLength * bsatnBaseSize(typespace, ty.value);
+  }
+  return {
+    String: 4 + assumedArrayLength,
+    Sum: 1,
+    Bool: 1,
+    I8: 1,
+    U8: 1,
+    I16: 2,
+    U16: 2,
+    I32: 4,
+    U32: 4,
+    F32: 4,
+    I64: 8,
+    U64: 8,
+    F64: 8,
+    I128: 16,
+    U128: 16,
+    I256: 32,
+    U256: 32,
+  }[ty.tag];
 }
