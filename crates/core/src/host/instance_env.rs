@@ -679,10 +679,34 @@ fn convert_http_request(request: st_http::Request) -> http::Result<(http::reques
     } = request;
 
     let (mut request, ()) = http::Request::new(()).into_parts();
-    request.method = method.into();
+    request.method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
+    };
     request.uri = uri.try_into()?;
-    request.version = version.into();
-    request.headers = headers.try_into()?;
+    request.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    request.headers = headers
+        .into_iter()
+        .map(|(k, v)| {
+            let mut value = http::HeaderValue::try_from(v.bytes.into_vec())?;
+            value.set_sensitive(v.is_sensitive);
+            Ok((k.try_into()?, value))
+        })
+        .collect::<http::Result<_>>()?;
 
     let timeout = timeout.map(|d| d.to_duration_saturating());
 
@@ -703,8 +727,24 @@ fn convert_http_response(response: http::response::Parts) -> st_http::Response {
     let _ = extensions;
 
     st_http::Response {
-        headers: headers.into(),
-        version: version.into(),
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| {
+                let v = st_http::HeaderValue {
+                    is_sensitive: v.is_sensitive(),
+                    bytes: v.as_bytes().into(),
+                };
+                (k.map(|k| k.to_string()), v)
+            })
+            .collect(),
+        version: match version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {version:?}"),
+        },
         code: status.as_u16(),
     }
 }

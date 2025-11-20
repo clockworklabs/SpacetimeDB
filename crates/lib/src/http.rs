@@ -52,40 +52,6 @@ pub enum Method {
     Extension(String),
 }
 
-impl From<http::Method> for Method {
-    fn from(method: http::Method) -> Method {
-        match method {
-            http::Method::GET => Method::Get,
-            http::Method::HEAD => Method::Head,
-            http::Method::POST => Method::Post,
-            http::Method::PUT => Method::Put,
-            http::Method::DELETE => Method::Delete,
-            http::Method::CONNECT => Method::Connect,
-            http::Method::OPTIONS => Method::Options,
-            http::Method::TRACE => Method::Trace,
-            http::Method::PATCH => Method::Patch,
-            _ => Method::Extension(method.to_string()),
-        }
-    }
-}
-
-impl From<Method> for http::Method {
-    fn from(method: Method) -> http::Method {
-        match method {
-            Method::Get => http::Method::GET,
-            Method::Head => http::Method::HEAD,
-            Method::Post => http::Method::POST,
-            Method::Put => http::Method::PUT,
-            Method::Delete => http::Method::DELETE,
-            Method::Connect => http::Method::CONNECT,
-            Method::Options => http::Method::OPTIONS,
-            Method::Trace => http::Method::TRACE,
-            Method::Patch => http::Method::PATCH,
-            Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
-        }
-    }
-}
-
 /// An HTTP version.
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
 #[sats(crate = crate, name = "HttpVersion")]
@@ -95,31 +61,6 @@ pub enum Version {
     Http11,
     Http2,
     Http3,
-}
-
-impl From<http::Version> for Version {
-    fn from(version: http::Version) -> Version {
-        match version {
-            http::Version::HTTP_09 => Version::Http09,
-            http::Version::HTTP_10 => Version::Http10,
-            http::Version::HTTP_11 => Version::Http11,
-            http::Version::HTTP_2 => Version::Http2,
-            http::Version::HTTP_3 => Version::Http3,
-            _ => unreachable!("Unknown HTTP version: {version:?}"),
-        }
-    }
-}
-
-impl From<Version> for http::Version {
-    fn from(version: Version) -> http::Version {
-        match version {
-            Version::Http09 => http::Version::HTTP_09,
-            Version::Http10 => http::Version::HTTP_10,
-            Version::Http11 => http::Version::HTTP_11,
-            Version::Http2 => http::Version::HTTP_2,
-            Version::Http3 => http::Version::HTTP_3,
-        }
-    }
 }
 
 /// A set of HTTP headers.
@@ -134,26 +75,22 @@ pub struct Headers {
 
 // `http::header::IntoIter` only returns the `HeaderName` for the first
 // `HeaderValue` with that name, so we have to manually assign the names.
-struct HeaderMapIntoIter {
-    prev: Option<(http::HeaderName, http::HeaderValue)>,
-    inner: http::header::IntoIter<http::HeaderValue>,
+struct HeaderIter<I, T> {
+    prev: Option<(String, T)>,
+    inner: I,
 }
 
-impl From<http::header::HeaderMap> for HeaderMapIntoIter {
-    fn from(map: http::header::HeaderMap) -> Self {
-        let mut inner = map.into_iter();
-        Self {
-            prev: inner.next().map(|(k, v)| (k.unwrap(), v)),
-            inner,
-        }
-    }
-}
-
-impl Iterator for HeaderMapIntoIter {
-    type Item = (http::HeaderName, http::HeaderValue);
+impl<I, T> Iterator for HeaderIter<I, T>
+where
+    I: Iterator<Item = (Option<String>, T)>,
+{
+    type Item = (String, T);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (prev_k, prev_v) = self.prev.take()?;
+        let (prev_k, prev_v) = self
+            .prev
+            .take()
+            .or_else(|| self.inner.next().map(|(k, v)| (k.unwrap(), v)))?;
         self.prev = self
             .inner
             .next()
@@ -166,28 +103,20 @@ impl Iterator for HeaderMapIntoIter {
     }
 }
 
-impl From<http::HeaderMap> for Headers {
-    fn from(value: http::HeaderMap) -> Headers {
-        Headers {
-            entries: HeaderMapIntoIter::from(value)
-                .map(|(name, value)| HttpHeaderPair {
-                    name: name.to_string(),
-                    value: value.into(),
-                })
-                .collect(),
-        }
+impl FromIterator<(Option<String>, HeaderValue)> for Headers {
+    fn from_iter<T: IntoIterator<Item = (Option<String>, HeaderValue)>>(iter: T) -> Self {
+        let inner = iter.into_iter();
+        let entries = HeaderIter { prev: None, inner }
+            .map(|(name, value)| HttpHeaderPair { name, value })
+            .collect();
+        Self { entries }
     }
 }
 
-impl TryFrom<Headers> for http::HeaderMap {
-    type Error = http::Error;
-    fn try_from(headers: Headers) -> http::Result<Self> {
-        let Headers { entries } = headers;
-        let mut new_headers = http::HeaderMap::with_capacity(entries.len() / 2);
-        for HttpHeaderPair { name, value } in entries {
-            new_headers.insert(http::HeaderName::try_from(name)?, value.try_into()?);
-        }
-        Ok(new_headers)
+impl Headers {
+    #[allow(clippy::should_implement_trait)]
+    pub fn into_iter(self) -> impl Iterator<Item = (String, HeaderValue)> {
+        IntoIterator::into_iter(self.entries).map(|HttpHeaderPair { name, value }| (name, value))
     }
 }
 
@@ -202,27 +131,9 @@ struct HttpHeaderPair {
 /// A valid HTTP header value, sourced from an already-validated [`http::HeaderValue`].
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate, name = "HttpHeaderValue")]
-struct HeaderValue {
-    bytes: Box<[u8]>,
-    is_sensitive: bool,
-}
-
-impl From<http::HeaderValue> for HeaderValue {
-    fn from(value: http::HeaderValue) -> HeaderValue {
-        HeaderValue {
-            is_sensitive: value.is_sensitive(),
-            bytes: value.as_bytes().into(),
-        }
-    }
-}
-
-impl TryFrom<HeaderValue> for http::HeaderValue {
-    type Error = http::Error;
-    fn try_from(value: HeaderValue) -> http::Result<http::HeaderValue> {
-        let mut new_value = http::HeaderValue::from_bytes(&value.bytes)?;
-        new_value.set_sensitive(value.is_sensitive);
-        Ok(new_value)
-    }
+pub struct HeaderValue {
+    pub bytes: Box<[u8]>,
+    pub is_sensitive: bool,
 }
 
 #[derive(Clone, SpacetimeType)]
