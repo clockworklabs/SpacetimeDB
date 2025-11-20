@@ -1538,6 +1538,9 @@ public class Module : IIncrementalGenerator
                                 )
                             )}}
 
+                            // IMPORTANT: The order in which we register views matters.
+                            // It must correspond to the order in which we call `GenerateDispatcherClass`.
+                            // See the comment on `GenerateDispatcherClass` for more explanation.
                             {{string.Join("\n", 
                                 views.Array.Where(v => !v.IsAnonymous)
                                     .Select(v => $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();")
