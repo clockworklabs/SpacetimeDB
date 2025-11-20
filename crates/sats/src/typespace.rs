@@ -290,6 +290,7 @@ pub trait GroundSpacetimeType {
 /// - `String` and `&str`, utf-8 string data
 /// - `()`, the unit type
 /// - `Option<T> where T: SpacetimeType`
+/// - `Result<T, E> where T: SpacetimeType, E: SpacetimeType`
 /// - `Vec<T> where T: SpacetimeType`
 ///
 /// (Storing collections in rows of a database table is a form of [denormalization](https://en.wikipedia.org/wiki/Denormalization).)
@@ -427,6 +428,16 @@ impl_st!([] bytes::Bytes, AlgebraicType::bytes());
 #[cfg(feature = "bytestring")]
 impl_st!([] bytestring::ByteString, AlgebraicType::String);
 
+impl<T, E> SpacetimeType for Result<T, E>
+where
+    T: SpacetimeType,
+    E: SpacetimeType,
+{
+    fn make_type<S: TypespaceBuilder>(typespace: &mut S) -> AlgebraicType {
+        AlgebraicType::result(T::make_type(typespace), E::make_type(typespace))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::proptest::generate_typespace_valid_for_codegen;
@@ -466,5 +477,18 @@ mod tests {
         assert_not_valid(AlgebraicType::option(AlgebraicType::array(AlgebraicType::option(
             bad_inner_1.clone(),
         ))));
+
+        assert_not_valid(AlgebraicType::result(bad_inner_1.clone(), AlgebraicType::U8));
+        assert_not_valid(AlgebraicType::result(AlgebraicType::U8, bad_inner_2.clone()));
+
+        assert_not_valid(AlgebraicType::result(
+            AlgebraicType::array(AlgebraicType::result(bad_inner_1.clone(), AlgebraicType::U8)),
+            AlgebraicType::U8,
+        ));
+
+        assert_not_valid(AlgebraicType::result(
+            AlgebraicType::U8,
+            AlgebraicType::array(AlgebraicType::result(AlgebraicType::U8, bad_inner_2.clone())),
+        ));
     }
 }

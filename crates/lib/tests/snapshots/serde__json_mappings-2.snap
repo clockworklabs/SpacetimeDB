@@ -1,6 +1,6 @@
 ---
 source: crates/lib/tests/serde.rs
-expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz\": [\"it's 🥶°C\"],\n    \"quux\": { \"Unit\": [] },\n    \"and_peggy\": null,\n    \"identity\": [\"0x0\"]\n})"
+expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz\": [\"it's 🥶°C\"],\n    \"quux\": { \"Unit\": [] },\n    \"and_peggy\": null,\n    \"result\": { \"err\": \"sorry\" },\n    \"identity\": [\"0x0\"]\n})"
 ---
 (
     foo = 5654,
@@ -13,6 +13,9 @@ expression: "de_json({\n    \"foo\": 5654,\n    \"bar\": [1, 15, 44],\n    \"baz
     ),
     and_peggy = (
         none = (),
+    ),
+    result = (
+        err = "sorry",
     ),
     identity = (
         __identity__ = 0,

@@ -1168,7 +1168,7 @@ record ReducerDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.to_bsatn_string()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -1239,7 +1239,7 @@ record ProcedureDeclaration
                     var result = {{FullName}}((SpacetimeDB.ProcedureContext)ctx{{invocationArgs}});
                     using var output = new MemoryStream();
                     using var writer = new BinaryWriter(output);
-                    new {{ReturnType.BSATNName}}().Write(writer, result);
+                    new {{ReturnType.to_bsatn_string()}}().Write(writer, result);
                     return output.ToArray();
                 """;
 
@@ -1283,7 +1283,7 @@ record ProcedureDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.to_bsatn_string()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IProcedure.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }

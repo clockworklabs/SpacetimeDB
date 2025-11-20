@@ -4,7 +4,7 @@ from .. import Smoketest
 class SqlFormat(Smoketest):
     MODULE_CODE = """
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{table, ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration};
+use spacetimedb::{table, ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration, SpacetimeType };
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints)]
@@ -57,6 +57,25 @@ pub struct TOthersTuple {
     tuple: TOthers
 }
 
+#[derive(SpacetimeType, Debug, Clone, Copy)]
+pub enum Action {
+    Inactive,
+    Active,
+}
+
+#[derive(Clone)]
+#[spacetimedb::table(name = t_enums)]
+pub struct TEnums {
+    bool_opt: Option<bool>,
+    bool_result: Result<bool, String>,
+    action: Action,
+}
+
+#[spacetimedb::table(name = t_enums_tuple)]
+pub struct TEnumsTuple {
+    tuple: TEnums,
+}
+
 #[spacetimedb::reducer]
 pub fn test(ctx: &ReducerContext) {
     let tuple = TInts {
@@ -94,6 +113,15 @@ pub fn test(ctx: &ReducerContext) {
     };
     ctx.db.t_others().insert(tuple.clone());
     ctx.db.t_others_tuple().insert(TOthersTuple { tuple });
+    
+    let tuple = TEnums {
+        bool_opt: Some(true),
+        bool_result: Ok(false),
+        action: Action::Active,
+    };
+    
+    ctx.db.t_enums().insert(tuple.clone());
+    ctx.db.t_enums_tuple().insert(TEnumsTuple { tuple });
 }
 """
 
@@ -138,4 +166,14 @@ pub fn test(ctx: &ReducerContext) {
  tuple                                                                                                                                                         
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  (bool = true, f32 = 594806.56, f64 = -3454353.345389043, str = "This is spacetimedb", bytes = 0x01020304050607, identity = 0x0000000000000000000000000000000000000000000000000000000000000001, connection_id = 0x00000000000000000000000000000000, timestamp = 1970-01-01T00:00:00+00:00, duration = +0.000000)
+""")
+        self.assertSql("SELECT * FROM t_enums", """\
+ bool_opt      | bool_result  | action
+---------------+--------------+---------------
+ (some = true) | (ok = false) | (Active = ())
+""")
+        self.assertSql("SELECT * FROM t_enums_tuple", """\
+ tuple
+--------------------------------------------------------------------------------
+ (bool_opt = (some = true), bool_result = (ok = false), action = (Active = ()))
 """)

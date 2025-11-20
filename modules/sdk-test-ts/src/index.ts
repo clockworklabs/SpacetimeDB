@@ -316,6 +316,40 @@ const optionTables = [
   ),
 ] as const;
 
+// Tables for Result<Ok, Err> values.
+const resultTables = [
+  tbl(
+    'result_i32_string',
+    { insert: 'insert_result_i32_string' },
+    { r: t.result(t.i32(), t.string()) }
+  ),
+  tbl(
+    'result_string_i32',
+    { insert: 'insert_result_string_i32' },
+    { r: t.result(t.string(), t.i32()) }
+  ),
+  tbl(
+    'result_identity_string',
+    { insert: 'insert_result_identity_string' },
+    { r: t.result(t.identity(), t.string()) }
+  ),
+  tbl(
+    'result_simple_enum_i32',
+    { insert: 'insert_result_simple_enum_i32' },
+    { r: t.result(SimpleEnum, t.i32()) }
+  ),
+  tbl(
+    'result_every_primitive_struct_string',
+    { insert: 'insert_result_every_primitive_struct_string' },
+    { r: t.result(EveryPrimitiveStruct, t.string()) }
+  ),
+  tbl(
+    'result_vec_i32_string',
+    { insert: 'insert_result_vec_i32_string' },
+    { r: t.result(t.array(t.i32()), t.string()) }
+  ),
+] as const;
+
 // Tables mapping a unique, but non-pk, key to a boring i32 payload.
 // This allows us to test delete events, and the semantically correct absence of update events.
 const uniqueTables = [
@@ -717,6 +751,7 @@ const allTables = [
   ...singleValTables,
   ...vecTables,
   ...optionTables,
+  ...resultTables,
   ...uniqueTables,
   ...pkTables,
   ...weirdTables,

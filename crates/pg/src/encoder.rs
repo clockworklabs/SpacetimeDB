@@ -239,6 +239,15 @@ mod tests {
         let row = run(schema, value).await;
         assert_eq!(row, "\0\0\0\u{b}{\"some\": 1}\0\0\0\u{c}{\"none\": {}}");
 
+        let result = AlgebraicType::result(AlgebraicType::I64, AlgebraicType::String);
+        let schema = ProductType::from([result.clone(), result.clone()]);
+        let value = product![
+            AlgebraicValue::sum(0, AlgebraicValue::I64(1)),                 // Ok(1)
+            AlgebraicValue::sum(1, AlgebraicValue::String("error".into())), // Err("error")
+        ];
+        let row = run(schema, value).await;
+        assert_eq!(row, "\0\0\0\t{\"ok\": 1}\0\0\0\u{10}{\"err\": \"error\"}");
+
         let color = AlgebraicType::Sum([SumTypeVariant::new_named(AlgebraicType::I64, "Gray")].into());
         let nested = AlgebraicType::option(color.clone());
         let schema = ProductType::from([color, nested]);

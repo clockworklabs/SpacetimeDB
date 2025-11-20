@@ -4,6 +4,7 @@ import type BinaryWriter from './binary_writer';
 import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
 import { Identity, type IdentityAlgebraicType } from './identity';
 import { Option, type OptionAlgebraicType } from './option';
+import { Result, type ResultAlgebraicType } from './result';
 import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
@@ -1208,6 +1209,57 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
       this,
       set(defaultMetadata, { defaultValue: value })
     );
+  }
+}
+
+export class ResultBuilder<
+    Ok extends TypeBuilder<any, any>,
+    Err extends TypeBuilder<any, any>,
+  >
+  extends TypeBuilder<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    ResultAlgebraicType<
+      InferSpacetimeTypeOfTypeBuilder<Ok>,
+      InferSpacetimeTypeOfTypeBuilder<Err>
+    >
+  >
+  implements
+    Defaultable<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      ResultAlgebraicType<
+        InferSpacetimeTypeOfTypeBuilder<Ok>,
+        InferSpacetimeTypeOfTypeBuilder<Err>
+      >
+    >
+{
+  ok: Ok;
+  err: Err;
+
+  constructor(ok: Ok, err: Err) {
+    super(Result.getAlgebraicType(ok.algebraicType, err.algebraicType));
+    this.ok = ok;
+    this.err = err;
+  }
+  default(
+    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  ): ResultColumnBuilder<
+    Ok,
+    Err,
+    SetField<
+      DefaultMetadata,
+      'defaultValue',
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    >
+  > {
+    return new ResultColumnBuilder<
+      Ok,
+      Err,
+      SetField<
+        DefaultMetadata,
+        'defaultValue',
+        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+      >
+    >(this, set(defaultMetadata, { defaultValue: value }));
   }
 }
 
@@ -2653,6 +2705,54 @@ export class OptionColumnBuilder<
   }
 }
 
+export class ResultColumnBuilder<
+    Ok extends TypeBuilder<any, any>,
+    Err extends TypeBuilder<any, any>,
+    M extends ColumnMetadata<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    > = DefaultMetadata,
+  >
+  extends ColumnBuilder<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    ResultAlgebraicType<
+      InferSpacetimeTypeOfTypeBuilder<Ok>,
+      InferSpacetimeTypeOfTypeBuilder<Err>
+    >,
+    M
+  >
+  implements
+    Defaultable<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      ResultAlgebraicType<
+        InferSpacetimeTypeOfTypeBuilder<Ok>,
+        InferSpacetimeTypeOfTypeBuilder<Err>
+      >
+    >
+{
+  constructor(typeBuilder: TypeBuilder<any, any>, metadata: M) {
+    super(typeBuilder, metadata);
+  }
+
+  default(
+    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  ): ResultColumnBuilder<
+    Ok,
+    Err,
+    SetField<
+      M,
+      'defaultValue',
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    >
+  > {
+    return new ResultColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, {
+        defaultValue: value,
+      })
+    );
+  }
+}
+
 export class ProductColumnBuilder<
     Elements extends ElementsObj,
     M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
@@ -3289,6 +3389,20 @@ export const t = {
     value: Value
   ): OptionBuilder<Value> {
     return new OptionBuilder(value);
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link Result} type.
+   * You can create a column of the same type by constructing an enum with an `ok` and `err` variant.
+   * @param ok The type of the value contained in the `ok` variant of the `Result`.
+   * @param err The type of the value contained in the `err` variant of the `Result`.
+   * @returns A new {@link ResultBuilder} instance with the {@link Result} type.
+   */
+  result<Ok extends TypeBuilder<any, any>, Err extends TypeBuilder<any, any>>(
+    ok: Ok,
+    err: Err
+  ): ResultBuilder<Ok, Err> {
+    return new ResultBuilder(ok, err);
   },
 
   /**

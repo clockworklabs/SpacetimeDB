@@ -84,6 +84,12 @@ public abstract record TypeUse(string Name, string BSATNName)
             ),
             INamedTypeSymbol named => named.OriginalDefinition.ToString() switch
             {
+                "SpacetimeDB.Result<T, E>" or "SpacetimeDB.Result<T,E>" => new ResultUse(
+                    type,
+                    typeInfo,
+                    Parse(member, named.TypeArguments[0], diag),
+                    Parse(member, named.TypeArguments[1], diag)
+                ),
                 "System.Collections.Generic.List<T>" => new ListUse(
                     type,
                     typeInfo,
@@ -99,6 +105,14 @@ public abstract record TypeUse(string Name, string BSATNName)
             },
             _ => throw new InvalidOperationException($"Unsupported type {type}"),
         };
+    }
+
+    /// <summary>
+    /// Get the name of the BSATN struct for this type.
+    /// </summary>
+    public virtual string to_bsatn_string()
+    {
+        return this.BSATNName;
     }
 
     /// <summary>
@@ -131,6 +145,40 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// <param name="level">Iteration level counter. You don't need to set this.</param>
     /// <returns></returns>
     public abstract string GetHashCodeStatement(string inVar, string outVar, int level = 0);
+}
+
+/// <summary>
+/// A use of a Result<T, E> type.
+/// </summary>
+public sealed record ResultUse : TypeUse
+{
+    public TypeUse Ok { get; }
+    public TypeUse Err { get; }
+
+    public string TypeName { get; }
+
+    public ResultUse(string typeName, string typeInfo, TypeUse ok, TypeUse err)
+        : base(typeName, typeInfo)
+    {
+        Ok = ok;
+        Err = err;
+        TypeName = typeName;
+    }
+
+    public override string to_bsatn_string()
+    {
+        return $"{TypeName}.BSATN<{Ok.BSATNName}, {Err.BSATNName}>";
+    }
+
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = {inVar1} == {inVar2};";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
 }
 
 /// <summary>
@@ -348,7 +396,7 @@ public record MemberDeclaration(
         return string.Join(
             "\n        ",
             members.Select(m =>
-                $"{visStr} static readonly {m.Type.BSATNName} {m.Name}{TypeUse.BsatnFieldSuffix} = new();"
+                $"{visStr} static readonly {m.Type.to_bsatn_string()} {m.Name}{TypeUse.BsatnFieldSuffix} = new();"
             )
         );
     }

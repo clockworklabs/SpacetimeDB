@@ -16,6 +16,7 @@ import {
   type InferSpacetimeTypeOfTypeBuilder,
   type RowObj,
   type VariantsObj,
+  ResultBuilder,
 } from './type_builders';
 import type { UntypedTableDef } from './table';
 import {
@@ -202,6 +203,11 @@ export function registerTypesRecursively<
   } else if (typeBuilder instanceof OptionBuilder) {
     return new OptionBuilder(
       registerTypesRecursively(typeBuilder.value)
+    ) as any;
+  } else if (typeBuilder instanceof ResultBuilder) {
+    return new ResultBuilder(
+      registerTypesRecursively(typeBuilder.ok),
+      registerTypesRecursively(typeBuilder.err)
     ) as any;
   } else if (typeBuilder instanceof ArrayBuilder) {
     return new ArrayBuilder(
