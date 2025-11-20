@@ -635,12 +635,7 @@ impl InstanceCommon {
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(
-                        &caller_identity,
-                        &self.info.module_hash,
-                        &caller_connection_id,
-                        procedure_name,
-                    )
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, procedure_name)
                     .inc();
 
                 // TODO(procedure-energy):
@@ -747,12 +742,7 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(
-                    &result.stats.energy,
-                    &caller_identity,
-                    &Some(caller_connection_id),
-                    reducer_name,
-                )
+                self.handle_outer_error(&result.stats.energy, reducer_name)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
@@ -827,21 +817,10 @@ impl InstanceCommon {
         (res, trapped)
     }
 
-    fn handle_outer_error(
-        &mut self,
-        energy: &EnergyStats,
-        caller_identity: &Identity,
-        caller_connection_id: &Option<ConnectionId>,
-        reducer_name: &str,
-    ) -> EventStatus {
+    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
-            .with_label_values(
-                caller_identity,
-                &self.info.module_hash,
-                &caller_connection_id.unwrap_or(ConnectionId::ZERO),
-                reducer_name,
-            )
+            .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
             .inc();
 
         if energy.remaining.get() == 0 {
@@ -964,14 +943,12 @@ impl InstanceCommon {
         let outcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // Materialize anonymous view
             (Ok(bytes), None) => {

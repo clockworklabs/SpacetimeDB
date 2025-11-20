@@ -326,7 +326,7 @@ public static class Module
         }
     }
 
-    public static Errno __call_anonymous_view__(uint id, BytesSource args, BytesSink rows)
+    public static Errno __call_view_anon__(uint id, BytesSource args, BytesSink rows)
     {
         try
         {
