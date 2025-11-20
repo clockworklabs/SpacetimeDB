@@ -921,14 +921,6 @@ record ViewDeclaration
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
 
-    public static uint ViewIndexCounter = 0;
-
-    public static uint GetNextViewIndex() => ViewIndexCounter++;
-
-    public static uint AnonViewIndexCounter = 0;
-
-    public static uint GetNextAnonViewIndex() => AnonViewIndexCounter++;
-
     public ViewDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
@@ -1001,7 +993,12 @@ record ViewDeclaration
             );
             """;
 
-    public string GenerateDispatcherClass()
+    /// <summary>
+    /// Generates the class responsible for evaluating a view.
+    /// If this is an anonymous view, the index corresponds to the position of this dispatcher in the `viewDispatchers` list of `RegisterView`.
+    /// Otherwise it corresponds to the position of this dispatcher in the `anonymousViewDispatchers` list of `RegisterAnonymousView`.
+    /// </summary>
+    public string GenerateDispatcherClass(uint index)
     {
         var paramReads = string.Join(
             "\n                        ",
@@ -1022,14 +1019,29 @@ record ViewDeclaration
             ? "SpacetimeDB.AnonymousViewContext"
             : "SpacetimeDB.ViewContext";
 
+        var isValueOption = ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption");
+        var writeOutput = isValueOption
+            ? $$$"""
+                    var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
+                    var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+                    using var output = new System.IO.MemoryStream();
+                    using var writer = new System.IO.BinaryWriter(output);
+                    listSerializer.Write(writer, listValue);
+                    return output.ToArray();
+                """
+            : $$$"""
+                    {{{ReturnType.BSATNName}}} returnRW = new();
+                    using var output = new System.IO.MemoryStream();
+                    using var writer = new System.IO.BinaryWriter(output);
+                    returnRW.Write(writer, returnValue);
+                    return output.ToArray();            
+                """;
+
         var invocationArgs =
             Parameters.Length == 0 ? "" : ", " + string.Join(", ", Parameters.Select(p => p.Name));
-        var index = IsAnonymous ? GetNextAnonViewIndex() : GetNextViewIndex();
         return $$$"""
             sealed class {{{Name}}}ViewDispatcher : {{{interfaceName}}} {
                 {{{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Parameters)}}}
-                
-                private static readonly {{{ReturnType.BSATNName}}} returnRW = new();
                 
                 public SpacetimeDB.Internal.RawViewDefV9 {{{makeViewDefMethod}}}(SpacetimeDB.BSATN.ITypeRegistrar registrar)
                     => {{{GenerateViewDef(index)}}}
@@ -1041,10 +1053,7 @@ record ViewDeclaration
                     try {
                         {{{paramReads}}}
                         var returnValue = {{{FullName}}}(({{{concreteContext}}})ctx{{{invocationArgs}}});
-                        using var output = new System.IO.MemoryStream();
-                        using var writer = new System.IO.BinaryWriter(output);
-                        returnRW.Write(writer, returnValue);
-                        return output.ToArray();
+                        {{{writeOutput}}}
                     } catch (System.Exception e) {
                         global::SpacetimeDB.Log.Error("Error in view '{{{Name}}}': " + e);
                         throw;
@@ -1052,13 +1061,6 @@ record ViewDeclaration
                 }
             }
             """;
-    }
-
-    public string GenerateClass()
-    {
-        var builder = new Scope.Extensions(Scope, FullName);
-        builder.Contents.Append(GenerateDispatcherClass());
-        return builder.ToString();
     }
 }
 
@@ -1489,8 +1491,15 @@ public class Module : IIncrementalGenerator
                         }
                     }
                     
-                    {{string.Join("\n", views.Array.Select(v => v.GenerateDispatcherClass()))}}
-                    
+                    {{string.Join("\n", 
+                        views.Array.Where(v => !v.IsAnonymous)
+                            .Select((v, i) => v.GenerateDispatcherClass((uint)i))
+                            .Concat(
+                                views.Array.Where(v => v.IsAnonymous)
+                                    .Select((v, i) => v.GenerateDispatcherClass((uint)i))
+                            )
+                    )}}
+                        
                     namespace SpacetimeDB.Internal.ViewHandles {
                         {{string.Join("\n", readOnlyAccessors.Array.Select(v => v.readOnlyAccessor))}}
                     }
@@ -1503,6 +1512,9 @@ public class Module : IIncrementalGenerator
                     
                     static class ModuleRegistration {
                         {{string.Join("\n", addReducers.Select(r => r.Class))}}
+
+                        public static List<T> ToListOrEmpty<T>(T? value) where T : struct
+                                => value is null ? new List<T>() : new List<T> { value.Value };
 
                     #if EXPERIMENTAL_WASM_AOT
                         // In AOT mode we're building a library.
@@ -1525,14 +1537,19 @@ public class Module : IIncrementalGenerator
                                     $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Name}>();"
                                 )
                             )}}
-                            {{string.Join(
-                                "\n",
-                                views.Array.Select(v =>
-                                    v.IsAnonymous
-                                        ? $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();"
-                                        : $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();"
-                                )
-                            )}}
+
+                            // IMPORTANT: The order in which we register views matters.
+                            // It must correspond to the order in which we call `GenerateDispatcherClass`.
+                            // See the comment on `GenerateDispatcherClass` for more explanation.
+                            {{string.Join("\n", 
+                                views.Array.Where(v => !v.IsAnonymous)
+                                    .Select(v => $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();")
+                                    .Concat(
+                                        views.Array.Where(v => v.IsAnonymous)
+                                            .Select(v => $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();")
+                                    )
+                            )}}                            
+
                             {{string.Join(
                                 "\n",
                                 tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.tableAccessorName}>();")
@@ -1584,6 +1601,36 @@ public class Module : IIncrementalGenerator
                             args,
                             error
                         );
+
+                        [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
+                        public static SpacetimeDB.Internal.Errno __call_view__(
+                            uint id,
+                            ulong sender_0,
+                            ulong sender_1,
+                            ulong sender_2,
+                            ulong sender_3,
+                            SpacetimeDB.Internal.BytesSource args,
+                            SpacetimeDB.Internal.BytesSink sink
+                        ) => SpacetimeDB.Internal.Module.__call_view__(
+                            id,
+                            sender_0,
+                            sender_1,
+                            sender_2,
+                            sender_3,
+                            args,
+                            sink
+                        );
+
+                        [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
+                        public static SpacetimeDB.Internal.Errno __call_view_anon__(
+                            uint id,
+                            SpacetimeDB.Internal.BytesSource args,
+                            SpacetimeDB.Internal.BytesSink sink
+                        ) => SpacetimeDB.Internal.Module.__call_view_anon__(
+                            id,
+                            args,
+                            sink
+                        );                                                
                     #endif
                     }
                     

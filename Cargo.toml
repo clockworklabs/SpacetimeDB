@@ -48,6 +48,7 @@ members = [
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
   "sdks/rust/tests/procedure-client",
+  "tools/ci",
   "tools/upgrade-version",
   "tools/license-check",
   "tools/replace-spacetimedb",

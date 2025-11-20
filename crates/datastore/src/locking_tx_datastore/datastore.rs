@@ -146,6 +146,8 @@ impl Locking {
         committed_state.build_indexes()?;
         // Figure out where to pick up for each sequence.
         *self.sequence_state.lock() = committed_state.build_sequence_state()?;
+
+        committed_state.collect_ephemeral_tables()?;
         Ok(())
     }
 
