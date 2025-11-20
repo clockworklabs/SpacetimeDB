@@ -160,13 +160,7 @@ fn convert_request(parts: http::request::Parts) -> st_http::Request {
         },
         headers: headers
             .into_iter()
-            .map(|(k, v)| {
-                let v = st_http::HeaderValue {
-                    is_sensitive: v.is_sensitive(),
-                    bytes: v.as_bytes().into(),
-                };
-                (k.map(|k| k.to_string()), v)
-            })
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
             .collect(),
         timeout: timeout.map(Into::into),
         uri: uri.to_string(),
@@ -195,11 +189,7 @@ fn convert_response(response: st_http::Response) -> http::Result<http::response:
     response.status = http::StatusCode::from_u16(code)?;
     response.headers = headers
         .into_iter()
-        .map(|(k, v)| {
-            let mut value = http::HeaderValue::try_from(v.bytes.into_vec())?;
-            value.set_sensitive(v.is_sensitive);
-            Ok((k.try_into()?, value))
-        })
+        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
         .collect::<http::Result<_>>()?;
     Ok(response)
 }

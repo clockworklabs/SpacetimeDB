@@ -76,15 +76,15 @@ pub struct Headers {
 // `http::header::IntoIter` only returns the `HeaderName` for the first
 // `HeaderValue` with that name, so we have to manually assign the names.
 struct HeaderIter<I, T> {
-    prev: Option<(String, T)>,
+    prev: Option<(Box<str>, T)>,
     inner: I,
 }
 
 impl<I, T> Iterator for HeaderIter<I, T>
 where
-    I: Iterator<Item = (Option<String>, T)>,
+    I: Iterator<Item = (Option<Box<str>>, T)>,
 {
-    type Item = (String, T);
+    type Item = (Box<str>, T);
 
     fn next(&mut self) -> Option<Self::Item> {
         let (prev_k, prev_v) = self
@@ -103,8 +103,8 @@ where
     }
 }
 
-impl FromIterator<(Option<String>, HeaderValue)> for Headers {
-    fn from_iter<T: IntoIterator<Item = (Option<String>, HeaderValue)>>(iter: T) -> Self {
+impl FromIterator<(Option<Box<str>>, Box<[u8]>)> for Headers {
+    fn from_iter<T: IntoIterator<Item = (Option<Box<str>>, Box<[u8]>)>>(iter: T) -> Self {
         let inner = iter.into_iter();
         let entries = HeaderIter { prev: None, inner }
             .map(|(name, value)| HttpHeaderPair { name, value })
@@ -115,7 +115,7 @@ impl FromIterator<(Option<String>, HeaderValue)> for Headers {
 
 impl Headers {
     #[allow(clippy::should_implement_trait)]
-    pub fn into_iter(self) -> impl Iterator<Item = (String, HeaderValue)> {
+    pub fn into_iter(self) -> impl Iterator<Item = (Box<str>, Box<[u8]>)> {
         IntoIterator::into_iter(self.entries).map(|HttpHeaderPair { name, value }| (name, value))
     }
 }
@@ -124,16 +124,9 @@ impl Headers {
 #[sats(crate = crate, name = "HttpHeaderPair")]
 struct HttpHeaderPair {
     /// A valid HTTP header name, sourced from an already-validated [`http::HeaderName`].
-    name: String,
-    value: HeaderValue,
-}
-
-/// A valid HTTP header value, sourced from an already-validated [`http::HeaderValue`].
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate, name = "HttpHeaderValue")]
-pub struct HeaderValue {
-    pub bytes: Box<[u8]>,
-    pub is_sensitive: bool,
+    name: Box<str>,
+    /// A valid HTTP header value, sourced from an already-validated [`http::HeaderValue`].
+    value: Box<[u8]>,
 }
 
 #[derive(Clone, SpacetimeType)]

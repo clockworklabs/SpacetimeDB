@@ -701,11 +701,7 @@ fn convert_http_request(request: st_http::Request) -> http::Result<(http::reques
     };
     request.headers = headers
         .into_iter()
-        .map(|(k, v)| {
-            let mut value = http::HeaderValue::try_from(v.bytes.into_vec())?;
-            value.set_sensitive(v.is_sensitive);
-            Ok((k.try_into()?, value))
-        })
+        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
         .collect::<http::Result<_>>()?;
 
     let timeout = timeout.map(|d| d.to_duration_saturating());
@@ -729,13 +725,7 @@ fn convert_http_response(response: http::response::Parts) -> st_http::Response {
     st_http::Response {
         headers: headers
             .into_iter()
-            .map(|(k, v)| {
-                let v = st_http::HeaderValue {
-                    is_sensitive: v.is_sensitive(),
-                    bytes: v.as_bytes().into(),
-                };
-                (k.map(|k| k.to_string()), v)
-            })
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
             .collect(),
         version: match version {
             http::Version::HTTP_09 => st_http::Version::Http09,
