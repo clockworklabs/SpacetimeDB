@@ -44,22 +44,31 @@ use spacetimedb_schema::auto_migrate::{
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
-fn require_spacetime_auth_for_creation() -> bool {
-    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
+fn require_spacetime_auth_for_creation() -> Option<String> {
+    // If the string is a non-empty value, require SpacetimeAuth for database creation
+    // and return the value for logging purposes.
+    // TODO(cloutiertyler): This env var replaces TEMP_REQUIRE_SPACETIME_AUTH,
+    // we should remove that one in the future. We may eventually remove
+    // the below restriction entirely as well in Maincloud.
+    match env::var("TEMP_SPACETIMEAUTH_ISSUER_REQUIRED_TO_PUBLISH") {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
 }
 
 // A hacky function to let us restrict database creation on maincloud.
 fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
-    if !require_spacetime_auth_for_creation() {
+    let Some(required_issuer) = require_spacetime_auth_for_creation() else {
         return Ok(());
-    }
+    };
     let issuer = auth.claims.issuer.trim_end_matches('/');
-    if issuer == "https://auth.spacetimedb.com" || issuer == "https://auth.staging.spacetimedb.com" {
+    if issuer == required_issuer {
         Ok(())
     } else {
         log::trace!(
-            "Rejecting creation request because auth issuer is {}",
-            auth.claims.issuer
+            "Rejecting creation request because auth issuer is {} and required issuer is {}",
+            auth.claims.issuer,
+            required_issuer
         );
         Err((
             StatusCode::UNAUTHORIZED,
