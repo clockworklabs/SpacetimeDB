@@ -13,15 +13,15 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class GetAnonymousExampleDataByIdHandle : RemoteTableHandle<EventContext, ExampleData>
+        public sealed class PlayersForLevelHandle : RemoteTableHandle<EventContext, PlayerAndLevel>
         {
-            protected override string RemoteTableName => "GetAnonymousExampleDataById";
+            protected override string RemoteTableName => "PlayersForLevel";
 
-            internal GetAnonymousExampleDataByIdHandle(DbConnection conn) : base(conn)
+            internal PlayersForLevelHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly GetAnonymousExampleDataByIdHandle GetAnonymousExampleDataById;
+        public readonly PlayersForLevelHandle PlayersForLevel;
     }
 }
