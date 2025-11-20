@@ -252,7 +252,7 @@ fn main() -> Result<()> {
                     if cfg!(target_os = "windows") {
                         let _ = run!(&format!("powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"", pid));
                     } else {
-                        let _ = run!(&format!("bash -lc 'kill {} 2>/dev/null'", pid));
+                        let _ = run!(&format!("kill {}", pid));
                     }
                 }
                 StartServer::No => {}
