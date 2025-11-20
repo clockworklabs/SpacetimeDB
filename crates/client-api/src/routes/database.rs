@@ -53,7 +53,8 @@ fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
     if !require_spacetime_auth_for_creation() {
         return Ok(());
     }
-    if auth.claims.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+    let issuer = auth.claims.issuer.trim_end_matches('/');
+    if issuer == "https://auth.spacetimedb.com" || issuer == "https://auth.staging.spacetimedb.com" {
         Ok(())
     } else {
         log::trace!(
