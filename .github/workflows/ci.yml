@@ -105,7 +105,7 @@ jobs:
         run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests (Linux)
         if: runner.os == 'Linux'
-        run: cargo ci smoketests --docker -- ${SMOKETEST_ARGS}
+        run: cargo ci smoketests --start-server docker -- ${SMOKETEST_ARGS}
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
         run: cargo ci smoketests -- ${SMOKETEST_ARGS}
