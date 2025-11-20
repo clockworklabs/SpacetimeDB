@@ -24,8 +24,10 @@ namespace SpacetimeDB.Types
         public RemoteTables(DbConnection conn)
         {
             AddTable(ExampleData = new(conn));
-            AddTable(GetAnonymousExampleDataById = new(conn));
-            AddTable(GetExampleDataById = new(conn));
+            AddTable(MyPlayer = new(conn));
+            AddTable(Player = new(conn));
+            AddTable(PlayerLevel = new(conn));
+            AddTable(PlayersForLevel = new(conn));
         }
     }
 

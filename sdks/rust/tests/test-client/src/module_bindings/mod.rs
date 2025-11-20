@@ -163,7 +163,6 @@ pub mod insert_vec_u_8_reducer;
 pub mod insert_vec_unit_struct_reducer;
 pub mod large_table_table;
 pub mod large_table_type;
-pub mod my_user_table;
 pub mod no_op_succeeds_reducer;
 pub mod one_bool_table;
 pub mod one_bool_type;
@@ -682,7 +681,6 @@ pub use insert_vec_unit_struct_reducer::{
 };
 pub use large_table_table::*;
 pub use large_table_type::LargeTable;
-pub use my_user_table::*;
 pub use no_op_succeeds_reducer::{no_op_succeeds, set_flags_for_no_op_succeeds, NoOpSucceedsCallbackId};
 pub use one_bool_table::*;
 pub use one_bool_type::OneBool;
@@ -2775,7 +2773,6 @@ pub struct DbUpdate {
     indexed_table: __sdk::TableUpdate<IndexedTable>,
     indexed_table_2: __sdk::TableUpdate<IndexedTable2>,
     large_table: __sdk::TableUpdate<LargeTable>,
-    my_user: __sdk::TableUpdate<Users>,
     one_bool: __sdk::TableUpdate<OneBool>,
     one_byte_struct: __sdk::TableUpdate<OneByteStruct>,
     one_connection_id: __sdk::TableUpdate<OneConnectionId>,
@@ -2892,9 +2889,6 @@ impl TryFrom<__ws::DatabaseUpdate<__ws::BsatnFormat>> for DbUpdate {
                 "large_table" => db_update
                     .large_table
                     .append(large_table_table::parse_table_update(table_update)?),
-                "my_user" => db_update
-                    .my_user
-                    .append(my_user_table::parse_table_update(table_update)?),
                 "one_bool" => db_update
                     .one_bool
                     .append(one_bool_table::parse_table_update(table_update)?),
@@ -3344,7 +3338,6 @@ impl __sdk::DbUpdate for DbUpdate {
         diff.vec_u_64 = cache.apply_diff_to_table::<VecU64>("vec_u64", &self.vec_u_64);
         diff.vec_u_8 = cache.apply_diff_to_table::<VecU8>("vec_u8", &self.vec_u_8);
         diff.vec_unit_struct = cache.apply_diff_to_table::<VecUnitStruct>("vec_unit_struct", &self.vec_unit_struct);
-        diff.my_user = cache.apply_diff_to_table::<Users>("my_user", &self.my_user);
 
         diff
     }
@@ -3359,7 +3352,6 @@ pub struct AppliedDiff<'r> {
     indexed_table: __sdk::TableAppliedDiff<'r, IndexedTable>,
     indexed_table_2: __sdk::TableAppliedDiff<'r, IndexedTable2>,
     large_table: __sdk::TableAppliedDiff<'r, LargeTable>,
-    my_user: __sdk::TableAppliedDiff<'r, Users>,
     one_bool: __sdk::TableAppliedDiff<'r, OneBool>,
     one_byte_struct: __sdk::TableAppliedDiff<'r, OneByteStruct>,
     one_connection_id: __sdk::TableAppliedDiff<'r, OneConnectionId>,
@@ -3471,7 +3463,6 @@ impl<'r> __sdk::AppliedDiff<'r> for AppliedDiff<'r> {
         callbacks.invoke_table_row_callbacks::<IndexedTable>("indexed_table", &self.indexed_table, event);
         callbacks.invoke_table_row_callbacks::<IndexedTable2>("indexed_table_2", &self.indexed_table_2, event);
         callbacks.invoke_table_row_callbacks::<LargeTable>("large_table", &self.large_table, event);
-        callbacks.invoke_table_row_callbacks::<Users>("my_user", &self.my_user, event);
         callbacks.invoke_table_row_callbacks::<OneBool>("one_bool", &self.one_bool, event);
         callbacks.invoke_table_row_callbacks::<OneByteStruct>("one_byte_struct", &self.one_byte_struct, event);
         callbacks.invoke_table_row_callbacks::<OneConnectionId>("one_connection_id", &self.one_connection_id, event);
@@ -4325,7 +4316,6 @@ impl __sdk::SpacetimeModule for RemoteModule {
         indexed_table_table::register_table(client_cache);
         indexed_table_2_table::register_table(client_cache);
         large_table_table::register_table(client_cache);
-        my_user_table::register_table(client_cache);
         one_bool_table::register_table(client_cache);
         one_byte_struct_table::register_table(client_cache);
         one_connection_id_table::register_table(client_cache);
