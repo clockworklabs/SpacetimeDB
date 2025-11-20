@@ -993,6 +993,11 @@ record ViewDeclaration
             );
             """;
 
+    /// <summary>
+    /// Generates the class responsible for evaluating a view.
+    /// If this is an anonymous view, the index corresponds to the position of this dispatcher in the `viewDispatchers` list of `RegisterView`.
+    /// Otherwise it corresponds to the position of this dispatcher in the `anonymousViewDispatchers` list of `RegisterAnonymousView`.
+    /// </summary>
     public string GenerateDispatcherClass(uint index)
     {
         var paramReads = string.Join(
