@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
+#[cfg(feature = "unstable")]
+pub mod http;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand08")]
@@ -739,6 +741,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
+#[cfg(feature = "unstable")]
 pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
@@ -1042,6 +1045,8 @@ impl Deref for TxContext {
 ///
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
+#[non_exhaustive]
+#[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     pub sender: Identity,
@@ -1053,11 +1058,15 @@ pub struct ProcedureContext {
     ///
     /// Will be `None` for certain scheduled procedures.
     pub connection_id: Option<ConnectionId>,
+
+    /// Methods for performing HTTP requests.
+    pub http: crate::http::HttpClient,
     // TODO: Add rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
 }
 
+#[cfg(feature = "unstable")]
 impl ProcedureContext {
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {

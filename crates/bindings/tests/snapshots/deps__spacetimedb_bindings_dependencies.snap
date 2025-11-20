@@ -2,9 +2,10 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 66
+total crates: 68
 spacetimedb
 ├── bytemuck
+├── bytes
 ├── derive_more
 │   ├── convert_case
 │   ├── proc_macro2
@@ -20,6 +21,10 @@ spacetimedb
 │       └── semver
 ├── getrandom
 │   └── cfg_if
+├── http
+│   ├── bytes
+│   ├── fnv
+│   └── itoa
 ├── log
 ├── rand
 │   ├── rand_chacha
@@ -78,7 +83,9 @@ spacetimedb
 │   ├── derive_more (*)
 │   ├── enum_as_inner (*)
 │   ├── hex
+│   ├── http (*)
 │   ├── itertools (*)
+│   ├── log
 │   ├── spacetimedb_bindings_macro (*)
 │   ├── spacetimedb_primitives (*)
 │   ├── spacetimedb_sats
