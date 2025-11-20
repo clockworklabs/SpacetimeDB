@@ -181,18 +181,7 @@ fn main() -> Result<()> {
                 run!("rm -f .dockerignore")?;
                 run!("docker compose -f .github/docker-compose.yml up -d")?;
             } else {
-                // Bare mode
-                if cfg!(target_os = "windows") {
-                    // Start spacetimedb-cli in the background with a fixed pg port
-                    // Use Git Bash compatible backgrounding
-                    run!(r#"target/debug/spacetimedb-cli.exe start --pg-port 5432 &"#)?;
-                    // Ensure dotnet workloads are present for module builds on Windows
-                    run!(
-                        r#"(cd modules && dotnet workload config --update-mode manifests && dotnet workload update)"#
-                    )?;
-                } else {
-                    run!("target/debug/spacetimedb-cli start --pg-port 5432 &")?;
-                }
+                run!(r#"cargo run -p spacetimedb-cli -- start --pg-port 5432 &"#)?;
             }
 
             // Always exclude some tests by default (mirrors CI workflow)

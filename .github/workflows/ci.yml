@@ -36,6 +36,8 @@ jobs:
     container: ${{ matrix.container }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      # Note: clear_database and replication only work in private
+      SMOKETEST_ARGS: ${{ matrix.smoketest_args }} -x clear_database replication teams
     steps:
       - name: Find Git ref
         env:
@@ -87,22 +89,13 @@ jobs:
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
 
-      - name: Build and start database (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
-          rm .dockerignore
-          docker compose -f .github/docker-compose.yml up -d
-      - name: Build and start database (Windows)
+      # the sdk-manifests on windows-latest are messed up, so we need to update them
+      - name: Fix sdk-manifests
         if: runner.os == 'Windows'
+        working-directory: modules
+        # Powershell doesn't early-exit properly from a multi-line command if one fails
+        shell: bash
         run: |
-          # Fail properly if any individual command fails
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $true
-
-          Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
-          cd modules
-          # the sdk-manifests on windows-latest are messed up, so we need to update them
           dotnet workload config --update-mode manifests
           dotnet workload update
       - uses: actions/setup-python@v5
@@ -110,9 +103,12 @@ jobs:
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
-      - name: Run smoketests
-        # Note: clear_database and replication only work in private
-        run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
+      - name: Run smoketests (Linux)
+        if: runner.os == 'Linux'
+        run: cargo ci smoketests --docker -- ${SMOKETEST_ARGS}
+      - name: Run smoketests (Windows)
+        if: runner.os == 'Windows'
+        run: cargo ci smoketests -- ${SMOKETEST_ARGS}
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
