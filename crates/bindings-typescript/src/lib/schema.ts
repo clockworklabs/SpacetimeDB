@@ -514,7 +514,7 @@ class Schema<S extends UntypedSchemaDef> {
   //   }
   // }
 
-  anyonymousView<Ret extends ViewReturnTypeBuilder>(
+  anonymousView<Ret extends ViewReturnTypeBuilder>(
     opts: ViewOpts,
     ret: Ret,
     fn: AnonymousViewFn<S, {}, Ret>
@@ -523,18 +523,18 @@ class Schema<S extends UntypedSchemaDef> {
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
-  // anyonymousView<Ret extends ViewReturnTypeBuilder>(
+  // anonymousView<Ret extends ViewReturnTypeBuilder>(
   //   opts: ViewOpts,
   //   ret: Ret,
   //   fn: AnonymousViewFn<S, {}, Ret>
   // ): void;
-  // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
   //   opts: ViewOpts,
   //   params: Params,
   //   ret: Ret,
   //   fn: AnonymousViewFn<S, {}, Ret>
   // ): void;
-  // anyonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
+  // anonymousView<Params extends ParamsObj, Ret extends ViewReturnTypeBuilder>(
   //   opts: ViewOpts,
   //   paramsOrRet: Ret | Params,
   //   retOrFn: AnonymousViewFn<S, {}, Ret> | Ret,
