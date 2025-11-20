@@ -43,7 +43,7 @@ impl HttpClient {
     /// and a timeout of 100 milliseconds, then treat the response as a string and log it:
     ///
     /// ```norun
-    /// # use spacetimedb::procedure;
+    /// # use spacetimedb::{procedure, ProcedureContext};
     /// # use spacetimedb::http::{Request, Timeout};
     /// # use std::time::Duration;
     /// # #[procedure]
@@ -102,7 +102,7 @@ impl HttpClient {
     /// Send a `GET` request, then treat the response as a string and log it:
     ///
     /// ```no_run
-    /// # use spacetimedb::procedure;
+    /// # use spacetimedb::{procedure, ProcedureContext};
     /// # #[procedure]
     /// # fn get_from_somewhere(ctx: &mut ProcedureContext) {
     /// match ctx.http.get("https://some-remote-host.invalid/download") {
