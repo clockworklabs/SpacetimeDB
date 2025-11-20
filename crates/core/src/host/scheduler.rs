@@ -1,34 +1,32 @@
-use std::sync::Arc;
-use std::time::Duration;
-
-use anyhow::anyhow;
-use futures::StreamExt;
-use rustc_hash::FxHashMap;
-use spacetimedb_client_api_messages::energy::EnergyQuanta;
-use spacetimedb_lib::scheduler::ScheduleAt;
-use spacetimedb_lib::Timestamp;
-use spacetimedb_primitives::ReducerId;
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
-use spacetimedb_schema::def::deserialize::ArgsSeed;
-use spacetimedb_schema::def::ReducerDef;
-use spacetimedb_table::table::RowRef;
-use tokio::sync::mpsc;
-use tokio::time::Instant;
-use tokio_util::time::delay_queue::{self, DelayQueue, Expired};
-
-use crate::db::relational_db::RelationalDB;
-use crate::host::module_host::ModuleInfo;
-
 use super::module_host::ModuleEvent;
 use super::module_host::ModuleFunctionCall;
 use super::module_host::{CallReducerParams, WeakModuleHost};
 use super::module_host::{DatabaseUpdate, EventStatus};
-use super::{FunctionArgs, ModuleHost, ReducerCallError};
+use super::{FunctionArgs, ModuleHost};
+use crate::db::relational_db::RelationalDB;
+use crate::host::module_host::{CallProcedureParams, ModuleInfo};
+use crate::host::NoSuchModule;
+use crate::host::{InvalidProcedureArguments, InvalidReducerArguments};
+use anyhow::anyhow;
+use core::time::Duration;
+use futures::StreamExt;
+use itertools::Either;
+use rustc_hash::FxHashMap;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_datastore::system_tables::{StFields, StScheduledFields, ST_SCHEDULED_ID};
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_lib::scheduler::ScheduleAt;
+use spacetimedb_lib::Timestamp;
+use spacetimedb_primitives::{ColId, TableId};
+use spacetimedb_sats::{bsatn::ToBsatn as _, AlgebraicValue};
+use spacetimedb_table::table::RowRef;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::time::Instant;
+use tokio_util::time::delay_queue::{self, DelayQueue, Expired};
 
 #[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct ScheduledFunctionId {
@@ -333,36 +331,61 @@ impl SchedulerActor {
             return;
         };
         let db = module_host.replica_ctx().relational_db.clone();
-        let module_host_clone = module_host.clone();
 
-        let res = tokio::spawn(async move { module_host.call_scheduled_reducer(item).await }).await;
-
-        match res {
-            // If we didn't actually call the function
-            // because the module exited or it was already deleted,
+        // Determine the call params.
+        // This also lets us know whether to call a reducer or procedure.
+        let params = call_params_for_queued_item(&module_host.info, &db, item);
+        let (timestamp, params) = match params {
+            // If the function was already deleted,
             // leave the `ScheduledFunction` in the database for when the module restarts.
-            Ok(Err(ReducerCallError::NoSuchModule(_)) | Err(ReducerCallError::ScheduleReducerNotFound)) => {}
-
-            Ok(Ok((_, ts))) => {
-                if let Some(id) = id {
-                    let _ = self.delete_scheduled_function_row(&db, id, module_host_clone, ts).await;
-                }
-            }
-
-            // Delete the scheduled function row if its not repeated function.
-            Ok(_) | Err(_) => {
+            Ok(None) => return,
+            Ok(Some(params)) => params,
+            Err(_) => {
                 if let Some(id) = id {
                     // TODO: Handle errors here?
                     let _ = self
-                        .delete_scheduled_function_row(&db, id, module_host_clone, Timestamp::now())
+                        .delete_scheduled_function_row(&db, id, module_host, Timestamp::now())
+                        .await;
+                }
+                return;
+            }
+        };
+
+        let module_host_clone = module_host.clone();
+        let res = tokio::spawn(async move {
+            match params {
+                Either::Left(params) => module_host_clone
+                    .call_reducer_with_params("scheduled_reducer", params)
+                    .await
+                    .map(drop),
+                Either::Right(params) => module_host_clone
+                    .call_procedure_with_params("scheduled_procedure", params)
+                    .await
+                    .map(drop),
+            }
+        })
+        .await;
+
+        match res {
+            Ok(Err(NoSuchModule)) => {}
+            Ok(Ok(())) => {
+                if let Some(id) = id {
+                    let _ = self
+                        .delete_scheduled_function_row(&db, id, module_host, timestamp)
                         .await;
                 }
             }
-        }
+            Err(e) => {
+                if let Some(id) = id {
+                    // TODO: Handle errors here?
+                    let _ = self
+                        .delete_scheduled_function_row(&db, id, module_host, Timestamp::now())
+                        .await;
+                }
 
-        if let Err(e) = res {
-            log::error!("invoking scheduled function failed: {e:#}");
-        };
+                log::error!("invoking scheduled function failed: {e:#}");
+            }
+        }
     }
 
     async fn delete_scheduled_function_row(
@@ -378,28 +401,19 @@ impl SchedulerActor {
             .on_module_thread("delete_scheduled_function_row", move || {
                 let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
-                match get_schedule_row_mut(&tx, &db, id) {
-                    Ok(schedule_row) => {
-                        if let Ok(schedule_at) = read_schedule_at(&schedule_row, id.at_column) {
-                            // If the schedule is an interval, we handle it as a repeated schedule
-                            if let ScheduleAt::Interval(_) = schedule_at {
-                                return Some(schedule_at);
-                            }
-                            let row_ptr = schedule_row.pointer();
-                            db.delete(&mut tx, id.table_id, [row_ptr]);
-
-                            commit_and_broadcast_deletion_event(tx, module_host);
-                        } else {
-                            log::debug!(
-                                "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
-                                id.table_id,
-                                id.schedule_id
-                            );
+                if let Ok(schedule_row) = get_schedule_row_mut(&tx, &db, id) {
+                    if let Ok(schedule_at) = read_schedule_at(&schedule_row, id.at_column) {
+                        // If the schedule is an interval, we handle it as a repeated schedule
+                        if let ScheduleAt::Interval(_) = schedule_at {
+                            return Some(schedule_at);
                         }
-                    }
-                    Err(_) => {
+                        let row_ptr = schedule_row.pointer();
+                        db.delete(&mut tx, id.table_id, [row_ptr]);
+
+                        commit_and_broadcast_deletion_event(tx, module_host);
+                    } else {
                         log::debug!(
-                            "Table row corresponding to yield scheduler ID not found: table_id {}, scheduler_id {}",
+                            "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
                             id.table_id,
                             id.schedule_id
                         );
@@ -420,62 +434,72 @@ impl SchedulerActor {
     }
 }
 
-pub(crate) fn handle_queued_call_reducer_params(
-    tx: &MutTxId,
-    module_info: &ModuleInfo,
+pub(crate) fn call_params_for_queued_item(
+    module: &ModuleInfo,
     db: &RelationalDB,
     item: QueueItem,
-) -> anyhow::Result<Option<CallReducerParams>> {
-    let caller_identity = module_info.database_identity;
-
-    match item {
+) -> anyhow::Result<Option<(Timestamp, CallParams)>> {
+    Ok(Some(match item {
         QueueItem::Id { id, at } => {
-            let Ok(schedule_row) = get_schedule_row_mut(tx, db, id) else {
-                // if the row is not found, it means the schedule is cancelled by the user
-                log::debug!(
-                    "table row corresponding to yield scheduler id not found: table_id {}, scheduler_id {}",
-                    id.table_id,
-                    id.schedule_id
-                );
+            let Ok(ScheduledFunction { function, bsatn_args }) = db
+                .with_read_only::<_, anyhow::Result<ScheduledFunction>>(Workload::Internal, |tx| {
+                    let schedule_row = get_schedule_row(tx, db, id)?;
+                    let fun = process_schedule(tx, db, id.table_id, &schedule_row)?;
+                    Ok(fun)
+                })
+            else {
+                // If the row is not found, it means the schedule is cancelled by the user.
                 return Ok(None);
             };
 
-            let ScheduledFunction { function, bsatn_args } = process_schedule(tx, db, id.table_id, &schedule_row)?;
-
-            let (reducer_id, reducer_seed) = find_reducer(module_info, &function)?;
-
-            let reducer_args = FunctionArgs::Bsatn(bsatn_args.into()).into_tuple(reducer_seed)?;
-
-            // the timestamp we tell the reducer it's running at will be
-            // at least the timestamp it was scheduled to run at.
-            let timestamp = at.max(Timestamp::now());
-
-            Ok(Some(CallReducerParams::from_system(
-                timestamp,
-                caller_identity,
-                reducer_id,
-                reducer_args,
-            )))
+            let fun_args = FunctionArgs::Bsatn(bsatn_args.into());
+            function_to_call_params(module, &function, fun_args, Some(at))?
         }
         QueueItem::VolatileNonatomicImmediate { function_name, args } => {
-            let (reducer_id, reducer_seed) = find_reducer(module_info, &function_name)?;
-            let reducer_args = args.into_tuple(reducer_seed)?;
-
-            Ok(Some(CallReducerParams::from_system(
-                Timestamp::now(),
-                caller_identity,
-                reducer_id,
-                reducer_args,
-            )))
+            function_to_call_params(module, &function_name, args, None)?
         }
-    }
+    }))
 }
 
-fn find_reducer<'a>(module_info: &'a ModuleInfo, name: &str) -> anyhow::Result<(ReducerId, ArgsSeed<'a, ReducerDef>)> {
-    module_info
-        .module_def
-        .reducer_arg_deserialize_seed(name)
-        .ok_or_else(|| anyhow!("Reducer not found: {name}"))
+type CallParams = Either<CallReducerParams, CallProcedureParams>;
+
+/// Finds the function for `name`
+/// and returns the appropriate call parameters
+/// to call the function with `args`.
+fn function_to_call_params(
+    module: &ModuleInfo,
+    name: &str,
+    args: FunctionArgs,
+    at: Option<Timestamp>,
+) -> anyhow::Result<(Timestamp, CallParams)> {
+    let identity = module.database_identity;
+
+    // Find the function and deserialize the arguments.
+    let module = &module.module_def;
+    let (id, args) = if let Some((id, def)) = module.reducer_full(name) {
+        let args = args.into_tuple_for_def(module, def).map_err(InvalidReducerArguments)?;
+        (Either::Left(id), args)
+    } else if let Some((id, def)) = module.procedure_full(name) {
+        let args = args
+            .into_tuple_for_def(module, def)
+            .map_err(InvalidProcedureArguments)?;
+        (Either::Right(id), args)
+    } else {
+        return Err(anyhow!("Reducer or procedure `{name}` not found"));
+    };
+
+    // The timestamp we tell the function it's running at will be
+    // at least the timestamp it was scheduled to run at.
+    let now = Timestamp::now();
+    let ts = at.unwrap_or(now).max(now);
+
+    use Either::*;
+    let params = match id {
+        Left(id) => Left(CallReducerParams::from_system(ts, identity, id, args)),
+        Right(id) => Right(CallProcedureParams::from_system(ts, identity, id, args)),
+    };
+
+    Ok((ts, params))
 }
 
 fn commit_and_broadcast_deletion_event(tx: MutTxId, module_host: ModuleHost) {
@@ -505,7 +529,7 @@ fn commit_and_broadcast_deletion_event(tx: MutTxId, module_host: ModuleHost) {
 
 /// Generate [`ScheduledFunction`] for given [`ScheduledFunctionId`].
 fn process_schedule(
-    tx: &MutTxId,
+    tx: &TxId,
     db: &RelationalDB,
     table_id: TableId,
     schedule_row: &RowRef<'_>,
@@ -514,7 +538,7 @@ fn process_schedule(
     let table_id_col = StScheduledFields::TableId.col_id();
     let function_name_col = StScheduledFields::ReducerName.col_id();
     let st_scheduled_row = db
-        .iter_by_col_eq_mut(tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
+        .iter_by_col_eq(tx, ST_SCHEDULED_ID, table_id_col, &table_id.into())?
         .next()
         .ok_or_else(|| anyhow!("Scheduled table with id {table_id} entry does not exist in `st_scheduled`"))?;
     let function = st_scheduled_row.read_col::<Box<str>>(function_name_col)?;
@@ -526,6 +550,16 @@ fn process_schedule(
 }
 
 /// Helper to get `schedule_row` with `MutTxId`.
+fn get_schedule_row<'a>(tx: &'a TxId, db: &'a RelationalDB, id: ScheduledFunctionId) -> anyhow::Result<RowRef<'a>> {
+    db.iter_by_col_eq(tx, id.table_id, id.id_column, &id.schedule_id.into())?
+        .next()
+        .ok_or_else(|| anyhow!("Schedule with ID {} not found in table {}", id.schedule_id, id.table_id))
+        .inspect_err(|err| {
+            log::debug!("{err}");
+        })
+}
+
+/// Helper to get `schedule_row` with `MutTxId`.
 fn get_schedule_row_mut<'a>(
     tx: &'a MutTxId,
     db: &'a RelationalDB,
@@ -534,6 +568,9 @@ fn get_schedule_row_mut<'a>(
     db.iter_by_col_eq_mut(tx, id.table_id, id.id_column, &id.schedule_id.into())?
         .next()
         .ok_or_else(|| anyhow!("Schedule with ID {} not found in table {}", id.schedule_id, id.table_id))
+        .inspect_err(|err| {
+            log::debug!("{err}");
+        })
 }
 
 /// Helper to get `schedule_id` and `schedule_at`

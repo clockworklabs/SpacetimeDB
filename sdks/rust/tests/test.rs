@@ -322,6 +322,7 @@ mod procedure {
         make_test("procedure-http-err").run()
     }
 
+    #[test]
     fn schedule_procedure() {
         make_test("schedule-procedure").run()
     }
