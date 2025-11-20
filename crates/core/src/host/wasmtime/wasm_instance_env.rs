@@ -1662,15 +1662,16 @@ impl WasmInstanceEnv {
     /// then return its response details via a [`BytesSource`] written to `out[0]`
     /// and its response body via a [`BytesSource`] written to `out[1]`.
     ///
-    /// `request_ptr[..request_len]` should store a BSATN-serialized `spacetimedb_lib::http::Request` object
+    /// `request_ptr[..request_len]` should store a BSATN-serialized [`spacetimedb_lib::http::Request`] object
     /// containing the details of the request to be performed.
     ///
     /// `body_ptr[..body_len]` should store the body of the request to be performed;
     ///
     /// If the request is successful, a [`BytesSource`] is written to `out`
-    /// containing a BSATN-encoded `spacetimedb_lib::http::Response` object.
+    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object.
     /// "Successful" in this context includes any connection which results in any HTTP status code,
     /// regardless of the specified meaning of that code.
+    /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
     ///
     /// # Errors
     ///
@@ -1680,7 +1681,7 @@ impl WasmInstanceEnv {
     ///   In this case, `out` is not written.
     /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
     ///   In this case, a [`BytesSource`] is written to `out`
-    ///   containing a BSATN-encoded `spacetimedb_lib::http::Error` object.
+    ///   containing a BSATN-encoded [`spacetimedb_lib::http::Error`] object.
     ///
     /// # Traps
     ///

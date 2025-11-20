@@ -10,10 +10,10 @@ pub use http::{Request, Response};
 pub use spacetimedb_lib::http::{Error, Timeout};
 
 use crate::{
-    rt::{read_bytes_source_into, BytesSource},
+    rt::{read_bytes_source_as, read_bytes_source_into},
     IterBuf,
 };
-use spacetimedb_lib::{bsatn, de::Deserialize, http as st_http};
+use spacetimedb_lib::{bsatn, http as st_http};
 
 /// Allows performing
 #[non_exhaustive]
@@ -29,16 +29,9 @@ impl HttpClient {
         let request = st_http::Request::from(request);
         let request = bsatn::to_vec(&request).expect("Failed to BSATN-serialize `spacetimedb_lib::http::Request`");
 
-        fn read_output<T: for<'a> Deserialize<'a> + 'static>(source: BytesSource) -> T {
-            let mut buf = IterBuf::take();
-            read_bytes_source_into(source, &mut buf);
-            bsatn::from_slice::<T>(&buf)
-                .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
-        }
-
         match spacetimedb_bindings_sys::procedure::http_request(&request, &body.into_bytes()) {
             Ok((response_source, body_source)) => {
-                let response = read_output::<st_http::Response>(response_source);
+                let response = read_bytes_source_as::<st_http::Response>(response_source);
                 let response =
                     http::response::Parts::try_from(response).expect("Invalid http response returned from host");
                 let mut buf = IterBuf::take();
@@ -48,7 +41,7 @@ impl HttpClient {
                 Ok(http::Response::from_parts(response, body))
             }
             Err(err_source) => {
-                let error = read_output::<st_http::Error>(err_source);
+                let error = read_bytes_source_as::<st_http::Error>(err_source);
                 Err(error)
             }
         }
@@ -57,11 +50,7 @@ impl HttpClient {
     /// Send a `GET` request to `uri` with no headers.
     ///
     /// Blocks procedure execution for the duration of the HTTP request.
-    pub fn get<Uri>(&self, uri: Uri) -> Result<Response<Body>, Error>
-    where
-        Uri: TryInto<http::Uri>,
-        <Uri as TryInto<http::Uri>>::Error: Into<http::Error>,
-    {
+    pub fn get(&self, uri: impl TryInto<http::Uri, Error: Into<http::Error>>) -> Result<Response<Body>, Error> {
         self.send(
             http::Request::builder()
                 .method("GET")

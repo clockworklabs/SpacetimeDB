@@ -6,7 +6,7 @@ use crate::{
 };
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
-use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
+use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -1220,4 +1220,15 @@ pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, 
 
     // Schedule the reducer.
     sys::volatile_nonatomic_schedule_immediate(R2::NAME, &arg_bytes)
+}
+
+/// Read `source` completely into a temporary buffer, then BSATN-deserialize it as a `T`.
+///
+/// Panics if the bytes from `source` fail to deserialize as `T`.
+/// The type name of `T` will be included in the panic message.
+pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesSource) -> T {
+    let mut buf = IterBuf::take();
+    read_bytes_source_into(source, &mut buf);
+    bsatn::from_slice::<T>(&buf)
+        .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
 }

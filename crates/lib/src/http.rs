@@ -24,7 +24,7 @@ use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
 /// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
 ///
 /// Construct instances of this type by converting from [`http::Request`].
-/// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
+/// Note that all extensions to [`http::Request`] save for [`Timeout`] are ignored.
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct Request {
