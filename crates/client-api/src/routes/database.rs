@@ -44,20 +44,29 @@ use spacetimedb_schema::auto_migrate::{
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
-fn require_spacetime_auth_for_creation() -> Option<String> {
+fn required_issuer_for_creation() -> Option<String> {
     // If the string is a non-empty value, return the string to be used as the required issuer
     // TODO(cloutiertyler): This env var replaces TEMP_REQUIRE_SPACETIME_AUTH,
     // we should remove that one in the future. We may eventually remove
     // the below restriction entirely as well in Maincloud.
-    match env::var("TEMP_SPACETIMEAUTH_ISSUER_REQUIRED_TO_PUBLISH") {
-        Ok(v) if !v.is_empty() => Some(v),
-        _ => None,
+    if let Ok(v) = env::var("TEMP_SPACETIMEAUTH_ISSUER_REQUIRED_TO_PUBLISH")
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
+        return Some(v);
     }
+
+    // Legacy support for TEMP_REQUIRE_SPACETIME_AUTH.
+    if env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty()) {
+        return Some("https://auth.spacetimedb.com".to_string());
+    }
+
+    None
 }
 
 // A hacky function to let us restrict database creation on maincloud.
 fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
-    let Some(required_issuer) = require_spacetime_auth_for_creation() else {
+    let Some(required_issuer) = required_issuer_for_creation() else {
         return Ok(());
     };
     let issuer = auth.claims.issuer.trim_end_matches('/');
