@@ -1,9 +1,8 @@
 mod module_bindings;
 
-use module_bindings::*;
-
 use anyhow::Context;
-use spacetimedb_sdk::DbConnectionBuilder;
+use module_bindings::*;
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table};
 use test_counter::TestCounter;
 
 const LOCALHOST: &str = "http://localhost:3000";
@@ -39,8 +38,31 @@ fn main() {
     match &*test {
         "procedure-return-values" => exec_procedure_return_values(),
         "procedure-observe-panic" => exec_procedure_panic(),
+        "insert-with-tx-commit" => exec_insert_with_tx_commit(),
+        "insert-with-tx-rollback" => exec_insert_with_tx_rollback(),
         _ => panic!("Unknown test: {test}"),
     }
+}
+
+fn assert_table_empty<T: Table>(tbl: T) -> anyhow::Result<()> {
+    let count = tbl.count();
+    if count != 0 {
+        anyhow::bail!(
+            "Expected table {} to be empty, but found {} rows resident",
+            std::any::type_name::<T::Row>(),
+            count,
+        )
+    }
+    Ok(())
+}
+
+/// Each subscribing test runs against a fresh DB,
+/// so all tables should be empty until we call an insert reducer.
+///
+/// We'll call this function within our initial `on_subscription_applied` callback to verify that.
+fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
+    assert_table_empty(ctx.db().my_table())?;
+    Ok(())
 }
 
 fn connect_with_then(
@@ -69,6 +91,24 @@ fn connect_then(
     callback: impl FnOnce(&DbConnection) + Send + 'static,
 ) -> DbConnection {
     connect_with_then(test_counter, "", |x| x, callback)
+}
+
+/// A query that subscribes to all rows from all tables.
+const SUBSCRIBE_ALL: &[&str] = &["SELECT * FROM my_table;"];
+
+fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
+    subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
+}
+
+fn subscribe_these_then(
+    ctx: &impl RemoteDbContext,
+    queries: &[&str],
+    callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static,
+) {
+    ctx.subscription_builder()
+        .on_applied(callback)
+        .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+        .subscribe(queries);
 }
 
 fn exec_procedure_return_values() {
@@ -135,6 +175,68 @@ fn exec_procedure_panic() {
                     Ok(())
                 } else {
                     Err(anyhow::anyhow!("Expected failure but got Ok... huh? {res:?}"))
+                });
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+fn exec_insert_with_tx_commit() {
+    fn expected() -> ReturnStruct {
+        ReturnStruct {
+            a: 42,
+            b: "magic".into(),
+        }
+    }
+
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+    let inspect_result = test_counter.add_test("insert_with_tx_commit_values");
+    let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            ctx.db().my_table().on_insert(move |_, row| {
+                assert_eq!(row.field, expected());
+                (callback_result.take().unwrap())(Ok(()));
+            });
+
+            subscribe_all_then(ctx, move |ctx| {
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+
+                ctx.procedures.insert_with_tx_commit_then(move |ctx, res| {
+                    assert!(res.is_ok());
+                    let row = ctx.db().my_table().iter().next().unwrap();
+                    assert_eq!(row.field, expected());
+                    inspect_result(Ok(()));
+                });
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+fn exec_insert_with_tx_rollback() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+    let inspect_result = test_counter.add_test("insert_with_tx_rollback_values");
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            ctx.db()
+                .my_table()
+                .on_insert(|_, _| unreachable!("should not have inserted a row"));
+
+            subscribe_all_then(ctx, move |ctx| {
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+
+                ctx.procedures.insert_with_tx_rollback_then(move |ctx, res| {
+                    assert!(res.is_ok());
+                    assert_eq!(ctx.db().my_table().iter().next(), None);
+                    inspect_result(Ok(()));
                 });
             });
         }

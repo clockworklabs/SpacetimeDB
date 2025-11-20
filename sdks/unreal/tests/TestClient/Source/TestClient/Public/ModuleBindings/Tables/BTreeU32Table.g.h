@@ -10,10 +10,10 @@
 #include "DBCache/WithBsatn.h"
 #include "DBCache/TableHandle.h"
 #include "DBCache/TableCache.h"
-#include "BTreeU32Table.g.generated.h"
+#include "BtreeU32Table.g.generated.h"
 
 UCLASS(Blueprintable)
-class UBTreeU32NIndex : public UObject
+class UBtreeU32NIndex : public UObject
 {
     GENERATED_BODY()
 
@@ -47,13 +47,13 @@ private:
 };
 
 UCLASS(BlueprintType)
-class TESTCLIENT_API UBTreeU32Table : public URemoteTable
+class TESTCLIENT_API UBtreeU32Table : public URemoteTable
 {
     GENERATED_BODY()
 
 public:
     UPROPERTY(BlueprintReadOnly)
-    UBTreeU32NIndex* N;
+    UBtreeU32NIndex* N;
 
     void PostInitialize();
 
@@ -70,29 +70,29 @@ public:
 
     // Table Events
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( 
-        FOnBTreeU32Insert,
+        FOnBtreeU32Insert,
         const FEventContext&, Context,
         const FBTreeU32Type&, NewRow);
 
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams( 
-        FOnBTreeU32Update,
+        FOnBtreeU32Update,
         const FEventContext&, Context,
         const FBTreeU32Type&, OldRow,
         const FBTreeU32Type&, NewRow);
 
     DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams( 
-        FOnBTreeU32Delete,
+        FOnBtreeU32Delete,
         const FEventContext&, Context,
         const FBTreeU32Type&, DeletedRow);
 
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnBTreeU32Insert OnInsert;
+    FOnBtreeU32Insert OnInsert;
 
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnBTreeU32Update OnUpdate;
+    FOnBtreeU32Update OnUpdate;
 
     UPROPERTY(BlueprintAssignable, Category = "SpacetimeDB Events")
-    FOnBTreeU32Delete OnDelete;
+    FOnBtreeU32Delete OnDelete;
 
 private:
     const FString TableName = TEXT("btree_u32");

@@ -4,94 +4,27 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { Typespace } from './typespace_type';
-// Mark import as potentially unused
-declare type __keep_Typespace = Typespace;
-import { TableDesc } from './table_desc_type';
-// Mark import as potentially unused
-declare type __keep_TableDesc = TableDesc;
-import { ReducerDef } from './reducer_def_type';
-// Mark import as potentially unused
-declare type __keep_ReducerDef = ReducerDef;
-import { MiscModuleExport } from './misc_module_export_type';
-// Mark import as potentially unused
-declare type __keep_MiscModuleExport = MiscModuleExport;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import Typespace from './typespace_type';
+import TableDesc from './table_desc_type';
+import ReducerDef from './reducer_def_type';
+import MiscModuleExport from './misc_module_export_type';
 
-export type RawModuleDefV8 = {
-  typespace: Typespace;
-  tables: TableDesc[];
-  reducers: ReducerDef[];
-  miscExports: MiscModuleExport[];
-};
-let _cached_RawModuleDefV8_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawModuleDefV8 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawModuleDefV8_type_value)
-      return _cached_RawModuleDefV8_type_value;
-    _cached_RawModuleDefV8_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawModuleDefV8_type_value.value.elements.push(
-      {
-        name: 'typespace',
-        algebraicType: Typespace.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'tables',
-        algebraicType: __AlgebraicTypeValue.Array(
-          TableDesc.getTypeScriptAlgebraicType()
-        ),
-      },
-      {
-        name: 'reducers',
-        algebraicType: __AlgebraicTypeValue.Array(
-          ReducerDef.getTypeScriptAlgebraicType()
-        ),
-      },
-      {
-        name: 'miscExports',
-        algebraicType: __AlgebraicTypeValue.Array(
-          MiscModuleExport.getTypeScriptAlgebraicType()
-        ),
-      }
-    );
-    return _cached_RawModuleDefV8_type_value;
+export default __t.object('RawModuleDefV8', {
+  get typespace() {
+    return Typespace;
   },
-
-  serialize(writer: __BinaryWriter, value: RawModuleDefV8): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawModuleDefV8.getTypeScriptAlgebraicType(),
-      value
-    );
+  get tables() {
+    return __t.array(TableDesc);
   },
-
-  deserialize(reader: __BinaryReader): RawModuleDefV8 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawModuleDefV8.getTypeScriptAlgebraicType()
-    );
+  get reducers() {
+    return __t.array(ReducerDef);
   },
-};
-
-export default RawModuleDefV8;
+  get miscExports() {
+    return __t.array(MiscModuleExport);
+  },
+});

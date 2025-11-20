@@ -1206,6 +1206,15 @@ impl __sdk::InModule for DbUpdate {{
                             table_name.deref(),
                         );
                     }
+                    for view in iter_views(module) {
+                        let field_name = table_method_name(&view.name);
+                        writeln!(
+                            out,
+                            "diff.{field_name} = cache.apply_diff_to_table::<{}>({:?}, &self.{field_name});",
+                            type_ref_name(module, view.product_type_ref),
+                            view.name.deref(),
+                        );
+                    }
                 },
                 "
                     diff
