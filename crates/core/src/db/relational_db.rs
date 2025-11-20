@@ -1061,21 +1061,40 @@ impl RelationalDB {
 
 /// Duration after which expired unused views are cleaned up.
 /// Value is chosen arbitrarily; can be tuned later if needed.
-const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(100);
+const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
-/// Spawn a background task that periodically cleans up expired views.
+/// Duration to budget for each view cleanup job, so that it doesn't hold database lock for too
+/// long.
+//TODO: Make this value configurable
+const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Spawn a background task that periodically cleans up expired views
 pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
     tokio::spawn(async move {
         let db = &db;
         loop {
-            if let Err(e) = db.with_auto_commit(Workload::Internal, |tx| {
-                tx.clear_expired_views(VIEWS_EXPIRATION).map_err(DBError::from)
+            match db.with_auto_commit(Workload::Internal, |tx| {
+                tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+                    .map_err(DBError::from)
             }) {
-                log::error!(
-                    "[{}] DATABASE: failed to clear expired views: {}",
-                    db.database_identity(),
-                    e
-                );
+                Ok((cleared, total_expired)) => {
+                    if cleared != total_expired {
+                        //TODO: Report it as metric
+                        log::info!(
+                            "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                            db.database_identity(),
+                            cleared,
+                            total_expired - cleared
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "[{}] DATABASE: failed to clear expired views: {}",
+                        db.database_identity(),
+                        e
+                    );
+                }
             }
 
             tokio::time::sleep(VIEWS_EXPIRATION).await;
@@ -2590,7 +2609,10 @@ mod tests {
 
         // Clear expired views
         let mut tx = begin_mut_tx(&stdb);
-        tx.clear_expired_views(Instant::now().saturating_duration_since(before_sender2))?;
+        tx.clear_expired_views(
+            Instant::now().saturating_duration_since(before_sender2),
+            VIEW_CLEANUP_BUDGET,
+        )?;
         stdb.commit_tx(tx)?;
 
         assert!(
