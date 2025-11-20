@@ -821,9 +821,18 @@ impl RelationalDB {
             Txdata,
         };
 
+        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
+            tx_data
+                .ephemeral_tables()
+                .map(|etables| !etables.contains(table_id))
+                .unwrap_or(true)
+        };
+
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
+                // Skip ephemeral tables
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -834,6 +843,7 @@ impl RelationalDB {
 
             let deletes: Box<_> = tx_data
                 .deletes()
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -841,6 +851,8 @@ impl RelationalDB {
                 // filter out deletes for tables that are truncated in the same transaction.
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
+
+            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
 
@@ -850,7 +862,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates: truncates.into_iter().collect(),
+                    truncates,
                 }),
             };
 
@@ -2408,6 +2420,27 @@ mod tests {
         TableSchema::from_module_def(&def, table, (), TableId::SENTINEL)
     }
 
+    fn view_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("b", AlgebraicType::U8)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            false,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        let raw = builder.finish();
+        raw.try_into().expect("table validation failed")
+    }
+
     fn table_auto_inc() -> TableSchema {
         table(
             "MyTable",
@@ -2489,6 +2522,89 @@ mod tests {
             },
         }
 
+        Ok(())
+    }
+
+    fn setup_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId, ModuleDef, ViewDef)> {
+        let module_def = view_module_def();
+        let view_def = module_def.view("my_view").unwrap();
+
+        let mut tx = begin_mut_tx(stdb);
+        let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        stdb.commit_tx(tx)?;
+
+        Ok((view_id, table_id, module_def.clone(), view_def.clone()))
+    }
+
+    fn insert_view_row(
+        stdb: &TestDB,
+        view_id: ViewId,
+        table_id: TableId,
+        typespace: &Typespace,
+        row_type: AlgebraicTypeRef,
+        sender: Identity,
+        v: u8,
+    ) -> ResultTest<()> {
+        let to_bsatn = |pv: &ProductValue| {
+            Bytes::from(bsatn::to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
+        };
+
+        let row_pv = |v: u8| product![v];
+
+        let mut tx = begin_mut_tx(stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bsatn(&row_pv(v)), typespace)?;
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    fn project_views(stdb: &TestDB, table_id: TableId, sender: Identity) -> Vec<ProductValue> {
+        let tx = begin_tx(stdb);
+
+        stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+            .unwrap()
+            .map(|row| {
+                let pv = row.to_product_value();
+                ProductValue {
+                    elements: pv.elements.iter().skip(1).cloned().collect(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_view_tables_are_ephemeral() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        // Write some rows (reusing the same helper)
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ONE, 10)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ZERO, 20)?;
+
+        assert!(
+            !project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should NOT be empty after insert"
+        );
+
+        // Reopen the database — view tables must not persist
+        let stdb = stdb.reopen()?;
+
+        // Validate that the view's backing table has been removed
+        assert!(
+            project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should be empty after reopening the database"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        assert!(
+            subs_rows.is_empty(),
+            "st_view_subs should be empty after reopening the database"
+        );
         Ok(())
     }
 
