@@ -2432,7 +2432,6 @@ mod tests {
         ST_SEQUENCE_ID, ST_TABLE_ID,
     };
     use spacetimedb_fs_utils::compression::CompressType;
-    use spacetimedb_lib::bsatn::to_vec;
     use spacetimedb_lib::db::raw_def::v9::{btree, RawTableDefBuilder};
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
@@ -2657,65 +2656,59 @@ mod tests {
     #[test]
     fn test_views() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
-        let module_def = view_module_def();
-        let view_def = module_def.view("my_view").unwrap();
 
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
         let row_type = view_def.product_type_ref;
         let typespace = module_def.typespace();
 
-        let to_bstan = |pv: &ProductValue| {
-            Bytes::from(to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
-        };
-        let row_pv = |v: u8| ProductValue::from_iter(vec![AlgebraicValue::U8(v)]);
-
-        let project_views = |stdb: &TestDB, table_id: TableId, sender: Identity| {
-            let tx = begin_tx(stdb);
-            stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
-                .unwrap()
-                .map(|row| ProductValue {
-                    elements: row.to_product_value().elements.iter().skip(1).cloned().collect(),
-                })
-                .collect::<Vec<_>>()
-        };
-
-        // Create the view
-        let mut tx = begin_mut_tx(&stdb);
-        let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
-        stdb.commit_tx(tx)?;
-
-        let apply_view_update = |sender: Identity, val: u8| -> ResultTest<()> {
-            let mut tx = begin_mut_tx(&stdb);
-            tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
-            stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bstan(&row_pv(val)), typespace)?;
-            stdb.commit_tx(tx)?;
-            Ok(())
-        };
-
-        // Sender 1
         let sender1 = Identity::ONE;
-        apply_view_update(sender1, 42)?;
-        let mut tx = begin_mut_tx(&stdb);
-        tx.unsubscribe_view(view_id, ArgId::SENTINEL, sender1)?;
-        stdb.commit_tx(tx)?;
+
+        // Sender 1 insert
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender1, 42)?;
 
         assert_eq!(
             project_views(&stdb, table_id, sender1)[0],
-            row_pv(42),
-            "Materialized view row does not match inserted row"
+            product![42u8],
+            "View row not inserted correctly"
         );
 
-        // Sender 2
+        // Sender 2 insert
         let sender2 = Identity::ZERO;
         let before_sender2 = Instant::now();
-        apply_view_update(sender2, 84)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 84)?;
 
         assert_eq!(
             project_views(&stdb, table_id, sender2)[0],
-            row_pv(84),
-            "Materialized view row does not match inserted row"
+            product![84u8],
+            "Sender 2 view row not inserted correctly"
         );
 
-        // Clear expired views
+        // Restart database (view rows should NOT persist)
+        let stdb = stdb.reopen()?;
+
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 rows should NOT persist after reopen"
+        );
+        assert!(
+            project_views(&stdb, table_id, sender2).is_empty(),
+            "Sender 2 rows should NOT persist after reopen"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st = tx.lookup_st_view_subs(view_id)?;
+        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        stdb.commit_tx(tx)?;
+
+        // Reinsert after restart
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 91)?;
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Post-restart inserted rows must appear"
+        );
+
+        // Clean expired rows
         let mut tx = begin_mut_tx(&stdb);
         tx.clear_expired_views(
             Instant::now().saturating_duration_since(before_sender2),
@@ -2723,28 +2716,25 @@ mod tests {
         )?;
         stdb.commit_tx(tx)?;
 
+        // Only sender2 exists after reinsertion
         assert!(
             project_views(&stdb, table_id, sender1).is_empty(),
-            "Sender 1 rows should be cleared"
+            "Sender 1 should remain empty"
         );
         assert_eq!(
             project_views(&stdb, table_id, sender2)[0],
-            row_pv(84),
-            "Sender 2 rows should not be cleared"
+            product![91u8],
+            "Sender 2 row should remain"
         );
 
-        // Validate st_view_subs state
+        // And st_view_subs must reflect only sender2
         let tx = begin_mut_tx(&stdb);
-        let st_view_row = tx.lookup_st_view_subs(view_id)?;
-        assert_eq!(st_view_row.len(), 1, "Sender 1 should be removed from st_view_subs");
-        assert_eq!(
-            st_view_row[0].identity.0, sender2,
-            "Sender 1 should be removed from st_view_subs"
-        );
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_after.len(), 1);
+        assert_eq!(st_after[0].identity.0, sender2);
 
         Ok(())
     }
-
     #[test]
     fn test_table_name() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
