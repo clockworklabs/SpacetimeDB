@@ -5,7 +5,8 @@ import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import { Timestamp } from '../lib/timestamp';
+import { Timestamp, ClockGenerator } from '../lib/timestamp';
+import { Uuid } from '../lib/uuid';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import { SenderError, SpacetimeHostError } from './errors';
@@ -213,6 +214,19 @@ export const hooks: ModuleHooks = {
         ConnectionId.nullIfZero(new ConnectionId(connId)),
         senderIdentity
       ),
+      /** Create a new UUIDv4 using built-in RNG. */
+      newUuidV4(): Uuid {
+        // TODO: Use a spacetime RNG when available
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        return Uuid.fromRandomBytesV4(bytes);
+      },
+
+      /** Create a new UUIDv7 using the provided ClockGenerator. */
+      newUuidV7(clock: ClockGenerator): Uuid {
+        // TODO: Use a spacetime RNG when available
+        const bytes = crypto.getRandomValues(new Uint8Array(10));
+        return Uuid.fromUnixMillisV7(clock.tick().toMillis(), bytes);
+      },
     });
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
