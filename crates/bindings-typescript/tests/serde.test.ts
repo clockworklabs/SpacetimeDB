@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'vitest';
-import { AlgebraicType, BinaryReader, BinaryWriter } from 'spacetimedb';
+import {
+  AlgebraicType,
+  BinaryReader,
+  BinaryWriter,
+  ConnectionId,
+  Identity,
+  ScheduleAt,
+} from 'spacetimedb';
 
 describe('it correctly serializes and deserializes algebraic values', () => {
   test('when it serializes and deserializes with a product type', () => {
@@ -52,7 +59,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       __identity__: BigInt(1234567890123456789012345678901234567890n),
     };
 
-    const algebraic_type = AlgebraicType.createIdentityType();
+    const algebraic_type = Identity.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -82,7 +89,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       },
     };
 
-    const algebraic_type = AlgebraicType.createScheduleAtType();
+    const algebraic_type = ScheduleAt.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -107,7 +114,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       },
     };
 
-    const algebraic_type = AlgebraicType.createScheduleAtType();
+    const algebraic_type = ScheduleAt.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 
@@ -130,7 +137,7 @@ describe('it correctly serializes and deserializes algebraic values', () => {
       __connection_id__: U128_MAX,
     };
 
-    const algebraic_type = AlgebraicType.createConnectionIdType();
+    const algebraic_type = ConnectionId.getAlgebraicType();
     const binaryWriter = new BinaryWriter(1024);
     AlgebraicType.serializeValue(binaryWriter, algebraic_type, value);
 

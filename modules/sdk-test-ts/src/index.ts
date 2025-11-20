@@ -1,13 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
+import { toCamelCase } from 'spacetimedb';
 import { type RowObj, schema, t, table } from 'spacetimedb/server';
 
-const SimpleEnum = t.enum('SimpleEnum', {
-  Zero: t.unit(),
-  One: t.unit(),
-  Two: t.unit(),
-});
+const SimpleEnum = t.enum('SimpleEnum', ['Zero', 'One', 'Two']);
 
 const EnumWithPayload = t.enum('EnumWithPayload', {
   U8: t.u8(),
@@ -114,29 +111,29 @@ function tbl<const Name extends string, Row extends RowObj>(
     reducers(spacetimedb) {
       if (ops.insert) {
         spacetimedb.reducer(ops.insert, row, (ctx, args) => {
-          (ctx.db[name] as any).insert({ ...args });
+          (ctx.db[toCamelCase(name)] as any).insert({ ...args });
         });
       }
       if (ops.delete) {
         spacetimedb.reducer(ops.delete, row, (ctx, args) => {
-          (ctx.db[name] as any).delete({ ...args });
+          (ctx.db[toCamelCase(name)] as any).delete({ ...args });
         });
       }
       if (ops.insert_or_panic) {
         spacetimedb.reducer(ops.insert_or_panic, row, (ctx, args) => {
-          (ctx.db[name] as any).insert({ ...args });
+          (ctx.db[toCamelCase(name)] as any).insert({ ...args });
         });
       }
       if (ops.update_by) {
         const [reducer, col] = ops.update_by;
         spacetimedb.reducer(reducer, row, (ctx, args) => {
-          (ctx.db[name] as any)[col].update({ ...args });
+          (ctx.db[toCamelCase(name)] as any)[col].update({ ...args });
         });
       }
       if (ops.delete_by) {
         const [reducer, col] = ops.delete_by;
         spacetimedb.reducer(reducer, { [col]: row[col] }, (ctx, args) => {
-          (ctx.db[name] as any)[col].delete(args[col as any]);
+          (ctx.db[toCamelCase(name)] as any)[col].delete(args[col as any]);
         });
       }
     },
@@ -810,10 +807,10 @@ spacetimedb.reducer(
   'update_pk_simple_enum',
   { a: SimpleEnum, data: t.i32() },
   (ctx, { a, data }) => {
-    const o = ctx.db.pk_simple_enum.a.find(a);
+    const o = ctx.db.pkSimpleEnum.a.find(a);
     if (o == null) throw new Error('row not found');
     o.data = data;
-    ctx.db.pk_simple_enum.a.update(o);
+    ctx.db.pkSimpleEnum.a.update(o);
   }
 );
 
@@ -822,7 +819,7 @@ spacetimedb.reducer(
   { rows: t.array(BTreeU32.rowType) },
   (ctx, { rows }) => {
     for (const row of rows) {
-      ctx.db.btree_u32.insert(row);
+      ctx.db.btreeU32.insert(row);
     }
   }
 );
@@ -832,7 +829,7 @@ spacetimedb.reducer(
   { rows: t.array(BTreeU32.rowType) },
   (ctx, { rows }) => {
     for (const row of rows) {
-      ctx.db.btree_u32.delete(row);
+      ctx.db.btreeU32.delete(row);
     }
   }
 );
@@ -842,10 +839,10 @@ spacetimedb.reducer(
   { pk_u32: t.array(PkU32), bt_u32: t.array(BTreeU32.rowType) },
   (ctx, { pk_u32, bt_u32 }) => {
     for (const row of pk_u32) {
-      ctx.db.pk_u32.insert(row);
+      ctx.db.pkU32.insert(row);
     }
     for (const row of bt_u32) {
-      ctx.db.btree_u32.insert(row);
+      ctx.db.btreeU32.insert(row);
     }
   }
 );
@@ -857,8 +854,8 @@ spacetimedb.reducer(
   'insert_unique_u32_update_pk_u32',
   { n: t.u32(), d_unique: t.i32(), d_pk: t.i32() },
   (ctx, { n, d_unique, d_pk }) => {
-    ctx.db.unique_u32.insert({ n, data: d_unique });
-    ctx.db.pk_u32.n.update({ n, data: d_pk });
+    ctx.db.uniqueU32.insert({ n, data: d_unique });
+    ctx.db.pkU32.n.update({ n, data: d_pk });
   }
 );
 
@@ -871,24 +868,24 @@ spacetimedb.reducer(
   'delete_pk_u32_insert_pk_u32_two',
   { n: t.u32(), data: t.i32() },
   (ctx, { n, data }) => {
-    ctx.db.pk_u32_two.insert({ n, data });
-    ctx.db.pk_u32.delete({ n, data });
+    ctx.db.pkU32Two.insert({ n, data });
+    ctx.db.pkU32.delete({ n, data });
   }
 );
 
 spacetimedb.reducer('insert_caller_one_identity', ctx => {
-  ctx.db.one_identity.insert({ i: ctx.sender });
+  ctx.db.oneIdentity.insert({ i: ctx.sender });
 });
 
 spacetimedb.reducer('insert_caller_vec_identity', ctx => {
-  ctx.db.vec_identity.insert({ i: [ctx.sender] });
+  ctx.db.vecIdentity.insert({ i: [ctx.sender] });
 });
 
 spacetimedb.reducer(
   'insert_caller_unique_identity',
   { data: t.i32() },
   (ctx, { data }) => {
-    ctx.db.unique_identity.insert({ i: ctx.sender, data });
+    ctx.db.uniqueIdentity.insert({ i: ctx.sender, data });
   }
 );
 
@@ -896,20 +893,20 @@ spacetimedb.reducer(
   'insert_caller_pk_identity',
   { data: t.i32() },
   (ctx, { data }) => {
-    ctx.db.pk_identity.insert({ i: ctx.sender, data });
+    ctx.db.pkIdentity.insert({ i: ctx.sender, data });
   }
 );
 
 spacetimedb.reducer('insert_caller_one_connection_id', ctx => {
   if (!ctx.connectionId) throw new Error('No connection id in reducer context');
-  ctx.db.one_connection_id.insert({
+  ctx.db.oneConnectionId.insert({
     a: ctx.connectionId,
   });
 });
 
 spacetimedb.reducer('insert_caller_vec_connection_id', ctx => {
   if (!ctx.connectionId) throw new Error('No connection id in reducer context');
-  ctx.db.vec_connection_id.insert({
+  ctx.db.vecConnectionId.insert({
     a: [ctx.connectionId],
   });
 });
@@ -920,7 +917,7 @@ spacetimedb.reducer(
   (ctx, { data }) => {
     if (!ctx.connectionId)
       throw new Error('No connection id in reducer context');
-    ctx.db.unique_connection_id.insert({
+    ctx.db.uniqueConnectionId.insert({
       a: ctx.connectionId,
       data,
     });
@@ -933,7 +930,7 @@ spacetimedb.reducer(
   (ctx, { data }) => {
     if (!ctx.connectionId)
       throw new Error('No connection id in reducer context');
-    ctx.db.pk_connection_id.insert({
+    ctx.db.pkConnectionId.insert({
       a: ctx.connectionId,
       data,
     });
@@ -941,14 +938,14 @@ spacetimedb.reducer(
 );
 
 spacetimedb.reducer('insert_call_timestamp', ctx => {
-  ctx.db.one_timestamp.insert({ t: ctx.timestamp });
+  ctx.db.oneTimestamp.insert({ t: ctx.timestamp });
 });
 
 spacetimedb.reducer(
   'insert_primitives_as_strings',
   { s: EveryPrimitiveStruct },
   (ctx, { s }) => {
-    ctx.db.vec_string.insert({
+    ctx.db.vecString.insert({
       s: [
         s.a.toString(),
         s.b.toString(),
@@ -1001,7 +998,7 @@ spacetimedb.reducer(
   'insert_into_indexed_simple_enum',
   { n: SimpleEnum },
   (ctx, { n }) => {
-    ctx.db.indexed_simple_enum.insert({ n });
+    ctx.db.indexedSimpleEnum.insert({ n });
   }
 );
 
@@ -1009,9 +1006,9 @@ spacetimedb.reducer(
   'update_indexed_simple_enum',
   { a: SimpleEnum, b: SimpleEnum },
   (ctx, { a, b }) => {
-    if (!ctx.db.indexed_simple_enum.n.filter(a).next().done) {
-      ctx.db.indexed_simple_enum.n.delete(a);
-      ctx.db.indexed_simple_enum.insert({ n: b });
+    if (!ctx.db.indexedSimpleEnum.n.filter(a).next().done) {
+      ctx.db.indexedSimpleEnum.n.delete(a);
+      ctx.db.indexedSimpleEnum.insert({ n: b });
     }
   }
 );
