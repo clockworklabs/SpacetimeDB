@@ -19,7 +19,7 @@ jobs:
             runner: spacetimedb-new-runner
             container:
               image: localhost:5000/spacetimedb-ci:latest
-              options: >
+              options: >-
                 --privileged
 
           - name: aarch64 Linux
