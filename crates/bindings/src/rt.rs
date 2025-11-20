@@ -1226,6 +1226,7 @@ pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, 
 ///
 /// Panics if the bytes from `source` fail to deserialize as `T`.
 /// The type name of `T` will be included in the panic message.
+#[cfg_attr(not(feature = "unstable"), allow(unused))]
 pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesSource) -> T {
     let mut buf = IterBuf::take();
     read_bytes_source_into(source, &mut buf);

@@ -25,7 +25,7 @@ error[E0277]: the trait bound `Test: SpacetimeType` is not satisfied
             Alpha
             Arc<T>
             ArrayType
-            Body
+            Box<T>
           and $N others
 
 error[E0277]: the trait bound `Test: Deserialize<'de>` is not satisfied
@@ -113,7 +113,7 @@ error[E0277]: the column type `Test` does not implement `SpacetimeType`
             Alpha
             Arc<T>
             ArrayType
-            Body
+            Box<T>
           and $N others
   = note: required for `Test` to implement `TableColumn`
 
@@ -131,9 +131,9 @@ error[E0277]: `&'a Alpha` cannot appear as an argument to an index filtering ope
              &Lifecycle
              &TableAccess
              &TableType
+             &Version
              &bool
              &ethnum::int::I256
-             &ethnum::uint::U256
            and $N others
 note: required by a bound in `UniqueColumn::<Tbl, <Col as Column>::ColType, Col>::find`
   --> src/table.rs
@@ -158,9 +158,9 @@ error[E0277]: the trait bound `Alpha: IndexScanRangeBounds<(Alpha,), SingleBound
              &Lifecycle
              &TableAccess
              &TableType
+             &Version
              &bool
              &ethnum::int::I256
-             &ethnum::uint::U256
            and $N others
    = note: required for `Alpha` to implement `IndexScanRangeBounds<(Alpha,), SingleBound>`
 note: required by a bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
