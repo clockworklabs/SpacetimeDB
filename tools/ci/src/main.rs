@@ -187,12 +187,17 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Smoketests { start_server, args }) => {
             let mut started_pid: Option<i32> = None;
+            println!("Starting server..");
             match start_server {
                 StartServer::Docker => {
                     // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
                     run!("cd .github && docker compose -f docker-compose.yml up -d")?;
                 }
                 StartServer::Bare => {
+                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+                    // before the server is up.
+                    run!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+
                     let pid_str;
                     if cfg!(target_os = "windows") {
                         pid_str = cmd!(
@@ -207,7 +212,7 @@ fn main() -> Result<()> {
                         pid_str = cmd!(
                             "bash",
                             "-lc",
-                            "cargo run -p spacetimedb-cli -- start --pg-port 5432 & echo $!"
+                            "nohup cargo run -p spacetimedb-cli -- start --pg-port 5432 >/dev/null 2>&1 & echo $!"
                         )
                         .read()
                         .unwrap_or_default();
@@ -228,8 +233,11 @@ fn main() -> Result<()> {
                 .unwrap_or(false);
             let python = if py3_available { "python3" } else { "python" };
 
+            println!("Running smoketests..");
             let test_result = run!(&format!("{python} -m smoketests {}", args.join(" ")));
 
+            println!("Shutting down server..");
+            // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
             match start_server {
                 StartServer::Docker => {
                     let _ = run!("docker compose -f .github/docker-compose.yml down");
@@ -244,7 +252,7 @@ fn main() -> Result<()> {
                     if cfg!(target_os = "windows") {
                         let _ = run!(&format!("powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"", pid));
                     } else {
-                        let _ = run!(&format!("bash -lc 'kill {} 2>/dev/null || true'", pid));
+                        let _ = run!(&format!("bash -lc 'kill {} 2>/dev/null'", pid));
                     }
                 }
                 StartServer::No => {}
