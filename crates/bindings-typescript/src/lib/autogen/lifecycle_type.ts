@@ -4,74 +4,17 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import * as LifecycleVariants from './lifecycle_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
 // The tagged union or sum type for the algebraic type `Lifecycle`.
-export type Lifecycle =
-  | LifecycleVariants.Init
-  | LifecycleVariants.OnConnect
-  | LifecycleVariants.OnDisconnect;
-
-let _cached_Lifecycle_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const Lifecycle = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  Init: { tag: 'Init' } as const,
-  OnConnect: { tag: 'OnConnect' } as const,
-  OnDisconnect: { tag: 'OnDisconnect' } as const,
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_Lifecycle_type_value) return _cached_Lifecycle_type_value;
-    _cached_Lifecycle_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
-    _cached_Lifecycle_type_value.value.variants.push(
-      {
-        name: 'Init',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      },
-      {
-        name: 'OnConnect',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      },
-      {
-        name: 'OnDisconnect',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      }
-    );
-    return _cached_Lifecycle_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: Lifecycle): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Lifecycle.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Lifecycle {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Lifecycle.getTypeScriptAlgebraicType()
-    );
-  },
-};
+const Lifecycle = __t.enum('Lifecycle', {
+  Init: __t.unit(),
+  OnConnect: __t.unit(),
+  OnDisconnect: __t.unit(),
+});
 
 export default Lifecycle;

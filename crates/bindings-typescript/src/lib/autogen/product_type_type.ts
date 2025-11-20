@@ -4,63 +4,15 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { ProductTypeElement } from './product_type_element_type';
-// Mark import as potentially unused
-declare type __keep_ProductTypeElement = ProductTypeElement;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import ProductTypeElement from './product_type_element_type';
 
-export type ProductType = {
-  elements: ProductTypeElement[];
-};
-let _cached_ProductType_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const ProductType = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_ProductType_type_value) return _cached_ProductType_type_value;
-    _cached_ProductType_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_ProductType_type_value.value.elements.push({
-      name: 'elements',
-      algebraicType: __AlgebraicTypeValue.Array(
-        ProductTypeElement.getTypeScriptAlgebraicType()
-      ),
-    });
-    return _cached_ProductType_type_value;
+export default __t.object('ProductType', {
+  get elements() {
+    return __t.array(ProductTypeElement);
   },
-
-  serialize(writer: __BinaryWriter, value: ProductType): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ProductType.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): ProductType {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ProductType.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default ProductType;
+});

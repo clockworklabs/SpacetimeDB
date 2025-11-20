@@ -107,9 +107,9 @@ impl ViewReadSets {
     }
 
     /// Removes keys for `view_id` from the read set
-    pub fn remove_view(&mut self, view_id: ViewId) {
+    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
         self.tables.retain(|_, readset| {
-            readset.remove_view(view_id);
+            readset.remove_view(view_id, sender);
             !readset.is_empty()
         });
     }
@@ -144,9 +144,14 @@ impl TableReadSet {
         self.table_scans.is_empty()
     }
 
-    /// Removes keys for `view_id` from the read set
-    fn remove_view(&mut self, view_id: ViewId) {
-        self.table_scans.retain(|info| info.view_id != view_id);
+    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
+    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        if let Some(identity) = sender {
+            self.table_scans
+                .retain(|call| !(call.view_id == view_id && call.sender.as_ref() == Some(&identity)));
+        } else {
+            self.table_scans.retain(|call| call.view_id != view_id);
+        }
     }
 
     /// Merge or union two read sets for this table
@@ -221,7 +226,13 @@ impl MutTxId {
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
     pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
-        self.committed_state_write_lock.drop_view_from_read_sets(view_id)
+        self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
+    }
+
+    /// Removes a specific view call from the committed read set.
+    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
+        self.committed_state_write_lock
+            .drop_view_from_read_sets(view_id, Some(sender))
     }
 }
 
@@ -383,6 +394,8 @@ impl MutTxId {
 
         self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
 
         Ok((view_id, table_id))
     }
@@ -1693,7 +1706,7 @@ impl MutTxId {
         //
         // Note that technically the tx could have run against an empty database,
         // in which case we'd wrongly return zero (a non-existent transaction).
-        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // This doesn't happen in practice, however, as [RelationalDB::set_initialized]
         // creates a transaction.
         let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
             tx_offset.saturating_sub(1)
@@ -1957,6 +1970,90 @@ impl MutTxId {
             },
         )?;
         Ok(())
+    }
+
+    /// Clean up views that have no subscribers and haven’t been called recently.
+    ///
+    /// This function will scan for subscription entries in `st_view_sub` where:
+    /// - `has_subscribers == false`, `num_subscribers == 0`.
+    /// - `last_called` is older than `expiration_duration`.
+    ///
+    /// For each such expired view:
+    /// 1. It clears the backing table,
+    /// 2. Removes the view from the committed read set, and
+    /// 3. Deletes the subscription row.
+    ///
+    /// The cleanup is bounded by a total `max_duration`. The function stops when either:
+    /// - all expired views have been processed, or
+    /// - the `max_duration` budget is reached.
+    ///
+    /// Returns a tuple `(cleaned, total_expired)`:
+    /// - `cleaned`: Number of views actually cleaned (deleted) in this run.
+    /// - `total_expired`: Total number of expired views found (even if not all were cleaned due to time budget).
+    pub fn clear_expired_views(
+        &mut self,
+        expiration_duration: Duration,
+        max_duration: Duration,
+    ) -> Result<(usize, usize)> {
+        let start = std::time::Instant::now();
+        let now = Timestamp::now();
+        let expiration_threshold = now - expiration_duration;
+        let mut cleaned_count = 0;
+
+        // Collect all expired views from st_view_sub
+        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
+            .iter_by_col_eq(
+                ST_VIEW_SUB_ID,
+                StViewSubFields::HasSubscribers,
+                &AlgebraicValue::from(false),
+            )?
+            .filter_map(|row_ref| {
+                let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
+
+                if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
+                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let total_expired = expired_items.len();
+
+        // For each expired view subscription, clear the backing table and delete the subscription
+        for (view_id, sender, sub_row_ptr) in expired_items {
+            // Check if we've exceeded our time budget
+            if start.elapsed() >= max_duration {
+                break;
+            }
+
+            let StViewRow {
+                table_id, is_anonymous, ..
+            } = self.lookup_st_view(view_id)?;
+            let table_id = table_id.expect("views have backing table");
+
+            if is_anonymous {
+                self.clear_table(table_id)?;
+                self.drop_view_from_committed_read_set(view_id);
+            } else {
+                let rows_to_delete = self
+                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .map(|res| res.pointer())
+                    .collect::<Vec<_>>();
+
+                for row_ptr in rows_to_delete {
+                    self.delete(table_id, row_ptr)?;
+                }
+
+                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+            }
+
+            // Finally, delete the subscription row
+            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
+            cleaned_count += 1;
+        }
+
+        Ok((cleaned_count, total_expired))
     }
 
     /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.

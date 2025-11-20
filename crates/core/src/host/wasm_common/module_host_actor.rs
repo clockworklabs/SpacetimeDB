@@ -1,54 +1,48 @@
-use bytes::Bytes;
-use prometheus::{Histogram, IntCounter, IntGauge};
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
-use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_primitives::ProcedureId;
-use spacetimedb_primitives::TableId;
-use spacetimedb_primitives::ViewFnPtr;
-use spacetimedb_primitives::ViewId;
-use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
-use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::def::ViewDef;
-use std::future::Future;
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::span::EnteredSpan;
-
 use super::instrumentation::CallTimes;
-use crate::client::ClientConnectionSender;
+use super::*;
+use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::host::instance_env::InstanceEnv;
-use crate::host::instance_env::TxSlot;
+use crate::host::host_controller::CallProcedureReturn;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
-use crate::host::module_host::ViewCallResult;
-use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
-    CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
-    ModuleFunctionCall, ModuleInfo,
+    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ViewCallResult, ViewOutcome,
 };
+use crate::host::scheduler::QueueItem;
 use crate::host::{
-    ArgsTuple, ProcedureCallError, ProcedureCallResult, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
-    UpdateDatabaseResult,
+    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
-use crate::subscription::module_subscription_actor::WriteConflict;
+use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
+use bytes::Bytes;
+use core::future::Future;
+use core::time::Duration;
+use prometheus::{Histogram, IntCounter, IntGauge};
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
-
-use super::*;
+use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use std::sync::Arc;
+use tracing::span::EnteredSpan;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -87,7 +81,7 @@ pub trait WasmInstance {
         &mut self,
         op: ProcedureOp,
         budget: FunctionBudget,
-    ) -> impl Future<Output = ProcedureExecuteResult>;
+    ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
 }
 
 pub struct EnergyStats {
@@ -314,27 +308,93 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
+        let (res, trapped) = self.call_reducer_with_tx(tx, params);
+        self.trapped = trapped;
+        res
     }
 
-    pub async fn call_procedure(
+    pub fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.common.clear_all_clients()
+    }
+
+    pub fn call_identity_connected(
         &mut self,
-        params: CallProcedureParams,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let res = self.common.call_procedure(params, &mut self.instance).await;
-        if res.is_err() {
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = call_identity_connected(caller_auth, caller_connection_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_identity_disconnected(
+        &mut self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::call_identity_disconnected_inner(
+            caller_identity,
+            caller_connection_id,
+            module,
+            drop_view_subscribers,
+            call_reducer,
+            &mut trapped,
+        );
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::disconnect_client_inner(client_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(crate) fn call_scheduled_reducer(
+        &mut self,
+        item: QueueItem,
+    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let module_def = &self.common.info.clone().module_def;
+        let replica_ctx = &self.instance.replica_ctx().clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        self.trapped = trapped;
+        res
+    }
+
+    pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
+        let ret = self.common.call_procedure(params, &mut self.instance).await;
+        if ret.result.is_err() {
             self.trapped = true;
         }
-        res
+        ret
     }
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.common.call_reducer_with_tx(tx, params, &mut self.instance);
-        self.trapped = trapped;
-        res
+    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+        })
     }
 
     pub fn call_view_with_tx(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
@@ -386,7 +446,7 @@ impl InstanceCommon {
             Ok(plan) => plan,
             Err(e) => {
                 return match e {
-                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e)),
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
                 }
             }
@@ -453,7 +513,7 @@ impl InstanceCommon {
                         timer: None,
                     };
                     //TODO: Return back event in `UpdateDatabaseResult`?
-                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                    let _ = commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
                 } else {
                     let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
@@ -514,7 +574,7 @@ impl InstanceCommon {
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+    ) -> CallProcedureReturn {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -551,7 +611,7 @@ impl InstanceCommon {
         // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let result = inst.call_procedure(op, budget).await;
+        let (result, tx_offset) = inst.call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
             stats:
@@ -569,18 +629,13 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
-        match call_result {
+        let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(
-                        &caller_identity,
-                        &self.info.module_hash,
-                        &caller_connection_id,
-                        procedure_name,
-                    )
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, procedure_name)
                     .inc();
 
                 // TODO(procedure-energy):
@@ -594,16 +649,17 @@ impl InstanceCommon {
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
                 let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
-                let return_val = seed
-                    .deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
-                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))?;
-                Ok(ProcedureCallResult {
-                    return_val,
-                    execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
-                    start_timestamp: timestamp,
-                })
+                seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
+                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
+                    .map(|return_val| ProcedureCallResult {
+                        return_val,
+                        execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
+                        start_timestamp: timestamp,
+                    })
             }
-        }
+        };
+
+        CallProcedureReturn { result, tx_offset }
     }
 
     /// Execute a reducer.
@@ -686,12 +742,7 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(
-                    &result.stats.energy,
-                    &caller_identity,
-                    &Some(caller_connection_id),
-                    reducer_name,
-                )
+                self.handle_outer_error(&result.stats.energy, reducer_name)
             }
             Err(ExecutionError::User(err)) => {
                 log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
@@ -755,7 +806,7 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&self.info, client, event, out.tx);
+        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -766,21 +817,10 @@ impl InstanceCommon {
         (res, trapped)
     }
 
-    fn handle_outer_error(
-        &mut self,
-        energy: &EnergyStats,
-        caller_identity: &Identity,
-        caller_connection_id: &Option<ConnectionId>,
-        reducer_name: &str,
-    ) -> EventStatus {
+    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
-            .with_label_values(
-                caller_identity,
-                &self.info.module_hash,
-                &caller_connection_id.unwrap_or(ConnectionId::ZERO),
-                reducer_name,
-            )
+            .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
             .inc();
 
         if energy.remaining.get() == 0 {
@@ -903,14 +943,12 @@ impl InstanceCommon {
         let outcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // Materialize anonymous view
             (Ok(bytes), None) => {
@@ -1014,6 +1052,11 @@ impl InstanceCommon {
         }
 
         (out, trapped)
+    }
+
+    /// Empty the system tables tracking clients without running any lifecycle reducers.
+    pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.info.relational_db().clear_all_clients().map_err(Into::into)
     }
 }
 /// VM-related metrics for reducer execution.
@@ -1149,24 +1192,6 @@ fn lifecyle_modifications_to_tx(
     .map_err(|e| e.to_string().into())
 }
 */
-
-/// Commits the transaction
-/// and evaluates and broadcasts subscriptions updates.
-fn commit_and_broadcast_event(
-    info: &ModuleInfo,
-    client: Option<Arc<ClientConnectionSender>>,
-    event: ModuleEvent,
-    tx: MutTxId,
-) -> Arc<ModuleEvent> {
-    match info
-        .subscriptions
-        .commit_and_broadcast_event(client, event, tx)
-        .unwrap()
-    {
-        Ok(res) => res.event,
-        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
-    }
-}
 
 pub trait InstanceOp {
     fn name(&self) -> &str;
