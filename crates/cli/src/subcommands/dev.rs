@@ -323,6 +323,7 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
     } else {
         String::new()
     };
+    let original_contents = contents.clone();
 
     for prefix in prefixes {
         for (suffix, value) in [("DB_NAME", database_name), ("HOST", server_host_url)] {
@@ -343,7 +344,9 @@ fn upsert_env_db_names_and_hosts(env_path: &Path, server_host_url: &str, databas
         contents.push('\n');
     }
 
-    fs::write(env_path, contents)?;
+    if contents != original_contents {
+        fs::write(env_path, contents)?;
+    }
     Ok(())
 }
 
