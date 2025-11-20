@@ -15,7 +15,7 @@ use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
-use crate::host::{FunctionArgs, ModuleHost};
+use crate::host::ModuleHost;
 use crate::messages::websocket::Subscribe;
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::{collect_table_update_for_view, execute_plans};
@@ -42,9 +42,8 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
 use std::collections::HashSet;
-use std::sync::OnceLock;
 use std::{sync::Arc, time::Instant};
-use tokio::sync::{oneshot, watch};
+use tokio::sync::oneshot;
 
 type Subscriptions = Arc<RwLock<SubscriptionManager>>;
 
@@ -55,9 +54,7 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     broadcast_queue: BroadcastQueue,
-    owner_identity: Identity,
     stats: Arc<SubscriptionGauges>,
-    module_rx: OnceLock<watch::Receiver<ModuleHost>>,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +142,20 @@ pub struct CommitAndBroadcastEventSuccess {
     pub metrics: ExecutionMetrics,
 }
 
+/// Commits `tx`
+/// and evaluates and broadcasts subscriptions updates.
+pub(crate) fn commit_and_broadcast_event(
+    subs: &ModuleSubscriptions,
+    client: Option<Arc<ClientConnectionSender>>,
+    event: ModuleEvent,
+    tx: MutTxId,
+) -> CommitAndBroadcastEventSuccess {
+    match subs.commit_and_broadcast_event(client, event, tx).unwrap() {
+        Ok(res) => res,
+        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+    }
+}
+
 type AssertTxFn = Arc<dyn Fn(&Tx) + Send + Sync + 'static>;
 type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
 type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
@@ -185,7 +196,6 @@ impl ModuleSubscriptions {
         relational_db: Arc<RelationalDB>,
         subscriptions: Subscriptions,
         broadcast_queue: BroadcastQueue,
-        owner_identity: Identity,
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
@@ -194,40 +204,10 @@ impl ModuleSubscriptions {
             relational_db,
             subscriptions,
             broadcast_queue,
-            owner_identity,
             stats,
-            module_rx: OnceLock::new(),
         }
     }
 
-    /// Should be called once to initialize the `ModuleSubscriptions` with a `ModuleHost` receiver.
-    pub fn init(&self, module_host: watch::Receiver<ModuleHost>) {
-        self.module_rx
-            .set(module_host)
-            .expect("ModuleSubscriptions::init called twice");
-    }
-
-    #[allow(dead_code)]
-    async fn call_view(
-        &self,
-        tx: MutTxId,
-        view_name: &str,
-        args: FunctionArgs,
-        sender: Arc<ClientConnectionSender>,
-    ) -> Result<(), DBError> {
-        let module_host_rx = self
-            .module_rx
-            .get()
-            .expect("ModuleSubscriptions::init not called before call_view");
-        let module_host = module_host_rx.borrow();
-
-        let _result = module_host
-            .call_view(tx, view_name, args, sender.id.identity, Some(sender.id.connection_id))
-            .await;
-
-        // TODO: Handle result
-        Ok(())
-    }
     /// Construct a new [`ModuleSubscriptions`] for use in testing,
     /// creating a new [`tokio::runtime::Runtime`] to run its send worker.
     pub fn for_test_new_runtime(db: Arc<RelationalDB>) -> (ModuleSubscriptions, tokio::runtime::Runtime) {
@@ -244,8 +224,14 @@ impl ModuleSubscriptions {
             db,
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
-            Identity::ZERO,
         )
+    }
+
+    /// Returns the [`RelationalDB`] of this [`ModuleSubscriptions`].
+    ///
+    /// This is used by [`ModuleInfo`] and in turn by `InstanceCommon`.
+    pub fn relational_db(&self) -> &Arc<RelationalDB> {
+        &self.relational_db
     }
 
     // Recompute gauges to update metrics.
@@ -378,6 +364,7 @@ impl ModuleSubscriptions {
         &self,
         host: Option<&ModuleHost>,
         sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
         request: SubscribeSingle,
         timer: Instant,
         _assert: Option<AssertTxFn>,
@@ -400,9 +387,8 @@ impl ModuleSubscriptions {
         };
 
         let sql = request.query;
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-        let hash = QueryHash::from_string(&sql, auth.caller, false);
-        let hash_with_param = QueryHash::from_string(&sql, auth.caller, true);
+        let hash = QueryHash::from_string(&sql, auth.caller(), false);
+        let hash_with_param = QueryHash::from_string(&sql, auth.caller(), true);
 
         let (mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
 
@@ -426,7 +412,7 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
         let (tx, tx_offset) = self
-            .materialize_views_and_downgrade_tx(host, mut_tx, &query, auth.caller)
+            .materialize_views_and_downgrade_tx(host, mut_tx, &query, auth.caller())
             .await?;
 
         let (table_rows, metrics) = return_on_err_with_sql!(
@@ -474,6 +460,7 @@ impl ModuleSubscriptions {
     pub fn remove_single_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
         request: Unsubscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
@@ -510,9 +497,7 @@ impl ModuleSubscriptions {
             return Ok(None);
         };
 
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
-
-        let (tx, tx_offset) = self.unsubscribe_views(query, auth.caller)?;
+        let (tx, tx_offset) = self.unsubscribe_views(query, auth.caller())?;
 
         let (table_rows, metrics) = return_on_err_with_sql!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Unsubscribe),
@@ -549,6 +534,7 @@ impl ModuleSubscriptions {
     pub fn remove_multi_subscription(
         &self,
         sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
         request: UnsubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
@@ -569,7 +555,6 @@ impl ModuleSubscriptions {
             )
         };
 
-        let auth = AuthCtx::new(self.owner_identity, sender.id.identity);
         let database_identity = self.relational_db.database_identity();
         let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
 
@@ -593,7 +578,7 @@ impl ModuleSubscriptions {
         };
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-        let (tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller)?;
+        let (tx, tx_offset) = self.unsubscribe_views_and_downgrade_tx(mut_tx, &removed_queries, auth.caller())?;
 
         let (update, metrics) = return_on_err!(
             self.evaluate_queries(
@@ -649,6 +634,7 @@ impl ModuleSubscriptions {
     fn compile_queries(
         &self,
         sender: Identity,
+        auth: AuthCtx,
         queries: &[Box<str>],
         num_queries: usize,
         metrics: &SubscriptionMetrics,
@@ -667,8 +653,6 @@ impl ModuleSubscriptions {
             let hash_with_param = QueryHash::from_string(sql, sender, true);
             query_hashes.push((sql, hash, hash_with_param));
         }
-
-        let auth = AuthCtx::new(self.owner_identity, sender);
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
         let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
@@ -740,14 +724,9 @@ impl ModuleSubscriptions {
         &self,
         recipient: Arc<ClientConnectionSender>,
         message: ProcedureResultMessage,
+        tx_offset: Option<TransactionOffset>,
     ) -> Result<(), BroadcastError> {
-        self.broadcast_queue.send_client_message(
-            recipient,
-            // TODO(procedure-tx): We'll need some mechanism for procedures to report their last-referenced TxOffset,
-            // and to pass it here.
-            // This is currently moot, as procedures have no way to open a transaction yet.
-            None, message,
-        )
+        self.broadcast_queue.send_client_message(recipient, tx_offset, message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -755,6 +734,7 @@ impl ModuleSubscriptions {
         &self,
         host: Option<&ModuleHost>,
         sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
         request: SubscribeMulti,
         timer: Instant,
         _assert: Option<AssertTxFn>,
@@ -787,6 +767,7 @@ impl ModuleSubscriptions {
         let (queries, auth, mut_tx, compile_timer) = return_on_err!(
             self.compile_queries(
                 sender.id.identity,
+                auth,
                 &request.query_strings,
                 num_queries,
                 &subscription_metrics
@@ -816,7 +797,7 @@ impl ModuleSubscriptions {
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
         let (tx, tx_offset) = self
-            .materialize_views_and_downgrade_tx(host, mut_tx, &queries, auth.caller)
+            .materialize_views_and_downgrade_tx(host, mut_tx, &queries, auth.caller())
             .await?;
 
         let Ok((update, metrics)) =
@@ -875,6 +856,7 @@ impl ModuleSubscriptions {
         &self,
         host: Option<&ModuleHost>,
         sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
         subscription: Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
@@ -888,13 +870,14 @@ impl ModuleSubscriptions {
 
         let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
             sender.id.identity,
+            auth,
             &subscription.query_strings,
             num_queries,
             &subscription_metrics,
         )?;
 
         let (tx, tx_offset) = self
-            .materialize_views_and_downgrade_tx(host, mut_tx, &queries, auth.caller)
+            .materialize_views_and_downgrade_tx(host, mut_tx, &queries, auth.caller())
             .await?;
 
         check_row_limit(
@@ -966,6 +949,13 @@ impl ModuleSubscriptions {
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
     }
 
+    /// Rolls back `tx` and returns the offset as it was before `tx`.
+    pub(crate) fn rollback_mut_tx(stdb: &RelationalDB, tx: MutTxId) -> TxOffset {
+        let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+        stdb.report_tx_metrics(reducer, None, Some(tx_metrics), None);
+        tx_offset
+    }
+
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
     /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
@@ -1004,9 +994,7 @@ impl ModuleSubscriptions {
                 // We don't need to do any subscription updates in this case, so we will exit early.
 
                 let event = Arc::new(event);
-                let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                self.relational_db
-                    .report_tx_metrics(reducer, None, Some(tx_metrics), None);
+                let tx_offset = Self::rollback_mut_tx(stdb, tx);
                 if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
                         event: Some(event.clone()),
@@ -1232,6 +1220,7 @@ mod tests {
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
     use crate::sql::execute::run;
+    use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
@@ -1278,8 +1267,8 @@ mod tests {
             db.clone(),
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
-            owner,
         );
+        let auth = AuthCtx::new(owner, sender.auth.claims.identity);
 
         let subscribe = Subscribe {
             query_strings: [sql.into()].into(),
@@ -1288,6 +1277,7 @@ mod tests {
         runtime.block_on(module_subscriptions.add_legacy_subscriber(
             None,
             sender,
+            auth,
             subscribe,
             Instant::now(),
             assert,
@@ -1348,7 +1338,7 @@ mod tests {
             let (durable_offset, ..) = watch::channel(None);
             Self {
                 commitlog: Arc::new(RwLock::new(
-                    commitlog::Generic::open(repo::Memory::new(), <_>::default()).unwrap(),
+                    commitlog::Generic::open(repo::Memory::unlimited(), <_>::default()).unwrap(),
                 )),
                 durable_offset,
             }
@@ -1370,7 +1360,7 @@ mod tests {
             EmptyHistory::new(),
             Some(Persistence {
                 durability: durability.clone(),
-                disk_size: Arc::new(|| Ok(0)),
+                disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
             }),
             None,
@@ -1530,26 +1520,42 @@ mod tests {
     /// Subscribe to a query as a client
     async fn subscribe_single(
         subs: &ModuleSubscriptions,
+        auth: AuthCtx,
         sql: &'static str,
         sender: Arc<ClientConnectionSender>,
         counter: &mut u32,
     ) -> anyhow::Result<()> {
         *counter += 1;
-        subs.add_single_subscription(None, sender, single_subscribe(sql, *counter), Instant::now(), None)
-            .await?;
+        subs.add_single_subscription(
+            None,
+            sender,
+            auth,
+            single_subscribe(sql, *counter),
+            Instant::now(),
+            None,
+        )
+        .await?;
         Ok(())
     }
 
     /// Subscribe to a set of queries as a client
     async fn subscribe_multi(
         subs: &ModuleSubscriptions,
+        auth: AuthCtx,
         queries: &[&'static str],
         sender: Arc<ClientConnectionSender>,
         counter: &mut u32,
     ) -> anyhow::Result<ExecutionMetrics> {
         *counter += 1;
         let metrics = subs
-            .add_multi_subscription(None, sender, multi_subscribe(queries, *counter), Instant::now(), None)
+            .add_multi_subscription(
+                None,
+                sender,
+                auth,
+                multi_subscribe(queries, *counter),
+                Instant::now(),
+                None,
+            )
             .await?
             .unwrap_or_default();
         Ok(metrics)
@@ -1558,20 +1564,22 @@ mod tests {
     /// Unsubscribe from a single query
     fn unsubscribe_single(
         subs: &ModuleSubscriptions,
+        auth: AuthCtx,
         sender: Arc<ClientConnectionSender>,
         query_id: u32,
     ) -> anyhow::Result<()> {
-        subs.remove_single_subscription(sender, single_unsubscribe(query_id), Instant::now())?;
+        subs.remove_single_subscription(sender, auth, single_unsubscribe(query_id), Instant::now())?;
         Ok(())
     }
 
     /// Unsubscribe from a set of queries
     fn unsubscribe_multi(
         subs: &ModuleSubscriptions,
+        auth: AuthCtx,
         sender: Arc<ClientConnectionSender>,
         query_id: u32,
     ) -> anyhow::Result<()> {
-        subs.remove_multi_subscription(sender, multi_unsubscribe(query_id), Instant::now())?;
+        subs.remove_multi_subscription(sender, auth, multi_unsubscribe(query_id), Instant::now())?;
         Ok(())
     }
 
@@ -1684,9 +1692,7 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let Ok(Ok(success)) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
-            panic!("Encountered an error in `commit_and_broadcast_event`");
-        };
+        let success = commit_and_broadcast_event(subs, None, module_event(), tx);
         Ok(success.metrics)
     }
 
@@ -1753,13 +1759,14 @@ mod tests {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
         // Subscribe to an invalid query (r is not in scope)
         let sql = "select r.* from t";
-        subscribe_single(&subs, sql, tx, &mut 0).await?;
+        subscribe_single(&subs, auth, sql, tx, &mut 0).await?;
 
         check_subscription_err(sql, rx.recv().await);
 
@@ -1774,13 +1781,14 @@ mod tests {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
 
         // Subscribe to an invalid query (r is not in scope)
         let sql = "select r.* from t";
-        subscribe_multi(&subs, &[sql], tx, &mut 0).await?;
+        subscribe_multi(&subs, auth, &[sql], tx, &mut 0).await?;
 
         check_subscription_err(sql, rx.recv().await);
 
@@ -1795,6 +1803,7 @@ mod tests {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
@@ -1813,7 +1822,7 @@ mod tests {
 
         // Subscribe to `t`
         let sql = "select * from t where id = 1";
-        subscribe_single(&subs, sql, tx.clone(), &mut query_id).await?;
+        subscribe_single(&subs, auth.clone(), sql, tx.clone(), &mut query_id).await?;
 
         // The initial subscription should succeed
         assert!(matches!(
@@ -1828,7 +1837,7 @@ mod tests {
         with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Unsubscribe from `t`
-        unsubscribe_single(&subs, tx, query_id)?;
+        unsubscribe_single(&subs, auth, tx, query_id)?;
 
         // Why does the unsubscribe fail?
         // This relies on some knowledge of the underlying implementation.
@@ -1850,6 +1859,7 @@ mod tests {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create a table `t` with an index on `id`
@@ -1870,7 +1880,7 @@ mod tests {
 
         // Subscribe to `t`
         let sql = "select * from t where id = 1";
-        subscribe_multi(&subs, &[sql], tx.clone(), &mut query_id).await?;
+        subscribe_multi(&subs, auth.clone(), &[sql], tx.clone(), &mut query_id).await?;
 
         // The initial subscription should succeed
         assert!(matches!(
@@ -1885,7 +1895,7 @@ mod tests {
         with_auto_commit(&db, |tx| db.drop_index(tx, index_id))?;
 
         // Unsubscribe from `t`
-        unsubscribe_multi(&subs, tx, query_id)?;
+        unsubscribe_multi(&subs, auth, tx, query_id)?;
 
         // Why does the unsubscribe fail?
         // This relies on some knowledge of the underlying implementation.
@@ -1905,6 +1915,7 @@ mod tests {
         let client_id = client_id_from_u8(1);
         let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         // Create two tables `t` and `s` with indexes on their `id` columns
@@ -1920,7 +1931,7 @@ mod tests {
             })
         })?;
         let sql = "select t.* from t join s on t.id = s.id";
-        subscribe_single(&subs, sql, tx, &mut 0).await?;
+        subscribe_single(&subs, auth, sql, tx, &mut 0).await?;
 
         // The initial subscription should succeed
         assert!(matches!(
@@ -1969,6 +1980,9 @@ mod tests {
         let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
 
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("identity", AlgebraicType::identity())];
@@ -1981,6 +1995,7 @@ mod tests {
         // Each client should receive different rows.
         subscribe_multi(
             &subs,
+            auth_for_a,
             &["select * from t where identity = :sender"],
             tx_for_a,
             &mut query_ids,
@@ -1988,6 +2003,7 @@ mod tests {
         .await?;
         subscribe_multi(
             &subs,
+            auth_for_b,
             &["select * from t where identity = :sender"],
             tx_for_b,
             &mut query_ids,
@@ -2038,6 +2054,9 @@ mod tests {
         let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
         let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
 
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
+
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("id", AlgebraicType::identity())];
@@ -2062,8 +2081,8 @@ mod tests {
         // Have each client subscribe to `w`.
         // Because `w` is gated using parameterized RLS rules,
         // each client should receive different rows.
-        subscribe_multi(&subs, &["select * from w"], tx_for_a, &mut query_ids).await?;
-        subscribe_multi(&subs, &["select * from w"], tx_for_b, &mut query_ids).await?;
+        subscribe_multi(&subs, auth_for_a, &["select * from w"], tx_for_a, &mut query_ids).await?;
+        subscribe_multi(&subs, auth_for_b, &["select * from w"], tx_for_b, &mut query_ids).await?;
 
         // Wait for both subscriptions
         assert!(matches!(
@@ -2102,9 +2121,15 @@ mod tests {
     async fn test_rls_for_owner() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id_for_a = client_id_from_u8(0);
+        let client_id_for_b = client_id_from_u8(1);
+
         // Establish a connection for owner and client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(0), &db);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(1), &db);
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_for_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_for_b, &db);
+
+        let auth_for_a = AuthCtx::new(db.owner_identity(), client_id_for_a.identity);
+        let auth_for_b = AuthCtx::new(db.owner_identity(), client_id_for_b.identity);
 
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
@@ -2117,8 +2142,8 @@ mod tests {
         let mut query_ids = 0;
 
         // Have owner and client subscribe to `t`
-        subscribe_multi(&subs, &["select * from t"], tx_for_a, &mut query_ids).await?;
-        subscribe_multi(&subs, &["select * from t"], tx_for_b, &mut query_ids).await?;
+        subscribe_multi(&subs, auth_for_a, &["select * from t"], tx_for_a, &mut query_ids).await?;
+        subscribe_multi(&subs, auth_for_b, &["select * from t"], tx_for_b, &mut query_ids).await?;
 
         // Wait for both subscriptions
         assert_matches!(
@@ -2180,9 +2205,12 @@ mod tests {
     async fn test_no_empty_updates() -> anyhow::Result<()> {
         let db = relational_db()?;
 
-        // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+        let client_id = client_id_from_u8(1);
 
+        // Establish a client connection
+        let (tx, mut rx) = client_connection(client_id, &db);
+
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = [("x", AlgebraicType::U8)];
@@ -2190,7 +2218,7 @@ mod tests {
         let t_id = db.create_table_for_test("t", &schema, &[])?;
 
         // Subscribe to rows of `t` where `x` is 0
-        subscribe_multi(&subs, &["select * from t where x = 0"], tx, &mut 0).await?;
+        subscribe_multi(&subs, auth, &["select * from t where x = 0"], tx, &mut 0).await?;
 
         // Wait to receive the initial subscription message
         assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
@@ -2230,9 +2258,11 @@ mod tests {
     async fn test_no_compression_for_subscribe() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id = client_id_from_u8(1);
         // Establish a client connection with compression
-        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), &db, Compression::Brotli);
+        let (tx, mut rx) = client_connection_with_compression(client_id, &db, Compression::Brotli);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
@@ -2248,7 +2278,7 @@ mod tests {
         commit_tx(&db, &subs, [], inserts)?;
 
         // Subscribe to the entire table
-        subscribe_multi(&subs, &["select * from t"], tx, &mut 0).await?;
+        subscribe_multi(&subs, auth, &["select * from t"], tx, &mut 0).await?;
 
         // Assert the table updates within this message are all be uncompressed
         match rx.recv().await {
@@ -2276,14 +2306,16 @@ mod tests {
         let db = relational_db()?;
 
         // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
         let schema = [("x", AlgebraicType::U8), ("y", AlgebraicType::U8)];
         let t_id = db.create_table_for_test("t", &schema, &[])?;
 
         // Subscribe to `t`
-        subscribe_multi(&subs, &["select * from t"], tx, &mut 0).await?;
+        subscribe_multi(&subs, auth, &["select * from t"], tx, &mut 0).await?;
 
         // Wait to receive the initial subscription message
         assert_matches!(rx.recv().await, Some(SerializableMessage::Subscription(_)));
@@ -2296,7 +2328,7 @@ mod tests {
         run(
             &db,
             "INSERT INTO t (x, y) VALUES (0, 1)",
-            auth,
+            auth.clone(),
             Some(&subs),
             None,
             &mut vec![],
@@ -2306,7 +2338,15 @@ mod tests {
         // Client should receive insert
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
-        run(&db, "UPDATE t SET y=2 WHERE x=0", auth, Some(&subs), None, &mut vec![]).await?;
+        run(
+            &db,
+            "UPDATE t SET y=2 WHERE x=0",
+            auth.clone(),
+            Some(&subs),
+            None,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive update
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
@@ -2326,8 +2366,10 @@ mod tests {
         let db = relational_db()?;
 
         // Establish a client connection with compression
-        let (tx, mut rx) = client_connection_with_compression(client_id_from_u8(1), &db, Compression::Brotli);
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection_with_compression(client_id, &db, Compression::Brotli);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let table_id = db.create_table_for_test("t", &[("x", AlgebraicType::U64)], &[])?;
@@ -2339,7 +2381,7 @@ mod tests {
         }
 
         // Subscribe to the entire table
-        subscribe_multi(&subs, &["select * from t"], tx, &mut 0).await?;
+        subscribe_multi(&subs, auth, &["select * from t"], tx, &mut 0).await?;
 
         // Wait to receive the initial subscription message
         assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
@@ -2377,8 +2419,10 @@ mod tests {
             let db = relational_db()?;
 
             // Establish a client connection
-            let (sender, mut rx) = client_connection(client_id_from_u8(1), &db);
+            let client_id = client_id_from_u8(1);
+            let (sender, mut rx) = client_connection(client_id, &db);
 
+            let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
             let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
             let p_schema = [("id", AlgebraicType::U64), ("signed_in", AlgebraicType::Bool)];
@@ -2391,7 +2435,7 @@ mod tests {
             let p_id = db.create_table_for_test("p", &p_schema, &[0.into()])?;
             let l_id = db.create_table_for_test("l", &l_schema, &[0.into()])?;
 
-            subscribe_multi(&subs, queries, sender, &mut 0).await?;
+            subscribe_multi(&subs, auth, queries, sender, &mut 0).await?;
 
             assert!(matches!(rx.recv().await, Some(SerializableMessage::Subscription(_))));
 
@@ -2490,10 +2534,14 @@ mod tests {
     async fn test_query_pruning() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id_a = client_id_from_u8(1);
+        let client_id_b = client_id_from_u8(2);
         // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1), &db);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2), &db);
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_b, &db);
 
+        let auth_a = AuthCtx::new(db.owner_identity(), client_id_a.identity);
+        let auth_b = AuthCtx::new(db.owner_identity(), client_id_b.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test(
@@ -2533,6 +2581,7 @@ mod tests {
         // Returns (i: 0, a: 1, b: 1)
         subscribe_multi(
             &subs,
+            auth_a.clone(),
             &[
                 "select u.* from u join v on u.i = v.i where v.x = 4",
                 "select u.* from u join v on u.i = v.i where v.x = 6",
@@ -2545,6 +2594,7 @@ mod tests {
         // Returns (i: 1, a: 2, b: 2)
         subscribe_multi(
             &subs,
+            auth_b.clone(),
             &[
                 "select u.* from u join v on u.i = v.i where v.x = 5",
                 "select u.* from u join v on u.i = v.i where v.x = 7",
@@ -2634,8 +2684,10 @@ mod tests {
     async fn test_join_pruning() -> anyhow::Result<()> {
         let db = relational_db()?;
 
-        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let u_id = db.create_table_for_test_with_the_works(
@@ -2682,6 +2734,7 @@ mod tests {
 
         subscribe_multi(
             &subs,
+            auth,
             &[
                 "select u.* from u join v on u.i = v.i where v.x = 1",
                 "select u.* from u join v on u.i = v.i where v.x = 2",
@@ -2789,9 +2842,14 @@ mod tests {
     async fn test_subscribe_distinct_queries_same_plan() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id_a = client_id_from_u8(1);
+        let client_id_b = client_id_from_u8(2);
         // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1), &db);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2), &db);
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_b, &db);
+
+        let auth_a = AuthCtx::new(db.owner_identity(), client_id_a.identity);
+        let auth_b = AuthCtx::new(db.owner_identity(), client_id_b.identity);
 
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
@@ -2827,6 +2885,7 @@ mod tests {
         // Both clients subscribe to the same query modulo whitespace
         subscribe_multi(
             &subs,
+            auth_a,
             &["select u.* from u join v on u.i = v.i where v.x = 1"],
             tx_for_a,
             &mut query_ids,
@@ -2834,6 +2893,7 @@ mod tests {
         .await?;
         subscribe_multi(
             &subs,
+            auth_b,
             &["select u.* from u join v on u.i = v.i where v.x =  1"],
             tx_for_b.clone(),
             &mut query_ids,
@@ -2885,9 +2945,15 @@ mod tests {
     async fn test_unsubscribe_distinct_queries_same_plan() -> anyhow::Result<()> {
         let db = relational_db()?;
 
+        let client_id_a = client_id_from_u8(1);
+        let client_id_b = client_id_from_u8(2);
+
         // Establish a connection for each client
-        let (tx_for_a, mut rx_for_a) = client_connection(client_id_from_u8(1), &db);
-        let (tx_for_b, mut rx_for_b) = client_connection(client_id_from_u8(2), &db);
+        let (tx_for_a, mut rx_for_a) = client_connection(client_id_a, &db);
+        let (tx_for_b, mut rx_for_b) = client_connection(client_id_b, &db);
+
+        let auth_a = AuthCtx::new(db.owner_identity(), client_id_a.identity);
+        let auth_b = AuthCtx::new(db.owner_identity(), client_id_b.identity);
 
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
@@ -2922,6 +2988,7 @@ mod tests {
 
         subscribe_multi(
             &subs,
+            auth_a,
             &["select u.* from u join v on u.i = v.i where v.x = 1"],
             tx_for_a,
             &mut query_ids,
@@ -2929,6 +2996,7 @@ mod tests {
         .await?;
         subscribe_multi(
             &subs,
+            auth_b.clone(),
             &["select u.* from u join v on u.i = v.i where  v.x = 1"],
             tx_for_b.clone(),
             &mut query_ids,
@@ -2951,7 +3019,7 @@ mod tests {
             }))
         );
 
-        unsubscribe_multi(&subs, tx_for_b, query_ids)?;
+        unsubscribe_multi(&subs, auth_b, tx_for_b, query_ids)?;
 
         assert_matches!(
             rx_for_b.recv().await,
@@ -3000,8 +3068,10 @@ mod tests {
         let db = relational_db()?;
 
         // Establish a client connection
-        let (tx, mut rx) = client_connection(client_id_from_u8(1), &db);
+        let client_id = client_id_from_u8(1);
+        let (tx, mut rx) = client_connection(client_id, &db);
 
+        let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
 
         let schema = &[("id", AlgebraicType::U64), ("a", AlgebraicType::U64)];
@@ -3016,6 +3086,7 @@ mod tests {
         // Subscribe to queries that return empty results
         let metrics = subscribe_multi(
             &subs,
+            auth,
             &[
                 "select t.* from t where a = 0",
                 "select t.* from t join s on t.id = s.id where s.a = 0",
@@ -3125,18 +3196,31 @@ mod tests {
     async fn test_confirmed_reads() -> anyhow::Result<()> {
         let (db, durability) = relational_db_with_manual_durability()?;
 
+        let client_id_confirmed = client_id_from_u8(1);
+        let client_id_unconfirmed = client_id_from_u8(2);
+
         let (tx_for_confirmed, mut rx_for_confirmed) =
-            client_connection_with_confirmed_reads(client_id_from_u8(1), &db, true);
+            client_connection_with_confirmed_reads(client_id_confirmed, &db, true);
         let (tx_for_unconfirmed, mut rx_for_unconfirmed) =
-            client_connection_with_confirmed_reads(client_id_from_u8(2), &db, false);
+            client_connection_with_confirmed_reads(client_id_unconfirmed, &db, false);
+
+        let auth_confirmed = AuthCtx::new(db.owner_identity(), client_id_confirmed.identity);
+        let auth_unconfirmed = AuthCtx::new(db.owner_identity(), client_id_unconfirmed.identity);
 
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
         let table = db.create_table_for_test("t", &[("x", AlgebraicType::U8)], &[])?;
         let schema = ProductType::from([AlgebraicType::U8]);
 
         // Subscribe both clients.
-        subscribe_multi(&subs, &["select * from t"], tx_for_confirmed, &mut 0).await?;
-        subscribe_multi(&subs, &["select * from t"], tx_for_unconfirmed, &mut 0).await?;
+        subscribe_multi(&subs, auth_confirmed, &["select * from t"], tx_for_confirmed, &mut 0).await?;
+        subscribe_multi(
+            &subs,
+            auth_unconfirmed,
+            &["select * from t"],
+            tx_for_unconfirmed,
+            &mut 0,
+        )
+        .await?;
 
         assert_matches!(
             rx_for_unconfirmed.recv().await,

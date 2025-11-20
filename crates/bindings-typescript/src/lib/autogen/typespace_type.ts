@@ -4,63 +4,15 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { AlgebraicType } from './algebraic_type_type';
-// Mark import as potentially unused
-declare type __keep_AlgebraicType = AlgebraicType;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
 
-export type Typespace = {
-  types: AlgebraicType[];
-};
-let _cached_Typespace_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const Typespace = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_Typespace_type_value) return _cached_Typespace_type_value;
-    _cached_Typespace_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_Typespace_type_value.value.elements.push({
-      name: 'types',
-      algebraicType: __AlgebraicTypeValue.Array(
-        AlgebraicType.getTypeScriptAlgebraicType()
-      ),
-    });
-    return _cached_Typespace_type_value;
+export default __t.object('Typespace', {
+  get types() {
+    return __t.array(AlgebraicType);
   },
-
-  serialize(writer: __BinaryWriter, value: Typespace): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      Typespace.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): Typespace {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      Typespace.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default Typespace;
+});

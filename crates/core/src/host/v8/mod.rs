@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, CodeError, ExcResult,
-    JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, CodeError, ErrorOrException,
+    ExcResult, ExceptionThrown, JsStackTrace, TerminationError, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -12,28 +12,38 @@ use self::syscall::{
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
-use crate::host::instance_env::{ChunkPool, InstanceEnv};
-use crate::host::module_host::{CallViewParams, Instance, ViewCallResult};
-use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
+use crate::client::ClientActorId;
+use crate::host::host_controller::CallProcedureReturn;
+use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
+use crate::host::module_host::{
+    call_identity_connected, call_scheduled_reducer, init_database, CallViewParams, ClientConnectedError, Instance,
+    ViewCallResult,
+};
+use crate::host::scheduler::QueueItem;
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
-    DescribeError, ExecutionStats, ExecutionTimings, InstanceCommon, ReducerExecuteResult, ViewExecuteResult,
+    AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
+    InstanceOp, ProcedureExecuteResult, ProcedureOp, ReducerExecuteResult, ReducerOp, ViewExecuteResult, ViewOp,
+    WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ReducerCallResult, Scheduler};
+use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::asyncify;
 use anyhow::Context as _;
+use core::any::type_name;
 use core::str;
+use enum_as_inner::EnumAsInner;
 use itertools::Either;
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCall};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{RawModuleDef, Timestamp};
+use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::{mpsc, Arc, LazyLock};
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::oneshot;
 use v8::script_compiler::{compile_module, Source};
@@ -243,10 +253,8 @@ impl JsInstanceEnv {
 /// which will cause the worker's loop to terminate
 /// and cleanup the isolate and friends.
 pub struct JsInstance {
-    request_tx: SyncSender<JsWorkerRequest>,
-    update_response_rx: Receiver<anyhow::Result<UpdateDatabaseResult>>,
-    call_reducer_response_rx: Receiver<(ReducerCallResult, bool)>,
-    call_view_response_rx: Receiver<(ViewCallResult, bool)>,
+    request_tx: flume::Sender<JsWorkerRequest>,
+    reply_rx: flume::Receiver<(JsWorkerReply, bool)>,
     trapped: bool,
 }
 
@@ -255,76 +263,154 @@ impl JsInstance {
         self.trapped
     }
 
-    pub fn update_database(
-        &mut self,
+    /// Send a request to the worker and wait for a reply.
+    async fn send_recv<T>(
+        mut self: Box<Self>,
+        extract: impl FnOnce(JsWorkerReply) -> Result<T, JsWorkerReply>,
+        request: JsWorkerRequest,
+    ) -> (T, Box<Self>) {
+        // Send the request.
+        self.request_tx
+            .send_async(request)
+            .await
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        // Wait for the response.
+        let (reply, trapped) = self
+            .reply_rx
+            .recv_async()
+            .await
+            .expect("worker's `reply_tx` should be live as `JsInstance::drop` hasn't happened");
+
+        self.trapped = trapped;
+
+        match extract(reply) {
+            Err(err) => unreachable!("should have received {} but got {err:?}", type_name::<T>()),
+            Ok(reply) => (reply, self),
+        }
+    }
+
+    pub async fn update_database(
+        self: Box<Self>,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        // Send the request.
-        let request = JsWorkerRequest::UpdateDatabase {
-            program,
-            old_module_info,
-            policy,
-        };
-        self.request_tx
-            .send(request)
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        self.update_response_rx
-            .recv()
-            .expect("worker's `update_response_tx` should be live as `JsInstance::drop` hasn't happened")
+    ) -> (anyhow::Result<UpdateDatabaseResult>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_update_database,
+            JsWorkerRequest::UpdateDatabase {
+                program,
+                old_module_info,
+                policy,
+            },
+        )
+        .await
     }
 
-    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
-        // Send the request.
-        let request = JsWorkerRequest::CallReducer { tx, params };
-        self.request_tx
-            .send(request)
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        let (response, trapped) = self
-            .call_reducer_response_rx
-            .recv()
-            .expect("worker's `call_reducer_response_tx` should be live as `JsInstance::drop` hasn't happened");
-
-        self.trapped = trapped;
-
-        response
+    pub async fn call_reducer(
+        self: Box<Self>,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> (ReducerCallResult, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_reducer,
+            JsWorkerRequest::CallReducer { tx, params },
+        )
+        .await
     }
 
-    pub async fn call_procedure(
-        &mut self,
-        _params: CallProcedureParams,
-    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
+    pub async fn clear_all_clients(self: Box<Self>) -> (anyhow::Result<()>, Box<Self>) {
+        self.send_recv(JsWorkerReply::into_clear_all_clients, JsWorkerRequest::ClearAllClients)
+            .await
+    }
+
+    pub async fn call_identity_connected(
+        self: Box<Self>,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> (Result<(), ClientConnectedError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_identity_connected,
+            JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id),
+        )
+        .await
+    }
+
+    pub async fn call_identity_disconnected(
+        self: Box<Self>,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> (Result<(), ReducerCallError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_identity_disconnected,
+            JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id, drop_view_subscribers),
+        )
+        .await
+    }
+
+    pub async fn disconnect_client(
+        self: Box<Self>,
+        client_id: ClientActorId,
+    ) -> (Result<(), ReducerCallError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_disconnect_client,
+            JsWorkerRequest::DisconnectClient(client_id),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_scheduled_reducer(
+        self: Box<Self>,
+        item: QueueItem,
+    ) -> (Result<(ReducerCallResult, Timestamp), ReducerCallError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_scheduled_reducer,
+            JsWorkerRequest::CallScheduledReducer(item),
+        )
+        .await
+    }
+
+    pub async fn init_database(
+        self: Box<Self>,
+        program: Program,
+    ) -> (anyhow::Result<Option<ReducerCallResult>>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_init_database,
+            JsWorkerRequest::InitDatabase(program),
+        )
+        .await
+    }
+
+    pub async fn call_procedure(&mut self, _params: CallProcedureParams) -> CallProcedureReturn {
         todo!("JS/TS module procedure support")
     }
 
-    pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
-        // Send the request.
-        let request = JsWorkerRequest::CallView { tx, params };
-        self.request_tx
-            .send(request)
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        let (response, trapped) = self
-            .call_view_response_rx
-            .recv()
-            .expect("worker's `call_view_response_tx` should be live as `JsInstance::drop` hasn't happened");
-
-        self.trapped = trapped;
-
-        response
+    pub async fn call_view(self: Box<Self>, tx: MutTxId, params: CallViewParams) -> (ViewCallResult, Box<Self>) {
+        let (r, s) = self
+            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { tx, params })
+            .await;
+        (*r, s)
     }
+}
+
+/// A reply from the worker in [`spawn_instance_worker`].
+#[derive(EnumAsInner, Debug)]
+enum JsWorkerReply {
+    UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
+    CallReducer(ReducerCallResult),
+    CallView(Box<ViewCallResult>),
+    ClearAllClients(anyhow::Result<()>),
+    CallIdentityConnected(Result<(), ClientConnectedError>),
+    CallIdentityDisconnected(Result<(), ReducerCallError>),
+    DisconnectClient(Result<(), ReducerCallError>),
+    CallScheduledReducer(Result<(ReducerCallResult, Timestamp), ReducerCallError>),
+    InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
 // We care about optimizing for `CallReducer` as it happens frequently,
 // so we don't want to box anything in it.
-#[allow(clippy::large_enum_variant)]
 enum JsWorkerRequest {
     /// See [`JsInstance::update_database`].
     UpdateDatabase {
@@ -339,6 +425,18 @@ enum JsWorkerRequest {
     },
     /// See [`JsInstance::call_view`].
     CallView { tx: MutTxId, params: CallViewParams },
+    /// See [`JsInstance::clear_all_clients`].
+    ClearAllClients,
+    /// See [`JsInstance::call_identity_connected`].
+    CallIdentityConnected(ConnectionAuthCtx, ConnectionId),
+    /// See [`JsInstance::call_identity_disconnected`].
+    CallIdentityDisconnected(Identity, ConnectionId, bool),
+    /// See [`JsInstance::disconnect_client`].
+    DisconnectClient(ClientActorId),
+    /// See [`JsInstance::call_scheduled_reducer`].
+    CallScheduledReducer(QueueItem),
+    /// See [`JsInstance::init_database`].
+    InitDatabase(Program),
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -395,13 +493,9 @@ fn spawn_instance_worker(
     // The use-case is SPSC and all channels are rendezvous channels
     // where each `.send` blocks until it's received.
     // The Instance --Request-> Worker channel:
-    let (request_tx, request_rx) = mpsc::sync_channel(0);
-    // The Worker --UpdateResponse-> Instance channel:
-    let (update_response_tx, update_response_rx) = mpsc::sync_channel(0);
-    // The Worker --ReducerCallResult-> Instance channel:
-    let (call_reducer_response_tx, call_reducer_response_rx) = mpsc::sync_channel(0);
-    // The Worker --ViewCallResult-> Instance channel:
-    let (call_view_response_tx, call_view_response_rx) = mpsc::sync_channel(0);
+    let (request_tx, request_rx) = flume::bounded(0);
+    // The Worker --Reply-> Instance channel:
+    let (reply_tx, reply_rx) = flume::bounded(0);
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -433,32 +527,43 @@ fn spawn_instance_worker(
         };
 
         // Setup the instance common and environment.
+        let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
         let scheduler = module_common.scheduler().clone();
         let instance_env = InstanceEnv::new(replica_ctx.clone(), scheduler);
         scope.set_slot(JsInstanceEnv::new(instance_env));
 
+        let mut inst = V8Instance {
+            scope,
+            replica_ctx,
+            hooks: &hooks,
+        };
+
         // Process requests to the worker.
         //
         // The loop is terminated when a `JsInstance` is dropped.
         // This will cause channels, scopes, and the isolate to be cleaned up.
+        let reply = |ctx: &str, reply: JsWorkerReply, trapped| {
+            if let Err(e) = reply_tx.send((reply, trapped)) {
+                // This should never happen as `JsInstance::$function` immediately
+                // does `.recv` on the other end of the channel.
+                unreachable!("should have receiver for `{ctx}` response, {e}");
+            }
+        };
         for request in request_rx.iter() {
+            let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
+
+            use JsWorkerReply::*;
             match request {
                 JsWorkerRequest::UpdateDatabase {
                     program,
                     old_module_info,
                     policy,
                 } => {
-                    // Update the database.
-                    let res = instance_common.update_database(replica_ctx, program, old_module_info, policy);
-
-                    // Reply to `JsInstance::update_database`.
-                    if let Err(e) = update_response_tx.send(res) {
-                        // This should never happen as `JsInstance::update_database` immediately
-                        // does `.recv` on the other end of the channel.
-                        unreachable!("should have receiver for `update_database` response, {e}");
-                    }
+                    // Update the database and reply to `JsInstance::update_database`.
+                    let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
+                    reply("update_database", UpdateDatabase(res), false);
                 }
                 JsWorkerRequest::CallReducer { tx, params } => {
                     // Call the reducer.
@@ -466,34 +571,63 @@ fn spawn_instance_worker(
                     // but rather let this happen by `return_instance` using `JsInstance::trapped`
                     // which will cause `JsInstance` to be dropped,
                     // which in turn results in the loop being terminated.
-                    let res = call_reducer(&mut instance_common, replica_ctx, scope, &hooks, tx, params);
-
-                    // Reply to `JsInstance::call_reducer`.
-                    if let Err(e) = call_reducer_response_tx.send(res) {
-                        // This should never happen as `JsInstance::call_reducer` immediately
-                        // does `.recv` on the other end of the channel.
-                        unreachable!("should have receiver for `call_reducer` response, {e}");
-                    }
+                    let (res, trapped) = call_reducer(tx, params);
+                    reply("call_reducer", CallReducer(res), trapped);
                 }
                 JsWorkerRequest::CallView { tx, params } => {
-                    let res = call_view(&mut instance_common, replica_ctx, scope, &hooks, tx, params);
-
-                    if let Err(e) = call_view_response_tx.send(res) {
-                        unreachable!("should have receiver for `call_view` response, {e}");
-                    }
+                    let (res, trapped) = instance_common.call_view_with_tx(tx, params, &mut inst);
+                    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                }
+                JsWorkerRequest::ClearAllClients => {
+                    let res = instance_common.clear_all_clients();
+                    reply("clear_all_clients", ClearAllClients(res), false);
+                }
+                JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id) => {
+                    let mut trapped = false;
+                    let res =
+                        call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
+                    reply("call_identity_connected", CallIdentityConnected(res), trapped);
+                }
+                JsWorkerRequest::CallIdentityDisconnected(
+                    caller_identity,
+                    caller_connection_id,
+                    drop_view_subcribers,
+                ) => {
+                    let mut trapped = false;
+                    let res = ModuleHost::call_identity_disconnected_inner(
+                        caller_identity,
+                        caller_connection_id,
+                        info,
+                        drop_view_subcribers,
+                        call_reducer,
+                        &mut trapped,
+                    );
+                    reply("call_identity_disconnected", CallIdentityDisconnected(res), trapped);
+                }
+                JsWorkerRequest::DisconnectClient(client_id) => {
+                    let mut trapped = false;
+                    let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
+                    reply("disconnect_client", DisconnectClient(res), trapped);
+                }
+                JsWorkerRequest::CallScheduledReducer(queue_item) => {
+                    let (res, trapped) = call_scheduled_reducer(info, queue_item, call_reducer);
+                    reply("call_scheduled_reducer", CallScheduledReducer(res), trapped);
+                }
+                JsWorkerRequest::InitDatabase(program) => {
+                    let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
+                        init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
+                    reply("init_database", InitDatabase(res), trapped);
                 }
             }
         }
     });
 
     // Get the module, if any, and get any setup errors from the worker.
-    let res = result_rx.blocking_recv().expect("should have a sender");
+    let res: Result<ModuleCommon, anyhow::Error> = result_rx.blocking_recv().expect("should have a sender");
     res.map(|opt_mc| {
         let inst = JsInstance {
             request_tx,
-            update_response_rx,
-            call_reducer_response_rx,
-            call_view_response_rx,
+            reply_rx,
             trapped: false,
         };
         (opt_mc, inst)
@@ -603,43 +737,87 @@ fn call_free_fun<'scope>(
     fun.call(scope, receiver, args).ok_or_else(exception_already_thrown)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn common_call<'scope, R>(
+struct V8Instance<'a, 'scope, 'isolate> {
+    scope: &'a mut PinScope<'scope, 'isolate>,
+    replica_ctx: &'a Arc<ReplicaContext>,
+    hooks: &'a HookFunctions<'a>,
+}
+
+impl WasmInstance for V8Instance<'_, '_, '_> {
+    fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
+        extract_description(self.scope, self.hooks, self.replica_ctx)
+    }
+
+    fn replica_ctx(&self) -> &Arc<ReplicaContext> {
+        self.replica_ctx
+    }
+
+    fn tx_slot(&self) -> TxSlot {
+        self.scope.get_slot::<JsInstanceEnv>().unwrap().instance_env.tx.clone()
+    }
+
+    fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
+        let ExecutionResult { stats, call_result } = common_call(self.scope, budget, op, |scope, op| {
+            Ok(call_call_reducer(scope, self.hooks, op)?)
+        });
+        let call_result = call_result.and_then(|res| res.map_err(ExecutionError::User));
+        ExecutionResult { stats, call_result }
+    }
+
+    fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_view(scope, self.hooks, op)
+        })
+    }
+
+    fn call_view_anon(&mut self, op: AnonymousViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
+        common_call(self.scope, budget, op, |scope, op| {
+            call_call_view_anon(scope, self.hooks, op)
+        })
+    }
+
+    fn log_traceback(&self, func_type: &str, func: &str, trap: &anyhow::Error) {
+        log_traceback(self.replica_ctx, func_type, func, trap)
+    }
+
+    async fn call_procedure(
+        &mut self,
+        _op: ProcedureOp,
+        _budget: FunctionBudget,
+    ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
+        todo!("JS/TS module procedure support")
+    }
+}
+
+fn common_call<'scope, R, O, F>(
     scope: &mut PinScope<'scope, '_>,
-    tx: MutTxId,
-    name: &str,
-    timestamp: Timestamp,
     budget: FunctionBudget,
-    func_type: FuncCallType,
-    trapped: &mut bool,
-    call: impl FnOnce(&mut PinScope<'scope, '_>) -> Result<R, ErrorOrException<ExceptionThrown>>,
-) -> (MutTxId, ExecutionStats, anyhow::Result<R>) {
+    op: O,
+    call: F,
+) -> ExecutionResult<Result<R, ExecutionError>>
+where
+    O: InstanceOp,
+    F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
+{
     // TODO(v8): Start the budget timeout and long-running logger.
     let env = env_on_isolate_unwrap(scope);
-    let mut tx_slot = env.instance_env.tx.clone();
 
     // Start the timer.
     // We'd like this tightly around `call`.
-    env.start_funcall(name, timestamp, func_type);
+    env.start_funcall(op.name(), op.timestamp(), op.call_type());
 
-    // Call the function with `tx` provided.
-    // It should not be available before.
-    let (tx, call_result) = tx_slot.set(tx, || {
-        catch_exception(scope, call).map_err(|(e, can_continue)| {
-            // Convert `can_continue` to whether the isolate has "trapped".
-            // Also cancel execution termination if needed,
-            // that can occur due to terminating long running reducers.
-            *trapped = match can_continue {
-                CanContinue::No => false,
-                CanContinue::Yes => true,
-                CanContinue::YesCancelTermination => {
-                    scope.cancel_terminate_execution();
-                    true
-                }
-            };
-
-            anyhow::Error::from(e)
-        })
+    let call_result = catch_exception(scope, |scope| call(scope, op)).map_err(|(e, can_continue)| {
+        // Convert `can_continue` to whether the isolate has "trapped".
+        // Also cancel execution termination if needed,
+        // that can occur due to terminating long running reducers.
+        match can_continue {
+            CanContinue::No => ExecutionError::Trap(e.into()),
+            CanContinue::Yes => ExecutionError::Recoverable(e.into()),
+            CanContinue::YesCancelTermination => {
+                scope.cancel_terminate_execution();
+                ExecutionError::Trap(e.into())
+            }
+        }
     });
 
     // Finish timings.
@@ -657,73 +835,7 @@ fn common_call<'scope, R>(
         timings,
         memory_allocation,
     };
-    (tx, stats, call_result)
-}
-
-fn call_reducer<'scope>(
-    instance_common: &mut InstanceCommon,
-    replica_ctx: &ReplicaContext,
-    scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'_>,
-    tx: Option<MutTxId>,
-    params: CallReducerParams,
-) -> (super::ReducerCallResult, bool) {
-    let mut trapped = false;
-
-    let (res, _) = instance_common.call_reducer_with_tx(
-        replica_ctx,
-        tx,
-        params,
-        move |a, b, c| log_traceback(replica_ctx, a, b, c),
-        |tx, op, budget| {
-            let func = FuncCallType::Reducer;
-            let (tx, stats, call_result) =
-                common_call(scope, tx, op.name, op.timestamp, budget, func, &mut trapped, |scope| {
-                    let res = call_call_reducer(scope, hooks, op)?;
-                    Ok(res)
-                });
-            (tx, ReducerExecuteResult { stats, call_result })
-        },
-    );
-
-    (res, trapped)
-}
-
-fn call_view<'scope>(
-    instance_common: &mut InstanceCommon,
-    replica_ctx: &ReplicaContext,
-    scope: &mut PinScope<'scope, '_>,
-    hooks: &HookFunctions<'_>,
-    tx: MutTxId,
-    params: CallViewParams,
-) -> (ViewCallResult, bool) {
-    let mut trapped = false;
-
-    let is_anonymous = params.is_anonymous;
-    let (res, _) = instance_common.call_view_with_tx(
-        replica_ctx,
-        tx,
-        params,
-        move |a, b, c| log_traceback(replica_ctx, a, b, c),
-        |tx, op, budget| {
-            let func = FuncCallType::View(if is_anonymous {
-                ViewCall::anonymous(op.db_id, op.args.get_bsatn().clone())
-            } else {
-                ViewCall::with_identity(*op.caller_identity, op.db_id, op.args.get_bsatn().clone())
-            });
-            let (tx, stats, call_result) =
-                common_call(scope, tx, op.name, op.timestamp, budget, func, &mut trapped, |scope| {
-                    Ok(if is_anonymous {
-                        call_call_view_anon(scope, hooks, op.into())?
-                    } else {
-                        call_call_view(scope, hooks, op)?
-                    })
-                });
-            (tx, ViewExecuteResult { stats, call_result })
-        },
-    );
-
-    (res, trapped)
+    ExecutionResult { stats, call_result }
 }
 
 /// Extracts the raw module def by running the registered `__describe_module__` hook.

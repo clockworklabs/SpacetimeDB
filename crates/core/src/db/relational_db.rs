@@ -1,6 +1,5 @@
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
-use crate::host::ArgsTuple;
 use crate::messages::control_db::HostType;
 use crate::subscription::ExecutionCounters;
 use crate::util::{asyncify, spawn_rayon};
@@ -9,9 +8,8 @@ use anyhow::{anyhow, Context};
 use bytes::Bytes;
 use enum_map::EnumMap;
 use fs2::FileExt;
-use log::trace;
-use spacetimedb_commitlog as commitlog;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
+use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
@@ -21,7 +19,9 @@ use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
-use spacetimedb_datastore::system_tables::{system_tables, StModuleRow};
+use spacetimedb_datastore::system_tables::{
+    system_tables, StModuleRow, ST_CLIENT_ID, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_SUB_ID,
+};
 use spacetimedb_datastore::system_tables::{StFields, StVarFields, StVarName, StVarRow, ST_MODULE_ID, ST_VAR_ID};
 use spacetimedb_datastore::traits::{
     InsertFlags, IsolationLevel, Metadata, MutTx as _, MutTxDatastore, Program, RowTypeForTable, Tx as _, TxDatastore,
@@ -38,7 +38,7 @@ use spacetimedb_durability as durability;
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
-use spacetimedb_lib::de::DeserializeSeed as _;
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::Identity;
 use spacetimedb_lib::{bsatn, ConnectionId};
@@ -46,7 +46,9 @@ use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace};
+use spacetimedb_sats::{
+    AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, ProductValue, Typespace, WithTypespace,
+};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
@@ -629,11 +631,15 @@ impl RelationalDB {
         self.database_identity
     }
 
+    pub fn owner_identity(&self) -> Identity {
+        self.owner_identity
+    }
+
     /// The number of bytes on disk occupied by the durability layer.
     ///
     /// If this is an in-memory instance, `Ok(0)` is returned.
-    pub fn size_on_disk(&self) -> io::Result<u64> {
-        self.disk_size_fn.as_ref().map_or(Ok(0), |f| f())
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
+        self.disk_size_fn.as_ref().map_or(Ok(<_>::default()), |f| f())
     }
 
     /// The size in bytes of all of the in-memory data in this database.
@@ -815,9 +821,18 @@ impl RelationalDB {
             Txdata,
         };
 
+        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
+            tx_data
+                .ephemeral_tables()
+                .map(|etables| !etables.contains(table_id))
+                .unwrap_or(true)
+        };
+
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
+                // Skip ephemeral tables
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -828,6 +843,7 @@ impl RelationalDB {
 
             let deletes: Box<_> = tx_data
                 .deletes()
+                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -835,6 +851,8 @@ impl RelationalDB {
                 // filter out deletes for tables that are truncated in the same transaction.
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
+
+            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
 
@@ -844,7 +862,7 @@ impl RelationalDB {
                 mutations: Some(Mutations {
                     inserts,
                     deletes,
-                    truncates: truncates.into_iter().collect(),
+                    truncates,
                 }),
             };
 
@@ -1055,6 +1073,50 @@ impl RelationalDB {
     }
 }
 
+/// Duration after which expired unused views are cleaned up.
+/// Value is chosen arbitrarily; can be tuned later if needed.
+const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Duration to budget for each view cleanup job,
+/// so that it doesn't hold transaction lock for to long.
+//TODO: Make this value configurable
+const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Spawn a background task that periodically cleans up expired views
+pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
+    tokio::spawn(async move {
+        let db = &db;
+        loop {
+            match db.with_auto_commit(Workload::Internal, |tx| {
+                tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+                    .map_err(DBError::from)
+            }) {
+                Ok((cleared, total_expired)) => {
+                    if cleared != total_expired {
+                        //TODO: Report it as metric
+                        log::info!(
+                            "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                            db.database_identity(),
+                            cleared,
+                            total_expired - cleared
+                        );
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "[{}] DATABASE: failed to clear expired views: {}",
+                        db.database_identity(),
+                        e
+                    );
+                }
+            }
+
+            tokio::time::sleep(VIEWS_EXPIRATION).await;
+        }
+    })
+    .abort_handle()
+}
+
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
         Ok(self.inner.create_table_mut_tx(tx, schema)?)
@@ -1078,11 +1140,11 @@ impl RelationalDB {
         tx: &mut MutTx,
         module_def: &ModuleDef,
         view_def: &ViewDef,
-    ) -> Result<(ViewDatabaseId, TableId), DBError> {
+    ) -> Result<(ViewId, TableId), DBError> {
         Ok(tx.create_view(module_def, view_def)?)
     }
 
-    pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewDatabaseId) -> Result<(), DBError> {
+    pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
         Ok(tx.drop_view(view_id)?)
     }
 
@@ -1173,7 +1235,7 @@ impl RelationalDB {
         Ok(self.inner.rename_table_mut_tx(tx, table_id, new_name)?)
     }
 
-    pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewDatabaseId>, DBError> {
+    pub fn view_id_from_name_mut(&self, tx: &MutTx, view_name: &str) -> Result<Option<ViewId>, DBError> {
         Ok(self.inner.view_id_from_name_mut_tx(tx, view_name)?)
     }
 
@@ -1402,7 +1464,7 @@ impl RelationalDB {
         self.inner.delete_by_rel_mut_tx(tx, table_id, relation)
     }
 
-    /// Clear all rows from a table without dropping it.
+    /// Clears all rows from a table without dropping it.
     pub fn clear_table(&self, tx: &mut MutTx, table_id: TableId) -> Result<usize, DBError> {
         let rows_deleted = tx.clear_table(table_id)?;
         Ok(rows_deleted)
@@ -1411,6 +1473,17 @@ impl RelationalDB {
     /// Clear all rows from all view tables without dropping them.
     pub fn clear_all_views(&self, tx: &mut MutTx) -> Result<(), DBError> {
         Ok(tx.clear_all_views()?)
+    }
+
+    /// Empties the system tables tracking clients.
+    pub fn clear_all_clients(&self) -> Result<(), DBError> {
+        self.with_auto_commit(Workload::Internal, |mut_tx| {
+            self.clear_all_views(mut_tx)?;
+            self.clear_table(mut_tx, ST_CONNECTION_CREDENTIALS_ID)?;
+            self.clear_table(mut_tx, ST_CLIENT_ID)?;
+            self.clear_table(mut_tx, ST_VIEW_SUB_ID)?;
+            Ok(())
+        })
     }
 
     pub fn create_sequence(&self, tx: &mut MutTx, sequence_schema: SequenceSchema) -> Result<SequenceId, DBError> {
@@ -1509,93 +1582,122 @@ impl RelationalDB {
         })
     }
 
-    /// Materialize View backing table.
+    /// Write `bytes` into a (sender) view's backing table.
     ///
     /// # Process
-    /// 1. Serializes view arguments into `ST_VIEW_ARG_ID`
-    /// 2. Deletes stale rows matching the view arguments
-    /// 3. Deserializes the new view execution results
-    /// 4. Inserts fresh rows with the corresponding arg_id
+    /// 1. Delete all rows for `sender` from the view's backing table
+    /// 2. Deserialize `bytes`
+    /// 3. Insert the new rows into the backing table
     ///
     /// # Arguments
     /// * `tx` - Mutable transaction context
-    /// * `view` - Name of the view to update
-    /// * `args` - Arguments passed to the view call
-    /// * `return_type` - Expected return type of the view
-    /// * `bytes` - Serialized (bsatn encoded) return value from view execution
+    /// * `table_id` - The id of the view's backing table
+    /// * `sender` - The calling identity of the view being updated
+    /// * `row_type` - Expected return type of the view
+    /// * `bytes` - An array of product values (bsatn encoded)
     /// * `typespace` - Type information for deserialization
-    /// * `caller_identity` - Identity of the caller (for non-anonymous views)
     #[allow(clippy::too_many_arguments)]
     pub fn materialize_view(
         &self,
         tx: &mut MutTxId,
-        view: &str,
-        args: ArgsTuple,
-        return_type: AlgebraicTypeRef,
+        table_id: TableId,
+        sender: Identity,
+        row_type: AlgebraicTypeRef,
         bytes: Bytes,
         typespace: &Typespace,
-        caller_identity: Identity,
     ) -> Result<(), DBError> {
-        // Fetch view metadata
-        let st_view_row = tx.lookup_st_view_by_name(view)?;
-        let table_id = st_view_row.table_id.expect("View table must exist for materialization");
-        let view_id = st_view_row.view_id;
-        let is_anonymous = st_view_row.is_anonymous;
-        let arg_id = tx.get_or_insert_st_view_arg(args.get_bsatn())?;
-
-        // Build the filter key for identifying rows to update
-        let mut input_args = Vec::new();
-        if !is_anonymous {
-            input_args.push(AlgebraicValue::OptionSome(caller_identity.into()));
-        }
-        if !tx.is_view_parameterized(view_id)? {
-            input_args.push(AlgebraicValue::U64(arg_id));
-        }
-        let input_args = ProductValue {
-            elements: input_args.into_boxed_slice(),
-        };
-        let col_list: ColList = (0..input_args.elements.len()).collect();
-
-        // Remove stale View entries
-        let rows_to_delete: Vec<_> = self
-            .iter_by_col_eq_mut(tx, table_id, col_list, &input_args.clone().into())?
+        // Delete rows for `sender` from the backing table
+        let rows_to_delete = self
+            .iter_by_col_eq_mut(tx, table_id, ColId(0), &sender.into())?
             .map(|res| res.pointer())
-            .collect();
+            .collect::<Vec<_>>();
+        self.delete(tx, table_id, rows_to_delete);
 
-        let deleted_count = self.delete(tx, table_id, rows_to_delete);
-        trace!("Deleted {deleted_count} stale rows from view table {table_id} for arg_id {arg_id}");
-
-        // Deserialize the return value
-        let seed = spacetimedb_sats::WithTypespace::new(typespace, &return_type).resolve(return_type);
-        let return_val = seed
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
+        let rows = seed
             .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
             .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
 
-        // Extract products from return value (must be array)
-        let products: Vec<ProductValue> = return_val
+        // Insert new rows into the backing table
+        for product in rows
             .into_array()
-            .expect("Expected return_val to be an array")
+            .map_err(|_| ViewError::SerializeRow)
+            .map_err(DatastoreError::from)?
             .into_iter()
-            .map(|v| v.into_product().expect("Expected array elements to be ProductValue"))
-            .collect();
+        {
+            let product = product
+                .into_product()
+                .map_err(|_| ViewError::SerializeRow)
+                .map_err(DatastoreError::from)?;
+            self.insert(
+                tx,
+                table_id,
+                &ProductValue::from_iter(std::iter::once(sender.into()).chain(product.elements))
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
+        }
 
-        // Insert fresh results into the view table
-        let mut elements: Vec<AlgebraicValue> =
-            Vec::with_capacity(input_args.elements.len() + products.first().map_or(0, |p| p.elements.len()));
-        for product in products {
-            elements.clear();
-            elements.extend_from_slice(&input_args.elements);
-            elements.extend_from_slice(&product.elements);
+        Ok(())
+    }
 
-            let row = ProductValue {
-                elements: elements.as_slice().into(),
-            };
+    /// Write `bytes` into an anonymous view's backing table.
+    ///
+    /// # Process
+    /// 1. Clear the view's backing table
+    /// 2. Deserialize `bytes`
+    /// 3. Insert the new rows into the backing table
+    ///
+    /// # Arguments
+    /// * `tx` - Mutable transaction context
+    /// * `table_id` - The id of the view's backing table
+    /// * `row_type` - Expected return type of the view
+    /// * `bytes` - An array of product values (bsatn encoded)
+    /// * `typespace` - Type information for deserialization
+    #[allow(clippy::too_many_arguments)]
+    pub fn materialize_anonymous_view(
+        &self,
+        tx: &mut MutTxId,
+        table_id: TableId,
+        row_type: AlgebraicTypeRef,
+        bytes: Bytes,
+        typespace: &Typespace,
+    ) -> Result<(), DBError> {
+        // Clear entire backing table
+        self.clear_table(tx, table_id)?;
 
-            let row_bytes = row
-                .to_bsatn_vec()
-                .map_err(|_| DatastoreError::from(ViewError::SerializeRow))?;
+        // Deserialize the return rows.
+        // The return type is expected to be an array of products.
+        let row_type = typespace.resolve(row_type);
+        let ret_type = AlgebraicType::array(row_type.ty().clone());
+        let seed = WithTypespace::new(typespace, &ret_type);
+        let rows = seed
+            .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+            .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))?;
 
-            self.insert(tx, table_id, &row_bytes)?;
+        // Insert new rows into the backing table
+        for product in rows
+            .into_array()
+            .map_err(|_| ViewError::SerializeRow)
+            .map_err(DatastoreError::from)?
+            .into_iter()
+        {
+            self.insert(
+                tx,
+                table_id,
+                &product
+                    .into_product()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?
+                    .to_bsatn_vec()
+                    .map_err(|_| ViewError::SerializeRow)
+                    .map_err(DatastoreError::from)?,
+            )?;
         }
 
         Ok(())
@@ -2195,7 +2297,7 @@ pub mod tests_utils {
         name: &str,
         schema: &[(&str, AlgebraicType)],
         is_anonymous: bool,
-    ) -> Result<(ViewDatabaseId, TableId), DBError> {
+    ) -> Result<(ViewId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
 
         // Add the view's product type to the typespace
@@ -2310,14 +2412,14 @@ mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::time::Instant;
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
     use crate::db::relational_db::tests_utils::{
-        begin_tx, create_view_for_test, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
+        begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
     use anyhow::bail;
-    use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
@@ -2325,7 +2427,6 @@ mod tests {
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
-    use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, ViewCall};
     use spacetimedb_datastore::system_tables::{
         system_tables, StConstraintRow, StIndexRow, StSequenceRow, StTableRow, ST_CONSTRAINT_ID, ST_INDEX_ID,
         ST_SEQUENCE_ID, ST_TABLE_ID,
@@ -2362,6 +2463,27 @@ mod tests {
         let def: ModuleDef = raw.try_into().expect("table validation failed");
         let table = def.table(name).expect("table not found");
         TableSchema::from_module_def(&def, table, (), TableId::SENTINEL)
+    }
+
+    fn view_module_def() -> ModuleDef {
+        let mut builder = RawModuleDefV9Builder::new();
+
+        let return_type_ref = builder.add_algebraic_type(
+            [],
+            "my_view_return_type",
+            AlgebraicType::product([("b", AlgebraicType::U8)]),
+            true,
+        );
+        builder.add_view(
+            "my_view",
+            0,
+            true,
+            false,
+            ProductType::unit(),
+            AlgebraicType::array(AlgebraicType::Ref(return_type_ref)),
+        );
+        let raw = builder.finish();
+        raw.try_into().expect("table validation failed")
     }
 
     fn table_auto_inc() -> TableSchema {
@@ -2448,6 +2570,171 @@ mod tests {
         Ok(())
     }
 
+    fn setup_view(stdb: &TestDB) -> ResultTest<(ViewId, TableId, ModuleDef, ViewDef)> {
+        let module_def = view_module_def();
+        let view_def = module_def.view("my_view").unwrap();
+
+        let mut tx = begin_mut_tx(stdb);
+        let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+        stdb.commit_tx(tx)?;
+
+        Ok((view_id, table_id, module_def.clone(), view_def.clone()))
+    }
+
+    fn insert_view_row(
+        stdb: &TestDB,
+        view_id: ViewId,
+        table_id: TableId,
+        typespace: &Typespace,
+        row_type: AlgebraicTypeRef,
+        sender: Identity,
+        v: u8,
+    ) -> ResultTest<()> {
+        let to_bsatn = |pv: &ProductValue| {
+            Bytes::from(bsatn::to_vec(&AlgebraicValue::Array([pv.clone()].into())).expect("bstan serialization failed"))
+        };
+
+        let row_pv = |v: u8| product![v];
+
+        let mut tx = begin_mut_tx(stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, sender)?;
+        stdb.materialize_view(&mut tx, table_id, sender, row_type, to_bsatn(&row_pv(v)), typespace)?;
+        stdb.commit_tx(tx)?;
+
+        Ok(())
+    }
+
+    fn project_views(stdb: &TestDB, table_id: TableId, sender: Identity) -> Vec<ProductValue> {
+        let tx = begin_tx(stdb);
+
+        stdb.iter_by_col_eq(&tx, table_id, 0, &sender.into())
+            .unwrap()
+            .map(|row| {
+                let pv = row.to_product_value();
+                ProductValue {
+                    elements: pv.elements.iter().skip(1).cloned().collect(),
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_view_tables_are_ephemeral() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        // Write some rows (reusing the same helper)
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ONE, 10)?;
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, Identity::ZERO, 20)?;
+
+        assert!(
+            !project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should NOT be empty after insert"
+        );
+
+        // Reopen the database — view tables must not persist
+        let stdb = stdb.reopen()?;
+
+        // Validate that the view's backing table has been removed
+        assert!(
+            project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should be empty after reopening the database"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        assert!(
+            subs_rows.is_empty(),
+            "st_view_subs should be empty after reopening the database"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_views() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        let sender1 = Identity::ONE;
+
+        // Sender 1 insert
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender1, 42)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender1)[0],
+            product![42u8],
+            "View row not inserted correctly"
+        );
+
+        // Sender 2 insert
+        let sender2 = Identity::ZERO;
+        let before_sender2 = Instant::now();
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 84)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![84u8],
+            "Sender 2 view row not inserted correctly"
+        );
+
+        // Restart database (view rows should NOT persist)
+        let stdb = stdb.reopen()?;
+
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 rows should NOT persist after reopen"
+        );
+        assert!(
+            project_views(&stdb, table_id, sender2).is_empty(),
+            "Sender 2 rows should NOT persist after reopen"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st = tx.lookup_st_view_subs(view_id)?;
+        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        stdb.commit_tx(tx)?;
+
+        // Reinsert after restart
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 91)?;
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Post-restart inserted rows must appear"
+        );
+
+        // Clean expired rows
+        let mut tx = begin_mut_tx(&stdb);
+        tx.clear_expired_views(
+            Instant::now().saturating_duration_since(before_sender2),
+            VIEW_CLEANUP_BUDGET,
+        )?;
+        stdb.commit_tx(tx)?;
+
+        // Only sender2 exists after reinsertion
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 should remain empty"
+        );
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Sender 2 row should remain"
+        );
+
+        // And st_view_subs must reflect only sender2
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_after.len(), 1);
+        assert_eq!(st_after[0].identity.0, sender2);
+
+        Ok(())
+    }
     #[test]
     fn test_table_name() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
@@ -2959,57 +3246,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_materialized() -> anyhow::Result<()> {
-        let stdb = TestDB::in_memory()?;
-        let schema = [("col1", AlgebraicType::I64), ("col2", AlgebraicType::I64)];
-        let table_schema = table("MyTable", ProductType::from(schema), |b| b);
-
-        let view_schema = [("view_col", AlgebraicType::I64)];
-        let view_name = "MyView";
-        let args: Bytes = vec![].into();
-        let sender = Identity::ZERO;
-        let (view_id, _) = create_view_for_test(&stdb, view_name, &view_schema, true)?;
-
-        let mut tx = begin_mut_tx(&stdb);
-        let table_id = stdb.create_table(&mut tx, table_schema)?;
-
-        assert!(
-            !tx.is_materialized(view_name, args.clone(), sender)?.0,
-            "view should not be materialized as read set is not recorded yet"
-        );
-
-        let view_call = FuncCallType::View(ViewCall::anonymous(view_id, args));
-        tx.record_table_scan(&view_call, table_id);
-        assert!(
-            tx.is_materialized(view_name, vec![].into(), sender)?.0,
-            "view should be materialized as read set is recorded"
-        );
-        stdb.commit_tx(tx)?;
-
-        let tx = begin_mut_tx(&stdb);
-        assert!(
-            tx.is_materialized(view_name, vec![].into(), sender)?.0,
-            "view should be materialized after commit"
-        );
-        stdb.commit_tx(tx)?;
-
-        let mut tx = begin_mut_tx(&stdb);
-        stdb.insert(
-            &mut tx,
-            table_id,
-            &product![AlgebraicValue::I64(1), AlgebraicValue::I64(2)].to_bsatn_vec()?,
-        )?;
-        stdb.commit_tx(tx)?;
-
-        let tx = begin_mut_tx(&stdb);
-        assert!(
-            !tx.is_materialized(view_name, vec![].into(), sender)?.0,
-            "view should not be materialized after table modification"
-        );
-        Ok(())
-    }
-
-    #[test]
     /// Test that iteration yields each row only once
     /// in the edge case where a row is committed and has been deleted and re-inserted within the iterating TX.
     fn test_insert_delete_insert_iter() {
@@ -3069,43 +3305,37 @@ mod tests {
         let stdb = TestDB::durable().expect("failed to create TestDB");
 
         let timestamp = Timestamp::now();
-        let ctx = ReducerContext {
-            name: "abstract_concrete_proxy_factory_impl".into(),
-            caller_identity: Identity::__dummy(),
-            caller_connection_id: ConnectionId::ZERO,
-            timestamp,
-            arg_bsatn: Bytes::new(),
+        let workload = |name: &str| {
+            Workload::Reducer(ReducerContext {
+                name: name.into(),
+                caller_identity: Identity::__dummy(),
+                caller_connection_id: ConnectionId::ZERO,
+                timestamp,
+                arg_bsatn: Bytes::new(),
+            })
         };
+        let workload1 = workload("abstract_concrete_proxy_factory_impl");
 
         let row_ty = ProductType::from([("le_boeuf", AlgebraicType::I32)]);
         let schema = table("test_table", row_ty.clone(), |builder| builder);
 
         // Create an empty transaction
         {
-            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx.clone()));
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1.clone());
             stdb.commit_tx(tx).expect("failed to commit empty transaction");
         }
 
         // Create an empty transaction pretending to be an
         // `__identity_connected__` call.
         {
-            let tx = stdb.begin_mut_tx(
-                IsolationLevel::Serializable,
-                Workload::Reducer(ReducerContext {
-                    name: "__identity_connected__".into(),
-                    caller_identity: Identity::__dummy(),
-                    caller_connection_id: ConnectionId::ZERO,
-                    timestamp,
-                    arg_bsatn: Bytes::new(),
-                }),
-            );
+            let tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload("__identity_connected__"));
             stdb.commit_tx(tx)
                 .expect("failed to commit empty __identity_connected__ transaction");
         }
 
         // Create a non-empty transaction including reducer info
         let table_id = {
-            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Reducer(ctx));
+            let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, workload1);
             let table_id = stdb.create_table(&mut tx, schema).expect("failed to create table");
             insert(&stdb, &mut tx, table_id, &product!(AlgebraicValue::I32(0))).expect("failed to insert row");
             stdb.commit_tx(tx).expect("failed to commit tx");

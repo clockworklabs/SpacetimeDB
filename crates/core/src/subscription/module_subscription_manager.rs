@@ -25,7 +25,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{AlgebraicValue, ConnectionId, Identity, ProductValue};
-use spacetimedb_primitives::{ColId, IndexId, TableId, ViewDatabaseId};
+use spacetimedb_primitives::{ColId, IndexId, TableId, ViewId};
 use spacetimedb_subscription::{JoinEdge, SubscriptionPlan, TableName};
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -55,7 +55,7 @@ pub struct Plan {
 }
 
 impl CollectViews for Plan {
-    fn collect_views(&self, views: &mut std::collections::HashSet<ViewDatabaseId>) {
+    fn collect_views(&self, views: &mut std::collections::HashSet<ViewId>) {
         for plan in &self.plans {
             plan.collect_views(views);
         }
@@ -1475,15 +1475,13 @@ impl SendWorker {
                     tx_offset,
                     message,
                 } => match tx_offset {
-                    None => {
-                        let _ = recipient.send_message(None, message);
-                    }
+                    None => send_to_client(&recipient, None, message),
                     Some(tx_offset) => {
                         let Ok(tx_offset) = tx_offset.await else {
                             tracing::error!("tx offset sender dropped, exiting send worker");
                             return;
                         };
-                        let _ = recipient.send_message(Some(tx_offset), message);
+                        send_to_client(&recipient, Some(tx_offset), message);
                     }
                 },
                 SendWorkerMessage::RemoveClient(client_id) => {
@@ -1677,7 +1675,7 @@ mod tests {
             let auth = AuthCtx::for_testing();
             let tx = SchemaViewer::new(&*tx, &auth);
             let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
-            let hash = QueryHash::from_string(sql, auth.caller, has_param);
+            let hash = QueryHash::from_string(sql, auth.caller(), has_param);
             Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })
     }

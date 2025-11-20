@@ -12,7 +12,7 @@ use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
-use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
+use crate::host::{CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::asyncify;
@@ -29,7 +29,7 @@ use spacetimedb_client_api_messages::websocket::{
     UnsubscribeMulti,
 };
 use spacetimedb_durability::{DurableOffset, TxOffset};
-use spacetimedb_lib::identity::RequestId;
+use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
@@ -424,6 +424,7 @@ pub struct ClientConnection {
     sender: Arc<ClientConnectionSender>,
     pub replica_id: u64,
     module_rx: watch::Receiver<ModuleHost>,
+    auth: AuthCtx,
 }
 
 impl Deref for ClientConnection {
@@ -675,9 +676,11 @@ impl ClientConnection {
     /// to verify that the database at `module_rx` approves of this connection,
     /// and should not invoke this method if that call returns an error,
     /// and pass the returned [`Connected`] as `_proof_of_client_connected_call`.
+    #[allow(clippy::too_many_arguments)]
     pub async fn spawn<Fut>(
         id: ClientActorId,
         auth: ConnectionAuthCtx,
+        sql_auth: AuthCtx,
         config: ClientConfig,
         replica_id: u64,
         mut module_rx: watch::Receiver<ModuleHost>,
@@ -735,6 +738,7 @@ impl ClientConnection {
             sender,
             replica_id,
             module_rx,
+            auth: sql_auth,
         };
 
         let actor_fut = actor(this.clone(), receiver);
@@ -750,10 +754,12 @@ impl ClientConnection {
         replica_id: u64,
         module_rx: watch::Receiver<ModuleHost>,
     ) -> Self {
+        let auth = AuthCtx::new(module_rx.borrow().database_info().database_identity, id.identity);
         Self {
             sender: Arc::new(ClientConnectionSender::dummy(id, config, module_rx.clone())),
             replica_id,
             module_rx,
+            auth,
         }
     }
 
@@ -842,7 +848,7 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
     ) -> Result<(), BroadcastError> {
-        let res = self
+        let CallProcedureReturn { result, tx_offset } = self
             .module()
             .call_procedure(
                 self.id.identity,
@@ -853,9 +859,11 @@ impl ClientConnection {
             )
             .await;
 
+        let message = ProcedureResultMessage::from_result(&result, request_id);
+
         self.module()
             .subscriptions()
-            .send_procedure_message(self.sender(), ProcedureResultMessage::from_result(&res, request_id))
+            .send_procedure_message(self.sender(), message, tx_offset)
     }
 
     pub async fn subscribe_single(
@@ -868,7 +876,7 @@ impl ClientConnection {
             .on_module_thread_async("subscribe_single", async move || {
                 let host = me.module();
                 host.subscriptions()
-                    .add_single_subscription(Some(&host), me.sender, subscription, timer, None)
+                    .add_single_subscription(Some(&host), me.sender, me.auth.clone(), subscription, timer, None)
                     .await
             })
             .await?
@@ -879,7 +887,7 @@ impl ClientConnection {
         asyncify(move || {
             me.module()
                 .subscriptions()
-                .remove_single_subscription(me.sender, request, timer)
+                .remove_single_subscription(me.sender, me.auth.clone(), request, timer)
         })
         .await
     }
@@ -894,7 +902,7 @@ impl ClientConnection {
             .on_module_thread_async("subscribe_multi", async move || {
                 let host = me.module();
                 host.subscriptions()
-                    .add_multi_subscription(Some(&host), me.sender, request, timer, None)
+                    .add_multi_subscription(Some(&host), me.sender, me.auth.clone(), request, timer, None)
                     .await
             })
             .await?
@@ -910,7 +918,7 @@ impl ClientConnection {
             .on_module_thread("unsubscribe_multi", move || {
                 me.module()
                     .subscriptions()
-                    .remove_multi_subscription(me.sender, request, timer)
+                    .remove_multi_subscription(me.sender, me.auth.clone(), request, timer)
             })
             .await?
     }
@@ -921,7 +929,7 @@ impl ClientConnection {
             .on_module_thread_async("subscribe", async move || {
                 let host = me.module();
                 host.subscriptions()
-                    .add_legacy_subscriber(Some(&host), me.sender, subscription, timer, None)
+                    .add_legacy_subscriber(Some(&host), me.sender, me.auth.clone(), subscription, timer, None)
                     .await
             })
             .await?
@@ -935,7 +943,7 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         self.module()
             .one_off_query::<JsonFormat>(
-                self.id.identity,
+                self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
@@ -953,7 +961,7 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         self.module()
             .one_off_query::<BsatnFormat>(
-                self.id.identity,
+                self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),

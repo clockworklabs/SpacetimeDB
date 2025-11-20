@@ -544,6 +544,77 @@ spacetimedb.reducer('send_message', { arg: ScheduledJobs.rowType }, (ctx, { arg 
 });
 ```
 
+## Views
+
+Views are read‑only functions that compute and return results from your tables.
+They are declared with either `spacetimedb.view(viewOpts, returnType, handler)` or `spacetimedb.anonymousView(viewOpts, returnType, handler)`,
+where `spacetimedb` is the value returned from the `schema` function, and `viewOpts` is defined as `{ name: string; public: true; }`
+
+The handler signature is `(ctx) => rows`, where `rows` must be either an array or option of product values.
+Views must be declared as `public`, with an explicit `name`, and do not accept user parameters beyond the context type.
+
+```ts
+import { schema, table, t, type RowObj } from 'spacetimedb/server';
+
+const players = table('players', {
+  id: t.u64().primaryKey().autoInc(),
+  identity: t.identity().unique(),
+  name: t.string(),
+});
+
+const playerLevels = table('player_levels', {
+  player_id: t.u64().unique(),
+  level: t.u64(),
+});
+
+const spacetimedb = schema(players, playerLevels);
+
+// At-most-one row: return Option<row> via t.option(...)
+// Your function may return the row or null
+spacetimedb.view(
+  { name: 'my_player', public: true },
+  t.option(players.row()),
+  (ctx) => {
+    const row = ctx.db.players.identity.find(ctx.sender);
+    return row ?? null;
+  }
+);
+
+// Multiple rows: return an array of rows via t.array(...)
+spacetimedb.anonymousView(
+  { name: 'players_for_level', public: true },
+  t.array(
+    t.product({
+      id: t.u64(),
+      name: t.string(),
+      level: t.u64(),
+    })
+  ),
+  (ctx) => {
+    const out: Array<{ id: bigint; name: string; level: bigint }> = [];
+    for (const player of ctx.db.playerLevels.level.find(2)) {
+      const p = ctx.db.players.id.find(player.player_id);
+      if (p) out.push({ id: p.id, name: p.name, level: player.level });
+    }
+    return out;
+  }
+);
+```
+
+Views can be queried and subscribed to like normal tables and are updated atomically in realtime.
+
+```sql
+SELECT * FROM my_player;
+SELECT * FROM players_for_level;
+```
+
+#### `ViewContext` and `AnonymousViewContext`
+
+Within a view, the context (`ctx`) provides:
+
+- `ctx.db` - read-only access to tables and indexes
+- `ctx.sender` - caller `Identity` (for `ViewContext` only)
+
 ## Automatic Migrations
 
 Re-publishing attempts schema migrations automatically. Safe operations:
@@ -573,7 +644,7 @@ The following deletes all data stored in the database.
 To fully reset your database and clear all data, run:
 
 ```bash
-spacetime publish --clear-database <DATABASE_NAME>
+spacetime publish --delete-data <DATABASE_NAME>
 # or
 spacetime publish -c <DATABASE_NAME>
 ```

@@ -1,8 +1,12 @@
+use std::fmt;
+use std::future::Future;
 use std::num::NonZeroU8;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use async_trait::async_trait;
 use axum::response::ErrorResponse;
+use bytes::Bytes;
 use http::StatusCode;
 
 use spacetimedb::client::ClientActorIndex;
@@ -16,6 +20,7 @@ use spacetimedb_client_api_messages::name::{DomainName, InsertDomainResult, Regi
 use spacetimedb_lib::{ProductTypeElement, ProductValue};
 use spacetimedb_paths::server::ModuleLogsDir;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
+use thiserror::Error;
 use tokio::sync::watch;
 
 pub mod auth;
@@ -155,13 +160,22 @@ pub struct DatabaseDef {
     /// The [`Identity`] the database shall have.
     pub database_identity: Identity,
     /// The compiled program of the database module.
-    pub program_bytes: Vec<u8>,
+    pub program_bytes: Bytes,
     /// The desired number of replicas the database shall have.
     ///
     /// If `None`, the edition default is used.
     pub num_replicas: Option<NonZeroU8>,
     /// The host type of the supplied program.
     pub host_type: HostType,
+    pub parent: Option<Identity>,
+}
+
+/// Parameters for resetting a database via [`ControlStateDelegate::reset_database`].
+pub struct DatabaseResetDef {
+    pub database_identity: Identity,
+    pub program_bytes: Option<Bytes>,
+    pub num_replicas: Option<NonZeroU8>,
+    pub host_type: Option<HostType>,
 }
 
 /// API of the SpacetimeDB control plane.
@@ -187,28 +201,29 @@ pub trait ControlStateDelegate: ControlStateReadAccess + ControlStateWriteAccess
 impl<T: ControlStateReadAccess + ControlStateWriteAccess + Send + Sync> ControlStateDelegate for T {}
 
 /// Query API of the SpacetimeDB control plane.
+#[async_trait]
 pub trait ControlStateReadAccess {
     // Nodes
-    fn get_node_id(&self) -> Option<u64>;
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
+    async fn get_node_id(&self) -> Option<u64>;
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>>;
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>>;
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
-    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>>;
+    async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>>;
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>>;
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>>;
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>>;
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica>;
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>>;
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
+    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>>;
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>>;
 }
 
 /// Write operations on the SpacetimeDB control plane.
@@ -232,6 +247,10 @@ pub trait ControlStateWriteAccess: Send + Sync {
     async fn migrate_plan(&self, spec: DatabaseDef, style: PrettyPrintStyle) -> anyhow::Result<MigratePlanResult>;
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()>;
+
+    /// Remove all data from a database, and reset it according to the
+    /// given [DatabaseResetDef].
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()>;
 
     // Energy
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()>;
@@ -263,53 +282,54 @@ pub trait ControlStateWriteAccess: Send + Sync {
     ) -> anyhow::Result<SetDomainsResult>;
 }
 
-impl<T: ControlStateReadAccess + ?Sized> ControlStateReadAccess for Arc<T> {
+#[async_trait]
+impl<T: ControlStateReadAccess + Send + Sync + Sync + ?Sized> ControlStateReadAccess for Arc<T> {
     // Nodes
-    fn get_node_id(&self) -> Option<u64> {
-        (**self).get_node_id()
+    async fn get_node_id(&self) -> Option<u64> {
+        (**self).get_node_id().await
     }
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
-        (**self).get_node_by_id(node_id)
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
+        (**self).get_node_by_id(node_id).await
     }
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
-        (**self).get_nodes()
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+        (**self).get_nodes().await
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_id(id)
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_id(id).await
     }
-    fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
-        (**self).get_database_by_identity(identity)
+    async fn get_database_by_identity(&self, identity: &Identity) -> anyhow::Result<Option<Database>> {
+        (**self).get_database_by_identity(identity).await
     }
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
-        (**self).get_databases()
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+        (**self).get_databases().await
     }
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
-        (**self).get_replica_by_id(id)
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+        (**self).get_replica_by_id(id).await
     }
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
-        (**self).get_replicas()
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+        (**self).get_replicas().await
     }
 
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
-        (**self).get_energy_balance(identity)
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+        (**self).get_energy_balance(identity).await
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
-        (**self).lookup_identity(domain)
+    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+        (**self).lookup_identity(domain).await
     }
 
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
-        (**self).reverse_lookup(database_identity)
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+        (**self).reverse_lookup(database_identity).await
     }
 
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
-        (**self).get_leader_replica_by_database(database_id)
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+        (**self).get_leader_replica_by_database(database_id).await
     }
 }
 
@@ -330,6 +350,10 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 
     async fn delete_database(&self, caller_identity: &Identity, database_identity: &Identity) -> anyhow::Result<()> {
         (**self).delete_database(caller_identity, database_identity).await
+    }
+
+    async fn reset_database(&self, caller_identity: &Identity, spec: DatabaseResetDef) -> anyhow::Result<()> {
+        (**self).reset_database(caller_identity, spec).await
     }
 
     async fn add_energy(&self, identity: &Identity, amount: EnergyQuanta) -> anyhow::Result<()> {
@@ -385,6 +409,136 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
 
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         (**self).module_logs_dir(replica_id)
+    }
+}
+
+/// Result of an authorization check performed by an implementation of the
+/// [Authorization] trait.
+///
+/// [Unauthorized::Unauthorized] means that the subject was denied the
+/// permission to perform the requested action.
+///
+/// [Unauthorized::InternalError] indicates an error to perform the check in
+/// the first place. It may succeed when retried.
+///
+/// The [axum::response::IntoResponse] impl maps the variants to HTTP responses
+/// as follows:
+///
+/// * [Unauthorized::InternalError] is mapped to a 503 Internal Server Error
+///   response with the inner error sent as a string in the response body.
+///
+/// * [Unauthorized::Unauthorized] is mapped to a 403 Forbidden response with
+///   the [fmt::Display] form of the variant sent as the response body.
+///
+///   NOTE: [401 Unauthorized] means something different in HTTP, namely that
+///   the provided credentials are missing or invalid.
+///
+/// [401 Unauthorized]: https://datatracker.ietf.org/doc/html/rfc7235#section-3.1
+#[derive(Debug, Error)]
+pub enum Unauthorized {
+    #[error(
+        "{} is not authorized to perform action{}: {}",
+        subject,
+        database.map(|ident| format!(" on database {ident}")).unwrap_or_default(),
+        action
+    )]
+    Unauthorized {
+        subject: Identity,
+        action: Action,
+        // `Option` for future, non-database-bound actions.
+        database: Option<Identity>,
+        #[source]
+        source: Option<anyhow::Error>,
+    },
+    #[error("authorization failed due to internal error")]
+    InternalError(#[from] anyhow::Error),
+}
+
+impl axum::response::IntoResponse for Unauthorized {
+    fn into_response(self) -> axum::response::Response {
+        let (status, e) = match self {
+            unauthorized @ Self::Unauthorized { .. } => (StatusCode::FORBIDDEN, anyhow!(unauthorized)),
+            Self::InternalError(e) => {
+                log::error!("internal error: {e:#}");
+                (StatusCode::INTERNAL_SERVER_ERROR, e)
+            }
+        };
+
+        (status, format!("{e:#}")).into_response()
+    }
+}
+
+/// Action to be authorized via [Authorization::authorize_action].
+#[derive(Debug)]
+pub enum Action {
+    CreateDatabase { parent: Option<Identity> },
+    UpdateDatabase,
+    ResetDatabase,
+    DeleteDatabase,
+    RenameDatabase,
+    ViewModuleLogs,
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::CreateDatabase { parent } => match parent {
+                Some(parent) => write!(f, "create database with parent {}", parent),
+                None => f.write_str("create database"),
+            },
+            Self::UpdateDatabase => f.write_str("update database"),
+            Self::ResetDatabase => f.write_str("reset database"),
+            Self::DeleteDatabase => f.write_str("delete database"),
+            Self::RenameDatabase => f.write_str("rename database"),
+            Self::ViewModuleLogs => f.write_str("view module logs"),
+        }
+    }
+}
+
+/// Trait to delegate authorization of "actions" performed through the
+/// client API to an external, edition-specific implementation.
+pub trait Authorization {
+    /// Authorize `subject` to perform [Action] `action` on `database`.
+    ///
+    /// Return `Ok(())` if permission is granted, `Err(Unauthorized)` if denied.
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send;
+
+    /// Obtain an attenuated [AuthCtx] for `subject` to evaluate SQL against
+    /// `database`.
+    ///
+    /// "SQL" includes the sql endpoint, pg wire connections, as well as
+    /// subscription queries.
+    ///
+    /// If any SQL should be rejected outright, or the authorization database
+    /// is not available, return `Err(Unauthorized)`.
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send;
+}
+
+impl<T: Authorization> Authorization for Arc<T> {
+    fn authorize_action(
+        &self,
+        subject: Identity,
+        database: Identity,
+        action: Action,
+    ) -> impl Future<Output = Result<(), Unauthorized>> + Send {
+        (**self).authorize_action(subject, database, action)
+    }
+
+    fn authorize_sql(
+        &self,
+        subject: Identity,
+        database: Identity,
+    ) -> impl Future<Output = Result<AuthCtx, Unauthorized>> + Send {
+        (**self).authorize_sql(subject, database)
     }
 }
 

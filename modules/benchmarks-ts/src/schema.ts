@@ -3,7 +3,6 @@ import {
   table,
   t,
   type Infer,
-  type InferTypeOfRow,
   type InferSchema,
 } from 'spacetimedb/server';
 

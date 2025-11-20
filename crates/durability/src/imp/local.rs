@@ -12,6 +12,7 @@ use std::{
 use anyhow::Context as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
+use scopeguard::defer_on_unwind;
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use spacetimedb_paths::server::CommitLogDir;
 use tokio::{
@@ -23,7 +24,7 @@ use tracing::instrument;
 
 use crate::{Durability, DurableOffset, History, TxOffset};
 
-pub use spacetimedb_commitlog::repo::OnNewSegmentFn;
+pub use spacetimedb_commitlog::repo::{OnNewSegmentFn, SizeOnDisk};
 
 /// [`Local`] configuration.
 #[derive(Clone, Copy, Debug)]
@@ -168,7 +169,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Get the size on disk of the underlying [`Commitlog`].
-    pub fn size_on_disk(&self) -> io::Result<u64> {
+    pub fn size_on_disk(&self) -> io::Result<SizeOnDisk> {
         self.clog.size_on_disk()
     }
 }
@@ -213,13 +214,13 @@ impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
             let mut retry = Some(txdata);
             while let Some(txdata) = retry.take() {
                 if let Err(error::Append { txdata, source }) = clog.append_maybe_flush(txdata) {
-                    flush_error(source);
+                    flush_error("persister", source);
                     retry = Some(txdata);
                 }
             }
 
             if flush_after {
-                clog.flush().map(drop).unwrap_or_else(flush_error);
+                clog.flush().map(drop).unwrap_or_else(|e| flush_error("persister", e));
             }
 
             trace!("flush-append succeeded");
@@ -240,10 +241,11 @@ impl<T: Encode + Send + Sync + 'static> PersisterTask<T> {
 ///
 /// Panics if the error indicates that the log may be permanently unwritable.
 #[inline]
-fn flush_error(e: io::Error) {
-    warn!("error flushing commitlog: {e:?}");
-    if e.kind() == io::ErrorKind::AlreadyExists {
-        panic!("commitlog unwritable!");
+#[track_caller]
+fn flush_error(task: &str, e: io::Error) {
+    warn!("error flushing commitlog ({task}): {e:?}");
+    if matches!(e.kind(), io::ErrorKind::AlreadyExists | io::ErrorKind::StorageFull) {
+        panic!("{e}");
     }
 }
 
@@ -263,6 +265,8 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
         let mut interval = interval(self.period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+        defer_on_unwind!(self.abort.abort());
+
         loop {
             interval.tick().await;
 
@@ -280,13 +284,12 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
             match task {
                 Err(e) => {
                     if e.is_panic() {
-                        self.abort.abort();
-                        panic::resume_unwind(e.into_panic())
+                        panic::resume_unwind(e.into_panic());
                     }
                     break;
                 }
                 Ok(Err(e)) => {
-                    warn!("flush failed: {e}");
+                    flush_error("flush-and-sync", e);
                 }
                 Ok(Ok(Some(new_offset))) => {
                     trace!("synced to offset {new_offset}");
@@ -307,7 +310,9 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
     type TxData = Txdata<T>;
 
     fn append_tx(&self, tx: Self::TxData) {
-        self.queue.send(tx).expect("commitlog persister task vanished");
+        if self.queue.send(tx).is_err() {
+            panic!("durability actor crashed");
+        }
         self.queue_depth.fetch_add(1, Relaxed);
     }
 

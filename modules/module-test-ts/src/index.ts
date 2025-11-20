@@ -34,7 +34,7 @@ const testC = t.enum('Namespace.TestC', {
 type TestC = Infer<typeof testC>;
 
 // Rust: const DEFAULT_TEST_C: TestC = TestC::Foo;
-const DEFAULT_TEST_C: TestC = { tag: 'Foo', value: {} } as const;
+const DEFAULT_TEST_C: TestC = { tag: 'Foo' } as const;
 
 // Rust: #[derive(SpacetimeType)] pub struct Baz { pub field: String }
 const Baz = t.object('Baz', {
@@ -219,7 +219,7 @@ const spacetimedb = schema(
 // ─────────────────────────────────────────────────────────────────────────────
 
 spacetimedb.view(
-  'my_player',
+  { name: 'my_player', public: true },
   playerLikeRow.optional(),
   // FIXME: this should not be necessary; change `OptionBuilder` to accept `null|undefined` for `none`
   ctx => ctx.db.player.identity.find(ctx.sender) ?? undefined
@@ -301,7 +301,7 @@ spacetimedb.reducer(
 
     // Insert test_a rows
     for (let i = 0; i < 1000; i++) {
-      ctx.db.test_a.insert({
+      ctx.db.testA.insert({
         x: (i >>> 0) + arg.x,
         y: (i >>> 0) + arg.y,
         z: 'Yo',
@@ -315,14 +315,14 @@ spacetimedb.reducer(
     let numDeleted = 0;
     for (let x = 5; x < 10; x++) {
       // Prefer index deletion if available; fallback to filter+delete
-      for (const row of ctx.db.test_a.iter()) {
+      for (const row of ctx.db.testA.iter()) {
         if (row.x === x) {
-          if (ctx.db.test_a.delete(row)) numDeleted++;
+          if (ctx.db.testA.delete(row)) numDeleted++;
         }
       }
     }
 
-    const rowCountAfter = ctx.db.test_a.count();
+    const rowCountAfter = ctx.db.testA.count();
     if (Number(rowCountBefore) !== Number(rowCountAfter) + numDeleted) {
       console.error(
         `Started with ${rowCountBefore} rows, deleted ${numDeleted}, and wound up with ${rowCountAfter} rows... huh?`
@@ -331,7 +331,7 @@ spacetimedb.reducer(
 
     // try_insert TestE { id: 0, name: "Tyler" }
     try {
-      const inserted = ctx.db.test_e.insert({ id: 0n, name: 'Tyler' });
+      const inserted = ctx.db.testE.insert({ id: 0n, name: 'Tyler' });
       console.info(`Inserted: ${JSON.stringify(inserted)}`);
     } catch (err) {
       console.info(`Error: ${String(err)}`);
@@ -366,14 +366,14 @@ spacetimedb.reducer(
 // add_player(name) -> Result<(), String>
 spacetimedb.reducer('add_player', { name: t.string() }, (ctx, { name }) => {
   const rec = { id: 0n as bigint, name };
-  const inserted = ctx.db.test_e.insert(rec); // id autoInc => always creates a new one
+  const inserted = ctx.db.testE.insert(rec); // id autoInc => always creates a new one
   // No-op re-upsert by id index if your bindings support it.
-  if (ctx.db.test_e.id?.update) ctx.db.test_e.id.update(inserted);
+  if (ctx.db.testE.id?.update) ctx.db.testE.id.update(inserted);
 });
 
 // delete_player(id) -> Result<(), String>
 spacetimedb.reducer('delete_player', { id: t.u64() }, (ctx, { id }) => {
-  const ok = ctx.db.test_e.id.delete(id);
+  const ok = ctx.db.testE.id.delete(id);
   if (!ok) throw new Error(`No TestE row with id ${id}`);
 });
 
@@ -383,9 +383,9 @@ spacetimedb.reducer(
   { name: t.string() },
   (ctx, { name }) => {
     let deleted = 0;
-    for (const row of ctx.db.test_e.iter()) {
+    for (const row of ctx.db.testE.iter()) {
       if (row.name === name) {
-        if (ctx.db.test_e.delete(row)) deleted++;
+        if (ctx.db.testE.delete(row)) deleted++;
       }
     }
     if (deleted === 0)
@@ -403,12 +403,12 @@ spacetimedb.reducer('client_connected', {}, _ctx => {
 
 // add_private(name)
 spacetimedb.reducer('add_private', { name: t.string() }, (ctx, { name }) => {
-  ctx.db.private_table.insert({ name });
+  ctx.db.privateTable.insert({ name });
 });
 
 // query_private()
 spacetimedb.reducer('query_private', {}, ctx => {
-  for (const row of ctx.db.private_table.iter()) {
+  for (const row of ctx.db.privateTable.iter()) {
     console.info(`Private, ${row.name}!`);
   }
   console.info('Private, World!');
@@ -419,7 +419,7 @@ spacetimedb.reducer('query_private', {}, ctx => {
 spacetimedb.reducer('test_btree_index_args', {}, ctx => {
   const s = 'String';
   // Demonstrate scanning via iteration; prefer index access if bindings expose it.
-  for (const row of ctx.db.test_e.iter()) {
+  for (const row of ctx.db.testE.iter()) {
     if (row.name === s || row.name === 'str') {
       // no-op; exercising types
     }
