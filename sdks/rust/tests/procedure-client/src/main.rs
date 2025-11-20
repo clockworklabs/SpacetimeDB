@@ -43,6 +43,7 @@ fn main() {
         "procedure-http-err" => exec_procedure_http_err(),
         "insert-with-tx-commit" => exec_insert_with_tx_commit(),
         "insert-with-tx-rollback" => exec_insert_with_tx_rollback(),
+        "schedule-procedure" => exec_schedule_procedure(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -97,7 +98,7 @@ fn connect_then(
 }
 
 /// A query that subscribes to all rows from all tables.
-const SUBSCRIBE_ALL: &[&str] = &["SELECT * FROM my_table;"];
+const SUBSCRIBE_ALL: &[&str] = &["SELECT * FROM my_table;", "SELECT * FROM proc_inserts_into;"];
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
     subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
@@ -310,5 +311,30 @@ fn exec_procedure_http_err() {
             })
         }
     });
+
+    test_counter.wait_for_all();
+}
+
+fn exec_schedule_procedure() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            ctx.db().proc_inserts_into().on_insert(move |_, row| {
+                assert_eq!(row.x, 24);
+                assert_eq!(row.y, 42);
+                (callback_result.take().unwrap())(Ok(()));
+            });
+
+            subscribe_all_then(ctx, move |ctx| {
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+                ctx.reducers.schedule_proc().unwrap();
+            });
+        }
+    });
+
     test_counter.wait_for_all();
 }
