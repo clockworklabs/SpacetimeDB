@@ -204,7 +204,7 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 1)
 
-        # insert to cause cache invalidation
+        # inserting new row should not trigger view invocation due to readsets
         self.spacetime(
             "sql",
             self.database_identity,
@@ -214,7 +214,29 @@ INSERT INTO player_state (id, level) VALUES (22, 8);
         )
 
         self.call_player_view()
-        #On third call, after invalidation, the view is evaluated again
+        #On third call, after inserting a row, the view is still cached
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 1)
+
+        # Updating the row that the view depends on should trigger re-evaluation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+UPDATE player_state SET level = 9 WHERE id = 42;
+""",
+        )
+
+        # Call the view again
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+Select * FROM player_state WHERE id = 42;
+""",
+        )
+
+        # On fourth call, after updating the dependent row, the view is re-evaluated
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 2)
 

@@ -56,14 +56,10 @@ use spacetimedb_schema::{
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
-    blob_store::BlobStore,
-    indexes::{RowPointer, SquashedOffset},
-    static_assert_size,
-    table::{
+    blob_store::BlobStore, indexes::{RowPointer, SquashedOffset}, static_assert_size, table::{
         BlobNumBytes, DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex,
         UniqueConstraintViolation,
-    },
-    table_index::TableIndex,
+    }, table_index::TableIndex
 };
 use std::{
     sync::Arc,
@@ -84,6 +80,7 @@ pub struct ViewCallInfo {
 #[derive(Default)]
 pub struct ViewReadSets {
     tables: IntMap<TableId, TableReadSet>,
+    indexes: IntMap<TableId, IndexColReadSet>,
 }
 
 impl MemoryUsage for ViewReadSets {
@@ -102,7 +99,7 @@ impl ViewReadSets {
     }
 
     /// Record that a view performs a full scan of this table
-    fn insert_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
+    fn insert_table_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
         self.tables.entry(table_id).or_default().insert_scan(call);
     }
 
@@ -112,6 +109,9 @@ impl ViewReadSets {
             readset.remove_view(view_id, sender);
             !readset.is_empty()
         });
+
+        // index cleanup
+        self.remove_view_from_indexes(view_id, sender);
     }
 
     /// Merge or union read sets together
@@ -119,8 +119,67 @@ impl ViewReadSets {
         for (table_id, rs) in readset.tables {
             self.tables.entry(table_id).or_default().merge(rs);
         }
+
+        self.merge_index_reads(readset.indexes);
+    }
+
+    /// Record that a view reads a specific index key
+    pub fn insert_index_scan(&mut self, table_id: TableId, cols: ColList, proj: AlgebraicValue, call: ViewCallInfo) {
+        let col_map = self.indexes.entry(table_id).or_default();
+        let key_map = col_map.entry(cols).or_default();
+        key_map.entry(proj).or_default().insert(call);
+    }
+
+    /// Returns the views that index seek on the given row pointer
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ptr: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.indexes.get(table_id).into_iter().flat_map(move |table_sets| {
+            table_sets.iter().flat_map(move |(cols, av_sets)| {
+                row_ptr
+                    .project(cols)
+                    .ok()
+                    .and_then(|k| av_sets.get(&k))
+                    .into_iter()
+                    .flat_map(|views| views.iter())
+            })
+        })
+    }
+
+    // Remove all references to a view from the index read sets
+    fn remove_view_from_indexes(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        self.indexes.retain(|_, col_map| {
+            col_map.retain(|_, key_map| {
+                key_map.retain(|_, views| {
+                    views.retain(|call| {
+                        !(call.view_id == view_id && sender.as_ref().is_none_or(|s| call.sender.as_ref() == Some(s)))
+                    });
+                    !views.is_empty()
+                });
+                !key_map.is_empty()
+            });
+            !col_map.is_empty()
+        });
+    }
+
+    /// Merge (union) another index reads into this one
+    fn merge_index_reads(&mut self, other: IntMap<TableId, IndexColReadSet>) {
+        for (table_id, other_col_map) in other {
+            let col_map = self.indexes.entry(table_id).or_default();
+            for (cols, other_key_map) in other_col_map {
+                let key_map = col_map.entry(cols).or_default();
+                for (key, other_views) in other_key_map {
+                    key_map.entry(key).or_default().extend(other_views);
+                }
+            }
+        }
     }
 }
+
+type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<ViewCallInfo>>;
+type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
 
 /// A table-level read set for views
 #[derive(Default)]
@@ -192,7 +251,7 @@ impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
     pub fn record_table_scan(&mut self, op: &FuncCallType, table_id: TableId) {
         if let FuncCallType::View(view) = op {
-            self.read_sets.insert_scan(table_id, view.clone());
+            self.read_sets.insert_table_scan(table_id, view.clone());
         }
     }
 
@@ -201,28 +260,69 @@ impl MutTxId {
         &mut self,
         op: &FuncCallType,
         table_id: TableId,
-        _: IndexId,
-        _: Bound<AlgebraicValue>,
-        _: Bound<AlgebraicValue>,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
     ) {
-        // TODO: Implement read set tracking for index scans
-        if let FuncCallType::View(view) = op {
-            self.read_sets.insert_scan(table_id, view.clone());
+        let FuncCallType::View(view) = op else {
+            return;
+        };
+
+        // Check for precise index seek
+        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper) {
+            if low_val == up_val {
+                // Fetch index metadata
+                let Some((_, idx, _)) = self.get_table_and_index(index_id) else {
+                    return;
+                };
+
+                let cols = idx.index().indexed_columns.clone();
+                self.read_sets
+                    .insert_index_scan(table_id, cols, low_val.clone(), view.clone());
+                return;
+            }
         }
+
+        // Everything else is treated as a table scan
+        self.read_sets.insert_table_scan(table_id, view.clone());
     }
 
-    /// Returns the views whose read sets overlaps with this transaction's write set
-    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> {
-        self.tx_state
+    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+        let mut res = self
+            .tx_state
             .insert_tables
             .keys()
             .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
             .chain(self.tx_state.delete_tables.keys())
             .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
-            .collect::<HashSet<_>>()
-            .into_iter()
-    }
+            .collect::<HashSet<_>>();
 
+        // Include views that perform precise index seeks.
+        // It is sufficient to only consider deleted tables,
+        // as deleted rows will cover all modification to existing rows in the committed state.
+        for (table_id, deleted_table) in &self.tx_state.delete_tables {
+            let (table, blob_store, _) = self
+                .committed_state_write_lock
+                .get_table_and_blob_store(*table_id)
+                .expect("table must exist in committed state for deleted table");
+
+            // Skip tables without indexes.
+            if table.indexes.is_empty() {
+                continue;
+            }
+
+            for ptr in deleted_table.iter() {
+                let Some(row_ref) = table.get_row_ref(blob_store, ptr) else {
+                    continue;
+                };
+                for view_call in self.committed_state_write_lock.views_for_index_seek(table_id, row_ref) {
+                    res.insert(view_call);
+                }
+            }
+        }
+
+        res.into_iter()
+    }
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
     pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
