@@ -50,7 +50,7 @@ fn read_my_schema(ctx: &mut ProcedureContext) -> String {
 
 #[procedure]
 fn invalid_request(ctx: &mut ProcedureContext) -> String {
-    match ctx.http.get(format!("http://foo.invalid/")) {
+    match ctx.http.get("http://foo.invalid/") {
         Ok(result) => panic!(
             "Got result from requesting `http://foo.invalid`... huh?\n{}",
             result.into_body().into_string_lossy()
