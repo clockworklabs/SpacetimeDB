@@ -349,6 +349,7 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
         NodesError::WouldBlockTransaction(_) => Some(errno::WOULD_BLOCK_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
+        NodesError::DecodeValue(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
         NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),

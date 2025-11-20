@@ -1679,6 +1679,9 @@ impl WasmInstanceEnv {
     ///
     /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
     ///   In this case, `out` is not written.
+    /// - `BSATN_DECODE_ERROR` if `request_ptr[..request_len]` does not contain
+    ///   a valid BSATN-serialized [`spacetimedb_lib::http::Request`] object.
+    ///   In this case, `out` is not written.
     /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
     ///   In this case, a [`BytesSource`] is written to `out`
     ///   containing a BSATN-encoded [`spacetimedb_lib::http::Error`] object.
@@ -1690,7 +1693,6 @@ impl WasmInstanceEnv {
     /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
     /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
     /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
-    /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
     pub fn procedure_http_request<'caller>(
         caller: Caller<'caller, Self>,
         (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),
@@ -1710,8 +1712,7 @@ impl WasmInstanceEnv {
                 // our bespoke type with a stable layout and BSATN encoding.
                 let request_buf = mem.deref_slice(request_ptr, request_len)?;
                 let request = bsatn::from_slice::<st_http::Request>(request_buf).map_err(|err| {
-                    // BSATN deserialization failure of the request will trap by returning `NodesError::DecodeValue`,
-                    // which `Self::convert_wasm_result` treats as fatal.
+                    // This goes to `errno::BSATN_DECODE_ERROR` in `Self::convert_wasm_result`.
                     NodesError::DecodeValue(err)
                 })?;
 

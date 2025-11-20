@@ -751,6 +751,9 @@ pub mod raw {
         ///
         /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
         ///   In this case, `out` is not written.
+        /// - `BSATN_DECODE_ERROR` if `request_ptr[..request_len]` does not contain
+        ///   a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
+        ///   In this case, `out` is not written.
         /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
         ///   In this case, a [`BytesSource`] is written to `out`
         ///   containing a BSATN-encoded `spacetimedb_lib::http::Error` object.
