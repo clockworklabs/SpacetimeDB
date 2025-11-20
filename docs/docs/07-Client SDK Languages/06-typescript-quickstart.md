@@ -63,7 +63,7 @@ Replace the entire contents of `client/src/App.tsx` with the following:
 
 ```tsx
 import React, { useEffect, useState } from 'react';
-import { DbConnection, Message, User } from './module_bindings';
+import { Message, tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, where, eq } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
@@ -78,7 +78,7 @@ export type PrettyMessage = {
 function App() {
   const [newName, setNewName] = useState('');
   const [settingName, setSettingName] = useState(false);
-  const [systemMessages, setSystemMessages] = useState([] as Message[]);
+  const [systemMessages, setSystemMessages] = useState([] as Infer<typeof Message>[]);
   const [newMessage, setNewMessage] = useState('');
 
   const prettyMessages: PrettyMessage[] = [];
@@ -570,11 +570,12 @@ Once SpacetimeDB is connected, we can easily access the data in the client cache
 Add the following `useSpacetimeDB` hook to the top of your render function, just below your `useState` declarations.
 
 ```tsx
-const conn = useSpacetimeDB<DbConnection>();
-const { identity, isActive: connected } = conn;
+const { identity, isActive: connected } = useSpacetimeDB();
+const setName = useReducer(reducers.setName);
+const sendMessage = useReducer(reducers.sendMessage);
 
 // Subscribe to all messages in the chat
-const { rows: messages } = useTable<DbConnection, Message>('message');
+const [messages] = useTable(tables.message);
 ```
 
 Next replace `const onlineUsers: User[] = [];` with the following:
@@ -583,8 +584,8 @@ Next replace `const onlineUsers: User[] = [];` with the following:
 // Subscribe to all online users in the chat
 // so we can show who's online and demonstrate
 // the `where` and `eq` query expressions
-const { rows: onlineUsers } = useTable<DbConnection, User>(
-  'user',
+const [onlineUsers] = useTable(
+  tables.user,
   where(eq('online', true))
 );
 ```
@@ -594,11 +595,11 @@ Notice that we can filter users in the `user` table based on their online status
 Let's now prettify our messages in our render function by sorting them by their `sent` timestamp, and joining the username of the sender to the message by looking up the user by their `Identity` in the `user` table. Replace `const prettyMessages: PrettyMessage[] = [];` with the following:
 
 ```tsx
-const prettyMessages: PrettyMessage[] = Array.from(messages)
+const prettyMessages: PrettyMessage[] = messages
   .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
   .map(message => {
     const user = users.find(
-      u => u.identity.toHexString() === message.sender.toHexString()
+      u => u.identity.message.sender.toHexString()
     );
     return {
       senderName: user?.name || message.sender.toHexString().substring(0, 8),
@@ -642,7 +643,7 @@ Modify the `onSubmitNewName` callback by adding a call to the `setName` reducer:
 const onSubmitNewName = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setSettingName(false);
-  conn.reducers.setName(newName);
+  setName({ name: newName });
 };
 ```
 
@@ -652,7 +653,7 @@ Next, modify the `onSubmitMessage` callback by adding a call to the `sendMessage
 const onSubmitMessage = (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
   setNewMessage('');
-  conn.reducers.sendMessage(newMessage);
+  sendMessage({ text: newMessage });
 };
 ```
 
@@ -750,8 +751,8 @@ const prettyMessages: PrettyMessage[] = Array.from(messages)
 Finally, let's also subscribe to offline users so we can show them in the sidebar as well. Replace `const offlineUsers: User[] = [];` with:
 
 ```tsx
-const { rows: offlineUsers } = useTable<DbConnection, User>(
-  'user',
+const [offlineUsers] = useTable(
+  tables.user,
   where(eq('online', false))
 );
 ```

@@ -56,6 +56,7 @@ dirs.workspace = true
 enum-as-inner.workspace = true
 enum-map.workspace = true
 flate2.workspace = true
+flume.workspace = true
 fs2.workspace = true
 futures.workspace = true
 futures-util.workspace = true

@@ -1,18 +1,23 @@
 import { DbConnectionImpl, type ConnectionEvent } from './db_connection_impl';
 import { EventEmitter } from './event_emitter';
-import type { Identity } from '../';
-import type RemoteModule from './spacetime_module';
+import type {
+  DbConnectionConfig,
+  ErrorContextInterface,
+  Identity,
+  RemoteModuleOf,
+} from '../';
 import { ensureMinimumVersionOrThrow } from './version';
 import { WebsocketDecompressAdapter } from './websocket_decompress_adapter';
 
 /**
  * The database client connection to a SpacetimeDB server.
+ * NOTE: DbConnectionImpl<any> is used here because UntypedRemoteModule causes
+ * variance issues with function paramters, and the end user will never be
+ * constructing a DbConnectionBuilder directly since it's code generated. We will
+ * always have a concrete RemoteModule type in those cases. Even if they user
+ * did do this, they would just lose type safety on the RemoteModule.
  */
-export class DbConnectionBuilder<
-  DbConnection,
-  ErrorContext,
-  _SubscriptionEventContext,
-> {
+export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
   #uri?: URL;
   #nameOrAddress?: string;
   #identity?: Identity;
@@ -32,8 +37,10 @@ export class DbConnectionBuilder<
    * @param dbConnectionConstructor The constructor to use to create a new `DbConnection`.
    */
   constructor(
-    private remoteModule: RemoteModule,
-    private dbConnectionConstructor: (imp: DbConnectionImpl) => DbConnection
+    private remoteModule: RemoteModuleOf<DbConnection>,
+    private dbConnectionCtor: (
+      config: DbConnectionConfig<RemoteModuleOf<DbConnection>>
+    ) => DbConnection
   ) {
     this.#createWSFn = WebsocketDecompressAdapter.createWebSocketFn;
   }
@@ -179,7 +186,12 @@ export class DbConnectionBuilder<
    * });
    * ```
    */
-  onConnectError(callback: (ctx: ErrorContext, error: Error) => void): this {
+  onConnectError(
+    callback: (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      error: Error
+    ) => void
+  ): this {
     this.#emitter.on('connectError', callback);
     return this;
   }
@@ -211,7 +223,10 @@ export class DbConnectionBuilder<
    * @throws {Error} Throws an error if called multiple times on the same `DbConnectionBuilder`.
    */
   onDisconnect(
-    callback: (ctx: ErrorContext, error?: Error | undefined) => void
+    callback: (
+      ctx: ErrorContextInterface<RemoteModuleOf<DbConnection>>,
+      error?: Error | undefined
+    ) => void
   ): this {
     this.#emitter.on('disconnect', callback);
     return this;
@@ -245,19 +260,17 @@ export class DbConnectionBuilder<
     // Ideally, it would be a compile time error, but I'm not sure how to accomplish that.
     ensureMinimumVersionOrThrow(this.remoteModule.versionInfo?.cliVersion);
 
-    return this.dbConnectionConstructor(
-      new DbConnectionImpl({
-        uri: this.#uri,
-        nameOrAddress: this.#nameOrAddress,
-        identity: this.#identity,
-        token: this.#token,
-        emitter: this.#emitter,
-        compression: this.#compression,
-        lightMode: this.#lightMode,
-        confirmedReads: this.#confirmedReads,
-        createWSFn: this.#createWSFn,
-        remoteModule: this.remoteModule,
-      })
-    );
+    return this.dbConnectionCtor({
+      uri: this.#uri,
+      nameOrAddress: this.#nameOrAddress,
+      identity: this.#identity,
+      token: this.#token,
+      emitter: this.#emitter,
+      compression: this.#compression,
+      lightMode: this.#lightMode,
+      confirmedReads: this.#confirmedReads,
+      createWSFn: this.#createWSFn,
+      remoteModule: this.remoteModule,
+    });
   }
 }

@@ -15,27 +15,29 @@ import {
   type IndexVal,
   type UniqueIndex,
   type RangedIndex,
-} from './indexes';
-import { type RowType, type Table, type TableMethods } from './table';
+} from '../lib/indexes';
+import { type RowType, type Table, type TableMethods } from '../lib/table';
 import {
-  type DbView,
   type ReducerCtx,
   REDUCERS,
   type JwtClaims,
   type AuthCtx,
   type JsonObject,
-} from './reducers';
-import { MODULE_DEF } from './schema';
+} from '../lib/reducers';
+import { MODULE_DEF } from '../lib/schema';
 
 import * as _syscalls from 'spacetime:sys@1.0';
 import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
+import type { DbView } from './db_view';
+import { toCamelCase } from '../lib/util';
+import type { Infer } from '../lib/type_builders';
+import { bsatnBaseSize } from '../lib/util';
 import {
   ANON_VIEWS,
   VIEWS,
   type AnonymousViewCtx,
   type ViewCtx,
-} from './views';
-import { bsatnBaseSize } from './util';
+} from '../lib/views';
 
 const { freeze } = Object;
 
@@ -182,7 +184,11 @@ class AuthCtxImpl implements AuthCtx {
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
-    RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
+    AlgebraicType.serializeValue(
+      writer,
+      RawModuleDef.algebraicType,
+      RawModuleDef.V9(MODULE_DEF)
+    );
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
@@ -265,21 +271,26 @@ function getDbView() {
   return DB_VIEW;
 }
 
-function makeDbView(module_def: RawModuleDefV9): DbView<any> {
+function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
   return freeze(
     Object.fromEntries(
-      module_def.tables.map(table => [
-        table.name,
-        makeTableView(module_def.typespace, table),
+      moduleDef.tables.map(table => [
+        toCamelCase(table.name),
+        makeTableView(moduleDef.typespace, table),
       ])
     )
   );
 }
 
-function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
+function makeTableView(
+  typespace: Infer<typeof Typespace>,
+  table: Infer<typeof RawTableDefV9>
+): Table<any> {
   const table_id = sys.table_id_from_name(table.name);
   const rowType = typespace.types[table.productTypeRef];
-  if (rowType.tag !== 'Product') throw 'impossible';
+  if (rowType.tag !== 'Product') {
+    throw 'impossible';
+  }
 
   const baseSize = bsatnBaseSize(typespace, rowType);
 
@@ -386,19 +397,19 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
 
     let index: Index<any, any>;
     if (isUnique) {
-      const serializeBound = (col_val: any[]): IndexScanArgs => {
-        if (col_val.length !== numColumns)
+      const serializeBound = (colVal: any[]): IndexScanArgs => {
+        if (colVal.length !== numColumns)
           throw new TypeError('wrong number of elements');
 
         const writer = new BinaryWriter(baseSize + 1);
         const prefix_elems = numColumns - 1;
-        serializePrefix(writer, col_val, prefix_elems);
+        serializePrefix(writer, colVal, prefix_elems);
         const rstartOffset = writer.offset;
         writer.writeU8(0);
         AlgebraicType.serializeValue(
           writer,
           indexType.value.elements[numColumns - 1].algebraicType,
-          col_val[numColumns - 1],
+          colVal[numColumns - 1],
           typespace
         );
         const buffer = writer.getBuffer();
@@ -407,9 +418,9 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
         return [prefix, prefix_elems, rstart, rstart];
       };
       index = {
-        find: (col_val: IndexVal<any, any>): RowType<any> | null => {
-          if (numColumns === 1) col_val = [col_val];
-          const args = serializeBound(col_val);
+        find: (colVal: IndexVal<any, any>): RowType<any> | null => {
+          if (numColumns === 1) colVal = [colVal];
+          const args = serializeBound(colVal);
           const iter = new TableIterator(
             sys.datastore_index_scan_range_bsatn(index_id, ...args),
             rowType
@@ -422,9 +433,9 @@ function makeTableView(typespace: Typespace, table: RawTableDefV9): Table<any> {
             );
           return value;
         },
-        delete: (col_val: IndexVal<any, any>): boolean => {
-          if (numColumns === 1) col_val = [col_val];
-          const args = serializeBound(col_val);
+        delete: (colVal: IndexVal<any, any>): boolean => {
+          if (numColumns === 1) colVal = [colVal];
+          const args = serializeBound(colVal);
           const num = sys.datastore_delete_by_index_scan_range_bsatn(
             index_id,
             ...args

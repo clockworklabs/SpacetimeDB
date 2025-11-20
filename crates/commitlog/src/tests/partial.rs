@@ -180,6 +180,7 @@ fn open_log<T>(repo: ShortMem) -> commitlog::Generic<ShortMem, T> {
         repo,
         Options {
             max_segment_size: 1024,
+            max_records_in_commit: NonZeroU16::new(10).unwrap(),
             ..Options::default()
         },
     )

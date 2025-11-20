@@ -772,7 +772,16 @@ mod tests {
     fn write_read_roundtrip() {
         let repo = repo::Memory::unlimited();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(4).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
         writer.append([0; 32]).unwrap();
         writer.append([1; 32]).unwrap();
         writer.append([2; 32]).unwrap();
@@ -801,7 +810,16 @@ mod tests {
     fn metadata() {
         let repo = repo::Memory::unlimited();
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(3).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
         // Commit 0..2
         writer.append([0; 32]).unwrap();
         writer.append([0; 32]).unwrap();
@@ -835,7 +853,17 @@ mod tests {
         let repo = repo::Memory::unlimited();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(3).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
+
         for commit in &commits {
             for tx in commit {
                 writer.append(*tx).unwrap();
@@ -868,7 +896,16 @@ mod tests {
         let repo = repo::Memory::unlimited();
         let commits = vec![vec![[1; 32], [2; 32]], vec![[3; 32]], vec![[4; 32], [5; 32]]];
 
-        let mut writer = repo::create_segment_writer(&repo, Options::default(), Commit::DEFAULT_EPOCH, 0).unwrap();
+        let mut writer = repo::create_segment_writer(
+            &repo,
+            Options {
+                max_records_in_commit: NonZeroU16::new(3).unwrap(),
+                ..<_>::default()
+            },
+            Commit::DEFAULT_EPOCH,
+            0,
+        )
+        .unwrap();
         for commit in &commits {
             for tx in commit {
                 writer.append(*tx).unwrap();

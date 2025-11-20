@@ -62,7 +62,7 @@ pub struct Options {
     /// If this number is exceeded, the commit is flushed to disk even without
     /// explicitly calling [`Commitlog::flush`].
     ///
-    /// Default: 65,535
+    /// Default: 1
     #[cfg_attr(feature = "serde", serde(default = "Options::default_max_records_in_commit"))]
     pub max_records_in_commit: NonZeroU16,
     /// Whenever at least this many bytes have been written to the currently
@@ -106,7 +106,7 @@ impl Default for Options {
 
 impl Options {
     pub const DEFAULT_MAX_SEGMENT_SIZE: u64 = 1024 * 1024 * 1024;
-    pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::MAX;
+    pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::new(1).expect("1 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;

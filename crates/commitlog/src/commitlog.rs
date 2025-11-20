@@ -920,7 +920,7 @@ fn range_is_empty(range: &impl RangeBounds<u64>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::Cell, iter::repeat};
+    use std::{cell::Cell, iter::repeat, num::NonZeroU16};
 
     use pretty_assertions::assert_matches;
 
@@ -1231,6 +1231,7 @@ mod tests {
             log.repo.clone(),
             Options {
                 max_segment_size: 1024,
+                max_records_in_commit: NonZeroU16::new(10).unwrap(),
                 ..Options::default()
             },
         )

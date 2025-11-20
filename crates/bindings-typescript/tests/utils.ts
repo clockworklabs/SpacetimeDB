@@ -1,4 +1,7 @@
-import { AlgebraicType, BinaryWriter, Identity } from '../src';
+import { AlgebraicType } from '../src/lib/algebraic_type';
+import BinaryWriter from '../src/lib/binary_writer';
+import { Identity } from '../src/lib/identity';
+import type { Infer } from '../src/lib/type_builders';
 import { Player, Point, User } from '../test-app/src/module_bindings';
 
 export const anIdentity = Identity.fromString(
@@ -11,13 +14,13 @@ export const sallyIdentity = Identity.fromString(
   '000000000000000000000000000000000000000000000000000000000006a111'
 );
 
-export function encodePlayer(value: Player): Uint8Array {
+export function encodePlayer(value: Infer<typeof Player>): Uint8Array {
   const writer = new BinaryWriter(1024);
   Player.serialize(writer, value);
   return writer.getBuffer();
 }
 
-export function encodeUser(value: User): Uint8Array {
+export function encodeUser(value: Infer<typeof User>): Uint8Array {
   const writer = new BinaryWriter(1024);
   User.serialize(writer, value);
   return writer.getBuffer();
@@ -25,7 +28,7 @@ export function encodeUser(value: User): Uint8Array {
 
 export function encodeCreatePlayerArgs(
   name: string,
-  location: Point
+  location: Infer<typeof Point>
 ): Uint8Array {
   const writer = new BinaryWriter(1024);
   AlgebraicType.serializeValue(writer, AlgebraicType.String, name);

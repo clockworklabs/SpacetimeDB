@@ -3,7 +3,9 @@ use spacetimedb::{reducer, table, Identity, ReducerContext, SpacetimeType, Table
 #[table(name = player, public)]
 pub struct Player {
     #[primary_key]
-    owner_id: String,
+    #[auto_inc]
+    id: u32,
+    user_id: Identity,
     name: String,
     location: Point,
 }
@@ -23,15 +25,23 @@ pub struct User {
 
 #[table(name = unindexed_player, public)]
 pub struct UnindexedPlayer {
-    owner_id: String,
+    #[primary_key]
+    #[auto_inc]
+    id: u32,
+    owner_id: Identity,
     name: String,
     location: Point,
 }
 
 #[reducer]
 pub fn create_player(ctx: &ReducerContext, name: String, location: Point) {
+    ctx.db.user().insert(User {
+        identity: ctx.sender,
+        username: name.clone(),
+    });
     ctx.db.player().insert(Player {
-        owner_id: ctx.sender.to_hex().to_string(),
+        id: 0,
+        user_id: ctx.sender,
         name,
         location,
     });

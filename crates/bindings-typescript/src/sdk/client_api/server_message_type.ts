@@ -4,208 +4,58 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { InitialSubscription } from './initial_subscription_type';
-// Mark import as potentially unused
-declare type __keep_InitialSubscription = InitialSubscription;
-import { TransactionUpdate } from './transaction_update_type';
-// Mark import as potentially unused
-declare type __keep_TransactionUpdate = TransactionUpdate;
-import { TransactionUpdateLight } from './transaction_update_light_type';
-// Mark import as potentially unused
-declare type __keep_TransactionUpdateLight = TransactionUpdateLight;
-import { IdentityToken } from './identity_token_type';
-// Mark import as potentially unused
-declare type __keep_IdentityToken = IdentityToken;
-import { OneOffQueryResponse } from './one_off_query_response_type';
-// Mark import as potentially unused
-declare type __keep_OneOffQueryResponse = OneOffQueryResponse;
-import { SubscribeApplied } from './subscribe_applied_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeApplied = SubscribeApplied;
-import { UnsubscribeApplied } from './unsubscribe_applied_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeApplied = UnsubscribeApplied;
-import { SubscriptionError } from './subscription_error_type';
-// Mark import as potentially unused
-declare type __keep_SubscriptionError = SubscriptionError;
-import { SubscribeMultiApplied } from './subscribe_multi_applied_type';
-// Mark import as potentially unused
-declare type __keep_SubscribeMultiApplied = SubscribeMultiApplied;
-import { UnsubscribeMultiApplied } from './unsubscribe_multi_applied_type';
-// Mark import as potentially unused
-declare type __keep_UnsubscribeMultiApplied = UnsubscribeMultiApplied;
-
-import * as ServerMessageVariants from './server_message_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import InitialSubscription from './initial_subscription_type';
+import TransactionUpdate from './transaction_update_type';
+import TransactionUpdateLight from './transaction_update_light_type';
+import IdentityToken from './identity_token_type';
+import OneOffQueryResponse from './one_off_query_response_type';
+import SubscribeApplied from './subscribe_applied_type';
+import UnsubscribeApplied from './unsubscribe_applied_type';
+import SubscriptionError from './subscription_error_type';
+import SubscribeMultiApplied from './subscribe_multi_applied_type';
+import UnsubscribeMultiApplied from './unsubscribe_multi_applied_type';
+import ProcedureResult from './procedure_result_type';
 
 // The tagged union or sum type for the algebraic type `ServerMessage`.
-export type ServerMessage =
-  | ServerMessageVariants.InitialSubscription
-  | ServerMessageVariants.TransactionUpdate
-  | ServerMessageVariants.TransactionUpdateLight
-  | ServerMessageVariants.IdentityToken
-  | ServerMessageVariants.OneOffQueryResponse
-  | ServerMessageVariants.SubscribeApplied
-  | ServerMessageVariants.UnsubscribeApplied
-  | ServerMessageVariants.SubscriptionError
-  | ServerMessageVariants.SubscribeMultiApplied
-  | ServerMessageVariants.UnsubscribeMultiApplied;
-
-let _cached_ServerMessage_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const ServerMessage = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  InitialSubscription: (
-    value: InitialSubscription
-  ): ServerMessageVariants.InitialSubscription => ({
-    tag: 'InitialSubscription',
-    value,
-  }),
-  TransactionUpdate: (
-    value: TransactionUpdate
-  ): ServerMessageVariants.TransactionUpdate => ({
-    tag: 'TransactionUpdate',
-    value,
-  }),
-  TransactionUpdateLight: (
-    value: TransactionUpdateLight
-  ): ServerMessageVariants.TransactionUpdateLight => ({
-    tag: 'TransactionUpdateLight',
-    value,
-  }),
-  IdentityToken: (
-    value: IdentityToken
-  ): ServerMessageVariants.IdentityToken => ({ tag: 'IdentityToken', value }),
-  OneOffQueryResponse: (
-    value: OneOffQueryResponse
-  ): ServerMessageVariants.OneOffQueryResponse => ({
-    tag: 'OneOffQueryResponse',
-    value,
-  }),
-  SubscribeApplied: (
-    value: SubscribeApplied
-  ): ServerMessageVariants.SubscribeApplied => ({
-    tag: 'SubscribeApplied',
-    value,
-  }),
-  UnsubscribeApplied: (
-    value: UnsubscribeApplied
-  ): ServerMessageVariants.UnsubscribeApplied => ({
-    tag: 'UnsubscribeApplied',
-    value,
-  }),
-  SubscriptionError: (
-    value: SubscriptionError
-  ): ServerMessageVariants.SubscriptionError => ({
-    tag: 'SubscriptionError',
-    value,
-  }),
-  SubscribeMultiApplied: (
-    value: SubscribeMultiApplied
-  ): ServerMessageVariants.SubscribeMultiApplied => ({
-    tag: 'SubscribeMultiApplied',
-    value,
-  }),
-  UnsubscribeMultiApplied: (
-    value: UnsubscribeMultiApplied
-  ): ServerMessageVariants.UnsubscribeMultiApplied => ({
-    tag: 'UnsubscribeMultiApplied',
-    value,
-  }),
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_ServerMessage_type_value)
-      return _cached_ServerMessage_type_value;
-    _cached_ServerMessage_type_value = __AlgebraicTypeValue.Sum({
-      variants: [],
-    });
-    _cached_ServerMessage_type_value.value.variants.push(
-      {
-        name: 'InitialSubscription',
-        algebraicType: InitialSubscription.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'TransactionUpdate',
-        algebraicType: TransactionUpdate.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'TransactionUpdateLight',
-        algebraicType: TransactionUpdateLight.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'IdentityToken',
-        algebraicType: IdentityToken.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'OneOffQueryResponse',
-        algebraicType: OneOffQueryResponse.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'SubscribeApplied',
-        algebraicType: SubscribeApplied.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'UnsubscribeApplied',
-        algebraicType: UnsubscribeApplied.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'SubscriptionError',
-        algebraicType: SubscriptionError.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'SubscribeMultiApplied',
-        algebraicType: SubscribeMultiApplied.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'UnsubscribeMultiApplied',
-        algebraicType: UnsubscribeMultiApplied.getTypeScriptAlgebraicType(),
-      }
-    );
-    return _cached_ServerMessage_type_value;
+const ServerMessage = __t.enum('ServerMessage', {
+  get InitialSubscription() {
+    return InitialSubscription;
   },
-
-  serialize(writer: __BinaryWriter, value: ServerMessage): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      ServerMessage.getTypeScriptAlgebraicType(),
-      value
-    );
+  get TransactionUpdate() {
+    return TransactionUpdate;
   },
-
-  deserialize(reader: __BinaryReader): ServerMessage {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      ServerMessage.getTypeScriptAlgebraicType()
-    );
+  get TransactionUpdateLight() {
+    return TransactionUpdateLight;
   },
-};
+  get IdentityToken() {
+    return IdentityToken;
+  },
+  get OneOffQueryResponse() {
+    return OneOffQueryResponse;
+  },
+  get SubscribeApplied() {
+    return SubscribeApplied;
+  },
+  get UnsubscribeApplied() {
+    return UnsubscribeApplied;
+  },
+  get SubscriptionError() {
+    return SubscriptionError;
+  },
+  get SubscribeMultiApplied() {
+    return SubscribeMultiApplied;
+  },
+  get UnsubscribeMultiApplied() {
+    return UnsubscribeMultiApplied;
+  },
+  get ProcedureResult() {
+    return ProcedureResult;
+  },
+});
 
 export default ServerMessage;

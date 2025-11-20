@@ -226,3 +226,6 @@ new.json
 
 # Symlinked output from `nix build`
 result
+
+# Python venv directories
+venv/

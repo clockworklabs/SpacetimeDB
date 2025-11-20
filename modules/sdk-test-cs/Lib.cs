@@ -848,7 +848,12 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_unique_u32_update_pk_u32(ReducerContext ctx, uint n, int d_unique, int d_pk)
+    public static void insert_unique_u32_update_pk_u32(
+        ReducerContext ctx,
+        uint n,
+        int d_unique,
+        int d_pk
+    )
     {
         ctx.Db.unique_u32.Insert(new UniqueU32 { n = n, data = d_unique });
         ctx.Db.pk_u32.n.Update(new PkU32 { n = n, data = d_pk });
@@ -1715,9 +1720,7 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_vec_identity(ReducerContext ctx)
     {
-        ctx.Db.vec_identity.Insert(
-                                   new VecIdentity { i = new List<Identity> { ctx.Sender } }
-        );
+        ctx.Db.vec_identity.Insert(new VecIdentity { i = new List<Identity> { ctx.Sender } });
     }
 
     [SpacetimeDB.Reducer]
@@ -1735,7 +1738,9 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void insert_caller_one_connection_id(ReducerContext ctx)
     {
-        ctx.Db.one_connection_id.Insert(new OneConnectionId { a = (ConnectionId)ctx.ConnectionId! });
+        ctx.Db.one_connection_id.Insert(
+            new OneConnectionId { a = (ConnectionId)ctx.ConnectionId! }
+        );
     }
 
     [SpacetimeDB.Reducer]
@@ -1753,14 +1758,16 @@ public static partial class Module
     public static void insert_caller_unique_connection_id(ReducerContext ctx, int data)
     {
         ctx.Db.unique_connection_id.Insert(
-                                     new UniqueConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data }
+            new UniqueConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data }
         );
     }
 
     [SpacetimeDB.Reducer]
     public static void insert_caller_pk_connection_id(ReducerContext ctx, int data)
     {
-        ctx.Db.pk_connection_id.Insert(new PkConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data });
+        ctx.Db.pk_connection_id.Insert(
+            new PkConnectionId { a = (ConnectionId)ctx.ConnectionId!, data = data }
+        );
     }
 
     [SpacetimeDB.Reducer]
@@ -1782,7 +1789,11 @@ public static partial class Module
     }
 
     [SpacetimeDB.Reducer]
-    public static void insert_into_pk_btree_u32(ReducerContext ctx, List<PkU32> pk_u32, List<BTreeU32> bt_u32)
+    public static void insert_into_pk_btree_u32(
+        ReducerContext ctx,
+        List<PkU32> pk_u32,
+        List<BTreeU32> bt_u32
+    )
     {
         foreach (var row in pk_u32)
         {
@@ -1950,7 +1961,6 @@ public static partial class Module
                             return value.ToString()!.ToLowerInvariant();
                         }
                         return value.ToString()!;
-
                     })
                     .ToList(),
             }
@@ -2032,7 +2042,9 @@ public static partial class Module
     }
 
     [SpacetimeDB.ClientVisibilityFilter]
-    public static readonly Filter USERS_FILTER = new Filter.Sql("SELECT * FROM users WHERE identity = :sender");
+    public static readonly Filter USERS_FILTER = new Filter.Sql(
+        "SELECT * FROM users WHERE identity = :sender"
+    );
 
     [SpacetimeDB.Table(Name = "users", Public = true)]
     public partial struct Users
@@ -2049,7 +2061,8 @@ public static partial class Module
     }
 
     [SpacetimeDB.Table(Name = "indexed_simple_enum", Public = true)]
-    public partial struct IndexedSimpleEnum {
+    public partial struct IndexedSimpleEnum
+    {
         [SpacetimeDB.Index.BTree]
         public SimpleEnum n;
     }

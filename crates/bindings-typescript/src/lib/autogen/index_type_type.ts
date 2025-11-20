@@ -4,66 +4,16 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import * as IndexTypeVariants from './index_type_variants';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
 // The tagged union or sum type for the algebraic type `IndexType`.
-export type IndexType = IndexTypeVariants.BTree | IndexTypeVariants.Hash;
-
-let _cached_IndexType_type_value: __AlgebraicTypeType | null = null;
-
-// A value with helper functions to construct the type.
-export const IndexType = {
-  // Helper functions for constructing each variant of the tagged union.
-  // ```
-  // const foo = Foo.A(42);
-  // assert!(foo.tag === "A");
-  // assert!(foo.value === 42);
-  // ```
-  BTree: { tag: 'BTree' } as const,
-  Hash: { tag: 'Hash' } as const,
-
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_IndexType_type_value) return _cached_IndexType_type_value;
-    _cached_IndexType_type_value = __AlgebraicTypeValue.Sum({ variants: [] });
-    _cached_IndexType_type_value.value.variants.push(
-      {
-        name: 'BTree',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      },
-      {
-        name: 'Hash',
-        algebraicType: __AlgebraicTypeValue.Product({ elements: [] }),
-      }
-    );
-    return _cached_IndexType_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: IndexType): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      IndexType.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): IndexType {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      IndexType.getTypeScriptAlgebraicType()
-    );
-  },
-};
+const IndexType = __t.enum('IndexType', {
+  BTree: __t.unit(),
+  Hash: __t.unit(),
+});
 
 export default IndexType;

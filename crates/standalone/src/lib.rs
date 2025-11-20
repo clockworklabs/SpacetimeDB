@@ -148,13 +148,14 @@ impl NodeDelegate for StandaloneEnv {
     }
 }
 
+#[async_trait]
 impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
     // Nodes
-    fn get_node_id(&self) -> Option<u64> {
+    async fn get_node_id(&self) -> Option<u64> {
         Some(0)
     }
 
-    fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
+    async fn get_node_by_id(&self, node_id: u64) -> anyhow::Result<Option<Node>> {
         if node_id == 0 {
             return Ok(Some(Node {
                 id: 0,
@@ -166,46 +167,46 @@ impl spacetimedb_client_api::ControlStateReadAccess for StandaloneEnv {
         Ok(None)
     }
 
-    fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
-        Ok(vec![self.get_node_by_id(0)?.unwrap()])
+    async fn get_nodes(&self) -> anyhow::Result<Vec<Node>> {
+        Ok(vec![self.get_node_by_id(0).await?.unwrap()])
     }
 
     // Databases
-    fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
+    async fn get_database_by_id(&self, id: u64) -> anyhow::Result<Option<Database>> {
         Ok(self.control_db.get_database_by_id(id)?)
     }
 
-    fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>> {
+    async fn get_database_by_identity(&self, database_identity: &Identity) -> anyhow::Result<Option<Database>> {
         Ok(self.control_db.get_database_by_identity(database_identity)?)
     }
 
-    fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
+    async fn get_databases(&self) -> anyhow::Result<Vec<Database>> {
         Ok(self.control_db.get_databases()?)
     }
 
     // Replicas
-    fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
+    async fn get_replica_by_id(&self, id: u64) -> anyhow::Result<Option<Replica>> {
         Ok(self.control_db.get_replica_by_id(id)?)
     }
 
-    fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
+    async fn get_replicas(&self) -> anyhow::Result<Vec<Replica>> {
         Ok(self.control_db.get_replicas()?)
     }
 
-    fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
+    async fn get_leader_replica_by_database(&self, database_id: u64) -> Option<Replica> {
         self.control_db.get_leader_replica_by_database(database_id)
     }
     // Energy
-    fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
+    async fn get_energy_balance(&self, identity: &Identity) -> anyhow::Result<Option<EnergyBalance>> {
         Ok(self.control_db.get_energy_balance(identity)?)
     }
 
     // DNS
-    fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
+    async fn lookup_identity(&self, domain: &str) -> anyhow::Result<Option<Identity>> {
         Ok(self.control_db.spacetime_dns(domain)?)
     }
 
-    fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
+    async fn reverse_lookup(&self, database_identity: &Identity) -> anyhow::Result<Vec<DomainName>> {
         Ok(self.control_db.spacetime_reverse_dns(database_identity)?)
     }
 }
@@ -446,7 +447,8 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         action: spacetimedb_client_api::Action,
     ) -> Result<(), spacetimedb_client_api::Unauthorized> {
         let database = self
-            .get_database_by_identity(&database)?
+            .get_database_by_identity(&database)
+            .await?
             .with_context(|| format!("database {database} not found"))
             .with_context(|| format!("Unable to authorize {subject} to perform {action:?})"))?;
         if subject == database.owner_identity {
@@ -467,7 +469,8 @@ impl spacetimedb_client_api::Authorization for StandaloneEnv {
         database: Identity,
     ) -> Result<AuthCtx, spacetimedb_client_api::Unauthorized> {
         let database = self
-            .get_database_by_identity(&database)?
+            .get_database_by_identity(&database)
+            .await?
             .with_context(|| format!("database {database} not found"))
             .with_context(|| format!("Unable to authorize {subject} for SQL"))?;
 

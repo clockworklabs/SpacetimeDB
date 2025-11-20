@@ -4,79 +4,23 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { AlgebraicType } from './algebraic_type_type';
-// Mark import as potentially unused
-declare type __keep_AlgebraicType = AlgebraicType;
-import { ProductType } from './product_type_type';
-// Mark import as potentially unused
-declare type __keep_ProductType = ProductType;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import AlgebraicType from './algebraic_type_type';
+import ProductType from './product_type_type';
 
-export type RawViewDefV9 = {
-  name: string;
-  index: number;
-  isPublic: boolean;
-  isAnonymous: boolean;
-  params: ProductType;
-  returnType: AlgebraicType;
-};
-let _cached_RawViewDefV9_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawViewDefV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawViewDefV9_type_value) return _cached_RawViewDefV9_type_value;
-    _cached_RawViewDefV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawViewDefV9_type_value.value.elements.push(
-      { name: 'name', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'index', algebraicType: __AlgebraicTypeValue.U32 },
-      { name: 'isPublic', algebraicType: __AlgebraicTypeValue.Bool },
-      { name: 'isAnonymous', algebraicType: __AlgebraicTypeValue.Bool },
-      {
-        name: 'params',
-        algebraicType: ProductType.getTypeScriptAlgebraicType(),
-      },
-      {
-        name: 'returnType',
-        algebraicType: AlgebraicType.getTypeScriptAlgebraicType(),
-      }
-    );
-    return _cached_RawViewDefV9_type_value;
+export default __t.object('RawViewDefV9', {
+  name: __t.string(),
+  index: __t.u32(),
+  isPublic: __t.bool(),
+  isAnonymous: __t.bool(),
+  get params() {
+    return ProductType;
   },
-
-  serialize(writer: __BinaryWriter, value: RawViewDefV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawViewDefV9.getTypeScriptAlgebraicType(),
-      value
-    );
+  get returnType() {
+    return AlgebraicType;
   },
-
-  deserialize(reader: __BinaryReader): RawViewDefV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawViewDefV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawViewDefV9;
+});
