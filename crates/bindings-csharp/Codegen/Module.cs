@@ -1532,14 +1532,16 @@ public class Module : IIncrementalGenerator
                                     $"SpacetimeDB.Internal.Module.RegisterReducer<{r.Name}>();"
                                 )
                             )}}
-                            {{string.Join(
-                                "\n",
-                                views.Array.Select(v =>
-                                    v.IsAnonymous
-                                        ? $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();"
-                                        : $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();"
-                                )
-                            )}}
+
+                            {{string.Join("\n", 
+                                views.Array.Where(v => !v.IsAnonymous)
+                                    .Select(v => $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();")
+                                    .Concat(
+                                        views.Array.Where(v => v.IsAnonymous)
+                                            .Select(v => $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();")
+                                    )
+                            )}}                            
+
                             {{string.Join(
                                 "\n",
                                 tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.tableAccessorName}>();")

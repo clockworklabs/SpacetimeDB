@@ -1863,16 +1863,18 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefIndexNoMutationViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoAnonIdentityViewDispatcher>();
+
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoContextViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoIterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoPublicViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefReturnsNotASpacetimeTypeViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongContextViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongReturnViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewNoDeleteViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewNoInsertViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefIndexNoMutationViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoAnonIdentityViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoIterViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefReturnsNotASpacetimeTypeViewDispatcher>();
+
         SpacetimeDB.Internal.Module.RegisterTable<
             global::Player,
             SpacetimeDB.Internal.TableHandles.Player

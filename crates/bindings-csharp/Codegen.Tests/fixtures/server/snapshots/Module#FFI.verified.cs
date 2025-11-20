@@ -1655,8 +1655,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<InsertMultiData>();
         SpacetimeDB.Internal.Module.RegisterReducer<ScheduleImmediate>();
         SpacetimeDB.Internal.Module.RegisterReducer<SendScheduledMessage>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<FindPublicTableByIdentityViewDispatcher>();
+
         SpacetimeDB.Internal.Module.RegisterView<PublicTableByIdentityViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<FindPublicTableByIdentityViewDispatcher>();
+
         SpacetimeDB.Internal.Module.RegisterTable<
             global::BTreeMultiColumn,
             SpacetimeDB.Internal.TableHandles.BTreeMultiColumn

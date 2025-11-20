@@ -141,12 +141,19 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Debug.Assert(context.Db.MyPlayer != null, "context.Db.MyPlayer != null");
     Debug.Assert(context.Db.PlayersForLevel != null, "context.Db.PlayersForLevel != null");
     Debug.Assert(context.Db.MyPlayer.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}");
-    Debug.Assert(context.Db.PlayersForLevel.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.PlayersForLevel.Count}");
+    Debug.Assert(context.Db.PlayersForLevel.Count > 0, $"context.Db.PlayersForLevel.Count = {context.Db.PlayersForLevel.Count}");
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
+    var expectedPlayer = new Player { Id = 1, Identity = context.Identity!.Value, Name = "NewPlayer" };
     Log.Debug("MyPlayer Iter count: " + (viewIterRows != null ? viewIterRows.Count().ToString() : "null"));
     Debug.Assert(viewIterRows != null && viewIterRows.Any());
+    Log.Debug("Validating View row data " +
+              $"Id={expectedPlayer.Id}, Identity={expectedPlayer.Identity}, Name={expectedPlayer.Name} => " +
+              $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}");
+    Debug.Assert(viewIterRows.First().Id == expectedPlayer.Id &&
+                 viewIterRows.First().Identity == expectedPlayer.Identity &&
+                 viewIterRows.First().Name == expectedPlayer.Name);
 
     Log.Debug("Calling RemoteQuery on View");
     var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");
@@ -154,10 +161,12 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
     Log.Debug("Calling Iter on Anonymous View");
     var anonViewIterRows = context.Db.PlayersForLevel.Iter();
+    Log.Debug("PlayersForLevel Iter count: " + (anonViewIterRows != null ? anonViewIterRows.Count().ToString() : "null"));
     Debug.Assert(anonViewIterRows != null && anonViewIterRows.Any());
 
     Log.Debug("Calling RemoteQuery on Anonymous View");
     var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery("WHERE Level = 1");
+    Log.Debug("PlayersForLevel RemoteQuery count: " + (anonViewRemoteQueryRows != null ? anonViewRemoteQueryRows.Result.Length.ToString() : "null"));
     Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
 }
 
