@@ -45,8 +45,7 @@ use spacetimedb_schema::auto_migrate::{
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
 fn require_spacetime_auth_for_creation() -> Option<String> {
-    // If the string is a non-empty value, require SpacetimeAuth for database creation
-    // and return the value for logging purposes.
+    // If the string is a non-empty value, return the string to be used as the required issuer
     // TODO(cloutiertyler): This env var replaces TEMP_REQUIRE_SPACETIME_AUTH,
     // we should remove that one in the future. We may eventually remove
     // the below restriction entirely as well in Maincloud.
