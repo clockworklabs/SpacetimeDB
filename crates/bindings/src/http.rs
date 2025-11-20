@@ -15,7 +15,10 @@ use crate::{
 };
 use spacetimedb_lib::{bsatn, http as st_http};
 
-/// Allows performing
+/// Allows performing HTTP requests via [`HttpClient::send`] and [`HttpClient::get`].
+///
+/// Access an `HttpClient` from within [procedures](crate::procedure)
+/// via [the `http` field of the `ProcedureContext`](crate::ProcedureContext::http).
 #[non_exhaustive]
 pub struct HttpClient {}
 
@@ -23,7 +26,52 @@ impl HttpClient {
     /// Send the HTTP request `request` and wait for its response.
     ///
     /// For simple `GET` requests with no headers, use [`HttpClient::get`] instead.
-    // TODO(docs): expand docs
+    ///
+    /// Include a [`Timeout`] in the [`Request::extensions`] via [`http::request::RequestBuilder::extension`]
+    /// to impose a timeout on the request.
+    /// All HTTP requests in SpacetimeDB are subject to a maximum timeout of 500 milliseconds.
+    /// All other extensions in `request` are ignored.
+    ///
+    /// The returned [`Response`] may have a status code other than 200 OK.
+    /// Callers should inspect [`Response::status`] to handle errors returned from the remote server.
+    /// This method returns `Err(err)` only when a connection could not be initiated or was dropped,
+    /// e.g. due to DNS resolution failure or an unresponsive server.
+    ///
+    /// # Example
+    ///
+    /// Send a `POST` request with the header `Content-Type: text/plain`, a string body,
+    /// and a timeout of 100 milliseconds, then treat the response as a string and log it:
+    ///
+    /// ```norun
+    /// # use spacetimedb::procedure;
+    /// # use spacetimedb::http::{Request, Timeout};
+    /// # use std::time::Duration;
+    /// # #[procedure]
+    /// # fn post_somewhere(ctx: &mut ProcedureContext) {
+    /// let request = Request::builder()
+    ///     .uri("https://some-remote-host.invalid/upload")
+    ///     .method("POST")
+    ///     .header("Content-Type", "text/plain")
+    ///     // Set a timeout of 100 ms, further restricting the default timeout.
+    ///     .extension(Timeout::from(Duration::from_millis(100)))
+    ///     .body("This is the body of the HTTP request")
+    ///     .expect("Building `Request` object failed");
+    ///
+    /// match ctx.http.send(request) {
+    ///     Err(err) => {
+    ///         log::error!("HTTP request failed: {err}");
+    ///     },
+    ///     Ok(response) => {
+    ///         log::info!(
+    ///             "Got response with status {}, body {}",
+    ///             response.status(),
+    ///             response.body().into_string_lossy(),
+    ///         );
+    ///     }
+    /// }
+    /// # }
+    ///
+    /// ```
     pub fn send<B: Into<Body>>(&self, request: Request<B>) -> Result<Response<Body>, Error> {
         let (request, body) = request.map(Into::into).into_parts();
         let request = st_http::Request::from(request);
@@ -47,9 +95,30 @@ impl HttpClient {
         }
     }
 
-    /// Send a `GET` request to `uri` with no headers.
+    /// Send a `GET` request to `uri` with no headers and wait for the response.
     ///
-    /// Blocks procedure execution for the duration of the HTTP request.
+    /// # Example
+    ///
+    /// Send a `GET` request, then treat the response as a string and log it:
+    ///
+    /// ```no_run
+    /// # use spacetimedb::procedure;
+    /// # #[procedure]
+    /// # fn get_from_somewhere(ctx: &mut ProcedureContext) {
+    /// match ctx.http.get("https://some-remote-host.invalid/download") {
+    ///     Err(err) => {
+    ///         log::error!("HTTP request failed: {err}");
+    ///     }
+    ///     Ok(response) => {
+    ///         log::info!(
+    ///             "Got response with status {}, body {}",
+    ///             response.status(),
+    ///             response.body().into_string_lossy(),
+    ///         );
+    ///     }
+    /// }
+    /// # }
+    /// ```
     pub fn get(&self, uri: impl TryInto<http::Uri, Error: Into<http::Error>>) -> Result<Response<Body>, Error> {
         self.send(
             http::Request::builder()
@@ -67,21 +136,28 @@ pub struct Body {
 }
 
 impl Body {
+    /// Treat the body as a sequence of bytes.
     pub fn into_bytes(self) -> Bytes {
         match self.inner {
             BodyInner::Bytes(bytes) => bytes,
         }
     }
 
+    /// Convert the body into a [`String`], erroring if it is not valid UTF-8.
     pub fn into_string(self) -> Result<String, std::string::FromUtf8Error> {
         String::from_utf8(self.into_bytes().into())
     }
 
+    /// Convert the body into a [`String`], replacing invalid UTF-8 with
+    /// `U+FFFD REPLACEMENT CHARACTER`, which looks like this: �.
+    ///
+    /// See [`String::from_utf8_lossy`] for more details on the conversion.
     pub fn into_string_lossy(self) -> String {
         self.into_string()
             .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
     }
 
+    /// Construct a `Body` consisting of `bytes`.
     pub fn from_bytes(bytes: impl Into<Bytes>) -> Body {
         Body {
             inner: BodyInner::Bytes(bytes.into()),
