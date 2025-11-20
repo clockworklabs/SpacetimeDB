@@ -20,6 +20,8 @@ macro_rules! regex_replace {
 fn main() -> anyhow::Result<()> {
     let module = RawModuleDefV8::with_builder(|module| {
         module.add_type::<RawModuleDef>();
+        module.add_type::<spacetimedb_lib::http::Request>();
+        module.add_type::<spacetimedb_lib::http::Response>();
     });
 
     let dir = &Path::new(concat!(
