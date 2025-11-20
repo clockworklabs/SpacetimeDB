@@ -139,6 +139,8 @@ fn main() -> Result<()> {
     match cli.cmd {
         Some(CiCmd::Test) => {
             run!("cargo test --all -- --skip unreal")?;
+            // The fallocate tests have been flakely when running in parallel
+            run!("cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1")?;
             run!("bash tools/check-diff.sh")?;
             run!("cargo run -p spacetimedb-codegen --example regen-csharp-moduledef && bash tools/check-diff.sh crates/bindings-csharp")?;
             run!("(cd crates/bindings-csharp && dotnet test -warnaserror)")?;

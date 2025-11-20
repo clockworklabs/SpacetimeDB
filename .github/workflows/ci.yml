@@ -170,91 +170,8 @@ jobs:
         working-directory: crates/bindings-typescript
         run: pnpm build
 
-      - name: Run cargo test
-        #Note: Unreal tests will be run separately
-        run: cargo test --all -- --skip unreal
-
-        # The fallocate tests have been flakely when running in parallel
-      - name: Run fallocate tests
-        run: cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
-
-      - name: Ensure C# autogen bindings are up-to-date
-        run: |
-          apt-get update
-          apt-get install -y acl curl ca-certificates
-
-          REPO="$GITHUB_WORKSPACE"
-          # Let ue4 read/write the workspace & tool caches without changing ownership
-          for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
-            [ -d "$p" ] && setfacl -R -m u:ue4:rwX -m d:u:ue4:rwX "$p" || true
-          done
-
-          # Rust tool caches live under the runner tool cache so they persist
-          export CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
-          export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
-          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
-
-          # Make sure the UE build script is executable (and parents traversable)
-          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
-          chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
-          chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
-
-
-
-          # Make sure the UE build script is executable (and parents traversable)
-          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
-          chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
-          chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
-
-          # Run the build & tests as ue4 (who owns the UE tree)
-          sudo -E -H -u ue4 env \
-            HOME=/home/ue4 \
-            XDG_CONFIG_HOME=/home/ue4/.config \
-            CARGO_HOME="$CARGO_HOME" \
-            RUSTUP_HOME="$RUSTUP_HOME" \
-          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-          done
-          done
-
-          # Rust tool caches live under the runner tool cache so they persist
-          export CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
-          export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
-          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
-          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
-
-          # Make sure the UE build script is executable (and parents traversable)
-          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
-          chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
-          chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
-
-          # Run the build & tests as ue4 (who owns the UE tree)
-          sudo -E -H -u ue4 env \
-            HOME=/home/ue4 \
-            XDG_CONFIG_HOME=/home/ue4/.config \
-            CARGO_HOME="$CARGO_HOME" \
-            RUSTUP_HOME="$RUSTUP_HOME" \
-            PATH="$CARGO_HOME/bin:$PATH" \
-            bash -lc '
-              set -euxo pipefail
-              # Install rustup for ue4 if needed (uses the shared caches)
-              if ! command -v cargo >/dev/null 2>&1; then
-            CARGO_HOME="$CARGO_HOME" \
-            RUSTUP_HOME="$RUSTUP_HOME" \
-            PATH="$CARGO_HOME/bin:$PATH" \
-            bash -lc '
-              set -euxo pipefail
-              # Install rustup for ue4 if needed (uses the shared caches)
-              if ! command -v cargo >/dev/null 2>&1; then
-                curl -sSf https://sh.rustup.rs | sh -s -- -y
-              fi
-              rustup show >/dev/null
-              git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
-
-              cd "$GITHUB_WORKSPACE/sdks/unreal"
-              cargo --version
-              cargo test -- --test-threads=1
-            '
+      - name: Run tests
+        run: cargo ci test
 
   lints:
     name: Lints
@@ -393,26 +310,26 @@ jobs:
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
     steps:
-      # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
-      # commits though.
-      #      - name: Find Git ref
-      #        env:
-      #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #        shell: bash
-      #        run: |
-      #          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-      #          if test -n "${PR_NUMBER}"; then
-      #            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-      #          else
-      #            GIT_REF="${{ github.ref }}"
-      #          fi
-      #          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+# Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
+# commits though.
+#      - name: Find Git ref
+#        env:
+#          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#        shell: bash
+#        run: |
+#          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+#          if test -n "${PR_NUMBER}"; then
+#            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+#          else
+#            GIT_REF="${{ github.ref }}"
+#          fi
+#          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
-      - name: Install unreal engine test dependencies
+      - name: Run Unreal Engine tests
         working-directory: sdks/unreal
         env:
           UE_ROOT_PATH: /home/ue4/UnrealEngine
@@ -421,12 +338,43 @@ jobs:
           apt-get update
           apt-get install -y acl curl ca-certificates
 
-      - name: Run Unreal Engine tests
-        working-directory: sdks/unreal
-        env:
-          UE_ROOT_PATH: /home/ue4/UnrealEngine
-        run: |
-          cargo ci unreal-tests
+          REPO="$GITHUB_WORKSPACE"
+          # Let ue4 read/write the workspace & tool caches without changing ownership
+          for p in "$REPO" "${RUNNER_TEMP:-/__t}" "${RUNNER_TOOL_CACHE:-/__t}"; do
+            [ -d "$p" ] && setfacl -R -m u:ue4:rwX -m d:u:ue4:rwX "$p" || true
+          done
+
+          # Rust tool caches live under the runner tool cache so they persist
+          export CARGO_HOME="${RUNNER_TOOL_CACHE:-/__t}/cargo"
+          export RUSTUP_HOME="${RUNNER_TOOL_CACHE:-/__t}/rustup"
+          mkdir -p "$CARGO_HOME" "$RUSTUP_HOME"
+          chown -R ue4:ue4 "$CARGO_HOME" "$RUSTUP_HOME"
+
+          # Make sure the UE build script is executable (and parents traversable)
+          UE_DIR="${UE_ROOT_PATH:-/home/ue4/UnrealEngine}"
+          chmod a+rx "$UE_DIR" "$UE_DIR/Engine" "$UE_DIR/Engine/Build" "$UE_DIR/Engine/Build/BatchFiles/Linux" || true
+          chmod a+rx "$UE_DIR/Engine/Build/BatchFiles/Linux/Build.sh" || true
+
+          # Run the build & tests as ue4 (who owns the UE tree)
+          sudo -E -H -u ue4 env \
+            HOME=/home/ue4 \
+            XDG_CONFIG_HOME=/home/ue4/.config \
+            CARGO_HOME="$CARGO_HOME" \
+            RUSTUP_HOME="$RUSTUP_HOME" \
+            PATH="$CARGO_HOME/bin:$PATH" \
+            bash -lc '
+              set -euxo pipefail
+              # Install rustup for ue4 if needed (uses the shared caches)
+              if ! command -v cargo >/dev/null 2>&1; then
+                curl -sSf https://sh.rustup.rs | sh -s -- -y
+              fi
+              rustup show >/dev/null
+              git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+
+              cd "$GITHUB_WORKSPACE/sdks/unreal"
+              cargo --version
+              cargo test -- --test-threads=1
+            '
 
   ci_command_docs:
     name: Check CI command docs
