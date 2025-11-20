@@ -268,17 +268,13 @@ fn exec_procedure_http_ok() {
                         let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
                             &mut serde_json::Deserializer::from_str(&res.unwrap()),
                         )?;
-                        anyhow::ensure!(module_def
-                            .misc_exports
-                            .iter()
-                            .find(|misc_export| {
-                                if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
-                                    &*procedure_def.name == "read_my_schema"
-                                } else {
-                                    false
-                                }
-                            })
-                            .is_some());
+                        anyhow::ensure!(module_def.misc_exports.iter().any(|misc_export| {
+                            if let RawMiscModuleExportV9::Procedure(procedure_def) = misc_export {
+                                &*procedure_def.name == "read_my_schema"
+                            } else {
+                                false
+                            }
+                        }));
                         Ok(())
                     })(),
                 )
