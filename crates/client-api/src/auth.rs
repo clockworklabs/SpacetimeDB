@@ -14,6 +14,7 @@ use spacetimedb::auth::token_validation::{
 use spacetimedb::auth::JwtKeys;
 use spacetimedb::energy::EnergyQuanta;
 use spacetimedb::identity::Identity;
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
@@ -117,6 +118,7 @@ pub struct TokenClaims {
     pub issuer: String,
     pub subject: String,
     pub audience: Vec<String>,
+    pub extra: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl From<SpacetimeAuth> for TokenClaims {
@@ -126,6 +128,7 @@ impl From<SpacetimeAuth> for TokenClaims {
             subject: auth.claims.subject,
             // This will need to be changed when we care about audiencies.
             audience: Vec::new(),
+            extra: auth.claims.extra,
         }
     }
 }
@@ -136,6 +139,7 @@ impl TokenClaims {
             issuer,
             subject,
             audience: Vec::new(),
+            extra: None,
         }
     }
 
@@ -159,6 +163,7 @@ impl TokenClaims {
             subject: self.subject.clone(),
             issuer: self.issuer.clone(),
             audience: self.audience.clone(),
+            extra: self.extra.clone(),
             iat,
             exp,
         };
@@ -184,6 +189,7 @@ impl SpacetimeAuth {
             subject: subject.clone(),
             // Placeholder audience.
             audience: vec!["spacetimedb".to_string()],
+            extra: None,
         };
 
         let (claims, token) = claims.encode_and_sign(ctx.jwt_auth_provider()).map_err(log_and_500)?;
@@ -291,6 +297,7 @@ mod tests {
             issuer: "localhost".to_string(),
             subject: "test-subject".to_string(),
             audience: vec!["spacetimedb".to_string()],
+            extra: None,
         };
         let id = claims.id();
         let (_, token) = claims.encode_and_sign(&kp.private)?;
@@ -310,6 +317,7 @@ mod tests {
             issuer: "localhost".to_string(),
             subject: "test-subject".to_string(),
             audience: vec![dummy_audience.clone()],
+            extra: None,
         };
         let (_, token) = claims.encode_and_sign(&kp.private)?;
         let st_creds = SpacetimeCreds::from_signed_token(token);
