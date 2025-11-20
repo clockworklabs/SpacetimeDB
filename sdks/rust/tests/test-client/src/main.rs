@@ -819,7 +819,7 @@ fn exec_insert_call_timestamp() {
         move |ctx| {
             subscribe_all_then(ctx, move |ctx| {
                 let mut on_insert_result = Some(test_counter.add_test("on_insert"));
-                ctx.db.one_timestamp().on_insert(move |ctx, row| {
+                ctx.db.one_timestamp().on_insert(move |ctx: &EventContext, row| {
                     let run_checks = || {
                         let Event::Reducer(reducer_event) = &ctx.event else {
                             anyhow::bail!("Expected Reducer event but found {:?}", ctx.event);
