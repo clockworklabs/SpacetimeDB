@@ -56,10 +56,14 @@ use spacetimedb_schema::{
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
-    blob_store::BlobStore, indexes::{RowPointer, SquashedOffset}, static_assert_size, table::{
+    blob_store::BlobStore,
+    indexes::{RowPointer, SquashedOffset},
+    static_assert_size,
+    table::{
         BlobNumBytes, DuplicateError, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex,
         UniqueConstraintViolation,
-    }, table_index::TableIndex
+    },
+    table_index::TableIndex,
 };
 use std::{
     sync::Arc,
@@ -289,7 +293,8 @@ impl MutTxId {
 
     /// Returns the views whose read sets overlaps with this transaction's write set
     pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
-        let mut res = self.tx_state
+        let mut res = self
+            .tx_state
             .insert_tables
             .keys()
             .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
@@ -298,8 +303,6 @@ impl MutTxId {
             .collect::<HashSet<_>>();
 
         // Include views that perform precise index seeks.
-        // It is sufficient to only consider deleted tables,
-        // as deleted rows will cover all modification to existing rows in the committed state.
         for (table_id, deleted_table) in &self.tx_state.delete_tables {
             let (table, blob_store, _) = self
                 .committed_state_write_lock
@@ -315,6 +318,24 @@ impl MutTxId {
                 let Some(row_ref) = table.get_row_ref(blob_store, ptr) else {
                     continue;
                 };
+                for view_call in self.committed_state_write_lock.views_for_index_seek(table_id, row_ref) {
+                    res.insert(view_call);
+                }
+            }
+        }
+
+        for (table_id, inserted_table) in &self.tx_state.insert_tables {
+            let (table, blob_store, _) = self
+                .committed_state_write_lock
+                .get_table_and_blob_store(*table_id)
+                .expect("table must exist in committed state for inserted table");
+
+            // Skip tables without indexes.
+            if table.indexes.is_empty() {
+                continue;
+            }
+
+            for row_ref in inserted_table.scan_rows(blob_store) {
                 for view_call in self.committed_state_write_lock.views_for_index_seek(table_id, row_ref) {
                     res.insert(view_call);
                 }

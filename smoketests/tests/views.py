@@ -190,19 +190,29 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
     # since it relies on log capturing starting from an empty log.
     def test_a_view_materialization(self):
         """This test asserts whether views are materialized correctly"""
-        self.insert_initial_data()
+
         player_called_log = "player view called"
-
-        self.assertNotIn(player_called_log, self.logs(100))
-
-        self.call_player_view()
-        #On first call, the view is evaluated
-        self.assertIn(player_called_log, self.logs(100))
-    
-        self.call_player_view()
-        #On second call, the view is cached
+        
+        # call view, with no data
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+""")
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 1)
+
+        self.insert_initial_data()
+
+        # Should invoke view as data is inserted
+        self.call_player_view()
+
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+    
+        self.call_player_view()
+        # the view is cached
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
 
         # inserting new row should not trigger view invocation due to readsets
         self.spacetime(
@@ -214,9 +224,8 @@ INSERT INTO player_state (id, level) VALUES (22, 8);
         )
 
         self.call_player_view()
-        #On third call, after inserting a row, the view is still cached
         logs = self.logs(100)
-        self.assertEqual(logs.count(player_called_log), 1)
+        self.assertEqual(logs.count(player_called_log), 2)
 
         # Updating the row that the view depends on should trigger re-evaluation
         self.spacetime(
@@ -238,7 +247,17 @@ Select * FROM player_state WHERE id = 42;
 
         # On fourth call, after updating the dependent row, the view is re-evaluated
         logs = self.logs(100)
-        self.assertEqual(logs.count(player_called_log), 2)
+        self.assertEqual(logs.count(player_called_log), 3)
+
+
+        # Updating it back for other tests to work
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+UPDATE player_state SET level = 7 WHERE id = 42;
+""",
+        )
 
     def test_query_anonymous_view_reducer(self):
         """Tests that anonymous views are updated for reducers"""
