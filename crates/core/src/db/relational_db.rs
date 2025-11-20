@@ -1077,8 +1077,8 @@ impl RelationalDB {
 /// Value is chosen arbitrarily; can be tuned later if needed.
 const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
-/// Duration to budget for each view cleanup job, so that it doesn't hold database lock for too
-/// long.
+/// Duration to budget for each view cleanup job,
+/// so that it doesn't hold transaction lock for to long.
 //TODO: Make this value configurable
 const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
 
