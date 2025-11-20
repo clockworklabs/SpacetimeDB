@@ -103,23 +103,6 @@ Usage: update-flow [OPTIONS]
 - `--github-token-auth`: Whether to enable github token authentication feature when building the update binary. By default this is disabled.
 - `--help`: Print help (see a summary with '-h')
 
-### `unreal-tests`
-
-Run Unreal Engine related tests
-
-This assumes the UE4 environment is already set up
-
-This is designed to run in the github actions environment, but should work locally if the Unreal environment is set up correctly.
-
-**Usage:**
-```bash
-Usage: unreal-tests
-```
-
-**Options:**
-
-- `--help`: Print help (see a summary with '-h')
-
 ### `cli-docs`
 
 **Usage:**
