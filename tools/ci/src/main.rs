@@ -54,7 +54,7 @@ enum CiCmd {
         #[arg(
             long,
             default_value_t = false,
-            long_help = "Start SpacetimeDB in docker (Linux) instead of bare. Also forwarded to the smoketests runner."
+            long_help = "Start SpacetimeDB in docker (Linux) instead of bare."
         )]
         docker: bool,
         #[arg(
@@ -175,20 +175,11 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests { docker, args }) => {
-            // Prepare arguments for the smoketests runner
-            let mut st_args = args.clone();
-            if docker {
-                st_args.push("--docker".to_string());
-            }
-
             // Start SpacetimeDB depending on platform and docker flag
             if docker {
-                // Linux docker compose flow
-                if cfg!(target_os = "linux") {
-                    // Our .dockerignore omits `target`, which our CI Dockerfile needs.
-                    run!("rm -f .dockerignore")?;
-                    run!("docker compose -f .github/docker-compose.yml up -d")?;
-                }
+                // Our .dockerignore omits `target`, which our CI Dockerfile needs.
+                run!("rm -f .dockerignore")?;
+                run!("docker compose -f .github/docker-compose.yml up -d")?;
             } else {
                 // Bare mode
                 if cfg!(target_os = "windows") {
