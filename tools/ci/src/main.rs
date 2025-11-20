@@ -169,7 +169,6 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests { args }) => {
-            // Note: clear_database and replication only work in private
             run!(&format!("python -m smoketests {}", args.join(" ")))?;
         }
 
