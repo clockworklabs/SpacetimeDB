@@ -112,7 +112,7 @@ jobs:
         run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests
         # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
+        run: cargo ci smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down

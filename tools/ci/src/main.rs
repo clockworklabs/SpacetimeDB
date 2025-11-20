@@ -150,8 +150,14 @@ fn main() -> Result<()> {
             run!("cargo fmt --all -- --check")?;
             run!("cargo clippy --all --tests --benches -- -D warnings")?;
             run!("(cd crates/bindings-csharp && dotnet tool restore && dotnet csharpier --check .)")?;
+            // `bindings` is the only crate we care strongly about documenting,
+            // since we link to its docs.rs from our website.
+            // We won't pass `--no-deps`, though,
+            // since we want everything reachable through it to also work.
+            // This includes `sats` and `lib`.
             run!(
                 "cd crates/bindings && cargo doc",
+                // Make `cargo doc` exit with error on warnings, most notably broken links
                 &[("RUSTDOCFLAGS", "--deny warnings")]
             )?;
         }
@@ -188,7 +194,7 @@ fn main() -> Result<()> {
             run!(&format!(
                 r#"
 ROOT_DIR="$(mktemp -d)"
-cargo run {github_token_auth_flag}--target {target} -p spacetimedb-update -- self-install --root-dir="${{ROOT_DIR}}" --yes
+cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install --root-dir="${{ROOT_DIR}}" --yes
 "${{ROOT_DIR}}"/spacetime --root-dir="${{ROOT_DIR}}" help
         "#
             ))?;
