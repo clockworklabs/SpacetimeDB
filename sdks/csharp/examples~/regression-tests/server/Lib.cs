@@ -46,6 +46,12 @@ public static partial class Module
         public uint Indexed;
     }
 
+    [SpacetimeDB.Table(Name = "my_log", Public = true)]
+    public partial struct MyLog
+    {
+        public Result<MyTable, string> msg;
+    }
+
     [SpacetimeDB.Table(Name = "player", Public = true)]
     public partial struct Player
     {
@@ -126,6 +132,12 @@ public static partial class Module
         throw new Exception(error);
     }
 
+    [SpacetimeDB.Reducer]
+    public static void InsertResult(ReducerContext ctx, Result<MyTable, string> msg)
+    {
+        ctx.Db.my_log.Insert(new MyLog { msg = msg });
+    }
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -184,7 +196,7 @@ public static partial class Module
             {
                 Field = new ReturnStruct(a: 42, b: "magic"),
             });
-            return 0; // return value ignored by WithTx
+            return new Unit();
         });
 
         AssertRowCount(ctx, 1);
@@ -205,6 +217,30 @@ public static partial class Module
 
         Debug.Assert(!outcome.IsSuccess, "TryWithTxAsync should report failure");
         AssertRowCount(ctx, 0);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static Result<ReturnStruct, string> InsertWithTxRollbackResult(ProcedureContext ctx)
+    {
+        try
+        {
+            var outcome = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
+            {
+                tx.Db.my_table.Insert(new MyTable
+                {
+                    Field = new ReturnStruct(a: 42, b: "magic")
+                });
+
+                throw new InvalidOperationException("rollback");
+            });
+            Debug.Assert(!outcome.IsSuccess, "TryWithTxAsync should report failure");
+            AssertRowCount(ctx, 0);
+            return Result<ReturnStruct, string>.Ok(new ReturnStruct(a: 42, b: "magic"));
+        }
+        catch (System.Exception e)
+        {
+            return Result<ReturnStruct, string>.Err(e.ToString());
+        }
     }
 
     private static void AssertRowCount(ProcedureContext ctx, ulong expected)

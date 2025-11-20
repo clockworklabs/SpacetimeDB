@@ -6,7 +6,7 @@ use crate::algebraic_value::ser::value_serialize;
 use crate::de::Deserialize;
 use crate::meta_type::MetaType;
 use crate::product_type::{CONNECTION_ID_TAG, IDENTITY_TAG, TIMESTAMP_TAG, TIME_DURATION_TAG};
-use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG};
+use crate::sum_type::{OPTION_NONE_TAG, OPTION_SOME_TAG, RESULT_ERR_TAG, RESULT_OK_TAG};
 use crate::typespace::Typespace;
 use crate::{i256, u256};
 use crate::{AlgebraicTypeRef, AlgebraicValue, ArrayType, ProductType, SpacetimeType, SumType, SumTypeVariant};
@@ -213,6 +213,17 @@ impl AlgebraicType {
         self.as_sum()?.as_option()
     }
 
+    /// Returns whether this type is a result type.
+    pub fn is_result(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_result())
+    }
+
+    /// If this type is the standard result type, returns the types of the `ok` and `err` variants.
+    /// Otherwise, returns `None`.
+    pub fn as_result(&self) -> Option<(&AlgebraicType, &AlgebraicType)> {
+        self.as_sum()?.as_result()
+    }
+
     /// Returns whether this type is scalar or a string type.
     pub fn is_scalar_or_string(&self) -> bool {
         self.is_scalar() || self.is_string()
@@ -304,6 +315,12 @@ impl AlgebraicType {
     /// Returns a structural option type where `some_type` is the type for the `some` variant.
     pub fn option(some_type: Self) -> Self {
         Self::sum([(OPTION_SOME_TAG, some_type), (OPTION_NONE_TAG, AlgebraicType::unit())])
+    }
+
+    /// Returns a structural result type where `ok_type` is the type for the `ok` variant
+    /// and `err_type` is the type for the `err` variant.
+    pub fn result(ok_type: Self, err_type: Self) -> Self {
+        Self::sum([(RESULT_OK_TAG, ok_type), (RESULT_ERR_TAG, err_type)])
     }
 
     /// Returns an unsized array type where the element type is `ty`.
@@ -432,7 +449,7 @@ impl AlgebraicType {
     /// - a reference
     /// - a special, known type
     /// - a non-compound type like `U8`, `I32`, `F64`, etc.
-    /// - or a map, array, or option built from types that satisfy [`AlgebraicType::is_valid_for_client_type_use`]
+    /// - or a map, array, option, or result built from types that satisfy [`AlgebraicType::is_valid_for_client_type_use`]
     ///
     /// This method does not actually follow `Ref`s to check the types they point to,
     /// it only checks the structure of the type.
@@ -441,6 +458,8 @@ impl AlgebraicType {
             AlgebraicType::Sum(sum) => {
                 if let Some(wrapped) = sum.as_option() {
                     wrapped.is_valid_for_client_type_use()
+                } else if let Some((ok_ty, err_ty)) = sum.as_result() {
+                    ok_ty.is_valid_for_client_type_use() && err_ty.is_valid_for_client_type_use()
                 } else {
                     sum.is_special() || sum.is_empty()
                 }
@@ -539,6 +558,21 @@ mod tests {
         assert_eq!(
             "{ ty_: Sum, some: { ty_: Sum }, none: { ty_: Product } }",
             fmt_map(&option).to_string()
+        );
+    }
+
+    #[test]
+    fn result() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        assert_eq!("(ok: U8 | err: String)", fmt_algebraic_type(&result).to_string());
+    }
+
+    #[test]
+    fn result_map() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        assert_eq!(
+            "{ ty_: Sum, ok: { ty_: U8 }, err: { ty_: String } }",
+            fmt_map(&result).to_string()
         );
     }
 
@@ -649,6 +683,18 @@ mod tests {
     }
 
     #[test]
+    fn result_as_value() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        let algebraic_type = AlgebraicType::meta_type();
+        let typespace = Typespace::new(vec![algebraic_type]);
+        let at_ref = AlgebraicType::Ref(AlgebraicTypeRef(0));
+        assert_eq!(
+            r#"(sum = (variants = [(name = (some = "ok"), algebraic_type = (u8 = ())), (name = (some = "err"), algebraic_type = (string = ()))]))"#,
+            in_space(&typespace, &at_ref, &result.as_value()).to_satn()
+        );
+    }
+
+    #[test]
     fn algebraic_type_as_value() {
         let algebraic_type = AlgebraicType::meta_type();
         let typespace = Typespace::new(vec![algebraic_type.clone()]);
@@ -716,6 +762,12 @@ mod tests {
     fn option_from_value() {
         let option = AlgebraicType::option(AlgebraicType::never());
         AlgebraicType::from_value(&option.as_value()).expect("No errors.");
+    }
+
+    #[test]
+    fn result_from_value() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        AlgebraicType::from_value(&result.as_value()).expect("No errors.");
     }
 
     #[test]

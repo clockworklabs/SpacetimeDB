@@ -335,6 +335,16 @@ define_tables! {
     OptionVecOptionI32 { insert insert_option_vec_option_i32 } v Option<Vec<Option<i32>>>;
 }
 
+// Tables holding a Result of various types.
+define_tables! {
+    ResultI32String { insert insert_result_i32_string } r Result<i32, String>;
+    ResultStringI32 { insert insert_result_string_i32 } r Result<String, i32>;
+    ResultIdentityString { insert insert_result_identity_string } r Result<Identity, String>;
+    ResultSimpleEnumI32 { insert insert_result_simple_enum_i32 } r Result<SimpleEnum, i32>;
+    ResultEveryPrimitiveStructString { insert insert_result_every_primitive_struct_string } r Result<EveryPrimitiveStruct, String>;
+    ResultVecI32String { insert insert_result_vec_i32_string } r Result<Vec<i32>, String>;
+}
+
 // Tables mapping a unique, but non-pk, key to a boring i32 payload.
 // This allows us to test delete events, and the semantically correct absence of update events.
 define_tables! {

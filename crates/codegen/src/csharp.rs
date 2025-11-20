@@ -1103,6 +1103,12 @@ fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Disp
         AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt(module, inner_ty)),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
+            f,
+            "SpacetimeDB.Result<{}, {}>",
+            ty_fmt(module, ok_ty),
+            ty_fmt(module, err_ty)
+        ),
         AlgebraicTypeUse::Array(elem_ty) => write!(f, "System.Collections.Generic.List<{}>", ty_fmt(module, elem_ty)),
         AlgebraicTypeUse::String => f.write_str("string"),
         AlgebraicTypeUse::Ref(r) => f.write_str(&type_ref_name(module, *r)),
@@ -1137,6 +1143,12 @@ fn ty_fmt_with_ns<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace
         AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt_with_ns(module, inner_ty, namespace)),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
+            f,
+            "SpacetimeDB.Result<{}, {}>",
+            ty_fmt_with_ns(module, ok_ty, namespace),
+            ty_fmt_with_ns(module, err_ty, namespace)
+        ),
         AlgebraicTypeUse::Array(elem_ty) => write!(
             f,
             "System.Collections.Generic.List<{}>",
@@ -1189,6 +1201,8 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration => None,
+        // Result<T, E> is a struct, initialized to the "Ok with default T" variant.
+        AlgebraicTypeUse::Result { .. } => None,
         AlgebraicTypeUse::Never => unimplemented!("never types are not yet supported in C# output"),
     }
 }

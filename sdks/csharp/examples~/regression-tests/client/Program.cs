@@ -64,6 +64,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_player",
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
+            "SELECT * FROM my_log",
         ]);
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -133,6 +134,28 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling ThrowError");
     waiting++;
     context.Reducers.ThrowError("this is an error");
+
+    Log.Debug("Calling InsertResult");
+    waiting++;
+    context.Reducers.InsertResult(Result<MyTable, string>.Ok(new MyTable(new ReturnStruct(42, "magic"))));
+    waiting++;
+    context.Reducers.InsertResult(Result<MyTable, string>.Err("Fail"));
+
+    Log.Debug("Calling RemoteQuery on my_log");
+    var logRows = context.Db.MyLog.RemoteQuery("").Result;
+    Debug.Assert(logRows != null && logRows.Length == 2);
+    var logs = logRows.ToArray();
+    var expected = new[]
+    {
+        new MyLog(Result<MyTable, string>.Ok(
+            new MyTable(new ReturnStruct(42, "magic"))
+        )),
+        new MyLog(Result<MyTable, string>.Err("Fail")),
+    };
+    Debug.Assert(
+        logs.SequenceEqual(expected),
+        "Logs did not match expected results"
+    );
 
     // RemoteQuery test
     Log.Debug("Calling RemoteQuery");
@@ -226,6 +249,22 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         else
         {
             throw new Exception("Expected InsertWithTransactionRollback to fail, but it succeeded");
+        }
+        waiting--;
+    });
+
+    Log.Debug("Calling InsertWithTxRollbackResult");
+    waiting++;
+    context.Procedures.InsertWithTxRollbackResult((IProcedureEventContext ctx, ProcedureCallbackResult<Result<ReturnStruct, string>> result) =>
+    {
+        if (result.IsSuccess)
+        {
+            Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after rollback result. Count was {context.Db.MyTable.Count}");
+            Log.Debug("Insert with transaction result rollback succeeded");
+        }
+        else
+        {
+            throw new Exception("Expected InsertWithTxRollbackResult to fail, but it succeeded");
         }
         waiting--;
     });
