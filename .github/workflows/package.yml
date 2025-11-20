@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: ubuntu-latest }
+          - { name: x86_64 Linux, target: x86_64-unknown-linux-gnu, runner: spacetimedb-new-runner }
           - { name: aarch64 Linux, target: aarch64-unknown-linux-gnu, runner: arm-runner }
           # Disabled because musl builds weren't working and we didn't want to investigate. See https://github.com/clockworklabs/SpacetimeDB/pull/2964.
           # - { name: x86_64 Linux musl, target: x86_64-unknown-linux-musl, runner: bare-metal, container: alpine }
