@@ -6,26 +6,34 @@
 //! so we're forced to define our own representation for the SATS serialization.
 //! These types are that representation.
 //!
-//! To preserve extensibility and compatibility, all types defined here should be
-//! a `pub` wrapper struct with a single private `inner` field,
-//! which is an `enum` whose last variant holds either `Box<str>`, `String`, `Box<[T]>` or `Vec<T>` for any type `T`.
-//! Using an enum allows us to add additional variants while preserving the BSATN encoding passed across the WASM boundary,
-//! and including a variant with a variable-length type
-//! allows us to add other variants with variable-length types while preserving the BFLATN layout stored in table pages.
-//! (It's unlikely that any of these types will end up stored in a table, but better safe than sorry.)
-//!
-//! Users aren't intended to interact with these types, except [`Body`], [`Timeout`] and [`Error`].
+//! Users aren't intended to interact with these types,
+//! except [`Timeout`] and [`Error`], which are re-exported from the `bindings` crate.
 //! Our user-facing APIs should use the [`http`] crate's types directly, and convert to and from these types internally.
+//!
+//! These types are used in BSATN encoding for interchange between the SpacetimeDB host
+//! and guest WASM modules in the `procedure_http_request` ABI call.
+//! For that reason, the layout of these types must not change.
+//! Because we want, to the extent possible,
+//! to support both (old host, new guest) and (new host, old guest) pairings,
+//! we can't meaningfully make these types extensible, even with tricks like version enum wrappers.
+//! Instead, if/when we want to add new functionality which requires sending additional information,
+//! we'll define a new versioned ABI call which uses new types for interchange.
 
 use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
 
 /// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
 ///
 /// Construct instances of this type by converting from [`http::Request`].
+/// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate)]
 pub struct Request {
-    inner: HttpRequest,
+    method: Method,
+    headers: Headers,
+    timeout: Option<Timeout>,
+    /// A valid URI, sourced from an already-validated [`http::Uri`].
+    uri: String,
+    version: Version,
 }
 
 impl From<http::request::Parts> for Request {
@@ -44,13 +52,11 @@ impl From<http::request::Parts> for Request {
             log::warn!("Converting HTTP `Request` with unrecognized extensions");
         }
         Request {
-            inner: HttpRequest {
-                method: method.into(),
-                headers: headers.into(),
-                timeout,
-                uri: uri.to_string(),
-                version: version.into(),
-            },
+            method: method.into(),
+            headers: headers.into(),
+            timeout,
+            uri: uri.to_string(),
+            version: version.into(),
         }
     }
 }
@@ -59,14 +65,11 @@ impl TryFrom<Request> for http::request::Parts {
     type Error = http::Error;
     fn try_from(req: Request) -> http::Result<http::request::Parts> {
         let Request {
-            inner:
-                HttpRequest {
-                    method,
-                    headers,
-                    timeout,
-                    uri,
-                    version,
-                },
+            method,
+            headers,
+            timeout,
+            uri,
+            version,
         } = req;
         let (mut request, ()) = http::Request::new(()).into_parts();
         request.method = method.into();
@@ -82,22 +85,13 @@ impl TryFrom<Request> for http::request::Parts {
     }
 }
 
-/// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-struct HttpRequest {
-    method: Method,
-    headers: Headers,
-    timeout: Option<Timeout>,
-    /// A valid URI, sourced from an already-validated [`http::Uri`].
-    uri: String,
-    version: Version,
-}
-
 /// An HTTP extension to specify a timeout for requests made by a procedure running in a SpacetimeDB database.
 ///
 /// Pass an instance of this type to [`http::request::Builder::extension`] to set a timeout on a request.
-// This type is a user-facing trivial newtype, no need for all the struct-wrapping-enum compatibility song-and-dance.
+///
+/// This timeout applies to the entire request,
+/// from when the headers are first sent to when the response body is fully downloaded.
+/// This is sometimes called a total timeout, the sum of the connect timeout and the read timeout.
 #[derive(Clone, SpacetimeType, Copy, PartialEq, Eq)]
 #[sats(crate = crate)]
 pub struct Timeout {
@@ -117,17 +111,9 @@ impl From<Timeout> for TimeDuration {
 }
 
 /// Represents an HTTP method.
-///
-/// See associated constants like [`Method::GET`], or convert from a [`http::Method`].
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
 #[sats(crate = crate)]
-pub struct Method {
-    inner: HttpMethod,
-}
-
-#[derive(Clone, SpacetimeType, PartialEq, Eq)]
-#[sats(crate = crate)]
-enum HttpMethod {
+pub enum Method {
     Get,
     Head,
     Post,
@@ -141,36 +127,30 @@ enum HttpMethod {
 }
 
 impl Method {
-    const fn from_inner(inner: HttpMethod) -> Method {
-        Method { inner }
-    }
-
-    pub const GET: Method = Method::from_inner(HttpMethod::Get);
-    pub const HEAD: Method = Method::from_inner(HttpMethod::Head);
-    pub const POST: Method = Method::from_inner(HttpMethod::Post);
-    pub const PUT: Method = Method::from_inner(HttpMethod::Put);
-    pub const DELETE: Method = Method::from_inner(HttpMethod::Delete);
-    pub const CONNECT: Method = Method::from_inner(HttpMethod::Connect);
-    pub const OPTIONS: Method = Method::from_inner(HttpMethod::Options);
-    pub const TRACE: Method = Method::from_inner(HttpMethod::Trace);
-    pub const PATCH: Method = Method::from_inner(HttpMethod::Patch);
+    pub const GET: Method = Method::Get;
+    pub const HEAD: Method = Method::Head;
+    pub const POST: Method = Method::Post;
+    pub const PUT: Method = Method::Put;
+    pub const DELETE: Method = Method::Delete;
+    pub const CONNECT: Method = Method::Connect;
+    pub const OPTIONS: Method = Method::Options;
+    pub const TRACE: Method = Method::Trace;
+    pub const PATCH: Method = Method::Patch;
 }
 
 impl From<http::Method> for Method {
     fn from(method: http::Method) -> Method {
         match method {
-            http::Method::GET => Method::GET,
-            http::Method::HEAD => Method::HEAD,
-            http::Method::POST => Method::POST,
-            http::Method::PUT => Method::PUT,
-            http::Method::DELETE => Method::DELETE,
-            http::Method::CONNECT => Method::CONNECT,
-            http::Method::OPTIONS => Method::OPTIONS,
-            http::Method::TRACE => Method::TRACE,
-            http::Method::PATCH => Method::PATCH,
-            _ => Method {
-                inner: HttpMethod::Extension(method.to_string()),
-            },
+            http::Method::GET => Method::Get,
+            http::Method::HEAD => Method::Head,
+            http::Method::POST => Method::Post,
+            http::Method::PUT => Method::Put,
+            http::Method::DELETE => Method::Delete,
+            http::Method::CONNECT => Method::Connect,
+            http::Method::OPTIONS => Method::Options,
+            http::Method::TRACE => Method::Trace,
+            http::Method::PATCH => Method::Patch,
+            _ => Method::Extension(method.to_string()),
         }
     }
 }
@@ -178,18 +158,16 @@ impl From<http::Method> for Method {
 impl From<Method> for http::Method {
     fn from(method: Method) -> http::Method {
         match method {
-            Method::GET => http::Method::GET,
-            Method::HEAD => http::Method::HEAD,
-            Method::POST => http::Method::POST,
-            Method::PUT => http::Method::PUT,
-            Method::DELETE => http::Method::DELETE,
-            Method::CONNECT => http::Method::CONNECT,
-            Method::OPTIONS => http::Method::OPTIONS,
-            Method::TRACE => http::Method::TRACE,
-            Method::PATCH => http::Method::PATCH,
-            Method {
-                inner: HttpMethod::Extension(method),
-            } => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
+            Method::Get => http::Method::GET,
+            Method::Head => http::Method::HEAD,
+            Method::Post => http::Method::POST,
+            Method::Put => http::Method::PUT,
+            Method::Delete => http::Method::DELETE,
+            Method::Connect => http::Method::CONNECT,
+            Method::Options => http::Method::OPTIONS,
+            Method::Trace => http::Method::TRACE,
+            Method::Patch => http::Method::PATCH,
+            Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
         }
     }
 }
@@ -199,30 +177,22 @@ impl From<Method> for http::Method {
 /// See associated constants like [`Version::HTTP_11`], or convert from a [`http::Version`].
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
 #[sats(crate = crate)]
-pub struct Version {
-    inner: HttpVersion,
-}
-
-impl Version {
-    const fn from_inner(inner: HttpVersion) -> Version {
-        Version { inner }
-    }
-
-    pub const HTTP_09: Version = Version::from_inner(HttpVersion::Http09);
-    pub const HTTP_10: Version = Version::from_inner(HttpVersion::Http10);
-    pub const HTTP_11: Version = Version::from_inner(HttpVersion::Http11);
-    pub const HTTP_2: Version = Version::from_inner(HttpVersion::Http2);
-    pub const HTTP_3: Version = Version::from_inner(HttpVersion::Http3);
+pub enum Version {
+    Http09,
+    Http10,
+    Http11,
+    Http2,
+    Http3,
 }
 
 impl From<http::Version> for Version {
     fn from(version: http::Version) -> Version {
         match version {
-            http::Version::HTTP_09 => Version::HTTP_09,
-            http::Version::HTTP_10 => Version::HTTP_10,
-            http::Version::HTTP_11 => Version::HTTP_11,
-            http::Version::HTTP_2 => Version::HTTP_2,
-            http::Version::HTTP_3 => Version::HTTP_3,
+            http::Version::HTTP_09 => Version::Http09,
+            http::Version::HTTP_10 => Version::Http10,
+            http::Version::HTTP_11 => Version::Http11,
+            http::Version::HTTP_2 => Version::Http2,
+            http::Version::HTTP_3 => Version::Http3,
             _ => unreachable!("Unknown HTTP version: {version:?}"),
         }
     }
@@ -231,23 +201,13 @@ impl From<http::Version> for Version {
 impl From<Version> for http::Version {
     fn from(version: Version) -> http::Version {
         match version {
-            Version::HTTP_09 => http::Version::HTTP_09,
-            Version::HTTP_10 => http::Version::HTTP_10,
-            Version::HTTP_11 => http::Version::HTTP_11,
-            Version::HTTP_2 => http::Version::HTTP_2,
-            Version::HTTP_3 => http::Version::HTTP_3,
+            Version::Http09 => http::Version::HTTP_09,
+            Version::Http10 => http::Version::HTTP_10,
+            Version::Http11 => http::Version::HTTP_11,
+            Version::Http2 => http::Version::HTTP_2,
+            Version::Http3 => http::Version::HTTP_3,
         }
     }
-}
-
-#[derive(Clone, SpacetimeType, PartialEq, Eq)]
-#[sats(crate = crate)]
-enum HttpVersion {
-    Http09,
-    Http10,
-    Http11,
-    Http2,
-    Http3,
 }
 
 /// A set of HTTP headers.
@@ -372,51 +332,35 @@ struct HttpResponse {
     code: u16,
 }
 
-#[derive(Clone, SpacetimeType)]
+/// Errors that may arise from HTTP calls.
+#[derive(Clone, SpacetimeType, Debug)]
 #[sats(crate = crate)]
 pub struct Error {
-    inner: HttpError,
-}
-
-impl std::fmt::Debug for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let Error {
-            inner: HttpError::Message(msg),
-        } = self;
-        f.debug_tuple("spacetimedb_lib::http::Error").field(msg).finish()
-    }
+    /// A string message describing the error.
+    ///
+    /// It would be nice if we could store a more interesting object here,
+    /// ideally a type-erased `dyn Trait` cause,
+    /// rather than just a string, similar to how `anyhow` does.
+    /// This is not possible because we need to serialize `Error` for transport to WASM,
+    /// meaning it must have a concrete static type.
+    /// `reqwest::Error`, which is the source for these,
+    /// is type-erased enough that the best we can do (at least, the best we can do easily)
+    /// is to eagerly string-ify the error.    
+    message: String,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let Error {
-            inner: HttpError::Message(msg),
-        } = self;
-        f.write_str(msg)
+        let Error { message } = self;
+        f.write_str(message)
     }
 }
 
 impl std::error::Error for Error {}
 
-#[derive(Clone, SpacetimeType)]
-#[sats(crate = crate)]
-enum HttpError {
-    // It would be nice if we could store a more interesting object here,
-    // ideally a type-erased `dyn Trait` cause,
-    // rather than just a string, similar to how `anyhow` does.
-    // This is not possible because we need to serialize `Error` for transport to WASM,
-    // meaning it must have a concrete static type.
-    // `reqwest::Error`, which is the source for these,
-    // is type-erased enough that the best we can do (at least, the best we can do easily)
-    // is to eagerly string-ify the error.
-    Message(String),
-}
-
 impl Error {
     pub fn from_string(message: String) -> Self {
-        Error {
-            inner: HttpError::Message(message),
-        }
+        Error { message }
     }
 
     pub fn from_display(t: &impl std::fmt::Display) -> Self {
