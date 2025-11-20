@@ -3,6 +3,7 @@ use super::*;
 use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
+use crate::error::DBError;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
@@ -30,6 +31,7 @@ use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
@@ -39,6 +41,7 @@ use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use std::sync::Arc;
@@ -99,6 +102,35 @@ impl EnergyStats {
     fn used(&self) -> FunctionBudget {
         (self.budget.get() - self.remaining.get()).into()
     }
+}
+
+fn deserialize_view_rows(
+    row_type: AlgebraicTypeRef,
+    bytes: Bytes,
+    typespace: &Typespace,
+) -> Result<Vec<ProductValue>, DBError> {
+    // The return type is expected to be an array of products.
+    let row_type = typespace.resolve(row_type);
+    let ret_type = AlgebraicType::array(row_type.ty().clone());
+    let seed = WithTypespace::new(typespace, &ret_type);
+    let rows = seed
+        .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+        .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))
+        .map_err(DBError::from)?;
+
+    rows.into_array()
+        .map_err(|_| ViewError::SerializeRow)
+        .map_err(DatastoreError::from)
+        .map_err(DBError::from)?
+        .into_iter()
+        .map(|product| {
+            product
+                .into_product()
+                .map_err(|_| ViewError::SerializeRow)
+                .map_err(DatastoreError::from)
+                .map_err(DBError::from)
+        })
+        .collect()
 }
 
 pub struct ExecutionTimings {
@@ -960,35 +992,28 @@ impl InstanceCommon {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            // Materialize anonymous view
-            (Ok(bytes), None) => {
+            (Ok(bytes), sender) => {
                 let ViewReturnData::Rows(bytes) = bytes else {
                     unimplemented!("View returned a non-rows format");
                 };
-                stdb.materialize_anonymous_view(&mut tx, table_id, row_type, bytes, self.info.module_def.typespace())
+
+                let typespace = self.info.module_def.typespace();
+                let rows = deserialize_view_rows(row_type, bytes, typespace)
                     .inspect_err(|err| {
                         log::error!("Fatal error materializing view `{view_name}`: {err}");
                     })
                     .expect("Fatal error materializing view");
-                ViewOutcome::Success
-            }
-            // Materialize sender view
-            (Ok(bytes), Some(sender)) => {
-                let ViewReturnData::Rows(bytes) = bytes else {
-                    unimplemented!("View returned a non-rows format");
+
+                let res = match sender {
+                    Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
+                    None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
                 };
-                stdb.materialize_view(
-                    &mut tx,
-                    table_id,
-                    sender,
-                    row_type,
-                    bytes,
-                    self.info.module_def.typespace(),
-                )
-                .inspect_err(|err| {
+
+                res.inspect_err(|err| {
                     log::error!("Fatal error materializing view `{view_name}`: {err}");
                 })
                 .expect("Fatal error materializing view");
+
                 ViewOutcome::Success
             }
         };
