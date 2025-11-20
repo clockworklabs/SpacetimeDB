@@ -37,13 +37,27 @@ fn will_panic(_ctx: &mut ProcedureContext) {
     panic!("This procedure is expected to panic")
 }
 
-// TODO(procedure-http): Add a procedure here which does an HTTP request against a SpacetimeDB route (as `http://localhost:3000/v1/`)
-// and returns some value derived from the response.
-// Then write a test which invokes it in the Rust client SDK test suite.
+#[procedure]
+fn read_my_schema(ctx: &mut ProcedureContext) -> String {
+    let module_identity = ctx.identity();
+    match ctx.http.get(format!(
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+    )) {
+        Ok(result) => result.into_body().into_string_lossy(),
+        Err(e) => panic!("{e}"),
+    }
+}
 
-// TODO(procedure-http): Add a procedure here which does an HTTP request against an invalid SpacetimeDB route
-// and returns some value derived from the error.
-// Then write a test which invokes it in the Rust client SDK test suite.
+#[procedure]
+fn invalid_request(ctx: &mut ProcedureContext) -> String {
+    match ctx.http.get(format!("http://foo.invalid/")) {
+        Ok(result) => panic!(
+            "Got result from requesting `http://foo.invalid`... huh?\n{}",
+            result.into_body().into_string_lossy()
+        ),
+        Err(e) => e.to_string(),
+    }
+}
 
 #[table(public, name = my_table)]
 struct MyTable {
