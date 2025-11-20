@@ -52,6 +52,12 @@ enum CiCmd {
     /// Executes the smoketests suite with some default exclusions.
     Smoketests {
         #[arg(
+            long,
+            default_value_t = false,
+            long_help = "Start SpacetimeDB in docker (Linux) instead of bare. Also forwarded to the smoketests runner."
+        )]
+        docker: bool,
+        #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
         )]
@@ -168,9 +174,59 @@ fn main() -> Result<()> {
             run!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { args }) => {
+        Some(CiCmd::Smoketests { docker, args }) => {
+            // Prepare arguments for the smoketests runner
+            let mut st_args = args.clone();
+            if docker {
+                st_args.push("--docker".to_string());
+            }
+
+            // Start SpacetimeDB depending on platform and docker flag
+            if docker {
+                // Linux docker compose flow
+                if cfg!(target_os = "linux") {
+                    // Our .dockerignore omits `target`, which our CI Dockerfile needs.
+                    run!("rm -f .dockerignore")?;
+                    run!("docker compose -f .github/docker-compose.yml up -d")?;
+                }
+            } else {
+                // Bare mode
+                if cfg!(target_os = "windows") {
+                    // Start spacetimedb-cli in the background with a fixed pg port
+                    // Use Git Bash compatible backgrounding
+                    run!(r#"target/debug/spacetimedb-cli.exe start --pg-port 5432 &"#)?;
+                    // Ensure dotnet workloads are present for module builds on Windows
+                    run!(
+                        r#"(cd modules && dotnet workload config --update-mode manifests && dotnet workload update)"#
+                    )?;
+                } else {
+                    run!("target/debug/spacetimedb-cli start --pg-port 5432 &")?;
+                }
+            }
+
+            // Always exclude some tests by default (mirrors CI workflow)
             // Note: clear_database and replication only work in private
-            run!(&format!("python -m smoketests {}", args.join(" ")))?;
+            let default_excludes = "-x clear_database replication teams";
+            let joined = st_args.join(" ");
+            let cmdline = if joined.is_empty() {
+                format!("python -m smoketests {}", default_excludes)
+            } else {
+                format!("python -m smoketests {} {}", joined, default_excludes)
+            };
+
+            let mut test_err: Option<anyhow::Error> = None;
+            if let Err(e) = run!(&cmdline) {
+                test_err = Some(e);
+            }
+
+            // Teardown if we started docker
+            if docker && cfg!(target_os = "linux") {
+                let _ = run!("docker compose -f .github/docker-compose.yml down");
+            }
+
+            if let Some(e) = test_err {
+                return Err(e);
+            }
         }
 
         Some(CiCmd::UpdateFlow {
