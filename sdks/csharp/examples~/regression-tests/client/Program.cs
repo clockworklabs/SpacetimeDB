@@ -38,7 +38,7 @@ DbConnection ConnectToDB()
 }
 
 uint waiting = 0;
-bool applied = false;
+var applied = false;
 SubscriptionHandle? handle = null;
 
 void OnConnected(DbConnection conn, Identity identity, string authToken)
@@ -50,7 +50,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         {
             throw err;
         })
-        .Subscribe(["SELECT * FROM ExampleData"]);
+        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer", "SELECT * FROM PlayersForLevel"]);
 
     conn.Reducers.OnAdd += (ReducerEventContext ctx, uint id, uint indexed) =>
     {
@@ -133,6 +133,52 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         ValidateBTreeIndexes(ctx);
         waiting--;
     });
+
+
+    // Views test
+
+    Log.Debug("Checking Views are populated");
+    Debug.Assert(context.Db.MyPlayer != null, "context.Db.MyPlayer != null");
+    Debug.Assert(context.Db.PlayersForLevel != null, "context.Db.PlayersForLevel != null");
+    Debug.Assert(context.Db.MyPlayer.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}");
+    Debug.Assert(context.Db.PlayersForLevel.Count > 0, $"context.Db.PlayersForLevel.Count = {context.Db.PlayersForLevel.Count}");
+
+    Log.Debug("Calling Iter on View");
+    var viewIterRows = context.Db.MyPlayer.Iter();
+    var expectedPlayer = new Player { Id = 1, Identity = context.Identity!.Value, Name = "NewPlayer" };
+    Log.Debug("MyPlayer Iter count: " + (viewIterRows != null ? viewIterRows.Count().ToString() : "null"));
+    Debug.Assert(viewIterRows != null && viewIterRows.Any());
+    Log.Debug("Validating View row data " +
+              $"Id={expectedPlayer.Id}, Identity={expectedPlayer.Identity}, Name={expectedPlayer.Name} => " +
+              $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}");
+    Debug.Assert(viewIterRows.First().Equals(expectedPlayer));
+
+    Log.Debug("Calling RemoteQuery on View");
+    var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");
+    Debug.Assert(viewRemoteQueryRows != null && viewRemoteQueryRows.Result.Length > 0);
+    Debug.Assert(viewRemoteQueryRows.Result.First().Equals(expectedPlayer));
+
+    Log.Debug("Calling Iter on Anonymous View");
+    var anonViewIterRows = context.Db.PlayersForLevel.Iter();
+    var expectedPlayerAndLevel = new PlayerAndLevel
+    {
+        Id = 1,
+        Identity = context.Identity!.Value,
+        Name = "NewPlayer",
+        Level = 1
+    };
+    Log.Debug("PlayersForLevel Iter count: " + (anonViewIterRows != null ? anonViewIterRows.Count().ToString() : "null"));
+    Debug.Assert(anonViewIterRows != null && anonViewIterRows.Any());
+    Log.Debug("Validating Anonymous View row data " +
+              $"Id={expectedPlayerAndLevel.Id}, Identity={expectedPlayerAndLevel.Identity}, Name={expectedPlayerAndLevel.Name}, Level={expectedPlayerAndLevel.Level} => " +
+              $"Id={anonViewIterRows.First().Id}, Identity={anonViewIterRows.First().Identity}, Name={anonViewIterRows.First().Name}, Level={anonViewIterRows.First().Level}");
+    Debug.Assert(anonViewIterRows.First().Equals(expectedPlayerAndLevel));
+
+    Log.Debug("Calling RemoteQuery on Anonymous View");
+    var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery("WHERE Level = 1");
+    Log.Debug("PlayersForLevel RemoteQuery count: " + (anonViewRemoteQueryRows != null ? anonViewRemoteQueryRows.Result.Length.ToString() : "null"));
+    Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
+    Debug.Assert(anonViewRemoteQueryRows.Result.First().Equals(expectedPlayerAndLevel));
 }
 
 System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>

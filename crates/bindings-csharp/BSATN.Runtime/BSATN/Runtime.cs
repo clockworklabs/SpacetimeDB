@@ -228,6 +228,12 @@ public readonly struct ValueOption<Inner, InnerRW> : IReadWrite<Inner?>
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         AlgebraicType.MakeOption(innerRW.GetAlgebraicType(registrar));
+
+    // Return a List BSATN serializer that can serialize this option as an array
+    public static List<Inner, InnerRW> GetListSerializer()
+    {
+        return new List<Inner, InnerRW>();
+    }
 }
 
 public readonly struct Bool : IReadWrite<bool>

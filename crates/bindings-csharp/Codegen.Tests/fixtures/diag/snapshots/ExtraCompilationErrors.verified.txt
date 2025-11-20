@@ -233,7 +233,7 @@ public partial struct TestDefaultFieldValues
             
             var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
                                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-            using var output = new System.IO.MemoryStream();
+                SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
 */
     Message: Argument 1: cannot convert from 'SpacetimeDB.ViewContext' to 'SpacetimeDB.ReducerContext',
     Severity: Error,
@@ -279,7 +279,7 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
             
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
                                      ^^^^^^^^^^^^^^^^
-            using var output = new System.IO.MemoryStream();
+                SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
 */
     Message: No overload for method 'ViewDefNoContext' takes 1 arguments,
     Severity: Error,
@@ -299,10 +299,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    
-    private static readonly SpacetimeDB.BSATN.ValueOption<NotSpacetimeType, NotSpacetimeType.BSATN> returnRW = new();
-                                                                                             ^^^^^
-    
+    Params: [],
+    ReturnType: new SpacetimeDB.BSATN.ValueOption<NotSpacetimeType, NotSpacetimeType.BSATN>().GetAlgebraicType(registrar)
+                                                                                     ^^^^^
+);
 */
     Message: The type name 'BSATN' does not exist in the type 'NotSpacetimeType',
     Severity: Error,
@@ -322,10 +322,10 @@ SpacetimeDB.Internal.Module.RegisterClientVisibilityFilter(global::Module.MY_THI
     }
   },
   {/*
-    Params: [],
-    ReturnType: new SpacetimeDB.BSATN.ValueOption<NotSpacetimeType, NotSpacetimeType.BSATN>().GetAlgebraicType(registrar)
-                                                                                     ^^^^^
-);
+            var returnValue = Module.ViewDefReturnsNotASpacetimeType((SpacetimeDB.AnonymousViewContext)ctx);
+                var listSerializer = SpacetimeDB.BSATN.ValueOption<NotSpacetimeType, NotSpacetimeType.BSATN>.GetListSerializer();
+                                                                                                      ^^^^^
+    var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
 */
     Message: The type name 'BSATN' does not exist in the type 'NotSpacetimeType',
     Severity: Error,
