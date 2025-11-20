@@ -5,6 +5,7 @@ expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-u
 total crates: 68
 spacetimedb
 ├── bytemuck
+├── bytes
 ├── derive_more
 │   ├── convert_case
 │   ├── proc_macro2

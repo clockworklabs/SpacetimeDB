@@ -173,8 +173,6 @@ impl From<Method> for http::Method {
 }
 
 /// An HTTP version.
-///
-/// See associated constants like [`Version::HTTP_11`], or convert from a [`http::Version`].
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
 #[sats(crate = crate)]
 pub enum Version {
