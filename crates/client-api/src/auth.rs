@@ -126,8 +126,7 @@ impl From<SpacetimeAuth> for TokenClaims {
         Self {
             issuer: auth.claims.issuer,
             subject: auth.claims.subject,
-            // This will need to be changed when we care about audiencies.
-            audience: Vec::new(),
+            audience: auth.claims.audience,
             extra: auth.claims.extra,
         }
     }
@@ -286,7 +285,7 @@ mod tests {
     use anyhow::Ok;
 
     use spacetimedb::auth::{token_validation::TokenValidator, JwtKeys};
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     // Make sure that when we encode TokenClaims, we can decode to get the expected identity.
     #[tokio::test]
@@ -304,6 +303,35 @@ mod tests {
         let decoded = kp.public.validate_token(&token).await?;
 
         assert_eq!(decoded.identity, id);
+        Ok(())
+    }
+
+    fn to_hashmap(value: serde_json::Value) -> HashMap<String, serde_json::Value> {
+        let mut map = HashMap::new();
+        value.as_object().unwrap().iter().for_each(|(k, v)| {
+            map.insert(k.clone(), v.clone());
+        });
+        map
+    }
+
+    // Make sure that when we encode TokenClaims, we can decode the extra claims.
+    #[tokio::test]
+    async fn decode_encoded_token_with_extra_claims() -> Result<(), anyhow::Error> {
+        let kp = JwtKeys::generate()?;
+
+        let claims = TokenClaims {
+            issuer: "localhost".to_string(),
+            subject: "test-subject".to_string(),
+            audience: vec!["spacetimedb".to_string()],
+            extra: Some(to_hashmap(serde_json::json!({"custom_claim": "value"}))),
+        };
+        let id = claims.id();
+        let (_, token) = claims.encode_and_sign(&kp.private)?;
+        let decoded = kp.public.validate_token(&token).await?;
+
+        assert_eq!(decoded.identity, id);
+        let custom_claim_value = decoded.extra.as_ref().unwrap().get("custom_claim").unwrap();
+        assert_eq!(custom_claim_value.as_str().unwrap(), "value");
         Ok(())
     }
 
