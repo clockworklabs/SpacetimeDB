@@ -1,5 +1,7 @@
 mod module_bindings;
 
+use core::time::Duration;
+
 use anyhow::Context;
 use module_bindings::*;
 use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
@@ -324,8 +326,22 @@ fn exec_schedule_procedure() {
     connect_then(&test_counter, {
         move |ctx| {
             ctx.db().proc_inserts_into().on_insert(move |_, row| {
-                assert_eq!(row.x, 24);
-                assert_eq!(row.y, 42);
+                assert_eq!(row.x, 42);
+                assert_eq!(row.y, 24);
+
+                // Ensure that the elapsed time
+                // between the reducer and procedure
+                // is at least 1 second
+                // but no more than 1 second + 50 milliseconds.
+                let elapsed = row
+                    .procedure_ts
+                    .duration_since(row.reducer_ts)
+                    .expect("procedure ts > reducer ts");
+                const MS_1000: Duration = Duration::from_millis(1000);
+                const MS_1050: Duration = Duration::from_millis(1050);
+                assert!(elapsed >= MS_1000);
+                assert!(elapsed <= MS_1050);
+
                 (callback_result.take().unwrap())(Ok(()));
             });
 

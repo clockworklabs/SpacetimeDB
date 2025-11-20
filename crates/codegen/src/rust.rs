@@ -423,6 +423,7 @@ impl {func_name} for super::RemoteReducers {{
         {callback_id}(self.imp.on_reducer(
             {reducer_name:?},
             Box::new(move |ctx: &super::ReducerEventContext| {{
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {{
                     event: __sdk::ReducerEvent {{
                         reducer: super::Reducer::{enum_variant_name} {{

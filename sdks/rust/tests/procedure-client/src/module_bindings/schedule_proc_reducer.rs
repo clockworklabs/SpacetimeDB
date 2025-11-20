@@ -58,6 +58,7 @@ impl schedule_proc for super::RemoteReducers {
         ScheduleProcCallbackId(self.imp.on_reducer(
             "schedule_proc",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
