@@ -1,8 +1,8 @@
 use serial_test::serial;
 use spacetimedb_lib::sats::{product, AlgebraicValue};
 use spacetimedb_testing::modules::{
-    CompilationMode, CompiledModule, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust, TypeScript,
-    DEFAULT_CONFIG, IN_MEMORY_CONFIG,
+    CompilationMode, CompiledModule, Cpp, Csharp, LogLevel, LoggerRecord, ModuleHandle, ModuleLanguage, Rust,
+    TypeScript, DEFAULT_CONFIG, IN_MEMORY_CONFIG,
 };
 use std::{
     future::Future,
@@ -103,6 +103,12 @@ fn test_calling_a_reducer_csharp() {
 #[serial]
 fn test_calling_a_reducer_typescript() {
     test_calling_a_reducer_in_module("module-test-ts");
+}
+
+#[test]
+#[serial]
+fn test_calling_a_reducer_cpp() {
+    test_calling_a_reducer_in_module("module-test-cpp");
 }
 
 #[test]
@@ -413,6 +419,11 @@ fn test_calling_bench_db_circles_csharp() {
 fn test_calling_bench_db_circles_typescript() {
     test_calling_bench_db_circles::<TypeScript>();
 }
+#[test]
+#[serial]
+fn test_calling_bench_db_circles_cpp() {
+    test_calling_bench_db_circles::<Cpp>();
+}
 
 fn test_calling_bench_db_ia_loop<L: ModuleLanguage>() {
     L::get_module().with_module_async(DEFAULT_CONFIG, |module| async move {
@@ -448,4 +459,9 @@ fn test_calling_bench_db_ia_loop_csharp() {
 #[serial]
 fn test_calling_bench_db_ia_loop_typescript() {
     test_calling_bench_db_ia_loop::<TypeScript>();
+}
+#[test]
+#[serial]
+fn test_calling_bench_db_ia_loop_cpp() {
+    test_calling_bench_db_ia_loop::<Cpp>();
 }
