@@ -997,10 +997,7 @@ record ViewDeclaration
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
-                ReturnType: new {{{ReturnType.BSATNName.Replace(
-                "Module.",
-                "global::Module."
-            )}}}().GetAlgebraicType(registrar)
+                ReturnType: new {{{ReturnType.BSATNName}}}().GetAlgebraicType(registrar)
             );
             """;
 
