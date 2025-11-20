@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use duct::cmd;
 use std::collections::HashMap;
 use std::path::Path;
@@ -31,6 +31,16 @@ struct Cli {
     skip: Vec<String>,
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
+enum StartServer {
+    /// Do not start a server; assume one is already running or remote
+    No,
+    /// Start a local server using the spacetimedb CLI
+    Bare,
+    /// Start services using docker compose
+    Docker,
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -52,11 +62,12 @@ enum CiCmd {
     /// Executes the smoketests suite with some default exclusions.
     Smoketests {
         #[arg(
-            long,
-            default_value_t = false,
-            long_help = "Start SpacetimeDB in docker (Linux) instead of bare."
+            long = "start-server",
+            value_enum,
+            default_value_t = StartServer::Bare,
+            long_help = "How to start SpacetimeDB before running smoketests: no | bare | docker"
         )]
-        docker: bool,
+        start_server: StartServer,
         #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
@@ -174,39 +185,72 @@ fn main() -> Result<()> {
             run!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { docker, args }) => {
-            // Start SpacetimeDB depending on platform and docker flag
-            if docker {
-                // Our .dockerignore omits `target`, which our CI Dockerfile needs.
-                run!("rm -f .dockerignore")?;
-                run!("docker compose -f .github/docker-compose.yml up -d")?;
-            } else {
-                run!(r#"cargo run -p spacetimedb-cli -- start --pg-port 5432 &"#)?;
+        Some(CiCmd::Smoketests { start_server, args }) => {
+            let mut started_pid: Option<i32> = None;
+            match start_server {
+                StartServer::Docker => {
+                    // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
+                    run!("cd .github && docker compose -f docker-compose.yml up -d")?;
+                }
+                StartServer::Bare => {
+                    let pid_str;
+                    if cfg!(target_os = "windows") {
+                        pid_str = cmd!(
+                            "powershell",
+                            "-NoProfile",
+                            "-Command",
+                            "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --pg-port 5432' -PassThru; $p.Id"
+                        )
+                        .read()
+                        .unwrap_or_default();
+                    } else {
+                        pid_str = cmd!(
+                            "bash",
+                            "-lc",
+                            "cargo run -p spacetimedb-cli -- start --pg-port 5432 & echo $!"
+                        )
+                        .read()
+                        .unwrap_or_default();
+                    }
+                    started_pid = Some(
+                        pid_str
+                            .trim()
+                            .parse::<i32>()
+                            .expect("Failed to get PID of started process"),
+                    )
+                }
+                StartServer::No => {}
             }
 
-            // Always exclude some tests by default (mirrors CI workflow)
-            // Note: clear_database and replication only work in private
-            let default_excludes = "-x clear_database replication teams";
-            let joined = st_args.join(" ");
-            let cmdline = if joined.is_empty() {
-                format!("python -m smoketests {}", default_excludes)
-            } else {
-                format!("python -m smoketests {} {}", joined, default_excludes)
-            };
+            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+                .run()
+                .map(|s| s.status.success())
+                .unwrap_or(false);
+            let python = if py3_available { "python3" } else { "python" };
 
-            let mut test_err: Option<anyhow::Error> = None;
-            if let Err(e) = run!(&cmdline) {
-                test_err = Some(e);
+            let test_result = run!(&format!("{python} -m smoketests {}", args.join(" ")));
+
+            match start_server {
+                StartServer::Docker => {
+                    let _ = run!("docker compose -f .github/docker-compose.yml down");
+                }
+                StartServer::Bare => {
+                    let pid = if let Some(pid) = started_pid {
+                        pid
+                    } else {
+                        // We constructed a `Some` above if `StartServer::Bare`.
+                        unreachable!();
+                    };
+                    if cfg!(target_os = "windows") {
+                        let _ = run!(&format!("powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"", pid));
+                    } else {
+                        let _ = run!(&format!("bash -lc 'kill {} 2>/dev/null || true'", pid));
+                    }
+                }
+                StartServer::No => {}
             }
 
-            // Teardown if we started docker
-            if docker && cfg!(target_os = "linux") {
-                let _ = run!("docker compose -f .github/docker-compose.yml down");
-            }
-
-            if let Some(e) = test_err {
-                return Err(e);
-            }
+            test_result?;
         }
 
         Some(CiCmd::UpdateFlow {

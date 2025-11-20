@@ -109,9 +109,6 @@ jobs:
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
         run: cargo ci smoketests -- ${SMOKETEST_ARGS}
-      - name: Stop containers (Linux)
-        if: always() && runner.os == 'Linux'
-        run: docker compose -f .github/docker-compose.yml down
 
   test:
     name: Test Suite
