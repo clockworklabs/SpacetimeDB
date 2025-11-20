@@ -62,10 +62,11 @@ impl HttpClient {
     ///         log::error!("HTTP request failed: {err}");
     ///     },
     ///     Ok(response) => {
+    ///         let (parts, body) = response.into_parts();
     ///         log::info!(
     ///             "Got response with status {}, body {}",
-    ///             response.status(),
-    ///             response.body().into_string_lossy(),
+    ///             parts.status,
+    ///             body.into_string_lossy(),
     ///         );
     ///     }
     /// }
@@ -110,10 +111,11 @@ impl HttpClient {
     ///         log::error!("HTTP request failed: {err}");
     ///     }
     ///     Ok(response) => {
+    ///         let (parts, body) = response.into_parts();
     ///         log::info!(
     ///             "Got response with status {}, body {}",
-    ///             response.status(),
-    ///             response.body().into_string_lossy(),
+    ///             parts.status,
+    ///             body.into_string_lossy(),
     ///         );
     ///     }
     /// }
