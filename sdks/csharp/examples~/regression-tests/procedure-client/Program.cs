@@ -162,16 +162,16 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     });
 
     // Make sure the table is empty before we run the insert procedure
-    Debug.Assert(context.Db.MyTable.Count() == 0);
+    Debug.Assert(context.Db.MyTable.Count == 0);
     Log.Debug("MyTable is initially empty");
     
     Log.Debug("Insert with transaction rollback");
     waiting++;
-    context.Procedures.InsertWithTransactionRollback((ctx, result) =>
+    context.Procedures.InsertWithTxRollback((ctx, result) =>
     {
         if (result.IsSuccess)
         {
-            Debug.Assert(context.Db.MyTable.Count() == 0);
+            Debug.Assert(context.Db.MyTable.Count == 0);
             Log.Debug("Insert with transaction rollback succeeded");
         }
         else
@@ -183,7 +183,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
     Log.Debug("Insert with transaction commit");
     waiting++;
-    context.Procedures.InsertWithTransactionCommit((ctx, result) =>
+    context.Procedures.InsertWithTxCommit((ctx, result) =>
     {
         if (result.IsSuccess)
         {
