@@ -1,0 +1,63 @@
+name: Attach client binaries to release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (e.g. v1.9.0)"
+        required: true
+        default: "v1.9.0"
+  push:
+    branches:
+      - jdetter/attach-artifacts-workflow
+
+jobs:
+  upload-assets:
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    permissions:
+      contents: write  # needed to modify releases
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts from private base URL
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          BASE_URL: ${{ secrets.ARTIFACT_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          FULL_URL="$BASE_URL/$RELEASE_TAG"
+
+          mkdir -p artifacts
+          cd artifacts
+
+          wget "$FULL_URL/spacetime-aarch64-apple-darwin.tar.gz"
+          wget "$FULL_URL/spacetime-aarch64-unknown-linux-gnu.tar.gz"
+          wget "$FULL_URL/spacetime-x86_64-apple-darwin.tar.gz"
+          wget "$FULL_URL/spacetime-x86_64-pc-windows-msvc.zip"
+          wget "$FULL_URL/spacetime-x86_64-unknown-linux-gnu.tar.gz"
+          wget "$FULL_URL/spacetimedb-update-aarch64-apple-darwin"
+          wget "$FULL_URL/spacetimedb-update-aarch64-unknown-linux-gnu"
+          wget "$FULL_URL/spacetimedb-update-x86_64-apple-darwin"
+          wget "$FULL_URL/spacetimedb-update-x86_64-pc-windows-msvc.exe"
+          wget "$FULL_URL/spacetimedb-update-x86_64-unknown-linux-gnu"
+
+      - name: Upload artifacts to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          cd artifacts
+
+          gh release upload "$RELEASE_TAG" ./* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
