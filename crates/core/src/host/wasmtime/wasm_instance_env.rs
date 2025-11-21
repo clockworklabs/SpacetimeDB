@@ -13,15 +13,14 @@ use crate::subscription::module_subscription_actor::{commit_and_broadcast_event,
 use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::asyncify;
 use anyhow::Context as _;
-use core::time::Duration;
 use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_lib::{ConnectionId, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Timestamp};
 use spacetimedb_primitives::{errno, ColId};
 use std::future::Future;
 use std::num::NonZeroU32;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use wasmtime::{AsContext, Caller, StoreContextMut};
 
 /// A stream of bytes which the WASM module can read from
@@ -1656,6 +1655,110 @@ impl WasmInstanceEnv {
             }
             res => unreachable!("should've had a tx to close; {res:?}"),
         }
+    }
+
+    /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
+    /// suspending execution until the request is complete,
+    /// then return its response details via a [`BytesSource`] written to `out[0]`
+    /// and its response body via a [`BytesSource`] written to `out[1]`.
+    ///
+    /// `request_ptr[..request_len]` should store a BSATN-serialized [`spacetimedb_lib::http::Request`] object
+    /// containing the details of the request to be performed.
+    ///
+    /// `body_ptr[..body_len]` should store the body of the request to be performed;
+    ///
+    /// If the request is successful, a [`BytesSource`] is written to `out`
+    /// containing a BSATN-encoded [`spacetimedb_lib::http::Response`] object.
+    /// "Successful" in this context includes any connection which results in any HTTP status code,
+    /// regardless of the specified meaning of that code.
+    /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error:
+    ///
+    /// - `WOULD_BLOCK_TRANSACTION` if there is currently a transaction open.
+    ///   In this case, `out` is not written.
+    /// - `BSATN_DECODE_ERROR` if `request_ptr[..request_len]` does not contain
+    ///   a valid BSATN-serialized [`spacetimedb_lib::http::Request`] object.
+    ///   In this case, `out` is not written.
+    /// - `HTTP_ERROR` if an error occurs while executing the HTTP request.
+    ///   In this case, a [`BytesSource`] is written to `out`
+    ///   containing a BSATN-encoded [`spacetimedb_lib::http::Error`] object.
+    ///
+    /// # Traps
+    ///
+    /// Traps if:
+    ///
+    /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
+    /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
+    /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+    pub fn procedure_http_request<'caller>(
+        caller: Caller<'caller, Self>,
+        (request_ptr, request_len, body_ptr, body_len, out): (WasmPtr<u8>, u32, WasmPtr<u8>, u32, WasmPtr<u32>),
+    ) -> Fut<'caller, RtResult<u32>> {
+        use spacetimedb_lib::http as st_http;
+
+        Self::async_with_span(caller, AbiCall::ProcedureHttpRequest, move |mut caller| async move {
+            let (mem, env) = Self::mem_env(&mut caller);
+
+            // Yes clippy, I'm calling a closure at its definition site *on purpose*,
+            // as a hacky-but-stable `try` block.
+            #[allow(clippy::redundant_closure_call)]
+            let res = (async move || {
+                // TODO(procedure-metrics): record size in bytes of request.
+
+                // Read the request from memory as a `spacetimedb_lib::http::Request`,
+                // our bespoke type with a stable layout and BSATN encoding.
+                let request_buf = mem.deref_slice(request_ptr, request_len)?;
+                let request = bsatn::from_slice::<st_http::Request>(request_buf).map_err(|err| {
+                    // This goes to `errno::BSATN_DECODE_ERROR` in `Self::convert_wasm_result`.
+                    NodesError::DecodeValue(err)
+                })?;
+
+                let body_buf = mem.deref_slice(body_ptr, body_len)?;
+                let body = bytes::Bytes::copy_from_slice(body_buf);
+
+                let result = env
+                    .instance_env
+                    .http_request(request, body)
+                    // TODO(perf): Evaluate whether it's better to run this future on the "global" I/O Tokio executor,
+                    // rather than the thread-local database executors.
+                    .await;
+
+                match result {
+                    Ok((response, body)) => {
+                        let result = bsatn::to_vec(&response)
+                            .with_context(|| "Failed to BSATN serialize `st_http::Response` object".to_string())?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, body)?;
+                        bytes_source
+                            .0
+                            .write_to(mem, out.saturating_add(size_of::<u32>() as u32))?;
+
+                        Ok(0u32)
+                    }
+                    Err(NodesError::HttpError(err)) => {
+                        let result = bsatn::to_vec(&err).with_context(|| {
+                            format!("Failed to BSATN serialize `spacetimedb_lib::http::Error` object {err:#?}")
+                        })?;
+                        let bytes_source = WasmInstanceEnv::create_bytes_source(env, result.into())?;
+                        bytes_source.0.write_to(mem, out)?;
+                        Ok(errno::HTTP_ERROR.get() as u32)
+                    }
+                    Err(e) => Err(WasmError::Db(e)),
+                }
+            })()
+            .await;
+
+            (
+                caller,
+                res.or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureHttpRequest, err)),
+            )
+        })
     }
 }
 

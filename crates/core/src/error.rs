@@ -17,6 +17,7 @@ use thiserror::Error;
 use crate::client::ClientActorId;
 use crate::host::module_host::ViewCallError;
 use crate::host::scheduler::ScheduleError;
+use crate::host::AbiCall;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_primitives::*;
 use spacetimedb_sats::hash::Hash;
@@ -266,8 +267,8 @@ pub enum NodesError {
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
     NotInTransaction,
-    #[error("can't perform operation; a transaction already exists")]
-    WouldBlockTransaction,
+    #[error("ABI call not allowed while holding open a transaction: {0}")]
+    WouldBlockTransaction(AbiCall),
     #[error("table with name {0:?} already exists")]
     AlreadyExists(String),
     #[error("table with name `{0}` start with 'st_' and that is reserved for internal system tables.")]
@@ -280,6 +281,8 @@ pub enum NodesError {
     BadIndexType(u8),
     #[error("Failed to scheduled timer: {0}")]
     ScheduleError(#[source] ScheduleError),
+    #[error("HTTP request failed: {0}")]
+    HttpError(String),
 }
 
 impl From<DBError> for NodesError {
