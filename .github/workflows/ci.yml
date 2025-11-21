@@ -106,7 +106,7 @@ jobs:
       - name: Run smoketests (Linux)
         if: runner.os == 'Linux'
         run: |
-          # .dockerignore ignores target, which our CI dockerfile uses
+          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           cargo ci smoketests --docker .github/docker-compose.yml -- ${SMOKETEST_ARGS}
       - name: Run smoketests (Windows)
