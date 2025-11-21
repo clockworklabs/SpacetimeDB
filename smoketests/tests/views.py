@@ -109,6 +109,16 @@ pub struct PlayerState {
     level: u64,
 }
 
+
+#[derive(Clone)]
+#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+pub struct PlayerInfo {
+    #[primary_key]
+    id: u64,
+    age: u64,
+    level: u64,
+}
+
 #[spacetimedb::reducer]
 pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
     ctx.db.player_level().insert(PlayerState { id, level });
@@ -140,6 +150,14 @@ pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
     let first = ctx.db.player_state().id().find(42).unwrap();
     let second = PlayerState { id: 7, level: 3 };
     vec![first, second]
+}
+
+#[spacetimedb::view(name = player_info_multi_index, public)]
+pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
+
+    log::info!("player_info called");
+    ctx.db.player_info().age_level_index().filter((25u64, 7u64)).next()
+    
 }
 """
 
@@ -258,6 +276,67 @@ Select * FROM player_state WHERE id = 42;
 UPDATE player_state SET level = 7 WHERE id = 42;
 """,
         )
+
+    def test_view_multi_index_materialization(self):
+        """This test asserts whether views using multi-column indexes are materialized correctly"""
+
+        player_called_log = "player_info called"
+        
+        # call view, with no data
+        self.assertSql("SELECT * FROM player_info_multi_index", """\
+ id | age | level
+----+-----+-------
+""")
+
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 1)
+
+        # Insert data
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """\
+INSERT INTO player_info (id, age, level) VALUES (1, 25, 7);
+""",
+        )
+
+        # Should invoke view as data is inserted
+        self.assertSql("SELECT * FROM player_info_multi_index", """\
+ id | age | level
+----+-----+-------
+ 1  | 25  | 7
+""")
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+
+
+        # Inserting a row that does not match should not trigger re-evaluation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """\
+INSERT INTO player_info (id, age, level) VALUES (2, 30, 8);
+""",
+        )
+
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+
+        # Updating the row that the view depends on should trigger re-evaluation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+UPDATE player_info SET age = 26 WHERE id = 1;
+""",
+        )
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 3)
+        self.assertSql("SELECT * FROM player_info_multi_index", """\
+ id | age | level
+----+-----+-------
+""")
+
 
     def test_query_anonymous_view_reducer(self):
         """Tests that anonymous views are updated for reducers"""
