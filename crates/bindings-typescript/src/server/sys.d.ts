@@ -93,4 +93,10 @@ declare module 'spacetime:sys@1.2' {
     request: Uint8Array,
     body: Uint8Array | string
   ): [response: Uint8Array, body: Uint8Array];
+
+  export function procedure_start_mut_tx(): bigint;
+
+  export function procedure_commit_mut_tx();
+
+  export function procedure_abort_mut_tx();
 }

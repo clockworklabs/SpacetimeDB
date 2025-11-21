@@ -20,7 +20,7 @@ use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, Tim
 use crate::host::AbiCall;
 use anyhow::Context;
 use bytes::Bytes;
-use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
+use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::Serialize;
 use v8::{
@@ -129,7 +129,22 @@ pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
             with_sys_result_value,
             AbiCall::ProcedureHttpRequest,
             procedure_http_request
-        )
+        ),
+        (
+            with_sys_result_value,
+            AbiCall::ProcedureStartMutTransaction,
+            procedure_start_mut_tx
+        ),
+        (
+            with_sys_result_noret,
+            AbiCall::ProcedureAbortMutTransaction,
+            procedure_abort_mut_tx
+        ),
+        (
+            with_sys_result_noret,
+            AbiCall::ProcedureCommitMutTransaction,
+            procedure_commit_mut_tx
+        ),
     )
 }
 
@@ -1584,4 +1599,38 @@ fn procedure_http_request<'scope>(
         scope,
         &[response.into(), response_body.into()],
     ))
+}
+
+fn procedure_start_mut_tx<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    _args: FunctionCallbackArguments<'_>,
+) -> SysCallResult<Local<'scope, v8::BigInt>> {
+    let env = get_env(scope)?;
+
+    let fut = env.instance_env.start_mutable_tx()?;
+
+    let rt = tokio::runtime::Handle::current();
+    rt.block_on(fut);
+
+    let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+
+    Ok(v8::BigInt::new_from_u64(scope, timestamp))
+}
+
+fn procedure_abort_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
+    let env = get_env(scope)?;
+
+    env.instance_env.abort_mutable_tx()?;
+    Ok(())
+}
+
+fn procedure_commit_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
+    let env = get_env(scope)?;
+
+    let fut = env.instance_env.commit_mutable_tx()?;
+
+    let rt = tokio::runtime::Handle::current();
+    rt.block_on(fut);
+
+    Ok(())
 }
