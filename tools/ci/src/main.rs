@@ -4,7 +4,7 @@ use duct::cmd;
 use log::warn;
 use std::collections::HashMap;
 use std::net::TcpListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -151,14 +151,16 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
 
 #[derive(Debug, Clone)]
 pub enum StartServer {
-    /// Do not start a server.
     No,
-
-    /// Start a server normally.
     Yes { random_port: bool },
+    Docker { compose_file: PathBuf, random_port: bool },
+}
 
-    /// Start a server using Docker Compose.
-    Docker { random_port: bool, compose_file: PathBuf },
+#[derive(Debug, Clone)]
+pub enum ServerState {
+    None,
+    Yes { pid: i32 },
+    Docker { compose_file: PathBuf, project: String },
 }
 
 fn find_free_port() -> Result<u16> {
@@ -171,58 +173,75 @@ fn find_free_port() -> Result<u16> {
     Ok(port)
 }
 
-fn run_smoketests_batch(start_server: StartServer, args: &[String]) -> Result<()> {
-    let mut started_pid: Option<i32> = None;
-    match (start_server, docker.as_ref()) {
-        (start_server, Some(compose_file)) => {
+fn run_smoketests_batch(server_mode: StartServer, args: &[String]) -> Result<()> {
+    let server_state = match server_mode {
+        StartServer::No => ServerState::None,
+        StartServer::Docker {
+            compose_file,
+            random_port,
+        } => {
             println!("Starting server..");
-            let server_port = find_free_port()?;
-            let pg_port = find_free_port()?;
-            let tracy_port = find_free_port()?;
+            let env_string;
+            let project;
+            if random_port {
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                let tracy_port = find_free_port()?;
+                env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
+                project = format!("spacetimedb-smoketests-{server_port}");
+            } else {
+                env_string = String::new();
+                project = "spacetimedb-smoketests".to_string();
+            };
+            let compose_str = compose_file.to_string_lossy();
             bash!(&format!(
-                "STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port} docker compose -f {compose_file} up -d"
+                "{env_string} docker compose -f {compose_str} --project {project} up -d"
             ))?;
+            ServerState::Docker { compose_file, project }
         }
-        (true, None) => {
+        StartServer::Yes { random_port } => {
             // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
             // before the server is up.
             bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
 
             // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
-            let server_port = find_free_port()?;
-            println!("Starting server on port {server_port}..");
+            let arg_string = if random_port {
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                &format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port}")
+            } else {
+                "--pg-port 5432"
+            };
+            println!("Starting server..");
             let pid_str;
             if cfg!(target_os = "windows") {
                 pid_str = cmd!(
-                    "powershell",
-                    "-NoProfile",
-                    "-Command",
-                    &format!(
-                        "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --listen-addr 0.0.0.0:{server_port} --pg-port 5432' -PassThru; $p.Id"
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        &format!(
+                            "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start {arg_string}' -PassThru; $p.Id"
+                        )
                     )
-                )
-                .read()
-                .unwrap_or_default();
+                    .read()
+                    .unwrap_or_default();
             } else {
                 pid_str = cmd!(
                     "bash",
                     "-lc",
-                    &format!(
-                        "nohup cargo run -p spacetimedb-cli -- start --listen-addr 0.0.0.0:{server_port} --pg-port 5432 >/dev/null 2>&1 & echo $!"
-                    )
+                    &format!("nohup cargo run -p spacetimedb-cli -- start {arg_string} >/dev/null 2>&1 & echo $!")
                 )
                 .read()
                 .unwrap_or_default();
             }
-            started_pid = Some(
-                pid_str
+            ServerState::Yes {
+                pid: pid_str
                     .trim()
                     .parse::<i32>()
                     .expect("Failed to get PID of started process"),
-            )
+            }
         }
-        (false, None) => {}
-    }
+    };
 
     // TODO: does this work on windows?
     let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
@@ -232,29 +251,18 @@ fn run_smoketests_batch(start_server: StartServer, args: &[String]) -> Result<()
     let python = if py3_available { "python3" } else { "python" };
 
     println!("Running smoketests..");
-    let mut smoketests_args = args.to_vec();
-    if let Some(compose_file) = docker.as_ref() {
-        // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
-        // run the server in docker while still retaining full control over what tests they want.
-        smoketests_args.push("--compose-file".to_string());
-        smoketests_args.push(compose_file.to_string());
-    }
-    let test_result = bash!(&format!("{python} -m smoketests {}", smoketests_args.join(" ")));
+    let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
 
     // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
-    match (start_server, docker.as_ref()) {
-        (_, Some(compose_file)) => {
+    match server_state {
+        ServerState::None => {}
+        ServerState::Docker { compose_file, project } => {
             println!("Shutting down server..");
-            let _ = bash!(&format!("docker compose -f {compose_file} down"));
+            let compose_str = compose_file.to_string_lossy();
+            let _ = bash!(&format!("docker compose -f {compose_str} --project {project} down"));
         }
-        (true, None) => {
+        ServerState::Yes { pid } => {
             println!("Shutting down server..");
-            let pid = if let Some(pid) = started_pid {
-                pid
-            } else {
-                // We constructed a `Some` above in this case
-                unreachable!();
-            };
             if cfg!(target_os = "windows") {
                 let _ = bash!(&format!(
                     "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
@@ -264,7 +272,6 @@ fn run_smoketests_batch(start_server: StartServer, args: &[String]) -> Result<()
                 let _ = bash!(&format!("kill {}", pid));
             }
         }
-        (false, None) => {}
     }
 
     test_result
@@ -323,6 +330,13 @@ fn main() -> Result<()> {
                 (true, None) => StartServer::Yes { random_port: false },
                 (false, None) => StartServer::No,
             };
+            let mut args = args.to_vec();
+            if let Some(compose_file) = docker.as_ref() {
+                // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
+                // run the server in docker while still retaining full control over what tests they want.
+                args.push("--compose-file".to_string());
+                args.push(compose_file.to_string());
+            }
             run_smoketests_batch(start_server, &args)?;
         }
 
