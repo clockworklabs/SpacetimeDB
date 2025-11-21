@@ -21,11 +21,12 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
+use crate::sql::ast::SchemaViewer;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
-use anyhow::Context;
+use anyhow::{bail, ensure, Context};
 use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
@@ -36,15 +37,19 @@ use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::{bsatn, ConnectionId, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_subscription::SubscriptionPlan;
 use std::sync::Arc;
 use tracing::span::EnteredSpan;
 
@@ -986,6 +991,12 @@ impl InstanceCommon {
         } = params;
 
         let _outer_span = start_call_function_span(&view_name, &caller, None);
+        let func_call_type = FuncCallType::View(ViewCallInfo {
+            view_id,
+            table_id,
+            view_name: view_name.clone(),
+            sender: sender.clone(),
+        });
 
         let mut tx_slot = inst.tx_slot();
         let (mut tx, result) = tx_slot.set(tx, || {
@@ -1043,17 +1054,54 @@ impl InstanceCommon {
                         log::error!("Fatal error parsing result for view `{view_name}`: {err}");
                     })
                     .expect("Fatal error parsing view result");
-
-                let ViewResult::Rows(bytes) = result else {
-                    unimplemented!("View returned a non-rows format");
-                };
-
                 let typespace = self.info.module_def.typespace();
-                let rows = deserialize_view_rows(row_type, bytes, typespace)
-                    .inspect_err(|err| {
-                        log::error!("Fatal error materializing view `{view_name}`: {err}");
+                let row_product_type = typespace
+                    .resolve(row_type)
+                    .ty()
+                    .clone()
+                    .into_product()
+                    .inspect_err(|t| {
+                        log::error!("Fatal error resolving row type for view `{view_name}`: {t:?}");
                     })
-                    .expect("Fatal error materializing view");
+                    .expect("Fatal error resolving row type for view");
+
+                let rows = match result {
+                    ViewResult::Rows(bytes) => {
+                        let rows = deserialize_view_rows(row_type, bytes, typespace)
+                            .inspect_err(|err| {
+                                log::error!("Fatal error materializing view `{view_name}`: {err}");
+                            })
+                            .expect("Fatal error materializing view");
+                        rows
+                    }
+                    ViewResult::RawSql(query) => self
+                        .run_query_for_view(
+                            &mut tx,
+                            &query,
+                            &row_product_type,
+                            &ViewCallInfo {
+                                view_id,
+                                table_id,
+                                view_name: view_name.clone(),
+                                sender: sender.clone(),
+                            },
+                        )
+                        .inspect_err(|err| {
+                            log::error!("Fatal error executing raw SQL for view `{view_name}`: {err}");
+                        })
+                        .expect("Fatal error executing raw SQL for view"),
+                    _ => unimplemented!("Parameterized query is not supported"),
+                };
+                // let ViewResult::Rows(bytes) = result else {
+                //     unimplemented!("View returned a non-rows format");
+                // };
+
+                // let typespace = self.info.module_def.typespace();
+                // let rows = deserialize_view_rows(row_type, bytes, typespace)
+                //     .inspect_err(|err| {
+                //         log::error!("Fatal error materializing view `{view_name}`: {err}");
+                //     })
+                //     .expect("Fatal error materializing view");
 
                 let res = match sender {
                     Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
@@ -1080,6 +1128,66 @@ impl InstanceCommon {
         (res, trapped)
     }
 
+    fn run_query_for_view(
+        &self,
+        tx: &mut MutTxId,
+        the_query: &str,
+        expected_row_type: &ProductType,
+        call_info: &ViewCallInfo,
+    ) -> anyhow::Result<Vec<ProductValue>> {
+        if the_query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Views bypass RLS.
+        let auth = AuthCtx::for_current(self.info.database_identity);
+        let schema_view = SchemaViewer::new(&*tx, &auth);
+
+        // Compile to subscription plans.
+        let (plans, has_params) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
+        ensure!(
+            !has_params,
+            "parameterized SQL is not supported for view materialization yet"
+        );
+
+        // Validate shape and disallow views-on-views.
+        for plan in &plans {
+            let phys = plan.optimized_physical_plan();
+            let Some(source_schema) = phys.return_table() else {
+                bail!("query does not return plain table rows");
+            };
+            if phys.reads_from_view(true) || phys.reads_from_view(false) {
+                bail!("view definition cannot read from other views");
+            }
+            if source_schema.row_type != *expected_row_type {
+                bail!(
+                    "query returns `{}` but view expects `{}`",
+                    fmt_algebraic_type(&AlgebraicType::Product(source_schema.row_type.clone())),
+                    fmt_algebraic_type(&AlgebraicType::Product(expected_row_type.clone())),
+                );
+            }
+        }
+
+        let op = FuncCallType::View(call_info.clone());
+        let mut metrics = ExecutionMetrics::default();
+        let mut rows = Vec::new();
+
+        for plan in plans {
+            // Track read sets for all tables involved in this plan.
+            // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
+            for table_id in plan.table_ids() {
+                tx.record_table_scan(&op, table_id);
+            }
+
+            let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
+            pipelined.execute(&*tx, &mut metrics, &mut |row| {
+                rows.push(row.to_product_value());
+                Ok(())
+            })?;
+        }
+
+        Ok(rows)
+    }
     /// A [`MutTxId`] knows which views must be updated (re-evaluated).
     /// This method re-evaluates them and updates their backing tables.
     pub(crate) fn call_views_with_tx<I: WasmInstance>(
