@@ -13,7 +13,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -25,7 +25,7 @@ use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
 #[derive(Clone)]
@@ -205,6 +205,11 @@ impl InstanceEnv {
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
+    }
+
+    /// True if `self` is holding an open transaction, or false if it is not.
+    pub fn in_tx(&self) -> bool {
+        self.get_tx().is_ok()
     }
 
     pub(crate) fn take_tx(&self) -> Result<MutTxId, GetTxError> {
@@ -588,7 +593,9 @@ impl InstanceEnv {
 
     pub async fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
         if self.get_tx().is_ok() {
-            return Err(NodesError::WouldBlockTransaction);
+            return Err(NodesError::WouldBlockTransaction(
+                super::AbiCall::ProcedureStartMutTransaction,
+            ));
         }
 
         let stdb = self.replica_ctx.relational_db.clone();
@@ -597,6 +604,138 @@ impl InstanceEnv {
         self.tx.set_raw(tx);
 
         Ok(())
+    }
+
+    pub async fn http_request(
+        &mut self,
+        request: st_http::Request,
+        body: bytes::Bytes,
+    ) -> Result<(st_http::Response, bytes::Bytes), NodesError> {
+        if self.in_tx() {
+            // If we're holding a transaction open, refuse to perform this blocking operation.
+            return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
+        }
+
+        // TODO(procedure-metrics): record size in bytes of request.
+
+        fn http_error<E: ToString>(err: E) -> NodesError {
+            NodesError::HttpError(err.to_string())
+        }
+
+        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
+        // and map its body into a type `reqwest` will like.
+        let (request, timeout) = convert_http_request(request).map_err(http_error)?;
+
+        let request = http::Request::from_parts(request, body);
+
+        let mut reqwest: reqwest::Request = request.try_into().map_err(http_error)?;
+
+        // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+
+        // reqwest's timeout covers from the start of the request to the end of reading the body,
+        // so there's no need to do our own timeout operation.
+        *reqwest.timeout_mut() = Some(timeout);
+
+        let reqwest = reqwest;
+
+        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
+
+        // Actually execute the HTTP request!
+        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+        let response = reqwest::Client::new().execute(reqwest).await.map_err(http_error)?;
+
+        // Download the response body, which in all likelihood will be a stream,
+        // as reqwest seems to prefer that.
+        let (response, body) = http::Response::from(response).into_parts();
+        let body = http_body_util::BodyExt::collect(body)
+            .await
+            .map_err(http_error)?
+            .to_bytes();
+
+        // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+        // which has a stable BSATN encoding to pass across the WASM boundary.
+        let response = convert_http_response(response);
+
+        Ok((response, body))
+    }
+}
+
+/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+///
+/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+
+fn convert_http_request(request: st_http::Request) -> http::Result<(http::request::Parts, Option<Duration>)> {
+    let st_http::Request {
+        method,
+        headers,
+        timeout,
+        uri,
+        version,
+    } = request;
+
+    let (mut request, ()) = http::Request::new(()).into_parts();
+    request.method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
+    };
+    request.uri = uri.try_into()?;
+    request.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    request.headers = headers
+        .into_iter()
+        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
+        .collect::<http::Result<_>>()?;
+
+    let timeout = timeout.map(|d| d.to_duration_saturating());
+
+    Ok((request, timeout))
+}
+
+fn convert_http_response(response: http::response::Parts) -> st_http::Response {
+    let http::response::Parts {
+        extensions,
+        headers,
+        status,
+        version,
+        ..
+    } = response;
+
+    // there's a good chance that reqwest inserted some extensions into this request,
+    // but we can't control that and don't care much about it.
+    let _ = extensions;
+
+    st_http::Response {
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        version: match version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {version:?}"),
+        },
+        code: status.as_u16(),
     }
 }
 

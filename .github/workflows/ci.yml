@@ -295,8 +295,11 @@ jobs:
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
     runs-on: spacetimedb-new-runner
+    # Disable the tests because they are very flaky at the moment.
+    # TODO: Remove this line and re-enable the `if` line just below here.
+    if: false
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    # if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:

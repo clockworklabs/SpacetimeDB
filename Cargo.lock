@@ -5346,6 +5346,8 @@ version = "1.8.0"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
+ "serde_json",
+ "spacetimedb-lib 1.8.0",
  "spacetimedb-sdk",
  "test-counter",
 ]
@@ -7110,8 +7112,10 @@ name = "spacetimedb"
 version = "1.8.0"
 dependencies = [
  "bytemuck",
+ "bytes",
  "derive_more 0.99.20",
  "getrandom 0.2.16",
+ "http 1.3.1",
  "insta",
  "log",
  "rand 0.8.5",
@@ -7460,6 +7464,8 @@ dependencies = [
  "hashbrown 0.15.5",
  "hex",
  "hostname",
+ "http 1.3.1",
+ "http-body-util",
  "hyper 1.7.0",
  "imara-diff",
  "indexmap 2.12.0",
@@ -7724,6 +7730,7 @@ dependencies = [
  "hex",
  "insta",
  "itertools 0.12.1",
+ "log",
  "proptest",
  "proptest-derive",
  "ron",
