@@ -7,11 +7,6 @@ on:
         description: "Release tag (e.g. v1.9.0)"
         required: true
 
-  # TODO - Remove before merging!
-  push:
-    branches:
-      - jdetter/attach-artifacts-workflow
-
 jobs:
   upload-assets:
     runs-on: spacetimedb-new-runner
@@ -33,8 +28,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # TODO - Remove before merging!
-          RELEASE_TAG=v1.9.0
           FULL_URL="$BASE_URL/$RELEASE_TAG"
 
           mkdir -p artifacts
@@ -67,9 +60,6 @@ jobs:
           set -euo pipefail
 
           cd artifacts
-
-          # TODO - Remove before merging!
-          RELEASE_TAG=v1.9.0
 
           gh release upload "$RELEASE_TAG" ./* \
             --repo "$GITHUB_REPOSITORY" \
