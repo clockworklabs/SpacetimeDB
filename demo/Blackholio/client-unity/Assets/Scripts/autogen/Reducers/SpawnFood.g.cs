@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void SpawnFoodHandler(ReducerEventContext ctx, SpawnFoodTimer timer);
+        public delegate void SpawnFoodHandler(ReducerEventContext ctx, SpacetimeDB.Types.SpawnFoodTimer timer);
         public event SpawnFoodHandler? OnSpawnFood;
 
-        public void SpawnFood(SpawnFoodTimer timer)
+        public void SpawnFood(SpacetimeDB.Types.SpawnFoodTimer timer)
         {
             conn.InternalCallReducer(new Reducer.SpawnFood(timer), this.SetCallReducerFlags.SpawnFoodFlags);
         }
