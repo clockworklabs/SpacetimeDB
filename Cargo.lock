@@ -7716,7 +7716,6 @@ dependencies = [
  "enum-as-inner",
  "enum-map",
  "hex",
- "http 1.3.1",
  "insta",
  "itertools 0.12.1",
  "log",
