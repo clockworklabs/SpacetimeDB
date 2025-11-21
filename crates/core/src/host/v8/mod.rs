@@ -1,7 +1,7 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, CodeError, ErrorOrException,
-    ExcResult, ExceptionThrown, JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, JsStackTrace, TerminationError, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
@@ -384,10 +384,11 @@ impl JsInstance {
     }
 
     pub async fn call_procedure(self: Box<Self>, params: CallProcedureParams) -> (CallProcedureReturn, Box<Self>) {
+        let rt = tokio::runtime::Handle::current();
         let (r, s) = self
             .send_recv(
                 JsWorkerReply::into_call_procedure,
-                JsWorkerRequest::CallProcedure { params },
+                JsWorkerRequest::CallProcedure { params, rt },
             )
             .await;
         (*r, s)
@@ -434,7 +435,10 @@ enum JsWorkerRequest {
     /// See [`JsInstance::call_view`].
     CallView { tx: MutTxId, params: CallViewParams },
     /// See [`JsInstance::call_procedure`].
-    CallProcedure { params: CallProcedureParams },
+    CallProcedure {
+        params: CallProcedureParams,
+        rt: tokio::runtime::Handle,
+    },
     /// See [`JsInstance::clear_all_clients`].
     ClearAllClients,
     /// See [`JsInstance::call_identity_connected`].
@@ -588,7 +592,8 @@ fn spawn_instance_worker(
                     let (res, trapped) = instance_common.call_view_with_tx(tx, params, &mut inst);
                     reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
                 }
-                JsWorkerRequest::CallProcedure { params } => {
+                JsWorkerRequest::CallProcedure { params, rt } => {
+                    let _guard = rt.enter();
                     let (res, trapped) = instance_common
                         .call_procedure(params, &mut inst)
                         .now_or_never()
@@ -883,6 +888,39 @@ fn extract_description<'scope>(
             .map_err(|(e, _)| e.into())
         },
     )
+}
+
+/// The trait used as bound on `v8::ArrayBuffer::new_backing_store_from_bytes`
+/// isn't public, so we need to emulate it.
+trait IntoArrayBufferBackingStore {
+    fn into_backing_store(self) -> v8::UniqueRef<v8::BackingStore>;
+}
+macro_rules! impl_into_backing_store {
+    ([$($bounds:tt)*] $t:ty) => {
+        impl<$($bounds)*> IntoArrayBufferBackingStore for $t {
+            fn into_backing_store(self) -> v8::UniqueRef<v8::BackingStore> {
+                v8::ArrayBuffer::new_backing_store_from_bytes(self)
+            }
+        }
+    };
+    ($($primitive:ty),*) => {$(
+        impl_into_backing_store!([] Box<[$primitive]>);
+        impl_into_backing_store!([] Vec<$primitive>);
+    )*};
+}
+
+impl_into_backing_store!([T: AsMut<[u8]>] Box<T>);
+impl_into_backing_store!(u8, u16, u32, u64, i8, i16, i32, i64);
+
+/// Taking a scope and a buffer, return a `v8::Local<'scope, v8::Uint8Array>`.
+fn make_uint8array<'scope>(
+    scope: &PinScope<'scope, '_>,
+    buf: impl IntoArrayBufferBackingStore,
+) -> v8::Local<'scope, v8::Uint8Array> {
+    let store = buf.into_backing_store();
+    let len = store.byte_length();
+    let buf = v8::ArrayBuffer::with_backing_store(scope, &store.make_shared());
+    v8::Uint8Array::new(scope, buf, 0, len).expect("len > 9 pebibytes")
 }
 
 #[cfg(test)]

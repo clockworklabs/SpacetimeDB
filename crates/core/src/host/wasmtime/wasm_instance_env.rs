@@ -323,7 +323,7 @@ impl WasmInstanceEnv {
 
     fn convert_wasm_result<T: From<u16>>(func: AbiCall, err: WasmError) -> RtResult<T> {
         match err {
-            WasmError::Db(err) => err_to_errno_and_log(func, err),
+            WasmError::Db(err) => err_to_errno_and_log(func, err).map(|(code, _)| code),
             WasmError::BufferTooSmall => Ok(errno::BUFFER_TOO_SMALL.get().into()),
             WasmError::Wasm(err) => Err(err),
         }
@@ -1629,9 +1629,7 @@ impl WasmInstanceEnv {
                 let body_buf = mem.deref_slice(body_ptr, body_len)?;
                 let body = bytes::Bytes::copy_from_slice(body_buf);
 
-                let result = env
-                    .instance_env
-                    .http_request(request, body)
+                let result = async { env.instance_env.http_request(request, body)?.await }
                     // TODO(perf): Evaluate whether it's better to run this future on the "global" I/O Tokio executor,
                     // rather than the thread-local database executors.
                     .await;
