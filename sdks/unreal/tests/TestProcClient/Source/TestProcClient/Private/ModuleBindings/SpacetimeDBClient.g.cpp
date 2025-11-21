@@ -4,6 +4,7 @@
 #include "ModuleBindings/SpacetimeDBClient.g.h"
 #include "DBCache/WithBsatn.h"
 #include "BSATN/UEBSATNHelpers.h"
+#include "ModuleBindings/Tables/MyTableTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -26,6 +27,7 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
 	Procedures->Conn = this;
 
+	RegisterTable<FMyTableType, UMyTableTable, FEventContext>(TEXT("my_table"), Db->MyTable);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -61,12 +63,126 @@ void URemoteTables::Initialize()
 {
 
 	/** Creating tables */
+	MyTable = NewObject<UMyTableTable>(this);
 	/**/
 
 	/** Initialization */
+	MyTable->PostInitialize();
 	/**/
 }
 
+
+void URemoteProcedures::InsertWithTxCommit(FOnInsertWithTxCommitComplete Callback)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+    FOnProcedureCompleteDelegate Wrapper;
+    Wrapper.BindLambda(
+        [Callback = MoveTemp(Callback)]
+        (const FSpacetimeDBEvent& Event,
+            const TArray<uint8>& ResultData,
+            bool bSuccess) mutable
+        {
+            FSpacetimeDBUnit ResultValue{};
+
+            if (bSuccess) {
+                ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
+            }
+
+            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            // Fire the user's typed delegate
+            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+        });
+	Conn->CallProcedureTyped(TEXT("insert_with_tx_commit"), FInsertWithTxCommitArgs(), Wrapper);
+}
+
+void URemoteProcedures::InsertWithTxRollback(FOnInsertWithTxRollbackComplete Callback)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+    FOnProcedureCompleteDelegate Wrapper;
+    Wrapper.BindLambda(
+        [Callback = MoveTemp(Callback)]
+        (const FSpacetimeDBEvent& Event,
+            const TArray<uint8>& ResultData,
+            bool bSuccess) mutable
+        {
+            FSpacetimeDBUnit ResultValue{};
+
+            if (bSuccess) {
+                ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
+            }
+
+            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            // Fire the user's typed delegate
+            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+        });
+	Conn->CallProcedureTyped(TEXT("insert_with_tx_rollback"), FInsertWithTxRollbackArgs(), Wrapper);
+}
+
+void URemoteProcedures::InvalidRequest(FOnInvalidRequestComplete Callback)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+    FOnProcedureCompleteDelegate Wrapper;
+    Wrapper.BindLambda(
+        [Callback = MoveTemp(Callback)]
+        (const FSpacetimeDBEvent& Event,
+            const TArray<uint8>& ResultData,
+            bool bSuccess) mutable
+        {
+            FString ResultValue{};
+
+            if (bSuccess) {
+                ResultValue = UE::SpacetimeDB::Deserialize<FString>(ResultData);
+            }
+
+            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            // Fire the user's typed delegate
+            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+        });
+	Conn->CallProcedureTyped(TEXT("invalid_request"), FInvalidRequestArgs(), Wrapper);
+}
+
+void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+    FOnProcedureCompleteDelegate Wrapper;
+    Wrapper.BindLambda(
+        [Callback = MoveTemp(Callback)]
+        (const FSpacetimeDBEvent& Event,
+            const TArray<uint8>& ResultData,
+            bool bSuccess) mutable
+        {
+            FString ResultValue{};
+
+            if (bSuccess) {
+                ResultValue = UE::SpacetimeDB::Deserialize<FString>(ResultData);
+            }
+
+            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            // Fire the user's typed delegate
+            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+        });
+	Conn->CallProcedureTyped(TEXT("read_my_schema"), FReadMySchemaArgs(), Wrapper);
+}
 
 void URemoteProcedures::ReturnEnumA(const uint32 A, FOnReturnEnumAComplete Callback)
 {

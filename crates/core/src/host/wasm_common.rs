@@ -347,13 +347,16 @@ pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
+        NodesError::WouldBlockTransaction(_) => Some(errno::WOULD_BLOCK_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
+        NodesError::DecodeValue(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
         NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
         NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
         NodesError::IndexRowNotFound => Some(errno::NO_SUCH_ROW),
         NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
         NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
+        NodesError::HttpError(_) => Some(errno::HTTP_ERROR),
         NodesError::Internal(internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {
@@ -422,6 +425,10 @@ macro_rules! abi_funcs {
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
+            "spacetime_10.3"::procedure_http_request,
         }
     };
 }

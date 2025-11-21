@@ -4,13 +4,16 @@ use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use crate::util::asyncify;
 use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -22,7 +25,7 @@ use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
 #[derive(Clone)]
@@ -204,6 +207,19 @@ impl InstanceEnv {
         self.tx.get()
     }
 
+    /// True if `self` is holding an open transaction, or false if it is not.
+    pub fn in_tx(&self) -> bool {
+        self.get_tx().is_ok()
+    }
+
+    pub(crate) fn take_tx(&self) -> Result<MutTxId, GetTxError> {
+        self.tx.take()
+    }
+
+    pub(crate) fn relational_db(&self) -> &Arc<RelationalDB> {
+        &self.replica_ctx.relational_db
+    }
+
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
         let tx = &mut *self.get_tx()?;
         Ok(tx.get_jwt_payload(connection_id).map_err(DBError::from)?)
@@ -219,11 +235,8 @@ impl InstanceEnv {
         );
     }
 
-    /// End a console timer by logging the span at INFO level.
-    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
-        let elapsed = span.start.elapsed();
-        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
-
+    /// Logs a simple `message` at `level`.
+    pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
         /// A backtrace provider that provides nothing.
         struct Noop;
         impl BacktraceProvider for Noop {
@@ -243,9 +256,17 @@ impl InstanceEnv {
             filename: None,
             line_number: None,
             function,
-            message: &message,
+            message,
         };
-        self.console_log(LogLevel::Info, &record, &Noop);
+        self.console_log(level, &record, &Noop);
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        self.console_log_simple_message(LogLevel::Info, function, &message);
     }
 
     /// Returns the current time suitable for logging.
@@ -274,7 +295,7 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, insert_flags) = stdb
@@ -343,7 +364,7 @@ impl InstanceEnv {
     }
 
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, update_flags) = stdb
@@ -386,8 +407,8 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
         let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
@@ -416,7 +437,7 @@ impl InstanceEnv {
     /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(level = "trace", skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Track the number of bytes coming from the caller
@@ -443,7 +464,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
@@ -457,7 +478,7 @@ impl InstanceEnv {
     /// and `IndexNotFound` if the index does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the index id from the name.
@@ -471,7 +492,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
@@ -488,8 +509,8 @@ impl InstanceEnv {
         pool: &mut ChunkPool,
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Track the number of rows and the number of bytes scanned by the iterator
         let mut rows_scanned = 0;
@@ -521,8 +542,8 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Track rows and bytes scanned by the iterator
         let mut rows_scanned = 0;
@@ -569,25 +590,138 @@ impl InstanceEnv {
 
         written
     }
+
+    pub async fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
+        if self.get_tx().is_ok() {
+            return Err(NodesError::WouldBlockTransaction(
+                super::AbiCall::ProcedureStartMutTransaction,
+            ));
+        }
+
+        let stdb = self.replica_ctx.relational_db.clone();
+        // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
+        let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
+        self.tx.set_raw(tx);
+
+        Ok(())
+    }
+
+    pub async fn http_request(
+        &mut self,
+        request: st_http::Request,
+        body: bytes::Bytes,
+    ) -> Result<(st_http::Response, bytes::Bytes), NodesError> {
+        if self.in_tx() {
+            // If we're holding a transaction open, refuse to perform this blocking operation.
+            return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
+        }
+
+        // TODO(procedure-metrics): record size in bytes of request.
+
+        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
+        // and map its body into a type `reqwest` will like.
+        fn convert_request(request: st_http::Request, body: bytes::Bytes) -> Result<reqwest::Request, st_http::Error> {
+            let mut request: http::request::Parts =
+                request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
+
+            // Pull our timeout extension, if any, out of the `http::Request` extensions.
+            // reqwest has its own timeout extension, which is where we'll provide this.
+            let timeout = request.extensions.remove::<st_http::Timeout>();
+
+            let request = http::Request::from_parts(request, body.to_vec());
+
+            let mut reqwest: reqwest::Request = request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
+
+            // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+            // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+            let timeout = timeout
+                .map(|timeout| timeout.timeout.to_duration().unwrap_or(Duration::ZERO))
+                .unwrap_or(HTTP_DEFAULT_TIMEOUT)
+                .min(HTTP_DEFAULT_TIMEOUT);
+
+            // reqwest's timeout covers from the start of the request to the end of reading the body,
+            // so there's no need to do our own timeout operation.
+            *reqwest.timeout_mut() = Some(timeout);
+
+            Ok(reqwest)
+        }
+
+        // If for whatever reason reqwest doesn't like our `http::Request`,
+        // surface that error to the guest so customers can debug and provide a more appropriate request.
+        let reqwest = convert_request(request, body)?;
+
+        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
+
+        // Actually execute the HTTP request!
+        // We'll wrap this future in a `tokio::time::timeout` before `await`ing it.
+        let get_response_and_download_body = async {
+            // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+            let response = reqwest::Client::new()
+                .execute(reqwest)
+                .await
+                .map_err(|err| st_http::Error::from_display(&err))?;
+
+            // Download the response body, which in all likelihood will be a stream,
+            // as reqwest seems to prefer that.
+            // Note that this will be wrapped in the same `tokio::time::timeout` as the above `execute` call.
+            let (parts, body) = http::Response::from(response).into_parts();
+            let body = http_body_util::BodyExt::collect(body)
+                .await
+                .map_err(|err| st_http::Error::from_display(&err))?;
+
+            // Map the collected body into our `spacetimedb_lib::http::Body` type,
+            // then wrap it back in an `http::Response`.
+            Ok::<_, st_http::Error>((parts, body.to_bytes()))
+        };
+
+        // If the request failed, surface that error to the guest so customer logic can handle it.
+        let (response, body) = get_response_and_download_body.await?;
+
+        // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+        // which has a stable BSATN encoding to pass across the WASM boundary.
+        let response = st_http::Response::from(response);
+
+        Ok((response, body))
+    }
 }
 
+/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+///
+/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+
 impl TxSlot {
-    pub fn set<T>(&mut self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
+    /// Sets the slot to `tx`, ensuring that there was no tx before.
+    pub fn set_raw(&mut self, tx: MutTxId) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
-        let remove_tx = || self.inner.lock().take();
+    }
+
+    /// Sets the slot to `tx` runs `work`, and returns back `tx`.
+    pub fn set<T>(&mut self, tx: MutTxId, work: impl FnOnce() -> T) -> (MutTxId, T) {
+        self.set_raw(tx);
+
+        let remove_tx = || self.take().expect("tx was removed during transaction");
 
         let res = {
             scopeguard::defer_on_unwind! { remove_tx(); }
-            f()
+            work()
         };
 
-        let tx = remove_tx().expect("tx was removed during transaction");
+        let tx = remove_tx();
         (tx, res)
     }
 
+    /// Returns the tx in the slot.
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
+    }
+
+    /// Steals the tx from the slot.
+    pub fn take(&self) -> Result<MutTxId, GetTxError> {
+        self.inner.lock().take().ok_or(GetTxError)
     }
 }
 

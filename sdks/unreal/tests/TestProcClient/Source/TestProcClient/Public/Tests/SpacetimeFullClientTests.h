@@ -12,4 +12,6 @@ DEFINE_LATENT_AUTOMATION_COMMAND_FOUR_PARAMETER(FWaitForTestCounter, FAutomation
 
 
 /** Tests for calling simple procedures.  */
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FProcedureTest, "SpacetimeDB.TestProcClient.ProcedureTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FProcedureBasicTest, "SpacetimeDB.TestProcClient.ProcedureBasicTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FProcedureInsertTransactionCommitTest, "SpacetimeDB.TestProcClient.ProcedureInsertTransactionCommitTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FProcedureInsertTransactionRollbackTest, "SpacetimeDB.TestProcClient.ProcedureInsertTransactionRollbackTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

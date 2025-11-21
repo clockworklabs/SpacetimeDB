@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, num::NonZeroU16};
 
 use env_logger::Env;
 
@@ -13,6 +13,7 @@ pub fn mem_log<T: Encode>(max_segment_size: u64) -> commitlog::Generic<repo::Mem
         repo::Memory::unlimited(),
         Options {
             max_segment_size,
+            max_records_in_commit: NonZeroU16::new(10).unwrap(),
             ..Options::default()
         },
     )

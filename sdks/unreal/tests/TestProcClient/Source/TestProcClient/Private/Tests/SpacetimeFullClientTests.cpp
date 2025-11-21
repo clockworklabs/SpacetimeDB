@@ -94,9 +94,9 @@ static FString NormalizeDuration(const FSpacetimeDBTimeDuration &Dur)
 }
 //
 
-bool FProcedureTest::RunTest(const FString &Parameters)
+bool FProcedureBasicTest::RunTest(const FString &Parameters)
 {
-	TestName = "ProcedureTest";
+	TestName = "ProcedureBasicTest";
 
 	if (!ValidateParameterConfig(this))
 		return false;
@@ -135,3 +135,74 @@ bool FProcedureTest::RunTest(const FString &Parameters)
 	return true;
 }
 
+
+bool FProcedureInsertTransactionCommitTest::RunTest(const FString &Parameters)
+{
+	TestName = "ProcedureInsertTransactionCommitTest";
+
+	if (!ValidateParameterConfig(this))
+		return false;
+	UProcedureHandler *Handler = CreateTestHandler<UProcedureHandler>();
+
+	Handler->Counter->Register(TEXT("OnSubscriptionAppliedNothing"));
+	Handler->Counter->Register(TEXT("InsertWithTxCommitValues")); 
+	Handler->Counter->Register(TEXT("InsertWithTxCommitCallback"));
+
+	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [Handler](UDbConnection *Conn){
+		// my_table on_insert - assert it matches expected value
+		Conn->Db->MyTable->OnInsert().BindLambda([Handler](const FSubscriptionEventContext& Ctx, const FMyTableRow& Row)
+		{
+			Handler->Counter->Increment(TEXT("OnSubscriptionAppliedNothing"));
+			// assert row matches expected value
+		});
+
+		SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx)
+			{
+				// assert my_table is still empty
+
+				// call insert_with_tx_commit_then
+					// result is okay
+					// assert row matches expected value
+				FOnReturnEnumAComplete ReturnEnumACallback;
+				BIND_DELEGATE_SAFE(ReturnEnumACallback, Handler, UProcedureHandler, OnReturnEnumA);		
+				Conn->Procedures->ReturnEnumA(42, ReturnEnumACallback);
+			}); 
+		});		
+	});
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+	return true;
+}
+
+bool FProcedureInsertTransactionRollbackTest::RunTest(const FString &Parameters)
+{
+	TestName = "ProcedureInsertTransactionRollbackTest";
+
+	if (!ValidateParameterConfig(this))
+		return false;
+	UProcedureHandler *Handler = CreateTestHandler<UProcedureHandler>();
+
+	Handler->Counter->Register(TEXT("OnSubscriptionAppliedNothing"));
+	Handler->Counter->Register(TEXT("InsertWithTxRollbackValues"));
+
+	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [Handler](UDbConnection *Conn){
+		// my_table on_insert - assert it matches expected value
+
+		SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx)
+			{
+				// assert my_table is still empty
+
+				// call insert_with_tx_rollback_then
+					// result is okay
+					// assert row matches expected value
+				FOnReturnEnumAComplete ReturnEnumACallback;
+				BIND_DELEGATE_SAFE(ReturnEnumACallback, Handler, UProcedureHandler, OnReturnEnumA);		
+				Conn->Procedures->ReturnEnumA(42, ReturnEnumACallback);
+			}); 
+		});
+
+	});
+
+	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+	return true;
+}

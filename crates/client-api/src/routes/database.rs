@@ -33,7 +33,8 @@ use spacetimedb::identity::Identity;
 use spacetimedb::messages::control_db::{Database, HostType};
 use spacetimedb_client_api_messages::http::SqlStmtResult;
 use spacetimedb_client_api_messages::name::{
-    self, DatabaseName, DomainName, MigrationPolicy, PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
+    self, DatabaseName, DomainName, MigrationPolicy, PrePublishAutoMigrateResult, PrePublishManualMigrateResult,
+    PrePublishResult, PrettyPrintStyle, PublishOp, PublishResult,
 };
 use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9;
 use spacetimedb_lib::{sats, AlgebraicValue, Hash, ProductValue, Timestamp};
@@ -43,21 +44,30 @@ use spacetimedb_schema::auto_migrate::{
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
-fn require_spacetime_auth_for_creation() -> bool {
-    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
+fn require_spacetime_auth_for_creation() -> Option<String> {
+    // If the string is a non-empty value, return the string to be used as the required issuer
+    // TODO(cloutiertyler): This env var replaces TEMP_REQUIRE_SPACETIME_AUTH,
+    // we should remove that one in the future. We may eventually remove
+    // the below restriction entirely as well in Maincloud.
+    match env::var("TEMP_SPACETIMEAUTH_ISSUER_REQUIRED_TO_PUBLISH") {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
 }
 
 // A hacky function to let us restrict database creation on maincloud.
 fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
-    if !require_spacetime_auth_for_creation() {
+    let Some(required_issuer) = require_spacetime_auth_for_creation() else {
         return Ok(());
-    }
-    if auth.claims.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+    };
+    let issuer = auth.claims.issuer.trim_end_matches('/');
+    if issuer == required_issuer {
         Ok(())
     } else {
         log::trace!(
-            "Rejecting creation request because auth issuer is {}",
-            auth.claims.issuer
+            "Rejecting creation request because auth issuer is {} and required issuer is {}",
+            auth.claims.issuer,
+            required_issuer
         );
         Err((
             StatusCode::UNAUTHORIZED,
@@ -281,6 +291,7 @@ async fn procedure<S: ControlStateDelegate + NodeDelegate>(
     let result = match module
         .call_procedure(caller_identity, Some(connection_id), None, &procedure, args)
         .await
+        .result
     {
         Ok(res) => Ok(res),
         Err(e) => {
@@ -959,17 +970,17 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             }
             .hash();
 
-            Ok(PrePublishResult {
+            Ok(PrePublishResult::AutoMigrate(PrePublishAutoMigrateResult {
                 token,
                 migrate_plan: plan,
                 break_clients: breaks_client,
-            })
+            }))
         }
-        MigratePlanResult::AutoMigrationError(e) => Err((
-            StatusCode::BAD_REQUEST,
-            format!("Automatic migration is not possible: {e}"),
-        )
-            .into()),
+        MigratePlanResult::AutoMigrationError(e) => {
+            Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
+                reason: e.to_string(),
+            }))
+        }
     }
     .map(axum::Json)
 }

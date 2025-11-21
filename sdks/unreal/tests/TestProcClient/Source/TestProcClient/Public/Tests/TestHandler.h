@@ -46,5 +46,9 @@ public:
 	UFUNCTION() void OnReturnStruct(const FProcedureEvent& Event, const FReturnStructType& Result, bool bSuccess);
 	UFUNCTION() void OnWillPanic(const FProcedureEvent& Event, const FSpacetimeDBUnit& Result, bool bSuccess);
 
+
+	UFUNCTION() void OnInsertWithTxCommitMyTable(const FEventContext& Event, const FMyTableType& NewRow);
+	UFUNCTION() void OnInsertWithTxRollbackMyTable(const FEventContext& Event, const FMyTableType& NewRow);
+
 	TArray<FString> ExpectedStrings;
 };

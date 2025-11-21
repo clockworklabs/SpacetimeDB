@@ -4,9 +4,12 @@
 use core::cell::{LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
+use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
+#[cfg(feature = "unstable")]
+pub mod http;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand08")]
@@ -738,6 +741,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
+#[cfg(feature = "unstable")]
 pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
@@ -888,8 +892,6 @@ pub struct ViewContext {
 /// number generation.
 ///
 /// Implements the `DbContext` trait for accessing views into a database.
-/// Currently, being this generic is only meaningful in clients,
-/// as `ReducerContext` is the only implementor of `DbContext` within modules.
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
@@ -903,6 +905,8 @@ pub struct ReducerContext {
     /// Will be `None` for certain reducers invoked automatically by the host,
     /// including `init` and scheduled reducers.
     pub connection_id: Option<ConnectionId>,
+
+    sender_auth: AuthCtx,
 
     /// Allows accessing the local database attached to a module.
     ///
@@ -942,8 +946,6 @@ pub struct ReducerContext {
     /// See the [`#[table]`](macro@crate::table) macro for more information.
     pub db: Local,
 
-    sender_auth: AuthCtx,
-
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
 }
@@ -964,16 +966,12 @@ impl ReducerContext {
 
     #[doc(hidden)]
     fn new(db: Local, sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
-        let sender_auth = match connection_id {
-            Some(cid) => AuthCtx::from_connection_id(cid),
-            None => AuthCtx::internal(),
-        };
         Self {
             db,
             sender,
             timestamp,
             connection_id,
-            sender_auth,
+            sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
         }
@@ -1011,12 +1009,44 @@ impl ReducerContext {
     }
 }
 
+#[cfg(feature = "unstable")]
+/// The context that an anonymous transaction
+/// in [`ProcedureContext::with_tx`] is provided with.
+///
+/// Includes information about the client starting the transaction
+/// and the time of the procedure/reducer,
+/// as well as a view into the module's database.
+///
+/// If the crate was compiled with the `rand` feature, also includes faculties for random
+/// number generation.
+///
+/// Implements the `DbContext` trait for accessing views into a database.
+pub struct TxContext(ReducerContext);
+
+#[cfg(feature = "unstable")]
+impl AsRef<ReducerContext> for TxContext {
+    fn as_ref(&self) -> &ReducerContext {
+        &self.0
+    }
+}
+
+#[cfg(feature = "unstable")]
+impl Deref for TxContext {
+    type Target = ReducerContext;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// The context that any procedure is provided with.
 ///
 /// Each procedure must accept `&mut ProcedureContext` as its first argument.
 ///
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
+#[non_exhaustive]
+#[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     pub sender: Identity,
@@ -1028,11 +1058,15 @@ pub struct ProcedureContext {
     ///
     /// Will be `None` for certain scheduled procedures.
     pub connection_id: Option<ConnectionId>,
+
+    /// Methods for performing HTTP requests.
+    pub http: crate::http::HttpClient,
     // TODO: Add rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
 }
 
+#[cfg(feature = "unstable")]
 impl ProcedureContext {
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
@@ -1074,6 +1108,129 @@ impl ProcedureContext {
         let new_time = Timestamp::from_micros_since_unix_epoch(new_time);
         self.timestamp = new_time;
     }
+
+    /// Acquire a mutable transaction
+    /// and execute `body` with read-write access to the database.
+    ///
+    /// If `body` panics, the transaction will be rolled back,
+    /// and the calling procedure terminated.
+    /// Otherwise, the transaction will be committed and its mutations persisted.
+    /// Prefer calling [`Self::try_with_tx`]
+    /// and returning a `Result` for signaling errors
+    /// to allow the calling procedure to handle the transaction's failure.
+    ///
+    /// Regardless of the transaction's success or failure,
+    /// the return value of `body` is not persisted to the commitlog
+    /// or broadcast to subscribed clients.
+    /// Clients attribute mutations performed by this transaction to `Event::UnknownTransaction`.
+    ///
+    /// If the transaction fails to commit after `body` returns,
+    /// e.g., due to a conflict with a concurrent transaction,
+    /// this method will re-invoke `body` with a new transaction in order to retry.
+    /// The transaction will be retried at most once.
+    /// If it fails to commit a second time, this method will panic.
+    ///
+    /// Because `body` may be run multiple times,
+    /// and is expected to perform the same set of database operations
+    /// and return the same result on each invocation,
+    /// callers should avoid writing to any captured mutable state within `body`,
+    /// This includes interior mutability through types like [`std::cell::Cell`].
+    #[cfg(feature = "unstable")]
+    pub fn with_tx<T>(&mut self, body: impl Fn(&TxContext) -> T) -> T {
+        use core::convert::Infallible;
+        match self.try_with_tx::<T, Infallible>(|tx| Ok(body(tx))) {
+            Ok(v) => v,
+            Err(e) => match e {},
+        }
+    }
+
+    /// Acquire a mutable transaction
+    /// and execute `body` with read-write access to the database.
+    ///
+    /// When `body` returns `Ok`,
+    /// the transaction will be committed and its mutations persisted.
+    /// When `body` returns `Err`,
+    /// the transaction will be rolled back and its mutations discarded.
+    ///
+    /// If `body` panics, the transaction will be rolled back,
+    /// and the calling procedure terminated.
+    /// Prefer returning `Result` for signaling errors
+    /// to allow the calling procedure to handle the transaction's failure.
+    ///
+    /// Regardless of the transaction's success or failure,
+    /// the return value of `body` is not persisted to the commitlog
+    /// or broadcast to subscribed clients.
+    /// Clients attribute mutations performed by this transaction to `Event::UnknownTransaction`.
+    ///
+    /// If the transaction fails to commit after `body` returns,
+    /// e.g., due to a conflict with a concurrent transaction,
+    /// this method will re-invoke `body` with a new transaction in order to retry.
+    /// The transaction will be retried at most once.
+    /// If it fails to commit a second time, this method will panic.
+    ///
+    /// Because `body` may be run multiple times,
+    /// and is expected to perform the same set of database operations
+    /// and return the same result on each invocation,
+    /// callers should avoid writing to any captured mutable state within `body`,
+    /// This includes interior mutability through types like [`std::cell::Cell`].
+    #[cfg(feature = "unstable")]
+    pub fn try_with_tx<T, E>(&mut self, body: impl Fn(&TxContext) -> Result<T, E>) -> Result<T, E> {
+        let abort = || {
+            sys::procedure::procedure_abort_mut_tx()
+                .expect("should have a pending mutable anon tx as `procedure_start_mut_tx` preceded")
+        };
+
+        let run = || {
+            // Start the transaction.
+
+            use core::mem;
+            let timestamp = sys::procedure::procedure_start_mut_tx().expect(
+                "holding `&mut ProcedureContext`, so should not be in a tx already; called manually elsewhere?",
+            );
+            let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp);
+
+            // We've resumed, so let's do the work, but first prepare the context.
+            let tx = ReducerContext::new(Local {}, self.sender, self.connection_id, timestamp);
+            let tx = TxContext(tx);
+
+            // Guard the execution of `body` with a scope-guard that `abort`s on panic.
+            // Wasmtime now supports unwinding, so we need to protect against that.
+            // We're not using `scopeguard::guard` here to avoid an extra dependency.
+            struct DoOnDrop<F: Fn()>(F);
+            impl<F: Fn()> Drop for DoOnDrop<F> {
+                fn drop(&mut self) {
+                    (self.0)();
+                }
+            }
+            let abort_guard = DoOnDrop(abort);
+            let res = body(&tx);
+            // Defuse the bomb.
+            mem::forget(abort_guard);
+            res
+        };
+
+        let mut res = run();
+
+        // Commit or roll back?
+        match res {
+            Ok(_) if sys::procedure::procedure_commit_mut_tx().is_err() => {
+                // Tried to commit, but couldn't. Retry once.
+                log::warn!("committing anonymous transaction failed");
+                // NOTE(procedure,centril): there's no actual guarantee that `body`
+                // does the exact same as the time before, as the timestamps differ
+                // and due to interior mutability.
+                res = run();
+                match res {
+                    Ok(_) => sys::procedure::procedure_commit_mut_tx().expect("transaction retry failed again"),
+                    Err(_) => abort(),
+                }
+            }
+            Ok(_) => {}
+            Err(_) => abort(),
+        }
+
+        res
+    }
 }
 
 /// A handle on a database with a particular table schema.
@@ -1102,9 +1259,17 @@ impl DbContext for ReducerContext {
     }
 }
 
-// `ProcedureContext` is *not* a `DbContext`. We will add a `TxContext`
-// which can be obtained from `ProcedureContext::start_tx`,
-// and that will be a `DbContext`.
+#[cfg(feature = "unstable")]
+impl DbContext for TxContext {
+    type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+// `ProcedureContext` is *not* a `DbContext`
+// but a `TxContext` derived from it is.
 
 /// Allows accessing the local database attached to the module.
 ///
@@ -1125,18 +1290,25 @@ pub struct JwtClaims {
 }
 
 /// Authentication information for the caller of a reducer.
+#[derive(Clone)]
 pub struct AuthCtx {
     is_internal: bool,
     // NOTE(jsdt): cannot directly use a `LazyCell` without making this struct generic,
     // which would cause `ReducerContext` to become generic as well.
-    jwt: Box<dyn Deref<Target = Option<JwtClaims>>>,
+    jwt: Rc<dyn Deref<Target = Option<JwtClaims>>>,
 }
 
 impl AuthCtx {
+    /// Creates an [`AuthCtx`] both for cases where there's a [`ConnectionId`]
+    /// and for when there isn't.
+    fn from_connection_id_opt(conn_id: Option<ConnectionId>) -> Self {
+        conn_id.map(Self::from_connection_id).unwrap_or_else(Self::internal)
+    }
+
     fn new(is_internal: bool, jwt_fn: impl FnOnce() -> Option<JwtClaims> + 'static) -> Self {
         AuthCtx {
             is_internal,
-            jwt: Box::new(LazyCell::new(jwt_fn)),
+            jwt: Rc::new(LazyCell::new(jwt_fn)),
         }
     }
 

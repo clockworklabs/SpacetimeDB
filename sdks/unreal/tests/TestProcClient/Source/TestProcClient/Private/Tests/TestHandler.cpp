@@ -1,6 +1,7 @@
 #include "Tests/TestHandler.h"
 #include "Tests/TestCounter.h"
 #include "Tests/CommonTestFunctions.h"
+#include "TestHandler.h"
 
 void UProcedureHandler::OnReturnEnumA(const FProcedureEvent& Event, const FReturnEnumType& Result, bool bSuccess)
 {
@@ -56,4 +57,12 @@ void UProcedureHandler::OnWillPanic(const FProcedureEvent& Event, const FSpaceti
 	else {
 		Counter->MarkFailure(Name, TEXT("Expected failure did not occur"));
 	}
+}
+
+void UProcedureHandler::OnInsertWithTxCommitMyTable(const FEventContext & Event, const FMyTableType & NewRow)
+{
+}
+
+void UProcedureHandler::OnInsertWithTxRollbackMyTable(const FEventContext & Event, const FMyTableType & NewRow)
+{
 }
