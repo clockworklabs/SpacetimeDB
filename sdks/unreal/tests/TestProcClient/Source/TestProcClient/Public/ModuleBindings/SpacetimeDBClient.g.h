@@ -546,6 +546,13 @@ struct TESTPROCCLIENT_API FTestProcClientProcedureEvent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
 	FSpacetimeDBTimeDuration TotalHostExecutionDuration;
 
+	FTestProcClientProcedureEvent() {
+	}
+	FTestProcClientProcedureEvent(FProcedureEvent Event) {
+		Timestamp = Event.Timestamp;
+		Status = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
+		TotalHostExecutionDuration = Event.TotalHostExecutionDuration;
+	}
 	FORCEINLINE bool operator==(const FTestProcClientProcedureEvent& Other) const
 	{
 		return Status == Other.Status && Timestamp == Other.Timestamp &&
@@ -896,48 +903,48 @@ private:
 };
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnInsertWithTxCommitComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     FSpacetimeDBUnit, Result,
     bool, bSuccess);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnInsertWithTxRollbackComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     FSpacetimeDBUnit, Result,
     bool, bSuccess);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnInvalidRequestComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     const FString&, Result,
     bool, bSuccess);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnReadMySchemaComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     const FString&, Result,
     bool, bSuccess);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnReturnEnumAComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     const FReturnEnumType&, Result,
     bool, bSuccess);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnReturnEnumBComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     const FReturnEnumType&, Result,
     bool, bSuccess);
 
 // NOTE: Procedure ReturnPrimitive has non-Blueprint-compatible return type: uint32
 DECLARE_DELEGATE_ThreeParams(FOnReturnPrimitiveComplete,
-    const FProcedureEvent&, /*Event*/
+    const FProcedureEventContext&, /*Context*/
     uint32, /*Result,*/
     bool /*bSuccess*/);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnReturnStructComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     const FReturnStructType&, Result,
     bool, bSuccess);
 
 DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOnWillPanicComplete,
-    const FProcedureEvent&, Event,
+    const FProcedureEventContext&, Context,
     FSpacetimeDBUnit, Result,
     bool, bSuccess);
 

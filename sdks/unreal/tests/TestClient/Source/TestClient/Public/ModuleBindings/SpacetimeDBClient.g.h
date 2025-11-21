@@ -6255,6 +6255,13 @@ struct TESTCLIENT_API FTestClientProcedureEvent
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
 	FSpacetimeDBTimeDuration TotalHostExecutionDuration;
 
+	FTestClientProcedureEvent() {
+	}
+	FTestClientProcedureEvent(FProcedureEvent Event) {
+		Timestamp = Event.Timestamp;
+		Status = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
+		TotalHostExecutionDuration = Event.TotalHostExecutionDuration;
+	}
 	FORCEINLINE bool operator==(const FTestClientProcedureEvent& Other) const
 	{
 		return Status == Other.Status && Timestamp == Other.Timestamp &&

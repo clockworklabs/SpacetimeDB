@@ -8,6 +8,7 @@
 #include "UmbreallaHeaderTypes.h"
 #include "UmbreallaHeaderProcedures.h"
 #include "ModuleBindings/SpacetimeDBClient.g.h"
+#include "ModuleBindings/Types/MyTableType.g.h"
 
 #include "TestHandler.generated.h"
 
@@ -40,15 +41,20 @@ public:
 //#undef DECLARE_UFUNC
 
 
-	UFUNCTION() void OnReturnEnumA(const FProcedureEvent& Event, const FReturnEnumType& Result, bool bSuccess);
-	UFUNCTION() void OnReturnEnumB(const FProcedureEvent& Event, const FReturnEnumType& Result, bool bSuccess);
-	UFUNCTION() void OnReturnPrimitive(const FProcedureEvent& Event, const uint32 Result, bool bSuccess);
-	UFUNCTION() void OnReturnStruct(const FProcedureEvent& Event, const FReturnStructType& Result, bool bSuccess);
-	UFUNCTION() void OnWillPanic(const FProcedureEvent& Event, const FSpacetimeDBUnit& Result, bool bSuccess);
+	UFUNCTION() void OnReturnEnumA(const FProcedureEventContext& Context, const FReturnEnumType& Result, bool bSuccess);
+	UFUNCTION() void OnReturnEnumB(const FProcedureEventContext& Context, const FReturnEnumType& Result, bool bSuccess);
+	UFUNCTION() void OnReturnPrimitive(const FProcedureEventContext& Context, const uint32 Result, bool bSuccess);
+	UFUNCTION() void OnReturnStruct(const FProcedureEventContext& Context, const FReturnStructType& Result, bool bSuccess);
+	UFUNCTION() void OnWillPanic(const FProcedureEventContext& Context, const FSpacetimeDBUnit& Result, bool bSuccess);
 
 
 	UFUNCTION() void OnInsertWithTxCommitMyTable(const FEventContext& Event, const FMyTableType& NewRow);
-	UFUNCTION() void OnInsertWithTxRollbackMyTable(const FEventContext& Event, const FMyTableType& NewRow);
+	UFUNCTION() void OnReturnInsertTxCommit(const FProcedureEventContext& Context, const FSpacetimeDBUnit& Result, bool bSuccess);
 
+	UFUNCTION() void OnInsertWithTxRollbackMyTable(const FEventContext& Event, const FMyTableType& NewRow);
+	UFUNCTION() void OnReturnInsertTxRollback(const FProcedureEventContext& Context, const FSpacetimeDBUnit& Result, bool bSuccess);
+
+	//FSpacetimeDBUnit
 	TArray<FString> ExpectedStrings;
+	FMyTableType ExpectedMyTableRow;
 };

@@ -9,7 +9,6 @@
 #include "Types/Builtins.h"
 #include "Types/UnitType.h"
 #include <atomic>
-
 #include "Callback.generated.h"
 
 /**

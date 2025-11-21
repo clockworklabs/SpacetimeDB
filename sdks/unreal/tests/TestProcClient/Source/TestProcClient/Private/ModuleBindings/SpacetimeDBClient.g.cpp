@@ -82,7 +82,7 @@ void URemoteProcedures::InsertWithTxCommit(FOnInsertWithTxCommitComplete Callbac
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -93,9 +93,10 @@ void URemoteProcedures::InsertWithTxCommit(FOnInsertWithTxCommitComplete Callbac
                 ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("insert_with_tx_commit"), FInsertWithTxCommitArgs(), Wrapper);
 }
@@ -110,7 +111,7 @@ void URemoteProcedures::InsertWithTxRollback(FOnInsertWithTxRollbackComplete Cal
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -121,9 +122,10 @@ void URemoteProcedures::InsertWithTxRollback(FOnInsertWithTxRollbackComplete Cal
                 ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("insert_with_tx_rollback"), FInsertWithTxRollbackArgs(), Wrapper);
 }
@@ -138,7 +140,7 @@ void URemoteProcedures::InvalidRequest(FOnInvalidRequestComplete Callback)
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -149,9 +151,10 @@ void URemoteProcedures::InvalidRequest(FOnInvalidRequestComplete Callback)
                 ResultValue = UE::SpacetimeDB::Deserialize<FString>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("invalid_request"), FInvalidRequestArgs(), Wrapper);
 }
@@ -166,7 +169,7 @@ void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -177,9 +180,10 @@ void URemoteProcedures::ReadMySchema(FOnReadMySchemaComplete Callback)
                 ResultValue = UE::SpacetimeDB::Deserialize<FString>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("read_my_schema"), FReadMySchemaArgs(), Wrapper);
 }
@@ -194,7 +198,7 @@ void URemoteProcedures::ReturnEnumA(const uint32 A, FOnReturnEnumAComplete Callb
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -205,9 +209,10 @@ void URemoteProcedures::ReturnEnumA(const uint32 A, FOnReturnEnumAComplete Callb
                 ResultValue = UE::SpacetimeDB::Deserialize<FReturnEnumType>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("return_enum_a"), FReturnEnumAArgs(A), Wrapper);
 }
@@ -222,7 +227,7 @@ void URemoteProcedures::ReturnEnumB(const FString& B, FOnReturnEnumBComplete Cal
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -233,9 +238,10 @@ void URemoteProcedures::ReturnEnumB(const FString& B, FOnReturnEnumBComplete Cal
                 ResultValue = UE::SpacetimeDB::Deserialize<FReturnEnumType>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("return_enum_b"), FReturnEnumBArgs(B), Wrapper);
 }
@@ -250,7 +256,7 @@ void URemoteProcedures::ReturnPrimitive(const uint32 Lhs, const uint32 Rhs, FOnR
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -261,9 +267,10 @@ void URemoteProcedures::ReturnPrimitive(const uint32 Lhs, const uint32 Rhs, FOnR
                 ResultValue = UE::SpacetimeDB::Deserialize<uint32>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("return_primitive"), FReturnPrimitiveArgs(Lhs, Rhs), Wrapper);
 }
@@ -278,7 +285,7 @@ void URemoteProcedures::ReturnStruct(const uint32 A, const FString& B, FOnReturn
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -289,9 +296,10 @@ void URemoteProcedures::ReturnStruct(const uint32 A, const FString& B, FOnReturn
                 ResultValue = UE::SpacetimeDB::Deserialize<FReturnStructType>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("return_struct"), FReturnStructArgs(A, B), Wrapper);
 }
@@ -306,7 +314,7 @@ void URemoteProcedures::WillPanic(FOnWillPanicComplete Callback)
 
     FOnProcedureCompleteDelegate Wrapper;
     Wrapper.BindLambda(
-        [Callback = MoveTemp(Callback)]
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
         (const FSpacetimeDBEvent& Event,
             const TArray<uint8>& ResultData,
             bool bSuccess) mutable
@@ -317,9 +325,10 @@ void URemoteProcedures::WillPanic(FOnWillPanicComplete Callback)
                 ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
             }
 
-            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
             // Fire the user's typed delegate
-            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
         });
 	Conn->CallProcedureTyped(TEXT("will_panic"), FWillPanicArgs(), Wrapper);
 }

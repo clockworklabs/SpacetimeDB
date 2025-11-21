@@ -2278,6 +2278,20 @@ fn generate_procedure_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef
     writeln!(output, "\tFSpacetimeDBTimeDuration TotalHostExecutionDuration;");
     writeln!(output);
 
+    writeln!(output, "\tF{module_name}ProcedureEvent() {{");
+    writeln!(output, "\t}}");
+    writeln!(output, "\tF{module_name}ProcedureEvent(FProcedureEvent Event) {{");
+    writeln!(output, "\t\tTimestamp = Event.Timestamp;");
+    writeln!(
+        output,
+        "\t\tStatus = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);"
+    );
+    writeln!(
+        output,
+        "\t\tTotalHostExecutionDuration = Event.TotalHostExecutionDuration;"
+    );
+    writeln!(output, "\t}}");
+
     writeln!(
         output,
         "\tFORCEINLINE bool operator==(const F{module_name}ProcedureEvent& Other) const"
@@ -2548,7 +2562,7 @@ fn generate_remote_procedures_class(
                 "// NOTE: Procedure {procedure_pascal} has non-Blueprint-compatible return type: {return_type_str}"
             );
             writeln!(output, "DECLARE_DELEGATE_ThreeParams(FOn{procedure_pascal}Complete,");
-            writeln!(output, "    const FProcedureEvent&, /*Event*/");
+            writeln!(output, "    const FProcedureEventContext&, /*Context*/");
             writeln!(output, "    {return_type_ref}, /*Result,*/");
             writeln!(output, "    bool /*bSuccess*/);");
             writeln!(output);
@@ -2557,7 +2571,7 @@ fn generate_remote_procedures_class(
                 output,
                 "DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOn{procedure_pascal}Complete,"
             );
-            writeln!(output, "    const FProcedureEvent&, Event,");
+            writeln!(output, "    const FProcedureEventContext&, Context,");
             writeln!(output, "    {}, Result,", return_type_ref);
             writeln!(output, "    bool, bSuccess);");
             writeln!(output);
@@ -3746,7 +3760,7 @@ fn generate_remote_procedure_calls(output: &mut UnrealCppAutogen, module: &Modul
 
         writeln!(output, "    FOnProcedureCompleteDelegate Wrapper;");
         writeln!(output, "    Wrapper.BindLambda(");
-        writeln!(output, "        [Callback = MoveTemp(Callback)]");
+        writeln!(output, "        [Callback = MoveTemp(Callback), Conn = this->Conn]");
         writeln!(output, "        (const FSpacetimeDBEvent& Event,");
         writeln!(output, "            const TArray<uint8>& ResultData,");
         writeln!(output, "            bool bSuccess) mutable");
@@ -3761,14 +3775,15 @@ fn generate_remote_procedure_calls(output: &mut UnrealCppAutogen, module: &Modul
         );
         writeln!(output, "            }}");
         writeln!(output);
+        writeln!(output, "            F{module_name}ProcedureEvent ProcedureEvent = F{module_name}ProcedureEvent(Event.GetAsProcedure());");
         writeln!(
             output,
-            "            FProcedureEvent ProcedureEvent = Event.GetAsProcedure();"
+            "            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);"
         );
         writeln!(output, "            // Fire the user's typed delegate");
         writeln!(
             output,
-            "            Callback.ExecuteIfBound(ProcedureEvent, ResultValue, bSuccess);"
+            "            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);"
         );
         writeln!(output, "        }});");
 

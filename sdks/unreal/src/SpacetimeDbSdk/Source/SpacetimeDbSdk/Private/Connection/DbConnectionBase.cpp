@@ -358,7 +358,7 @@ void UDbConnectionBase::ProcessServerMessage(const FServerMessageType& Message)
 			{
 				ErrorMessage = Payload.Status.GetAsInternalError();
 			}
-			
+
 			ProcedureCallbacks->ResolveCallback(Payload.RequestId, FSpacetimeDBEvent::Procedure(ProcEvent), PayloadData, ProcEvent.Success);
 			if (!ProcEvent.Success)
 			{
