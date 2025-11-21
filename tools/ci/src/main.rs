@@ -148,6 +148,98 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
+fn run_smoketests(start_server: bool, docker: &Option<String>, args: &[String]) -> Result<()> {
+    let mut started_pid: Option<i32> = None;
+    match (start_server, docker.as_ref()) {
+        (start_server, Some(compose_file)) => {
+            if !start_server {
+                warn!("--docker implies --start-server=true");
+            }
+            println!("Starting server..");
+            // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
+            bash!(&format!("docker compose -f {compose_file} up -d"))?;
+        }
+        (true, None) => {
+            // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+            // before the server is up.
+            bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+
+            println!("Starting server..");
+            let pid_str;
+            if cfg!(target_os = "windows") {
+                pid_str = cmd!(
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --pg-port 5432' -PassThru; $p.Id"
+                )
+                .read()
+                .unwrap_or_default();
+            } else {
+                pid_str = cmd!(
+                    "bash",
+                    "-lc",
+                    "nohup cargo run -p spacetimedb-cli -- start --pg-port 5432 >/dev/null 2>&1 & echo $!"
+                )
+                .read()
+                .unwrap_or_default();
+            }
+            started_pid = Some(
+                pid_str
+                    .trim()
+                    .parse::<i32>()
+                    .expect("Failed to get PID of started process"),
+            )
+        }
+        (false, None) => {}
+    }
+
+    // TODO: does this work on windows?
+    let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+        .run()
+        .map(|s| s.status.success())
+        .unwrap_or(false);
+    let python = if py3_available { "python3" } else { "python" };
+
+    println!("Running smoketests..");
+    let mut smoketests_args = args.to_vec();
+    if let Some(compose_file) = docker.as_ref() {
+        // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
+        // run the server in docker while still retaining full control over what tests they want.
+        smoketests_args.push("--compose-file".to_string());
+        smoketests_args.push(compose_file.to_string());
+    }
+    let test_result = bash!(&format!("{python} -m smoketests {}", smoketests_args.join(" ")));
+
+    // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
+    match (start_server, docker.as_ref()) {
+        (_, Some(compose_file)) => {
+            println!("Shutting down server..");
+            let _ = bash!(&format!("docker compose -f {compose_file} down"));
+        }
+        (true, None) => {
+            println!("Shutting down server..");
+            let pid = if let Some(pid) = started_pid {
+                pid
+            } else {
+                // We constructed a `Some` above in this case
+                unreachable!();
+            };
+            if cfg!(target_os = "windows") {
+                let _ = bash!(&format!(
+                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
+                    pid
+                ));
+            } else {
+                let _ = bash!(&format!("kill {}", pid));
+            }
+        }
+        (false, None) => {}
+    }
+
+    test_result
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -188,92 +280,7 @@ fn main() -> Result<()> {
             docker,
             args,
         }) => {
-            let mut started_pid: Option<i32> = None;
-            match (start_server, docker.as_ref()) {
-                (start_server, Some(compose_file)) => {
-                    if !start_server {
-                        warn!("--docker implies --start-server=true");
-                    }
-                    println!("Starting server..");
-                    // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
-                    bash!(&format!("docker compose -f {compose_file} up -d"))?;
-                }
-                (true, None) => {
-                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
-                    // before the server is up.
-                    bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
-
-                    println!("Starting server..");
-                    let pid_str;
-                    if cfg!(target_os = "windows") {
-                        pid_str = cmd!(
-                            "powershell",
-                            "-NoProfile",
-                            "-Command",
-                            "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --pg-port 5432' -PassThru; $p.Id"
-                        )
-                        .read()
-                        .unwrap_or_default();
-                    } else {
-                        pid_str = cmd!(
-                            "bash",
-                            "-lc",
-                            "nohup cargo run -p spacetimedb-cli -- start --pg-port 5432 >/dev/null 2>&1 & echo $!"
-                        )
-                        .read()
-                        .unwrap_or_default();
-                    }
-                    started_pid = Some(
-                        pid_str
-                            .trim()
-                            .parse::<i32>()
-                            .expect("Failed to get PID of started process"),
-                    )
-                }
-                (false, None) => {}
-            }
-
-            // TODO: does this work on windows?
-            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-                .run()
-                .map(|s| s.status.success())
-                .unwrap_or(false);
-            let python = if py3_available { "python3" } else { "python" };
-
-            println!("Running smoketests..");
-            let mut smoketests_args = args.clone();
-            if let Some(compose_file) = docker.as_ref() {
-                // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
-                // run the server in docker while still retaining full control over what tests they want.
-                smoketests_args.push("--compose-file".to_string());
-                smoketests_args.push(compose_file.to_string());
-            }
-            let test_result = bash!(&format!("{python} -m smoketests {}", smoketests_args.join(" ")));
-
-            // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
-            match (start_server, docker.as_ref()) {
-                (_, Some(compose_file)) => {
-                    println!("Shutting down server..");
-                    let _ = bash!(&format!("docker compose -f {compose_file} down"));
-                }
-                (true, None) => {
-                    println!("Shutting down server..");
-                    let pid = if let Some(pid) = started_pid {
-                        pid
-                    } else {
-                        // We constructed a `Some` above in this case
-                        unreachable!();
-                    };
-                    if cfg!(target_os = "windows") {
-                        let _ = bash!(&format!("powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"", pid));
-                    } else {
-                        let _ = bash!(&format!("kill {}", pid));
-                    }
-                }
-                (false, None) => {}
-            }
-
-            test_result?;
+            run_smoketests(start_server, &docker, &args)?;
         }
 
         Some(CiCmd::UpdateFlow {
