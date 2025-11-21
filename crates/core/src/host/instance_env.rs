@@ -618,68 +618,45 @@ impl InstanceEnv {
 
         // TODO(procedure-metrics): record size in bytes of request.
 
-        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
-        // and map its body into a type `reqwest` will like.
-        fn convert_request(request: st_http::Request, body: bytes::Bytes) -> Result<reqwest::Request, st_http::Error> {
-            let mut request: http::request::Parts =
-                request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
-
-            // Pull our timeout extension, if any, out of the `http::Request` extensions.
-            // reqwest has its own timeout extension, which is where we'll provide this.
-            let timeout = request.extensions.remove::<st_http::Timeout>();
-
-            let request = http::Request::from_parts(request, body.to_vec());
-
-            let mut reqwest: reqwest::Request = request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
-
-            // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
-            // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
-            let timeout = timeout
-                .map(|timeout| timeout.timeout.to_duration().unwrap_or(Duration::ZERO))
-                .unwrap_or(HTTP_DEFAULT_TIMEOUT)
-                .min(HTTP_DEFAULT_TIMEOUT);
-
-            // reqwest's timeout covers from the start of the request to the end of reading the body,
-            // so there's no need to do our own timeout operation.
-            *reqwest.timeout_mut() = Some(timeout);
-
-            Ok(reqwest)
+        fn http_error<E: ToString>(err: E) -> NodesError {
+            NodesError::HttpError(err.to_string())
         }
 
-        // If for whatever reason reqwest doesn't like our `http::Request`,
-        // surface that error to the guest so customers can debug and provide a more appropriate request.
-        let reqwest = convert_request(request, body)?;
+        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
+        // and map its body into a type `reqwest` will like.
+        let (request, timeout) = convert_http_request(request).map_err(http_error)?;
+
+        let request = http::Request::from_parts(request, body);
+
+        let mut reqwest: reqwest::Request = request.try_into().map_err(http_error)?;
+
+        // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+
+        // reqwest's timeout covers from the start of the request to the end of reading the body,
+        // so there's no need to do our own timeout operation.
+        *reqwest.timeout_mut() = Some(timeout);
+
+        let reqwest = reqwest;
 
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
-        // We'll wrap this future in a `tokio::time::timeout` before `await`ing it.
-        let get_response_and_download_body = async {
-            // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-            let response = reqwest::Client::new()
-                .execute(reqwest)
-                .await
-                .map_err(|err| st_http::Error::from_display(&err))?;
+        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+        let response = reqwest::Client::new().execute(reqwest).await.map_err(http_error)?;
 
-            // Download the response body, which in all likelihood will be a stream,
-            // as reqwest seems to prefer that.
-            // Note that this will be wrapped in the same `tokio::time::timeout` as the above `execute` call.
-            let (parts, body) = http::Response::from(response).into_parts();
-            let body = http_body_util::BodyExt::collect(body)
-                .await
-                .map_err(|err| st_http::Error::from_display(&err))?;
-
-            // Map the collected body into our `spacetimedb_lib::http::Body` type,
-            // then wrap it back in an `http::Response`.
-            Ok::<_, st_http::Error>((parts, body.to_bytes()))
-        };
-
-        // If the request failed, surface that error to the guest so customer logic can handle it.
-        let (response, body) = get_response_and_download_body.await?;
+        // Download the response body, which in all likelihood will be a stream,
+        // as reqwest seems to prefer that.
+        let (response, body) = http::Response::from(response).into_parts();
+        let body = http_body_util::BodyExt::collect(body)
+            .await
+            .map_err(http_error)?
+            .to_bytes();
 
         // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
         // which has a stable BSATN encoding to pass across the WASM boundary.
-        let response = st_http::Response::from(response);
+        let response = convert_http_response(response);
 
         Ok((response, body))
     }
@@ -691,6 +668,76 @@ impl InstanceEnv {
 ///
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+
+fn convert_http_request(request: st_http::Request) -> http::Result<(http::request::Parts, Option<Duration>)> {
+    let st_http::Request {
+        method,
+        headers,
+        timeout,
+        uri,
+        version,
+    } = request;
+
+    let (mut request, ()) = http::Request::new(()).into_parts();
+    request.method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
+    };
+    request.uri = uri.try_into()?;
+    request.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    request.headers = headers
+        .into_iter()
+        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
+        .collect::<http::Result<_>>()?;
+
+    let timeout = timeout.map(|d| d.to_duration_saturating());
+
+    Ok((request, timeout))
+}
+
+fn convert_http_response(response: http::response::Parts) -> st_http::Response {
+    let http::response::Parts {
+        extensions,
+        headers,
+        status,
+        version,
+        ..
+    } = response;
+
+    // there's a good chance that reqwest inserted some extensions into this request,
+    // but we can't control that and don't care much about it.
+    let _ = extensions;
+
+    st_http::Response {
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        version: match version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {version:?}"),
+        },
+        code: status.as_u16(),
+    }
+}
 
 impl TxSlot {
     /// Sets the slot to `tx`, ensuring that there was no tx before.

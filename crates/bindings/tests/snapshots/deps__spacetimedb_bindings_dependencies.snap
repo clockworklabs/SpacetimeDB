@@ -83,7 +83,6 @@ spacetimedb
 │   ├── derive_more (*)
 │   ├── enum_as_inner (*)
 │   ├── hex
-│   ├── http (*)
 │   ├── itertools (*)
 │   ├── log
 │   ├── spacetimedb_bindings_macro (*)
