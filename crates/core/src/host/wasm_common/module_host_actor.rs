@@ -25,7 +25,8 @@ use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
-use bytes::Bytes;
+use anyhow::Context;
+use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
@@ -36,12 +37,12 @@ use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
-use spacetimedb_lib::db::raw_def::v9::Lifecycle;
+use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, ProductType, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, ProductValue, Typespace, WithTypespace};
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
 use std::sync::Arc;
@@ -195,6 +196,49 @@ pub enum ViewReturnData {
     Rows(Bytes),
     // This view returns a ViewResultHeader, potentially followed by more data.
     HeaderFirst(Bytes),
+}
+
+pub enum ViewResult {
+    Rows(Bytes),
+    RawSql(String),
+    ParameterizedQuery {
+        query: String,
+        parameters: Bytes,
+        parameter_types: Option<ProductType>,
+    },
+}
+
+impl ViewResult {
+    pub fn from_return_data(data: ViewReturnData) -> Result<Self, anyhow::Error> {
+        match data {
+            ViewReturnData::Rows(bytes) => Ok(ViewResult::Rows(bytes)),
+            ViewReturnData::HeaderFirst(bytes) => {
+                let mut reader = &bytes[..];
+                let header = {
+                    let deserializer = bsatn::Deserializer::new(&mut reader);
+                    ViewResultHeader::deserialize(deserializer)
+                        .context("failed to deserialize ViewResultHeader from view return data")?
+                };
+                match header {
+                    ViewResultHeader::RawSql(query) => Ok(ViewResult::RawSql(query)),
+                    ViewResultHeader::RowData => {
+                        let at = bytes.len() - reader.remaining();
+                        let remaining_bytes = bytes.slice(at..);
+                        Ok(ViewResult::Rows(remaining_bytes))
+                    }
+                    ViewResultHeader::ParameterizedQuery(header) => {
+                        let at = bytes.len() - reader.remaining();
+                        let remaining_bytes = bytes.slice(at..);
+                        Ok(ViewResult::ParameterizedQuery {
+                            query: header.template,
+                            parameters: remaining_bytes,
+                            parameter_types: header.parameter_types,
+                        })
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
@@ -992,8 +1036,15 @@ impl InstanceCommon {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            (Ok(bytes), sender) => {
-                let ViewReturnData::Rows(bytes) = bytes else {
+            (Ok(raw), sender) => {
+                // TODO: This shouldn't be able to cause fatal errors.
+                let result = ViewResult::from_return_data(raw)
+                    .inspect_err(|err| {
+                        log::error!("Fatal error parsing result for view `{view_name}`: {err}");
+                    })
+                    .expect("Fatal error parsing view result");
+
+                let ViewResult::Rows(bytes) = result else {
                     unimplemented!("View returned a non-rows format");
                 };
 

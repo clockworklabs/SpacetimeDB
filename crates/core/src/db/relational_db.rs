@@ -39,15 +39,13 @@ use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::st_var::StVarValue;
-use spacetimedb_lib::Identity;
 use spacetimedb_lib::ConnectionId;
+use spacetimedb_lib::Identity;
 use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use spacetimedb_sats::{
-    AlgebraicType, AlgebraicValue, ProductType, ProductValue,
-};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductType, ProductValue};
 use spacetimedb_schema::def::{ModuleDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{
     ColumnSchema, IndexSchema, RowLevelSecuritySchema, Schema, SequenceSchema, TableSchema,
