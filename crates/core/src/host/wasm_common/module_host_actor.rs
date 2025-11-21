@@ -26,7 +26,7 @@ use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
-use anyhow::{bail, ensure, Context};
+use anyhow::{anyhow, bail, ensure, Context};
 use bytes::{Buf, Bytes};
 use core::future::Future;
 use core::time::Duration;
@@ -991,12 +991,6 @@ impl InstanceCommon {
         } = params;
 
         let _outer_span = start_call_function_span(&view_name, &caller, None);
-        let func_call_type = FuncCallType::View(ViewCallInfo {
-            view_id,
-            table_id,
-            view_name: view_name.clone(),
-            sender: sender.clone(),
-        });
 
         let mut tx_slot = inst.tx_slot();
         let (mut tx, result) = tx_slot.set(tx, || {
@@ -1037,7 +1031,7 @@ impl InstanceCommon {
 
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let outcome = match (result.call_result, sender) {
+        let outcome: ViewOutcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
@@ -1048,72 +1042,52 @@ impl InstanceCommon {
                 self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             (Ok(raw), sender) => {
-                // TODO: This shouldn't be able to cause fatal errors.
-                let result = ViewResult::from_return_data(raw)
-                    .inspect_err(|err| {
-                        log::error!("Fatal error parsing result for view `{view_name}`: {err}");
-                    })
-                    .expect("Fatal error parsing view result");
-                let typespace = self.info.module_def.typespace();
-                let row_product_type = typespace
-                    .resolve(row_type)
-                    .ty()
-                    .clone()
-                    .into_product()
-                    .inspect_err(|t| {
-                        log::error!("Fatal error resolving row type for view `{view_name}`: {t:?}");
-                    })
-                    .expect("Fatal error resolving row type for view");
+                // This is wrapped in a closure to simplify error handling.
+                let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
+                    let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
+                    let typespace = self.info.module_def.typespace();
+                    let row_product_type = typespace
+                        .resolve(row_type)
+                        .ty()
+                        .clone()
+                        .into_product()
+                        .map_err(|_| anyhow!("Error resolving row type for view"))?;
 
-                let rows = match result {
-                    ViewResult::Rows(bytes) => {
-                        let rows = deserialize_view_rows(row_type, bytes, typespace)
-                            .inspect_err(|err| {
-                                log::error!("Fatal error materializing view `{view_name}`: {err}");
-                            })
-                            .expect("Fatal error materializing view");
-                        rows
+                    let rows = match result {
+                        ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
+                            .context("Error deserializing rows returned by view".to_string())?,
+                        ViewResult::RawSql(query) => self
+                            .run_query_for_view(
+                                &mut tx,
+                                &query,
+                                &row_product_type,
+                                &ViewCallInfo {
+                                    view_id,
+                                    table_id,
+                                    view_name: view_name.clone(),
+                                    sender,
+                                },
+                            )
+                            .context("Error executing raw SQL returned by view".to_string())?,
+                        _ => anyhow::bail!("View returned an unsupported format"),
+                    };
+
+                    let res = match sender {
+                        Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
+                        None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
+                    };
+
+                    res.context("Error materializing view")?;
+
+                    Ok(ViewOutcome::Success)
+                })();
+                match outcome {
+                    Ok(outcome) => outcome,
+                    Err(err) => {
+                        log::error!("Error materializing view `{view_name}`: {err:?}");
+                        ViewOutcome::Failed(format!("Error materializing view `{view_name}`: {err}"))
                     }
-                    ViewResult::RawSql(query) => self
-                        .run_query_for_view(
-                            &mut tx,
-                            &query,
-                            &row_product_type,
-                            &ViewCallInfo {
-                                view_id,
-                                table_id,
-                                view_name: view_name.clone(),
-                                sender: sender.clone(),
-                            },
-                        )
-                        .inspect_err(|err| {
-                            log::error!("Fatal error executing raw SQL for view `{view_name}`: {err}");
-                        })
-                        .expect("Fatal error executing raw SQL for view"),
-                    _ => unimplemented!("Parameterized query is not supported"),
-                };
-                // let ViewResult::Rows(bytes) = result else {
-                //     unimplemented!("View returned a non-rows format");
-                // };
-
-                // let typespace = self.info.module_def.typespace();
-                // let rows = deserialize_view_rows(row_type, bytes, typespace)
-                //     .inspect_err(|err| {
-                //         log::error!("Fatal error materializing view `{view_name}`: {err}");
-                //     })
-                //     .expect("Fatal error materializing view");
-
-                let res = match sender {
-                    Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
-                    None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
-                };
-
-                res.inspect_err(|err| {
-                    log::error!("Fatal error materializing view `{view_name}`: {err}");
-                })
-                .expect("Fatal error materializing view");
-
-                ViewOutcome::Success
+                }
             }
         };
 
@@ -1135,6 +1109,7 @@ impl InstanceCommon {
         expected_row_type: &ProductType,
         call_info: &ViewCallInfo,
     ) -> anyhow::Result<Vec<ProductValue>> {
+        log::info!("Materializing view `{}` with query: {}", call_info.view_name, the_query);
         if the_query.trim().is_empty() {
             return Ok(Vec::new());
         }
