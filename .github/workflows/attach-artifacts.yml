@@ -6,7 +6,6 @@ on:
       release_tag:
         description: "Release tag (e.g. v1.9.0)"
         required: true
-        default: "v1.9.0"
 
   # TODO - Remove before merging!
   push:
@@ -68,6 +67,9 @@ jobs:
           set -euo pipefail
 
           cd artifacts
+
+          # TODO - Remove before merging!
+          RELEASE_TAG=v1.9.0
 
           gh release upload "$RELEASE_TAG" ./* \
             --repo "$GITHUB_REPOSITORY" \
