@@ -1,11 +1,9 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use log::warn;
 use std::collections::HashMap;
-use std::net::TcpListener;
 use std::path::Path;
-use std::thread;
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -68,12 +66,6 @@ enum CiCmd {
             long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
         )]
         docker: Option<String>,
-        #[arg(
-            long = "parallel",
-            default_value_t = false,
-            long_help = "Run smoketest suites in parallel, one process per top-level suite"
-        )]
-        parallel: bool,
         #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
@@ -143,168 +135,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn prebuild_bare_server() -> Result<()> {
-    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
-    // before the server is up.
-    bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")
-}
-
-fn run_smoketests_inner(
-    python: &str,
-    suite_name: Option<&str>,
-    start_server: bool,
-    docker: &Option<String>,
-    per_suite: bool,
-    args: &[String],
-) -> (String, bool) {
-    let mut output = String::new();
-    let mut ok = true;
-
-    // Server setup
-    let mut pid: Option<i32> = None;
-    let mut port: Option<u16> = None;
-    if let Some(compose_file) = docker.as_ref() {
-        output.push_str("Starting server..\n");
-        // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
-        let cmdline = format!("docker compose -f {} up -d", compose_file);
-        let res = cmd!("bash", "-lc", &cmdline).stderr_to_stdout().run();
-        if let Err(e) = res {
-            output.push_str(&format!("Failed to start docker: {}\n", e));
-            return (output, false);
-        }
-    } else if start_server {
-        // Bare server: shared (port 5432) in serial mode, or per-suite port + --remote-server in parallel mode.
-        if !per_suite {
-            if let Err(e) = prebuild_bare_server() {
-                output.push_str(&format!("Failed to prebuild server: {}\n", e));
-                return (output, false);
-            }
-            output.push_str("Starting server..\n");
-            let cmdline = "nohup cargo run -p spacetimedb-cli -- start --pg-port 5432 >/dev/null 2>&1 & echo $!";
-            let pid_str = cmd!("bash", "-lc", cmdline).read().unwrap_or_default();
-            match pid_str.trim().parse::<i32>() {
-                Ok(p) => pid = Some(p),
-                Err(e) => {
-                    output.push_str(&format!("Failed to parse server PID from '{}': {}\n", pid_str, e));
-                    return (output, false);
-                }
-            }
-        } else {
-            let free_port = match find_free_port() {
-                Ok(p) => p,
-                Err(e) => {
-                    output.push_str(&format!("Failed to find free port: {}\n", e));
-                    return (output, false);
-                }
-            };
-            port = Some(free_port);
-            output.push_str(&format!("Starting local server on port {}..\n", free_port));
-            let cmdline = format!(
-                "nohup cargo run -p spacetimedb-cli -- start --pg-port {} >/dev/null 2>&1 & echo $!",
-                free_port
-            );
-            let pid_str = cmd!("bash", "-lc", &cmdline).read().unwrap_or_default();
-            match pid_str.trim().parse::<i32>() {
-                Ok(p) => pid = Some(p),
-                Err(e) => {
-                    output.push_str(&format!("Failed to parse server PID from '{}': {}\n", pid_str, e));
-                    return (output, false);
-                }
-            }
-        }
-    }
-
-    // Build smoketests args
-    let mut smoketests_args = Vec::new();
-    if let Some(name) = suite_name {
-        smoketests_args.push(name.to_string());
-    }
-    smoketests_args.extend(args.iter().cloned());
-
-    if let Some(compose_file) = docker.as_ref() {
-        // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
-        // run the server in docker while still retaining full control over what tests they want.
-        smoketests_args.push("--compose-file".to_string());
-        smoketests_args.push(compose_file.to_string());
-    }
-
-    if start_server && docker.is_none() && per_suite {
-        if let Some(p) = port {
-            smoketests_args.push("--remote-server".to_string());
-            smoketests_args.push(format!("http://127.0.0.1:{}", p));
-        }
-    }
-
-    output.push_str("Running smoketests..\n");
-    let cmdline = format!("{} -m smoketests {}", python, smoketests_args.join(" "));
-    let res = cmd!("bash", "-lc", &cmdline).stderr_to_stdout().read();
-    match res {
-        Ok(out) => {
-            output.push_str(&out);
-        }
-        Err(e) => {
-            output.push_str(&format!("smoketests failed: {}\n", e));
-            ok = false;
-        }
-    }
-
-    // Shutdown
-    if let Some(compose_file) = docker.as_ref() {
-        output.push_str("Shutting down server..\n");
-        let down_cmd = format!("docker compose -f {} down", compose_file);
-        let _ = cmd!("bash", "-lc", &down_cmd).run();
-    }
-
-    if let Some(p) = pid {
-        output.push_str("Shutting down server..\n");
-        let kill_cmd = format!("kill {}", p);
-        let _ = cmd!("bash", "-lc", &kill_cmd).run();
-    }
-
-    (output, ok)
-}
-
-fn run_smoketests_serial(python: &str, start_server: bool, docker: &Option<String>, args: &[String]) -> Result<()> {
-    let (output, ok) = run_smoketests_inner(python, None, start_server, docker, false, args);
-    print!("{}", output);
-    if !ok {
-        bail!("smoketests failed");
-    }
-    Ok(())
-}
-
-fn find_free_port() -> Result<u16> {
-    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind to an ephemeral port")?;
-    let port = listener
-        .local_addr()
-        .context("failed to read local address for ephemeral port")?
-        .port();
-    drop(listener);
-    Ok(port)
-}
-
-fn list_smoketest_suites() -> Result<Vec<String>> {
-    let mut suites = Vec::new();
-    for entry in fs::read_dir("smoketests/tests").context("failed to read smoketests/tests directory")? {
-        let entry = entry?;
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name == "__init__.py" {
-                continue;
-            }
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if ext == "py" {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        suites.push(stem.to_string());
-                    }
-                }
-            }
-        }
-    }
-    suites.sort();
-    Ok(suites)
-}
-
 fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
     let mut env = env::vars().collect::<HashMap<_, _>>();
     env.extend(additional_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
@@ -316,6 +146,98 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
         return Err(e);
     }
     Ok(())
+}
+
+fn run_smoketests_batch(start_server: bool, docker: &Option<String>, args: &[String]) -> Result<()> {
+    let mut started_pid: Option<i32> = None;
+    match (start_server, docker.as_ref()) {
+        (start_server, Some(compose_file)) => {
+            if !start_server {
+                warn!("--docker implies --start-server=true");
+            }
+            println!("Starting server..");
+            // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
+            bash!(&format!("docker compose -f {compose_file} up -d"))?;
+        }
+        (true, None) => {
+            // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+            // before the server is up.
+            bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+
+            println!("Starting server..");
+            let pid_str;
+            if cfg!(target_os = "windows") {
+                pid_str = cmd!(
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --pg-port 5432' -PassThru; $p.Id"
+                )
+                .read()
+                .unwrap_or_default();
+            } else {
+                pid_str = cmd!(
+                    "bash",
+                    "-lc",
+                    "nohup cargo run -p spacetimedb-cli -- start --pg-port 5432 >/dev/null 2>&1 & echo $!"
+                )
+                .read()
+                .unwrap_or_default();
+            }
+            started_pid = Some(
+                pid_str
+                    .trim()
+                    .parse::<i32>()
+                    .expect("Failed to get PID of started process"),
+            )
+        }
+        (false, None) => {}
+    }
+
+    // TODO: does this work on windows?
+    let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+        .run()
+        .map(|s| s.status.success())
+        .unwrap_or(false);
+    let python = if py3_available { "python3" } else { "python" };
+
+    println!("Running smoketests..");
+    let mut smoketests_args = args.to_vec();
+    if let Some(compose_file) = docker.as_ref() {
+        // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
+        // run the server in docker while still retaining full control over what tests they want.
+        smoketests_args.push("--compose-file".to_string());
+        smoketests_args.push(compose_file.to_string());
+    }
+    let test_result = bash!(&format!("{python} -m smoketests {}", smoketests_args.join(" ")));
+
+    // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
+    match (start_server, docker.as_ref()) {
+        (_, Some(compose_file)) => {
+            println!("Shutting down server..");
+            let _ = bash!(&format!("docker compose -f {compose_file} down"));
+        }
+        (true, None) => {
+            println!("Shutting down server..");
+            let pid = if let Some(pid) = started_pid {
+                pid
+            } else {
+                // We constructed a `Some` above in this case
+                unreachable!();
+            };
+            if cfg!(target_os = "windows") {
+                let _ = bash!(&format!(
+                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
+                    pid
+                ));
+            } else {
+                let _ = bash!(&format!("kill {}", pid));
+            }
+        }
+        (false, None) => {}
+    }
+
+    test_result
 }
 
 fn main() -> Result<()> {
@@ -356,74 +278,9 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests {
             start_server,
             docker,
-            parallel,
             args,
         }) => {
-            // TODO: does this work on windows?
-            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-                .run()
-                .map(|s| s.status.success())
-                .unwrap_or(false);
-            let python = if py3_available { "python3" } else { "python" };
-
-            if !parallel {
-                run_smoketests_serial(python, start_server, &docker, &args)?;
-            } else {
-                // Parallel mode: run each top-level smoketest suite in its own process.
-                let suites = list_smoketest_suites()?;
-                if suites.is_empty() {
-                    bail!("No smoketest suites found in smoketests/tests");
-                }
-
-                let mut handles = Vec::new();
-                for suite in suites {
-                    let suite_name = suite.clone();
-                    let docker = docker.clone();
-                    let args = args.clone();
-                    let python = python.to_string();
-                    let start_server = start_server;
-
-                    let handle = thread::spawn(move || {
-                        let (output, ok) =
-                            run_smoketests_inner(&python, Some(&suite_name), start_server, &docker, true, &args);
-                        (suite_name, output, ok)
-                    });
-
-                    handles.push(handle);
-                }
-
-                let mut all_ok = true;
-                let mut results = Vec::new();
-                for handle in handles {
-                    match handle.join() {
-                        Ok((suite, output, ok)) => {
-                            results.push((suite, output, ok));
-                        }
-                        Err(_) => {
-                            results.push(("<thread-panic>".to_string(), "thread panicked".to_string(), false));
-                        }
-                    }
-                }
-
-                // Print outputs in a stable order.
-                results.sort_by(|a, b| a.0.cmp(&b.0));
-                for (suite, output, ok) in &results {
-                    println!("===== smoketests suite: {} =====", suite);
-                    print!("{}", output);
-                    println!(
-                        "===== end suite: {} (status: {}) =====",
-                        suite,
-                        if *ok { "ok" } else { "FAILED" }
-                    );
-                    if !ok {
-                        all_ok = false;
-                    }
-                }
-
-                if !all_ok {
-                    bail!("One or more smoketest suites failed");
-                }
-            }
+            run_smoketests_batch(start_server, &docker, &args)?;
         }
 
         Some(CiCmd::UpdateFlow {
