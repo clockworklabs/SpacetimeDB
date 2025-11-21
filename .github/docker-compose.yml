@@ -6,9 +6,9 @@ services:
       context: ../
       dockerfile: .github/Dockerfile
     ports:
-      - "3000:3000"
+      - "${STDB_PORT:-3000}:3000"
       # Postgres
-      - "5432:5432"
+      - "${STDB_PG_PORT:-5432}:5432"
     entrypoint: spacetime start --pg-port 5432
     privileged: true
     environment:

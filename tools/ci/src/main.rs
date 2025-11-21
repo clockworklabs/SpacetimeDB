@@ -1,8 +1,9 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use log::warn;
 use std::collections::HashMap;
+use std::net::TcpListener;
 use std::path::Path;
 use std::{env, fs};
 
@@ -148,30 +149,57 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-fn run_smoketests_batch(start_server: bool, docker: &Option<String>, args: &[String]) -> Result<()> {
+#[derive(Debug, Clone)]
+pub enum StartServer {
+    /// Do not start a server.
+    No,
+
+    /// Start a server normally.
+    Yes { random_port: bool },
+
+    /// Start a server using Docker Compose.
+    Docker { random_port: bool, compose_file: PathBuf },
+}
+
+fn find_free_port() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind to an ephemeral port")?;
+    let port = listener
+        .local_addr()
+        .context("failed to read local address for ephemeral port")?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+fn run_smoketests_batch(start_server: StartServer, args: &[String]) -> Result<()> {
     let mut started_pid: Option<i32> = None;
     match (start_server, docker.as_ref()) {
         (start_server, Some(compose_file)) => {
-            if !start_server {
-                warn!("--docker implies --start-server=true");
-            }
             println!("Starting server..");
-            // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
-            bash!(&format!("docker compose -f {compose_file} up -d"))?;
+            let server_port = find_free_port()?;
+            let pg_port = find_free_port()?;
+            let tracy_port = find_free_port()?;
+            bash!(&format!(
+                "STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port} docker compose -f {compose_file} up -d"
+            ))?;
         }
         (true, None) => {
             // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
             // before the server is up.
             bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
 
-            println!("Starting server..");
+            // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
+            let server_port = find_free_port()?;
+            println!("Starting server on port {server_port}..");
             let pid_str;
             if cfg!(target_os = "windows") {
                 pid_str = cmd!(
                     "powershell",
                     "-NoProfile",
                     "-Command",
-                    "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --pg-port 5432' -PassThru; $p.Id"
+                    &format!(
+                        "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start --listen-addr 0.0.0.0:{server_port} --pg-port 5432' -PassThru; $p.Id"
+                    )
                 )
                 .read()
                 .unwrap_or_default();
@@ -179,7 +207,9 @@ fn run_smoketests_batch(start_server: bool, docker: &Option<String>, args: &[Str
                 pid_str = cmd!(
                     "bash",
                     "-lc",
-                    "nohup cargo run -p spacetimedb-cli -- start --pg-port 5432 >/dev/null 2>&1 & echo $!"
+                    &format!(
+                        "nohup cargo run -p spacetimedb-cli -- start --listen-addr 0.0.0.0:{server_port} --pg-port 5432 >/dev/null 2>&1 & echo $!"
+                    )
                 )
                 .read()
                 .unwrap_or_default();
@@ -280,7 +310,20 @@ fn main() -> Result<()> {
             docker,
             args,
         }) => {
-            run_smoketests_batch(start_server, &docker, &args)?;
+            let start_server = match (start_server, docker.as_ref()) {
+                (start_server, Some(compose_file)) => {
+                    if !start_server {
+                        warn!("--docker implies --start-server=true");
+                    }
+                    StartServer::Docker {
+                        random_port: false,
+                        compose_file: compose_file.into(),
+                    }
+                }
+                (true, None) => StartServer::Yes { random_port: false },
+                (false, None) => StartServer::No,
+            };
+            run_smoketests_batch(start_server, &args)?;
         }
 
         Some(CiCmd::UpdateFlow {
