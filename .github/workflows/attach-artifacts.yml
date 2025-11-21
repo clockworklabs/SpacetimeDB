@@ -7,6 +7,8 @@ on:
         description: "Release tag (e.g. v1.9.0)"
         required: true
         default: "v1.9.0"
+
+  # TODO - Remove before merging!
   push:
     branches:
       - jdetter/attach-artifacts-workflow
@@ -32,21 +34,31 @@ jobs:
         run: |
           set -euo pipefail
 
+          # TODO - Remove before merging!
+          RELEASE_TAG=v1.9.0
           FULL_URL="$BASE_URL/$RELEASE_TAG"
 
           mkdir -p artifacts
           cd artifacts
 
-          wget "$FULL_URL/spacetime-aarch64-apple-darwin.tar.gz"
-          wget "$FULL_URL/spacetime-aarch64-unknown-linux-gnu.tar.gz"
-          wget "$FULL_URL/spacetime-x86_64-apple-darwin.tar.gz"
-          wget "$FULL_URL/spacetime-x86_64-pc-windows-msvc.zip"
-          wget "$FULL_URL/spacetime-x86_64-unknown-linux-gnu.tar.gz"
-          wget "$FULL_URL/spacetimedb-update-aarch64-apple-darwin"
-          wget "$FULL_URL/spacetimedb-update-aarch64-unknown-linux-gnu"
-          wget "$FULL_URL/spacetimedb-update-x86_64-apple-darwin"
-          wget "$FULL_URL/spacetimedb-update-x86_64-pc-windows-msvc.exe"
-          wget "$FULL_URL/spacetimedb-update-x86_64-unknown-linux-gnu"
+          download() {
+            local filename="$1"
+            if ! wget -q "${FULL_URL}/${filename}" -O "${filename}"; then
+              echo "Failed to download ${filename}"
+              exit 1
+            fi
+          }
+
+          download "spacetime-aarch64-apple-darwin.tar.gz"
+          download "spacetime-aarch64-unknown-linux-gnu.tar.gz"
+          download "spacetime-x86_64-apple-darwin.tar.gz"
+          download "spacetime-x86_64-pc-windows-msvc.zip"
+          download "spacetime-x86_64-unknown-linux-gnu.tar.gz"
+          download "spacetimedb-update-aarch64-apple-darwin"
+          download "spacetimedb-update-aarch64-unknown-linux-gnu"
+          download "spacetimedb-update-x86_64-apple-darwin"
+          download "spacetimedb-update-x86_64-pc-windows-msvc.exe"
+          download "spacetimedb-update-x86_64-unknown-linux-gnu"
 
       - name: Upload artifacts to GitHub Release
         env:
