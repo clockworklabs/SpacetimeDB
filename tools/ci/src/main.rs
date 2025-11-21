@@ -1,8 +1,10 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use log::warn;
 use std::collections::HashMap;
-use std::path::Path;
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -51,6 +53,20 @@ enum CiCmd {
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests {
+        #[arg(
+            long = "start-server",
+            default_value_t = true,
+            long_help = "Whether to start a local SpacetimeDB server before running smoketests"
+        )]
+        start_server: bool,
+        #[arg(
+            long = "docker",
+            value_name = "COMPOSE_FILE",
+            num_args(0..=1),
+            default_missing_value = "docker-compose.yml",
+            long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
+        )]
+        docker: Option<String>,
         #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
@@ -133,6 +149,134 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub enum StartServer {
+    No,
+    Yes { random_port: bool },
+    Docker { compose_file: PathBuf, random_port: bool },
+}
+
+#[derive(Debug, Clone)]
+pub enum ServerState {
+    None,
+    Yes { pid: i32 },
+    Docker { compose_file: PathBuf, project: String },
+}
+
+fn find_free_port() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind to an ephemeral port")?;
+    let port = listener
+        .local_addr()
+        .context("failed to read local address for ephemeral port")?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+fn run_smoketests_batch(server_mode: StartServer, args: &[String]) -> Result<()> {
+    let server_state = match server_mode {
+        StartServer::No => ServerState::None,
+        StartServer::Docker {
+            compose_file,
+            random_port,
+        } => {
+            println!("Starting server..");
+            let env_string;
+            let project;
+            if random_port {
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                let tracy_port = find_free_port()?;
+                env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
+                project = format!("spacetimedb-smoketests-{server_port}");
+            } else {
+                env_string = String::new();
+                project = "spacetimedb-smoketests".to_string();
+            };
+            let compose_str = compose_file.to_string_lossy();
+            bash!(&format!(
+                "{env_string} docker compose -f {compose_str} --project {project} up -d"
+            ))?;
+            ServerState::Docker { compose_file, project }
+        }
+        StartServer::Yes { random_port } => {
+            // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+            // before the server is up.
+            bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+
+            // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
+            let arg_string = if random_port {
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                &format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port}")
+            } else {
+                "--pg-port 5432"
+            };
+            println!("Starting server..");
+            let pid_str;
+            if cfg!(target_os = "windows") {
+                pid_str = cmd!(
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        &format!(
+                            "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start {arg_string}' -PassThru; $p.Id"
+                        )
+                    )
+                    .read()
+                    .unwrap_or_default();
+            } else {
+                pid_str = cmd!(
+                    "bash",
+                    "-lc",
+                    &format!("nohup cargo run -p spacetimedb-cli -- start {arg_string} >/dev/null 2>&1 & echo $!")
+                )
+                .read()
+                .unwrap_or_default();
+            }
+            ServerState::Yes {
+                pid: pid_str
+                    .trim()
+                    .parse::<i32>()
+                    .expect("Failed to get PID of started process"),
+            }
+        }
+    };
+
+    // TODO: does this work on windows?
+    let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+        .run()
+        .map(|s| s.status.success())
+        .unwrap_or(false);
+    let python = if py3_available { "python3" } else { "python" };
+
+    println!("Running smoketests..");
+    let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
+
+    // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
+    match server_state {
+        ServerState::None => {}
+        ServerState::Docker { compose_file, project } => {
+            println!("Shutting down server..");
+            let compose_str = compose_file.to_string_lossy();
+            let _ = bash!(&format!("docker compose -f {compose_str} --project {project} down"));
+        }
+        ServerState::Yes { pid } => {
+            println!("Shutting down server..");
+            if cfg!(target_os = "windows") {
+                let _ = bash!(&format!(
+                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
+                    pid
+                ));
+            } else {
+                let _ = bash!(&format!("kill {}", pid));
+            }
+        }
+    }
+
+    test_result
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -168,14 +312,32 @@ fn main() -> Result<()> {
             bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { args }) => {
-            // On some systems, there is no `python`, but there is `python3`.
-            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-                .run()
-                .map(|s| s.status.success())
-                .unwrap_or(false);
-            let python = if py3_available { "python3" } else { "python" };
-            bash!(&format!("{python} -m smoketests {}", args.join(" ")))?;
+        Some(CiCmd::Smoketests {
+            start_server,
+            docker,
+            args,
+        }) => {
+            let start_server = match (start_server, docker.as_ref()) {
+                (start_server, Some(compose_file)) => {
+                    if !start_server {
+                        warn!("--docker implies --start-server=true");
+                    }
+                    StartServer::Docker {
+                        random_port: false,
+                        compose_file: compose_file.into(),
+                    }
+                }
+                (true, None) => StartServer::Yes { random_port: false },
+                (false, None) => StartServer::No,
+            };
+            let mut args = args.to_vec();
+            if let Some(compose_file) = docker.as_ref() {
+                // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
+                // run the server in docker while still retaining full control over what tests they want.
+                args.push("--compose-file".to_string());
+                args.push(compose_file.to_string());
+            }
+            run_smoketests_batch(start_server, &args)?;
         }
 
         Some(CiCmd::UpdateFlow {

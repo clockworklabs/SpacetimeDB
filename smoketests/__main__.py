@@ -77,8 +77,6 @@ def main():
     parser.add_argument("--no-docker-logs", action="store_true")
     parser.add_argument("--skip-dotnet", action="store_true", help="ignore tests which require dotnet")
     parser.add_argument("--show-all-output", action="store_true", help="show all stdout/stderr from the tests as they're running")
-    parser.add_argument("--parallel", action="store_true", help="run test classes in parallel")
-    parser.add_argument("-j", dest='jobs', help="Set number of jobs for parallel test runs. Default is `nproc`", type=int, default=0)
     parser.add_argument('-k', dest='testNamePatterns',
                         action='append', type=_convert_select_pattern,
                         help='Only run tests which match the given substring')
@@ -87,6 +85,7 @@ def main():
     parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
     parser.add_argument("--remote-server", action="store", help="Run against a remote server")
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
+    parser.add_argument("--local-only", action="store_true", help="Only run tests that require a local server")
     args = parser.parse_args()
 
     if args.docker:
@@ -116,6 +115,25 @@ def main():
     loader.testNamePatterns = args.testNamePatterns
 
     tests = loader.loadTestsFromNames(testlist)
+
+    if args.local_only:
+        def _is_local_only(test_case):
+            method_name = getattr(test_case, "_testMethodName", None)
+            if method_name is not None and hasattr(test_case, method_name):
+                method = getattr(test_case, method_name)
+                if getattr(method, "_requires_local_server", False):
+                    return True
+            # Also allow class-level decoration
+            if getattr(test_case.__class__, "_requires_local_server", False):
+                return True
+            return False
+
+        filtered = unittest.TestSuite()
+        for t in _iter_all_tests(tests):
+            if _is_local_only(t):
+                filtered.addTest(t)
+        tests = filtered
+
     if args.list:
         failed_cls = getattr(unittest.loader, "_FailedTest", None)
         any_failed = False
@@ -176,14 +194,9 @@ def main():
     buffer = not args.show_all_output
     verbosity = 2
 
-    if args.parallel:
-        print("parallel test running is under construction, this will probably not work correctly")
-        from . import unittest_parallel
-        unittest_parallel.main(buffer=buffer, verbose=verbosity, level="class", discovered_tests=tests, jobs=args.jobs)
-    else:
-        result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
-        if not result.wasSuccessful():
-            parser.exit(status=1)
+    result = unittest.TextTestRunner(buffer=buffer, verbosity=verbosity).run(tests)
+    if not result.wasSuccessful():
+        parser.exit(status=1)
 
 
 if __name__ == '__main__':
