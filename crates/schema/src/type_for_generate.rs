@@ -12,7 +12,7 @@ use petgraph::{
 use smallvec::SmallVec;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
-    map::{HashMap, HashSet},
+    map::{hash_set, HashMap, HashSet},
 };
 use spacetimedb_lib::{AlgebraicType, ProductTypeElement};
 use spacetimedb_sats::{
@@ -632,7 +632,7 @@ impl NodeIndexable for TypespaceForGenerateBuilder<'_> {
     }
 }
 impl<'a> IntoNodeIdentifiers for &'a TypespaceForGenerateBuilder<'a> {
-    type NodeIdentifiers = std::iter::Cloned<hashbrown::hash_set::Iter<'a, spacetimedb_sats::AlgebraicTypeRef>>;
+    type NodeIdentifiers = std::iter::Cloned<hash_set::Iter<'a, spacetimedb_sats::AlgebraicTypeRef>>;
 
     fn node_identifiers(self) -> Self::NodeIdentifiers {
         self.is_def.iter().cloned()

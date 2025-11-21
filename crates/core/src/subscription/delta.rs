@@ -1,13 +1,12 @@
+use crate::host::module_host::UpdatesRelValue;
 use anyhow::Result;
-use hashbrown::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::ColList;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::relation::RelValue;
-
-use crate::host::module_host::UpdatesRelValue;
 
 /// Evaluate a subscription over a delta update.
 /// Returns `None` for empty updates.
