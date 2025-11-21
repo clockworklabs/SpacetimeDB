@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use log::warn;
 use std::collections::HashMap;
 use std::path::Path;
 use std::{env, fs};
@@ -31,16 +32,6 @@ struct Cli {
     skip: Vec<String>,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-enum StartServer {
-    /// Do not start a server; assume one is already running or remote
-    No,
-    /// Start a local server using the spacetimedb CLI
-    Bare,
-    /// Start services using docker compose
-    Docker,
-}
-
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -63,11 +54,18 @@ enum CiCmd {
     Smoketests {
         #[arg(
             long = "start-server",
-            value_enum,
-            default_value_t = StartServer::Bare,
-            long_help = "How to start SpacetimeDB before running smoketests: no | bare | docker"
+            default_value_t = true,
+            long_help = "Whether to start a local SpacetimeDB server before running smoketests"
         )]
-        start_server: StartServer,
+        start_server: bool,
+        #[arg(
+            long = "docker",
+            value_name = "COMPOSE_FILE",
+            num_args(0..=1),
+            default_missing_value = "docker-compose.yml",
+            long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
+        )]
+        docker: Option<String>,
         #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
@@ -185,19 +183,27 @@ fn main() -> Result<()> {
             bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { start_server, args }) => {
+        Some(CiCmd::Smoketests {
+            start_server,
+            docker,
+            args,
+        }) => {
             let mut started_pid: Option<i32> = None;
-            println!("Starting server..");
-            match start_server {
-                StartServer::Docker => {
+            match (start_server, docker.as_ref()) {
+                (start_server, Some(compose_file)) => {
+                    if !start_server {
+                        warn!("--docker implies --start-server=true");
+                    }
+                    println!("Starting server..");
                     // This means we ignore `.dockerignore`, beacuse it omits `target`, which our CI Dockerfile needs.
-                    bash!("cd .github && docker compose -f docker-compose.yml up -d")?;
+                    bash!(&format!("docker compose -f {compose_file} up -d"))?;
                 }
-                StartServer::Bare => {
+                (true, None) => {
                     // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
                     // before the server is up.
                     bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
 
+                    println!("Starting server..");
                     let pid_str;
                     if cfg!(target_os = "windows") {
                         pid_str = cmd!(
@@ -224,9 +230,10 @@ fn main() -> Result<()> {
                             .expect("Failed to get PID of started process"),
                     )
                 }
-                StartServer::No => {}
+                (false, None) => {}
             }
 
+            // TODO: does this work on windows?
             let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
                 .run()
                 .map(|s| s.status.success())
@@ -234,19 +241,27 @@ fn main() -> Result<()> {
             let python = if py3_available { "python3" } else { "python" };
 
             println!("Running smoketests..");
-            let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
+            let mut smoketests_args = args.clone();
+            if let Some(compose_file) = docker.as_ref() {
+                // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
+                // run the server in docker while still retaining full control over what tests they want.
+                smoketests_args.push("--compose-file".to_string());
+                smoketests_args.push(compose_file.to_string());
+            }
+            let test_result = bash!(&format!("{python} -m smoketests {}", smoketests_args.join(" ")));
 
-            println!("Shutting down server..");
             // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
-            match start_server {
-                StartServer::Docker => {
-                    let _ = bash!("docker compose -f .github/docker-compose.yml down");
+            match (start_server, docker.as_ref()) {
+                (_, Some(compose_file)) => {
+                    println!("Shutting down server..");
+                    let _ = bash!(&format!("docker compose -f {compose_file} down"));
                 }
-                StartServer::Bare => {
+                (true, None) => {
+                    println!("Shutting down server..");
                     let pid = if let Some(pid) = started_pid {
                         pid
                     } else {
-                        // We constructed a `Some` above if `StartServer::Bare`.
+                        // We constructed a `Some` above in this case
                         unreachable!();
                     };
                     if cfg!(target_os = "windows") {
@@ -255,7 +270,7 @@ fn main() -> Result<()> {
                         let _ = bash!(&format!("kill {}", pid));
                     }
                 }
-                StartServer::No => {}
+                (false, None) => {}
             }
 
             test_result?;
