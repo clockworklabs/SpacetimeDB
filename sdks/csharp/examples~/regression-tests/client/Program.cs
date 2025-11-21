@@ -157,7 +157,6 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");
     Debug.Assert(viewRemoteQueryRows != null && viewRemoteQueryRows.Result.Length > 0);
     Debug.Assert(viewRemoteQueryRows.Result.First().Equals(expectedPlayer));
-    
 
     Log.Debug("Calling Iter on Anonymous View");
     var anonViewIterRows = context.Db.PlayersForLevel.Iter();
