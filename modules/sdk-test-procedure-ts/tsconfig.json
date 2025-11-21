@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+
+    "strict": true,
+    "declaration": true,
+    "emitDeclarationOnly": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowImportingTsExtensions": true,
+    "noImplicitAny": true,
+    "moduleResolution": "Bundler",
+    "isolatedDeclarations": false,
+
+    // This library is ESM-only, do not import commonjs modules
+    "esModuleInterop": false,
+    "allowSyntheticDefaultImports": false,
+    "useDefineForClassFields": true,
+
+    // Crucial when using esbuild/swc/babel instead of tsc emit:
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true
+  },
+  "include": ["src/index.ts", "tests/**/*"],
+  "exclude": ["node_modules", "**/__tests__/*", "dist/**/*"]
+}
