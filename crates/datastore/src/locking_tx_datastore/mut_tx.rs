@@ -42,7 +42,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -76,7 +76,7 @@ type DecodeResult<T> = core::result::Result<T, DecodeError>;
 pub struct ViewCallInfo {
     pub view_id: ViewId,
     pub table_id: TableId,
-    pub view_name: Box<str>,
+    pub fn_ptr: ViewFnPtr,
     pub sender: Option<Identity>,
 }
 

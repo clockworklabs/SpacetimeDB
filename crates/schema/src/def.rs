@@ -276,6 +276,14 @@ impl ModuleDef {
         self.reducers.get_index(id.idx()).map(|(_, def)| def)
     }
 
+    /// Look up a view by its id, and whether it is anonymous.
+    pub fn get_view_by_id(&self, id: ViewFnPtr, is_anonymous: bool) -> Option<&ViewDef> {
+        self.views
+            .iter()
+            .find(|(_, def)| def.fn_ptr == id && def.is_anonymous == is_anonymous)
+            .map(|(_, def)| def)
+    }
+
     /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
     pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
