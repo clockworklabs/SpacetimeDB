@@ -282,7 +282,7 @@ pub enum NodesError {
     #[error("Failed to scheduled timer: {0}")]
     ScheduleError(#[source] ScheduleError),
     #[error("HTTP request failed: {0}")]
-    HttpError(#[from] spacetimedb_lib::http::Error),
+    HttpError(String),
 }
 
 impl From<DBError> for NodesError {
