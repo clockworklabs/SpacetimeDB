@@ -1,14 +1,13 @@
 //! `SpacetimeType`-ified HTTP request, response and error types,
 //! for use in the procedure HTTP API.
 //!
-//! The types here are all mirrors of various types within the [`http`] crate.
+//! The types here are all mirrors of various types within the `http` crate.
 //! That crate's types don't have stable representations or `pub`lic interiors,
 //! so we're forced to define our own representation for the SATS serialization.
 //! These types are that representation.
 //!
 //! Users aren't intended to interact with these types,
-//! except [`Timeout`] and [`Error`], which are re-exported from the `bindings` crate.
-//! Our user-facing APIs should use the [`http`] crate's types directly, and convert to and from these types internally.
+//! Our user-facing APIs should use the `http` crate's types directly, and convert to and from these types internally.
 //!
 //! These types are used in BSATN encoding for interchange between the SpacetimeDB host
 //! and guest WASM modules in the `procedure_http_request` ABI call.
@@ -22,16 +21,13 @@
 use spacetimedb_sats::{time_duration::TimeDuration, SpacetimeType};
 
 /// Represents an HTTP request which can be made from a procedure running in a SpacetimeDB database.
-///
-/// Construct instances of this type by converting from [`http::Request`].
-/// Note that all extensions to [`http::Request`] save for [`Timeout`] are ignored.
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate, name = "HttpRequest")]
 pub struct Request {
     pub method: Method,
     pub headers: Headers,
     pub timeout: Option<TimeDuration>,
-    /// A valid URI, sourced from an already-validated [`http::Uri`].
+    /// A valid URI, sourced from an already-validated `http::Uri`.
     pub uri: String,
     pub version: Version,
 }
@@ -64,8 +60,6 @@ pub enum Version {
 }
 
 /// A set of HTTP headers.
-///
-/// Construct this by converting from a [`http::HeaderMap`].
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate, name = "HttpHeaders")]
 pub struct Headers {
@@ -123,9 +117,9 @@ impl Headers {
 #[derive(Clone, SpacetimeType)]
 #[sats(crate = crate, name = "HttpHeaderPair")]
 struct HttpHeaderPair {
-    /// A valid HTTP header name, sourced from an already-validated [`http::HeaderName`].
+    /// A valid HTTP header name, sourced from an already-validated `http::HeaderName`.
     name: Box<str>,
-    /// A valid HTTP header value, sourced from an already-validated [`http::HeaderValue`].
+    /// A valid HTTP header value, sourced from an already-validated `http::HeaderValue`.
     value: Box<[u8]>,
 }
 
@@ -134,6 +128,6 @@ struct HttpHeaderPair {
 pub struct Response {
     pub headers: Headers,
     pub version: Version,
-    /// A valid HTTP response status code, sourced from an already-validated [`http::StatusCode`].
+    /// A valid HTTP response status code, sourced from an already-validated `http::StatusCode`.
     pub code: u16,
 }
