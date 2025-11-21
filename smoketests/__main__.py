@@ -85,6 +85,7 @@ def main():
     parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
     parser.add_argument("--remote-server", action="store", help="Run against a remote server")
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
+    parser.add_argument("--local-only", action="store_true", help="Only run tests that require a local server")
     args = parser.parse_args()
 
     if args.docker:
@@ -114,6 +115,25 @@ def main():
     loader.testNamePatterns = args.testNamePatterns
 
     tests = loader.loadTestsFromNames(testlist)
+
+    if args.local_only:
+        def _is_local_only(test_case):
+            method_name = getattr(test_case, "_testMethodName", None)
+            if method_name is not None and hasattr(test_case, method_name):
+                method = getattr(test_case, method_name)
+                if getattr(method, "_requires_local_server", False):
+                    return True
+            # Also allow class-level decoration
+            if getattr(test_case.__class__, "_requires_local_server", False):
+                return True
+            return False
+
+        filtered = unittest.TestSuite()
+        for t in _iter_all_tests(tests):
+            if _is_local_only(t):
+                filtered.addTest(t)
+        tests = filtered
+
     if args.list:
         failed_cls = getattr(unittest.loader, "_FailedTest", None)
         any_failed = False

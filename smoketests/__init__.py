@@ -80,6 +80,7 @@ def requires_anonymous_login(item):
     return item
 
 def requires_local_server(item):
+    setattr(item, "_requires_local_server", True)
     if REMOTE_SERVER:
         return unittest.skip("running against a remote server")(item)
     return item
