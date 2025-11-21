@@ -2,7 +2,15 @@
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
 import { toCamelCase, type Infer } from 'spacetimedb';
-import { errors, type RowObj, schema, t, table } from 'spacetimedb/server';
+import {
+  errors,
+  type ProcedureCtx,
+  type RowObj,
+  schema,
+  t,
+  table,
+  type TransactionCtx,
+} from 'spacetimedb/server';
 
 const ReturnStruct = t.object('ReturnStruct', {
   a: t.u32(),
@@ -14,7 +22,12 @@ const ReturnEnum = t.enum('ReturnEnum', {
   B: t.string(),
 });
 
-const spacetimedb = schema();
+const MyTable = table(
+  { name: 'my_table', public: true },
+  { field: ReturnStruct }
+);
+
+const spacetimedb = schema(MyTable);
 
 spacetimedb.procedure(
   'return_primitive',
@@ -60,4 +73,43 @@ spacetimedb.procedure('invalid_request', t.string(), ctx => {
     }
     throw e;
   }
+});
+
+function insertMyTable(ctx: TransactionCtx<typeof spacetimedb.schemaType>) {
+  ctx.db.myTable.insert({ field: { a: 42, b: 'magic' } });
+}
+
+function assertRowCount(
+  ctx: ProcedureCtx<typeof spacetimedb.schemaType>,
+  count: number
+) {
+  ctx.with_tx(ctx => {
+    assertEqual(ctx.db.myTable.count(), BigInt(count));
+  });
+}
+
+function assertEqual<T>(a: T, b: T) {
+  if (a !== b) {
+    throw new Error(`assertion failed: ${a} != ${b}`);
+  }
+}
+
+spacetimedb.procedure('insert_with_tx_commit', t.unit(), ctx => {
+  ctx.with_tx(insertMyTable);
+  assertRowCount(ctx, 1);
+  return {};
+});
+
+spacetimedb.procedure('insert_with_tx_rollback', t.unit(), ctx => {
+  const error = {};
+  try {
+    ctx.with_tx(ctx => {
+      insertMyTable(ctx);
+      throw error;
+    });
+  } catch (e) {
+    if (e !== error) throw e;
+  }
+  assertRowCount(ctx, 0);
+  return {};
 });

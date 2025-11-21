@@ -25,7 +25,7 @@ import {
   type JwtClaims,
   type ReducerCtx,
 } from '../lib/reducers';
-import { MODULE_DEF } from '../lib/schema';
+import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
@@ -175,6 +175,21 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+export const makeReducerCtx = (
+  sender: Identity,
+  timestamp: Timestamp,
+  connectionId: ConnectionId | null
+): ReducerCtx<UntypedSchemaDef> => ({
+  sender,
+  get identity() {
+    return new Identity(sys.identity().__identity__);
+  },
+  timestamp,
+  connectionId,
+  db: getDbView(),
+  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
+});
+
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
@@ -195,19 +210,13 @@ export const hooks: ModuleHooks = {
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze({
-      sender: senderIdentity,
-      get identity() {
-        return new Identity(sys.identity().__identity__);
-      },
-      timestamp: new Timestamp(timestamp),
-      connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
-      db: getDbView(),
-      senderAuth: AuthCtxImpl.fromSystemTables(
-        ConnectionId.nullIfZero(new ConnectionId(connId)),
-        senderIdentity
-      ),
-    });
+    const ctx: ReducerCtx<any> = freeze(
+      makeReducerCtx(
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      )
+    );
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
     } catch (e) {

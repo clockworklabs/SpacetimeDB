@@ -3,7 +3,7 @@ import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
 import type { HttpClient } from '../server/http_internal';
-import type { ParamsObj } from './reducers';
+import type { ParamsObj, ReducerCtx } from './reducers';
 import { MODULE_DEF, type UntypedSchemaDef } from './schema';
 import type { Infer, InferTypeOfRow, TypeBuilder } from './type_builders';
 import { bsatnBaseSize } from './util';
@@ -21,7 +21,11 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
+  with_tx<T>(body: (ctx: TransactionCtx<S>) => T): T;
 }
+
+export interface TransactionCtx<S extends UntypedSchemaDef>
+  extends ReducerCtx<S> {}
 
 export function procedure<
   S extends UntypedSchemaDef,

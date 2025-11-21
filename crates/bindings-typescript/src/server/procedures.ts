@@ -3,11 +3,16 @@ import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import { PROCEDURES, type ProcedureCtx } from '../lib/procedures';
+import {
+  PROCEDURES,
+  type ProcedureCtx,
+  type TransactionCtx,
+} from '../lib/procedures';
 import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
-import type { Timestamp } from '../lib/timestamp';
+import { Timestamp } from '../lib/timestamp';
+import type { DbView } from './db_view';
 import { httpClient } from './http_internal';
-import { sys } from './runtime';
+import { makeReducerCtx, sys } from './runtime';
 
 const { freeze } = Object;
 
@@ -25,7 +30,7 @@ export function callProcedure(
     MODULE_DEF.typespace
   );
 
-  const ctx: ProcedureCtx<UntypedSchemaDef> = freeze({
+  const ctx: ProcedureCtx<UntypedSchemaDef> = {
     sender,
     timestamp,
     connectionId,
@@ -33,7 +38,37 @@ export function callProcedure(
     get identity() {
       return new Identity(sys.identity().__identity__);
     },
-  });
+    with_tx(body) {
+      const run = () => {
+        const timestamp = sys.procedure_start_mut_tx();
+
+        try {
+          const ctx: TransactionCtx<UntypedSchemaDef> = freeze(
+            makeReducerCtx(sender, new Timestamp(timestamp), connectionId)
+          );
+          return body(ctx);
+        } catch (e) {
+          sys.procedure_abort_mut_tx();
+          throw e;
+        }
+      };
+
+      let res = run();
+      try {
+        sys.procedure_commit_mut_tx();
+        return res;
+      } catch {}
+      console.warn('committing anonymous transaction failed');
+      res = run();
+      try {
+        sys.procedure_commit_mut_tx();
+        return res;
+      } catch (e) {
+        throw new Error('transaction retry failed again', { cause: e });
+      }
+    },
+  };
+  freeze(ctx);
 
   const ret = fn(ctx, args);
   const retBuf = new BinaryWriter(returnTypeBaseSize);
