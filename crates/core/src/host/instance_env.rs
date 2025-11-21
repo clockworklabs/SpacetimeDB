@@ -13,7 +13,7 @@ use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
 use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
@@ -25,7 +25,7 @@ use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
 #[derive(Clone)]
@@ -205,6 +205,11 @@ impl InstanceEnv {
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
+    }
+
+    /// True if `self` is holding an open transaction, or false if it is not.
+    pub fn in_tx(&self) -> bool {
+        self.get_tx().is_ok()
     }
 
     pub(crate) fn take_tx(&self) -> Result<MutTxId, GetTxError> {
@@ -588,7 +593,9 @@ impl InstanceEnv {
 
     pub async fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
         if self.get_tx().is_ok() {
-            return Err(NodesError::WouldBlockTransaction);
+            return Err(NodesError::WouldBlockTransaction(
+                super::AbiCall::ProcedureStartMutTransaction,
+            ));
         }
 
         let stdb = self.replica_ctx.relational_db.clone();
@@ -598,7 +605,92 @@ impl InstanceEnv {
 
         Ok(())
     }
+
+    pub async fn http_request(
+        &mut self,
+        request: st_http::Request,
+        body: bytes::Bytes,
+    ) -> Result<(st_http::Response, bytes::Bytes), NodesError> {
+        if self.in_tx() {
+            // If we're holding a transaction open, refuse to perform this blocking operation.
+            return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
+        }
+
+        // TODO(procedure-metrics): record size in bytes of request.
+
+        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
+        // and map its body into a type `reqwest` will like.
+        fn convert_request(request: st_http::Request, body: bytes::Bytes) -> Result<reqwest::Request, st_http::Error> {
+            let mut request: http::request::Parts =
+                request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
+
+            // Pull our timeout extension, if any, out of the `http::Request` extensions.
+            // reqwest has its own timeout extension, which is where we'll provide this.
+            let timeout = request.extensions.remove::<st_http::Timeout>();
+
+            let request = http::Request::from_parts(request, body.to_vec());
+
+            let mut reqwest: reqwest::Request = request.try_into().map_err(|err| st_http::Error::from_display(&err))?;
+
+            // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+            // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+            let timeout = timeout
+                .map(|timeout| timeout.timeout.to_duration().unwrap_or(Duration::ZERO))
+                .unwrap_or(HTTP_DEFAULT_TIMEOUT)
+                .min(HTTP_DEFAULT_TIMEOUT);
+
+            // reqwest's timeout covers from the start of the request to the end of reading the body,
+            // so there's no need to do our own timeout operation.
+            *reqwest.timeout_mut() = Some(timeout);
+
+            Ok(reqwest)
+        }
+
+        // If for whatever reason reqwest doesn't like our `http::Request`,
+        // surface that error to the guest so customers can debug and provide a more appropriate request.
+        let reqwest = convert_request(request, body)?;
+
+        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
+
+        // Actually execute the HTTP request!
+        // We'll wrap this future in a `tokio::time::timeout` before `await`ing it.
+        let get_response_and_download_body = async {
+            // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+            let response = reqwest::Client::new()
+                .execute(reqwest)
+                .await
+                .map_err(|err| st_http::Error::from_display(&err))?;
+
+            // Download the response body, which in all likelihood will be a stream,
+            // as reqwest seems to prefer that.
+            // Note that this will be wrapped in the same `tokio::time::timeout` as the above `execute` call.
+            let (parts, body) = http::Response::from(response).into_parts();
+            let body = http_body_util::BodyExt::collect(body)
+                .await
+                .map_err(|err| st_http::Error::from_display(&err))?;
+
+            // Map the collected body into our `spacetimedb_lib::http::Body` type,
+            // then wrap it back in an `http::Response`.
+            Ok::<_, st_http::Error>((parts, body.to_bytes()))
+        };
+
+        // If the request failed, surface that error to the guest so customer logic can handle it.
+        let (response, body) = get_response_and_download_body.await?;
+
+        // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+        // which has a stable BSATN encoding to pass across the WASM boundary.
+        let response = st_http::Response::from(response);
+
+        Ok((response, body))
+    }
 }
+
+/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+///
+/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl TxSlot {
     /// Sets the slot to `tx`, ensuring that there was no tx before.

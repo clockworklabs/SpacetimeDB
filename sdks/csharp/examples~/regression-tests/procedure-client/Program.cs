@@ -160,6 +160,45 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
         waiting--;
     });
+
+    // Make sure the table is empty before we run the insert procedure
+    Debug.Assert(context.Db.MyTable.Count() == 0);
+    Log.Debug("MyTable is initially empty");
+    
+    Log.Debug("Insert with transaction rollback");
+    waiting++;
+    context.Procedures.InsertWithTransactionRollback((ctx, result) =>
+    {
+        if (result.IsSuccess)
+        {
+            Debug.Assert(context.Db.MyTable.Count() == 0);
+            Log.Debug("Insert with transaction rollback succeeded");
+        }
+        else
+        {
+            throw new Exception("Expected InsertWithTransactionRollback to fail, but it succeeded");
+        }
+        waiting--;
+    });
+
+    Log.Debug("Insert with transaction commit");
+    waiting++;
+    context.Procedures.InsertWithTransactionCommit((ctx, result) =>
+    {
+        if (result.IsSuccess)
+        {
+            var expectedRow = new MyTable(new ReturnStruct(42, "magic"));
+            var row = context.Db.MyTable.Iter().FirstOrDefault();
+            Debug.Assert(row != null);
+            Debug.Assert(row.Equals(expectedRow));
+            Log.Debug("Insert with transaction commit succeeded");
+        }
+        else
+        {
+            throw result.Error!;
+        }
+        waiting--;
+    });
 }
 
 System.AppDomain.CurrentDomain.UnhandledException += (sender, args) =>

@@ -36,7 +36,7 @@ jobs:
               --json 'workflow,state,name' |
               jq '.[]
                 | select(.workflow != "Discord notifications")
-                | select(.state != "SUCCESS" and .state != "NEUTRAL")
+                | select(.state != "SUCCESS" and .state != "NEUTRAL" and .state != "SKIPPED")
               ' |
               jq -r '"\(.workflow) / \(.name): \(.state)"'
           )"
