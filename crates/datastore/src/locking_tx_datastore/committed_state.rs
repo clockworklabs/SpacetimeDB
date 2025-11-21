@@ -1008,6 +1008,17 @@ impl CommittedState {
         (table, blob_store, pool)
     }
 
+    /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
+    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
+        (
+            self.tables
+                .iter_mut()
+                .filter(|(table_id, _)| !self.ephemeral_tables.contains(*table_id))
+                .map(|(_, table)| table),
+            &self.blob_store,
+        )
+    }
+
     pub fn report_data_size(&self, database_identity: Identity) {
         use crate::db_metrics::data_size::DATA_SIZE_METRICS;
 
