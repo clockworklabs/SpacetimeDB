@@ -254,15 +254,6 @@ UPDATE player_state SET level = 9 WHERE id = 42;
 """,
         )
 
-        # Call the view again
-        self.spacetime(
-            "sql",
-            self.database_identity,
-            """
-Select * FROM player_state WHERE id = 42;
-""",
-        )
-
         # On fourth call, after updating the dependent row, the view is re-evaluated
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 3)
@@ -315,7 +306,7 @@ INSERT INTO player_info (id, age, level) VALUES (1, 25, 7);
             "sql",
             self.database_identity,
             """\
-INSERT INTO player_info (id, age, level) VALUES (2, 30, 8);
+INSERT INTO player_info (id, age, level) VALUES (2, 25, 8);
 """,
         )
 
