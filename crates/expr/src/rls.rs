@@ -1,6 +1,7 @@
 use std::rc::Rc;
+use std::sync::Arc;
 
-use spacetimedb_lib::identity::AuthCtx;
+use spacetimedb_lib::identity::{AuthCtx, SqlPermission};
 use spacetimedb_primitives::TableId;
 use spacetimedb_sql_parser::ast::BinOp;
 
@@ -211,7 +212,7 @@ fn resolve_views_for_expr(
     suffix: &mut usize,
     auth: &AuthCtx,
 ) -> anyhow::Result<Vec<RelExpr>> {
-    if auth.caller == auth.owner {
+    if auth.bypass_rls() {
         return Ok([view].into());
     }
 
@@ -269,8 +270,17 @@ fn resolve_views_for_expr(
                 ResolveList::new(table_id, resolving.clone()),
                 has_param,
                 suffix,
-                // Use the owner identity to evaluate the RLS query joins
-                &AuthCtx::for_current(auth.owner),
+                // Bypass RLS when evaluating the RLS query (but not original query) joins
+                &AuthCtx::with_permissions(
+                    auth.caller(),
+                    {
+                        let auth = auth.clone();
+                        Arc::new(move |p| match p {
+                            SqlPermission::BypassRLS => true,
+                            _ => auth.has_permission(p),
+                        })
+                    },
+                ),
             )?;
 
             // Run alpha conversion on each view definition
