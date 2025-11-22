@@ -347,6 +347,7 @@ pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
     match err {
         NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
+        NodesError::NotInAnonTransaction => Some(errno::TRANSACTION_NOT_ANONYMOUS),
         NodesError::WouldBlockTransaction(_) => Some(errno::WOULD_BLOCK_TRANSACTION),
         NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
         NodesError::DecodeValue(_) => Some(errno::BSATN_DECODE_ERROR),
