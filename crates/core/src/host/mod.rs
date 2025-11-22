@@ -181,4 +181,5 @@ pub enum AbiCall {
     ProcedureStartMutTransaction,
     ProcedureCommitMutTransaction,
     ProcedureAbortMutTransaction,
+    ProcedureHttpRequest,
 }

@@ -349,6 +349,7 @@ mod tests {
             audience: vec![],
             iat: std::time::SystemTime::now(),
             exp: None,
+            extra: None,
         };
         let token = kp.private.sign(&orig_claims)?;
 
@@ -391,6 +392,7 @@ mod tests {
             audience: vec![],
             iat: std::time::SystemTime::now(),
             exp: None,
+            extra: None,
         };
         let token = kp.private.sign(&orig_claims)?;
 
@@ -444,6 +446,7 @@ mod tests {
             audience: vec![],
             iat: std::time::SystemTime::now(),
             exp: None,
+            extra: None,
         };
         let token = kp.private.sign(&orig_claims)?;
 
@@ -609,6 +612,7 @@ mod tests {
             audience: vec![],
             iat: std::time::SystemTime::now(),
             exp: None,
+            extra: None,
         };
         for kp in [kp1, kp2] {
             log::debug!("Testing with key {:?}", kp.kid);
