@@ -1,0 +1,169 @@
+[gd_scene load_steps=17 format=3 uid="uid://bxuk66njrs835"]
+
+[ext_resource type="Script" uid="uid://caf2ukha6d1l5" path="res://scenes/main.gd" id="1_o5qli"]
+[ext_resource type="Script" uid="uid://jvk6ou7i2d4s" path="res://addons/SpacetimeDB/GodotHelpers/RowReceiver.gd" id="2_0wfyh"]
+[ext_resource type="Script" uid="uid://dqmqs2xovlarq" path="res://spacetime_data/schema/tables/blackholio_circle_table.gd" id="3_tefeu"]
+[ext_resource type="Script" uid="uid://baowi86860b4w" path="res://spacetime_data/schema/tables/blackholio_entity_table.gd" id="4_o6xl0"]
+[ext_resource type="Script" uid="uid://dtnqygsfsqhr7" path="res://spacetime_data/schema/tables/blackholio_food_table.gd" id="5_tipki"]
+[ext_resource type="Script" uid="uid://dfx137l3hqnta" path="res://spacetime_data/schema/tables/blackholio_player_table.gd" id="6_85g3d"]
+[ext_resource type="Texture2D" uid="uid://bic0r5ke12xsa" path="res://assets/textures/StarBackground.png" id="7_o6xl0"]
+[ext_resource type="PackedScene" uid="uid://buff80egtgxf0" path="res://scenes/camera_controller.tscn" id="7_tipki"]
+[ext_resource type="Shader" uid="uid://b1oibng64wcag" path="res://scenes/main.gdshader" id="8_choun"]
+[ext_resource type="Script" uid="uid://cj852krs1vdi0" path="res://scenes/enter_game_button.gd" id="9_85g3d"]
+[ext_resource type="Script" uid="uid://b3polu81puxt7" path="res://scenes/respawn_button.gd" id="11_ya4ey"]
+
+[sub_resource type="Resource" id="Resource_choun"]
+script = ExtResource("3_tefeu")
+entity_id = 0
+player_id = 0
+speed = 0.0
+last_split_time = 0
+metadata/_custom_type_script = "uid://dqmqs2xovlarq"
+
+[sub_resource type="Resource" id="Resource_ya4ey"]
+script = ExtResource("4_o6xl0")
+entity_id = 0
+mass = 0
+metadata/_custom_type_script = "uid://baowi86860b4w"
+
+[sub_resource type="Resource" id="Resource_eb6dy"]
+script = ExtResource("5_tipki")
+entity_id = 0
+metadata/_custom_type_script = "uid://dtnqygsfsqhr7"
+
+[sub_resource type="Resource" id="Resource_trceg"]
+script = ExtResource("6_85g3d")
+identity = PackedByteArray()
+player_id = 0
+name = ""
+metadata/_custom_type_script = "uid://dfx137l3hqnta"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ya4ey"]
+shader = ExtResource("8_choun")
+shader_parameter/border_size = 0.001
+shader_parameter/border_color = Color(1, 1, 1, 1)
+shader_parameter/background_color = Color(0, 0, 0, 1)
+
+[node name="Main" type="Node2D" node_paths=PackedStringArray("circle_row_receiver", "entity_row_receiver", "food_row_receiver", "player_row_receiver")]
+script = ExtResource("1_o5qli")
+circle_row_receiver = NodePath("Receiver [BlackholioCircleTable]")
+entity_row_receiver = NodePath("Receiver [BlackholioEntityTable]")
+food_row_receiver = NodePath("Receiver [BlackholioFoodTable]")
+player_row_receiver = NodePath("Receiver [BlackholioPlayerTable]")
+
+[node name="Receiver [BlackholioCircleTable]" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+table_to_receive = SubResource("Resource_choun")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="Receiver [BlackholioEntityTable]" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+table_to_receive = SubResource("Resource_ya4ey")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="Receiver [BlackholioFoodTable]" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+table_to_receive = SubResource("Resource_eb6dy")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="Receiver [BlackholioPlayerTable]" type="Node" parent="."]
+script = ExtResource("2_0wfyh")
+table_to_receive = SubResource("Resource_trceg")
+metadata/_custom_type_script = "uid://jvk6ou7i2d4s"
+
+[node name="CameraController" parent="." node_paths=PackedStringArray("menu_camera", "menu") instance=ExtResource("7_tipki")]
+offset = Vector2(7.845, 16.265)
+enabled = false
+menu_camera = NodePath("../MenuCamera")
+menu = NodePath("../Menu")
+
+[node name="MenuCamera" type="Camera2D" parent="."]
+anchor_mode = 0
+
+[node name="Background" type="TextureRect" parent="."]
+material = SubResource("ShaderMaterial_ya4ey")
+texture = ExtResource("7_o6xl0")
+expand_mode = 2
+
+[node name="Menu" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 1152.0
+offset_bottom = 648.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Panel" type="Panel" parent="Menu"]
+custom_minimum_size = Vector2(91.11, 65.925)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -36.0275
+offset_right = 100.0
+offset_bottom = 36.0275
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Menu/Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="DisplayName" type="TextEdit" parent="Menu/Panel/VBoxContainer"]
+custom_minimum_size = Vector2(0, 33)
+layout_mode = 2
+placeholder_text = "Display Name"
+scroll_fit_content_height = true
+
+[node name="EnterGameButton" type="Button" parent="Menu/Panel/VBoxContainer" node_paths=PackedStringArray("menu", "camera", "menu_camera", "displayname_panel", "respawn_panel", "display_input")]
+layout_mode = 2
+text = "Join"
+script = ExtResource("9_85g3d")
+menu = NodePath("../../..")
+camera = NodePath("../../../../CameraController")
+menu_camera = NodePath("../../../../MenuCamera")
+displayname_panel = NodePath("../..")
+respawn_panel = NodePath("../../../Panel2")
+display_input = NodePath("../DisplayName")
+
+[node name="Panel2" type="Panel" parent="Menu"]
+visible = false
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -100.0
+offset_top = -17.235
+offset_right = 100.0
+offset_bottom = 17.235
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Menu/Panel2"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="RespawnButton" type="Button" parent="Menu/Panel2/VBoxContainer" node_paths=PackedStringArray("menu", "camera", "menu_camera")]
+layout_mode = 2
+text = "Respawn"
+script = ExtResource("11_ya4ey")
+menu = NodePath("../../..")
+camera = NodePath("../../../../CameraController")
+menu_camera = NodePath("../../../../MenuCamera")
