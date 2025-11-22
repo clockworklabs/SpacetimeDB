@@ -184,4 +184,9 @@
     {
         public ReducerKind Kind => kind;
     }
+    
+    [AttributeUsage(AttributeTargets.Method, Inherited = false)]
+    public sealed class ProcedureAttribute() : Attribute
+    {
+    }
 }
