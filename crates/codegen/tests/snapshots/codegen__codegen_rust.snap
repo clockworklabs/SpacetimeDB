@@ -1805,11 +1805,17 @@ impl __sdk::InModule for RemoteTables {
 /// You must explicitly advance the connection by calling any one of:
 ///
 /// - [`DbConnection::frame_tick`].
-/// - [`DbConnection::run_threaded`].
-/// - [`DbConnection::run_background_task`].
+#[cfg_attr(not(target_arch = "wasm32"), doc = "- [`DbConnection::run_threaded`].")]
+#[cfg_attr(
+    target_arch = "wasm32",
+    doc = "- [`DbConnection::run_background_task`]."
+)]
 /// - [`DbConnection::run_async`].
 /// - [`DbConnection::advance_one_message`].
-/// - [`DbConnection::advance_one_message_blocking`].
+#[cfg_attr(
+    not(target_arch = "wasm32"),
+    doc = "- [`DbConnection::advance_one_message_blocking`]."
+)]
 /// - [`DbConnection::advance_one_message_async`].
 ///
 /// Which of these methods you should call depends on the specific needs of your application,
