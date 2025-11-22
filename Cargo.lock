@@ -5335,7 +5335,7 @@ dependencies = [
  "anyhow",
  "env_logger 0.10.2",
  "serde_json",
- "spacetimedb-lib 1.8.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-sdk",
  "test-counter",
 ]
