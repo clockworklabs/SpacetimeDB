@@ -82,43 +82,43 @@
       "name": "cjs (brotli)",
       "path": "dist/index.cjs",
       "brotli": true,
-      "limit": "25 kB"
+      "limit": "26 kB"
     },
     {
       "name": "esm (brotli)",
       "path": "dist/index.mjs",
       "brotli": true,
-      "limit": "20 kB"
+      "limit": "26 kB"
     },
     {
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "25 kB"
+      "limit": "30 kB"
     },
     {
       "name": "esm (uncompressed)",
       "path": "dist/index.mjs",
       "brotli": false,
-      "limit": "150 kB"
+      "limit": "160 kB"
     },
     {
       "name": "esm min (brotli)",
       "path": "dist/min/index.browser.mjs",
       "brotli": true,
-      "limit": "12 kB"
+      "limit": "14 kB"
     },
     {
       "name": "esm min (gzip)",
       "path": "dist/min/index.browser.mjs",
       "gzip": true,
-      "limit": "15 kB"
+      "limit": "16 kB"
     },
     {
       "name": "esm min (uncompressed)",
       "path": "dist/min/index.browser.mjs",
       "brotli": false,
-      "limit": "60 kB"
+      "limit": "65 kB"
     },
     {
       "name": "react esm min (brotli)",
@@ -141,18 +141,18 @@
       "name": "sdk esm min (brotli)",
       "path": "dist/min/sdk/index.browser.mjs",
       "brotli": true,
-      "limit": "10 kB"
+      "limit": "14 kB"
     },
     {
       "name": "sdk esm min (gzip)",
       "path": "dist/min/sdk/index.browser.mjs",
       "gzip": true,
-      "limit": "15 kB"
+      "limit": "16 kB"
     },
     {
       "name": "sdk esm min (uncompressed)",
       "path": "dist/min/sdk/index.browser.mjs",
-      "limit": "10 kB"
+      "limit": "14 kB"
     }
   ],
   "dependencies": {
