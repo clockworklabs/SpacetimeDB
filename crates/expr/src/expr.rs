@@ -243,8 +243,10 @@ pub enum RelExpr {
     Select(Box<RelExpr>, Expr),
     /// A left deep binary cross product
     LeftDeepJoin(LeftDeepJoin),
-    /// A left deep binary equi-join
-    EqJoin(LeftDeepJoin, FieldProject, FieldProject),
+    /// A left deep binary inner equi-join
+    InnerEqJoin(LeftDeepJoin, FieldProject, FieldProject),
+    /// A left deep binary left outer equi-join
+    LeftOuterEqJoin(LeftDeepJoin, FieldProject, FieldProject),
 }
 
 /// A table reference
@@ -277,7 +279,8 @@ impl RelExpr {
         match self {
             Self::Select(lhs, _)
             | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
-            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+            | Self::InnerEqJoin(LeftDeepJoin { lhs, .. }, ..)
+            | Self::LeftOuterEqJoin(LeftDeepJoin { lhs, .. }, ..) => {
                 lhs.visit(f);
             }
             Self::RelVar(..) => {}
@@ -290,7 +293,8 @@ impl RelExpr {
         match self {
             Self::Select(lhs, _)
             | Self::LeftDeepJoin(LeftDeepJoin { lhs, .. })
-            | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
+            | Self::InnerEqJoin(LeftDeepJoin { lhs, .. }, ..)
+            | Self::LeftOuterEqJoin(LeftDeepJoin { lhs, .. }, ..) => {
                 lhs.visit_mut(f);
             }
             Self::RelVar(..) => {}
@@ -301,7 +305,11 @@ impl RelExpr {
     pub fn nfields(&self) -> usize {
         match self {
             Self::RelVar(..) => 1,
-            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
+            Self::LeftDeepJoin(join)
+            | Self::InnerEqJoin(join, ..)
+            | Self::LeftOuterEqJoin(join, ..) => {
+                join.lhs.nfields() + 1
+            }
             Self::Select(input, _) => input.nfields(),
         }
     }
@@ -310,7 +318,9 @@ impl RelExpr {
     pub fn has_field(&self, field: &str) -> bool {
         match self {
             Self::RelVar(Relvar { alias, .. }) => alias.as_ref() == field,
-            Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
+            Self::LeftDeepJoin(join)
+            | Self::InnerEqJoin(join, ..)
+            | Self::LeftOuterEqJoin(join, ..) => {
                 join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }
             Self::Select(input, _) => input.has_field(field),
@@ -322,10 +332,12 @@ impl RelExpr {
         match self {
             Self::RelVar(relvar) if relvar.alias.as_ref() == alias => Some(&relvar.schema),
             Self::Select(input, _) => input.find_table_schema(alias),
-            Self::EqJoin(LeftDeepJoin { rhs, .. }, ..) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
-            Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => lhs.find_table_schema(alias),
             Self::LeftDeepJoin(LeftDeepJoin { rhs, .. }) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
             Self::LeftDeepJoin(LeftDeepJoin { lhs, .. }) => lhs.find_table_schema(alias),
+            Self::InnerEqJoin(LeftDeepJoin { rhs, .. }, ..) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
+            Self::InnerEqJoin(LeftDeepJoin { lhs, .. }, ..) => lhs.find_table_schema(alias),
+            Self::LeftOuterEqJoin(LeftDeepJoin { rhs, .. }, ..) if rhs.alias.as_ref() == alias => Some(&rhs.schema),
+            Self::LeftOuterEqJoin(LeftDeepJoin { lhs, .. }, ..) => lhs.find_table_schema(alias),
             _ => None,
         }
     }
