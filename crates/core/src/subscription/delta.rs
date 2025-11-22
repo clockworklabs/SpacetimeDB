@@ -1,5 +1,5 @@
 use anyhow::Result;
-use hashbrown::HashMap;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
 use spacetimedb_execution::{Datastore, DeltaStore};
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_subscription::SubscriptionPlan;

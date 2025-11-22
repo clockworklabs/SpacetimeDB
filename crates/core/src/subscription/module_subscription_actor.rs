@@ -1225,7 +1225,6 @@ mod tests {
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use core::fmt;
-    use hashbrown::HashMap;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -1234,6 +1233,7 @@ mod tests {
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_commitlog::{commitlog, repo};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;

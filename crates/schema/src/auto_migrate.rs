@@ -4,7 +4,7 @@ use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
 use formatter::format_plan;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
-    map::HashSet,
+    map::{HashCollectionExt as _, HashSet},
 };
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
