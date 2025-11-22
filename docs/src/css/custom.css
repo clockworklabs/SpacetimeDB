@@ -316,6 +316,10 @@ strong {
     letter-spacing: calc(var(--14px) * 0.08);
     text-transform: uppercase;
     font-weight: 600;
+
+    a:not(.navbar__button) {
+      font-weight: 600;
+    }
   }
 
   [id^="inkeep-shadowradix"] {
