@@ -1375,7 +1375,7 @@ impl __sdk::InModule for RemoteTables {{
 ///
 /// - [`DbConnection::frame_tick`].
 /// - [`DbConnection::run_threaded`].
-/// - [`DbConnection::run_background`].
+/// - [`DbConnection::run_background_task`].
 /// - [`DbConnection::run_async`].
 /// - [`DbConnection::advance_one_message`].
 /// - [`DbConnection::advance_one_message_blocking`].
@@ -1518,8 +1518,8 @@ impl DbConnection {{
 
     /// Spawn a background task which processes WebSocket messages as they are received.
     #[cfg(target_arch = \"wasm32\")]
-    pub fn run_background(&self) {{
-        self.imp.run_background()
+    pub fn run_background_task(&self) {{
+        self.imp.run_background_task()
     }}
 
     /// Run an `async` loop which processes WebSocket messages when polled.
