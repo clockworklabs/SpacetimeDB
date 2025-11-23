@@ -162,3 +162,38 @@ fn cli_can_publish_breaking_change_with_on_conflict_flag() {
     .assert()
     .success();
 }
+
+#[test]
+fn cli_can_publish_no_conflict_does_not_delete_data() {
+    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
+
+    // Workspace root for `cargo run -p ...`
+    let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
+    let dir = workspace_dir.join("modules").join("module-test");
+
+    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
+    cmd.args([
+        "publish",
+        "--server",
+        &spacetime.host_url.to_string(),
+        "no-conflict-test",
+    ])
+    .current_dir(dir.clone())
+    .assert()
+    .success();
+
+    // Can republish without conflict even with --on-conflict=delete-data flag
+    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
+    cmd.args([
+        "publish",
+        "--server",
+        &spacetime.host_url.to_string(),
+        "--delete-data=on-conflict",
+        // NOTE: deleting data requires --yes,
+        // so not providing it here ensures that no data deletion is attempted.
+        "no-conflict-test",
+    ])
+    .current_dir(dir)
+    .assert()
+    .success();
+}

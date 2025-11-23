@@ -1,6 +1,11 @@
-
 use std::{
-    env, io::{BufReader, BufRead}, net::SocketAddr, process::{Child, Command, Stdio}, sync::{Arc, Mutex}, thread::{self, sleep}, time::{Duration, Instant}
+    env,
+    io::{BufRead, BufReader},
+    net::SocketAddr,
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex},
+    thread::{self, sleep},
+    time::{Duration, Instant},
 };
 
 use reqwest::blocking::Client;
@@ -16,18 +21,13 @@ pub struct SpacetimeDbGuard {
 }
 
 impl SpacetimeDbGuard {
-
     /// Start `spacetimedb` in a temporary data directory via:
     /// cargo run -p spacetimedb-cli -- start --data-dir <temp-dir> --listen-addr <addr>
     pub fn spawn_in_temp_data_dir() -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir = temp_dir.path().display().to_string();
 
-        Self::spawn_spacetime_start(&[
-            "start",
-            "--data-dir",
-            &data_dir,
-        ])
+        Self::spawn_spacetime_start(&["start", "--data-dir", &data_dir])
     }
 
     fn spawn_spacetime_start(extra_args: &[&str]) -> Self {
@@ -41,11 +41,7 @@ impl SpacetimeDbGuard {
 
         Self::build_prereqs(workspace_dir);
 
-        let mut cargo_args = vec![
-            "run",
-            "-p", "spacetimedb-cli",
-            "--",
-        ];
+        let mut cargo_args = vec!["run", "-p", "spacetimedb-cli", "--"];
 
         cargo_args.extend(extra_args);
         cargo_args.extend(["--listen-addr", &address]);

@@ -233,9 +233,14 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String, age: u8) {
-    #[cfg(feature = "test-add-column")] 
-    ctx.db.person().insert(Person { id: 0, name, age, edited: false });
-    #[cfg(not(feature = "test-add-column"))] 
+    #[cfg(feature = "test-add-column")]
+    ctx.db.person().insert(Person {
+        id: 0,
+        name,
+        age,
+        edited: false,
+    });
+    #[cfg(not(feature = "test-add-column"))]
     ctx.db.person().insert(Person { id: 0, name, age });
 }
 

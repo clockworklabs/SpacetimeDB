@@ -23,7 +23,12 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
     )
 }
 
-pub(crate) fn build_rust(project_path: &Path, features: Option<&std::ffi::OsString>, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_rust(
+    project_path: &Path,
+    features: Option<&std::ffi::OsString>,
+    lint_dir: Option<&Path>,
+    build_debug: bool,
+) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed
     if !has_wasm32_target() {
         if has_rust_up() {
@@ -85,9 +90,7 @@ pub(crate) fn build_rust(project_path: &Path, features: Option<&std::ffi::OsStri
     // Convert Vec<String> to Vec<&str>
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-    let reader = cargo_cmd("build", build_debug, &args_str)
-        .dir(project_path)
-        .reader()?;
+    let reader = cargo_cmd("build", build_debug, &args_str).dir(project_path).reader()?;
 
     let mut artifact = None;
     for message in Message::parse_stream(io::BufReader::new(reader)) {
