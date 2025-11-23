@@ -30,6 +30,12 @@ impl SpacetimeDbGuard {
         Self::spawn_spacetime_start(&["start", "--data-dir", &data_dir])
     }
 
+    /// Start `spacetimedb` in-memory via:
+    /// cargo run -p spacetimedb-cli -- start --in-memory --listen-addr 127.0.0.1:<port>
+    pub fn spawn_in_memory() -> Self {
+        Self::spawn_spacetime_start(&["start", "--in-memory"])
+    }
+
     fn spawn_spacetime_start(extra_args: &[&str]) -> Self {
         let port = find_free_port();
         let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();

@@ -79,4 +79,8 @@ impl ExternalStorage for DiskStorage {
     async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>> {
         self.get(&program_hash).await.map_err(Into::into)
     }
+
+    async fn put(&self, program_bytes: &[u8]) -> anyhow::Result<Hash> {
+        self.put(program_bytes).await.map_err(Into::into)
+    }
 }

@@ -14,7 +14,7 @@ pub mod update;
 
 /// Whether SpacetimeDB is run in memory, or persists objects and
 /// a message log to disk.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Storage {
     /// The object store is in memory, and no message log is kept.
     Memory,
