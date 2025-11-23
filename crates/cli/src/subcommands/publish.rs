@@ -67,6 +67,7 @@ pub fn cli() -> clap::Command {
         .arg(
             Arg::new("break_clients")
                 .long("break-clients")
+                .alias("yes-break-clients")
                 .action(SetTrue)
                 .help("Allow breaking changes when publishing to an existing database identity. This will force publish even if it will break existing clients, but will NOT force publish if it would cause deletion of any data in the database. See --yes and --delete-data for details.")
         )
@@ -361,9 +362,22 @@ async fn apply_pre_publish_if_needed(
                 builder = builder.query(&[("clear", true)]);
             }
             PrePublishResult::AutoMigrate(auto) => {
+                if clear_database == ClearMode::Always {
+                    println!("Auto-migration, does NOT require clearing the database, but proceeding with database clear due to --delete-data=always.");
+                    println!(
+                        "This will DESTROY the current {} module, and ALL corresponding data.",
+                        name_or_identity
+                    );
+                    if !y_or_n(
+                        force,
+                        format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
+                    )? {
+                        anyhow::bail!("Aborting");
+                    }
+                    builder = builder.query(&[("clear", true)]);
+                    return Ok(builder);
+                }
                 println!("{}", auto.migrate_plan);
-                // We only arrive here if you have not specified ClearMode::Always AND there was no
-                // conflict that required manual migration.
                 if auto.break_clients
                     && !y_or_n(
                         force_break_clients || force,

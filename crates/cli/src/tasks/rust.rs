@@ -23,7 +23,7 @@ fn cargo_cmd(subcommand: &str, build_debug: bool, args: &[&str]) -> duct::Expres
     )
 }
 
-pub(crate) fn build_rust(project_path: &Path, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
+pub(crate) fn build_rust(project_path: &Path, features: Option<&std::ffi::OsString>, lint_dir: Option<&Path>, build_debug: bool) -> anyhow::Result<PathBuf> {
     // Make sure that we have the wasm target installed
     if !has_wasm32_target() {
         if has_rust_up() {
@@ -75,7 +75,17 @@ pub(crate) fn build_rust(project_path: &Path, lint_dir: Option<&Path>, build_deb
         );
     }
 
-    let reader = cargo_cmd("build", build_debug, &["--message-format=json-render-diagnostics"])
+    let mut args = if let Some(features) = features {
+        vec![format!("--features={}", features.to_string_lossy())]
+    } else {
+        vec![]
+    };
+    args.push("--message-format=json-render-diagnostics".to_string());
+
+    // Convert Vec<String> to Vec<&str>
+    let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    let reader = cargo_cmd("build", build_debug, &args_str)
         .dir(project_path)
         .reader()?;
 

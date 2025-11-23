@@ -388,7 +388,7 @@ async fn generate_build_and_publish(
 
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
-        tasks::build(spacetimedb_dir, Some(Path::new("src")), false).context("Failed to build project")?;
+        tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
     println!("{}", "Generating module bindings...".cyan());
