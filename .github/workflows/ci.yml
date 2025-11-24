@@ -512,7 +512,7 @@ jobs:
           cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md
           pnpm format
           git status
-          if git diff --exit-code HEAD; then
+          if git diff --exit-code HEAD -- docs/docs/cli-reference.md; then
             echo "No docs changes detected"
           else
             echo "It looks like the CLI docs have changed:"
