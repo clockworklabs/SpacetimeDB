@@ -75,6 +75,12 @@ enum CiCmd {
         )]
         parallel: bool,
         #[arg(
+            long = "python",
+            value_name = "PYTHON_PATH",
+            long_help = "Python interpreter to use for smoketests"
+        )]
+        python: Option<String>,
+        #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
         )]
@@ -316,6 +322,7 @@ fn main() -> Result<()> {
             start_server,
             docker,
             parallel,
+            python,
             args,
         }) => {
             let start_server = match (start_server, docker.as_ref()) {
@@ -339,12 +346,20 @@ fn main() -> Result<()> {
                 args.push(compose_file.to_string());
             }
 
-            // TODO: does this work on windows?
-            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-                .run()
-                .map(|s| s.status.success())
-                .unwrap_or(false);
-            let python = if py3_available { "python3" } else { "python" };
+            let python = if let Some(p) = python {
+                p
+            } else {
+                // TODO: does this work on windows?
+                let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+                    .run()
+                    .map(|s| s.status.success())
+                    .unwrap_or(false);
+                if py3_available {
+                    "python3".to_string()
+                } else {
+                    "python".to_string()
+                }
+            };
 
             if parallel {
                 println!("Listing smoketests for parallel execution..");
@@ -400,7 +415,7 @@ fn main() -> Result<()> {
                     batch_args.extend(args.iter().cloned());
 
                     // TODO: capture output and print it only in contiguous blocks
-                    let result = run_smoketests_batch(start_server.clone(), &batch_args, python);
+                    let result = run_smoketests_batch(start_server.clone(), &batch_args, &python);
 
                     if result.is_err() {
                         any_failed_batch = true;
@@ -411,7 +426,7 @@ fn main() -> Result<()> {
                     anyhow::bail!("One or more smoketest batches failed");
                 }
             } else {
-                run_smoketests_batch(start_server, &args, python)?;
+                run_smoketests_batch(start_server, &args, &python)?;
             }
         }
 
