@@ -2,13 +2,10 @@ name: Discord notifications
 
 on:
   pull_request:
-    types: [closed]
 
 jobs:
   discordNotification:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'master'
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
