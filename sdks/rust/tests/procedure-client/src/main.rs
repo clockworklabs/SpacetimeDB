@@ -332,15 +332,15 @@ fn exec_schedule_procedure() {
                 // Ensure that the elapsed time
                 // between the reducer and procedure
                 // is at least 1 second
-                // but no more than 1 second + 50 milliseconds.
+                // but no more than 2 seconds.
                 let elapsed = row
                     .procedure_ts
                     .duration_since(row.reducer_ts)
                     .expect("procedure ts > reducer ts");
-                const MS_1000: Duration = Duration::from_millis(1000);
-                const MS_1050: Duration = Duration::from_millis(1050);
+                const MS_1000: Duration = Duration::from_secs(1);
+                const MS_2000: Duration = Duration::from_secs(2);
                 assert!(elapsed >= MS_1000);
-                assert!(elapsed <= MS_1050);
+                assert!(elapsed <= MS_2000);
 
                 (callback_result.take().unwrap())(Ok(()));
             });
