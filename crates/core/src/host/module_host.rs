@@ -1427,13 +1427,14 @@ impl ModuleHost {
     pub async fn call_reducer_with_params(
         &self,
         reducer_name: &str,
+        tx: Option<MutTxId>,
         params: CallReducerParams,
     ) -> Result<ReducerCallResult, NoSuchModule> {
         self.call(
             reducer_name,
-            params,
-            |p, inst| inst.call_reducer(None, p),
-            |p, inst| inst.call_reducer(None, p),
+            (tx, params),
+            |(tx, p), inst| inst.call_reducer(tx, p),
+            |(tx, p), inst| inst.call_reducer(tx, p),
         )
         .await
     }
@@ -1465,7 +1466,7 @@ impl ModuleHost {
         };
 
         Ok(self
-            .call_reducer_with_params(&reducer_def.name, call_reducer_params)
+            .call_reducer_with_params(&reducer_def.name, None, call_reducer_params)
             .await?)
     }
 
@@ -1583,15 +1584,9 @@ impl ModuleHost {
             procedure_id,
             args,
         };
-        self.call_async_with_instance(&procedure_def.name, async move |inst| match inst {
-            Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
-            Instance::Js(inst) => {
-                let (r, s) = inst.call_procedure(params).await;
-                (r, Instance::Js(s))
-            }
-        })
-        .await
-        .map_err(Into::into)
+        self.call_procedure_with_params(&procedure_def.name, params)
+            .await
+            .map_err(Into::into)
     }
 
     // This is not reused in `call_procedure_inner`
@@ -1601,9 +1596,12 @@ impl ModuleHost {
         name: &str,
         params: CallProcedureParams,
     ) -> Result<CallProcedureReturn, NoSuchModule> {
-        self.call_async_with_instance(name, async move |mut inst| {
-            let res = inst.call_procedure(params).await;
-            (res, inst)
+        self.call_async_with_instance(name, async move |inst| match inst {
+            Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+            Instance::Js(inst) => {
+                let (r, s) = inst.call_procedure(params).await;
+                (r, Instance::Js(s))
+            }
         })
         .await
     }
