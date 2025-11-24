@@ -142,7 +142,7 @@ public static partial class Module
             ctx.Db.PlayerLevel.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
     }
-    
+
     [SpacetimeDB.Procedure]
     public static uint ReturnPrimitive(ProcedureContext ctx, uint lhs, uint rhs)
     {
