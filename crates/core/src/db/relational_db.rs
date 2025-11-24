@@ -1930,14 +1930,19 @@ pub mod tests_utils {
     use crate::db::snapshot::SnapshotWorker;
 
     use super::*;
+    use crate::sql::ast::{SchemaViewer, TableSchemaView};
     use core::ops::Deref;
     use durability::EmptyHistory;
+    use expect_test::Expect;
     use spacetimedb_datastore::locking_tx_datastore::MutTxId;
     use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
+    use spacetimedb_lib::identity::AuthCtx;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
     use spacetimedb_paths::server::SnapshotDirPath;
     use spacetimedb_paths::FromPathUnchecked;
+    use spacetimedb_physical_plan::plan::tests_utils::{check_query, check_sub};
+    use spacetimedb_physical_plan::printer::ExplainOptions;
     use tempfile::TempDir;
 
     pub enum TestDBDir {
@@ -2412,6 +2417,26 @@ pub mod tests_utils {
         let snapshot = SnapshotRepository::open(dir.clone(), identity, replica).unwrap();
 
         (dir, snapshot)
+    }
+
+    /// [`Expect`] the query `Explain` output.
+    pub fn expect_query_with_auth<T: TableSchemaView + StateView>(tx: &T, sql: &str, auth: AuthCtx, expect: Expect) {
+        let schema = SchemaViewer::new(tx, &auth);
+
+        check_query(&schema, ExplainOptions::default(), &auth, sql, expect)
+    }
+
+    /// [`Expect`] the query `Explain` output, using `AuthCtx::for_testing`.
+    pub fn expect_query<T: TableSchemaView + StateView>(tx: &T, sql: &str, expect: Expect) {
+        expect_query_with_auth(tx, sql, AuthCtx::for_testing(), expect)
+    }
+
+    /// [`Expect`] the query `Sub` output, using `AuthCtx::for_testing`.
+    pub fn expect_sub<T: TableSchemaView + StateView>(tx: &T, sql: &str, expect: Expect) {
+        let auth = AuthCtx::for_testing();
+        let schema = SchemaViewer::new(tx, &auth);
+
+        check_sub(&schema, ExplainOptions::default(), &auth, sql, expect)
     }
 }
 
