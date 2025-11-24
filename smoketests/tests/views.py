@@ -109,6 +109,16 @@ pub struct PlayerState {
     level: u64,
 }
 
+
+#[derive(Clone)]
+#[spacetimedb::table(name = player_info, index(name=age_level_index, btree(columns = [age, level])))]
+pub struct PlayerInfo {
+    #[primary_key]
+    id: u64,
+    age: u64,
+    level: u64,
+}
+
 #[spacetimedb::reducer]
 pub fn add_player_level(ctx: &ReducerContext, id: u64, level: u64) {
     ctx.db.player_level().insert(PlayerState { id, level });
@@ -140,6 +150,14 @@ pub fn player_vec(ctx: &ViewContext) -> Vec<PlayerState> {
     let first = ctx.db.player_state().id().find(42).unwrap();
     let second = PlayerState { id: 7, level: 3 };
     vec![first, second]
+}
+
+#[spacetimedb::view(name = player_info_multi_index, public)]
+pub fn player_info_view(ctx: &ViewContext) -> Option<PlayerInfo> {
+
+    log::info!("player_info called");
+    ctx.db.player_info().age_level_index().filter((25u64, 7u64)).next()
+    
 }
 """
 
@@ -190,21 +208,31 @@ INSERT INTO player_state (id, level) VALUES (42, 7);
     # since it relies on log capturing starting from an empty log.
     def test_a_view_materialization(self):
         """This test asserts whether views are materialized correctly"""
-        self.insert_initial_data()
+
         player_called_log = "player view called"
-
-        self.assertNotIn(player_called_log, self.logs(100))
-
-        self.call_player_view()
-        #On first call, the view is evaluated
-        self.assertIn(player_called_log, self.logs(100))
-    
-        self.call_player_view()
-        #On second call, the view is cached
+        
+        # call view, with no data
+        self.assertSql("SELECT * FROM player", """\
+ id | level
+----+-------
+""")
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 1)
 
-        # insert to cause cache invalidation
+        self.insert_initial_data()
+
+        # Should invoke view as data is inserted
+        self.call_player_view()
+
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+    
+        self.call_player_view()
+        # the view is cached
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+
+        # inserting new row should not trigger view invocation due to readsets
         self.spacetime(
             "sql",
             self.database_identity,
@@ -214,9 +242,92 @@ INSERT INTO player_state (id, level) VALUES (22, 8);
         )
 
         self.call_player_view()
-        #On third call, after invalidation, the view is evaluated again
         logs = self.logs(100)
         self.assertEqual(logs.count(player_called_log), 2)
+
+        # Updating the row that the view depends on should trigger re-evaluation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+UPDATE player_state SET level = 9 WHERE id = 42;
+""",
+        )
+
+        # On fourth call, after updating the dependent row, the view is re-evaluated
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 3)
+
+
+        # Updating it back for other tests to work
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+UPDATE player_state SET level = 7 WHERE id = 42;
+""",
+        )
+
+    def test_view_multi_index_materialization(self):
+        """This test asserts whether views using multi-column indexes are materialized correctly"""
+
+        player_called_log = "player_info called"
+        
+        # call view, with no data
+        self.assertSql("SELECT * FROM player_info_multi_index", """\
+ id | age | level
+----+-----+-------
+""")
+
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 1)
+
+        # Insert data
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """\
+INSERT INTO player_info (id, age, level) VALUES (1, 25, 7);
+""",
+        )
+
+        # Should invoke view as data is inserted
+        self.assertSql("SELECT * FROM player_info_multi_index", """\
+ id | age | level
+----+-----+-------
+ 1  | 25  | 7
+""")
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+
+
+        # Inserting a row that does not match should not trigger re-evaluation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """\
+INSERT INTO player_info (id, age, level) VALUES (2, 25, 8);
+""",
+        )
+
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 2)
+
+        # Updating the row that the view depends on should trigger re-evaluation
+        self.spacetime(
+            "sql",
+            self.database_identity,
+            """
+UPDATE player_info SET age = 26 WHERE id = 1;
+""",
+        )
+        logs = self.logs(100)
+        self.assertEqual(logs.count(player_called_log), 3)
+        self.assertSql("SELECT * FROM player_info_multi_index", """\
+ id | age | level
+----+-----+-------
+""")
+
 
     def test_query_anonymous_view_reducer(self):
         """Tests that anonymous views are updated for reducers"""
@@ -416,3 +527,72 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
  id | level
 ----+-------
 """)
+
+class SubscribeViews(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{Identity, ReducerContext, Table, ViewContext};
+
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    identity: Identity,
+    #[unique]
+    name: String,
+}
+
+#[spacetimedb::view(name = my_player, public)]
+pub fn my_player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().identity().find(ctx.sender)
+}
+
+#[spacetimedb::reducer]
+pub fn insert_player(ctx: &ReducerContext, name: String) {
+    ctx.db.player_state().insert(PlayerState { name, identity: ctx.sender });
+}
+"""
+
+    def _test_subscribing_with_different_identities(self):
+        """Tests different clients subscribing to a client-specific view"""
+
+        # Insert an identity for Alice
+        self.call("insert_player", "Alice")
+
+        # Generate and insert a new identity for Bob
+        self.reset_config()
+        self.new_identity()
+        self.call("insert_player", "Bob")
+
+        # Subscribe to `my_player` as Bob
+        sub = self.subscribe("select * from my_player", n=0)
+        events = sub()
+
+        # Project out the identity field.
+        # TODO: Eventually we should be able to do this directly in the sql.
+        # But for now we implement it in python.
+        projection = [
+            {
+                'my_player': {
+                    'deletes': [
+                        {'name': row['name']}
+                        for row in event['my_player']['deletes']
+                    ],
+                    'inserts': [
+                        {'name': row['name']}
+                        for row in event['my_player']['inserts']
+                    ],
+                }
+            }
+            for event in events
+        ]
+
+        self.assertEqual(
+            [
+                {
+                    'my_player': {
+                        'deletes': [],
+                        'inserts': [{'name': 'Bob'}],
+                    }
+                },
+            ],
+            projection,
+        )

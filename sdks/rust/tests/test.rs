@@ -301,4 +301,24 @@ mod procedure {
     fn observe_panic() {
         make_test("procedure-observe-panic").run()
     }
+
+    #[test]
+    fn with_tx_commit() {
+        make_test("insert-with-tx-commit").run()
+    }
+
+    #[test]
+    fn with_tx_rollback() {
+        make_test("insert-with-tx-rollback").run()
+    }
+
+    #[test]
+    fn http_ok() {
+        make_test("procedure-http-ok").run()
+    }
+
+    #[test]
+    fn http_err() {
+        make_test("procedure-http-err").run()
+    }
 }
