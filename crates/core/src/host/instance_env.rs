@@ -5,10 +5,12 @@ use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
 use crate::util::asyncify;
+use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
@@ -616,7 +618,20 @@ impl InstanceEnv {
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
         }
 
-        // TODO(procedure-metrics): record size in bytes of request.
+        // Record in metrics that we're starting an HTTP request.
+        DB_METRICS
+            .procedure_num_http_requests
+            .with_label_values(self.database_identity())
+            .inc();
+        DB_METRICS
+            .procedure_http_request_size_bytes
+            .with_label_values(self.database_identity())
+            .inc_by((request.size_in_bytes() + body.len()) as _);
+        // Make a guard for the `in_progress` metric that will be decremented on exit.
+        let _in_progress_metric = DB_METRICS
+            .procedure_num_in_progress_http_requests
+            .with_label_values(self.database_identity())
+            .inc_scope();
 
         fn http_error<E: ToString>(err: E) -> NodesError {
             NodesError::HttpError(err.to_string())
@@ -643,20 +658,43 @@ impl InstanceEnv {
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
-        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let response = reqwest::Client::new().execute(reqwest).await.map_err(http_error)?;
+        // Async block here as a sort of hacky `try` block.
+        let (response, body) = async {
+            // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+            let response = reqwest::Client::new().execute(reqwest).await?;
 
-        // Download the response body, which in all likelihood will be a stream,
-        // as reqwest seems to prefer that.
-        let (response, body) = http::Response::from(response).into_parts();
-        let body = http_body_util::BodyExt::collect(body)
-            .await
-            .map_err(http_error)?
-            .to_bytes();
+            // Download the response body, which in all likelihood will be a stream,
+            // as reqwest seems to prefer that.
+            let (response, body) = http::Response::from(response).into_parts();
+            let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
+            Ok((response, body))
+        }
+        .await
+        .inspect_err(|err: &reqwest::Error| {
+            // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
+            if err.is_timeout() {
+                DB_METRICS
+                    .procedure_num_timeout_http_requests
+                    .with_label_values(self.database_identity())
+                    .inc();
+            } else {
+                DB_METRICS
+                    .procedure_num_failed_http_requests
+                    .with_label_values(self.database_identity())
+                    .inc();
+            }
+        })
+        .map_err(http_error)?;
 
         // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
         // which has a stable BSATN encoding to pass across the WASM boundary.
         let response = convert_http_response(response);
+
+        // Record the response size in bytes.
+        DB_METRICS
+            .procedure_http_response_size_bytes
+            .with_label_values(self.database_identity())
+            .inc_by((response.size_in_bytes() + body.len()) as _);
 
         Ok((response, body))
     }
