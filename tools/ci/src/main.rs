@@ -406,17 +406,29 @@ fn main() -> Result<()> {
                     })
                     .collect();
 
-                let mut any_failed_batch = false;
+                // Run each batch in parallel threads.
+                let mut handles = Vec::new();
                 for batch in batches {
-                    println!("Running smoketests batch {batch}..");
-                    // TODO: this doesn't work properly if the user passed multiple batches as input.
+                    let start_server_clone = start_server.clone();
+                    let python_clone = python.clone();
                     let mut batch_args: Vec<String> = Vec::new();
+                    // TODO: this doesn't work properly if the user passed multiple batches as input.
                     batch_args.push(batch.clone());
                     batch_args.extend(args.iter().cloned());
 
-                    // TODO: capture output and print it only in contiguous blocks
-                    let result = run_smoketests_batch(start_server.clone(), &batch_args, &python);
+                    handles.push(std::thread::spawn(move || {
+                        println!("Running smoketests batch {batch}..");
+                        // TODO: capture output and print it only in contiguous blocks
+                        run_smoketests_batch(start_server_clone, &batch_args, &python_clone)
+                    }));
+                }
 
+                let mut any_failed_batch = false;
+                for handle in handles {
+                    // If the thread panicked or the batch failed, treat it as a failure.
+                    let result = handle
+                        .join()
+                        .unwrap_or_else(|_| Err(anyhow::anyhow!("smoketest batch thread panicked",)));
                     if result.is_err() {
                         any_failed_batch = true;
                     }
