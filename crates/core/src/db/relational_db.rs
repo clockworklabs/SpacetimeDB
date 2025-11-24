@@ -1073,6 +1073,61 @@ impl RelationalDB {
     }
 }
 
+/// Duration after which expired unused views are cleaned up.
+/// Value is chosen arbitrarily; can be tuned later if needed.
+const VIEWS_EXPIRATION: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Duration to budget for each view cleanup job,
+/// so that it doesn't hold transaction lock for to long.
+//TODO: Make this value configurable
+const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_millis(10);
+
+/// Spawn a background task that periodically cleans up expired views
+pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
+    fn run_view_cleanup(db: &RelationalDB) {
+        match db.with_auto_commit(Workload::Internal, |tx| {
+            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+                .map_err(DBError::from)
+        }) {
+            Ok((cleared, total_expired)) => {
+                if cleared != total_expired {
+                    // TODO: metrics
+                    log::info!(
+                        "[{}] DATABASE: cleared {} expired views ({} remaining)",
+                        db.database_identity(),
+                        cleared,
+                        total_expired - cleared
+                    );
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "[{}] DATABASE: failed to clear expired views: {}",
+                    db.database_identity(),
+                    e
+                );
+            }
+        }
+    }
+
+    tokio::spawn(async move {
+        loop {
+            // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
+            // in milliseconds, which may be too long for async tasks.
+            let db = db.clone();
+            let db_identity = db.database_identity();
+            tokio::task::spawn_blocking(move || run_view_cleanup(&db))
+                .await
+                .inspect_err(|e| {
+                    log::error!("[{}] DATABASE: failed to run view cleanup task: {}", db_identity, e);
+                })
+                .ok();
+
+            tokio::time::sleep(VIEWS_EXPIRATION).await;
+        }
+    })
+    .abort_handle()
+}
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
         Ok(self.inner.create_table_mut_tx(tx, schema)?)
@@ -2368,6 +2423,7 @@ mod tests {
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use std::rc::Rc;
+    use std::time::Instant;
 
     use super::tests_utils::begin_mut_tx;
     use super::*;
@@ -2608,6 +2664,88 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_views() -> ResultTest<()> {
+        let stdb = TestDB::durable()?;
+
+        let (view_id, table_id, module_def, view_def) = setup_view(&stdb)?;
+        let row_type = view_def.product_type_ref;
+        let typespace = module_def.typespace();
+
+        let sender1 = Identity::ONE;
+
+        // Sender 1 insert
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender1, 42)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender1)[0],
+            product![42u8],
+            "View row not inserted correctly"
+        );
+
+        // Sender 2 insert
+        let sender2 = Identity::ZERO;
+        let before_sender2 = Instant::now();
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 84)?;
+
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![84u8],
+            "Sender 2 view row not inserted correctly"
+        );
+
+        // Restart database (view rows should NOT persist)
+        let stdb = stdb.reopen()?;
+
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 rows should NOT persist after reopen"
+        );
+        assert!(
+            project_views(&stdb, table_id, sender2).is_empty(),
+            "Sender 2 rows should NOT persist after reopen"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let st = tx.lookup_st_view_subs(view_id)?;
+        assert!(st.is_empty(), "st_view_subs should also be cleared after restart");
+        stdb.commit_tx(tx)?;
+
+        // Reinsert after restart
+        insert_view_row(&stdb, view_id, table_id, typespace, row_type, sender2, 91)?;
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Post-restart inserted rows must appear"
+        );
+
+        // Clean expired rows
+        let mut tx = begin_mut_tx(&stdb);
+        tx.clear_expired_views(
+            Instant::now().saturating_duration_since(before_sender2),
+            VIEW_CLEANUP_BUDGET,
+        )?;
+        stdb.commit_tx(tx)?;
+
+        // Only sender2 exists after reinsertion
+        assert!(
+            project_views(&stdb, table_id, sender1).is_empty(),
+            "Sender 1 should remain empty"
+        );
+        assert_eq!(
+            project_views(&stdb, table_id, sender2)[0],
+            product![91u8],
+            "Sender 2 row should remain"
+        );
+
+        // And st_view_subs must reflect only sender2
+        let tx = begin_mut_tx(&stdb);
+        let st_after = tx.lookup_st_view_subs(view_id)?;
+        assert_eq!(st_after.len(), 1);
+        assert_eq!(st_after[0].identity.0, sender2);
+
+        Ok(())
+    }
     #[test]
     fn test_table_name() -> ResultTest<()> {
         let stdb = TestDB::durable()?;

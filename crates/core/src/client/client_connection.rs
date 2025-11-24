@@ -335,6 +335,7 @@ impl ClientConnectionSender {
             audience: vec![],
             iat: SystemTime::now(),
             exp: None,
+            extra: None,
         };
         let sender = Self {
             id,
