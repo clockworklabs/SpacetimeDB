@@ -395,7 +395,7 @@ metrics_group!(
         pub subscription_rows_examined: HistogramVec,
 
         #[name = spacetime_subscription_query_execution_time_micros]
-        #[help = "Time taken to execute subscription queries (in microseconds)"]
+        #[help = "Time taken to execute and fetch records for an initial subscription query (in microseconds)"]
         #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
         #[buckets(100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000)]
         pub subscription_query_execution_time_micros: HistogramVec,
