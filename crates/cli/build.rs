@@ -1,8 +1,8 @@
+use git2::Repository;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use toml::Value;
 
 fn main() {
@@ -40,10 +40,22 @@ fn is_nix_build() -> bool {
 
 fn find_git_hash() -> String {
     nix_injected_commit_hash().unwrap_or_else(|| {
-        // When we're *not* building in Nix, we can assume that git metadata is still present in the filesystem,
-        // and that the git command-line tool is installed.
-        let output = Command::new("git").args(["rev-parse", "HEAD"]).output().unwrap();
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
+        // When we're *not* building in Nix, we can assume that git metadata is still present in the filesystem.
+        let repo_root = get_repo_root();
+        let repo = Repository::open(&repo_root)
+            .unwrap_or_else(|err| panic!("Failed to open git repository at {}: {err:#?}", repo_root.display()));
+
+        let head = repo.head().unwrap_or_else(|err| {
+            panic!("Failed to get HEAD reference from git repository: {err:#?}");
+        });
+
+        let commit = head.peel_to_commit().unwrap_or_else(|err| {
+            panic!("Failed to peel HEAD to commit: {err:#?}");
+        });
+
+        let oid = commit.id();
+
+        oid.to_string()
     })
 }
 
@@ -357,22 +369,25 @@ fn get_git_tracked_files_via_cli(path: &Path, manifest_dir: &Path) -> (Vec<PathB
 
     let resolved_path = make_repo_root_relative(&get_full_path_within_manifest_dir(path, manifest_dir), &repo_root);
 
-    let output = Command::new("git")
-        .args(["ls-files", resolved_path.to_str().unwrap()])
-        .current_dir(repo_root)
-        .output()
-        .expect("Failed to execute git ls-files");
+    let repo = Repository::open(&repo_root)
+        .unwrap_or_else(|err| panic!("Failed to open git repository at {}: {err:#?}", repo_root.display()));
 
-    if !output.status.success() {
-        return (Vec::new(), resolved_path);
+    let index = repo.index().unwrap_or_else(|err| {
+        panic!("Failed to read git index: {err:#?}");
+    });
+
+    let mut files = Vec::new();
+    let prefix = resolved_path.to_str().unwrap();
+
+    for entry in index.iter() {
+        let path = std::str::from_utf8(&entry.path).unwrap_or_else(|err| {
+            panic!("Invalid UTF-8 in git index path: {err:#?}");
+        });
+
+        if path.starts_with(prefix) {
+            files.push(PathBuf::from(path));
+        }
     }
-
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let files: Vec<PathBuf> = stdout
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(PathBuf::from)
-        .collect();
 
     (files, resolved_path)
 }
