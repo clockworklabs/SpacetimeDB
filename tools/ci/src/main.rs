@@ -215,6 +215,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
         StartServer::Yes { random_port } => {
             // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
             // before the server is up.
+            // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
             bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
 
             // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
