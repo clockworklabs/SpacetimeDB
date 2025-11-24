@@ -246,6 +246,11 @@ metrics_group!(
         #[labels(database_identity: Identity, module_hash: Hash, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
 
+        #[name = spacetime_worker_sender_errors_total]
+        #[help = "The number of sender errors returned from reducers."]
+        #[labels(database_identity: Identity, module_hash: Hash, reducer_symbol: str)]
+        pub sender_errors: IntCounterVec,
+
         #[name = spacetime_worker_wasm_memory_bytes]
         #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
         #[labels(database_identity: Identity)]
