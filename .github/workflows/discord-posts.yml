@@ -60,11 +60,11 @@ jobs:
             message+=$'\n'
             # This uses special Discord syntax for pinging a particular role.
             # Note the '&' - this is the difference between pinging a *role* and pinging a *person*.
-            message+=" (cc <@&${MENTION_ON_FAILURE}>"
             if [[ -n "${author_discord_id}" ]]; then
-              message+=" <@${author_discord_id}>"
+              message+="<@${author_discord_id}> please investigate these failures."
             fi
-            message+=")"
+            message+=$'\n'
+            message+="(cc <@&${MENTION_ON_FAILURE}> - Releases may be affected)"
           fi
           # Use `jq` to construct the json data blob in the format required by the webhook.
           data="$(jq --null-input --arg msg "$message" '.content=$msg')"
