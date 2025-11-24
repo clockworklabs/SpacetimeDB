@@ -59,6 +59,7 @@ import { toCamelCase, toPascalCase } from '../lib/util.ts';
 export {
   DbConnectionBuilder,
   SubscriptionBuilderImpl,
+  SubscriptionHandleImpl,
   type TableCache,
   type Event,
 };

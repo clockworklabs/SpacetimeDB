@@ -182,8 +182,7 @@ impl Lang for TypeScript {
 
         print_file_header(out, true, false);
 
-        out.newline();
-
+        writeln!(out);
         writeln!(out, "// Import and reexport all reducer arg types");
         for reducer in iter_reducers(module) {
             let reducer_name = &reducer.name;
@@ -213,9 +212,8 @@ impl Lang for TypeScript {
             writeln!(out, "export {{ {type_name} }};");
         }
 
-        out.newline();
-
         writeln!(out);
+        writeln!(out, "/** The schema information for all tables in this module. This is defined the same was as the tables would have been defined in the server. */");
         writeln!(out, "const tablesSchema = __schema(");
         out.indent(1);
         for table in iter_tables(module) {
@@ -247,7 +245,7 @@ impl Lang for TypeScript {
         writeln!(out, ");");
 
         writeln!(out);
-
+        writeln!(out, "/** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */");
         writeln!(out, "const reducersSchema = __reducers(");
         out.indent(1);
         for reducer in iter_reducers(module) {
@@ -263,7 +261,7 @@ impl Lang for TypeScript {
         writeln!(out, ");");
 
         writeln!(out);
-
+        writeln!(out, "/** The remote SpacetimeDB module schema, both runtime and type information. */");
         writeln!(out, "const REMOTE_MODULE = {{");
         out.indent(1);
         writeln!(out, "versionInfo: {{");
@@ -285,58 +283,73 @@ impl Lang for TypeScript {
         writeln!(out);
         writeln!(
             out,
+            "/** The tables available in this remote SpacetimeDB module. */"
+        );
+        writeln!(
+            out,
             "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
+        );
+        writeln!(out);
+        writeln!(
+            out,
+            "/** The reducers available in this remote SpacetimeDB module. */"
         );
         writeln!(
             out,
             "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
         );
-        writeln!(out);
-
-        out.newline();
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
+        writeln!(out);
+        writeln!(out, "/** The context type returned in callbacks for all possible events. */");
         writeln!(
             out,
             "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
         );
+
+        writeln!(out, "/** The context type returned in callbacks for reducer events. */");
         writeln!(
             out,
             "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
         );
+
+        writeln!(out, "/** The context type returned in callbacks for subscription events. */");
         writeln!(
             out,
             "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
         );
+
+        writeln!(out, "/** The context type returned in callbacks for error events. */");
         writeln!(
             out,
             "export type ErrorContext = __ErrorContextInterface<typeof REMOTE_MODULE>;"
         );
 
-        writeln!(out);
-
+        writeln!(out, "/** The subscription handle type to manage active subscriptions created from a {{@link SubscriptionBuilder}}. */");
         writeln!(
             out,
-            "export class SubscriptionBuilder extends __SubscriptionBuilderImpl<"
+            "export type SubscriptionHandle = __SubscriptionHandleImpl<typeof REMOTE_MODULE>;"
         );
-        out.indent(1);
-        writeln!(out, "typeof REMOTE_MODULE");
-        out.dedent(1);
-        writeln!(out, "> {{}}");
 
         writeln!(out);
-        writeln!(out, "export class DbConnectionBuilder extends __DbConnectionBuilder<");
-        out.indent(1);
-        writeln!(out, "DbConnection");
-        out.dedent(1);
-        writeln!(out, "> {{}}");
+        writeln!(out, "/** Builder class to configure a new subscription to the remote SpacetimeDB instance. */");
+        writeln!(
+            out,
+            "export class SubscriptionBuilder extends __SubscriptionBuilderImpl<typeof REMOTE_MODULE> {{}}"
+        );
 
         writeln!(out);
+        writeln!(out, "/** Builder class to configure a new database connection to the remote SpacetimeDB instance. */");
+        writeln!(out, "export class DbConnectionBuilder extends __DbConnectionBuilder<typeof REMOTE_MODULE> {{}}");
+
+        writeln!(out);
+        writeln!(out, "/** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */");
         writeln!(
             out,
             "export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {{"
         );
         out.indent(1);
+        writeln!(out, "/** Creates a new {{@link DbConnectionBuilder}} to configure and connect to the remote SpacetimeDB instance. */");
         writeln!(out, "static builder = (): DbConnectionBuilder => {{");
         out.indent(1);
         writeln!(
@@ -345,6 +358,9 @@ impl Lang for TypeScript {
         );
         out.dedent(1);
         writeln!(out, "}};");
+
+        writeln!(out);
+        writeln!(out, "/** Creates a new {{@link SubscriptionBuilder}} to configure a subscription to the remote SpacetimeDB instance. */");
         writeln!(out, "subscriptionBuilder = (): SubscriptionBuilder => {{");
         out.indent(1);
         writeln!(out, "return new SubscriptionBuilder(this);");
@@ -373,6 +389,7 @@ fn print_index_imports(out: &mut Indenter) {
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",
+        "type SubscriptionHandleImpl as __SubscriptionHandleImpl",
         "type ErrorContextInterface as __ErrorContextInterface",
         "type RemoteModule as __RemoteModule",
         "SubscriptionBuilderImpl as __SubscriptionBuilderImpl",
@@ -540,6 +557,7 @@ fn write_table_opts<'a>(
             .flat_map(|cs| cs.iter()) // Iterator over the ColIds inside the set
             .map(|col_id| {
                 let (field_name, _field_type) = &product_def.elements[col_id.idx()];
+                let field_name = field_name.deref().to_case(Case::Camel);
                 format!("'{}'", field_name)
             })
             .collect();

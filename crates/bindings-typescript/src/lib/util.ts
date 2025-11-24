@@ -1,6 +1,6 @@
 import BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
-import type { CamelCase } from './type_util';
+import type { CamelCase, SnakeCase } from './type_util';
 
 /**
  * Converts a string to PascalCase (UpperCamelCase).
@@ -114,6 +114,17 @@ export function toCamelCase<T extends string>(str: T): CamelCase<T> {
   return str
     .replace(/[-_]+/g, '_') // collapse runs to a single separator (no backtracking issue)
     .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
+}
+
+/** Type safe conversion from a string like "some_Identifier-name" to "some_identifier_name".
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toSnakeCase<T extends string>(str: T): SnakeCase<T> {
+  return str
+    .replace(/([A-Z])/g, '_$1') // insert underscores before capitals
+    .replace(/[-\s]+/g, '_') // replace spaces and dashes with underscores
+    .toLowerCase() as SnakeCase<T>;
 }
 
 import type { AlgebraicType } from './algebraic_type';
