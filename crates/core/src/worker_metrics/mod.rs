@@ -387,6 +387,23 @@ metrics_group!(
         #[help = "The number of snapshot objects hardlinked in a single compression pass"]
         #[labels(db: Identity)]
         pub snapshot_compression_objects_hardlinked: IntGaugeVec,
+
+        #[name = spacetime_subscription_rows_examined]
+        #[help = "Distribution of rows examined per subscription query"]
+        #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
+        #[buckets(100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000)]
+        pub subscription_rows_examined: HistogramVec,
+
+        #[name = spacetime_subscription_query_execution_time_micros]
+        #[help = "Time taken to execute and fetch records for an initial subscription query (in microseconds)"]
+        #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
+        #[buckets(100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000)]
+        pub subscription_query_execution_time_micros: HistogramVec,
+
+        #[name = spacetime_subscription_queries_total]
+        #[help = "Total number of subscription queries by scan strategy"]
+        #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
+        pub subscription_queries_total: IntCounterVec,
     }
 );
 
