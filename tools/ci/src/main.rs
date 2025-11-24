@@ -2,7 +2,8 @@ use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use log::warn;
-use std::collections::HashMap;
+use serde_json;
+use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
@@ -67,6 +68,12 @@ enum CiCmd {
             long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
         )]
         docker: Option<String>,
+        #[arg(
+            long = "parallel",
+            default_value_t = false,
+            long_help = "Run smoketests in parallel batches grouped by test suite"
+        )]
+        parallel: bool,
         #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
@@ -173,7 +180,7 @@ fn find_free_port() -> Result<u16> {
     Ok(port)
 }
 
-fn run_smoketests_batch(server_mode: StartServer, args: &[String]) -> Result<()> {
+fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
     let server_state = match server_mode {
         StartServer::No => ServerState::None,
         StartServer::Docker {
@@ -243,13 +250,6 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String]) -> Result<()>
         }
     };
 
-    // TODO: does this work on windows?
-    let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-        .run()
-        .map(|s| s.status.success())
-        .unwrap_or(false);
-    let python = if py3_available { "python3" } else { "python" };
-
     println!("Running smoketests..");
     let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
 
@@ -315,6 +315,7 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests {
             start_server,
             docker,
+            parallel,
             args,
         }) => {
             let start_server = match (start_server, docker.as_ref()) {
@@ -323,11 +324,11 @@ fn main() -> Result<()> {
                         warn!("--docker implies --start-server=true");
                     }
                     StartServer::Docker {
-                        random_port: false,
+                        random_port: parallel,
                         compose_file: compose_file.into(),
                     }
                 }
-                (true, None) => StartServer::Yes { random_port: false },
+                (true, None) => StartServer::Yes { random_port: parallel },
                 (false, None) => StartServer::No,
             };
             let mut args = args.to_vec();
@@ -337,7 +338,81 @@ fn main() -> Result<()> {
                 args.push("--compose-file".to_string());
                 args.push(compose_file.to_string());
             }
-            run_smoketests_batch(start_server, &args)?;
+
+            // TODO: does this work on windows?
+            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+                .run()
+                .map(|s| s.status.success())
+                .unwrap_or(false);
+            let python = if py3_available { "python3" } else { "python" };
+
+            if parallel {
+                println!("Listing smoketests for parallel execution..");
+
+                let mut list_args: Vec<String> = args.to_vec();
+                list_args.push("--list=json".to_string());
+                let list_cmdline = format!("{python} -m smoketests {}", list_args.join(" "));
+
+                // TODO: do actually check the return code here. and make --list=json not return non-zero if there are errors.
+                let list_output = cmd!("bash", "-lc", list_cmdline)
+                    .stderr_to_stdout()
+                    .unchecked()
+                    .read()?;
+
+                let parsed: serde_json::Value = serde_json::from_str(&list_output)?;
+                let tests = parsed.get("tests").and_then(|v| v.as_array()).cloned().unwrap();
+                let errors = parsed
+                    .get("errors")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                if !errors.is_empty() {
+                    println!("Errors while constructing smoketests:");
+                    for err in &errors {
+                        let test_id = err.get("test_id").and_then(|v| v.as_str()).unwrap();
+                        let msg = err.get("error").and_then(|v| v.as_str()).unwrap();
+                        println!("{test_id}");
+                        println!("{msg}");
+                    }
+                    // If there were errors constructing tests, treat this as a failure
+                    // and do not run any batches.
+                    return Err(anyhow::anyhow!(
+                        "Errors encountered while constructing smoketests; aborting parallel run"
+                    ));
+                }
+
+                let batches: HashSet<String> = tests
+                    .into_iter()
+                    .map(|t| {
+                        let name = t.as_str().unwrap();
+                        let parts = name.split('.').collect::<Vec<&str>>();
+                        parts[2].to_string()
+                    })
+                    .collect();
+
+                let mut any_failed_batch = false;
+                for batch in batches {
+                    println!("Running smoketests batch {batch}..");
+                    // TODO: this doesn't work properly if the user passed multiple batches as input.
+                    let mut batch_args: Vec<String> = Vec::new();
+                    batch_args.push(batch.clone());
+                    batch_args.extend(args.iter().cloned());
+
+                    // TODO: capture output and print it only in contiguous blocks
+                    let result = run_smoketests_batch(start_server.clone(), &batch_args, python);
+
+                    if result.is_err() {
+                        any_failed_batch = true;
+                    }
+                }
+
+                if any_failed_batch {
+                    anyhow::bail!("One or more smoketest batches failed");
+                }
+            } else {
+                run_smoketests_batch(start_server, &args, python)?;
+            }
         }
 
         Some(CiCmd::UpdateFlow {
