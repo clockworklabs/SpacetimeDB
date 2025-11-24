@@ -64,13 +64,13 @@ To start, we'll need to add `SpacetimeDB` to our using statements. This will giv
 
 To the top of `spacetimedb/Lib.cs`, add some imports we'll be using:
 
-```csharp
+```csharp server
 using SpacetimeDB;
 ```
 
 We also need to create our static module class which all of the module code will live in. In `spacetimedb/Lib.cs`, add:
 
-```csharp
+```csharp server
 public static partial class Module
 {
 }
@@ -99,7 +99,7 @@ For each `Message`, we'll store the `Identity` of the user who sent it, the `Tim
 
 In `spacetimedb/Lib.cs`, add the definition of the table `Message` to the `Module` class:
 
-```csharp
+```csharp server
 [Table(Name = "message", Public = true)]
 public partial class Message
 {
@@ -119,7 +119,7 @@ It's also possible to call `SetName` via the SpacetimeDB CLI's `spacetime call` 
 
 In `spacetimedb/Lib.cs`, add to the `Module` class:
 
-```csharp
+```csharp server
 [Reducer]
 public static void SetName(ReducerContext ctx, string name)
 {
@@ -161,7 +161,7 @@ We define a reducer `SendMessage`, which clients will call to send messages. It 
 
 In `spacetimedb/Lib.cs`, add to the `Module` class:
 
-```csharp
+```csharp server
 [Reducer]
 public static void SendMessage(ReducerContext ctx, string text)
 {
@@ -207,7 +207,7 @@ We'll use `reducerContext.Db.User.Identity.Find` to look up a `User` row for `ct
 
 In `spacetimedb/Lib.cs`, add the definition of the connect reducer to the `Module` class:
 
-```csharp
+```csharp server
 [Reducer(ReducerKind.ClientConnected)]
 public static void ClientConnected(ReducerContext ctx)
 {
@@ -240,7 +240,7 @@ Similarly, whenever a client disconnects, the database will execute the `OnDisco
 
 Add the following code after the `OnConnect` handler:
 
-```csharp
+```csharp server
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void ClientDisconnected(ReducerContext ctx)
 {

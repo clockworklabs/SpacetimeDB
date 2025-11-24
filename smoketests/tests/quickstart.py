@@ -19,12 +19,18 @@ def _append_to_file(path: Path, content: str):
         f.write(content)
 
 
-def _parse_quickstart(doc_path: Path, language: str, module_name: str) -> str:
+def _parse_quickstart(doc_path: Path, language: str, module_name: str, server: bool) -> str:
     """Extract code blocks from `quickstart.md` docs.
     This will replicate the steps in the quickstart guide, so if it fails the quickstart guide is broken.
     """
     content = Path(doc_path).read_text()
-    codeblock_lang = "ts" if language == "typescript" else language
+
+    # append " server" to the codeblock language if we're extracting server code
+    if server:
+        codeblock_lang = "ts server" if language == "typescript" else f"{language} server"
+    else:
+        codeblock_lang = "ts" if language == "typescript" else language
+
     blocks = re.findall(rf"```{codeblock_lang}\n(.*?)\n```", content, re.DOTALL)
 
     end = ""
@@ -148,7 +154,7 @@ class BaseQuickstart(Smoketest):
         )
         self.project_path = server_path / "spacetimedb"
         shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
-        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name))
+        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name, server=True))
         self.server_postprocess(self.project_path)
         self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
 
@@ -177,7 +183,7 @@ class BaseQuickstart(Smoketest):
             "--project-path", self.project_path, capture_stderr=True
         )
         # Replay the quickstart guide steps
-        main = _parse_quickstart(self.client_doc, client_lang, self._module_name)
+        main = _parse_quickstart(self.client_doc, client_lang, self._module_name, server=False)
         for src, dst in self.replacements.items():
             main = main.replace(src, dst)
         main += "\n" + self.extra_code
@@ -356,7 +362,7 @@ Main();
 class TypeScript(Rust):
     lang = "typescript"
     client_lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/06-Server Module Languages/05-typescript-quickstart.md"
+    server_doc = STDB_DIR / "docs/docs/02-quickstarts/01-typescript.md"
     server_file = "src/index.ts"
 
     def server_postprocess(self, server_path: Path):

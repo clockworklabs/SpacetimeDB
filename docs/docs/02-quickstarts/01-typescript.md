@@ -44,7 +44,7 @@ Inside the `spacetimedb/` directory will be a `src/index.ts` entrypoint (require
 
 Open `spacetimedb/src/index.ts`. Replace its contents with the following imports to start building a bare-bones real-time chat server:
 
-```ts
+```ts server
 import { schema, t, table, SenderError } from 'spacetimedb/server';
 ```
 
@@ -63,7 +63,7 @@ For each `User`, we’ll store their `identity` (the caller’s unique identifie
 
 Add to `spacetimedb/src/index.ts`:
 
-```ts
+```ts server
 const User = table(
   { name: 'user', public: true },
   {
@@ -92,7 +92,7 @@ We’ll allow users to set a display name, since raw identities aren’t user-fr
 
 Add:
 
-```ts
+```ts server
 function validateName(name: string) {
   if (!name) {
     throw new SenderError('Names must not be empty');
@@ -117,7 +117,7 @@ Define a reducer `send_message` to insert a new `Message` with the caller’s id
 
 Add:
 
-```ts
+```ts server
 function validateMessage(text: string) {
   if (!text) {
     throw new SenderError('Messages must not be empty');
@@ -146,7 +146,7 @@ SpacetimeDB can invoke lifecycle reducers when clients connect/disconnect. We’
 
 Add:
 
-```ts
+```ts server
 // Called once when the module bundle is installed / updated.
 // We'll keep it empty for this quickstart.
 spacetimedb.init(_ctx => {});
