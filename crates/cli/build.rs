@@ -34,10 +34,6 @@ fn nix_injected_commit_hash() -> Option<String> {
     }
 }
 
-fn is_nix_build() -> bool {
-    nix_injected_commit_hash().is_some()
-}
-
 fn find_git_hash() -> String {
     nix_injected_commit_hash().unwrap_or_else(|| {
         // When we're *not* building in Nix, we can assume that git metadata is still present in the filesystem,
