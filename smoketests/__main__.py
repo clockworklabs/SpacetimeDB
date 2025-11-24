@@ -82,7 +82,7 @@ def main():
                         help='Only run tests which match the given substring')
     parser.add_argument("-x", dest="exclude", nargs="*", default=[])
     parser.add_argument("--no-build-cli", action="store_true", help="don't cargo build the cli")
-    parser.add_argument("--list", action="store_true", help="list the tests that would be run, but don't run them")
+    parser.add_argument("--list", nargs="?", const="text", choices=("text", "json"), default=None, help="list the tests that would be run (optionally as 'text' or 'json'), but don't run them")
     parser.add_argument("--remote-server", action="store", help="Run against a remote server")
     parser.add_argument("--spacetime-login", action="store_true", help="Use `spacetime login` for these tests (and disable tests that don't work with that)")
     parser.add_argument("--local-only", action="store_true", help="Only run tests that require a local server")
@@ -134,22 +134,39 @@ def main():
                 filtered.addTest(t)
         tests = filtered
 
-    if args.list:
+    if args.list is not None:
         failed_cls = getattr(unittest.loader, "_FailedTest", None)
         any_failed = False
+        test_names = []
+        failed_tests = []
         for test in _iter_all_tests(tests):
             name = test.id()
             if isinstance(test, failed_cls):
                 any_failed = True
-                print('')
-                print("Failed to construct %s:" % test.id())
                 exc = getattr(test, "_exception", None)
-                if exc is not None:
-                    tb = ''.join(traceback.format_exception(exc))
-                    print(tb.rstrip())
-                print('')
+                tb = ''.join(traceback.format_exception(exc)) if exc is not None else None
+                failed_tests.append({
+                    "test_id": name,
+                    "error": tb.rstrip() if tb is not None else None,
+                })
+                if args.list == "text":
+                    print('')
+                    print("Failed to construct %s:" % name)
+                    if tb is not None:
+                        print(tb.rstrip())
+                    print('')
             else:
-                print(f"{name}")
+                test_names.append(name)
+                if args.list == "text":
+                    print(f"{name}")
+
+        if args.list == "json":
+            output = {
+                "tests": test_names,
+                "errors": failed_tests,
+            }
+            print(json.dumps(output))
+
         exit(1 if any_failed else 0)
 
     if not args.no_build_cli:
