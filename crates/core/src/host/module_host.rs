@@ -401,13 +401,6 @@ impl Instance {
             Instance::Js(inst) => inst.trapped(),
         }
     }
-
-    async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        match self {
-            Instance::Wasm(inst) => inst.call_procedure(params).await,
-            Instance::Js(inst) => inst.call_procedure(params).await,
-        }
-    }
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -1604,18 +1597,20 @@ impl ModuleHost {
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         let args = args.into_tuple(procedure_seed).map_err(InvalidProcedureArguments)?;
 
-        self.call_async_with_instance(&procedure_def.name, async move |mut inst| {
-            let res = inst
-                .call_procedure(CallProcedureParams {
-                    timestamp: Timestamp::now(),
-                    caller_identity,
-                    caller_connection_id,
-                    timer,
-                    procedure_id,
-                    args,
-                })
-                .await;
-            (res, inst)
+        let params = CallProcedureParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            timer,
+            procedure_id,
+            args,
+        };
+        self.call_async_with_instance(&procedure_def.name, async move |inst| match inst {
+            Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+            Instance::Js(inst) => {
+                let (r, s) = inst.call_procedure(params).await;
+                (r, Instance::Js(s))
+            }
         })
         .await
         .map_err(Into::into)
