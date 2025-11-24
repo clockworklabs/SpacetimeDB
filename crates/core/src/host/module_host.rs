@@ -1684,12 +1684,18 @@ impl ModuleHost {
         for ViewCallInfo {
             view_id,
             table_id,
-            view_name,
+            fn_ptr,
             sender,
         } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
         {
+            let view_def = self
+                .info
+                .module_def
+                .get_view_by_id(fn_ptr, sender.is_none())
+                .ok_or(ViewCallError::NoSuchView)?;
+
             let result = self
-                .call_view(out.tx, &view_name, view_id, table_id, Nullary, caller, sender)
+                .call_view(out.tx, &view_def.name, view_id, table_id, Nullary, caller, sender)
                 .await?;
 
             // Increment execution stats

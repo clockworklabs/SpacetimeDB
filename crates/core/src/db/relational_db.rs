@@ -1084,39 +1084,50 @@ const VIEW_CLEANUP_BUDGET: std::time::Duration = std::time::Duration::from_milli
 
 /// Spawn a background task that periodically cleans up expired views
 pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandle {
-    tokio::spawn(async move {
-        let db = &db;
-        loop {
-            match db.with_auto_commit(Workload::Internal, |tx| {
-                tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
-                    .map_err(DBError::from)
-            }) {
-                Ok((cleared, total_expired)) => {
-                    if cleared != total_expired {
-                        //TODO: Report it as metric
-                        log::info!(
-                            "[{}] DATABASE: cleared {} expired views ({} remaining)",
-                            db.database_identity(),
-                            cleared,
-                            total_expired - cleared
-                        );
-                    }
-                }
-                Err(e) => {
-                    log::error!(
-                        "[{}] DATABASE: failed to clear expired views: {}",
+    fn run_view_cleanup(db: &RelationalDB) {
+        match db.with_auto_commit(Workload::Internal, |tx| {
+            tx.clear_expired_views(VIEWS_EXPIRATION, VIEW_CLEANUP_BUDGET)
+                .map_err(DBError::from)
+        }) {
+            Ok((cleared, total_expired)) => {
+                if cleared != total_expired {
+                    // TODO: metrics
+                    log::info!(
+                        "[{}] DATABASE: cleared {} expired views ({} remaining)",
                         db.database_identity(),
-                        e
+                        cleared,
+                        total_expired - cleared
                     );
                 }
             }
+            Err(e) => {
+                log::error!(
+                    "[{}] DATABASE: failed to clear expired views: {}",
+                    db.database_identity(),
+                    e
+                );
+            }
+        }
+    }
+
+    tokio::spawn(async move {
+        loop {
+            // Offload actual cleanup to blocking thread pool, as `VIEW_CLEANUP_BUDGET` is defined
+            // in milliseconds, which may be too long for async tasks.
+            let db = db.clone();
+            let db_identity = db.database_identity();
+            tokio::task::spawn_blocking(move || run_view_cleanup(&db))
+                .await
+                .inspect_err(|e| {
+                    log::error!("[{}] DATABASE: failed to run view cleanup task: {}", db_identity, e);
+                })
+                .ok();
 
             tokio::time::sleep(VIEWS_EXPIRATION).await;
         }
     })
     .abort_handle()
 }
-
 impl RelationalDB {
     pub fn create_table(&self, tx: &mut MutTx, schema: TableSchema) -> Result<TableId, DBError> {
         Ok(self.inner.create_table_mut_tx(tx, schema)?)

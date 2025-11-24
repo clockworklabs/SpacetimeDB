@@ -1030,94 +1030,14 @@ namespace SpacetimeDB
     }
 }
 
-sealed class ViewDefIndexNoMutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
-{
-    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefIndexNoMutation",
-            Index: 1,
-            IsPublic: true,
-            IsAnonymous: true,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewDefIndexNoMutation((SpacetimeDB.AnonymousViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefIndexNoMutation': " + e);
-            throw;
-        }
-    }
-}
-
-sealed class ViewDefNoAnonIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
-{
-    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefNoAnonIdentity",
-            Index: 2,
-            IsPublic: true,
-            IsAnonymous: true,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewDefNoAnonIdentity((SpacetimeDB.AnonymousViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoAnonIdentity': " + e);
-            throw;
-        }
-    }
-}
-
 sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    private static readonly SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
-
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
             Name: "ViewDefNoContext",
-            Index: 1,
+            Index: 0,
             IsPublic: true,
             IsAnonymous: false,
             Params: [],
@@ -1134,6 +1054,7 @@ sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
         try
         {
             var returnValue = Module.ViewDefNoContext((SpacetimeDB.ViewContext)ctx);
+            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             returnRW.Write(writer, returnValue);
@@ -1147,55 +1068,14 @@ sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
     }
 }
 
-sealed class ViewDefNoIterViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
-{
-    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefNoIter",
-            Index: 3,
-            IsPublic: true,
-            IsAnonymous: true,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewDefNoIter((SpacetimeDB.AnonymousViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoIter': " + e);
-            throw;
-        }
-    }
-}
-
 sealed class ViewDefNoPublicViewDispatcher : global::SpacetimeDB.Internal.IView
 {
-    private static readonly SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
-
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
             Name: "ViewDefNoPublic",
-            Index: 2,
+            Index: 1,
             IsPublic: false,
             IsAnonymous: false,
             Params: [],
@@ -1212,6 +1092,7 @@ sealed class ViewDefNoPublicViewDispatcher : global::SpacetimeDB.Internal.IView
         try
         {
             var returnValue = Module.ViewDefNoPublic((SpacetimeDB.ViewContext)ctx);
+            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
             returnRW.Write(writer, returnValue);
@@ -1225,20 +1106,299 @@ sealed class ViewDefNoPublicViewDispatcher : global::SpacetimeDB.Internal.IView
     }
 }
 
+sealed class ViewDefWrongContextViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefWrongContext",
+            Index: 2,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
+            SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefWrongContext': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewDefWrongReturnViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefWrongReturn",
+            Index: 3,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new Player.BSATN().GetAlgebraicType(registrar)
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefWrongReturn((SpacetimeDB.ViewContext)ctx);
+            Player.BSATN returnRW = new();
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            returnRW.Write(writer, returnValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefWrongReturn': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewNoDeleteViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewNoDelete",
+            Index: 4,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewNoDelete((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewNoDelete': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewNoInsertViewDispatcher : global::SpacetimeDB.Internal.IView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewNoInsert",
+            Index: 5,
+            IsPublic: true,
+            IsAnonymous: false,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewNoInsert((SpacetimeDB.ViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewNoInsert': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewDefIndexNoMutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefIndexNoMutation",
+            Index: 0,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefIndexNoMutation((SpacetimeDB.AnonymousViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefIndexNoMutation': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewDefNoAnonIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefNoAnonIdentity",
+            Index: 1,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefNoAnonIdentity((SpacetimeDB.AnonymousViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoAnonIdentity': " + e);
+            throw;
+        }
+    }
+}
+
+sealed class ViewDefNoIterViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+{
+    public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
+        SpacetimeDB.BSATN.ITypeRegistrar registrar
+    ) =>
+        new global::SpacetimeDB.Internal.RawViewDefV9(
+            Name: "ViewDefNoIter",
+            Index: 2,
+            IsPublic: true,
+            IsAnonymous: true,
+            Params: [],
+            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
+                registrar
+            )
+        );
+
+    public byte[] Invoke(
+        System.IO.BinaryReader reader,
+        global::SpacetimeDB.Internal.IAnonymousViewContext ctx
+    )
+    {
+        try
+        {
+            var returnValue = Module.ViewDefNoIter((SpacetimeDB.AnonymousViewContext)ctx);
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                Player,
+                Player.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+            using var output = new System.IO.MemoryStream();
+            using var writer = new System.IO.BinaryWriter(output);
+            listSerializer.Write(writer, listValue);
+            return output.ToArray();
+        }
+        catch (System.Exception e)
+        {
+            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoIter': " + e);
+            throw;
+        }
+    }
+}
+
 sealed class ViewDefReturnsNotASpacetimeTypeViewDispatcher
     : global::SpacetimeDB.Internal.IAnonymousView
 {
-    private static readonly SpacetimeDB.BSATN.ValueOption<
-        NotSpacetimeType,
-        NotSpacetimeType.BSATN
-    > returnRW = new();
-
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
             Name: "ViewDefReturnsNotASpacetimeType",
-            Index: 4,
+            Index: 3,
             IsPublic: true,
             IsAnonymous: true,
             Params: [],
@@ -1258,168 +1418,19 @@ sealed class ViewDefReturnsNotASpacetimeTypeViewDispatcher
             var returnValue = Module.ViewDefReturnsNotASpacetimeType(
                 (SpacetimeDB.AnonymousViewContext)ctx
             );
+            var listSerializer = SpacetimeDB.BSATN.ValueOption<
+                NotSpacetimeType,
+                NotSpacetimeType.BSATN
+            >.GetListSerializer();
+            var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
             using var output = new System.IO.MemoryStream();
             using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
+            listSerializer.Write(writer, listValue);
             return output.ToArray();
         }
         catch (System.Exception e)
         {
             global::SpacetimeDB.Log.Error("Error in view 'ViewDefReturnsNotASpacetimeType': " + e);
-            throw;
-        }
-    }
-}
-
-sealed class ViewDefWrongContextViewDispatcher : global::SpacetimeDB.Internal.IView
-{
-    private static readonly SpacetimeDB.BSATN.List<Player, Player.BSATN> returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefWrongContext",
-            Index: 3,
-            IsPublic: true,
-            IsAnonymous: false,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.List<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewDefWrongContext((SpacetimeDB.ViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefWrongContext': " + e);
-            throw;
-        }
-    }
-}
-
-sealed class ViewDefWrongReturnViewDispatcher : global::SpacetimeDB.Internal.IView
-{
-    private static readonly Player.BSATN returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefWrongReturn",
-            Index: 4,
-            IsPublic: true,
-            IsAnonymous: false,
-            Params: [],
-            ReturnType: new Player.BSATN().GetAlgebraicType(registrar)
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewDefWrongReturn((SpacetimeDB.ViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefWrongReturn': " + e);
-            throw;
-        }
-    }
-}
-
-sealed class ViewNoDeleteViewDispatcher : global::SpacetimeDB.Internal.IView
-{
-    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewNoDelete",
-            Index: 5,
-            IsPublic: true,
-            IsAnonymous: false,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewNoDelete((SpacetimeDB.ViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewNoDelete': " + e);
-            throw;
-        }
-    }
-}
-
-sealed class ViewNoInsertViewDispatcher : global::SpacetimeDB.Internal.IView
-{
-    private static readonly SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN> returnRW = new();
-
-    public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
-        SpacetimeDB.BSATN.ITypeRegistrar registrar
-    ) =>
-        new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewNoInsert",
-            Index: 6,
-            IsPublic: true,
-            IsAnonymous: false,
-            Params: [],
-            ReturnType: new SpacetimeDB.BSATN.ValueOption<Player, Player.BSATN>().GetAlgebraicType(
-                registrar
-            )
-        );
-
-    public byte[] Invoke(
-        System.IO.BinaryReader reader,
-        global::SpacetimeDB.Internal.IViewContext ctx
-    )
-    {
-        try
-        {
-            var returnValue = Module.ViewNoInsert((SpacetimeDB.ViewContext)ctx);
-            using var output = new System.IO.MemoryStream();
-            using var writer = new System.IO.BinaryWriter(output);
-            returnRW.Write(writer, returnValue);
-            return output.ToArray();
-        }
-        catch (System.Exception e)
-        {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewNoInsert': " + e);
             throw;
         }
     }
@@ -1812,6 +1823,9 @@ static class ModuleRegistration
         }
     }
 
+    public static List<T> ToListOrEmpty<T>(T? value)
+        where T : struct => value is null ? new List<T>() : new List<T> { value.Value };
+
 #if EXPERIMENTAL_WASM_AOT
     // In AOT mode we're building a library.
     // Main method won't be called automatically, so we need to export it as a preinit function.
@@ -1849,16 +1863,21 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.RegisterReducer<TestDuplicateReducerName>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerReturnType>();
         SpacetimeDB.Internal.Module.RegisterReducer<TestReducerWithoutContext>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefIndexNoMutationViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoAnonIdentityViewDispatcher>();
+
+        // IMPORTANT: The order in which we register views matters.
+        // It must correspond to the order in which we call `GenerateDispatcherClass`.
+        // See the comment on `GenerateDispatcherClass` for more explanation.
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoContextViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoIterViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefNoPublicViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefReturnsNotASpacetimeTypeViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongContextViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongReturnViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewNoDeleteViewDispatcher>();
         SpacetimeDB.Internal.Module.RegisterView<ViewNoInsertViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefIndexNoMutationViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoAnonIdentityViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoIterViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefReturnsNotASpacetimeTypeViewDispatcher>();
+
         SpacetimeDB.Internal.Module.RegisterTable<
             global::Player,
             SpacetimeDB.Internal.TableHandles.Player
@@ -2147,6 +2166,33 @@ static class ModuleRegistration
             args,
             error
         );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
+    public static SpacetimeDB.Internal.Errno __call_view__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    ) =>
+        SpacetimeDB.Internal.Module.__call_view__(
+            id,
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            args,
+            sink
+        );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
+    public static SpacetimeDB.Internal.Errno __call_view_anon__(
+        uint id,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink sink
+    ) => SpacetimeDB.Internal.Module.__call_view_anon__(id, args, sink);
 #endif
 }
 

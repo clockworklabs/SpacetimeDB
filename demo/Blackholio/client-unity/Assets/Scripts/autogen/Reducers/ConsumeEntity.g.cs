@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void ConsumeEntityHandler(ReducerEventContext ctx, ConsumeEntityTimer request);
+        public delegate void ConsumeEntityHandler(ReducerEventContext ctx, SpacetimeDB.Types.ConsumeEntityTimer request);
         public event ConsumeEntityHandler? OnConsumeEntity;
 
-        public void ConsumeEntity(ConsumeEntityTimer request)
+        public void ConsumeEntity(SpacetimeDB.Types.ConsumeEntityTimer request)
         {
             conn.InternalCallReducer(new Reducer.ConsumeEntity(request), this.SetCallReducerFlags.ConsumeEntityFlags);
         }
