@@ -618,8 +618,8 @@ pub struct CallReducerParams {
 }
 
 impl CallReducerParams {
-    /// Returns a set of parameters for a call that came from within
-    /// and without a client/caller/request_id.
+    /// Returns a set of parameters for an internal call
+    /// without a client/caller/request_id.
     pub fn from_system(
         timestamp: Timestamp,
         caller_identity: Identity,
@@ -665,8 +665,8 @@ pub struct CallProcedureParams {
 }
 
 impl CallProcedureParams {
-    /// Returns a set of parameters for a call that came from within
-    /// and without a client/caller/request_id.
+    /// Returns a set of parameters for an internal call
+    /// without a client/caller/request_id.
     pub fn from_system(
         timestamp: Timestamp,
         caller_identity: Identity,
