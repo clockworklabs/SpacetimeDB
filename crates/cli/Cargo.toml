@@ -83,7 +83,6 @@ xmltree.workspace = true
 quick-xml.workspace = true
 names.workspace = true
 notify.workspace = true
-serde_yaml = "0.9.34"
 
 [dev-dependencies]
 pretty_assertions.workspace = true
