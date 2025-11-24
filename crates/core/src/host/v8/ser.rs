@@ -112,7 +112,7 @@ impl<'this, 'scope, 'isolate> ser::Serializer for Serializer<'this, 'scope, 'iso
     }
 
     fn serialize_bytes(self, bytes: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Ok(super::make_uint8array(self.scope, bytes.to_vec()).into())
+        Ok(super::util::make_uint8array(self.scope, bytes.to_vec()).into())
     }
 
     fn serialize_array(self, len: usize) -> Result<Self::SerializeArray, Self::Error> {

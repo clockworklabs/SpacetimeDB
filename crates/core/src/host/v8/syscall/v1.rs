@@ -9,9 +9,10 @@ use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
 use crate::host::v8::syscall::hooks::HookFunctions;
+use crate::host::v8::util::make_uint8array;
 use crate::host::v8::{
-    call_free_fun, env_on_isolate, exception_already_thrown, make_uint8array, BufferTooSmall, JsInstanceEnv,
-    JsStackTrace, TerminationError, Throwable,
+    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, JsInstanceEnv, JsStackTrace,
+    TerminationError, Throwable,
 };
 use crate::host::wasm_common::instrumentation::span;
 use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp};
@@ -124,7 +125,11 @@ pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         scope,
         "spacetime:sys@1.2",
         (with_nothing, (), register_hooks),
-        (with_sys_result, AbiCall::ProcedureHttpRequest, procedure_http_request)
+        (
+            with_sys_result_value,
+            AbiCall::ProcedureHttpRequest,
+            procedure_http_request
+        )
     )
 }
 
@@ -214,7 +219,7 @@ fn with_sys_result_noret<'scope>(
 
 /// Wraps `run` in [`with_span`] and returns undefined to JS.
 /// Handles [`SysCallError`] if it occurs by throwing exceptions into JS.
-fn with_sys_result<'scope, O>(
+fn with_sys_result_value<'scope, O>(
     abi_call: AbiCall,
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
@@ -1521,6 +1526,19 @@ fn identity<'scope>(scope: &mut PinScope<'scope, '_>, _: FunctionCallbackArgumen
     Ok(*get_env(scope)?.instance_env.database_identity())
 }
 
+/// Execute an HTTP request in the context of a procedure.
+///
+/// # Signature
+///
+/// ```ignore
+/// function procedure_http_request(
+///     request: Uint8Array,
+///     body: Uint8Array | string
+/// ): [response: Uint8Array, body: Uint8Array];
+/// ```
+///
+/// Accepts a BSATN-encoded [`spacetimedb_lib::http::Request`] and a request body, and
+/// returns a BSATN-encoded [`spacetimedb_lib::http::Response`] and the response body.
 fn procedure_http_request<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
