@@ -2,14 +2,18 @@ use super::scheduler::{get_schedule_from_row, ScheduleError, Scheduler};
 use crate::database_logger::{BacktraceFrame, BacktraceProvider, LogLevel, ModuleBacktrace, Record};
 use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
+use crate::subscription::module_subscription_manager::{from_tx_offset, TransactionOffset};
 use crate::util::asyncify;
 use crate::util::prometheus_handle::IntGaugeExt;
 use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_client_api_messages::energy::EnergyQuanta;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
@@ -30,7 +34,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
-#[derive(Clone)]
 pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
@@ -43,6 +46,10 @@ pub struct InstanceEnv {
     pub func_type: FuncCallType,
     /// The name of the last, including current, function to be executed by this environment.
     pub func_name: String,
+    /// Are we in an anonymous tx context?
+    in_anon_tx: bool,
+    /// A procedure's last known transaction offset.
+    procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
 #[derive(Clone, Default)]
@@ -189,6 +196,8 @@ impl InstanceEnv {
             // run a function
             func_type: FuncCallType::Reducer,
             func_name: String::from("<initializing>"),
+            in_anon_tx: false,
+            procedure_last_tx_offset: None,
         }
     }
 
@@ -604,8 +613,92 @@ impl InstanceEnv {
         // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
         let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
         self.tx.set_raw(tx);
+        self.in_anon_tx = true;
 
         Ok(())
+    }
+
+    /// Finishes an anonymous transaction,
+    /// returning `Some(_)` if there was no ongoing one,
+    /// in which case the caller should return early.
+    fn finish_anon_tx(&mut self) -> Result<(), NodesError> {
+        if self.in_anon_tx {
+            self.in_anon_tx = false;
+            Ok(())
+        } else {
+            // Not in an anon tx context.
+            // This can happen if a reducer calls this ABI
+            // and tries to commit its own transaction early.
+            // We refuse to do this, as it would cause a later panic in the host.
+            Err(NodesError::NotInAnonTransaction)
+        }
+    }
+
+    pub async fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
+        self.finish_anon_tx()?;
+
+        let stdb = self.relational_db().clone();
+        let tx = self.take_tx()?;
+        let subs = self.replica_ctx.subscriptions.clone();
+
+        let event = ModuleEvent {
+            timestamp: Timestamp::now(),
+            caller_identity: stdb.database_identity(),
+            caller_connection_id: None,
+            function_call: ModuleFunctionCall::default(),
+            status: EventStatus::Committed(DatabaseUpdate::default()),
+            request_id: None,
+            timer: None,
+            // The procedure will pick up the tab for the energy.
+            energy_quanta_used: EnergyQuanta { quanta: 0 },
+            host_execution_duration: Duration::from_millis(0),
+        };
+        // Commit the tx and broadcast it.
+        // This is somewhat expensive,
+        // and can block for a while,
+        // so we need to asyncify it.
+        let event = asyncify(move || commit_and_broadcast_event(&subs, None, event, tx)).await;
+        self.procedure_last_tx_offset = Some(event.tx_offset);
+
+        Ok(())
+    }
+
+    pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
+        self.finish_anon_tx()?;
+        let stdb = self.relational_db().clone();
+        let tx = self.take_tx()?;
+
+        // Roll back the tx; this isn't that expensive, so we don't need to `asyncify`.
+        let offset = ModuleSubscriptions::rollback_mut_tx(&stdb, tx);
+        self.procedure_last_tx_offset = Some(from_tx_offset(offset));
+        Ok(())
+    }
+
+    /// In-case there is a anonymous tx at the end of a procedure,
+    /// it must be terminated.
+    ///
+    /// This represents a misuse by the module author of the module ABI.
+    pub fn terminate_dangling_anon_tx(&mut self) {
+        // Try to abort the anon tx.
+        match self.abort_mutable_tx() {
+            // There was no dangling anon tx. Yay!
+            Err(NodesError::NotInAnonTransaction) => {}
+            // There was one, which has been aborted.
+            // The module is using the ABI wrong! 😭
+            Ok(()) => {
+                let message = format!(
+                    "aborting dangling anonymous transaction in procedure {}",
+                    self.func_name
+                );
+                self.console_log_simple_message(LogLevel::Error, None, &message);
+            }
+            res => unreachable!("should've had a tx to close; {res:?}"),
+        }
+    }
+
+    /// After a procedure has finished, take its known last tx offset, if any.
+    pub fn take_procedure_tx_offset(&mut self) -> Option<TransactionOffset> {
+        self.procedure_last_tx_offset.take()
     }
 
     pub async fn http_request(
