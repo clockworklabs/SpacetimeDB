@@ -2671,7 +2671,6 @@ pub(crate) mod test {
         fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
             prop_assume!(ty.elements.len() >= 2);
 
-
             test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }

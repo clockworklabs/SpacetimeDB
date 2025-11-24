@@ -15,15 +15,10 @@ use proptest::{
 
 const SIZE: usize = 16;
 
-/// Generates leaf (i.e. non-compound) `AlgebraicType`s.
+/// Generates primitive `AlgebraicType`s.
 ///
-/// These are types which do not contain other types,
-/// i.e. bools, integers, floats, strings and units.
-///
-/// All other generated `AlgebraicType`s  are compound,
-/// i.e. contain at least one child `AlgebraicType`,
-/// and thus require recursive generation.
-fn generate_non_compound_algebraic_type() -> impl Strategy<Value = AlgebraicType> {
+/// These are bool, the integer types, and the float types.
+pub fn generate_primitive_algebraic_type() -> impl Strategy<Value = AlgebraicType> {
     prop_oneof![
         Just(AlgebraicType::Bool),
         Just(AlgebraicType::U8),
@@ -40,6 +35,20 @@ fn generate_non_compound_algebraic_type() -> impl Strategy<Value = AlgebraicType
         Just(AlgebraicType::I256),
         Just(AlgebraicType::F32),
         Just(AlgebraicType::F64),
+    ]
+}
+
+/// Generates leaf (i.e. non-compound) `AlgebraicType`s.
+///
+/// These are types which do not contain other types,
+/// i.e. bools, integers, floats, strings and units.
+///
+/// All other generated `AlgebraicType`s  are compound,
+/// i.e. contain at least one child `AlgebraicType`,
+/// and thus require recursive generation.
+fn generate_non_compound_algebraic_type() -> impl Strategy<Value = AlgebraicType> {
+    prop_oneof![
+        generate_primitive_algebraic_type(),
         Just(AlgebraicType::String),
         Just(AlgebraicType::unit()),
     ]
