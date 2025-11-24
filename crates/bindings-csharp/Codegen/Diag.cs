@@ -79,7 +79,7 @@ internal static class ErrorDescriptor
                 $"Reducer method {method.Identifier} does not have a ReducerContext parameter.",
             method => method.ParameterList
         );
-    
+
     public static readonly ErrorDescriptor<MethodDeclarationSyntax> ProcedureContextParam =
         new(
             group,
@@ -100,11 +100,11 @@ internal static class ErrorDescriptor
                 $"Reducer method {ctx.method.Identifier} starts with '{ctx.prefix}', which is a reserved prefix.",
             ctx => ctx.method.Identifier
         );
-    
+
     public static readonly ErrorDescriptor<(
         MethodDeclarationSyntax method,
         string prefix
-        )> ProcedureReservedPrefix =
+    )> ProcedureReservedPrefix =
         new(
             group,
             "Procedure method has a reserved name prefix",

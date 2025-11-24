@@ -35,11 +35,13 @@ partial class RawModuleDefV9
 
     internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
-    internal void RegisterProcedure(RawProcedureDefV9 procedure) => MiscExports.Add(new RawMiscModuleExportV9.Procedure(procedure));
+    internal void RegisterProcedure(RawProcedureDefV9 procedure) =>
+        MiscExports.Add(new RawMiscModuleExportV9.Procedure(procedure));
 
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
 
-    internal void RegisterView(RawViewDefV9 view) => MiscExports.Add(new RawMiscModuleExportV9.View(view));
+    internal void RegisterView(RawViewDefV9 view) =>
+        MiscExports.Add(new RawMiscModuleExportV9.View(view));
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
@@ -73,7 +75,7 @@ public static class Module
     >? newReducerContext = null;
     private static Func<Identity, IViewContext>? newViewContext = null;
     private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
-    
+
     private static Func<
         Identity,
         ConnectionId?,
@@ -134,7 +136,7 @@ public static class Module
         reducers.Add(reducer);
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
     }
-    
+
     public static void RegisterProcedure<P>()
         where P : IProcedure, new()
     {
@@ -316,19 +318,28 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
-    
+
     public static Errno __call_procedure__(
         uint id,
-        ulong sender_0, ulong sender_1, ulong sender_2, ulong sender_3,
-        ulong conn_id_0, ulong conn_id_1,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
         Timestamp timestamp,
         BytesSource args,
         BytesSink resultSink
     )
     {
-        try {
-            var sender = Identity.From(MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray());
-            var connectionId = ConnectionId.From(MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray());
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+            );
             var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
             var time = timestamp.ToStd();
 
@@ -343,7 +354,9 @@ public static class Module
             }
             resultSink.Write(bytes);
             return Errno.OK;
-        } catch (Exception e) {
+        }
+        catch (Exception e)
+        {
             var errorBytes = System.Text.Encoding.UTF8.GetBytes(e.ToString());
             resultSink.Write(errorBytes);
             return Errno.HOST_CALL_FAILURE;

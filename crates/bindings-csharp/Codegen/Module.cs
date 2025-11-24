@@ -1215,9 +1215,9 @@ record ProcedureDeclaration
                 diag.Report(ErrorDescriptor.ProcedureReservedPrefix, (methodSyntax, prefix));
             }
         }
-        
+
         ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
-        
+
         FullName = SymbolToName(method);
         Args = new(
             method
@@ -1230,9 +1230,8 @@ record ProcedureDeclaration
 
     public string GenerateClass()
     {
-        var invocationArgs = Args.Length == 0
-            ? ""
-            : ", " + string.Join(", ", Args.Select(a => a.Name));
+        var invocationArgs =
+            Args.Length == 0 ? "" : ", " + string.Join(", ", Args.Select(a => a.Name));
 
         var invokeBody = HasWrongSignature
             ? "throw new System.InvalidOperationException(\"Invalid procedure signature.\");"
@@ -1245,21 +1244,24 @@ record ProcedureDeclaration
                 """;
 
         return $$"""
-                 class {{Name}} : SpacetimeDB.Internal.IProcedure {
-                     {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
+            class {{Name}} : SpacetimeDB.Internal.IProcedure {
+                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
 
-                     public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
-                         nameof({{Name}}),
-                         [{{MemberDeclaration.GenerateDefs(Args)}}],
-                         new {{ReturnType.BSATNName}}().GetAlgebraicType(registrar)
-                     );
+                public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
+                    nameof({{Name}}),
+                    [{{MemberDeclaration.GenerateDefs(Args)}}],
+                    new {{ReturnType.BSATNName}}().GetAlgebraicType(registrar)
+                );
 
-                     public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
-                         {{string.Join("\n", Args.Select(a => $"var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);"))}}
-                         {{invokeBody}}
-                     }
-                 }
-                 """;
+                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
+                    {{string.Join(
+                "\n",
+                Args.Select(a => $"var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);")
+            )}}
+                    {{invokeBody}}
+                }
+            }
+            """;
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -1485,7 +1487,7 @@ public class Module : IIncrementalGenerator
             .Select((p, ct) => p.GenerateSchedule())
             .WithTrackingName("SpacetimeDB.Procedure.GenerateSchedule")
             .RegisterSourceOutputs(context);
-        
+
         var addProcedures = CollectDistinct(
             "Procedure",
             context,
@@ -1562,11 +1564,21 @@ public class Module : IIncrementalGenerator
             (context, tuple) =>
             {
                 var (
-                    (((((tableAccessors, addReducers), addProcedures), readOnlyAccessors), views), rlsFilters),
+                    (
+                        (
+                            (((tableAccessors, addReducers), addProcedures), readOnlyAccessors),
+                            views
+                        ),
+                        rlsFilters
+                    ),
                     columnDefaultValues
                 ) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
-                if (tableAccessors.Array.IsEmpty && addReducers.Array.IsEmpty && addProcedures.Array.IsEmpty)
+                if (
+                    tableAccessors.Array.IsEmpty
+                    && addReducers.Array.IsEmpty
+                    && addProcedures.Array.IsEmpty
+                )
                 {
                     return;
                 }
