@@ -7,19 +7,24 @@ on:
   pull_request:
 
 concurrency:
-  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  # Only cancel when the event is a pull_request
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
 
 jobs:
   unity-testsuite:
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        --cgroupns=host
     # Cancel any previous testsuites running on the same PR and/or ref.
     concurrency:
       group: unity-test-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout repository
         id: checkout-stdb
@@ -67,26 +72,18 @@ jobs:
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
-        id: cache-rust-deps
         with:
-          workspaces: demo/Blackholio/server-rust
-          key: ${{ steps.checkout-stdb.outputs.commit }}
-          # Cache Rust deps even if unit tests have failed.
-          cache-on-failure: true
-          # Cache the CLI as well.
-          cache-all-crates: true
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
 
       - name: Install SpacetimeDB CLI from the local checkout
-        # Rebuild only if we didn't get a precise cache hit.
-        if: steps.cache-rust-deps.outputs.cache-hit == 'false'
         run: |
           cargo install --force --path crates/cli --locked --message-format=short
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
-          ln -sf $HOME/.cargo/bin/spacetimedb-cli $HOME/.cargo/bin/spacetime
-        env:
-          # Share the target directory with our local project to avoid rebuilding same SpacetimeDB crates twice.
-          CARGO_TARGET_DIR: demo/Blackholio/server-rust/target
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
 
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp
@@ -159,6 +156,9 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
+        # We need this to support "Docker in Docker"
+      - name: Start Docker daemon
+        run: /usr/local/bin/start-docker.sh
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:

@@ -35,6 +35,9 @@ pub trait SpacetimeModule: Send + Sync + 'static {
     /// [`crate::DbContext`] implementor passed to reducer callbacks.
     type ReducerEventContext: ReducerEventContext<Module = Self>;
 
+    /// [`crate::DbContext`] implementor passed to procedure callbacks.
+    type ProcedureEventContext: ProcedureEventContext<Module = Self>;
+
     /// [`crate::DbContext`] implementor passed to subscription on-applied and on-removed callbacks.
     type SubscriptionEventContext: SubscriptionEventContext<Module = Self>;
 
@@ -136,6 +139,12 @@ pub trait ReducerEventContext:
     AbstractEventContext<Event = ReducerEvent<<<Self as InModule>::Module as SpacetimeModule>::Reducer>>
 where
     Self::Module: SpacetimeModule<ReducerEventContext = Self>,
+{
+}
+
+pub trait ProcedureEventContext: AbstractEventContext<Event = ()>
+where
+    Self::Module: SpacetimeModule<ProcedureEventContext = Self>,
 {
 }
 

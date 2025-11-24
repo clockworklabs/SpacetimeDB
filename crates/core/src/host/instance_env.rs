@@ -4,14 +4,17 @@ use crate::db::relational_db::{MutTx, RelationalDB};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use crate::host::wasm_common::TimingSpan;
 use crate::replica_context::ReplicaContext;
+use crate::util::asyncify;
 use chrono::{DateTime, Utc};
 use core::mem;
 use parking_lot::{Mutex, MutexGuard};
 use smallvec::SmallVec;
+use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_lib::{http as st_http, ConnectionId, Identity, Timestamp};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::{
     bsatn::{self, ToBsatn},
     buffer::{CountWriter, TeeWriter},
@@ -22,6 +25,7 @@ use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
 use std::ops::DerefMut;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::vec::IntoIter;
 
 #[derive(Clone)]
@@ -29,9 +33,14 @@ pub struct InstanceEnv {
     pub replica_ctx: Arc<ReplicaContext>,
     pub scheduler: Scheduler,
     pub tx: TxSlot,
-    /// The timestamp the current reducer began running.
+    /// The timestamp the current function began running.
     pub start_time: Timestamp,
-    pub view_id: Option<ViewId>,
+    /// The instant the current function began running.
+    pub start_instant: Instant,
+    /// The type of the last, including current, function to be executed by this environment.
+    pub func_type: FuncCallType,
+    /// The name of the last, including current, function to be executed by this environment.
+    pub func_name: String,
 }
 
 #[derive(Clone, Default)]
@@ -173,7 +182,11 @@ impl InstanceEnv {
             scheduler,
             tx: TxSlot::default(),
             start_time: Timestamp::now(),
-            view_id: None,
+            start_instant: Instant::now(),
+            // arbitrary - change if we need to recognize that an `InstanceEnv` has never
+            // run a function
+            func_type: FuncCallType::Reducer,
+            func_name: String::from("<initializing>"),
         }
     }
 
@@ -182,19 +195,29 @@ impl InstanceEnv {
         &self.replica_ctx.database.database_identity
     }
 
-    /// Signal to this `InstanceEnv` that a reducer or procedure call is beginning.
-    pub fn start_funcall(&mut self, ts: Timestamp) {
+    /// Signal to this `InstanceEnv` that a function call is beginning.
+    pub fn start_funcall(&mut self, name: &str, ts: Timestamp, func_type: FuncCallType) {
         self.start_time = ts;
-        self.view_id = None;
-    }
-
-    /// Signal to this `InstanceEnv` that a we're going to execute a view and compute its read set.
-    pub fn start_view(&mut self, view_id: ViewId) {
-        self.view_id = Some(view_id);
+        self.start_instant = Instant::now();
+        self.func_type = func_type;
+        name.clone_into(&mut self.func_name);
     }
 
     fn get_tx(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         self.tx.get()
+    }
+
+    /// True if `self` is holding an open transaction, or false if it is not.
+    pub fn in_tx(&self) -> bool {
+        self.get_tx().is_ok()
+    }
+
+    pub(crate) fn take_tx(&self) -> Result<MutTxId, GetTxError> {
+        self.tx.take()
+    }
+
+    pub(crate) fn relational_db(&self) -> &Arc<RelationalDB> {
+        &self.replica_ctx.relational_db
     }
 
     pub(crate) fn get_jwt_payload(&self, connection_id: ConnectionId) -> Result<Option<String>, NodesError> {
@@ -212,11 +235,8 @@ impl InstanceEnv {
         );
     }
 
-    /// End a console timer by logging the span at INFO level.
-    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
-        let elapsed = span.start.elapsed();
-        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
-
+    /// Logs a simple `message` at `level`.
+    pub(crate) fn console_log_simple_message(&self, level: LogLevel, function: Option<&str>, message: &str) {
         /// A backtrace provider that provides nothing.
         struct Noop;
         impl BacktraceProvider for Noop {
@@ -236,9 +256,17 @@ impl InstanceEnv {
             filename: None,
             line_number: None,
             function,
-            message: &message,
+            message,
         };
-        self.console_log(LogLevel::Info, &record, &Noop);
+        self.console_log(level, &record, &Noop);
+    }
+
+    /// End a console timer by logging the span at INFO level.
+    pub(crate) fn console_timer_end(&self, span: &TimingSpan, function: Option<&str>) {
+        let elapsed = span.start.elapsed();
+        let message = format!("Timing span {:?}: {:?}", &span.name, elapsed);
+
+        self.console_log_simple_message(LogLevel::Info, function, &message);
     }
 
     /// Returns the current time suitable for logging.
@@ -267,7 +295,7 @@ impl InstanceEnv {
     }
 
     pub fn insert(&self, table_id: TableId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, insert_flags) = stdb
@@ -336,7 +364,7 @@ impl InstanceEnv {
     }
 
     pub fn update(&self, table_id: TableId, index_id: IndexId, buffer: &mut [u8]) -> Result<usize, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         let (row_len, row_ptr, update_flags) = stdb
@@ -379,8 +407,8 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Find all rows in the table to delete.
         let (table_id, _, _, iter) = stdb.index_scan_range(tx, index_id, prefix, prefix_elems, rstart, rend)?;
@@ -409,7 +437,7 @@ impl InstanceEnv {
     /// - a row couldn't be decoded to the table schema type.
     #[tracing::instrument(level = "trace", skip(self, relation))]
     pub fn datastore_delete_all_by_eq_bsatn(&self, table_id: TableId, relation: &[u8]) -> Result<u32, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Track the number of bytes coming from the caller
@@ -436,7 +464,7 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn table_id_from_name(&self, table_name: &str) -> Result<TableId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the table id from the name.
@@ -450,7 +478,7 @@ impl InstanceEnv {
     /// and `IndexNotFound` if the index does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn index_id_from_name(&self, index_name: &str) -> Result<IndexId, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the index id from the name.
@@ -464,14 +492,14 @@ impl InstanceEnv {
     /// and `TableNotFound` if the table does not exist.
     #[tracing::instrument(level = "trace", skip_all)]
     pub fn datastore_table_row_count(&self, table_id: TableId) -> Result<u64, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
+        let stdb = self.relational_db();
         let tx = &mut *self.get_tx()?;
 
         // Query the row count for id.
         stdb.table_row_count_mut(tx, table_id)
             .ok_or(NodesError::TableNotFound)
             .inspect(|_| {
-                tx.record_table_scan(self.view_id, table_id);
+                tx.record_table_scan(&self.func_type, table_id);
             })
     }
 
@@ -481,8 +509,8 @@ impl InstanceEnv {
         pool: &mut ChunkPool,
         table_id: TableId,
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Track the number of rows and the number of bytes scanned by the iterator
         let mut rows_scanned = 0;
@@ -496,7 +524,7 @@ impl InstanceEnv {
             &mut bytes_scanned,
         );
 
-        tx.record_table_scan(self.view_id, table_id);
+        tx.record_table_scan(&self.func_type, table_id);
 
         tx.metrics.rows_scanned += rows_scanned;
         tx.metrics.bytes_scanned += bytes_scanned;
@@ -514,8 +542,8 @@ impl InstanceEnv {
         rstart: &[u8],
         rend: &[u8],
     ) -> Result<Vec<Vec<u8>>, NodesError> {
-        let stdb = &*self.replica_ctx.relational_db;
-        let tx = &mut *self.tx.get()?;
+        let stdb = self.relational_db();
+        let tx = &mut *self.get_tx()?;
 
         // Track rows and bytes scanned by the iterator
         let mut rows_scanned = 0;
@@ -527,7 +555,7 @@ impl InstanceEnv {
         // Scan the index and serialize rows to bsatn
         let chunks = ChunkedWriter::collect_iter(pool, iter, &mut rows_scanned, &mut bytes_scanned);
 
-        tx.record_index_scan(self.view_id, table_id, index_id, lower, upper);
+        tx.record_index_scan(&self.func_type, table_id, index_id, lower, upper);
 
         tx.metrics.index_seeks += 1;
         tx.metrics.rows_scanned += rows_scanned;
@@ -562,25 +590,185 @@ impl InstanceEnv {
 
         written
     }
+
+    pub async fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
+        if self.get_tx().is_ok() {
+            return Err(NodesError::WouldBlockTransaction(
+                super::AbiCall::ProcedureStartMutTransaction,
+            ));
+        }
+
+        let stdb = self.replica_ctx.relational_db.clone();
+        // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
+        let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
+        self.tx.set_raw(tx);
+
+        Ok(())
+    }
+
+    pub async fn http_request(
+        &mut self,
+        request: st_http::Request,
+        body: bytes::Bytes,
+    ) -> Result<(st_http::Response, bytes::Bytes), NodesError> {
+        if self.in_tx() {
+            // If we're holding a transaction open, refuse to perform this blocking operation.
+            return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
+        }
+
+        // TODO(procedure-metrics): record size in bytes of request.
+
+        fn http_error<E: ToString>(err: E) -> NodesError {
+            NodesError::HttpError(err.to_string())
+        }
+
+        // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
+        // and map its body into a type `reqwest` will like.
+        let (request, timeout) = convert_http_request(request).map_err(http_error)?;
+
+        let request = http::Request::from_parts(request, body);
+
+        let mut reqwest: reqwest::Request = request.try_into().map_err(http_error)?;
+
+        // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
+        // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
+        let timeout = timeout.unwrap_or(HTTP_DEFAULT_TIMEOUT).min(HTTP_DEFAULT_TIMEOUT);
+
+        // reqwest's timeout covers from the start of the request to the end of reading the body,
+        // so there's no need to do our own timeout operation.
+        *reqwest.timeout_mut() = Some(timeout);
+
+        let reqwest = reqwest;
+
+        // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
+
+        // Actually execute the HTTP request!
+        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+        let response = reqwest::Client::new().execute(reqwest).await.map_err(http_error)?;
+
+        // Download the response body, which in all likelihood will be a stream,
+        // as reqwest seems to prefer that.
+        let (response, body) = http::Response::from(response).into_parts();
+        let body = http_body_util::BodyExt::collect(body)
+            .await
+            .map_err(http_error)?
+            .to_bytes();
+
+        // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+        // which has a stable BSATN encoding to pass across the WASM boundary.
+        let response = convert_http_response(response);
+
+        Ok((response, body))
+    }
+}
+
+/// Default / maximum timeout for HTTP requests performed by [`InstanceEnv::http_request`].
+///
+/// If the user requests a timeout longer than this, we will clamp to this value.
+///
+/// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
+const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+
+fn convert_http_request(request: st_http::Request) -> http::Result<(http::request::Parts, Option<Duration>)> {
+    let st_http::Request {
+        method,
+        headers,
+        timeout,
+        uri,
+        version,
+    } = request;
+
+    let (mut request, ()) = http::Request::new(()).into_parts();
+    request.method = match method {
+        st_http::Method::Get => http::Method::GET,
+        st_http::Method::Head => http::Method::HEAD,
+        st_http::Method::Post => http::Method::POST,
+        st_http::Method::Put => http::Method::PUT,
+        st_http::Method::Delete => http::Method::DELETE,
+        st_http::Method::Connect => http::Method::CONNECT,
+        st_http::Method::Options => http::Method::OPTIONS,
+        st_http::Method::Trace => http::Method::TRACE,
+        st_http::Method::Patch => http::Method::PATCH,
+        st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
+    };
+    request.uri = uri.try_into()?;
+    request.version = match version {
+        st_http::Version::Http09 => http::Version::HTTP_09,
+        st_http::Version::Http10 => http::Version::HTTP_10,
+        st_http::Version::Http11 => http::Version::HTTP_11,
+        st_http::Version::Http2 => http::Version::HTTP_2,
+        st_http::Version::Http3 => http::Version::HTTP_3,
+    };
+    request.headers = headers
+        .into_iter()
+        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
+        .collect::<http::Result<_>>()?;
+
+    let timeout = timeout.map(|d| d.to_duration_saturating());
+
+    Ok((request, timeout))
+}
+
+fn convert_http_response(response: http::response::Parts) -> st_http::Response {
+    let http::response::Parts {
+        extensions,
+        headers,
+        status,
+        version,
+        ..
+    } = response;
+
+    // there's a good chance that reqwest inserted some extensions into this request,
+    // but we can't control that and don't care much about it.
+    let _ = extensions;
+
+    st_http::Response {
+        headers: headers
+            .into_iter()
+            .map(|(k, v)| (k.map(|k| k.as_str().into()), v.as_bytes().into()))
+            .collect(),
+        version: match version {
+            http::Version::HTTP_09 => st_http::Version::Http09,
+            http::Version::HTTP_10 => st_http::Version::Http10,
+            http::Version::HTTP_11 => st_http::Version::Http11,
+            http::Version::HTTP_2 => st_http::Version::Http2,
+            http::Version::HTTP_3 => st_http::Version::Http3,
+            _ => unreachable!("Unknown HTTP version: {version:?}"),
+        },
+        code: status.as_u16(),
+    }
 }
 
 impl TxSlot {
-    pub fn set<T>(&mut self, tx: MutTxId, f: impl FnOnce() -> T) -> (MutTxId, T) {
+    /// Sets the slot to `tx`, ensuring that there was no tx before.
+    pub fn set_raw(&mut self, tx: MutTxId) {
         let prev = self.inner.lock().replace(tx);
         assert!(prev.is_none(), "reentrant TxSlot::set");
-        let remove_tx = || self.inner.lock().take();
+    }
+
+    /// Sets the slot to `tx` runs `work`, and returns back `tx`.
+    pub fn set<T>(&mut self, tx: MutTxId, work: impl FnOnce() -> T) -> (MutTxId, T) {
+        self.set_raw(tx);
+
+        let remove_tx = || self.take().expect("tx was removed during transaction");
 
         let res = {
             scopeguard::defer_on_unwind! { remove_tx(); }
-            f()
+            work()
         };
 
-        let tx = remove_tx().expect("tx was removed during transaction");
+        let tx = remove_tx();
         (tx, res)
     }
 
+    /// Returns the tx in the slot.
     pub fn get(&self) -> Result<impl DerefMut<Target = MutTxId> + '_, GetTxError> {
         MutexGuard::try_map(self.inner.lock(), |map| map.as_mut()).map_err(|_| GetTxError)
+    }
+
+    /// Steals the tx from the slot.
+    pub fn take(&self) -> Result<MutTxId, GetTxError> {
+        self.inner.lock().take().ok_or(GetTxError)
     }
 }
 
@@ -658,16 +846,7 @@ mod test {
     fn instance_env(db: Arc<RelationalDB>) -> Result<(InstanceEnv, tokio::runtime::Runtime)> {
         let (scheduler, _) = Scheduler::open(db.clone());
         let (replica_context, runtime) = replica_ctx(db)?;
-        Ok((
-            InstanceEnv {
-                replica_ctx: Arc::new(replica_context),
-                scheduler,
-                tx: TxSlot::default(),
-                start_time: Timestamp::now(),
-                view_id: None,
-            },
-            runtime,
-        ))
+        Ok((InstanceEnv::new(Arc::new(replica_context), scheduler), runtime))
     }
 
     /// An in-memory `RelationalDB` for testing.

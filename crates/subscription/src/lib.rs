@@ -6,10 +6,10 @@ use spacetimedb_execution::{
     },
     Datastore, DeltaStore, Row,
 };
-use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
 use std::sync::Arc;
 use std::{collections::HashSet, ops::RangeBounds};
@@ -159,7 +159,7 @@ impl Fragments {
     /// dv(+) = R'ds(+) U dr(+)S' U dr(+)ds(-) U dr(-)ds(+)
     /// dv(-) = R'ds(-) U dr(-)S' U dr(+)ds(+) U dr(-)ds(-)
     /// ```
-    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label]) -> Result<Self> {
+    fn compile_from_plan(plan: &ProjectPlan, tables: &[Label], auth: &AuthCtx) -> Result<Self> {
         /// Mutate a query plan by turning a table scan into a delta scan
         fn mut_plan(plan: &mut ProjectPlan, relvar: Label, delta: Delta) {
             plan.visit_mut(&mut |plan| match plan {
@@ -178,18 +178,18 @@ impl Fragments {
         }
 
         /// Return a new plan with delta scans for the given tables
-        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)]) -> Result<PipelinedProject> {
+        fn new_plan(plan: &ProjectPlan, tables: &[(Label, Delta)], auth: &AuthCtx) -> Result<PipelinedProject> {
             let mut plan = plan.clone();
             for (alias, delta) in tables {
                 mut_plan(&mut plan, *alias, *delta);
             }
-            plan.optimize().map(PipelinedProject::from)
+            plan.optimize(auth).map(PipelinedProject::from)
         }
 
         match tables {
             [dr] => Ok(Fragments {
-                insert_plans: vec![new_plan(plan, &[(*dr, Delta::Inserts)])?],
-                delete_plans: vec![new_plan(plan, &[(*dr, Delta::Deletes)])?],
+                insert_plans: vec![new_plan(plan, &[(*dr, Delta::Inserts)], auth)?],
+                delete_plans: vec![new_plan(plan, &[(*dr, Delta::Deletes)], auth)?],
             }),
             [dr, ds] => Ok(Fragments {
                 insert_plans: vec![
@@ -197,21 +197,25 @@ impl Fragments {
                         // dr(+)S'
                         plan,
                         &[(*dr, Delta::Inserts)],
+                        auth,
                     )?,
                     new_plan(
                         // R'ds(+)
                         plan,
                         &[(*ds, Delta::Inserts)],
+                        auth,
                     )?,
                     new_plan(
                         // dr(+)ds(-)
                         plan,
                         &[(*dr, Delta::Inserts), (*ds, Delta::Deletes)],
+                        auth,
                     )?,
                     new_plan(
                         // dr(-)ds(+)
                         plan,
                         &[(*dr, Delta::Deletes), (*ds, Delta::Inserts)],
+                        auth,
                     )?,
                 ],
                 delete_plans: vec![
@@ -219,21 +223,25 @@ impl Fragments {
                         // dr(-)S'
                         plan,
                         &[(*dr, Delta::Deletes)],
+                        auth,
                     )?,
                     new_plan(
                         // R'ds(-)
                         plan,
                         &[(*ds, Delta::Deletes)],
+                        auth,
                     )?,
                     new_plan(
                         // dr(+)ds(+)
                         plan,
                         &[(*dr, Delta::Inserts), (*ds, Delta::Inserts)],
+                        auth,
                     )?,
                     new_plan(
                         // dr(-)ds(-)
                         plan,
                         &[(*dr, Delta::Deletes), (*ds, Delta::Deletes)],
+                        auth,
                     )?,
                 ],
             }),
@@ -353,6 +361,12 @@ pub struct SubscriptionPlan {
     fragments: Fragments,
     /// The optimized plan without any delta scans
     plan_opt: ProjectPlan,
+}
+
+impl CollectViews for SubscriptionPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.plan_opt.collect_views(views);
+    }
 }
 
 impl SubscriptionPlan {
@@ -513,7 +527,7 @@ impl SubscriptionPlan {
         let return_name = TableName::from(return_name);
 
         for plan in plans {
-            let plan_opt = plan.clone().optimize()?;
+            let plan_opt = plan.clone().optimize(auth)?;
 
             if has_non_index_join(&plan_opt) {
                 bail!("Subscriptions require indexes on join columns")
@@ -521,7 +535,7 @@ impl SubscriptionPlan {
 
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 
-            let fragments = Fragments::compile_from_plan(&plan, &table_aliases)?;
+            let fragments = Fragments::compile_from_plan(&plan, &table_aliases, auth)?;
 
             subscriptions.push(Self {
                 return_id,

@@ -28,6 +28,17 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
         )
     });
 
+    // TODO: Remove this once we have view bindings for C# and TypeScript
+    diff.retain(|step| {
+        !matches!(
+            step,
+            AutoMigrateStep::DisconnectAllUsers
+                | AutoMigrateStep::AddView(_)
+                | AutoMigrateStep::RemoveView(_)
+                | AutoMigrateStep::UpdateView(_)
+        )
+    });
+
     assert!(
         diff.is_empty(),
         "Rust and {lang_name} modules are not identical. Here are the steps to migrate from {lang_name} to Rust: {diff:#?}"

@@ -22,7 +22,7 @@ STDB_DIR = TEST_DIR.parent
 exe_suffix = ".exe" if sys.platform == "win32" else ""
 SPACETIME_BIN = STDB_DIR / ("target/debug/spacetime" + exe_suffix)
 TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
-STDB_CONFIG = TEST_DIR / "config.toml"
+BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 # the contents of files for the base smoketest project template
 TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/templates/basic-rust/server/src/lib.rs").read()
@@ -48,7 +48,10 @@ USE_SPACETIME_LOGIN = False
 REMOTE_SERVER = False
 
 # default value can be overridden by `--compose-file` flag
-COMPOSE_FILE = "./docker-compose.yml"
+COMPOSE_FILE = ".github/docker-compose.yml"
+
+# this will be initialized by main()
+STDB_CONFIG = ''
 
 # we need to late-bind the output stream to allow unittests to capture stdout/stderr.
 class CapturableHandler(logging.StreamHandler):
@@ -234,7 +237,6 @@ class Smoketest(unittest.TestCase):
         return list(map(json.loads, logs.splitlines()))
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None, break_clients=False):
-        print("publishing module", self.publish_module)
         publish_output = self.spacetime(
             "publish",
             *[domain] if domain is not None else [],
@@ -253,7 +255,9 @@ class Smoketest(unittest.TestCase):
 
     @classmethod
     def reset_config(cls):
-        shutil.copy(STDB_CONFIG, cls.config_path)
+        if not STDB_CONFIG:
+            raise Exception("config toml has not been initialized yet")
+        cls.config_path.write_text(STDB_CONFIG)
 
     def fingerprint(self):
         # Fetch the server's fingerprint; required for `identity list`.
@@ -262,14 +266,15 @@ class Smoketest(unittest.TestCase):
     def new_identity(self):
         new_identity(self.__class__.config_path)
 
-    def subscribe(self, *queries, n, confirmed = False):
+    def subscribe(self, *queries, n, confirmed = False, database = None):
         self._check_published()
         assert isinstance(n, int)
 
         args = [
             SPACETIME_BIN,
             "--config-path", str(self.config_path),
-            "subscribe", self.database_identity,
+            "subscribe",
+            database if database is not None else self.database_identity,
             "-t", "600",
             "-n", str(n),
             "--print-initial-update",
@@ -382,7 +387,7 @@ class Smoketest(unittest.TestCase):
         if "database_identity" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.database_identity)
+                self.spacetime("delete", "--yes", self.database_identity)
             except Exception:
                 pass
 
@@ -391,7 +396,7 @@ class Smoketest(unittest.TestCase):
        if hasattr(cls, "database_identity"):
            try:
                # TODO: save the credentials in publish_module()
-               cls.spacetime("delete", cls.database_identity)
+               cls.spacetime("delete", "--yes", cls.database_identity)
            except Exception:
                pass
 

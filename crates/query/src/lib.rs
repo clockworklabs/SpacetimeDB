@@ -45,9 +45,14 @@ pub fn compile_subscription(
     let plan_fragments = resolve_views_for_sub(tx, plan, auth, &mut has_param)?
         .into_iter()
         .map(compile_select)
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok((plan_fragments, return_id, return_name, has_param))
+    // Does this subscription read from a client-specific view?
+    // If so, it is as if the view is parameterized by `:sender`.
+    // We must know this in order to generate the correct query hash.
+    let reads_view = plan_fragments.iter().any(|plan| plan.reads_from_view(false));
+
+    Ok((plan_fragments, return_id, return_name, has_param || reads_view))
 }
 
 /// A utility for parsing and type checking a sql statement
@@ -64,12 +69,13 @@ pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Resu
 
 /// A utility for executing a sql select statement
 pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
+    auth: &AuthCtx,
     stmt: ProjectList,
     tx: &Tx,
     metrics: &mut ExecutionMetrics,
     check_row_limit: impl Fn(ProjectListPlan) -> Result<ProjectListPlan>,
 ) -> Result<Vec<ProductValue>> {
-    let plan = compile_select_list(stmt).optimize()?;
+    let plan = compile_select_list(stmt).optimize(auth)?;
     let plan = check_row_limit(plan)?;
     let plan = ProjectListExecutor::from(plan);
     let mut rows = vec![];
@@ -81,8 +87,13 @@ pub fn execute_select_stmt<Tx: Datastore + DeltaStore>(
 }
 
 /// A utility for executing a sql dml statement
-pub fn execute_dml_stmt<Tx: MutDatastore>(stmt: DML, tx: &mut Tx, metrics: &mut ExecutionMetrics) -> Result<()> {
-    let plan = compile_dml_plan(stmt).optimize()?;
+pub fn execute_dml_stmt<Tx: MutDatastore>(
+    auth: &AuthCtx,
+    stmt: DML,
+    tx: &mut Tx,
+    metrics: &mut ExecutionMetrics,
+) -> Result<()> {
+    let plan = compile_dml_plan(stmt).optimize(auth)?;
     let plan = MutExecutor::from(plan);
     plan.execute(tx, metrics)
 }

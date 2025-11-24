@@ -128,7 +128,7 @@ fn eval(c: &mut Criterion) {
             let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
             let plans = plans
                 .into_iter()
-                .map(|plan| plan.optimize().unwrap())
+                .map(|plan| plan.optimize(&auth).unwrap())
                 .map(PipelinedProject::from)
                 .collect::<Vec<_>>();
             let tx = DeltaTx::from(&tx);

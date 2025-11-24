@@ -17,6 +17,7 @@
 
 use crate::{
     client_cache::TableAppliedDiff,
+    error::InternalError,
     spacetime_module::{AbstractEventContext, Reducer, SpacetimeModule},
 };
 use spacetimedb_data_structures::map::HashMap;
@@ -260,5 +261,44 @@ impl<M: SpacetimeModule> ReducerCallbacks<M> {
             .expect("Attempt to remove a callback from a reducer which doesn't have any")
             .remove(&callback_id)
             .expect("Attempt to remove non-existent reducer callback");
+    }
+}
+
+/// A procedure callback for a procedure defined by the module `M`.
+///
+/// Procedure return values are deserialized within this function by code injected by the SDK.
+pub(crate) type ProcedureCallback<M> =
+    Box<dyn FnOnce(&<M as SpacetimeModule>::ProcedureEventContext, Result<Box<[u8]>, InternalError>) + Send + 'static>;
+
+pub struct ProcedureCallbacks<M: SpacetimeModule> {
+    request_id_to_callback: HashMap<u32, ProcedureCallback<M>>,
+}
+
+impl<M: SpacetimeModule> Default for ProcedureCallbacks<M> {
+    fn default() -> Self {
+        Self {
+            request_id_to_callback: Default::default(),
+        }
+    }
+}
+
+impl<M: SpacetimeModule> ProcedureCallbacks<M> {
+    pub(crate) fn insert(&mut self, request_id: u32, callback: ProcedureCallback<M>) {
+        if self.request_id_to_callback.insert(request_id, callback).is_some() {
+            unreachable!("Request IDs are drawn from a global monotonic atomic counter and so are unique");
+        };
+    }
+
+    pub(crate) fn resolve(
+        &mut self,
+        ctx: &<M as SpacetimeModule>::ProcedureEventContext,
+        request_id: u32,
+        result: Result<Box<[u8]>, InternalError>,
+    ) {
+        let callback = self
+            .request_id_to_callback
+            .remove(&request_id)
+            .expect("Attempting to resolve a non-existent procedure callback");
+        callback(ctx, result)
     }
 }

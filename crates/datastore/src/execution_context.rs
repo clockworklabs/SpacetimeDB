@@ -105,6 +105,19 @@ pub enum Workload {
 }
 
 impl Workload {
+    /// Returns a reducer workload with no arguments to the reducer
+    /// and the current timestamp.
+    pub fn reducer_no_args(name: &str, id: Identity, conn_id: ConnectionId) -> Self {
+        Self::Reducer(ReducerContext {
+            name: name.into(),
+            caller_identity: id,
+            caller_connection_id: conn_id,
+            timestamp: Timestamp::now(),
+            arg_bsatn: Bytes::new(),
+        })
+    }
+
+    /// Returns the workload's type/kind, without any of the data.
     pub fn workload_type(&self) -> WorkloadType {
         match self {
             #[cfg(any(test, feature = "test"))]
@@ -131,6 +144,7 @@ pub enum WorkloadType {
     Unsubscribe,
     Update,
     Internal,
+    View,
     Procedure,
 }
 
