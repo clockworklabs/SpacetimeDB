@@ -3,7 +3,11 @@ import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
 import type { ParamsObj } from './reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from './schema';
+import {
+  MODULE_DEF,
+  registerTypesRecursively,
+  type UntypedSchemaDef,
+} from './schema';
 import type { Infer, InferTypeOfRow, TypeBuilder } from './type_builders';
 import { bsatnBaseSize } from './util';
 
@@ -33,7 +37,7 @@ export function procedure<
         'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
     })),
   };
-  const returnType = ret.algebraicType;
+  const returnType = registerTypesRecursively(ret).algebraicType;
 
   MODULE_DEF.miscExports.push({
     tag: 'Procedure',
