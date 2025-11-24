@@ -37,7 +37,7 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Hash, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
