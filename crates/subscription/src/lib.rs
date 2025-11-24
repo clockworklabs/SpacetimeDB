@@ -354,14 +354,6 @@ pub struct SubscriptionPlan {
     return_id: TableId,
     /// To which table are we subscribed?
     return_name: TableName,
-    /// Are we subscribed to a view?
-    is_view: bool,
-    /// The number of columns returned.
-    /// Only relevant for views.
-    num_cols: usize,
-    /// The number of private columns returned.
-    /// Only relevant for views.
-    num_private_cols: usize,
     /// A subscription can read from multiple tables.
     /// From which tables do we read?
     table_ids: Vec<TableId>,
@@ -385,19 +377,25 @@ impl SubscriptionPlan {
 
     /// Does this plan return rows from a view?
     pub fn is_view(&self) -> bool {
-        self.is_view
+        self.plan_opt.returns_view_table()
     }
 
     /// The number of columns returned.
     /// Only relevant if [`Self::is_view`] is true.
     pub fn num_cols(&self) -> usize {
-        self.num_cols
+        self.plan_opt
+            .return_table()
+            .map(|schema| schema.num_cols())
+            .unwrap_or_default()
     }
 
     /// The number of private columns returned.
     /// Only relevant if [`Self::is_view`] is true.
     pub fn num_private_cols(&self) -> usize {
-        self.num_private_cols
+        self.plan_opt
+            .return_table()
+            .map(|schema| schema.num_private_cols())
+            .unwrap_or_default()
     }
 
     /// To which table does this plan subscribe?
@@ -558,16 +556,6 @@ impl SubscriptionPlan {
                 bail!("Subscriptions require indexes on join columns")
             }
 
-            let is_view = plan_opt.returns_view_table();
-            let num_cols = plan_opt
-                .return_table()
-                .map(|schema| schema.num_cols())
-                .unwrap_or_default();
-            let num_private_cols = plan_opt
-                .return_table()
-                .map(|schema| schema.num_private_cols())
-                .unwrap_or_default();
-
             let (table_ids, table_aliases) = table_ids_for_plan(&plan);
 
             let fragments = Fragments::compile_from_plan(&plan, &table_aliases, auth)?;
@@ -575,9 +563,6 @@ impl SubscriptionPlan {
             subscriptions.push(Self {
                 return_id,
                 return_name: return_name.clone(),
-                is_view,
-                num_cols,
-                num_private_cols,
                 table_ids,
                 plan_opt,
                 fragments,
