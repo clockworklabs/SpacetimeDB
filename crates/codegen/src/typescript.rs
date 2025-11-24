@@ -261,7 +261,10 @@ impl Lang for TypeScript {
         writeln!(out, ");");
 
         writeln!(out);
-        writeln!(out, "/** The remote SpacetimeDB module schema, both runtime and type information. */");
+        writeln!(
+            out,
+            "/** The remote SpacetimeDB module schema, both runtime and type information. */"
+        );
         writeln!(out, "const REMOTE_MODULE = {{");
         out.indent(1);
         writeln!(out, "versionInfo: {{");
@@ -281,19 +284,13 @@ impl Lang for TypeScript {
         out.dedent(1);
 
         writeln!(out);
-        writeln!(
-            out,
-            "/** The tables available in this remote SpacetimeDB module. */"
-        );
+        writeln!(out, "/** The tables available in this remote SpacetimeDB module. */");
         writeln!(
             out,
             "export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);"
         );
         writeln!(out);
-        writeln!(
-            out,
-            "/** The reducers available in this remote SpacetimeDB module. */"
-        );
+        writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
         writeln!(
             out,
             "export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);"
@@ -301,7 +298,10 @@ impl Lang for TypeScript {
 
         // Write type aliases for EventContext, ReducerEventContext, SubscriptionEventContext, ErrorContext
         writeln!(out);
-        writeln!(out, "/** The context type returned in callbacks for all possible events. */");
+        writeln!(
+            out,
+            "/** The context type returned in callbacks for all possible events. */"
+        );
         writeln!(
             out,
             "export type EventContext = __EventContextInterface<typeof REMOTE_MODULE>;"
@@ -313,7 +313,10 @@ impl Lang for TypeScript {
             "export type ReducerEventContext = __ReducerEventContextInterface<typeof REMOTE_MODULE>;"
         );
 
-        writeln!(out, "/** The context type returned in callbacks for subscription events. */");
+        writeln!(
+            out,
+            "/** The context type returned in callbacks for subscription events. */"
+        );
         writeln!(
             out,
             "export type SubscriptionEventContext = __SubscriptionEventContextInterface<typeof REMOTE_MODULE>;"
@@ -332,15 +335,24 @@ impl Lang for TypeScript {
         );
 
         writeln!(out);
-        writeln!(out, "/** Builder class to configure a new subscription to the remote SpacetimeDB instance. */");
+        writeln!(
+            out,
+            "/** Builder class to configure a new subscription to the remote SpacetimeDB instance. */"
+        );
         writeln!(
             out,
             "export class SubscriptionBuilder extends __SubscriptionBuilderImpl<typeof REMOTE_MODULE> {{}}"
         );
 
         writeln!(out);
-        writeln!(out, "/** Builder class to configure a new database connection to the remote SpacetimeDB instance. */");
-        writeln!(out, "export class DbConnectionBuilder extends __DbConnectionBuilder<typeof REMOTE_MODULE> {{}}");
+        writeln!(
+            out,
+            "/** Builder class to configure a new database connection to the remote SpacetimeDB instance. */"
+        );
+        writeln!(
+            out,
+            "export class DbConnectionBuilder extends __DbConnectionBuilder<typeof REMOTE_MODULE> {{}}"
+        );
 
         writeln!(out);
         writeln!(out, "/** The typed database connection to manage connections to the remote SpacetimeDB instance. This class has type information specific to the generated module. */");
