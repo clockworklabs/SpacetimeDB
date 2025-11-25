@@ -27,6 +27,7 @@ use spacetimedb_sats::{
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
+use std::future::Future;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -632,6 +633,10 @@ impl InstanceEnv {
         }
     }
 
+    // Async procedure syscalls return a `Result<impl Future>`, so that we can check `get_tx()`
+    // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
+    // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
+
     pub async fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
 
@@ -699,11 +704,11 @@ impl InstanceEnv {
         self.procedure_last_tx_offset.take()
     }
 
-    pub async fn http_request(
+    pub fn http_request(
         &mut self,
         request: st_http::Request,
         body: bytes::Bytes,
-    ) -> Result<(st_http::Response, bytes::Bytes), NodesError> {
+    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>>, NodesError> {
         if self.in_tx() {
             // If we're holding a transaction open, refuse to perform this blocking operation.
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
@@ -737,21 +742,25 @@ impl InstanceEnv {
 
         // Actually execute the HTTP request!
         // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-        let response = reqwest::Client::new().execute(reqwest).await.map_err(http_error)?;
+        let execute_fut = reqwest::Client::new().execute(reqwest);
 
-        // Download the response body, which in all likelihood will be a stream,
-        // as reqwest seems to prefer that.
-        let (response, body) = http::Response::from(response).into_parts();
-        let body = http_body_util::BodyExt::collect(body)
-            .await
-            .map_err(http_error)?
-            .to_bytes();
+        Ok(async move {
+            let response = execute_fut.await.map_err(http_error)?;
 
-        // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
-        // which has a stable BSATN encoding to pass across the WASM boundary.
-        let response = convert_http_response(response);
+            // Download the response body, which in all likelihood will be a stream,
+            // as reqwest seems to prefer that.
+            let (response, body) = http::Response::from(response).into_parts();
+            let body = http_body_util::BodyExt::collect(body)
+                .await
+                .map_err(http_error)?
+                .to_bytes();
 
-        Ok((response, body))
+            // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+            // which has a stable BSATN encoding to pass across the WASM boundary.
+            let response = convert_http_response(response);
+
+            Ok((response, body))
+        })
     }
 }
 

@@ -6,6 +6,7 @@ import { Identity } from '../lib/identity';
 import { PROCEDURES, type ProcedureCtx } from '../lib/procedures';
 import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
 import type { Timestamp } from '../lib/timestamp';
+import { httpClient } from './http_internal';
 import { sys } from './runtime';
 
 const { freeze } = Object;
@@ -28,6 +29,7 @@ export function callProcedure(
     sender,
     timestamp,
     connectionId,
+    http: httpClient,
     get identity() {
       return new Identity(sys.identity().__identity__);
     },

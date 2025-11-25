@@ -88,4 +88,9 @@ declare module 'spacetime:sys@1.2' {
   };
 
   export function register_hooks(hooks: ModuleHooks);
+
+  export function procedure_http_request(
+    request: Uint8Array,
+    body: Uint8Array | string
+  ): [response: Uint8Array, body: Uint8Array];
 }
