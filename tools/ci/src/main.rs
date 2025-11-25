@@ -235,6 +235,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
                     .read()
                     .unwrap_or_default();
             } else {
+                // TODO: Maybe we do this in a thread instead? Then it's easier to kill
                 pid_str = cmd!(
                     "bash",
                     "-lc",
@@ -253,6 +254,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
     };
 
     println!("Running smoketests..");
+    // TODO: Don't we need to _use_ the port here?!
     let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
 
     // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
