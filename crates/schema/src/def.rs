@@ -25,10 +25,10 @@ use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
 use enum_map::EnumMap;
-use hashbrown::{Equivalent, HashMap};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
+use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
@@ -274,6 +274,14 @@ impl ModuleDef {
     /// Look up a reducer by its id.
     pub fn get_reducer_by_id(&self, id: ReducerId) -> Option<&ReducerDef> {
         self.reducers.get_index(id.idx()).map(|(_, def)| def)
+    }
+
+    /// Look up a view by its id, and whether it is anonymous.
+    pub fn get_view_by_id(&self, id: ViewFnPtr, is_anonymous: bool) -> Option<&ViewDef> {
+        self.views
+            .iter()
+            .find(|(_, def)| def.fn_ptr == id && def.is_anonymous == is_anonymous)
+            .map(|(_, def)| def)
     }
 
     /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
@@ -1434,7 +1442,7 @@ impl ModuleDefLookup for ViewDef {
     }
 }
 
-fn to_raw<Def, RawDef, Name, A>(data: HashMap<Name, Def, A>) -> Vec<RawDef>
+fn to_raw<Def, RawDef, Name>(data: HashMap<Name, Def>) -> Vec<RawDef>
 where
     Def: ModuleDefLookup + Into<RawDef>,
     Name: Eq + Ord + 'static,
@@ -1449,7 +1457,7 @@ mod tests {
 
     use super::*;
     use proptest::prelude::*;
-    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_data_structures::{expect_error_matching, map::HashCollectionExt as _};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 
     proptest! {

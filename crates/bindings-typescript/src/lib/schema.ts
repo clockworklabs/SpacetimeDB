@@ -47,6 +47,7 @@ import {
 } from './views';
 import RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
 import type { IndexOpts } from './indexes';
+import { procedure, type ProcedureFn } from './procedures';
 
 export type TableNamesOf<S extends UntypedSchemaDef> =
   S['tables'][number]['name'];
@@ -546,6 +547,32 @@ class Schema<S extends UntypedSchemaDef> {
   //     defineView(name, true, paramsOrRet as Params, retOrFn, maybeFn!);
   //   }
   // }
+
+  procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
+    name: string,
+    params: Params,
+    ret: Ret,
+    fn: ProcedureFn<S, Params, Ret>
+  ): ProcedureFn<S, Params, Ret>;
+  procedure<Ret extends TypeBuilder<any, any>>(
+    name: string,
+    ret: Ret,
+    fn: ProcedureFn<S, {}, Ret>
+  ): ProcedureFn<S, {}, Ret>;
+  procedure<Params extends ParamsObj, Ret extends TypeBuilder<any, any>>(
+    name: string,
+    paramsOrRet: Ret | Params,
+    retOrFn: ProcedureFn<S, {}, Ret> | Ret,
+    maybeFn?: ProcedureFn<S, Params, Ret>
+  ): ProcedureFn<S, Params, Ret> {
+    if (typeof retOrFn === 'function') {
+      procedure(name, {}, paramsOrRet as Ret, retOrFn);
+      return retOrFn;
+    } else {
+      procedure(name, paramsOrRet as Params, retOrFn, maybeFn!);
+      return maybeFn!;
+    }
+  }
 
   clientVisibilityFilter = {
     sql(filter: string): void {

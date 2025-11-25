@@ -8,6 +8,7 @@ import {
   t,
   type Infer,
   type InferTypeOfRow,
+  errors,
 } from 'spacetimedb/server';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -438,5 +439,23 @@ spacetimedb.reducer('assert_caller_identity_is_module_identity', {}, ctx => {
     throw new Error(`Caller ${caller} is not the owner ${owner}`);
   } else {
     console.info(`Called by the owner ${owner}`);
+  }
+});
+
+// Hit SpacetimeDB's schema HTTP route and return its result as a string.
+//
+// This is a silly thing to do, but an effective test of the procedure HTTP API.
+spacetimedb.procedure('get_my_schema_via_http', t.string(), ctx => {
+  const module_identity = ctx.identity;
+  try {
+    const response = ctx.http.fetch(
+      `http://localhost:3000/v1/database/${module_identity}/schema?version=9`
+    );
+    return response.text();
+  } catch (e) {
+    if (e instanceof errors.HttpError) {
+      return e.message;
+    }
+    throw e;
   }
 });
