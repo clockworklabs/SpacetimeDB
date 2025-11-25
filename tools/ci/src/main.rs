@@ -187,6 +187,7 @@ fn find_free_port() -> Result<u16> {
 }
 
 fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
+    let mut args: Vec<_> = args.iter().cloned().collect();
     let server_state = match server_mode {
         StartServer::No => ServerState::None,
         StartServer::Docker {
@@ -217,6 +218,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
             // before the server is up.
             // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
             bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+            args.push("--no-build-cli".into());
 
             // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
             let arg_string = if random_port {
