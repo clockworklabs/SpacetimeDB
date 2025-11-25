@@ -633,6 +633,10 @@ impl InstanceEnv {
         }
     }
 
+    // Async procedure syscalls return a `Result<impl Future>`, so that we can check `get_tx()`
+    // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
+    // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
+
     pub async fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
 
