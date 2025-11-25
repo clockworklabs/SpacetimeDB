@@ -1,6 +1,5 @@
 use crate::error::IdentifierError;
-use hashbrown::Equivalent;
-use spacetimedb_data_structures::map::HashSet;
+use spacetimedb_data_structures::map::{Equivalent, HashSet};
 use spacetimedb_sats::{de, ser};
 use std::fmt::{self, Debug, Display};
 use std::ops::Deref;
