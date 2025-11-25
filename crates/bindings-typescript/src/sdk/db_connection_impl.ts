@@ -761,14 +761,10 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           eventContext
         );
 
-        const argsArray: any[] = [];
-        reducer.paramsType.elements.forEach(element => {
-          argsArray.push(reducerArgs[element.name!]);
-        });
         this.#reducerEmitter.emit(
           reducerInfo.reducerName,
           reducerEventContext,
-          ...argsArray
+          reducerArgs
         );
         for (const callback of callbacks) {
           callback.cb();

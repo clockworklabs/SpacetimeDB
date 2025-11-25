@@ -218,7 +218,7 @@ impl Lang for TypeScript {
         out.indent(1);
         for table in iter_tables(module) {
             let type_ref = table.product_type_ref;
-            let row_type_name = type_ref_name(module, type_ref);
+            let table_name_pascalcase = table.name.deref().to_case(Case::Pascal);
             writeln!(out, "__table({{");
             out.indent(1);
             write_table_opts(
@@ -230,16 +230,16 @@ impl Lang for TypeScript {
                 iter_constraints(table),
             );
             out.dedent(1);
-            writeln!(out, "}}, {}Row),", row_type_name);
+            writeln!(out, "}}, {}Row),", table_name_pascalcase);
         }
         for view in iter_views(module) {
             let type_ref = view.product_type_ref;
-            let row_type_name = type_ref_name(module, type_ref);
+            let view_name_pascalcase = view.name.deref().to_case(Case::Pascal);
             writeln!(out, "__table({{");
             out.indent(1);
             write_table_opts(module, out, type_ref, &view.name, iter::empty(), iter::empty());
             out.dedent(1);
-            writeln!(out, "}}, {}Row),", row_type_name);
+            writeln!(out, "}}, {}Row),", view_name_pascalcase);
         }
         out.dedent(1);
         writeln!(out, ");");
