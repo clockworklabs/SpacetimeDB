@@ -537,20 +537,8 @@ pub enum ViewResultHeader {
     RowData,
     // This means we the view wants to return the results of the sql query.
     RawSql(String),
-    // This means we the view wants to return the results of a sql query.
-    // Any query parameters will follow the header.
-    ParameterizedQuery(ParameterizedQueryHeader),
-}
-
-#[derive(Debug, Clone, SpacetimeType)]
-// A header for a parameterized query. This should be followed by a bsatn encoding of any parameters.
-#[sats(crate = crate)]
-pub struct ParameterizedQueryHeader {
-    // The sql query template. Add details on parameter syntax when it is supported.
-    pub template: String,
-    // If set, these are the types of the parameters.
-    // This is optional to support parameter inference in the future.
-    pub parameter_types: Option<ProductType>,
+    // We can add an option for parameterized queries later,
+    // which would make it easier to cache query plans on the host side.
 }
 
 /// A reducer definition.

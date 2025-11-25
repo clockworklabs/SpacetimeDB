@@ -203,14 +203,11 @@ pub enum ViewReturnData {
     HeaderFirst(Bytes),
 }
 
+// A view result after processing the return header.
 pub enum ViewResult {
+    // The rows are encoded as a bsatn array of products.
     Rows(Bytes),
     RawSql(String),
-    ParameterizedQuery {
-        query: String,
-        parameters: Bytes,
-        parameter_types: Option<ProductType>,
-    },
 }
 
 impl ViewResult {
@@ -230,15 +227,6 @@ impl ViewResult {
                         let at = bytes.len() - reader.remaining();
                         let remaining_bytes = bytes.slice(at..);
                         Ok(ViewResult::Rows(remaining_bytes))
-                    }
-                    ViewResultHeader::ParameterizedQuery(header) => {
-                        let at = bytes.len() - reader.remaining();
-                        let remaining_bytes = bytes.slice(at..);
-                        Ok(ViewResult::ParameterizedQuery {
-                            query: header.template,
-                            parameters: remaining_bytes,
-                            parameter_types: header.parameter_types,
-                        })
                     }
                 }
             }
@@ -1081,7 +1069,6 @@ impl InstanceCommon {
                                 },
                             )
                             .context("Error executing raw SQL returned by view".to_string())?,
-                        _ => anyhow::bail!("View returned an unsupported format"),
                     };
 
                     let res = match sender {
