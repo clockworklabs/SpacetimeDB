@@ -20,12 +20,13 @@ pub struct SpacetimeDbGuard {
     pub logs: Arc<Mutex<String>>,
 }
 
-// Remove all Cargo-provided env vars. These are set by the fact that we're running in a cargo command (e.g. `cargo test`).
-// We don't want to inherit any of these to a child cargo process, because it causes unnecessary rebuilds.
-fn unset_cargo_env_vars() {
+// Remove all Cargo-provided env vars from a child process. These are set by the fact that we're running in a cargo
+// command (e.g. `cargo test`). We don't want to inherit any of these to a child cargo process, because it causes
+// unnecessary rebuilds.
+fn unset_cargo_env_vars(cmd: &mut Command) {
     for (key, _) in std::env::vars() {
         if key.starts_with("CARGO_") && key != "CARGO_TARGET_DIR" {
-            std::env::remove_var(key);
+            cmd.env_remove(&key);
         }
     }
 }
@@ -50,8 +51,6 @@ impl SpacetimeDbGuard {
         let workspace_dir = env!("CARGO_MANIFEST_DIR");
 
         Self::build_prereqs(workspace_dir);
-
-        unset_cargo_env_vars();
         let mut cargo_args = vec!["run", "-p", "spacetimedb-cli", "--"];
 
         cargo_args.extend(extra_args);
@@ -71,9 +70,10 @@ impl SpacetimeDbGuard {
     fn build_prereqs(workspace_dir: &str) {
         let targets = ["spacetimedb-standalone", "spacetimedb-cli"];
 
-        unset_cargo_env_vars();
         for pkg in targets {
-            let _ = Command::new("cargo")
+            let mut cmd = Command::new("cargo");
+            unset_cargo_env_vars(&mut cmd);
+            let _ = cmd
                 .args(["build", "-p", pkg])
                 .current_dir(workspace_dir)
                 .status()
@@ -82,7 +82,9 @@ impl SpacetimeDbGuard {
     }
 
     fn spawn_child(workspace_dir: &str, args: &[&str]) -> (Child, Arc<Mutex<String>>) {
-        let mut child = Command::new("cargo")
+        let mut cmd = Command::new("cargo");
+        unset_cargo_env_vars(&mut cmd);
+        let mut child = cmd
             .args(args)
             .current_dir(workspace_dir)
             .stdout(Stdio::piped())
