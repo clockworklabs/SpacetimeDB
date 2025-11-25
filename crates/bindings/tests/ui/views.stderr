@@ -137,8 +137,9 @@ error[E0599]: no method named `try_insert` found for reference `&test__ViewHandl
    |                         ^^^^^^^^^^
    |
    = help: items from traits can only be used if the trait is implemented and in scope
-   = note: the following trait defines an item `try_insert`, perhaps you need to implement it:
+   = note: the following traits define an item `try_insert`, perhaps you need to implement one of them:
            candidate #1: `Table`
+           candidate #2: `http::header::map::into_header_name::Sealed`
 help: there is a method `try_into` with a similar name, but with different arguments
   --> $RUST/core/src/convert/mod.rs
    |

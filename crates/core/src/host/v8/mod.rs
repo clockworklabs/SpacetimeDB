@@ -1,13 +1,13 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, CodeError, ErrorOrException,
-    ExcResult, ExceptionThrown, JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, JsStackTrace, TerminationError, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks, resolve_sys_module, FnRet,
-    HookFunctions,
+    call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
+    resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
@@ -36,6 +36,7 @@ use anyhow::Context as _;
 use core::any::type_name;
 use core::str;
 use enum_as_inner::EnumAsInner;
+use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
@@ -60,6 +61,7 @@ mod ser;
 mod string;
 mod syscall;
 mod to_value;
+mod util;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
 #[derive(Default)]
@@ -382,8 +384,17 @@ impl JsInstance {
         .await
     }
 
-    pub async fn call_procedure(&mut self, _params: CallProcedureParams) -> CallProcedureReturn {
-        todo!("JS/TS module procedure support")
+    pub async fn call_procedure(self: Box<Self>, params: CallProcedureParams) -> (CallProcedureReturn, Box<Self>) {
+        // Get a handle to the current tokio runtime, and pass it to the worker
+        // so that it can execute futures.
+        let rt = tokio::runtime::Handle::current();
+        let (r, s) = self
+            .send_recv(
+                JsWorkerReply::into_call_procedure,
+                JsWorkerRequest::CallProcedure { params, rt },
+            )
+            .await;
+        (*r, s)
     }
 
     pub async fn call_view(self: Box<Self>, tx: MutTxId, params: CallViewParams) -> (ViewCallResult, Box<Self>) {
@@ -400,6 +411,7 @@ enum JsWorkerReply {
     UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
     CallReducer(ReducerCallResult),
     CallView(Box<ViewCallResult>),
+    CallProcedure(Box<CallProcedureReturn>),
     ClearAllClients(anyhow::Result<()>),
     CallIdentityConnected(Result<(), ClientConnectedError>),
     CallIdentityDisconnected(Result<(), ReducerCallError>),
@@ -425,6 +437,11 @@ enum JsWorkerRequest {
     },
     /// See [`JsInstance::call_view`].
     CallView { tx: MutTxId, params: CallViewParams },
+    /// See [`JsInstance::call_procedure`].
+    CallProcedure {
+        params: CallProcedureParams,
+        rt: tokio::runtime::Handle,
+    },
     /// See [`JsInstance::clear_all_clients`].
     ClearAllClients,
     /// See [`JsInstance::call_identity_connected`].
@@ -577,6 +594,18 @@ fn spawn_instance_worker(
                 JsWorkerRequest::CallView { tx, params } => {
                     let (res, trapped) = instance_common.call_view_with_tx(tx, params, &mut inst);
                     reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                }
+                JsWorkerRequest::CallProcedure { params, rt } => {
+                    // The callee passed us a handle to their tokio runtime - enter its
+                    // context so that we can execute futures.
+                    let _guard = rt.enter();
+
+                    let (res, trapped) = instance_common
+                        .call_procedure(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+
+                    reply("call_procedure", JsWorkerReply::CallProcedure(res.into()), trapped);
                 }
                 JsWorkerRequest::ClearAllClients => {
                     let res = instance_common.clear_all_clients();
@@ -757,11 +786,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        let ExecutionResult { stats, call_result } = common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op)?)
-        });
-        let call_result = call_result.and_then(|res| res.map_err(ExecutionError::User));
-        ExecutionResult { stats, call_result }
+        })
+        .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
@@ -782,10 +810,22 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     async fn call_procedure(
         &mut self,
-        _op: ProcedureOp,
-        _budget: FunctionBudget,
+        op: ProcedureOp,
+        budget: FunctionBudget,
     ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
-        todo!("JS/TS module procedure support")
+        let result = common_call(self.scope, budget, op, |scope, op| {
+            call_call_procedure(scope, self.hooks, op)
+        })
+        .map_result(|call_result| {
+            call_result.map_err(|e| match e {
+                ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
+            })
+        });
+        let tx_offset = env_on_isolate_unwrap(self.scope)
+            .instance_env
+            .take_procedure_tx_offset();
+        (result, tx_offset)
     }
 }
 
@@ -815,7 +855,7 @@ where
             CanContinue::Yes => ExecutionError::Recoverable(e.into()),
             CanContinue::YesCancelTermination => {
                 scope.cancel_terminate_execution();
-                ExecutionError::Trap(e.into())
+                ExecutionError::Recoverable(e.into())
             }
         }
     });

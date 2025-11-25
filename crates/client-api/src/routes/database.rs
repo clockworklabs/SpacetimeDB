@@ -44,21 +44,30 @@ use spacetimedb_schema::auto_migrate::{
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
-fn require_spacetime_auth_for_creation() -> bool {
-    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
+fn require_spacetime_auth_for_creation() -> Option<String> {
+    // If the string is a non-empty value, return the string to be used as the required issuer
+    // TODO(cloutiertyler): This env var replaces TEMP_REQUIRE_SPACETIME_AUTH,
+    // we should remove that one in the future. We may eventually remove
+    // the below restriction entirely as well in Maincloud.
+    match env::var("TEMP_SPACETIMEAUTH_ISSUER_REQUIRED_TO_PUBLISH") {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
 }
 
 // A hacky function to let us restrict database creation on maincloud.
 fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
-    if !require_spacetime_auth_for_creation() {
+    let Some(required_issuer) = require_spacetime_auth_for_creation() else {
         return Ok(());
-    }
-    if auth.claims.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+    };
+    let issuer = auth.claims.issuer.trim_end_matches('/');
+    if issuer == required_issuer {
         Ok(())
     } else {
         log::trace!(
-            "Rejecting creation request because auth issuer is {}",
-            auth.claims.issuer
+            "Rejecting creation request because auth issuer is {} and required issuer is {}",
+            auth.claims.issuer,
+            required_issuer
         );
         Err((
             StatusCode::UNAUTHORIZED,
@@ -1228,7 +1237,7 @@ where
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)
-            .route("/procedure/:procedure", self.call_procedure_post)
+            .route("/unstable/procedure/:procedure", self.call_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
