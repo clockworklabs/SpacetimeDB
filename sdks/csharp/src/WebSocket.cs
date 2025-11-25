@@ -384,7 +384,6 @@ namespace SpacetimeDB
             // No CTS on WebGL. Mark cancel intent so that when socket id arrives or open fires,
             // we immediately close and avoid reporting a connected state.
             _cancelConnectRequested = true;
-            return;
 #else
             try { _connectCts?.Cancel(); } catch { /* ignore */ }
 #endif
