@@ -3,11 +3,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   errors,
-  ScheduleAt,
   schema,
   t,
   table,
   type ProcedureCtx,
+  type ScheduleAt,
   type TransactionCtx,
 } from 'spacetimedb/server';
 
