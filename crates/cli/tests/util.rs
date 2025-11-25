@@ -20,6 +20,16 @@ pub struct SpacetimeDbGuard {
     pub logs: Arc<Mutex<String>>,
 }
 
+// Remove all Cargo-provided env vars. These are set by the fact that we're running in a cargo command (e.g. `cargo test`).
+// We don't want to inherit any of these to a child cargo process, because it causes unnecessary rebuilds.
+fn unset_cargo_env_vars() -> () {
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CARGO_") && key != "CARGO_TARGET_DIR" {
+            std::env::remove_var(key);
+        }
+    }
+}
+
 impl SpacetimeDbGuard {
     /// Start `spacetimedb` in a temporary data directory via:
     /// cargo run -p spacetimedb-cli -- start --data-dir <temp-dir> --listen-addr <addr>
@@ -41,6 +51,7 @@ impl SpacetimeDbGuard {
 
         Self::build_prereqs(workspace_dir);
 
+        unset_cargo_env_vars();
         let mut cargo_args = vec!["run", "-p", "spacetimedb-cli", "--"];
 
         cargo_args.extend(extra_args);
@@ -60,6 +71,7 @@ impl SpacetimeDbGuard {
     fn build_prereqs(workspace_dir: &str) {
         let targets = ["spacetimedb-standalone", "spacetimedb-cli"];
 
+        unset_cargo_env_vars();
         for pkg in targets {
             let _ = Command::new("cargo")
                 .args(["build", "-p", pkg])
