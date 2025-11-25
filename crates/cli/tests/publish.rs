@@ -26,174 +26,80 @@ fn cli_can_publish_spacetimedb_on_disk() {
         .success();
 }
 
-#[test]
-fn cli_can_publish_with_automigration_change() {
+// TODO: Somewhere we should test that --delete-data actually deletes the data in all cases
+fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bool) -> () {
     let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
 
-    // Workspace root for `cargo run -p ...`
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
     let dir = workspace_dir.join("modules").join("module-test");
 
     let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--server",
-        &spacetime.host_url.to_string(),
-        "automigration-test",
-    ])
-    .current_dir(dir.clone())
-    .assert()
-    .success();
+    cmd.args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
+        .current_dir(dir.clone())
+        .assert()
+        .success();
 
-    // Can republish with automigration change
     let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--build-options=--features test-add-column",
-        "--server",
-        &spacetime.host_url.to_string(),
-        "--yes-break-clients",
+    cmd.args(["publish", module_name, "--server", &spacetime.host_url.to_string()])
+        .args(republish_args)
+        .current_dir(dir);
+
+    if expect_success {
+        cmd.assert().success();
+    } else {
+        cmd.assert().failure();
+    }
+}
+
+#[test]
+fn cli_can_publish_with_automigration_change() {
+    migration_test(
         "automigration-test",
-    ])
-    .current_dir(dir)
-    .assert()
-    .success();
+        &["--build-options=--features test-add-column", "--yes-break-clients"],
+        true,
+    );
 }
 
 #[test]
 fn cli_cannot_publish_breaking_change_without_flag() {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
-
-    // Workspace root for `cargo run -p ...`
-    let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
-    let dir = workspace_dir.join("modules").join("module-test");
-
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--server",
-        &spacetime.host_url.to_string(),
+    migration_test(
         "breaking-change-test",
-    ])
-    .current_dir(dir.clone())
-    .assert()
-    .success();
-
-    // Cannot republish with breaking change without flag
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--build-options=--features test-remove-table",
-        "--server",
-        &spacetime.host_url.to_string(),
-        "breaking-change-test",
-    ])
-    .current_dir(dir)
-    .assert()
-    .failure();
+        &["--build-options=--features test-remove-table"],
+        false,
+    );
 }
 
 #[test]
 fn cli_can_publish_breaking_change_with_delete_data_flag() {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
-
-    // Workspace root for `cargo run -p ...`
-    let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
-    let dir = workspace_dir.join("modules").join("module-test");
-
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--server",
-        &spacetime.host_url.to_string(),
+    migration_test(
         "breaking-change-delete-data-test",
-    ])
-    .current_dir(dir.clone())
-    .assert()
-    .success();
-
-    // Can republish with breaking change with --delete-data flag
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--build-options=--features test-remove-table",
-        "--server",
-        &spacetime.host_url.to_string(),
-        "--delete-data",
-        "--yes",
-        "breaking-change-delete-data-test",
-    ])
-    .current_dir(dir)
-    .assert()
-    .success();
+        &["--build-options=--features test-remove-table", "--delete-data", "--yes"],
+        true,
+    );
 }
 
 #[test]
 fn cli_can_publish_breaking_change_with_on_conflict_flag() {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
-
-    // Workspace root for `cargo run -p ...`
-    let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
-    let dir = workspace_dir.join("modules").join("module-test");
-
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--server",
-        &spacetime.host_url.to_string(),
+    migration_test(
         "breaking-change-on-conflict-test",
-    ])
-    .current_dir(dir.clone())
-    .assert()
-    .success();
-
-    // Can republish with breaking change with --on-conflict=delete-data flag
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--build-options=--features test-remove-table",
-        "--server",
-        &spacetime.host_url.to_string(),
-        "--delete-data=on-conflict",
-        "--yes",
-        "breaking-change-on-conflict-test",
-    ])
-    .current_dir(dir)
-    .assert()
-    .success();
+        &[
+            "--build-options=--features test-remove-table",
+            "--delete-data=on-conflict",
+            "--yes",
+        ],
+        true,
+    );
 }
 
 #[test]
 fn cli_can_publish_no_conflict_does_not_delete_data() {
-    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
-
-    // Workspace root for `cargo run -p ...`
-    let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
-    let dir = workspace_dir.join("modules").join("module-test");
-
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--server",
-        &spacetime.host_url.to_string(),
+    migration_test(
         "no-conflict-test",
-    ])
-    .current_dir(dir.clone())
-    .assert()
-    .success();
-
-    // Can republish without conflict even with --on-conflict=delete-data flag
-    let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
-    cmd.args([
-        "publish",
-        "--server",
-        &spacetime.host_url.to_string(),
-        "--delete-data=on-conflict",
-        // NOTE: deleting data requires --yes,
-        // so not providing it here ensures that no data deletion is attempted.
-        "no-conflict-test",
-    ])
-    .current_dir(dir)
-    .assert()
-    .success();
+        &[
+            "--delete-data=on-conflict",
+            // NOTE: deleting data requires --yes,
+            // so not providing it here ensures that no data deletion is attempted.
+        ],
+        true,
+    );
 }
