@@ -301,7 +301,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         scheduleAtCol = colIds.get(name)!;
       }
     }
-
   }
 
   // convert explicit multi‑column indexes coming from options.indexes

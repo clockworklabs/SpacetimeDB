@@ -1489,8 +1489,7 @@ export type SimpleSumBuilder<Variants extends SimpleVariantsObj> =
 
 export class ScheduleAtBuilder
   extends TypeBuilder<ScheduleAt, ScheduleAtAlgebraicType>
-  implements
-    Defaultable<ScheduleAt, ScheduleAtAlgebraicType>
+  implements Defaultable<ScheduleAt, ScheduleAtAlgebraicType>
 {
   constructor() {
     super(ScheduleAt.getAlgebraicType());
@@ -2750,8 +2749,7 @@ export class ScheduleAtColumnBuilder<
     M extends ColumnMetadata<ScheduleAt> = DefaultMetadata,
   >
   extends ColumnBuilder<ScheduleAt, ScheduleAtAlgebraicType, M>
-  implements
-    Defaultable<ScheduleAt, ScheduleAtAlgebraicType>
+  implements Defaultable<ScheduleAt, ScheduleAtAlgebraicType>
 {
   default(
     value: ScheduleAt
