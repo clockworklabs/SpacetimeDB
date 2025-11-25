@@ -1,5 +1,7 @@
-//! This script is used to generate the C# bindings for the `RawModuleDef` type.
-//! Run `cargo run --example regen-csharp-moduledef` to update C# bindings whenever the module definition changes.
+//! This script is used to generate the Typescript bindings for the `RawModuleDef` type.
+//! Run `cargo run --example regen-typescript-moduledef` to update TS bindings whenever the module definition changes.
+
+// TODO: consider renaming this file, since it doesn't just generate `RawModuleDef` anymore.
 
 use fs_err as fs;
 use regex::Regex;
@@ -22,6 +24,8 @@ fn main() -> anyhow::Result<()> {
     let module = RawModuleDefV8::with_builder(|module| {
         module.add_type::<RawModuleDef>();
         module.add_type::<ViewResultHeader>();
+        module.add_type::<spacetimedb_lib::http::Request>();
+        module.add_type::<spacetimedb_lib::http::Response>();
     });
 
     let dir = &Path::new(concat!(

@@ -75,3 +75,28 @@ declare module 'spacetime:sys@1.1' {
 
   export function register_hooks(hooks: ModuleHooks);
 }
+
+declare module 'spacetime:sys@1.2' {
+  export type ModuleHooks = {
+    __call_procedure__(
+      id: u32,
+      sender: u256,
+      connection_id: u128,
+      timestamp: bigint,
+      args: Uint8Array
+    ): Uint8Array;
+  };
+
+  export function register_hooks(hooks: ModuleHooks);
+
+  export function procedure_http_request(
+    request: Uint8Array,
+    body: Uint8Array | string
+  ): [response: Uint8Array, body: Uint8Array];
+
+  export function procedure_start_mut_tx(): bigint;
+
+  export function procedure_commit_mut_tx();
+
+  export function procedure_abort_mut_tx();
+}

@@ -191,8 +191,15 @@ pub struct ExecutionResult<T, E> {
     pub call_result: Result<T, E>,
 }
 
-// pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
 pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
+
+impl<T, E> ExecutionResult<T, E> {
+    pub fn map_result<X, Y>(self, f: impl FnOnce(Result<T, E>) -> Result<X, Y>) -> ExecutionResult<X, Y> {
+        let Self { stats, call_result } = self;
+        let call_result = f(call_result);
+        ExecutionResult { stats, call_result }
+    }
+}
 
 // The original version of views used a different return format (it returned the rows directly).
 // The newer version uses ViewReturnData to represent the different formats.
@@ -460,11 +467,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        let ret = self.common.call_procedure(params, &mut self.instance).await;
-        if ret.result.is_err() {
-            self.trapped = true;
-        }
-        ret
+        let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
     }
 }
 
@@ -649,11 +654,11 @@ impl InstanceCommon {
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
-    async fn call_procedure<I: WasmInstance>(
+    pub(crate) async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> CallProcedureReturn {
+    ) -> (CallProcedureReturn, bool) {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -708,6 +713,8 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
+        let trapped = call_result.is_err();
+
         let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
@@ -738,7 +745,7 @@ impl InstanceCommon {
             }
         };
 
-        CallProcedureReturn { result, tx_offset }
+        (CallProcedureReturn { result, tx_offset }, trapped)
     }
 
     /// Execute a reducer.
