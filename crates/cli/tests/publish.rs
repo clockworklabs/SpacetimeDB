@@ -26,7 +26,9 @@ fn cli_can_publish_spacetimedb_on_disk() {
         .success();
 }
 
-// TODO: Somewhere we should test that --delete-data actually deletes the data in all cases
+// TODO: Somewhere we should test that data is actually deleted properly in all the expected cases,
+// e.g. when providing --delete-data, or when there's a conflict and --delete-data=on-conflict is provided.
+
 fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bool) -> () {
     let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
 
@@ -52,10 +54,94 @@ fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bo
 }
 
 #[test]
+fn cli_can_publish_no_conflict_does_not_delete_data() {
+    migration_test(
+        "no-conflict-test",
+        &[
+            "--delete-data=on-conflict",
+            // NOTE: deleting data requires --yes,
+            // so not providing it here ensures that no data deletion is attempted.
+        ],
+        true,
+    );
+}
+
+#[test]
+fn cli_can_publish_no_conflict_with_delete_data_flag() {
+    migration_test("no-conflict-delete-data-test", &["--delete-data", "--yes"], true);
+}
+
+#[test]
+fn cli_can_publish_no_conflict_without_delete_data_flag() {
+    migration_test(
+        "no-conflict-test",
+        &[], // no --delete-data flag at all
+        true,
+    );
+}
+
+#[test]
 fn cli_can_publish_with_automigration_change() {
     migration_test(
         "automigration-test",
         &["--build-options=--features test-add-column", "--yes-break-clients"],
+        true,
+    );
+}
+
+#[test]
+fn cli_cannot_publish_automigration_change_without_yes_break_clients() {
+    migration_test(
+        "automigration-test-no-break-flag",
+        &["--build-options=--features test-add-column"],
+        false,
+    );
+}
+
+#[test]
+fn cli_can_publish_automigration_change_with_on_conflict_and_yes_break_clients() {
+    migration_test(
+        "automigration-on-conflict-test",
+        &[
+            "--build-options=--features test-add-column",
+            "--delete-data=on-conflict",
+            "--yes-break-clients",
+        ],
+        true,
+    );
+}
+
+#[test]
+fn cli_cannot_publish_automigration_change_with_on_conflict_without_yes_break_clients() {
+    migration_test(
+        "automigration-on-conflict-no-break-flag-test",
+        &[
+            "--build-options=--features test-add-column",
+            "--delete-data=on-conflict",
+        ],
+        false,
+    );
+}
+
+#[test]
+fn cli_can_publish_automigration_change_with_delete_data_always_without_yes_break_clients() {
+    migration_test(
+        "automigration-delete-data-test",
+        &["--build-options=--features test-add-column", "--delete-data", "--yes"],
+        true,
+    );
+}
+
+#[test]
+fn cli_can_publish_automigration_change_with_delete_data_always_and_yes_break_clients() {
+    migration_test(
+        "automigration-delete-data-break-test",
+        &[
+            "--build-options=--features test-add-column",
+            "--delete-data",
+            "--yes",
+            "--yes-break-clients",
+        ],
         true,
     );
 }
@@ -86,19 +172,6 @@ fn cli_can_publish_breaking_change_with_on_conflict_flag() {
             "--build-options=--features test-remove-table",
             "--delete-data=on-conflict",
             "--yes",
-        ],
-        true,
-    );
-}
-
-#[test]
-fn cli_can_publish_no_conflict_does_not_delete_data() {
-    migration_test(
-        "no-conflict-test",
-        &[
-            "--delete-data=on-conflict",
-            // NOTE: deleting data requires --yes,
-            // so not providing it here ensures that no data deletion is attempted.
         ],
         true,
     );
