@@ -16,12 +16,13 @@
 
     // This library is ESM-only, do not import commonjs modules
     "esModuleInterop": false,
+    "allowSyntheticDefaultImports": false,
     "useDefineForClassFields": true,
 
     // Crucial when using esbuild/swc/babel instead of tsc emit:
     "verbatimModuleSyntax": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*", "tests/**/*", "vitest.config.ts", "tsup.config.ts"],
+  "include": ["src/index.ts", "tests/**/*"],
   "exclude": ["node_modules", "**/__tests__/*", "dist/**/*"]
 }

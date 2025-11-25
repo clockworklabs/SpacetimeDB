@@ -29,6 +29,7 @@ use spacetimedb_sats::{
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::table::RowRef;
 use std::fmt::Display;
+use std::future::Future;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -634,6 +635,10 @@ impl InstanceEnv {
         }
     }
 
+    // Async procedure syscalls return a `Result<impl Future>`, so that we can check `get_tx()`
+    // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
+    // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
+
     pub async fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
         self.finish_anon_tx()?;
 
@@ -701,11 +706,11 @@ impl InstanceEnv {
         self.procedure_last_tx_offset.take()
     }
 
-    pub async fn http_request(
+    pub fn http_request(
         &mut self,
         request: st_http::Request,
         body: bytes::Bytes,
-    ) -> Result<(st_http::Response, bytes::Bytes), NodesError> {
+    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>>, NodesError> {
         if self.in_tx() {
             // If we're holding a transaction open, refuse to perform this blocking operation.
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));
@@ -751,45 +756,54 @@ impl InstanceEnv {
         // TODO(procedure-metrics): record size in bytes of response, time spent awaiting response.
 
         // Actually execute the HTTP request!
-        // Async block here as a sort of hacky `try` block.
-        let (response, body) = async {
-            // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
-            let response = reqwest::Client::new().execute(reqwest).await?;
+        // TODO(perf): Stash a long-lived `Client` in the env somewhere, rather than building a new one for each call.
+        let execute_fut = reqwest::Client::new().execute(reqwest);
+
+        let response_fut = async {
+            let response = execute_fut.await?;
 
             // Download the response body, which in all likelihood will be a stream,
             // as reqwest seems to prefer that.
             let (response, body) = http::Response::from(response).into_parts();
+
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
+
             Ok((response, body))
-        }
-        .await
-        .inspect_err(|err: &reqwest::Error| {
-            // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
-            if err.is_timeout() {
-                DB_METRICS
-                    .procedure_num_timeout_http_requests
-                    .with_label_values(self.database_identity())
-                    .inc();
-            } else {
-                DB_METRICS
-                    .procedure_num_failed_http_requests
-                    .with_label_values(self.database_identity())
-                    .inc();
-            }
+        };
+
+        let database_identity = *self.database_identity();
+
+        Ok(async move {
+            let (response, body) = response_fut
+                .await
+                .inspect_err(|err: &reqwest::Error| {
+                    // Report the request's failure in our metrics as either a timeout or a misc. failure, as appropriate.
+                    if err.is_timeout() {
+                        DB_METRICS
+                            .procedure_num_timeout_http_requests
+                            .with_label_values(&database_identity)
+                            .inc();
+                    } else {
+                        DB_METRICS
+                            .procedure_num_failed_http_requests
+                            .with_label_values(&database_identity)
+                            .inc();
+                    }
+                })
+                .map_err(http_error)?;
+
+            // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
+            // which has a stable BSATN encoding to pass across the WASM boundary.
+            let response = convert_http_response(response);
+
+            // Record the response size in bytes.
+            DB_METRICS
+                .procedure_http_response_size_bytes
+                .with_label_values(&database_identity)
+                .inc_by((response.size_in_bytes() + body.len()) as _);
+
+            Ok((response, body))
         })
-        .map_err(http_error)?;
-
-        // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
-        // which has a stable BSATN encoding to pass across the WASM boundary.
-        let response = convert_http_response(response);
-
-        // Record the response size in bytes.
-        DB_METRICS
-            .procedure_http_response_size_bytes
-            .with_label_values(self.database_identity())
-            .inc_by((response.size_in_bytes() + body.len()) as _);
-
-        Ok((response, body))
     }
 }
 

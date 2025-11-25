@@ -4,13 +4,14 @@ use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::v8::de::{deserialize_js, scratch_buf};
-use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown};
+use crate::host::v8::error::{CodeError, CodeMessageError, ErrorOrException, ExcResult, ExceptionThrown, TypeError};
 use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
 use crate::host::v8::syscall::hooks::HookFunctions;
+use crate::host::v8::util::make_uint8array;
 use crate::host::v8::{
-    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, CodeError, JsInstanceEnv, JsStackTrace,
+    call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, JsInstanceEnv, JsStackTrace,
     TerminationError, Throwable,
 };
 use crate::host::wasm_common::instrumentation::span;
@@ -120,7 +121,16 @@ pub(super) fn sys_v1_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
 
 pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
     use register_hooks_v1_2 as register_hooks;
-    create_synthetic_module!(scope, "spacetime:sys@1.2", (with_nothing, (), register_hooks))
+    create_synthetic_module!(
+        scope,
+        "spacetime:sys@1.2",
+        (with_nothing, (), register_hooks),
+        (
+            with_sys_result_value,
+            AbiCall::ProcedureHttpRequest,
+            procedure_http_request
+        )
+    )
 }
 
 /// Registers a function in `module`
@@ -207,6 +217,23 @@ fn with_sys_result_noret<'scope>(
     }
 }
 
+/// Wraps `run` in [`with_span`] and returns undefined to JS.
+/// Handles [`SysCallError`] if it occurs by throwing exceptions into JS.
+fn with_sys_result_value<'scope, O>(
+    abi_call: AbiCall,
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'scope>,
+    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> SysCallResult<Local<'scope, O>>,
+) -> FnRet<'scope>
+where
+    Local<'scope, O>: Into<Local<'scope, v8::Value>>,
+{
+    match with_span(abi_call, scope, args, run) {
+        Ok(v) => Ok(v.into()),
+        Err(err) => handle_sys_call_error(abi_call, scope, err),
+    }
+}
+
 /// A higher order function conforming to the interface of [`with_sys_result`] and [`with_span`].
 fn with_nothing<'scope>(
     (): (),
@@ -240,7 +267,8 @@ fn code_error(scope: &PinScope<'_, '_>, code: u16) -> ExceptionThrown {
 /// Turns a [`NodesError`] into a thrown exception.
 fn throw_nodes_error(abi_call: AbiCall, scope: &mut PinScope<'_, '_>, error: NodesError) -> ExceptionThrown {
     let res = match err_to_errno_and_log::<u16>(abi_call, error) {
-        Ok(code) => CodeError::from_code(scope, code),
+        Ok((code, None)) => CodeError::from_code(scope, code),
+        Ok((code, Some(message))) => CodeMessageError::from_code(scope, code, message),
         Err(err) => {
             // Terminate execution ASAP and throw a catchable exception (`TerminationError`).
             // Unfortunately, JS execution won't be terminated once the callback returns,
@@ -1496,4 +1524,64 @@ fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments
 /// Returns the module identity.
 fn identity<'scope>(scope: &mut PinScope<'scope, '_>, _: FunctionCallbackArguments<'scope>) -> SysCallResult<Identity> {
     Ok(*get_env(scope)?.instance_env.database_identity())
+}
+
+/// Execute an HTTP request in the context of a procedure.
+///
+/// # Signature
+///
+/// ```ignore
+/// function procedure_http_request(
+///     request: Uint8Array,
+///     body: Uint8Array | string
+/// ): [response: Uint8Array, body: Uint8Array];
+/// ```
+///
+/// Accepts a BSATN-encoded [`spacetimedb_lib::http::Request`] and a request body, and
+/// returns a BSATN-encoded [`spacetimedb_lib::http::Response`] and the response body.
+fn procedure_http_request<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'scope>,
+) -> SysCallResult<Local<'scope, v8::Array>> {
+    use spacetimedb_lib::http as st_http;
+
+    let request =
+        cast!(scope, args.get(0), v8::Uint8Array, "Uint8Array for procedure request").map_err(|e| e.throw(scope))?;
+
+    let request = bsatn::from_slice::<st_http::Request>(request.get_contents(&mut []))
+        .map_err(|e| TypeError(format!("failed to decode http request: {e}")).throw(scope))?;
+
+    let request_body = args.get(1);
+    let request_body = if let Ok(s) = request_body.try_cast::<v8::String>() {
+        Bytes::from(s.to_rust_string_lossy(scope))
+    } else {
+        let bytes = cast!(
+            scope,
+            request_body,
+            v8::Uint8Array,
+            "Uint8Array or string for request body"
+        )
+        .map_err(|e| e.throw(scope))?;
+        Bytes::copy_from_slice(bytes.get_contents(&mut []))
+    };
+
+    let env = get_env(scope)?;
+
+    let fut = env.instance_env.http_request(request, request_body)?;
+
+    let rt = tokio::runtime::Handle::current();
+    let (response, response_body) = rt.block_on(fut)?;
+
+    let response = bsatn::to_vec(&response).expect("failed to serialize `HttpResponse`");
+    let response = make_uint8array(scope, response);
+
+    let response_body = match response_body.try_into_mut() {
+        Ok(bytes_mut) => make_uint8array(scope, Box::new(bytes_mut)),
+        Err(bytes) => make_uint8array(scope, Vec::from(bytes)),
+    };
+
+    Ok(v8::Array::new_with_elements(
+        scope,
+        &[response.into(), response_body.into()],
+    ))
 }
