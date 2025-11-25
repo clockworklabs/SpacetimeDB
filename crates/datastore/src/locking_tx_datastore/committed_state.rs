@@ -6,31 +6,34 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
-use crate::system_tables::{
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
-    ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX,
-};
 use crate::{
     db_metrics::DB_METRICS,
-    error::{DatastoreError, IndexError, TableError},
+    error::{DatastoreError, IndexError, TableError, ViewError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::state_view::iter_st_column_for_table,
+    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
-        StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
+        StTableRow, StViewRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
         ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
         ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
         ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
-        ST_VAR_IDX,
+        ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
-    traits::TxData,
+    traits::{EphemeralTables, TxData},
+};
+use crate::{
+    locking_tx_datastore::ViewCallInfo,
+    system_tables::{
+        ST_CONNECTION_CREDENTIALS_ID, ST_CONNECTION_CREDENTIALS_IDX, ST_VIEW_COLUMN_ID, ST_VIEW_COLUMN_IDX, ST_VIEW_ID,
+        ST_VIEW_IDX, ST_VIEW_PARAM_ID, ST_VIEW_PARAM_IDX, ST_VIEW_SUB_ID, ST_VIEW_SUB_IDX,
+    },
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
-use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_sats::{algebraic_value::de::ValueDeserializer, memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::{
@@ -72,6 +75,33 @@ pub struct CommittedState {
     /// We should split `CommittedState` into two types
     /// where one, e.g., `ReplayCommittedState`, has this field.
     table_dropped: IntSet<TableId>,
+    /// We track the read sets for each view in the committed state.
+    /// We check each reducer's write set against these read sets.
+    /// Any overlap will trigger a re-evaluation of the affected view,
+    /// and its read set will be updated accordingly.
+    read_sets: ViewReadSets,
+
+    /// Tables which do not need to be made persistent.
+    /// These include:
+    ///     - system tables: `st_view_sub`, `st_view_arg`
+    ///     - Tables which back views.
+    pub(super) ephemeral_tables: EphemeralTables,
+}
+
+impl CommittedState {
+    /// Returns the views that perform a full scan of this table
+    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+        self.read_sets.views_for_table_scan(table_id)
+    }
+
+    /// Returns the views that perform an precise index seek on given `row_ref` of `table_id`
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ref: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.read_sets.views_for_index_seek(table_id, row_ref)
+    }
 }
 
 impl MemoryUsage for CommittedState {
@@ -83,6 +113,8 @@ impl MemoryUsage for CommittedState {
             index_id_map,
             page_pool: _,
             table_dropped,
+            read_sets,
+            ephemeral_tables,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -90,6 +122,8 @@ impl MemoryUsage for CommittedState {
             + blob_store.heap_usage()
             + index_id_map.heap_usage()
             + table_dropped.heap_usage()
+            + read_sets.heap_usage()
+            + ephemeral_tables.heap_usage()
     }
 }
 
@@ -152,7 +186,9 @@ impl CommittedState {
             blob_store: <_>::default(),
             index_id_map: <_>::default(),
             table_dropped: <_>::default(),
+            read_sets: <_>::default(),
             page_pool,
+            ephemeral_tables: <_>::default(),
         }
     }
 
@@ -259,6 +295,8 @@ impl CommittedState {
         self.create_table(ST_VIEW_ID, schemas[ST_VIEW_IDX].clone());
         self.create_table(ST_VIEW_PARAM_ID, schemas[ST_VIEW_PARAM_IDX].clone());
         self.create_table(ST_VIEW_COLUMN_ID, schemas[ST_VIEW_COLUMN_IDX].clone());
+        self.create_table(ST_VIEW_SUB_ID, schemas[ST_VIEW_SUB_IDX].clone());
+        self.create_table(ST_VIEW_ARG_ID, schemas[ST_VIEW_ARG_IDX].clone());
 
         // Insert the sequences into `st_sequences`
         let (st_sequences, blob_store, pool) =
@@ -498,6 +536,32 @@ impl CommittedState {
         Ok(())
     }
 
+    pub(super) fn collect_ephemeral_tables(&mut self) -> Result<()> {
+        self.ephemeral_tables = self.ephemeral_tables()?.into_iter().collect();
+        Ok(())
+    }
+
+    fn ephemeral_tables(&self) -> Result<Vec<TableId>> {
+        let mut tables = vec![ST_VIEW_SUB_ID, ST_VIEW_ARG_ID];
+
+        let Some(st_view) = self.tables.get(&ST_VIEW_ID) else {
+            return Ok(tables);
+        };
+        let backing_tables = st_view
+            .scan_rows(&self.blob_store)
+            .map(|row_ref| {
+                let view_row = StViewRow::try_from(row_ref)?;
+                view_row
+                    .table_id
+                    .ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_row.view_id)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        tables.extend(backing_tables);
+
+        Ok(tables)
+    }
+
     /// After replaying all old transactions,
     /// inserts and deletes into the system tables
     /// might not be reflected in the schemas of the built tables.
@@ -614,7 +678,11 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, ctx: &ExecutionContext) -> TxData {
+    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        self.read_sets.remove_view(view_id, sender)
+    }
+
+    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
@@ -638,6 +706,12 @@ impl CommittedState {
         // Record any truncated tables in the `TxData`.
         tx_data.add_truncates(truncates);
 
+        // Merge read sets from the `MutTxId` into the `CommittedState`.
+        // It's important that this happens after applying the changes to `tx_data`,
+        // which implies `tx_data` already contains inserts and deletes for view tables
+        // so that we can pass updated set of table ids.
+        self.merge_read_sets(read_sets);
+
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
         if self.tx_consumes_offset(&tx_data, ctx) {
@@ -645,7 +719,13 @@ impl CommittedState {
             self.next_tx_offset += 1;
         }
 
+        tx_data.set_ephemeral_tables(&self.ephemeral_tables);
+
         tx_data
+    }
+
+    fn merge_read_sets(&mut self, read_sets: ViewReadSets) {
+        self.read_sets.merge(read_sets)
     }
 
     fn merge_apply_deletes(
@@ -813,10 +893,16 @@ impl CommittedState {
             }
             // A table was removed. Add it back.
             TableRemoved(table_id, table) => {
+                let is_view_table = table.schema.is_view();
                 // We don't need to deal with sub-components.
                 // That is, we don't need to add back indices and such.
                 // Instead, there will be separate pending schema changes like `IndexRemoved`.
                 self.tables.insert(table_id, table);
+
+                // Incase, the table was ephemeral, add it back to that set as well.
+                if is_view_table {
+                    self.ephemeral_tables.insert(table_id);
+                }
             }
             // A table was added. Remove it.
             TableAdded(table_id) => {
@@ -824,6 +910,8 @@ impl CommittedState {
                 // That is, we don't need to remove indices and such.
                 // Instead, there will be separate pending schema changes like `IndexAdded`.
                 self.tables.remove(&table_id);
+                // Incase, the table was ephemeral, remove it from that set as well.
+                self.ephemeral_tables.remove(&table_id);
             }
             // A table's access was changed. Change back to the old one.
             TableAlterAccess(table_id, access) => {

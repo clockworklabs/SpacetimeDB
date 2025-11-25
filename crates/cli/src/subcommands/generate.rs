@@ -200,7 +200,9 @@ pub async fn exec_ex(
             fs::create_dir_all(out_dir.join(parent))?;
         }
         let path = out_dir.join(fname);
-        fs::write(&path, code)?;
+        if !path.exists() || fs::read_to_string(&path)? != code {
+            fs::write(&path, code)?;
+        }
         paths.insert(path);
     }
 
@@ -252,7 +254,7 @@ pub async fn exec_ex(
         }
     }
 
-    if let Err(err) = lang.format_files(paths) {
+    if let Err(err) = lang.format_files(out_dir, paths) {
         // If we couldn't format the files, print a warning but don't fail the entire
         // task as the output should still be usable, just less pretty.
         eprintln!("Could not format generated files: {err}");
@@ -262,7 +264,7 @@ pub async fn exec_ex(
     Ok(())
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Language {
     Csharp,
     TypeScript,
@@ -285,10 +287,10 @@ impl clap::ValueEnum for Language {
 }
 
 impl Language {
-    fn format_files(&self, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
+    fn format_files(&self, project_dir: &Path, generated_files: BTreeSet<PathBuf>) -> anyhow::Result<()> {
         match self {
             Language::Rust => rustfmt(generated_files)?,
-            Language::Csharp => dotnet_format(generated_files)?,
+            Language::Csharp => dotnet_format(project_dir, generated_files)?,
             Language::TypeScript => {
                 // TODO: implement formatting.
             }

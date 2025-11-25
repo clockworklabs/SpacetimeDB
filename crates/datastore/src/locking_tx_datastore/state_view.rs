@@ -4,15 +4,16 @@ use crate::error::{DatastoreError, TableError};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
     StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
-    StSequenceFields, StSequenceRow, StTableFields, StTableRow, SystemTable, ST_COLUMN_ID,
-    ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID, ST_SEQUENCE_ID, ST_TABLE_ID,
+    StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
+    SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID,
+    ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
 use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
-use spacetimedb_schema::schema::{ColumnSchema, TableSchema};
+use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
     table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
@@ -120,9 +121,35 @@ pub trait StateView {
             })
             .transpose()?;
 
+        // Look up the view info for the table in question, if any.
+        let view_info: Option<ViewDefInfo> = self
+            .iter_by_col_eq(
+                ST_VIEW_ID,
+                StViewFields::TableId,
+                &AlgebraicValue::OptionSome(value_eq.clone()),
+            )
+            .map(|mut iter| {
+                iter.next().map(|row| -> Result<_> {
+                    let row = StViewRow::try_from(row)?;
+                    let has_args = self
+                        .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
+                        .next()
+                        .is_some();
+
+                    Ok(ViewDefInfo {
+                        view_id: row.view_id,
+                        has_args,
+                        is_anonymous: row.is_anonymous,
+                    })
+                })
+            })
+            .unwrap_or(None)
+            .transpose()?;
+
         Ok(TableSchema::new(
             table_id,
             table_name,
+            view_info,
             columns,
             indexes,
             constraints,

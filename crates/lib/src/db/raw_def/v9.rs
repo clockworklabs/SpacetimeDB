@@ -97,6 +97,50 @@ pub struct RawModuleDefV9 {
     pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
 }
 
+impl RawModuleDefV9 {
+    /// Find a [`RawTableDefV9`] by name in this raw module def
+    fn find_table_def(&self, table_name: &str) -> Option<&RawTableDefV9> {
+        self.tables
+            .iter()
+            .find(|table_def| table_def.name.as_ref() == table_name)
+    }
+
+    /// Find a [`RawViewDefV9`] by name in this raw module def
+    fn find_view_def(&self, view_name: &str) -> Option<&RawViewDefV9> {
+        self.misc_exports.iter().find_map(|misc_export| match misc_export {
+            RawMiscModuleExportV9::View(view_def) if view_def.name.as_ref() == view_name => Some(view_def),
+            _ => None,
+        })
+    }
+
+    /// Find and return the product type ref for a table in this module def
+    fn type_ref_for_table(&self, table_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_table_def(table_name)
+            .map(|table_def| table_def.product_type_ref)
+    }
+
+    /// Find and return the product type ref for a view in this module def
+    fn type_ref_for_view(&self, view_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_view_def(view_name)
+            .map(|view_def| &view_def.return_type)
+            .and_then(|return_type| {
+                return_type
+                    .as_option()
+                    .and_then(|inner| inner.clone().into_ref().ok())
+                    .or_else(|| {
+                        return_type
+                            .as_array()
+                            .and_then(|inner| inner.elem_ty.clone().into_ref().ok())
+                    })
+            })
+    }
+
+    /// Find and return the product type ref for a table or view in this module def
+    pub fn type_ref_for_table_like(&self, name: &str) -> Option<AlgebraicTypeRef> {
+        self.type_ref_for_table(name).or_else(|| self.type_ref_for_view(name))
+    }
+}
+
 /// The definition of a database table.
 ///
 /// This struct holds information about the table, including its name, columns, indexes,
@@ -454,6 +498,9 @@ pub struct RawViewDefV9 {
     /// The name of the view function as defined in the module
     pub name: RawIdentifier,
 
+    /// The index of the view in the module's list of views.
+    pub index: u32,
+
     /// Is this a public or a private view?
     /// Currently only public views are supported.
     /// Private views may be supported in the future.
@@ -732,6 +779,7 @@ impl RawModuleDefV9Builder {
     pub fn add_view(
         &mut self,
         name: impl Into<RawIdentifier>,
+        index: usize,
         is_public: bool,
         is_anonymous: bool,
         params: ProductType,
@@ -739,6 +787,7 @@ impl RawModuleDefV9Builder {
     ) {
         self.module.misc_exports.push(RawMiscModuleExportV9::View(RawViewDefV9 {
             name: name.into(),
+            index: index as u32,
             is_public,
             is_anonymous,
             params,

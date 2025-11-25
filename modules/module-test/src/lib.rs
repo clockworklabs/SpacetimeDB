@@ -4,7 +4,7 @@ use std::time::Duration;
 use spacetimedb::spacetimedb_lib::db::raw_def::v9::TableAccess;
 use spacetimedb::spacetimedb_lib::{self, bsatn};
 use spacetimedb::{
-    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp,
+    duration, table, ConnectionId, Deserialize, Identity, ReducerContext, SpacetimeType, Table, Timestamp, ViewContext,
 };
 use spacetimedb::{log, ProcedureContext};
 
@@ -180,6 +180,16 @@ impl Foo<'_> {
         bsatn::from_slice(data).unwrap()
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VIEWS
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[spacetimedb::view(name = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REDUCERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -454,5 +464,24 @@ fn sleep_one_second(ctx: &mut ProcedureContext) {
 fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
     Baz {
         field: format!("{foo}"),
+    }
+}
+
+#[spacetimedb::procedure]
+fn with_tx(ctx: &mut ProcedureContext) {
+    ctx.with_tx(|tx| say_hello(tx));
+}
+
+/// Hit SpacetimeDB's schema HTTP route and return its result as a string.
+///
+/// This is a silly thing to do, but an effective test of the procedure HTTP API.
+#[spacetimedb::procedure]
+fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
+    let module_identity = ctx.identity();
+    match ctx.http.get(format!(
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+    )) {
+        Ok(result) => result.into_body().into_string_lossy(),
+        Err(e) => format!("{e}"),
     }
 }

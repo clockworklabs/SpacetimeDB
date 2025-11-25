@@ -11,10 +11,10 @@ use spacetimedb_physical_plan::plan::{
     HashJoin, IxJoin, IxScan, PhysicalExpr, PhysicalPlan, ProjectField, ProjectListPlan, ProjectPlan, Sarg, Semi,
     TableScan, TupleField,
 };
-use spacetimedb_primitives::{ColId, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
 use spacetimedb_sats::product;
 
-use crate::{iter::get_index, Datastore, DeltaStore, Row, Tuple};
+use crate::{Datastore, DeltaStore, Row, Tuple};
 
 /// An executor for explicit column projections.
 /// Note, this plan can only be constructed from the http api,
@@ -22,6 +22,7 @@ use crate::{iter::get_index, Datastore, DeltaStore, Row, Tuple};
 /// Hence this operator is not particularly optimized.
 pub enum ProjectListExecutor {
     Name(Vec<PipelinedProject>),
+    View(Vec<ViewProject>),
     List(Vec<PipelinedExecutor>, Vec<TupleField>),
     Limit(Box<ProjectListExecutor>, u64),
     Agg(Vec<PipelinedExecutor>, AggType),
@@ -29,7 +30,41 @@ pub enum ProjectListExecutor {
 
 impl From<ProjectListPlan> for ProjectListExecutor {
     fn from(plan: ProjectListPlan) -> Self {
+        /// A helper that checks if a [`ProjectListPlan`] returns an unprojected view table
+        fn returns_view_table(plans: &[ProjectPlan]) -> bool {
+            plans.first().is_some_and(|plan| plan.returns_view_table())
+        }
+
+        /// A helper that returns the number of columns returned by this [`ProjectListPlan`]
+        fn num_cols(plans: &[ProjectPlan]) -> usize {
+            plans
+                .first()
+                .and_then(|plan| plan.return_table())
+                .map(|schema| schema.num_cols())
+                .unwrap_or_default()
+        }
+
+        /// A helper that returns the number of private columns returned by this [`ProjectListPlan`]
+        fn num_private_cols(plans: &[ProjectPlan]) -> usize {
+            plans
+                .first()
+                .and_then(|plan| plan.return_table())
+                .map(|schema| schema.num_private_cols())
+                .unwrap_or_default()
+        }
+
         match plan {
+            ProjectListPlan::Name(plans) if returns_view_table(&plans) => {
+                let num_cols = num_cols(&plans);
+                let num_private_cols = num_private_cols(&plans);
+                Self::View(
+                    plans
+                        .into_iter()
+                        .map(PipelinedProject::from)
+                        .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
+                        .collect(),
+                )
+            }
             ProjectListPlan::Name(plan) => Self::Name(plan.into_iter().map(PipelinedProject::from).collect()),
             ProjectListPlan::List(plan, fields) => {
                 Self::List(plan.into_iter().map(PipelinedExecutor::from).collect(), fields)
@@ -62,6 +97,14 @@ impl ProjectListExecutor {
                     })?;
                 }
             }
+            Self::View(plans) => {
+                for plan in plans {
+                    plan.execute(tx, metrics, &mut |row| {
+                        n += 1;
+                        f(row)
+                    })?;
+                }
+            }
             Self::List(plans, fields) => {
                 for plan in plans {
                     plan.execute(tx, metrics, &mut |t| {
@@ -90,7 +133,7 @@ impl ProjectListExecutor {
                         // It's a valid optimization but one that should be done by the optimizer.
                         // There should be no optimizations performed during execution.
                         PipelinedExecutor::TableScan(table_scan) => {
-                            n += tx.table_or_err(table_scan.table)?.num_rows() as usize;
+                            n += tx.row_count(table_scan.table) as usize;
                         }
                         _ => {
                             plan.execute(tx, metrics, &mut |_| {
@@ -105,6 +148,60 @@ impl ProjectListExecutor {
         }
         metrics.rows_scanned += n;
         metrics.bytes_scanned += bytes_scanned;
+        Ok(())
+    }
+}
+
+/// An executor for a query that returns rows from a view.
+/// Essentially just a projection that drops the view's private columns.
+///
+/// Unlike user tables, view tables can have private columns.
+/// For example, if a view is not anonymous, its backing table will have a `sender` column.
+/// This column tracks which rows belong to which caller of the view.
+/// However we must remove this column before sending rows from the view to a client.
+///
+/// See `TableSchema::from_view_def_for_datastore` for more details.
+#[derive(Debug)]
+pub struct ViewProject {
+    num_cols: usize,
+    num_private_cols: usize,
+    inner: PipelinedProject,
+}
+
+impl ViewProject {
+    pub fn new(inner: PipelinedProject, num_cols: usize, num_private_cols: usize) -> Self {
+        Self {
+            inner,
+            num_cols,
+            num_private_cols,
+        }
+    }
+
+    pub fn execute<Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(ProductValue) -> Result<()>,
+    ) -> Result<()> {
+        let mut n = 0;
+        let mut bytes_scanned = 0;
+        self.inner.execute(tx, metrics, &mut |row| match row {
+            Row::Ptr(ptr) => {
+                n += 1;
+                let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
+                let row = ptr.project_product(&col_list)?;
+                bytes_scanned += row.size_of();
+                f(row)
+            }
+            Row::Ref(val) => {
+                n += 1;
+                let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
+                let row = val.project_product(&col_list)?;
+                bytes_scanned += row.size_of();
+                f(row)
+            }
+        })?;
+        metrics.rows_scanned += n;
         Ok(())
     }
 }
@@ -629,7 +726,7 @@ impl PipelinedIxScan {
     ) -> Result<()> {
         // A single column index scan
         let single_col_scan = || {
-            tx.index_scan_range(
+            tx.index_scan(
                 self.table_id,
                 self.index_id,
                 &(self.lower.as_ref(), self.upper.as_ref()),
@@ -642,7 +739,7 @@ impl PipelinedIxScan {
         };
         // A multi-column index scan
         let multi_col_scan = |prefix: &[AlgebraicValue]| {
-            tx.index_scan_range(
+            tx.index_scan(
                 self.table_id,
                 self.index_id,
                 &(
@@ -728,11 +825,21 @@ impl PipelinedIxJoin {
         metrics: &mut ExecutionMetrics,
         f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
     ) -> Result<()> {
-        let rhs_index = get_index(tx, self.rhs_table, self.rhs_index)?;
-
         let mut n = 0;
         let mut index_seeks = 0;
         let mut bytes_scanned = 0;
+
+        let iter_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
+            let key = project(u, lhs_field, bytes_scanned);
+            Ok(tx
+                .index_scan(self.rhs_table, self.rhs_index, &key)?
+                .map(Row::Ptr)
+                .map(Tuple::Row))
+        };
+
+        let probe_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
+            Ok(iter_rhs(u, lhs_field, bytes_scanned)?.next())
+        };
 
         match self {
             Self {
@@ -747,10 +854,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if rhs_index
-                        .index()
-                        .contains_any(&project(&u, lhs_field, &mut bytes_scanned))
-                    {
+                    if probe_rhs(&u, lhs_field, &mut bytes_scanned)?.is_some() {
                         f(u)?;
                     }
                     Ok(())
@@ -767,12 +871,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(v) = rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .next()
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(v)?;
                     }
                     Ok(())
@@ -789,12 +888,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(v) = rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .next()
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(u.join(v))?;
                     }
                     Ok(())
@@ -812,10 +906,8 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    if let Some(n) = rhs_index.index().count(&project(&u, lhs_field, &mut bytes_scanned)) {
-                        for _ in 0..n {
-                            f(u.clone())?;
-                        }
+                    for _ in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
+                        f(u.clone())?;
                     }
                     Ok(())
                 })?;
@@ -831,11 +923,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for v in rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(v)?;
                     }
                     Ok(())
@@ -852,11 +940,7 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
-                    for v in rhs_index
-                        .seek_point(&project(&u, lhs_field, &mut bytes_scanned))
-                        .map(Row::Ptr)
-                        .map(Tuple::Row)
-                    {
+                    for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(u.clone().join(v))?;
                     }
                     Ok(())

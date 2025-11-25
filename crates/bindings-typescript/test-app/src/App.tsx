@@ -1,21 +1,32 @@
-import { DbConnection, Player } from './module_bindings';
+import { tables, reducers } from './module_bindings';
 import { useEffect } from 'react';
 import './App.css';
-import { useSpacetimeDB, useTable } from '../../src/react';
+import {
+  eq,
+  useReducer,
+  useSpacetimeDB,
+  useTable,
+  where,
+} from '../../src/react';
+
+function getRandomInt(max: number) {
+  return Math.floor(Math.random() * max);
+}
 
 function App() {
-  const connection = useSpacetimeDB<DbConnection>();
-  const players = useTable<DbConnection, Player>('player', {
-    onInsert: player => {
-      console.log(player);
+  const connection = useSpacetimeDB();
+  const [players] = useTable(tables.player, where(eq('name', 'Hello')), {
+    onInsert: row => {
+      console.log('Player inserted:', row);
     },
   });
+  const createPlayer = useReducer(reducers.createPlayer);
 
   useEffect(() => {
     setTimeout(() => {
-      console.log(Array.from(players.rows));
+      console.log(players);
     }, 5000);
-  }, [connection, players.rows]);
+  }, [connection, players]);
 
   return (
     <div className="App">
@@ -23,12 +34,24 @@ function App() {
       <p>{connection.identity?.toHexString()}</p>
 
       <button
-        onClick={() =>
-          connection.reducers.createPlayer('Hello', { x: 10, y: 40 })
-        }
+        onClick={() => {
+          const player = {
+            name: 'Hello',
+            location: { x: getRandomInt(100), y: getRandomInt(100) },
+          };
+          console.log('Creating player:', player);
+          createPlayer(player);
+        }}
       >
         Update
       </button>
+      <div>
+        {Array.from(players).map((player, i) => (
+          <div key={i}>
+            {player.name} - ({player.location.x}, {player.location.y})
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

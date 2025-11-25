@@ -8,12 +8,15 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
-use crate::system_tables::{
-    system_tables, ConnectionIdViaU128, StConnectionCredentialsFields, StConnectionCredentialsRow, StViewColumnFields,
-    StViewFields, StViewParamFields, StViewParamRow, ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID,
-    ST_VIEW_PARAM_ID,
-};
 use crate::traits::{InsertFlags, RowTypeForTable, TxData, UpdateFlags};
+use crate::{
+    error::ViewError,
+    system_tables::{
+        system_tables, ConnectionIdViaU128, IdentityViaU256, StConnectionCredentialsFields, StConnectionCredentialsRow,
+        StViewColumnFields, StViewFields, StViewParamFields, StViewParamRow, StViewSubFields, StViewSubRow,
+        ST_CONNECTION_CREDENTIALS_ID, ST_VIEW_COLUMN_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID, ST_VIEW_SUB_ID,
+    },
+};
 use crate::{
     error::{IndexError, SequenceError, TableError},
     system_tables::{
@@ -30,24 +33,26 @@ use core::ops::RangeBounds;
 use core::{cell::RefCell, mem};
 use core::{iter, ops::Bound};
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::{dml::MutDatastore, Datastore, DeltaStore, Row};
-use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics};
+use spacetimedb_lib::{db::raw_def::v9::RawSql, metrics::ExecutionMetrics, Timestamp};
 use spacetimedb_lib::{
     db::{auth::StAccess, raw_def::SEQUENCE_ALLOCATION_STEP},
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
+    memory_usage::MemoryUsage,
     ser::Serialize,
     AlgebraicType, AlgebraicValue, ProductType, ProductValue, WithTypespace,
 };
 use spacetimedb_schema::{
-    def::{ModuleDef, ViewColumnDef, ViewDef},
+    def::{ModuleDef, ViewColumnDef, ViewDef, ViewParamDef},
     schema::{ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, SequenceSchema, TableSchema},
 };
 use spacetimedb_table::{
@@ -61,12 +66,165 @@ use spacetimedb_table::{
     table_index::TableIndex,
 };
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 type DecodeResult<T> = core::result::Result<T, DecodeError>;
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ViewCallInfo {
+    pub view_id: ViewId,
+    pub table_id: TableId,
+    pub fn_ptr: ViewFnPtr,
+    pub sender: Option<Identity>,
+}
+
+/// A data structure for tracking the database rows/keys that are read by views
+#[derive(Default)]
+pub struct ViewReadSets {
+    tables: IntMap<TableId, TableReadSet>,
+}
+
+impl MemoryUsage for ViewReadSets {
+    fn heap_usage(&self) -> usize {
+        0 // TODO: Implement memory tracking for read sets
+    }
+}
+
+impl ViewReadSets {
+    /// Returns the views that perform a full scan of this table
+    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+        self.tables
+            .get(table_id)
+            .into_iter()
+            .flat_map(TableReadSet::views_for_table_scan)
+    }
+
+    /// Record that a view performs a full scan of this table
+    pub fn insert_full_table_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
+        self.tables.entry(table_id).or_default().insert_table_scan(call);
+    }
+
+    /// Removes keys for `view_id` from the read set
+    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        self.tables.retain(|_, readset| {
+            readset.remove_view(view_id, sender);
+            !readset.is_empty()
+        });
+    }
+
+    /// Merge or union read sets together
+    pub fn merge(&mut self, readset: Self) {
+        for (table_id, rs) in readset.tables {
+            self.tables.entry(table_id).or_default().merge(rs);
+        }
+    }
+
+    /// Record that a view reads a specific index key
+    pub fn insert_index_scan(&mut self, table_id: TableId, cols: ColList, proj: AlgebraicValue, call: ViewCallInfo) {
+        let table_readset = self.tables.entry(table_id).or_default();
+        table_readset.insert_index_scan(cols, proj, call);
+    }
+
+    /// Returns the views that index seek on the given row pointer
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ptr: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.tables
+            .get(table_id)
+            .into_iter()
+            .flat_map(move |ts| ts.views_for_index_seek(row_ptr))
+    }
+}
+
+type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<ViewCallInfo>>;
+type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
+
+/// A table-level read set for views
+#[derive(Default)]
+struct TableReadSet {
+    table_scans: HashSet<ViewCallInfo>,
+    index_reads: IndexColReadSet,
+}
+
+impl TableReadSet {
+    /// Record that this view performs a full scan of this read set's table
+    fn insert_table_scan(&mut self, call: ViewCallInfo) {
+        self.table_scans.insert(call);
+    }
+
+    /// Returns the views that perform a full scan of this read set's table
+    fn views_for_table_scan(&self) -> impl Iterator<Item = &ViewCallInfo> {
+        self.table_scans.iter()
+    }
+
+    /// Record that a view reads a specific index key for this table
+    fn insert_index_scan(&mut self, cols: ColList, key: AlgebraicValue, call: ViewCallInfo) {
+        let key_map = self.index_reads.entry(cols).or_default();
+        key_map.entry(key).or_default().insert(call);
+    }
+
+    /// Returns the views that index seek on the given row pointer (for this table)
+    fn views_for_index_seek<'a>(&'a self, row_ptr: RowRef<'a>) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.index_reads.iter().flat_map(move |(cols, av_set)| {
+            row_ptr
+                .project(cols)
+                .ok()
+                .and_then(|av| av_set.get(&av))
+                .into_iter()
+                .flat_map(|views| views.iter())
+        })
+    }
+
+    /// Is this read set empty? (no table scans and no index reads)
+    fn is_empty(&self) -> bool {
+        self.table_scans.is_empty() && self.index_reads.is_empty()
+    }
+
+    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
+    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        let matches_call = |call: &ViewCallInfo| {
+            call.view_id == view_id && sender.as_ref().is_none_or(|s| call.sender.as_ref() == Some(s))
+        };
+
+        // Remove from table_scans
+        self.table_scans.retain(|call| !matches_call(call));
+
+        // Remove from index_reads
+        self.index_reads.retain(|_cols, key_map| {
+            key_map.retain(|_key, views| {
+                views.retain(|call| !matches_call(call));
+                !views.is_empty()
+            });
+            !key_map.is_empty()
+        });
+    }
+
+    /// Merge (union) another table read set into this one
+    fn merge(&mut self, other: TableReadSet) {
+        // merge table scans
+        self.table_scans.extend(other.table_scans);
+
+        // merge index reads: for each cols, for each av, extend the view set
+        for (cols, other_av_set) in other.index_reads {
+            let av_set = self.index_reads.entry(cols).or_default();
+            for (av, other_views) in other_av_set {
+                av_set.entry(av).or_default().extend(other_views);
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+/// The type of operation being performed against the datastore.
+pub enum FuncCallType {
+    Reducer,
+    Procedure,
+    View(ViewCallInfo),
+}
 
 /// Represents a Mutable transaction. Holds locks for its duration
 ///
@@ -78,6 +236,7 @@ pub struct MutTxId {
     pub(super) committed_state_write_lock: SharedWriteGuard<CommittedState>,
     pub(super) sequence_state_lock: SharedMutexGuard<SequencesState>,
     pub(super) lock_wait_time: Duration,
+    pub(super) read_sets: ViewReadSets,
     // TODO(cloutiertyler): The below were made `pub` for the datastore split. We should
     // make these private again.
     pub timer: Instant,
@@ -85,15 +244,150 @@ pub struct MutTxId {
     pub metrics: ExecutionMetrics,
 }
 
-static_assert_size!(MutTxId, 400);
+static_assert_size!(MutTxId, 432);
 
-impl Datastore for MutTxId {
-    fn blob_store(&self) -> &dyn BlobStore {
-        &self.committed_state_write_lock.blob_store
+impl MutTxId {
+    /// Record that a view performs a table scan in this transaction's read set
+    pub fn record_table_scan(&mut self, op: &FuncCallType, table_id: TableId) {
+        if let FuncCallType::View(view) = op {
+            self.read_sets.insert_full_table_scan(table_id, view.clone());
+        }
     }
 
-    fn table(&self, table_id: TableId) -> Option<&Table> {
-        self.committed_state_write_lock.get_table(table_id)
+    /// Record that a view performs an index scan in this transaction's read set
+    pub fn record_index_scan(
+        &mut self,
+        op: &FuncCallType,
+        table_id: TableId,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
+    ) {
+        let FuncCallType::View(view) = op else {
+            return;
+        };
+
+        // Check for precise index seek
+        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper) {
+            if low_val == up_val {
+                // Fetch index metadata
+                let Some((_, idx, _)) = self.get_table_and_index(index_id) else {
+                    return;
+                };
+
+                let cols = idx.index().indexed_columns.clone();
+                self.read_sets
+                    .insert_index_scan(table_id, cols, low_val.clone(), view.clone());
+                return;
+            }
+        }
+
+        // Everything else is treated as a table scan
+        self.read_sets.insert_full_table_scan(table_id, view.clone());
+    }
+
+    /// Returns the views whose read sets overlaps with this transaction's write set
+    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+        let mut res = self
+            .tx_state
+            .insert_tables
+            .keys()
+            .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
+            .chain(self.tx_state.delete_tables.keys())
+            .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
+            .collect::<HashSet<_>>();
+
+        // Include views that perform precise index seeks.
+        let mut process_views = |table_id: &_, row_ref| {
+            for view_call in self.committed_state_write_lock.views_for_index_seek(table_id, row_ref) {
+                res.insert(view_call);
+            }
+        };
+
+        for (table_id, deleted_table) in &self.tx_state.delete_tables {
+            let (table, blob_store, _) = self
+                .committed_state_write_lock
+                .get_table_and_blob_store(*table_id)
+                .expect("table must exist in committed state for deleted table");
+
+            if table.indexes.is_empty() {
+                continue;
+            }
+
+            for ptr in deleted_table.iter() {
+                if let Some(row_ref) = table.get_row_ref(blob_store, ptr) {
+                    process_views(table_id, row_ref);
+                }
+            }
+        }
+
+        for (table_id, inserted_table) in &self.tx_state.insert_tables {
+            let (table, blob_store, _) = self
+                .committed_state_write_lock
+                .get_table_and_blob_store(*table_id)
+                .expect("table must exist in committed state for inserted table");
+
+            if table.indexes.is_empty() {
+                continue;
+            }
+
+            for row_ref in inserted_table.scan_rows(blob_store) {
+                process_views(table_id, row_ref);
+            }
+        }
+        res.into_iter()
+    }
+    /// Removes keys for `view_id` from the committed read set.
+    /// Used for dropping views in an auto-migration.
+    pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
+        self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
+    }
+
+    /// Removes a specific view call from the committed read set.
+    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
+        self.committed_state_write_lock
+            .drop_view_from_read_sets(view_id, Some(sender))
+    }
+}
+
+impl Datastore for MutTxId {
+    type TableIter<'a>
+        = IterMutTx<'a>
+    where
+        Self: 'a;
+
+    type IndexIter<'a>
+        = IndexScanRanged<'a>
+    where
+        Self: 'a;
+
+    fn row_count(&self, table_id: TableId) -> u64 {
+        self.table_row_count(table_id).unwrap_or_default()
+    }
+
+    fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
+        Ok(self.iter(table_id)?)
+    }
+
+    fn index_scan<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> anyhow::Result<Self::IndexIter<'a>> {
+        // Extract the table id, and commit/tx indices.
+        let (_, commit_index, tx_index) = self
+            .get_table_and_index(index_id)
+            .ok_or_else(|| IndexError::NotFound(index_id))?;
+
+        // Get an index seek iterator for the tx and committed state.
+        let tx_iter = tx_index.map(|i| i.seek_range(range));
+        let commit_iter = commit_index.seek_range(range);
+
+        let dt = self.tx_state.get_delete_table(table_id);
+        let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
+
+        Ok(iter)
     }
 }
 
@@ -195,21 +489,28 @@ impl MutTxId {
     /// - The returned [`ViewId`] is unique and not [`ViewId::SENTINEL`].
     /// - All view metadata maintained by the datastore is created atomically
     pub fn create_view(&mut self, module_def: &ModuleDef, view_def: &ViewDef) -> Result<(ViewId, TableId)> {
-        let table_schema = TableSchema::from_view_def(module_def, view_def);
+        let table_schema = TableSchema::from_view_def_for_datastore(module_def, view_def);
         let table_id = self.create_table(table_schema)?;
 
         let ViewDef {
             name,
-            is_anonymous,
-            is_public,
-            params,
+            param_columns,
             return_columns,
             ..
         } = view_def;
 
-        let view_id = self.insert_into_st_view(name.clone().into(), table_id, *is_public, *is_anonymous)?;
-        self.insert_into_st_view_param(view_id, params)?;
+        let view_name: Box<str> = name.clone().into();
+
+        // `create_table` inserts into `st_view` and updates the table schema.
+        let view_id = self
+            .view_id_from_name(&view_name)?
+            .ok_or(ViewError::NotFound(view_name))?;
+
+        self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
+
         Ok((view_id, table_id))
     }
 
@@ -219,6 +520,8 @@ impl MutTxId {
         self.drop_st_view(view_id)?;
         self.drop_st_view_param(view_id)?;
         self.drop_st_view_column(view_id)?;
+        self.drop_st_view_sub(view_id)?;
+        self.drop_view_from_committed_read_set(view_id);
 
         // Drop the view's backing table if materialized
         if let StViewRow {
@@ -269,6 +572,10 @@ impl MutTxId {
             .read_col(StTableFields::TableId)?;
 
         table_schema.update_table_id(table_id);
+
+        if let Some(info) = table_schema.view_info.as_mut() {
+            info.view_id = self.insert_into_st_view(table_name.clone(), table_id, true, info.is_anonymous)?;
+        }
 
         // Generate the full definition of the table, with the generated indexes, constraints, sequences...
 
@@ -336,13 +643,29 @@ impl MutTxId {
         })
     }
 
-    fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
+    pub fn lookup_st_view(&self, view_id: ViewId) -> Result<StViewRow> {
         let row = self
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewId, &view_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_view, view_id.into()))?;
 
         StViewRow::try_from(row)
+    }
+
+    pub fn lookup_st_view_by_name(&self, view: &str) -> Result<StViewRow> {
+        let st_view_row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, &view.into())?
+            .next()
+            .unwrap();
+
+        StViewRow::try_from(st_view_row)
+    }
+
+    /// Check if view has parameters.
+    pub fn is_view_parameterized(&self, view_id: ViewId) -> Result<bool> {
+        let view_id = view_id.into();
+        let mut iter = self.iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &view_id)?;
+        Ok(iter.next().is_some())
     }
 
     /// Insert a row into `st_view`, auto-increments and returns the [`ViewId`].
@@ -371,18 +694,15 @@ impl MutTxId {
 
     /// For each parameter of a view, insert a row into `st_view_param`.
     /// This does not include the context parameter.
-    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &ProductType) -> Result<()> {
-        for (i, field) in params.elements.iter().enumerate() {
+    fn insert_into_st_view_param(&mut self, view_id: ViewId, params: &[ViewParamDef]) -> Result<()> {
+        for ViewParamDef { name, col_id, ty, .. } in params {
             self.insert_via_serialize_bsatn(
                 ST_VIEW_PARAM_ID,
                 &StViewParamRow {
                     view_id,
-                    param_pos: i.into(),
-                    param_name: field
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("param_{i}").into_boxed_str()),
-                    param_type: field.algebraic_type.clone().into(),
+                    param_pos: *col_id,
+                    param_name: name.clone().into(),
+                    param_type: ty.clone().into(),
                 },
             )?;
         }
@@ -470,6 +790,11 @@ impl MutTxId {
         self.delete_col_eq(ST_VIEW_COLUMN_ID, StViewColumnFields::ViewId.col_id(), &view_id.into())
     }
 
+    /// Drops the rows in `st_view_sub` for this `view_id`
+    fn drop_st_view_sub(&mut self, view_id: ViewId) -> Result<()> {
+        self.delete_col_eq(ST_VIEW_SUB_ID, StViewSubFields::ViewId.col_id(), &view_id.into())
+    }
+
     pub fn drop_table(&mut self, table_id: TableId) -> Result<()> {
         self.clear_table(table_id)?;
 
@@ -543,6 +868,14 @@ impl MutTxId {
             .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
             .next();
         Ok(row.map(|row| row.read_col(StViewFields::ViewId).unwrap()))
+    }
+
+    pub fn view_from_name(&self, view_name: &str) -> Result<Option<StViewRow>> {
+        let view_name = &view_name.into();
+        let row = self
+            .iter_by_col_eq(ST_VIEW_ID, StViewFields::ViewName, view_name)?
+            .next();
+        Ok(row.map(|row| row.try_into().expect("st_view row should be valid")))
     }
 
     pub fn table_id_from_name(&self, table_name: &str) -> Result<Option<TableId>> {
@@ -919,7 +1252,12 @@ impl MutTxId {
         prefix_elems: ColId,
         rstart: &[u8],
         rend: &[u8],
-    ) -> Result<(TableId, IndexScanRanged<'a>)> {
+    ) -> Result<(
+        TableId,
+        Bound<AlgebraicValue>,
+        Bound<AlgebraicValue>,
+        IndexScanRanged<'a>,
+    )> {
         // Extract the table id, and commit/tx indices.
         let (table_id, commit_index, tx_index) = self
             .get_table_and_index(index_id)
@@ -938,9 +1276,12 @@ impl MutTxId {
         let tx_iter = tx_index.map(|i| i.seek_range(&bounds));
         let commit_iter = commit_index.seek_range(&bounds);
 
+        let (lower, upper) = bounds;
+
         let dt = self.tx_state.get_delete_table(table_id);
         let iter = combine_range_index_iters(dt, tx_iter, commit_iter);
-        Ok((table_id, iter))
+
+        Ok((table_id, lower, upper, iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
@@ -1455,7 +1796,9 @@ impl MutTxId {
     /// - `String`, the name of the reducer which ran during this transaction.
     pub(super) fn commit(mut self) -> (TxOffset, TxData, TxMetrics, String) {
         let tx_offset = self.committed_state_write_lock.next_tx_offset;
-        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        let tx_data = self
+            .committed_state_write_lock
+            .merge(self.tx_state, self.read_sets, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1477,7 +1820,7 @@ impl MutTxId {
         //
         // Note that technically the tx could have run against an empty database,
         // in which case we'd wrongly return zero (a non-existent transaction).
-        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // This doesn't happen in practice, however, as [RelationalDB::set_initialized]
         // creates a transaction.
         let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
             tx_offset.saturating_sub(1)
@@ -1497,7 +1840,9 @@ impl MutTxId {
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
     pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
-        let tx_data = self.committed_state_write_lock.merge(self.tx_state, &self.ctx);
+        let tx_data = self
+            .committed_state_write_lock
+            .merge(self.tx_state, self.read_sets, &self.ctx);
 
         // Compute and keep enough info that we can
         // record metrics after the transaction has ended
@@ -1647,6 +1992,296 @@ impl<'a, I: Iterator<Item = RowRef<'a>>> Iterator for FilterDeleted<'a, I> {
 }
 
 impl MutTxId {
+    /// Does this caller have an entry for `view_id` in `st_view_sub`?
+    pub fn is_view_materialized(&self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<bool> {
+        use StViewSubFields::*;
+        let sender = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), sender.into()]);
+        Ok(self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?.next().is_some())
+    }
+
+    /// Updates the `last_called` timestamp in `st_view_sub`.
+    /// Inserts a row into `st_view_sub` with no subscribers if the row does not exist.
+    ///
+    /// This is invoked when calling a view, but not subscribing to it.
+    /// Such is the case for the sql http api.
+    pub fn update_view_timestamp(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &StViewSubRow { last_called, ..row })?;
+            return Ok(());
+        }
+
+        // Insert `st_view_sub` row with 0 subscribers
+        self.insert_via_serialize_bsatn(
+            ST_VIEW_SUB_ID,
+            &StViewSubRow {
+                view_id,
+                arg_id,
+                identity,
+                num_subscribers: 0,
+                has_subscribers: false,
+                last_called,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Increment `num_subscribers` in `st_view_sub` to effectively subscribe a caller to a view.
+    /// We insert a row if there are no current subscribers and the row does not exist.
+    pub fn subscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_SUB_ID,
+                &StViewSubRow {
+                    num_subscribers: row.num_subscribers + 1,
+                    has_subscribers: true,
+                    last_called,
+                    ..row
+                },
+            )?;
+            return Ok(());
+        }
+
+        // Insert `st_view_sub` row with 1 subscriber
+        self.insert_via_serialize_bsatn(
+            ST_VIEW_SUB_ID,
+            &StViewSubRow {
+                view_id,
+                arg_id,
+                identity,
+                num_subscribers: 1,
+                has_subscribers: true,
+                last_called,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Clean up views that have no subscribers and haven’t been called recently.
+    ///
+    /// This function will scan for subscription entries in `st_view_sub` where:
+    /// - `has_subscribers == false`, `num_subscribers == 0`.
+    /// - `last_called` is older than `expiration_duration`.
+    ///
+    /// For each such expired view:
+    /// 1. It clears the backing table,
+    /// 2. Removes the view from the committed read set, and
+    /// 3. Deletes the subscription row.
+    ///
+    /// The cleanup is bounded by a total `max_duration`. The function stops when either:
+    /// - all expired views have been processed, or
+    /// - the `max_duration` budget is reached.
+    ///
+    /// Returns a tuple `(cleaned, total_expired)`:
+    /// - `cleaned`: Number of views actually cleaned (deleted) in this run.
+    /// - `total_expired`: Total number of expired views found (even if not all were cleaned due to time budget).
+    pub fn clear_expired_views(
+        &mut self,
+        expiration_duration: Duration,
+        max_duration: Duration,
+    ) -> Result<(usize, usize)> {
+        let start = std::time::Instant::now();
+        let now = Timestamp::now();
+        let expiration_threshold = now - expiration_duration;
+        let mut cleaned_count = 0;
+
+        // Collect all expired views from st_view_sub
+        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
+            .iter_by_col_eq(
+                ST_VIEW_SUB_ID,
+                StViewSubFields::HasSubscribers,
+                &AlgebraicValue::from(false),
+            )?
+            .filter_map(|row_ref| {
+                let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
+
+                if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
+                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let total_expired = expired_items.len();
+
+        // For each expired view subscription, clear the backing table and delete the subscription
+        for (view_id, sender, sub_row_ptr) in expired_items {
+            // Check if we've exceeded our time budget
+            if start.elapsed() >= max_duration {
+                break;
+            }
+
+            let StViewRow {
+                table_id, is_anonymous, ..
+            } = self.lookup_st_view(view_id)?;
+            let table_id = table_id.expect("views have backing table");
+
+            if is_anonymous {
+                self.clear_table(table_id)?;
+                self.drop_view_from_committed_read_set(view_id);
+            } else {
+                let rows_to_delete = self
+                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .map(|res| res.pointer())
+                    .collect::<Vec<_>>();
+
+                for row_ptr in rows_to_delete {
+                    self.delete(table_id, row_ptr)?;
+                }
+
+                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+            }
+
+            // Finally, delete the subscription row
+            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
+            cleaned_count += 1;
+        }
+
+        Ok((cleaned_count, total_expired))
+    }
+
+    /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.
+    pub fn unsubscribe_view(&mut self, view_id: ViewId, arg_id: ArgId, sender: Identity) -> Result<()> {
+        use StViewSubFields::*;
+
+        let identity = IdentityViaU256(sender);
+        let cols = col_list![ViewId, ArgId, Identity];
+        let value = AlgebraicValue::product([view_id.into(), arg_id.into(), identity.into()]);
+        let last_called = Timestamp::now().into();
+
+        // Update `last_called` of `st_view_sub` row
+        if let Some((row, ptr)) = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .next()
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .transpose()?
+        {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+            self.insert_via_serialize_bsatn(
+                ST_VIEW_SUB_ID,
+                &StViewSubRow {
+                    num_subscribers: row.num_subscribers - 1,
+                    has_subscribers: row.num_subscribers > 1,
+                    last_called,
+                    ..row
+                },
+            )?;
+        }
+        Ok(())
+    }
+
+    /// To effectively unsubscribe a caller from all of their subscribed views,
+    /// we decrement `num_subscribers` in `st_view_sub` for all of a caller's views.
+    pub fn unsubscribe_views(&mut self, sender: Identity) -> Result<()> {
+        let sender = IdentityViaU256(sender);
+        let cols = col_list![StViewSubFields::Identity];
+        let value = sender.into();
+
+        // Collect the rows for this identity.
+        // These are rows for which we will decrement the subscriber count.
+        let rows_to_delete = self
+            .iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .map(|row_ref| StViewSubRow::try_from(row_ref).map(|row| (row, row_ref.pointer())))
+            .filter(|result| match result {
+                Ok((row, _)) => row.has_subscribers && row.num_subscribers > 0,
+                _ => true,
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // Copy the rows to delete and decrement their subscriber count.
+        // These are the rows that we will insert.
+        let rows_to_insert = rows_to_delete
+            .iter()
+            .map(|(row, _)| row.clone())
+            .map(|row| StViewSubRow {
+                num_subscribers: row.num_subscribers - 1,
+                has_subscribers: row.num_subscribers > 1,
+                ..row
+            })
+            .collect::<Vec<_>>();
+
+        // Delete the old rows
+        for (_, ptr) in rows_to_delete {
+            self.delete(ST_VIEW_SUB_ID, ptr)?;
+        }
+
+        // Insert the new rows
+        for row in rows_to_insert {
+            self.insert_via_serialize_bsatn(ST_VIEW_SUB_ID, &row)?;
+        }
+
+        Ok(())
+    }
+
+    /// Clear all rows from all view tables without dropping them.
+    pub fn clear_all_views(&mut self) -> Result<()> {
+        for table_id in self
+            .iter(ST_VIEW_ID)?
+            .map(StViewRow::try_from)
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .filter_map(|row| row.table_id)
+        {
+            self.clear_table(table_id)?;
+        }
+        Ok(())
+    }
+
+    /// Get all view subscriptions for a given view.
+    pub fn lookup_st_view_subs(&self, view_id: ViewId) -> Result<Vec<StViewSubRow>> {
+        let cols = StViewSubFields::ViewId;
+        let value = view_id.into();
+        self.iter_by_col_eq(ST_VIEW_SUB_ID, cols, &value)?
+            .map(StViewSubRow::try_from)
+            .collect::<Result<Vec<_>>>()
+    }
+
+    /// Lookup a row in `st_view` by its primary key
+    fn st_view_row(&self, view_id: ViewId) -> Result<Option<StViewRow>> {
+        self.iter_by_col_eq(ST_VIEW_ID, col_list![StViewFields::ViewId], &view_id.into())?
+            .next()
+            .map(StViewRow::try_from)
+            .transpose()
+    }
+
+    /// Get the [`TableId`] for this view's backing table by probing `st_view`.
+    /// Note, all views with at least one subscriber are materialized.
+    pub fn get_table_id_for_view(&self, view_id: ViewId) -> Result<Option<(TableId, bool)>> {
+        Ok(self
+            .st_view_row(view_id)?
+            .and_then(|row| row.table_id.map(|id| (id, row.is_anonymous))))
+    }
+
     pub fn insert_st_client(
         &mut self,
         identity: Identity,

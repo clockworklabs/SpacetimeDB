@@ -456,6 +456,7 @@ impl ModuleValidator<'_> {
             is_anonymous,
             params,
             return_type,
+            index,
         } = view_def;
 
         let invalid_return_type = || {
@@ -541,12 +542,14 @@ impl ModuleValidator<'_> {
             is_anonymous,
             is_public,
             params,
+            fn_ptr: index.into(),
             params_for_generate: ProductTypeDef {
                 elements: params_for_generate,
                 recursive: false, // A `ProductTypeDef` not stored in a `Typespace` cannot be recursive.
             },
             return_type,
             return_type_for_generate,
+            product_type_ref,
             return_columns,
             param_columns,
         })

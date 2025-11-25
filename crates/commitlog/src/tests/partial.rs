@@ -1,18 +1,19 @@
 use std::{
     cmp,
-    fmt::Debug,
+    fmt::{self, Debug},
     io::{self, Seek as _, SeekFrom},
-    iter::repeat,
-    sync::RwLockWriteGuard,
+    iter::{self, repeat},
+    num::NonZeroU16,
 };
 
 use log::debug;
+use pretty_assertions::assert_matches;
 
 use crate::{
     commitlog, error, payload,
     repo::{self, Repo, SegmentLen},
-    segment::FileLike,
-    tests::helpers::enable_logging,
+    segment::{self, FileLike},
+    tests::helpers::{enable_logging, fill_log_with},
     Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
 };
 
@@ -100,9 +101,8 @@ fn overwrite_reopen() {
 
     {
         let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
-        let mut data = last_segment.buf_mut();
-        let pos = data.len() - last_commit.encoded_len() + 1;
-        data[pos] = 255;
+        let pos = last_segment.len() - last_commit.encoded_len() + 1;
+        last_segment.modify_byte_at(pos, |_| 255);
     }
 
     let mut log = open_log::<[u8; 32]>(repo.clone());
@@ -140,11 +140,47 @@ fn overwrite_reopen() {
     );
 }
 
+/// Edge case surfaced in production:
+///
+/// If the first commit in the last segment is corrupt, creating a new segment
+/// would fail because the `tx_range` is the same as the corrupt segment.
+///
+/// We don't automatically recover from that, but test that `open` returns an
+/// error providing some context.
+#[test]
+fn first_commit_in_last_segment_corrupt() {
+    enable_logging();
+
+    let repo = repo::Memory::unlimited();
+    let options = Options {
+        max_segment_size: 512,
+        max_records_in_commit: NonZeroU16::new(1).unwrap(),
+        ..<_>::default()
+    };
+    {
+        let mut log = commitlog::Generic::open(repo.clone(), options).unwrap();
+        fill_log_with(&mut log, iter::once([b'x'; 64]).cycle().take(9));
+    }
+    let segments = repo.existing_offsets().unwrap();
+    assert_eq!(2, segments.len(), "repo should contain 2 segments");
+
+    {
+        let mut last_segment = repo.open_segment_writer(*segments.last().unwrap()).unwrap();
+        last_segment.modify_bytes_at(segment::Header::LEN + 1.., |data| data.fill(0));
+    }
+
+    assert_matches!(
+        commitlog::Generic::<_, [u8; 64]>::open(repo, options),
+        Err(e) if e.kind() == io::ErrorKind::InvalidData,
+    );
+}
+
 fn open_log<T>(repo: ShortMem) -> commitlog::Generic<ShortMem, T> {
     commitlog::Generic::open(
         repo,
         Options {
             max_segment_size: 1024,
+            max_records_in_commit: NonZeroU16::new(10).unwrap(),
             ..Options::default()
         },
     )
@@ -162,8 +198,12 @@ struct ShortSegment {
 }
 
 impl ShortSegment {
-    fn buf_mut(&mut self) -> RwLockWriteGuard<'_, Vec<u8>> {
-        self.inner.buf_mut()
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
+        self.inner.modify_byte_at(pos, f);
     }
 }
 
@@ -180,6 +220,11 @@ impl FileLike for ShortSegment {
 
     fn ftruncate(&mut self, tx_offset: u64, size: u64) -> std::io::Result<()> {
         self.inner.ftruncate(tx_offset, size)
+    }
+
+    #[cfg(feature = "fallocate")]
+    fn fallocate(&mut self, size: u64) -> io::Result<()> {
+        self.inner.fallocate(size)
     }
 }
 
@@ -223,9 +268,15 @@ struct ShortMem {
 impl ShortMem {
     pub fn new(max_len: u64) -> Self {
         Self {
-            inner: repo::Memory::new(),
+            inner: repo::Memory::new(max_len * 4096),
             max_len,
         }
+    }
+}
+
+impl fmt::Display for ShortMem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.inner, f)
     }
 }
 

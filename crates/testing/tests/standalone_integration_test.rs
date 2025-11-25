@@ -130,6 +130,91 @@ fn test_calling_a_reducer_with_private_table() {
     );
 }
 
+async fn read_log_skip_repeating(module: &ModuleHandle) -> String {
+    let logs = read_logs(module).await;
+    let mut logs = logs
+        .into_iter()
+        // Filter out log lines from the `repeating_test` reducer,
+        // which runs frequently enough to appear in our logs after we've slept a second.
+        .filter(|line| !line.starts_with("Timestamp: Timestamp { __timestamp_micros_since_unix_epoch__: "))
+        .collect::<Vec<_>>();
+
+    if logs.len() != 1 {
+        panic!("Expected a single log message but found {logs:#?}");
+    };
+
+    logs.swap_remove(0)
+}
+
+fn test_calling_a_procedure_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "sleep_one_second",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // It sleeps one second, but we'll wait two just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let log_sleep = read_log_skip_repeating(&module).await;
+
+            assert!(log_sleep.starts_with("Slept from "));
+            assert!(log_sleep.contains("a total of"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_a_procedure() {
+    test_calling_a_procedure_in_module("module-test");
+}
+
+fn test_calling_with_tx_in_module(module_name: &'static str) {
+    init();
+
+    CompiledModule::compile(module_name, CompilationMode::Debug).with_module_async(
+        DEFAULT_CONFIG,
+        |module| async move {
+            let json = r#"
+{
+  "CallProcedure": {
+    "procedure": "with_tx",
+    "args": "[]",
+    "request_id": 0,
+    "flags": 0
+  }
+}"#
+            .to_string();
+            module.send(json).await.unwrap();
+
+            // Wait 1 second just to be safe.
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+            let log = read_log_skip_repeating(&module).await;
+
+            assert!(log.contains("Hello, World!"));
+        },
+    )
+}
+
+#[test]
+#[serial]
+fn test_calling_with_tx() {
+    test_calling_with_tx_in_module("module-test");
+}
+
 /// Invoke the `module-test` module,
 /// use `caller` to invoke its `test` reducer,
 /// and assert that its logs look right.

@@ -268,3 +268,98 @@ declare_tests_with_suffix!(rust, "");
 declare_tests_with_suffix!(typescript, "-ts");
 // TODO: migrate csharp to snake_case table names
 declare_tests_with_suffix!(csharp, "-cs");
+
+macro_rules! procedure_tests {
+    ($mod_name:ident, $suffix:literal) => {
+        mod $mod_name {
+            //! Tests of procedure functionality, using <./procedure_client> and <../../../modules/sdk-test-procedure>.
+            //!
+            //! These are separate from the existing client and module because as of writing (pgoldman 2025-10-30),
+            //! we do not have procedure support in all of the module languages we have tested.
+
+            use spacetimedb_testing::sdk::Test;
+
+            const MODULE: &str = concat!("sdk-test-procedure", $suffix);
+            const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/procedure-client");
+
+            fn make_test(subcommand: &str) -> Test {
+                Test::builder()
+                    .with_name(subcommand)
+                    .with_module(MODULE)
+                    .with_client(CLIENT)
+                    .with_language("rust")
+                    .with_bindings_dir("src/module_bindings")
+                    .with_compile_command("cargo build")
+                    .with_run_command(format!("cargo run -- {}", subcommand))
+                    .build()
+            }
+
+            #[test]
+            fn return_values() {
+                make_test("procedure-return-values").run()
+            }
+
+            #[test]
+            fn observe_panic() {
+                make_test("procedure-observe-panic").run()
+            }
+
+            #[test]
+            fn with_tx_commit() {
+                make_test("insert-with-tx-commit").run()
+            }
+
+            #[test]
+            fn with_tx_rollback() {
+                make_test("insert-with-tx-rollback").run()
+            }
+
+            #[test]
+            fn http_ok() {
+                make_test("procedure-http-ok").run()
+            }
+
+            #[test]
+            fn http_err() {
+                make_test("procedure-http-err").run()
+            }
+        }
+    };
+}
+
+procedure_tests!(rust_procedures, "");
+procedure_tests!(typescript_procedures, "-ts");
+
+mod view {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-view";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn subscribe_anonymous_view() {
+        make_test("view-anonymous-subscribe").run()
+    }
+
+    #[test]
+    fn subscribe_non_anonymous_view() {
+        make_test("view-non-anonymous-subscribe").run()
+    }
+
+    #[test]
+    fn subscribe_view_non_table_return() {
+        make_test("view-non-table-return").run()
+    }
+}

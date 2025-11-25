@@ -443,7 +443,7 @@ name = "benchmarks-module"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -614,6 +614,16 @@ checksum = "4e2e4afe60d7dd600fdd3de8d0f08c2b7ec039712e3b6137ff98b7004e82de4f"
 dependencies = [
  "alloc-no-stdlib",
  "alloc-stdlib",
+]
+
+[[package]]
+name = "bstr"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -1072,7 +1082,7 @@ dependencies = [
 
 [[package]]
 name = "connect_disconnect_client"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "spacetimedb-sdk",
@@ -1685,6 +1695,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "658bce805d770f407bc62102fca7c2c64ceef2fbcb2b8bd19d2765ce093980de"
 dependencies = [
  "console",
+ "fuzzy-matcher",
  "shell-words",
  "thiserror 1.0.69",
 ]
@@ -2151,6 +2162,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "flume"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da0e4dd2a88388a1f4ccc7c9ce104604dab68d9f408dc34cd45823d5a9069095"
+dependencies = [
+ "futures-core",
+ "futures-sink",
+ "spin",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2161,6 +2183,12 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-types"
@@ -2332,12 +2360,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
+]
+
+[[package]]
 name = "fxhash"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
+]
+
+[[package]]
+name = "gen-bindings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap 4.5.50",
+ "replace-spacetimedb",
+]
+
+[[package]]
+name = "generate-client-api"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "replace-spacetimedb",
+ "tempfile",
 ]
 
 [[package]]
@@ -2409,10 +2464,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
+name = "git2"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b903b73e45dc0c6c596f2d37eccece7c1c8bb6e4407b001096387c63d0d93724"
+dependencies = [
+ "bitflags 2.10.0",
+ "libc",
+ "libgit2-sys",
+ "log",
+ "openssl-probe",
+ "openssl-sys",
+ "url",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
+
+[[package]]
+name = "globset"
+version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52dfc19153a48bde0cbd630453615c8151bce3a5adfac7a0aebfbf0a1e1f57e3"
+dependencies = [
+ "aho-corasick",
+ "bstr",
+ "log",
+ "regex-automata",
+ "regex-syntax",
+]
 
 [[package]]
 name = "gzip-header"
@@ -2500,18 +2583,20 @@ checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash",
- "rayon",
- "serde",
+ "foldhash 0.1.5",
 ]
 
 [[package]]
 name = "hashbrown"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
+ "equivalent",
+ "rayon",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -3037,6 +3122,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ignore"
+version = "0.4.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3d782a365a015e0f5c04902246139249abf769125006fbe7649e2ee88169b4a"
+dependencies = [
+ "crossbeam-deque",
+ "globset",
+ "log",
+ "memchr",
+ "regex-automata",
+ "same-file",
+ "walkdir",
+ "winapi-util",
+]
+
+[[package]]
 name = "imara-diff"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3063,7 +3164,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6717a8d2a5a929a1a2eb43a12812498ed141a0bcfb7e8f7844fbdbe4303bba9f"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "serde",
  "serde_core",
 ]
@@ -3130,6 +3231,17 @@ dependencies = [
  "quick-xml 0.37.5",
  "rgb",
  "str_stack",
+]
+
+[[package]]
+name = "inotify"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd168d97690d0b8c412d6b6c10360277f4d7ee495c5d0d5d5fe0854923255cc"
+dependencies = [
+ "bitflags 1.3.2",
+ "inotify-sys",
+ "libc",
 ]
 
 [[package]]
@@ -3384,7 +3496,7 @@ name = "keynote-benchmarks"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -3449,6 +3561,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
+name = "libgit2-sys"
+version = "0.17.0+1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10472326a8a6477c3c20a64547b0059e4b0d086869eee31e6d7da728a8eb7224"
+dependencies = [
+ "cc",
+ "libc",
+ "libssh2-sys",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+]
+
+[[package]]
 name = "libloading"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3497,6 +3623,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "libssh2-sys"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "220e4f05ad4a218192533b300327f5150e809b54c4ec83b5a1d91833601811b9"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "libtest-mimic"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3505,6 +3645,18 @@ dependencies = [
  "clap 4.5.50",
  "termcolor",
  "threadpool",
+]
+
+[[package]]
+name = "libz-sys"
+version = "1.1.22"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b70e7a7df205e92a1a4cd9aaae7898dac0aa555503cc0a649494d0d60e7651d"
+dependencies = [
+ "cc",
+ "libc",
+ "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -3724,7 +3876,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -3762,6 +3914,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.107",
+]
+
+[[package]]
+name = "names"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7bddcd3bf5144b6392de80e04c347cd7fab2508f6df16a85fc496ecd5cec39bc"
+dependencies = [
+ "clap 3.2.23",
+ "rand 0.8.5",
 ]
 
 [[package]]
@@ -3852,17 +4014,36 @@ checksum = "610a5acd306ec67f907abe5567859a3c693fb9886eb1f012ab8f2a47bef3db51"
 
 [[package]]
 name = "notify"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c533b4c39709f9ba5005d8002048266593c1cfaf3c5f0739d5b8ab0c6c504009"
+dependencies = [
+ "bitflags 2.10.0",
+ "filetime",
+ "fsevent-sys",
+ "inotify 0.10.2",
+ "kqueue",
+ "libc",
+ "log",
+ "mio 1.1.0",
+ "notify-types 1.0.1",
+ "walkdir",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "notify"
 version = "8.2.0"
 source = "git+https://github.com/sapphi-red/notify?rev=refs%2Fheads%2Fpatches#cf2f71ff72bab5a94084001f6a776af81afebaac"
 dependencies = [
  "bitflags 2.10.0",
  "fsevent-sys",
- "inotify",
+ "inotify 0.11.0",
  "kqueue",
  "libc",
  "log",
  "mio 1.1.0",
- "notify-types",
+ "notify-types 2.0.0",
  "walkdir",
  "windows-sys 0.60.2",
 ]
@@ -3874,9 +4055,18 @@ source = "git+https://github.com/sapphi-red/notify?rev=refs%2Fheads%2Fpatches#cf
 dependencies = [
  "file-id",
  "log",
- "notify",
- "notify-types",
+ "notify 8.2.0",
+ "notify-types 2.0.0",
  "walkdir",
+]
+
+[[package]]
+name = "notify-types"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "585d3cb5e12e01aed9e8a1f70d5c6b5e86fe2a6e48fc8cd0b3e0b8df6f6eb174"
+dependencies = [
+ "instant",
 ]
 
 [[package]]
@@ -4248,7 +4438,7 @@ checksum = "9c2294f53fe0d6a715ad1877300fe5432033db1e5804800f82ee84840bd09894"
 dependencies = [
  "allocator-api2",
  "bumpalo",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "oxc_data_structures",
  "oxc_estree",
  "rustc-hash",
@@ -4779,7 +4969,7 @@ name = "perf-test-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -5147,6 +5337,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "procedure-client"
+version = "1.9.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "serde_json",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-sdk",
+ "test-counter",
+]
+
+[[package]]
 name = "prometheus"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5331,7 +5533,7 @@ name = "quickstart-chat-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -5642,6 +5844,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cadadef317c2f20755a64d7fdc48f9e7178ee6b0e1f7fce33fa60f1d68a276e6"
 
 [[package]]
+name = "replace-spacetimedb"
+version = "0.1.0"
+dependencies = [
+ "clap 4.5.50",
+ "ignore",
+ "memchr",
+ "regex",
+]
+
+[[package]]
 name = "reqwest"
 version = "0.11.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5823,7 +6035,7 @@ dependencies = [
  "itertools 0.14.0",
  "itoa",
  "memchr",
- "notify",
+ "notify 8.2.0",
  "oxc",
  "oxc_allocator",
  "oxc_ecmascript",
@@ -6141,7 +6353,7 @@ name = "rolldown_watcher"
 version = "0.1.0"
 source = "git+https://github.com/rolldown/rolldown.git?tag=v1.0.0-beta.42#596339764e63f3403e425c2cd8b23a1bc7170f77"
 dependencies = [
- "notify",
+ "notify 8.2.0",
  "notify-debouncer-full",
  "rolldown_error",
 ]
@@ -6421,12 +6633,32 @@ dependencies = [
  "anyhow",
  "log",
  "paste",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
+]
+
+[[package]]
+name = "sdk-test-procedure-module"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "paste",
+ "spacetimedb 1.9.0",
+]
+
+[[package]]
+name = "sdk-test-view"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "paste",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
 name = "sdk-unreal-test-harness"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "serial_test",
  "spacetimedb-testing",
@@ -6860,26 +7092,7 @@ name = "spacetime-module"
 version = "0.1.0"
 dependencies = [
  "log",
- "spacetimedb 1.6.0",
-]
-
-[[package]]
-name = "spacetimedb"
-version = "1.6.0"
-dependencies = [
- "bytemuck",
- "derive_more 0.99.20",
- "getrandom 0.2.16",
- "insta",
- "log",
- "rand 0.8.5",
- "scoped-tls",
- "serde_json",
- "spacetimedb-bindings-macro 1.6.0",
- "spacetimedb-bindings-sys 1.6.0",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
- "trybuild",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -6894,35 +7107,58 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "scoped-tls",
- "spacetimedb-bindings-macro 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spacetimedb-bindings-sys 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spacetimedb-lib 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-bindings-macro 1.6.0",
+ "spacetimedb-bindings-sys 1.6.0",
+ "spacetimedb-lib 1.6.0",
+ "spacetimedb-primitives 1.6.0",
+]
+
+[[package]]
+name = "spacetimedb"
+version = "1.9.0"
+dependencies = [
+ "bytemuck",
+ "bytes",
+ "derive_more 0.99.20",
+ "getrandom 0.2.16",
+ "http 1.3.1",
+ "insta",
+ "log",
+ "rand 0.8.5",
+ "scoped-tls",
+ "serde_json",
+ "spacetimedb-bindings-macro 1.9.0",
+ "spacetimedb-bindings-sys 1.9.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
+ "trybuild",
 ]
 
 [[package]]
 name = "spacetimedb-auth"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "serde",
  "serde_json",
  "serde_with",
  "spacetimedb-jsonwebtoken",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
 ]
 
 [[package]]
 name = "spacetimedb-bench"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
  "anymap",
  "byte-unit",
  "clap 4.5.50",
  "criterion",
- "foldhash",
+ "foldhash 0.2.0",
  "futures",
+ "hashbrown 0.16.1",
  "iai-callgrind",
  "iai-callgrind-macros",
  "iai-callgrind-runner",
@@ -6942,11 +7178,11 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-datastore",
  "spacetimedb-execution",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-query",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-standalone",
  "spacetimedb-table",
@@ -6962,6 +7198,8 @@ dependencies = [
 [[package]]
 name = "spacetimedb-bindings-macro"
 version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a930242493f5c875ab96903eb40fb6a90c4d3ae99597fd51da569ff22769a03"
 dependencies = [
  "heck 0.4.1",
  "humantime",
@@ -6973,23 +7211,14 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-bindings-macro"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a930242493f5c875ab96903eb40fb6a90c4d3ae99597fd51da569ff22769a03"
+version = "1.9.0"
 dependencies = [
  "heck 0.4.1",
  "humantime",
  "proc-macro2",
  "quote",
- "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.9.0",
  "syn 2.0.107",
-]
-
-[[package]]
-name = "spacetimedb-bindings-sys"
-version = "1.6.0"
-dependencies = [
- "spacetimedb-primitives 1.6.0",
 ]
 
 [[package]]
@@ -6998,12 +7227,19 @@ version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e565dfcdd2dc3f58e0178052ec1c8ce710b013482d4fa50b511ba786a2c3bc68"
 dependencies = [
- "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.6.0",
+]
+
+[[package]]
+name = "spacetimedb-bindings-sys"
+version = "1.9.0"
+dependencies = [
+ "spacetimedb-primitives 1.9.0",
 ]
 
 [[package]]
 name = "spacetimedb-cli"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -7014,18 +7250,24 @@ dependencies = [
  "clap-markdown",
  "colored",
  "convert_case 0.6.0",
+ "dialoguer",
  "dirs 5.0.1",
  "duct",
  "email_address",
  "flate2",
  "fs-err",
  "futures",
+ "git2",
  "http 1.3.1",
  "indicatif",
  "is-terminal",
  "itertools 0.12.1",
  "mimalloc",
+ "names",
+ "notify 7.0.0",
  "percent-encoding",
+ "pretty_assertions",
+ "quick-xml 0.31.0",
  "regex",
  "reqwest 0.12.24",
  "rolldown",
@@ -7041,15 +7283,16 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-schema",
  "syntect",
  "tabled",
  "tar",
  "tempfile",
  "termcolor",
+ "termtree",
  "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -7062,11 +7305,12 @@ dependencies = [
  "wasmbin",
  "webbrowser",
  "windows-sys 0.59.0",
+ "xmltree",
 ]
 
 [[package]]
 name = "spacetimedb-client-api"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -7103,10 +7347,11 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-datastore",
  "spacetimedb-jsonwebtoken",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-paths",
  "spacetimedb-schema",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
@@ -7120,7 +7365,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-client-api-messages"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "bytes",
  "bytestring",
@@ -7134,16 +7379,16 @@ dependencies = [
  "serde_json",
  "serde_with",
  "smallvec",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "strum",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-codegen"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "convert_case 0.6.0",
@@ -7152,15 +7397,15 @@ dependencies = [
  "itertools 0.12.1",
  "regex",
  "spacetimedb-data-structures",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-testing",
 ]
 
 [[package]]
 name = "spacetimedb-commitlog"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "async-stream",
  "bitflags 2.10.0",
@@ -7171,6 +7416,7 @@ dependencies = [
  "itertools 0.12.1",
  "log",
  "memmap2",
+ "nix 0.30.1",
  "once_cell",
  "pretty_assertions",
  "proptest",
@@ -7180,8 +7426,8 @@ dependencies = [
  "spacetimedb-commitlog",
  "spacetimedb-fs-utils",
  "spacetimedb-paths",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -7192,7 +7438,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-core"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -7218,13 +7464,15 @@ dependencies = [
  "env_logger 0.10.2",
  "faststr",
  "flate2",
+ "flume",
  "fs2",
  "fs_extra",
  "futures",
  "futures-util",
- "hashbrown 0.15.5",
  "hex",
  "hostname",
+ "http 1.3.1",
+ "http-body-util",
  "hyper 1.7.0",
  "imara-diff",
  "indexmap 2.12.0",
@@ -7272,14 +7520,14 @@ dependencies = [
  "spacetimedb-fs-utils",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-jwks",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
  "spacetimedb-paths",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-query",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
  "spacetimedb-subscription",
@@ -7314,11 +7562,11 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-data-structures"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "ahash 0.8.12",
  "crossbeam-queue",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
  "nohash-hasher",
  "serde",
  "smallvec",
@@ -7328,7 +7576,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-datastore"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7348,11 +7596,11 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-durability",
  "spacetimedb-execution",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-metrics",
  "spacetimedb-paths",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-snapshot",
  "spacetimedb-table",
@@ -7363,14 +7611,16 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-durability"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
  "log",
+ "scopeguard",
  "spacetimedb-commitlog",
  "spacetimedb-paths",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-sats 1.9.0",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",
@@ -7378,32 +7628,33 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-execution"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
  "spacetimedb-expr",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
 
 [[package]]
 name = "spacetimedb-expr"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "bigdecimal",
+ "bytes",
  "derive_more 0.99.20",
  "ethnum",
  "pretty_assertions",
- "spacetimedb 1.6.0",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb 1.9.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "thiserror 1.0.69",
@@ -7411,7 +7662,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-fs-utils"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -7454,6 +7705,26 @@ dependencies = [
 [[package]]
 name = "spacetimedb-lib"
 version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ba57c8f1983bb144ee7e1ff28aa5882ca437f67c14a14daad4bf61d31f7040d"
+dependencies = [
+ "anyhow",
+ "bitflags 2.10.0",
+ "blake3",
+ "chrono",
+ "derive_more 0.99.20",
+ "enum-as-inner",
+ "hex",
+ "itertools 0.12.1",
+ "spacetimedb-bindings-macro 1.6.0",
+ "spacetimedb-primitives 1.6.0",
+ "spacetimedb-sats 1.6.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-lib"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "bitflags 2.10.0",
@@ -7466,52 +7737,33 @@ dependencies = [
  "hex",
  "insta",
  "itertools 0.12.1",
+ "log",
  "proptest",
  "proptest-derive",
  "ron",
  "serde",
  "serde_json",
- "spacetimedb-bindings-macro 1.6.0",
+ "spacetimedb-bindings-macro 1.9.0",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "spacetimedb-lib"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ba57c8f1983bb144ee7e1ff28aa5882ca437f67c14a14daad4bf61d31f7040d"
-dependencies = [
- "anyhow",
- "bitflags 2.10.0",
- "blake3",
- "chrono",
- "derive_more 0.99.20",
- "enum-as-inner",
- "hex",
- "itertools 0.12.1",
- "spacetimedb-bindings-macro 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spacetimedb-sats 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-memory-usage"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "decorum",
  "ethnum",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
  "smallvec",
 ]
 
 [[package]]
 name = "spacetimedb-metrics"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "arrayvec",
  "itertools 0.12.1",
@@ -7521,7 +7773,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-paths"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7537,7 +7789,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-pg"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7548,38 +7800,25 @@ dependencies = [
  "pgwire",
  "spacetimedb-client-api",
  "spacetimedb-client-api-messages",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "thiserror 1.0.69",
  "tokio",
 ]
 
 [[package]]
 name = "spacetimedb-physical-plan"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "derive_more 0.99.20",
  "either",
  "pretty_assertions",
  "spacetimedb-expr",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
-]
-
-[[package]]
-name = "spacetimedb-primitives"
-version = "1.6.0"
-dependencies = [
- "bitflags 2.10.0",
- "either",
- "enum-as-inner",
- "itertools 0.12.1",
- "nohash-hasher",
- "proptest",
- "spacetimedb-memory-usage",
 ]
 
 [[package]]
@@ -7595,8 +7834,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-primitives"
+version = "1.9.0"
+dependencies = [
+ "bitflags 2.10.0",
+ "either",
+ "enum-as-inner",
+ "itertools 0.12.1",
+ "nohash-hasher",
+ "proptest",
+ "spacetimedb-memory-usage",
+]
+
+[[package]]
 name = "spacetimedb-query"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.1",
@@ -7604,9 +7856,9 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-execution",
  "spacetimedb-expr",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
 ]
@@ -7614,6 +7866,32 @@ dependencies = [
 [[package]]
 name = "spacetimedb-sats"
 version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eae61d8f88bda21f56c143bc9b4ddc20100ff08ae4fed0b9444509f7c3ca4339"
+dependencies = [
+ "anyhow",
+ "arrayvec",
+ "bitflags 2.10.0",
+ "bytemuck",
+ "bytes",
+ "chrono",
+ "decorum",
+ "derive_more 0.99.20",
+ "enum-as-inner",
+ "ethnum",
+ "hex",
+ "itertools 0.12.1",
+ "second-stack",
+ "sha3",
+ "smallvec",
+ "spacetimedb-bindings-macro 1.6.0",
+ "spacetimedb-primitives 1.6.0",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "spacetimedb-sats"
+version = "1.9.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -7638,48 +7916,21 @@ dependencies = [
  "serde_json",
  "sha3",
  "smallvec",
- "spacetimedb-bindings-macro 1.6.0",
+ "spacetimedb-bindings-macro 1.9.0",
  "spacetimedb-memory-usage",
  "spacetimedb-metrics",
- "spacetimedb-primitives 1.6.0",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "spacetimedb-sats"
-version = "1.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eae61d8f88bda21f56c143bc9b4ddc20100ff08ae4fed0b9444509f7c3ca4339"
-dependencies = [
- "anyhow",
- "arrayvec",
- "bitflags 2.10.0",
- "bytemuck",
- "bytes",
- "chrono",
- "decorum",
- "derive_more 0.99.20",
- "enum-as-inner",
- "ethnum",
- "hex",
- "itertools 0.12.1",
- "second-stack",
- "sha3",
- "smallvec",
- "spacetimedb-bindings-macro 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "spacetimedb-primitives 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb-primitives 1.9.0",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-schema"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "derive_more 0.99.20",
  "enum-as-inner",
  "enum-map",
- "hashbrown 0.15.5",
  "indexmap 2.12.0",
  "insta",
  "itertools 0.12.1",
@@ -7690,9 +7941,9 @@ dependencies = [
  "serial_test",
  "smallvec",
  "spacetimedb-data-structures",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-sql-parser",
  "spacetimedb-testing",
  "termcolor",
@@ -7703,7 +7954,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sdk"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anymap",
  "base64 0.21.7",
@@ -7722,9 +7973,9 @@ dependencies = [
  "rand 0.9.2",
  "spacetimedb-client-api-messages",
  "spacetimedb-data-structures",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-metrics",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-testing",
  "thiserror 1.0.69",
  "tokio",
@@ -7733,7 +7984,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-snapshot"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -7750,10 +8001,10 @@ dependencies = [
  "spacetimedb-datastore",
  "spacetimedb-durability",
  "spacetimedb-fs-utils",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-paths",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-table",
  "tempfile",
@@ -7766,17 +8017,17 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-sql-parser"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "derive_more 0.99.20",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "sqlparser",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-standalone"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7800,7 +8051,7 @@ dependencies = [
  "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-datastore",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-paths",
  "spacetimedb-pg",
  "spacetimedb-schema",
@@ -7817,20 +8068,20 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-subscription"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "spacetimedb-execution",
  "spacetimedb-expr",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-physical-plan",
- "spacetimedb-primitives 1.6.0",
+ "spacetimedb-primitives 1.9.0",
  "spacetimedb-query",
 ]
 
 [[package]]
 name = "spacetimedb-table"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "ahash 0.8.12",
  "blake3",
@@ -7846,19 +8097,20 @@ dependencies = [
  "rand 0.9.2",
  "smallvec",
  "spacetimedb-data-structures",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-memory-usage",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "spacetimedb-testing"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
@@ -7872,7 +8124,7 @@ dependencies = [
  "spacetimedb-client-api",
  "spacetimedb-core",
  "spacetimedb-data-structures",
- "spacetimedb-lib 1.6.0",
+ "spacetimedb-lib 1.9.0",
  "spacetimedb-paths",
  "spacetimedb-schema",
  "spacetimedb-standalone",
@@ -7883,7 +8135,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-update"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7908,7 +8160,7 @@ dependencies = [
 
 [[package]]
 name = "spacetimedb-vm"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "arrayvec",
@@ -7918,9 +8170,9 @@ dependencies = [
  "smallvec",
  "spacetimedb-data-structures",
  "spacetimedb-execution",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-primitives 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-primitives 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-schema",
  "spacetimedb-table",
  "tempfile",
@@ -7934,6 +8186,9 @@ name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
 
 [[package]]
 name = "sptr"
@@ -7999,7 +8254,7 @@ dependencies = [
 
 [[package]]
 name = "sqltest"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -8018,8 +8273,8 @@ dependencies = [
  "rust_decimal",
  "spacetimedb-core",
  "spacetimedb-datastore",
- "spacetimedb-lib 1.6.0",
- "spacetimedb-sats 1.6.0",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-sats 1.9.0",
  "spacetimedb-vm",
  "sqllogictest",
  "sqllogictest-engines",
@@ -8392,8 +8647,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "termtree"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
+
+[[package]]
 name = "test-client"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "env_logger 0.10.2",
@@ -8405,7 +8666,7 @@ dependencies = [
 
 [[package]]
 name = "test-counter"
-version = "1.6.0"
+version = "1.9.0"
 dependencies = [
  "anyhow",
  "spacetimedb-data-structures",
@@ -9124,7 +9385,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 1.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "spacetimedb 1.6.0",
 ]
 
 [[package]]
@@ -9133,7 +9394,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "log",
- "spacetimedb 1.6.0",
+ "spacetimedb 1.9.0",
 ]
 
 [[package]]
@@ -9340,6 +9601,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e723b9e1c02a3cf9f9d0de6a4ddb8cdc1df859078902fe0ae0589d615711ae6"
 dependencies = [
  "filetime",
+]
+
+[[package]]
+name = "view-client"
+version = "1.9.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-sdk",
+ "test-counter",
 ]
 
 [[package]]
@@ -10467,6 +10739,21 @@ name = "xi-unicode"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a67300977d3dc3f8034dae89778f502b6ba20b269527b3223ba59c0cf393bb8a"
+
+[[package]]
+name = "xml-rs"
+version = "0.8.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
+
+[[package]]
+name = "xmltree"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b619f8c85654798007fb10afa5125590b43b088c225a25fc2fec100a9fad0fc6"
+dependencies = [
+ "xml-rs",
+]
 
 [[package]]
 name = "xxhash-rust"

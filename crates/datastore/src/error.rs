@@ -1,7 +1,7 @@
 use super::system_tables::SystemTable;
 use enum_as_inner::EnumAsInner;
 use spacetimedb_lib::db::raw_def::{v9::RawSql, RawIndexDefV8};
-use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::buffer::DecodeError;
 use spacetimedb_sats::{product_value::InvalidFieldError, satn::Satn};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
@@ -29,8 +29,36 @@ pub enum DatastoreError {
     // TODO(cloutiertyler): should this be a TableError? I couldn't get it to compile
     #[error("Error reading a value from a table through BSATN: {0}")]
     ReadViaBsatnError(#[from] ReadViaBsatnError),
+
+    #[error("ViewError: {0}")]
+    View(#[from] ViewError),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum ViewError {
+    #[error("view '{0}' not found")]
+    NotFound(Box<str>),
+    #[error("Table backing View '{0}' not found")]
+    TableNotFound(ViewId),
+    #[error("failed to deserialize view arguments from row")]
+    DeserializeArgs,
+    #[error("failed to deserialize view return value: {0}")]
+    DeserializeReturn(String),
+    #[error("failed to serialize row to BSATN")]
+    SerializeRow,
+    #[error("invalid return type: expected Array or Option, got {0:?}")]
+    InvalidReturnType(AlgebraicType),
+    #[error("return type is Array but deserialized value is not Array")]
+    TypeMismatchArray,
+    #[error("return type is Option but deserialized value is not Option")]
+    TypeMismatchOption,
+    #[error("expected ProductValue in view result")]
+    ExpectedProduct,
+    #[error("failed to serialize view arguments")]
+    SerializeArgs,
 }
 
 #[derive(Error, Debug, EnumAsInner)]

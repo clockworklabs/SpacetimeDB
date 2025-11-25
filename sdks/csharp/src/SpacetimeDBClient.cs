@@ -21,6 +21,7 @@ namespace SpacetimeDB
         string? token;
         Compression? compression;
         bool light;
+        bool? confirmedReads;
 
         public DbConnection Build()
         {
@@ -32,7 +33,7 @@ namespace SpacetimeDB
             {
                 throw new InvalidOperationException("Building DbConnection with a null nameOrAddress. Call WithModuleName() first.");
             }
-            conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light);
+            conn.Connect(token, uri, nameOrAddress, compression ?? Compression.Brotli, light, confirmedReads);
 #if UNITY_5_3_OR_NEWER
             if (SpacetimeDBNetworkManager._instance != null)
             {
@@ -72,6 +73,12 @@ namespace SpacetimeDB
             return this;
         }
 
+        public DbConnectionBuilder<DbConnection> WithConfirmedReads(bool confirmedReads)
+        {
+            this.confirmedReads = confirmedReads;
+            return this;
+        }
+
         public delegate void ConnectCallback(DbConnection conn, Identity identity, string token);
 
         public DbConnectionBuilder<DbConnection> OnConnect(ConnectCallback cb)
@@ -99,7 +106,7 @@ namespace SpacetimeDB
 
     public interface IDbConnection
     {
-        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light);
+        internal void Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads);
 
         internal void AddOnConnect(Action<Identity, string> cb);
         internal void AddOnConnectError(WebSocket.ConnectErrorEventHandler cb);
@@ -114,6 +121,12 @@ namespace SpacetimeDB
         internal Task<T[]> RemoteQuery<T>(string query) where T : IStructuralReadWrite, new();
         void InternalCallReducer<T>(T args, CallReducerFlags flags)
             where T : IReducerArgs, new();
+
+        void InternalCallProcedure<TArgs, TReturn>(
+            TArgs args,
+            ProcedureCallback<TReturn> callback)
+            where TArgs : IProcedureArgs, new()
+            where TReturn : IStructuralReadWrite, new();
     }
 
     public abstract class DbConnectionBase<DbConnection, Tables, Reducer> : IDbConnection
@@ -158,8 +171,11 @@ namespace SpacetimeDB
         protected abstract IReducerEventContext ToReducerEventContext(ReducerEvent<Reducer> reducerEvent);
         protected abstract ISubscriptionEventContext MakeSubscriptionEventContext();
         protected abstract IErrorContext ToErrorContext(Exception errorContext);
+        protected abstract IProcedureEventContext ToProcedureEventContext(ProcedureEvent procedureEvent);
 
         private readonly Dictionary<Guid, TaskCompletionSource<OneOffQueryResponse>> waitingOneOffQueries = new();
+
+        private readonly ProcedureCallbacks procedureCallbacks = new();
 
         private bool isClosing;
         private readonly Thread networkMessageParseThread;
@@ -184,7 +200,7 @@ namespace SpacetimeDB
                     SpacetimeDBNetworkManager._instance.RemoveConnection(this);
                 }
             };
-            
+
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (SpacetimeDBNetworkManager._instance != null)
                 SpacetimeDBNetworkManager._instance.StartCoroutine(ParseMessages());
@@ -223,6 +239,7 @@ namespace SpacetimeDB
             public DateTime receiveTimestamp;
             public uint applyQueueTrackerId;
             public ReducerEvent<Reducer>? reducerEvent;
+            public ProcedureEvent? procedureEvent;
         }
 
         private readonly BlockingCollection<UnparsedMessage> _parseQueue =
@@ -370,6 +387,7 @@ namespace SpacetimeDB
                 var parseStart = DateTime.UtcNow;
 
                 ReducerEvent<Reducer>? reducerEvent = default;
+                ProcedureEvent? procedureEvent = default;
 
                 switch (message)
                 {
@@ -453,7 +471,22 @@ namespace SpacetimeDB
                     case ServerMessage.OneOffQueryResponse(var resp):
                         ParseOneOffQuery(resp);
                         break;
+                    case ServerMessage.ProcedureResult(var procedureResult):
+                        procedureEvent = new ProcedureEvent(
+                            procedureResult.Timestamp,
+                            procedureResult.Status,
+                            Identity ?? throw new InvalidOperationException("Identity not set"),
+                            ConnectionId,
+                            procedureResult.TotalHostExecutionDuration,
+                            procedureResult.RequestId
+                        );
 
+                        if (!stats.ProcedureRequestTracker.FinishTrackingRequest(procedureResult.RequestId, unparsed.timestamp))
+                        {
+                            Log.Warn($"Failed to finish tracking procedure request: {procedureResult.RequestId}");
+                        }
+
+                        break;
                     default:
                         throw new InvalidOperationException();
                 }
@@ -461,7 +494,7 @@ namespace SpacetimeDB
                 stats.ParseMessageTracker.InsertRequest(parseStart, trackerMetadata);
                 var applyTracker = stats.ApplyMessageQueueTracker.StartTrackingRequest(trackerMetadata);
 
-                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent };
+                return new ParsedMessage { message = message, dbOps = dbOps, receiveTimestamp = unparsed.timestamp, applyQueueTrackerId = applyTracker, reducerEvent = reducerEvent, procedureEvent = procedureEvent };
             }
         }
 
@@ -490,9 +523,24 @@ namespace SpacetimeDB
         /// <summary>
         /// Connect to a remote spacetime instance.
         /// </summary>
-        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://testnet.spacetimedb.com)
+        /// <param name="uri"> URI of the SpacetimeDB server (ex: https://maincloud.spacetimedb.com)
         /// <param name="addressOrName">The name or address of the database to connect to</param>
-        void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light)
+        /// <param name="compression">The compression settings to use</param>
+        /// <param name="light">Whether or not to request light updates</param>
+        /// <param name="confirmedReads">
+        /// If set to true, instruct the server to send updates for transactions
+        /// only after they are confirmed to be durable.
+        ///
+        /// What durable means depends on the server configuration. In general,
+        /// a transaction is durable when it has been written to disk on one or
+        /// more servers.
+        ///
+        /// If set to false, instruct the server to send updates as soon as
+        /// transactions are committed in memory.
+        ///
+        /// If not set, the server chooses the default.
+        /// </param>
+        void IDbConnection.Connect(string? token, string uri, string addressOrName, Compression compression, bool light, bool? confirmedReads)
         {
             isClosing = false;
 
@@ -517,7 +565,7 @@ namespace SpacetimeDB
                 {
                     try
                     {
-                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light);
+                        await webSocket.Connect(token, uri, addressOrName, ConnectionId, compression, light, confirmedReads);
                     }
                     catch (Exception e)
                     {
@@ -710,7 +758,13 @@ namespace SpacetimeDB
                 case ServerMessage.OneOffQueryResponse:
                     /* OneOffQuery is async and handles its own responses */
                     break;
-
+                case ServerMessage.ProcedureResult(var procedureResult):
+                    var procedureEventContext = ToProcedureEventContext(parsed.procedureEvent!);
+                    if (!procedureCallbacks.TryResolveCallback(procedureEventContext, procedureResult.RequestId, procedureResult))
+                    {
+                        Log.Warn($"Received ProcedureResult for unknown request ID: {procedureResult.RequestId}");
+                    }
+                    break;
                 default:
                     throw new InvalidOperationException();
             }
@@ -738,6 +792,28 @@ namespace SpacetimeDB
                 IStructuralReadWrite.ToBytes(args).ToList(),
                 stats.ReducerRequestTracker.StartTrackingRequest(args.ReducerName),
                 (byte)flags
+            )));
+        }
+
+        // TODO: Replace with an internal interface 
+        void IDbConnection.InternalCallProcedure<TArgs, TReturn>(
+            TArgs args,
+            ProcedureCallback<TReturn> callback)
+        {
+            if (!webSocket.IsConnected)
+            {
+                Log.Error("Cannot call procedure, not connected to server!");
+                return;
+            }
+
+            var requestId = stats.ProcedureRequestTracker.StartTrackingRequest(args.ProcedureName);
+            procedureCallbacks.RegisterCallback(requestId, callback);
+
+            webSocket.Send(new ClientMessage.CallProcedure(new CallProcedure(
+                args.ProcedureName,
+                IStructuralReadWrite.ToBytes(args).ToList(),
+                requestId,
+                0 // flags - assuming default for now
             )));
         }
 
@@ -887,8 +963,8 @@ namespace SpacetimeDB
     /// Represents the result of parsing a database update message from SpacetimeDB.
     /// Contains updates for all tables affected by the update, with each entry mapping a table handle
     /// to its respective set of row changes (by primary key or row instance).
-    /// 
-    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/> 
+    ///
+    /// Note: Due to C#'s struct constructor limitations, you must use <see cref="ParsedDatabaseUpdate.New"/>
     /// to create new instances.
     /// Do not use the default constructor, as it will not initialize the Updates dictionary.
     /// </summary>

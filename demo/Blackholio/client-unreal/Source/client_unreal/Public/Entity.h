@@ -28,19 +28,20 @@ protected:
 	float TargetScale = 1.f;
 	
 public:
-	uint32 EntityId = 0;
+	UPROPERTY(BlueprintReadOnly, Category="BH|Entity")
+	int32 EntityId = 0;
 	virtual void Tick(float DeltaTime) override;
 	void ConsumeDespawn(float DeltaTime);
 	
-	void Spawn(uint32 InEntityId);
+	void Spawn(int32 InEntityId);
 	virtual void OnEntityUpdated(const FEntityType& NewVal);
 	virtual void OnDelete(const FEventContext& Context);
 	bool ConsumeDelete(const FEventContext& Context);
 	
 	void SetColor(const FLinearColor& Color) const;
 
-	static float MassToRadius(uint32 Mass) { return FMath::Sqrt(static_cast<float>(Mass)); }
-	static float MassToDiameter(uint32 Mass) { return MassToRadius(Mass) * 2.f; }
+	static float MassToRadius(int32 Mass) { return FMath::Sqrt(static_cast<float>(Mass)); }
+	static float MassToDiameter(int32 Mass) { return MassToRadius(Mass) * 2.f; }
 
 private:
 	UPROPERTY()

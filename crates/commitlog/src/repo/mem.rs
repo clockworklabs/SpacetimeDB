@@ -1,215 +1,52 @@
 use std::{
     collections::{btree_map, BTreeMap},
-    io,
-    sync::{Arc, RwLock, RwLockWriteGuard},
+    fmt, io,
+    sync::{Arc, Mutex, RwLock},
 };
 
-use crate::segment::FileLike;
+use crate::repo::{
+    mem::segment::{SharedLock, Storage},
+    Repo,
+};
 
-use super::Repo;
+mod segment;
+pub use segment::Segment;
 
-type SharedLock<T> = Arc<RwLock<T>>;
-type SharedBytes = SharedLock<Vec<u8>>;
+pub const PAGE_SIZE: usize = 4096;
 
-/// A log segment backed by a `Vec<u8>`.
+/// The total capacity of the imaginary storage device.
 ///
-/// Writing to the segment behaves like a file opened with `O_APPEND`:
-/// [`io::Write::write`] always appends to the segment, regardless of the
-/// current position, and updates the position to the new length of the segment.
-/// The initial position is zero.
+/// [Segment]s are allocated from [Memory], which tracks the total space it
+/// has available. [SpaceOnDevice] is shared by each [Segment].
 ///
-/// Note that this is not a faithful model of a file, as safe Rust requires to
-/// protect the buffer with a lock. This means that pathological situations
-/// arising from concurrent read/write access of a file are impossible to occur.
-#[derive(Clone, Debug, Default)]
-pub struct Segment {
-    pos: u64,
-    buf: SharedBytes,
-}
-
-impl Segment {
-    pub fn len(&self) -> usize {
-        self.buf.read().unwrap().len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Obtain mutable access to the underlying buffer.
-    ///
-    /// This is intended for tests which deliberately corrupt the segment data.
-    pub fn buf_mut(&self) -> RwLockWriteGuard<'_, Vec<u8>> {
-        self.buf.write().unwrap()
-    }
-}
-
-impl From<SharedBytes> for Segment {
-    fn from(buf: SharedBytes) -> Self {
-        Self { pos: 0, buf }
-    }
-}
-
-impl super::SegmentLen for Segment {
-    fn segment_len(&mut self) -> io::Result<u64> {
-        Ok(self.len() as u64)
-    }
-}
-
-impl FileLike for Segment {
-    fn fsync(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-
-    fn ftruncate(&mut self, _tx_offset: u64, size: u64) -> io::Result<()> {
-        let mut inner = self.buf.write().unwrap();
-        inner.resize(size as usize, 0);
-        // NOTE: As per `ftruncate(2)`, the offset is not changed.
-        Ok(())
-    }
-}
-
-impl io::Write for Segment {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut inner = self.buf.write().unwrap();
-        inner.extend(buf);
-        self.pos += buf.len() as u64;
-
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-impl io::Read for Segment {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let inner = self.buf.read().unwrap();
-        let pos = self.pos as usize;
-        if pos > inner.len() {
-            // Bad file descriptor
-            return Err(io::Error::from_raw_os_error(9));
-        }
-        let n = io::Read::read(&mut &inner[pos..], buf)?;
-        self.pos += n as u64;
-
-        Ok(n)
-    }
-}
-
-impl io::Seek for Segment {
-    fn seek(&mut self, pos: io::SeekFrom) -> io::Result<u64> {
-        let (base_pos, offset) = match pos {
-            io::SeekFrom::Start(n) => {
-                self.pos = n;
-                return Ok(n);
-            }
-            io::SeekFrom::End(n) => (self.len() as u64, n),
-            io::SeekFrom::Current(n) => (self.pos, n),
-        };
-        match base_pos.checked_add_signed(offset) {
-            Some(n) => {
-                self.pos = n;
-                Ok(n)
-            }
-            None => Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "invalid seek to a negative or overflowing position",
-            )),
-        }
-    }
-}
-
-#[cfg(feature = "streaming")]
-mod async_impls {
-    use super::*;
-
-    use std::{
-        io::{Seek as _, Write as _},
-        pin::Pin,
-        task::{Context, Poll},
-    };
-
-    use tokio::io::{self, AsyncRead, AsyncSeek, AsyncWrite, ReadBuf};
-
-    use crate::stream::{AsyncFsync, AsyncLen, AsyncRepo, IntoAsyncWriter};
-
-    impl AsyncRepo for Memory {
-        type AsyncSegmentWriter = io::BufWriter<Segment>;
-        type AsyncSegmentReader = io::BufReader<Segment>;
-
-        async fn open_segment_reader_async(&self, offset: u64) -> io::Result<Self::AsyncSegmentReader> {
-            self.open_segment_writer(offset).map(io::BufReader::new)
-        }
-    }
-
-    impl IntoAsyncWriter for Segment {
-        type AsyncWriter = tokio::io::BufWriter<Self>;
-
-        fn into_async_writer(self) -> Self::AsyncWriter {
-            tokio::io::BufWriter::new(self)
-        }
-    }
-
-    impl AsyncRead for Segment {
-        fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
-            let this = self.get_mut();
-            let inner = this.buf.read().unwrap();
-            let pos = this.pos as usize;
-            if pos > inner.len() {
-                // Bad file descriptor
-                return Poll::Ready(Err(io::Error::from_raw_os_error(9)));
-            }
-            let filled = buf.filled().len();
-            AsyncRead::poll_read(Pin::new(&mut &inner[pos..]), cx, buf).map_ok(|()| {
-                this.pos += (buf.filled().len() - filled) as u64;
-            })
-        }
-    }
-
-    impl AsyncSeek for Segment {
-        fn start_seek(self: Pin<&mut Self>, position: io::SeekFrom) -> io::Result<()> {
-            self.get_mut().seek(position).map(drop)
-        }
-
-        fn poll_complete(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<u64>> {
-            Poll::Ready(self.get_mut().stream_position())
-        }
-    }
-
-    impl AsyncWrite for Segment {
-        fn poll_write(self: Pin<&mut Self>, _cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize, io::Error>> {
-            Poll::Ready(self.get_mut().write(buf))
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-            Poll::Ready(Ok(()))
-        }
-
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-
-    impl AsyncFsync for Segment {
-        async fn fsync(&self) {}
-    }
-
-    impl AsyncLen for Segment {
-        async fn segment_len(&mut self) -> io::Result<u64> {
-            Ok(self.len() as u64)
-        }
-    }
-}
+/// [Segment]s allocate space in [PAGE_SIZE] increments. When space is allocated,
+/// it is deducted from [SpaceOnDevice]. When there is not enough [SpaceOnDevice],
+/// allocating operations will return [io::ErrorKind::StorageFull].
+pub type SpaceOnDevice = Arc<Mutex<u64>>;
 
 /// In-memory implementation of [`Repo`].
-#[derive(Clone, Debug, Default)]
-pub struct Memory(SharedLock<BTreeMap<u64, SharedBytes>>);
+#[derive(Clone, Debug)]
+pub struct Memory {
+    space: SpaceOnDevice,
+    segments: SharedLock<BTreeMap<u64, SharedLock<Storage>>>,
+}
 
 impl Memory {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(total_space: u64) -> Self {
+        Self {
+            space: Arc::new(Mutex::new(total_space)),
+            segments: <_>::default(),
+        }
+    }
+
+    pub fn unlimited() -> Self {
+        Self::new(u64::MAX)
+    }
+}
+
+impl fmt::Display for Memory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("<memory>")
     }
 }
 
@@ -218,13 +55,13 @@ impl Repo for Memory {
     type SegmentReader = io::BufReader<Segment>;
 
     fn create_segment(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self.segments.write().unwrap();
         match inner.entry(offset) {
             btree_map::Entry::Occupied(entry) => {
                 let entry = entry.get();
                 let read_guard = entry.read().unwrap();
                 if read_guard.is_empty() {
-                    Ok(Segment::from(Arc::clone(entry)))
+                    Ok(Segment::from_shared(self.space.clone(), entry.clone()))
                 } else {
                     Err(io::Error::new(
                         io::ErrorKind::AlreadyExists,
@@ -233,21 +70,21 @@ impl Repo for Memory {
                 }
             }
             btree_map::Entry::Vacant(entry) => {
-                let segment = entry.insert(Default::default());
-                Ok(Segment::from(Arc::clone(segment)))
+                let segment = entry.insert(Arc::new(RwLock::new(Storage::new())));
+                Ok(Segment::from_shared(self.space.clone(), segment.clone()))
             }
         }
     }
 
     fn open_segment_writer(&self, offset: u64) -> io::Result<Self::SegmentWriter> {
-        let inner = self.0.read().unwrap();
+        let inner = self.segments.read().unwrap();
         let Some(buf) = inner.get(&offset) else {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
                 format!("segment {offset} does not exist"),
             ));
         };
-        Ok(Segment::from(Arc::clone(buf)))
+        Ok(Segment::from_shared(self.space.clone(), buf.clone()))
     }
 
     fn open_segment_reader(&self, offset: u64) -> io::Result<Self::SegmentReader> {
@@ -255,7 +92,7 @@ impl Repo for Memory {
     }
 
     fn remove_segment(&self, offset: u64) -> io::Result<()> {
-        let mut inner = self.0.write().unwrap();
+        let mut inner = self.segments.write().unwrap();
         if inner.remove(&offset).is_none() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -271,38 +108,283 @@ impl Repo for Memory {
     }
 
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
-        Ok(self.0.read().unwrap().keys().copied().collect())
+        Ok(self.segments.read().unwrap().keys().copied().collect())
+    }
+}
+
+#[cfg(feature = "streaming")]
+mod async_impls {
+    use std::io;
+
+    use crate::{
+        repo::{
+            mem::{Memory, Segment},
+            Repo as _,
+        },
+        stream::AsyncRepo,
+    };
+
+    impl AsyncRepo for Memory {
+        type AsyncSegmentWriter = tokio::io::BufWriter<Segment>;
+        type AsyncSegmentReader = tokio::io::BufReader<Segment>;
+
+        async fn open_segment_reader_async(&self, offset: u64) -> io::Result<Self::AsyncSegmentReader> {
+            self.open_segment_writer(offset).map(tokio::io::BufReader::new)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io;
+
+        use pretty_assertions::assert_matches;
+        use tempfile::tempfile;
+        use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncSeek, AsyncSeekExt as _, AsyncWrite, AsyncWriteExt as _};
+
+        use crate::{repo::mem::Segment, tests::helpers::enable_logging};
+
+        async fn read_write_seek(f: &mut (impl AsyncRead + AsyncSeek + AsyncWrite + Unpin)) {
+            enable_logging();
+
+            f.write_all(b"alonso").await.unwrap();
+
+            f.seek(io::SeekFrom::Start(0)).await.unwrap();
+            let mut buf = [0; 6];
+            f.read_exact(&mut buf).await.unwrap();
+            assert_eq!(&buf, b"alonso");
+
+            f.seek(io::SeekFrom::Start(2)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 4);
+            assert_eq!(&buf[..4], b"onso");
+
+            f.seek(io::SeekFrom::Current(-4)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 4);
+            assert_eq!(&buf[..4], b"onso");
+
+            f.seek(io::SeekFrom::End(-3)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 3);
+            assert_eq!(&buf[0..3], b"nso");
+
+            f.seek(io::SeekFrom::End(4096)).await.unwrap();
+            let n = f.read(&mut buf).await.unwrap();
+            assert_eq!(n, 0);
+        }
+
+        #[tokio::test]
+        async fn std_file_read_write_seek() {
+            let tmp = tempfile().unwrap();
+            read_write_seek(&mut tokio::fs::File::from_std(tmp)).await
+        }
+
+        #[tokio::test]
+        async fn segment_read_write_seek() {
+            read_write_seek(&mut Segment::new(4096)).await
+        }
+
+        #[tokio::test]
+        async fn write_many_pages() {
+            use tokio::io::{AsyncReadExt as _, AsyncSeekExt as _, AsyncWriteExt as _};
+
+            enable_logging();
+
+            let mut segment = Segment::new(4 * 4096);
+
+            let data = [b'y'; 4096];
+            for _ in 0..4 {
+                segment.write_all(&data[..2048]).await.unwrap();
+                segment.write_all(&data[2048..]).await.unwrap();
+            }
+            assert_matches!(
+                segment.write_all(&data[..2048]).await,
+                Err(e) if e.kind() == io::ErrorKind::StorageFull
+            );
+            segment.rewind().await.unwrap();
+
+            let mut buf = [0; 4096];
+            for _ in 0..4 {
+                segment.read_exact(&mut buf).await.unwrap();
+                assert!(buf.iter().all(|&x| x == b'y'));
+            }
+            assert_matches!(
+                segment.read_exact(&mut buf).await,
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof
+            );
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::{Read, Seek, Write};
+
+    use pretty_assertions::assert_matches;
+    use tempfile::tempfile;
+
+    use super::*;
+    use crate::{segment::FileLike as _, tests::helpers::enable_logging};
+
+    fn read_write_seek(f: &mut (impl Read + Seek + Write)) {
+        f.write_all(b"alonso").unwrap();
+
+        f.seek(io::SeekFrom::Start(0)).unwrap();
+        let mut buf = [0; 6];
+        f.read_exact(&mut buf).unwrap();
+        assert_eq!(&buf, b"alonso");
+
+        f.seek(io::SeekFrom::Start(2)).unwrap();
+        let n = f.read(&mut buf).unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(&buf[..4], b"onso");
+
+        f.seek(io::SeekFrom::Current(-4)).unwrap();
+        let n = f.read(&mut buf).unwrap();
+        assert_eq!(n, 4);
+        assert_eq!(&buf[..4], b"onso");
+
+        f.seek(io::SeekFrom::End(-3)).unwrap();
+        let n = f.read(&mut buf).unwrap();
+        assert_eq!(n, 3);
+        assert_eq!(&buf[0..3], b"nso");
+
+        f.seek(io::SeekFrom::End(4096)).unwrap();
+        let n = f.read(&mut buf).unwrap();
+        assert_eq!(n, 0);
+    }
 
     #[test]
     fn segment_read_write_seek() {
-        let mut segment = Segment::default();
-        segment.write_all(b"alonso").unwrap();
+        read_write_seek(&mut Segment::new(4096));
+    }
 
-        segment.seek(io::SeekFrom::Start(0)).unwrap();
-        let mut buf = [0; 6];
-        segment.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf, b"alonso");
+    #[test]
+    fn std_file_read_write_seek() {
+        read_write_seek(&mut tempfile().unwrap());
+    }
 
-        segment.seek(io::SeekFrom::Start(2)).unwrap();
-        let n = segment.read(&mut buf).unwrap();
-        assert_eq!(n, 4);
-        assert_eq!(&buf[..4], b"onso");
+    #[test]
+    fn ftruncate() {
+        enable_logging();
 
-        segment.seek(io::SeekFrom::Current(-4)).unwrap();
-        let n = segment.read(&mut buf).unwrap();
-        assert_eq!(n, 4);
-        assert_eq!(&buf[..4], b"onso");
+        let mut segment = Segment::new(2 * 4096);
 
-        segment.seek(io::SeekFrom::End(-3)).unwrap();
-        let n = segment.read(&mut buf).unwrap();
-        assert_eq!(n, 3);
-        assert_eq!(&buf[0..3], b"nso");
+        let data = [b'z'; 512];
+        let mut buf = Vec::with_capacity(4096);
+
+        segment.write_all(&data).unwrap();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(&buf, &data);
+
+        // Extend adds zeroes.
+        segment.ftruncate(42, 1024).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(&buf[..512], &data);
+        assert_eq!(&buf[512..], &[0; 512]);
+
+        // Extend beyond existing page allocates zeroed page.
+        segment.ftruncate(42, 5120).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(&buf[..512], &data);
+        let rest = &buf[512..];
+        assert_eq!(rest.len(), 5120 - 512);
+        assert!(rest.iter().all(|&b| b == 0));
+        assert_eq!(segment.allocated_space(), 8192);
+
+        // Extend beyond available space returns `StorageFull`.
+        assert_matches!(
+            segment.ftruncate(42, 9216),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull
+        );
+
+        // Shrink deallocates pages.
+        segment.ftruncate(42, 512).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.allocated_space(), 4096);
+
+        segment.ftruncate(42, 256).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, &data[..256]);
+    }
+
+    #[cfg(feature = "fallocate")]
+    #[test]
+    fn fallocate() {
+        enable_logging();
+
+        let mut segment = Segment::new(8192);
+
+        let data = [b'z'; 512];
+        let mut buf = Vec::with_capacity(4096);
+
+        segment.write_all(&data).unwrap();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+
+        // Extend within existing page doesn't allocate.
+        segment.fallocate(1024).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.allocated_space(), 4096);
+
+        // Extend beyond page allocates new page.
+        segment.fallocate(5120).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.allocated_space(), 2 * 4096);
+
+        // Extend beyond available space returns `StorageFull`.
+        assert_matches!(
+            segment.fallocate(9216),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull
+        );
+
+        // Shrink does nothing.
+        segment.fallocate(256).unwrap();
+        buf.clear();
+        read_from_start_to_end(&mut segment, &mut buf).unwrap();
+        assert_eq!(buf, data);
+        assert_eq!(segment.allocated_space(), 2 * 4096);
+    }
+
+    #[test]
+    fn write_many_pages() {
+        enable_logging();
+
+        let mut segment = Segment::new(4 * 4096);
+
+        let data = [b'y'; 4096];
+        for _ in 0..4 {
+            segment.write_all(&data[..2048]).unwrap();
+            segment.write_all(&data[2048..]).unwrap();
+        }
+        assert_matches!(
+            segment.write_all(&data[..2048]),
+            Err(e) if e.kind() == io::ErrorKind::StorageFull
+        );
+        segment.rewind().unwrap();
+
+        let mut buf = [0; 4096];
+        for _ in 0..4 {
+            segment.read_exact(&mut buf).unwrap();
+            assert!(buf.iter().all(|&x| x == b'y'));
+        }
+        assert_matches!(
+            segment.read_exact(&mut buf),
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof
+        );
+    }
+
+    fn read_from_start_to_end(f: &mut (impl Read + Seek), buf: &mut Vec<u8>) -> io::Result<usize> {
+        f.rewind()?;
+        f.read_to_end(buf)
     }
 }

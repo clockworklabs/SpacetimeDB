@@ -1,0 +1,18 @@
+[package]
+name = "procedure-client"
+version.workspace = true
+edition.workspace = true
+license-file = "LICENSE"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spacetimedb-sdk = { path = "../.." }
+spacetimedb-lib.workspace = true
+test-counter = { path = "../test-counter" }
+anyhow.workspace = true
+env_logger.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

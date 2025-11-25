@@ -3,7 +3,7 @@ use crate::messages::control_db::HostType;
 use once_cell::sync::Lazy;
 use prometheus::{GaugeVec, HistogramVec, IntCounterVec, IntGaugeVec};
 use spacetimedb_datastore::execution_context::WorkloadType;
-use spacetimedb_lib::{ConnectionId, Identity};
+use spacetimedb_lib::Identity;
 use spacetimedb_metrics::metrics_group;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_table::page_pool::PagePool;
@@ -243,8 +243,13 @@ metrics_group!(
 
         #[name = spacetime_worker_wasm_instance_errors_total]
         #[help = "The number of fatal WASM instance errors, such as reducer panics."]
-        #[labels(caller_identity: Identity, module_hash: Hash, caller_connection_id: ConnectionId, reducer_symbol: str)]
+        #[labels(database_identity: Identity, module_hash: Hash, reducer_symbol: str)]
         pub wasm_instance_errors: IntCounterVec,
+
+        #[name = spacetime_worker_sender_errors_total]
+        #[help = "The number of sender errors returned from reducers."]
+        #[labels(database_identity: Identity, module_hash: Hash, reducer_symbol: str)]
+        pub sender_errors: IntCounterVec,
 
         #[name = spacetime_worker_wasm_memory_bytes]
         #[help = "The number of bytes of linear memory allocated by the database's WASM module instance"]
@@ -387,6 +392,23 @@ metrics_group!(
         #[help = "The number of snapshot objects hardlinked in a single compression pass"]
         #[labels(db: Identity)]
         pub snapshot_compression_objects_hardlinked: IntGaugeVec,
+
+        #[name = spacetime_subscription_rows_examined]
+        #[help = "Distribution of rows examined per subscription query"]
+        #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
+        #[buckets(100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000)]
+        pub subscription_rows_examined: HistogramVec,
+
+        #[name = spacetime_subscription_query_execution_time_micros]
+        #[help = "Time taken to execute and fetch records for an initial subscription query (in microseconds)"]
+        #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
+        #[buckets(100, 500, 1000, 5000, 10000, 50000, 100000, 500000, 1000000, 5000000, 10000000)]
+        pub subscription_query_execution_time_micros: HistogramVec,
+
+        #[name = spacetime_subscription_queries_total]
+        #[help = "Total number of subscription queries by scan strategy"]
+        #[labels(db: Identity, scan_type: str, table: str, unindexed_columns: str)]
+        pub subscription_queries_total: IntCounterVec,
     }
 );
 

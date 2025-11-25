@@ -10,31 +10,36 @@ permissions:
   contents: read
 
 concurrency:
-  # When a PR number isn't available, the event won't be a `pull_request` event so it won't matter.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
-  # Only cancel when the event is a pull_request
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || format('sha-{0}', github.sha) }}
+  cancel-in-progress: true
 
 jobs:
   run-tests:
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     runs-on: ubuntu-latest
+    env:
+      TARGET_OWNER: clockworklabs
+      TARGET_REPO: SpacetimeDBPrivate
     steps:
-      - name: Print current ref and sha
-        run: |
-          echo "github.ref=${{ github.ref }}"
-          echo "github.sha=${{ github.sha }}"
-
-      - name: Trigger and wait for Internal Tests
+      - id: dispatch
+        name: Trigger tests
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
           script: |
-            const targetOwner = 'clockworklabs';
-            const targetRepo = 'SpacetimeDBPrivate';
-            const workflowId = 'internal-tests.yml';
+            const workflowId = 'ci.yml';
             const targetRef = 'master';
-            const publicRef = context.sha;
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
+            const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const preDispatch = new Date().toISOString();
+
+            console.log("context.eventName =", context.eventName);
+            console.log("context.ref =", context.ref);
+            console.log("context.sha =", context.sha);
+            console.log("Dispatch workflow with publicRef =", publicRef);
 
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
@@ -47,12 +52,10 @@ jobs:
 
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-            // Wait for workflow to be kicked off
-            await sleep(30000);
-
             // Find the dispatched run by name
             let runId = null;
             for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
+              await sleep(5000);
               const runsResp = await github.rest.actions.listWorkflowRuns({
                 owner: targetOwner,
                 repo: targetRepo,
@@ -62,7 +65,7 @@ jobs:
                 per_page: 50,
               });
 
-              const expectedName = `Internal Tests [${publicRef}]`;
+              const expectedName = `CI [public_ref=${publicRef}]`;
               const candidates = runsResp.data.workflow_runs
                 .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -71,7 +74,6 @@ jobs:
                 runId = candidates[0].id;
                 break;
               }
-              await sleep(30000);
             }
 
             if (!runId) {
@@ -82,9 +84,23 @@ jobs:
             // Provide direct link and context prior to waiting
             const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.info(`View run: ${runUrl}`);
-            core.info('Waiting for workflow result...');
 
-            // Wait for completion
+            core.setOutput('run_id', String(runId));
+            core.setOutput('run_url', runUrl);
+
+      - name: Wait for Internal Tests to complete
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
+            const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+            core.info(`Waiting for workflow result... ${runUrl}`);
+
             let conclusion = null;
             for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
               const runResp = await github.rest.actions.getWorkflowRun({
@@ -109,3 +125,24 @@ jobs:
             if (conclusion !== 'success') {
               core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
             }
+
+      - name: Cancel invoked run if workflow cancelled
+        if: ${{ cancelled() }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
+            if (!runId) {
+              core.warning('No run_id available to cancel.');
+              return;
+            }
+            core.info(`Cancelling private workflow run ${runId} in ${targetOwner}/${targetRepo}...`);
+            await github.rest.actions.cancelWorkflowRun({
+              owner: targetOwner,
+              repo: targetRepo,
+              run_id: runId,
+            });
+            core.info('Cancellation requested.');

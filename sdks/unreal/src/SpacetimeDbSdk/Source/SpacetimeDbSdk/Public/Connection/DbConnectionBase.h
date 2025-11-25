@@ -16,9 +16,9 @@
 
 #include "DbConnectionBase.generated.h"
 
-
-
+// Forward declarations
 class UDbConnectionBuilder;
+class UProcedureCallbacks;
 
 /** Macro for safae way to bind delegate without needing to write Function name as an FName. */
 #define BIND_DELEGATE_SAFE(DelegateVar, Object, ClassType, FunctionName) \
@@ -116,6 +116,13 @@ public:
 	{
 		TArray<uint8> Bytes = UE::SpacetimeDB::Serialize(Args);
 		InternalCallReducer(Reducer, MoveTemp(Bytes), Flags);
+	}
+
+	template<typename ArgsStruct>
+	void CallProcedureTyped(const FString& ProcedureName, const ArgsStruct& Args, const FOnProcedureCompleteDelegate& Callback)
+	{
+		TArray<uint8> Bytes = UE::SpacetimeDB::Serialize(Args);
+		InternalCallProcedure(ProcedureName, MoveTemp(Bytes), Callback);
 	}
 
 	template<typename RowType>
@@ -280,6 +287,9 @@ protected:
 	/** Call a reducer on the connected SpacetimeDB instance. */
 	void InternalCallReducer(const FString& Reducer, TArray<uint8> Args, USetReducerFlagsBase* Flags);
 
+	/** Call a reducer on the connected SpacetimeDB instance. */
+	void InternalCallProcedure(const FString& ProcedureName, TArray<uint8> Args, const FOnProcedureCompleteDelegate& Callback);
+
 	/**
 	* Update function to apply database changes.
 	* Must be implemented by child classes.
@@ -293,6 +303,9 @@ protected:
 	/** Event handler for reducer events. This can should overridden by child classes to handle specific reducer events. */
 	virtual void ReducerEventFailed(const FReducerEvent& Event, const FString ErrorMessage) {};
 
+	/** Event handler for procedure events. This can should overridden by child classes to handle specific procedure events. */
+	virtual void ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage) {};
+
 	/** Event handler for error events. This can should overridden by child classes to handle specific error events. */
 	virtual void TriggerError(const FString& ErrorMessage) {};
 
@@ -303,8 +316,11 @@ protected:
 	void ApplyRegisteredTableUpdates(const FDatabaseUpdateType& Update, void* Context);
 
 	/** Called when a subscription is updated. */
+	UPROPERTY()
 	TMap<int32, TObjectPtr<USubscriptionHandleBase>> ActiveSubscriptions;
 
+	UPROPERTY()
+	TObjectPtr<UProcedureCallbacks> ProcedureCallbacks;
 	/** Get the next request id for a message. This is used to track requests and responses. */
 	int32 NextRequestId;
 	/** Get the next subscription id for a subscription. This is used to track subscriptions and their responses. */
@@ -341,8 +357,11 @@ protected:
 	UPROPERTY()
 	bool bIsAutoTicking = false;
 
+	UPROPERTY()
 	FOnConnectErrorDelegate OnConnectErrorDelegate;
+	UPROPERTY()
 	FOnDisconnectBaseDelegate OnDisconnectBaseDelegate;
+	UPROPERTY()
 	FOnConnectBaseDelegate OnConnectBaseDelegate;
 
 	/** Called when the connection is established. */

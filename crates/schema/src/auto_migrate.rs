@@ -4,7 +4,7 @@ use crate::{def::*, error::PrettyAlgebraicType, identifier::Identifier};
 use formatter::format_plan;
 use spacetimedb_data_structures::{
     error_stream::{CollectAllErrors, CombineErrors, ErrorStream},
-    map::HashSet,
+    map::{HashCollectionExt as _, HashSet},
 };
 use spacetimedb_lib::{
     db::raw_def::v9::{RawRowLevelSecurityDefV9, TableType},
@@ -612,7 +612,7 @@ fn auto_migrate_view<'def>(plan: &mut AutoMigratePlan<'def>, old: &'def ViewDef,
             plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
         }
     } else {
-        plan.steps.push(AutoMigrateStep::UpdateView(old.key()));
+        plan.steps.push(AutoMigrateStep::UpdateView(new.key()));
     }
 
     Ok(())
@@ -785,7 +785,6 @@ fn ensure_old_ty_upgradable_to_new(
     new_ty: &AlgebraicType,
 ) -> Result<Any> {
     use AutoMigrateError::*;
-
     // Ensures an `old_ty` within `old` is upgradable to `new_ty`.
     let ensure =
         |(old_ty, new_ty)| ensure_old_ty_upgradable_to_new(true, old_container_name, old_column_name, old_ty, new_ty);
@@ -1019,11 +1018,22 @@ fn auto_migrate_constraints(plan: &mut AutoMigratePlan, new_tables: &HashSet<&Id
 // Because we can refer to many tables and fields on the row level-security query, we need to remove all of them,
 // then add the new ones, instead of trying to track the graph of dependencies.
 fn auto_migrate_row_level_security(plan: &mut AutoMigratePlan) -> Result<()> {
+    // Track if any RLS rules were changed.
+    let mut old_rls = HashSet::new();
+    let mut new_rls = HashSet::new();
+
     for rls in plan.old.row_level_security() {
+        old_rls.insert(rls.key());
         plan.steps.push(AutoMigrateStep::RemoveRowLevelSecurity(rls.key()));
     }
     for rls in plan.new.row_level_security() {
+        new_rls.insert(rls.key());
         plan.steps.push(AutoMigrateStep::AddRowLevelSecurity(rls.key()));
+    }
+
+    // We can force flush the cache by force disconnecting all clients if an RLS rule has been added, removed, or updated.
+    if old_rls != new_rls && !plan.disconnects_all_users() {
+        plan.steps.push(AutoMigrateStep::DisconnectAllUsers);
     }
 
     Ok(())
@@ -1110,6 +1120,7 @@ mod tests {
         let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
         builder.add_view(
             "my_view",
+            0,
             true,
             true,
             ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -1206,6 +1217,7 @@ mod tests {
         let view_return_ty_ref = builder.add_algebraic_type([], "my_view_return", view_return_ty, true);
         builder.add_view(
             "my_view",
+            0,
             true,
             true,
             ProductType::from([("x", AlgebraicType::U32)]),
@@ -1765,6 +1777,7 @@ mod tests {
             );
             builder.add_view(
                 "my_view",
+                0,
                 true,
                 true,
                 ProductType::from([("x", AlgebraicType::U32)]),
@@ -1793,6 +1806,7 @@ mod tests {
             );
             builder.add_view(
                 "my_view",
+                0,
                 true,
                 true,
                 ProductType::from([("x", AlgebraicType::U32)]),
@@ -1835,6 +1849,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1850,6 +1865,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1868,6 +1884,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1883,6 +1900,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1937,6 +1955,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1952,6 +1971,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         false,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1970,6 +1990,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -1985,6 +2006,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -2003,6 +2025,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -2018,6 +2041,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2036,6 +2060,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32), ("y", AlgebraicType::U32)]),
@@ -2051,6 +2076,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("y", AlgebraicType::U32), ("x", AlgebraicType::U32)]),
@@ -2069,6 +2095,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2084,6 +2111,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2102,6 +2130,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2117,6 +2146,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2135,6 +2165,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2150,6 +2181,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2168,6 +2200,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2183,6 +2216,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2201,6 +2235,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2216,6 +2251,7 @@ mod tests {
                     );
                     builder.add_view(
                         "my_view",
+                        0,
                         true,
                         true,
                         ProductType::from([("x", AlgebraicType::U32)]),
@@ -2244,5 +2280,53 @@ mod tests {
                 "{name}, steps: {steps:?}"
             );
         }
+    }
+
+    #[test]
+    fn change_rls_disconnect_clients() {
+        let old_def = create_module_def(|_builder| {});
+
+        let new_def = create_module_def(|_builder| {});
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
+
+        let old_def = create_module_def(|builder| {
+            builder.add_row_level_security("SELECT true;");
+        });
+        let new_def = create_module_def(|builder| {
+            builder.add_row_level_security("SELECT false;");
+        });
+
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        assert!(plan.disconnects_all_users(), "{plan:#?}");
+
+        let old_def = create_module_def(|builder| {
+            builder.add_row_level_security("SELECT true;");
+        });
+
+        let new_def = create_module_def(|_builder| {
+            // Remove RLS
+        });
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        assert!(plan.disconnects_all_users(), "{plan:#?}");
+
+        let old_def = create_module_def(|_builder| {});
+
+        let new_def = create_module_def(|builder| {
+            builder.add_row_level_security("SELECT false;");
+        });
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        assert!(plan.disconnects_all_users(), "{plan:#?}");
+
+        let old_def = create_module_def(|builder| {
+            builder.add_row_level_security("SELECT true;");
+        });
+
+        let new_def = create_module_def(|builder| {
+            builder.add_row_level_security("SELECT true;");
+        });
+        let plan = ponder_auto_migrate(&old_def, &new_def).expect("auto migration should succeed");
+        assert!(!plan.disconnects_all_users(), "{plan:#?}");
     }
 }

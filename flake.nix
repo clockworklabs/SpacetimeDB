@@ -25,6 +25,11 @@
 
         inherit (pkgs) lib;
 
+        # Inject git commit in an env var around the build so that we can embed it in the binary
+        # without calling into `git` during our build.
+        # Note that `self.rev` is not set for builds with a dirty worktree, in which case we instead use `self.dirtyRev`.
+        gitCommit = if (self ? rev) then self.rev else self.dirtyRev;
+
         librusty_v8 = if pkgs.stdenv.isDarwin then
           # Building on MacOS, we've seen errors building rusty_v8 with a local RUSTY_V8_ARCHIVE:
           # https://github.com/clockworklabs/SpacetimeDB/pull/3422#issuecomment-3416972711 .
@@ -65,7 +70,6 @@
             pkgs.perl
             pkgs.python3
             pkgs.cmake
-            pkgs.git
             pkgs.pkg-config
           ];
           # buildInputs are libraries that wind up in the target build.
@@ -80,6 +84,7 @@
 
           # Include our precompiled V8.
           RUSTY_V8_ARCHIVE = librusty_v8;
+          SPACETIMEDB_NIX_BUILD_GIT_COMMIT = gitCommit;
         };
 
         # Build a separate derivation containing our dependencies,
@@ -163,7 +168,6 @@
             packages = [
               rustStable
               rustNightly
-              cargoArtifacts
               pkgs.cargo-insta
             ];
           };
