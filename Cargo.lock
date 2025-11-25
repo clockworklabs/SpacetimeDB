@@ -6647,6 +6647,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sdk-test-view"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "log",
+ "paste",
+ "spacetimedb 1.9.0",
+]
+
+[[package]]
 name = "sdk-unreal-test-harness"
 version = "1.9.0"
 dependencies = [
@@ -9591,6 +9601,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e723b9e1c02a3cf9f9d0de6a4ddb8cdc1df859078902fe0ae0589d615711ae6"
 dependencies = [
  "filetime",
+]
+
+[[package]]
+name = "view-client"
+version = "1.9.0"
+dependencies = [
+ "anyhow",
+ "env_logger 0.10.2",
+ "spacetimedb-lib 1.9.0",
+ "spacetimedb-sdk",
+ "test-counter",
 ]
 
 [[package]]

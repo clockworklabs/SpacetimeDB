@@ -329,3 +329,37 @@ macro_rules! procedure_tests {
 
 procedure_tests!(rust_procedures, "");
 procedure_tests!(typescript_procedures, "-ts");
+
+mod view {
+    use spacetimedb_testing::sdk::Test;
+
+    const MODULE: &str = "sdk-test-view";
+    const CLIENT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/view-client");
+
+    fn make_test(subcommand: &str) -> Test {
+        Test::builder()
+            .with_name(subcommand)
+            .with_module(MODULE)
+            .with_client(CLIENT)
+            .with_language("rust")
+            .with_bindings_dir("src/module_bindings")
+            .with_compile_command("cargo build")
+            .with_run_command(format!("cargo run -- {}", subcommand))
+            .build()
+    }
+
+    #[test]
+    fn subscribe_anonymous_view() {
+        make_test("view-anonymous-subscribe").run()
+    }
+
+    #[test]
+    fn subscribe_non_anonymous_view() {
+        make_test("view-non-anonymous-subscribe").run()
+    }
+
+    #[test]
+    fn subscribe_view_non_table_return() {
+        make_test("view-non-table-return").run()
+    }
+}
