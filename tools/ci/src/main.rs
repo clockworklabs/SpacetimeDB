@@ -6,7 +6,8 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
+use std::time::Duration;
+use std::{env, fs, thread};
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -187,6 +188,9 @@ fn find_free_port() -> Result<u16> {
 }
 
 fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
+    // TODO: If we set --remote-server, check that it's not already in there.
+    let mut args: Vec<_> = args.iter().cloned().collect();
+
     let server_state = match server_mode {
         StartServer::No => ServerState::None,
         StartServer::Docker {
@@ -202,6 +206,8 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
                 let tracy_port = find_free_port()?;
                 env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
                 project = format!("spacetimedb-smoketests-{server_port}");
+                args.push("--remote-server".into());
+                args.push(format!("http://localhost:{server_port}"));
             } else {
                 env_string = String::new();
                 project = "spacetimedb-smoketests".to_string();
@@ -214,13 +220,16 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
         }
         StartServer::Yes { random_port } => {
             // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
-            let arg_string = if random_port {
+            let arg_string;
+            if random_port {
                 let server_port = find_free_port()?;
                 let pg_port = find_free_port()?;
-                &format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port}")
+                arg_string = format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port}");
+                args.push("--remote-server".into());
+                args.push(format!("http://localhost:{server_port}"));
             } else {
-                "--pg-port 5432"
-            };
+                arg_string = "--pg-port 5432".into();
+            }
             println!("Starting server..");
             let pid_str;
             if cfg!(target_os = "windows") {
@@ -253,33 +262,36 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
         }
     };
 
+    // TODO: be smarter about this
+    println!("Waiting for server to start..");
+    thread::sleep(Duration::from_secs(5));
+
     println!("Running smoketests..");
-    // TODO: Don't we need to _use_ the port here?!
     let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
 
     // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
-    match server_state {
-        ServerState::None => {}
-        ServerState::Docker { compose_file, project } => {
-            println!("Shutting down server..");
-            let compose_str = compose_file.to_string_lossy();
-            let _ = bash!(&format!(
-                "docker compose -f {compose_str} --project-name {project} down"
-            ));
-        }
-        ServerState::Yes { pid } => {
-            println!("Shutting down server..");
-            if cfg!(target_os = "windows") {
-                let _ = bash!(&format!(
-                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
-                    pid
-                ));
-            } else {
-                // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
-                let _ = bash!(&format!("kill {}", pid));
-            }
-        }
-    }
+    //    match server_state {
+    //        ServerState::None => {}
+    //        ServerState::Docker { compose_file, project } => {
+    //            println!("Shutting down server..");
+    //            let compose_str = compose_file.to_string_lossy();
+    //            let _ = bash!(&format!(
+    //                "docker compose -f {compose_str} --project-name {project} down"
+    //            ));
+    //        }
+    //        ServerState::Yes { pid } => {
+    //            println!("Shutting down server..");
+    //            if cfg!(target_os = "windows") {
+    //                let _ = bash!(&format!(
+    //                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
+    //                    pid
+    //                ));
+    //            } else {
+    //                // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
+    //                let _ = bash!(&format!("kill {}", pid));
+    //            }
+    //        }
+    //    }
 
     test_result
 }
@@ -368,6 +380,8 @@ fn main() -> Result<()> {
                     "python".to_string()
                 }
             };
+
+            // TODO: Handle --local-only tests
 
             if matches!(start_server, StartServer::Yes { .. }) {
                 println!("Building SpacetimeDB..");
