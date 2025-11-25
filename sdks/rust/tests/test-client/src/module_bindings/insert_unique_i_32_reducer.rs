@@ -65,6 +65,7 @@ impl insert_unique_i_32 for super::RemoteReducers {
         InsertUniqueI32CallbackId(self.imp.on_reducer(
             "insert_unique_i32",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

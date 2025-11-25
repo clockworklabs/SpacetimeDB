@@ -60,6 +60,7 @@ impl insert_one_u_256 for super::RemoteReducers {
         InsertOneU256CallbackId(self.imp.on_reducer(
             "insert_one_u256",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

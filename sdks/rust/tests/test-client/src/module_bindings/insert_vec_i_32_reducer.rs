@@ -60,6 +60,7 @@ impl insert_vec_i_32 for super::RemoteReducers {
         InsertVecI32CallbackId(self.imp.on_reducer(
             "insert_vec_i32",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
