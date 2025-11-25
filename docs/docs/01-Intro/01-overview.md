@@ -287,7 +287,7 @@ Procedures can perform additional operations not possible in reducers, including
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 
-<Tabs grouId="syntax" queryString>
+<Tabs groupId="syntax" queryString>
 <TabItem value="rust" label="Rust">
 
 A procedure can be defined in a Rust module:
