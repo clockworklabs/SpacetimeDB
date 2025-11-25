@@ -874,6 +874,7 @@ dependencies = [
  "duct",
  "log",
  "regex",
+ "serde_json",
 ]
 
 [[package]]

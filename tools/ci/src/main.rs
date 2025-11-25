@@ -1,8 +1,11 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
-use std::collections::HashMap;
-use std::path::Path;
+use log::warn;
+use serde_json;
+use std::collections::{HashMap, HashSet};
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -51,6 +54,32 @@ enum CiCmd {
     ///
     /// Executes the smoketests suite with some default exclusions.
     Smoketests {
+        #[arg(
+            long = "start-server",
+            default_value_t = true,
+            long_help = "Whether to start a local SpacetimeDB server before running smoketests"
+        )]
+        start_server: bool,
+        #[arg(
+            long = "docker",
+            value_name = "COMPOSE_FILE",
+            num_args(0..=1),
+            default_missing_value = "docker-compose.yml",
+            long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
+        )]
+        docker: Option<String>,
+        #[arg(
+            long = "parallel",
+            default_value_t = false,
+            long_help = "Run smoketests in parallel batches grouped by test suite"
+        )]
+        parallel: bool,
+        #[arg(
+            long = "python",
+            value_name = "PYTHON_PATH",
+            long_help = "Python interpreter to use for smoketests"
+        )]
+        python: Option<String>,
         #[arg(
             trailing_var_arg = true,
             long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
@@ -133,8 +162,137 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub enum StartServer {
+    No,
+    Yes { random_port: bool },
+    Docker { compose_file: PathBuf, random_port: bool },
+}
+
+#[derive(Debug, Clone)]
+pub enum ServerState {
+    None,
+    Yes { pid: i32 },
+    Docker { compose_file: PathBuf, project: String },
+}
+
+fn find_free_port() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind to an ephemeral port")?;
+    let port = listener
+        .local_addr()
+        .context("failed to read local address for ephemeral port")?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
+    let server_state = match server_mode {
+        StartServer::No => ServerState::None,
+        StartServer::Docker {
+            compose_file,
+            random_port,
+        } => {
+            println!("Starting server..");
+            let env_string;
+            let project;
+            if random_port {
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                let tracy_port = find_free_port()?;
+                env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
+                project = format!("spacetimedb-smoketests-{server_port}");
+            } else {
+                env_string = String::new();
+                project = "spacetimedb-smoketests".to_string();
+            };
+            let compose_str = compose_file.to_string_lossy();
+            bash!(&format!(
+                "{env_string} docker compose -f {compose_str} --project-name {project} up -d"
+            ))?;
+            ServerState::Docker { compose_file, project }
+        }
+        StartServer::Yes { random_port } => {
+            // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
+            let arg_string = if random_port {
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                &format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port}")
+            } else {
+                "--pg-port 5432"
+            };
+            println!("Starting server..");
+            let pid_str;
+            if cfg!(target_os = "windows") {
+                pid_str = cmd!(
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        &format!(
+                            "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start {arg_string}' -PassThru; $p.Id"
+                        )
+                    )
+                    .read()
+                    .unwrap_or_default();
+            } else {
+                // TODO: Maybe we do this in a thread instead? Then it's easier to kill
+                pid_str = cmd!(
+                    "bash",
+                    "-lc",
+                    &format!("nohup cargo run -p spacetimedb-cli -- start {arg_string} >/dev/null 2>&1 & echo $!")
+                )
+                .read()
+                .unwrap_or_default();
+            }
+            ServerState::Yes {
+                pid: pid_str
+                    .trim()
+                    .parse::<i32>()
+                    .expect("Failed to get PID of started process"),
+            }
+        }
+    };
+
+    println!("Running smoketests..");
+    // TODO: Don't we need to _use_ the port here?!
+    let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
+
+    // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
+    match server_state {
+        ServerState::None => {}
+        ServerState::Docker { compose_file, project } => {
+            println!("Shutting down server..");
+            let compose_str = compose_file.to_string_lossy();
+            let _ = bash!(&format!(
+                "docker compose -f {compose_str} --project-name {project} down"
+            ));
+        }
+        ServerState::Yes { pid } => {
+            println!("Shutting down server..");
+            if cfg!(target_os = "windows") {
+                let _ = bash!(&format!(
+                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
+                    pid
+                ));
+            } else {
+                // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
+                let _ = bash!(&format!("kill {}", pid));
+            }
+        }
+    }
+
+    test_result
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Remove all Cargo-provided env vars from the subcommand
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CARGO_") && key != "CARGO_TARGET_DIR" {
+            std::env::remove_var(key);
+        }
+    }
 
     match cli.cmd {
         Some(CiCmd::Test) => {
@@ -168,14 +326,141 @@ fn main() -> Result<()> {
             bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
 
-        Some(CiCmd::Smoketests { args }) => {
-            // On some systems, there is no `python`, but there is `python3`.
-            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-                .run()
-                .map(|s| s.status.success())
-                .unwrap_or(false);
-            let python = if py3_available { "python3" } else { "python" };
-            bash!(&format!("{python} -m smoketests {}", args.join(" ")))?;
+        Some(CiCmd::Smoketests {
+            start_server,
+            docker,
+            parallel,
+            python,
+            args,
+        }) => {
+            let start_server = match (start_server, docker.as_ref()) {
+                (start_server, Some(compose_file)) => {
+                    if !start_server {
+                        warn!("--docker implies --start-server=true");
+                    }
+                    StartServer::Docker {
+                        random_port: parallel,
+                        compose_file: compose_file.into(),
+                    }
+                }
+                (true, None) => StartServer::Yes { random_port: parallel },
+                (false, None) => StartServer::No,
+            };
+            let mut args = args.to_vec();
+            if let Some(compose_file) = docker.as_ref() {
+                // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
+                // run the server in docker while still retaining full control over what tests they want.
+                args.push("--compose-file".to_string());
+                args.push(compose_file.to_string());
+            }
+
+            let python = if let Some(p) = python {
+                p
+            } else {
+                // TODO: does this work on windows?
+                let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
+                    .run()
+                    .map(|s| s.status.success())
+                    .unwrap_or(false);
+                if py3_available {
+                    "python3".to_string()
+                } else {
+                    "python".to_string()
+                }
+            };
+
+            if matches!(start_server, StartServer::Yes { .. }) {
+                println!("Building SpacetimeDB..");
+
+                // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+                // before the server is up.
+                // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
+                bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+                args.push("--no-build-cli".into());
+            }
+
+            if parallel {
+                println!("Listing smoketests for parallel execution..");
+
+                let mut list_args: Vec<String> = args.to_vec();
+                list_args.push("--list=json".to_string());
+                let list_cmdline = format!("{python} -m smoketests {}", list_args.join(" "));
+
+                // TODO: do actually check the return code here. and make --list=json not return non-zero if there are errors.
+                let list_output = cmd!("bash", "-lc", list_cmdline)
+                    .stderr_to_stdout()
+                    .unchecked()
+                    .read()?;
+
+                let parsed: serde_json::Value = serde_json::from_str(&list_output)?;
+                let tests = parsed.get("tests").and_then(|v| v.as_array()).cloned().unwrap();
+                let errors = parsed
+                    .get("errors")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                if !errors.is_empty() {
+                    println!("Errors while constructing smoketests:");
+                    for err in &errors {
+                        let test_id = err.get("test_id").and_then(|v| v.as_str()).unwrap();
+                        let msg = err.get("error").and_then(|v| v.as_str()).unwrap();
+                        println!("{test_id}");
+                        println!("{msg}");
+                    }
+                    // If there were errors constructing tests, treat this as a failure
+                    // and do not run any batches.
+                    return Err(anyhow::anyhow!(
+                        "Errors encountered while constructing smoketests; aborting parallel run"
+                    ));
+                }
+
+                let batches: HashSet<String> = tests
+                    .into_iter()
+                    .map(|t| {
+                        let name = t.as_str().unwrap();
+                        let parts = name.split('.').collect::<Vec<&str>>();
+                        parts[2].to_string()
+                    })
+                    .collect();
+
+                // Run each batch in parallel threads.
+                let mut handles = Vec::new();
+                for batch in batches {
+                    let start_server_clone = start_server.clone();
+                    let python_clone = python.clone();
+                    let mut batch_args: Vec<String> = Vec::new();
+                    // TODO: this doesn't work properly if the user passed multiple batches as input.
+                    batch_args.push(batch.clone());
+                    batch_args.extend(args.iter().cloned());
+
+                    handles.push((
+                        batch.clone(),
+                        std::thread::spawn(move || {
+                            println!("Running smoketests batch {batch}..");
+                            // TODO: capture output and print it only in contiguous blocks
+                            run_smoketests_batch(start_server_clone, &batch_args, &python_clone)
+                        }),
+                    ));
+                }
+
+                let mut failed_batches = vec![];
+                for (batch, handle) in handles {
+                    // If the thread panicked or the batch failed, treat it as a failure.
+                    let result = handle
+                        .join()
+                        .unwrap_or_else(|_| Err(anyhow::anyhow!("smoketest batch thread panicked",)));
+                    if result.is_err() {
+                        failed_batches.push(batch);
+                    }
+                }
+
+                if !failed_batches.is_empty() {
+                    anyhow::bail!("Smoketest batch(es) failed: {}", failed_batches.join(", "));
+                }
+            } else {
+                run_smoketests_batch(start_server, &args, &python)?;
+            }
         }
 
         Some(CiCmd::UpdateFlow {
