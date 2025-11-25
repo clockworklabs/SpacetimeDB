@@ -1,13 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
+import { ScheduleAt } from 'spacetimedb';
 import {
   errors,
   schema,
   t,
   table,
   type ProcedureCtx,
-  type ScheduleAt,
   type TransactionCtx,
 } from 'spacetimedb/server';
 
@@ -145,7 +145,7 @@ spacetimedb.procedure('insert_with_tx_rollback', t.unit(), ctx => {
 });
 
 spacetimedb.reducer('schedule_proc', {}, ctx => {
-  ctx.db.scheduled_proc_table.insert({
+  ctx.db.scheduledProcTable.insert({
     scheduled_id: 0n,
     scheduled_at: ScheduleAt.interval(1000000n),
     reducer_ts: ctx.timestamp,
@@ -160,7 +160,7 @@ spacetimedb.procedure('scheduled_proc', { data: ScheduledProcTable }, t.unit(), 
   const y = data.y;
   const procedure_ts = ctx.timestamp;
   ctx.withTx(ctx => {
-    ctx.db.proc_inserts_into.insert({
+    ctx.db.procInsertsInto.insert({
       reducer_ts,
       procedure_ts,
       x,
