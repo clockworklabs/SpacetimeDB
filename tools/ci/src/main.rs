@@ -362,6 +362,16 @@ fn main() -> Result<()> {
                 }
             };
 
+            if matches!(start_server, StartServer::Yes { .. }) {
+                println!("Building SpacetimeDB..");
+
+                // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+                // before the server is up.
+                // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
+                bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+                args.push("--no-build-cli".into());
+            }
+
             if parallel {
                 println!("Listing smoketests for parallel execution..");
 
@@ -406,14 +416,6 @@ fn main() -> Result<()> {
                         parts[2].to_string()
                     })
                     .collect();
-
-                if matches!(start_server, StartServer::Yes { .. }) {
-                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
-                    // before the server is up.
-                    // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
-                    bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
-                    args.push("--no-build-cli".into());
-                }
 
                 // Run each batch in parallel threads.
                 let mut handles = Vec::new();
