@@ -1,4 +1,5 @@
 use core::hash::{Hash, Hasher};
+use derive_more::From;
 use spacetimedb_execution::Row;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_sats::bsatn::{ser::BsatnError, ToBsatn};
@@ -15,7 +16,7 @@ use std::sync::Arc;
 /// or an ephemeral row constructed during query execution.
 ///
 /// A `RelValue` is the type generated/consumed by queries.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum RelValue<'a> {
     /// A reference to a row in a table.
     Row(RowRef<'a>),

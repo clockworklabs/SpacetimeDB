@@ -139,6 +139,29 @@ impl CodeError {
 }
 
 /// A catchable error code thrown in callbacks
+/// to indicate bad arguments to a syscall.
+#[derive(Serialize)]
+pub(super) struct CodeMessageError {
+    __code_error__: u16,
+    __error_message__: String,
+}
+
+impl CodeMessageError {
+    /// Create a code error from a code.
+    pub(super) fn from_code<'scope>(
+        scope: &PinScope<'scope, '_>,
+        __code_error__: u16,
+        __error_message__: String,
+    ) -> ExcResult<ExceptionValue<'scope>> {
+        let error = Self {
+            __code_error__,
+            __error_message__,
+        };
+        serialize_to_js(scope, &error).map(ExceptionValue)
+    }
+}
+
+/// A catchable error code thrown in callbacks
 /// to indicate that a buffer was too small and the minimum size required.
 #[derive(Serialize)]
 pub(super) struct BufferTooSmall {

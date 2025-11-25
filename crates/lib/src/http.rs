@@ -32,6 +32,18 @@ pub struct Request {
     pub version: Version,
 }
 
+impl Request {
+    /// Return the size of this request's URI and [`Headers`]
+    /// for purposes of metrics reporting.
+    ///
+    /// Ignores the size of the [`Method`] and [`Version`] as they are effectively constant.
+    ///
+    /// As the body is stored externally to the `Request`, metrics reporting must count its size separately.
+    pub fn size_in_bytes(&self) -> usize {
+        self.uri.len() + self.headers.size_in_bytes()
+    }
+}
+
 /// Represents an HTTP method.
 #[derive(Clone, SpacetimeType, PartialEq, Eq)]
 #[sats(crate = crate, name = "HttpMethod")]
@@ -112,6 +124,17 @@ impl Headers {
     pub fn into_iter(self) -> impl Iterator<Item = (Box<str>, Box<[u8]>)> {
         IntoIterator::into_iter(self.entries).map(|HttpHeaderPair { name, value }| (name, value))
     }
+
+    /// The sum of the lengths of all the header names and header values.
+    ///
+    /// For headers with multiple values for the same header name,
+    /// the length of the header name is counted once for each occurence.
+    fn size_in_bytes(&self) -> usize {
+        self.entries
+            .iter()
+            .map(|HttpHeaderPair { name, value }| name.len() + value.len())
+            .sum::<usize>()
+    }
 }
 
 #[derive(Clone, SpacetimeType)]
@@ -130,4 +153,15 @@ pub struct Response {
     pub version: Version,
     /// A valid HTTP response status code, sourced from an already-validated `http::StatusCode`.
     pub code: u16,
+}
+
+impl Response {
+    /// Return the size of this request's [`Headers`] for purposes of metrics reporting.
+    ///
+    /// Ignores the size of the `code` and [`Version`] as they are effectively constant.
+    ///
+    /// As the body is stored externally to the `Response`, metrics reporting must count its size separately.
+    pub fn size_in_bytes(&self) -> usize {
+        self.headers.size_in_bytes()
+    }
 }

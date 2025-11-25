@@ -3,6 +3,37 @@
 
 using SpacetimeDB;
 
+[SpacetimeDB.Type]
+public partial class ReturnStruct
+{
+    public uint A;
+    public string B;
+
+    public ReturnStruct(uint a, string b)
+    {
+        A = a;
+        B = b;
+    }
+
+    public ReturnStruct()
+    {
+        A = 0;
+        B = string.Empty;
+    }
+}
+
+[SpacetimeDB.Type]
+public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(
+    uint A,
+    string B
+    )>;
+
+[SpacetimeDB.Table(Name = "my_table", Public = true)]
+public partial class MyTable
+{
+    public ReturnStruct Field { get; set; } = new(0, string.Empty);
+}
+
 public static partial class Module
 {
     [SpacetimeDB.Table(Name = "ExampleData", Public = true)]
@@ -110,5 +141,35 @@ public static partial class Module
             var playerId = (ctx.Db.Player.Identity.Find(ctx.Sender)!).Value.Id;
             ctx.Db.PlayerLevel.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
+    }
+
+    [SpacetimeDB.Procedure]
+    public static uint ReturnPrimitive(ProcedureContext ctx, uint lhs, uint rhs)
+    {
+        return lhs + rhs;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static ReturnStruct ReturnStructProcedure(ProcedureContext ctx, uint a, string b)
+    {
+        return new ReturnStruct(a, b);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static ReturnEnum ReturnEnumA(ProcedureContext ctx, uint a)
+    {
+        return new ReturnEnum.A(a);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static ReturnEnum ReturnEnumB(ProcedureContext ctx, string b)
+    {
+        return new ReturnEnum.B(b);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static SpacetimeDB.Unit WillPanic(ProcedureContext ctx)
+    {
+        throw new InvalidOperationException("This procedure is expected to panic");
     }
 }

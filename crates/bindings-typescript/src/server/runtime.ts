@@ -1,54 +1,48 @@
-import { AlgebraicType } from '../lib/algebraic_type';
+import * as _syscalls1_0 from 'spacetime:sys@1.0';
+import * as _syscalls1_2 from 'spacetime:sys@1.2';
+
+import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
+import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import { ConnectionId } from '../lib/connection_id';
-import { Identity } from '../lib/identity';
-import { Timestamp } from '../lib/timestamp';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
-import { SenderError, SpacetimeHostError } from './errors';
-import { Range, type Bound } from './range';
+import { ConnectionId } from '../lib/connection_id';
+import { Identity } from '../lib/identity';
 import {
   type Index,
   type IndexVal,
-  type UniqueIndex,
   type RangedIndex,
+  type UniqueIndex,
 } from '../lib/indexes';
-import { type RowType, type Table, type TableMethods } from '../lib/table';
+import { callProcedure } from './procedures';
 import {
-  type ReducerCtx,
   REDUCERS,
-  type JwtClaims,
   type AuthCtx,
   type JsonObject,
+  type JwtClaims,
+  type ReducerCtx,
 } from '../lib/reducers';
-import { MODULE_DEF } from '../lib/schema';
-
-import * as _syscalls from 'spacetime:sys@1.0';
-import type { u16, u32, ModuleHooks } from 'spacetime:sys@1.0';
-import type { DbView } from './db_view';
-import { toCamelCase } from '../lib/util';
+import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import { type RowType, type Table, type TableMethods } from '../lib/table';
+import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
-import { bsatnBaseSize } from '../lib/util';
+import { bsatnBaseSize, toCamelCase } from '../lib/util';
 import {
   ANON_VIEWS,
   VIEWS,
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
+import type { DbView } from './db_view';
+import { SenderError, SpacetimeHostError } from './errors';
+import { Range, type Bound } from './range';
 
 const { freeze } = Object;
 
-const sys: typeof _syscalls = freeze(
-  Object.fromEntries(
-    Object.entries(_syscalls).map(([name, syscall]) => [
-      name,
-      wrapSyscall(syscall),
-    ])
-  ) as typeof _syscalls
-);
+export const sys = freeze(wrapSyscalls(_syscalls1_0, _syscalls1_2));
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -181,6 +175,21 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+export const makeReducerCtx = (
+  sender: Identity,
+  timestamp: Timestamp,
+  connectionId: ConnectionId | null
+): ReducerCtx<UntypedSchemaDef> => ({
+  sender,
+  get identity() {
+    return new Identity(sys.identity().__identity__);
+  },
+  timestamp,
+  connectionId,
+  db: getDbView(),
+  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
+});
+
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
@@ -201,19 +210,13 @@ export const hooks: ModuleHooks = {
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze({
-      sender: senderIdentity,
-      get identity() {
-        return new Identity(sys.identity().__identity__);
-      },
-      timestamp: new Timestamp(timestamp),
-      connectionId: ConnectionId.nullIfZero(new ConnectionId(connId)),
-      db: getDbView(),
-      senderAuth: AuthCtxImpl.fromSystemTables(
-        ConnectionId.nullIfZero(new ConnectionId(connId)),
-        senderIdentity
-      ),
-    });
+    const ctx: ReducerCtx<any> = freeze(
+      makeReducerCtx(
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      )
+    );
     try {
       return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
     } catch (e) {
@@ -235,9 +238,9 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // at runtime
       db: getDbView(),
     });
-    const args = AlgebraicType.deserializeValue(
+    const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
-      AlgebraicType.Product(params),
+      params,
       MODULE_DEF.typespace
     );
     const ret = fn(ctx, args);
@@ -253,15 +256,27 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // at runtime
       db: getDbView(),
     });
-    const args = AlgebraicType.deserializeValue(
+    const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
-      AlgebraicType.Product(params),
+      params,
       MODULE_DEF.typespace
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
     return retBuf.getBuffer();
+  },
+};
+
+export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
+  __call_procedure__(id, sender, connection_id, timestamp, args) {
+    return callProcedure(
+      id,
+      new Identity(sender),
+      ConnectionId.nullIfZero(new ConnectionId(connection_id)),
+      new Timestamp(timestamp),
+      args
+    );
   },
 };
 
@@ -587,6 +602,21 @@ class TableIterator implements IterableIterator<any, undefined> {
   }
 }
 
+type Intersections<Ts extends readonly any[]> = Ts extends [
+  infer T,
+  ...infer Rest,
+]
+  ? T & Intersections<Rest>
+  : unknown;
+
+function wrapSyscalls<
+  Modules extends Record<string, (...args: any[]) => any>[],
+>(...modules: Modules): Intersections<Modules> {
+  return Object.fromEntries(
+    modules.flatMap(Object.entries).map(([k, v]) => [k, wrapSyscall(v)])
+  ) as Intersections<Modules>;
+}
+
 function wrapSyscall<F extends (...args: any[]) => any>(
   func: F
 ): (...args: Parameters<F>) => ReturnType<F> {
@@ -602,7 +632,12 @@ function wrapSyscall<F extends (...args: any[]) => any>(
           hasOwn(e, '__code_error__') &&
           typeof e.__code_error__ == 'number'
         ) {
-          throw new SpacetimeHostError(e.__code_error__);
+          const message =
+            hasOwn(e, '__error_message__') &&
+            typeof e.__error_message__ === 'string'
+              ? e.__error_message__
+              : undefined;
+          throw new SpacetimeHostError(e.__code_error__, message);
         }
         throw e;
       }

@@ -35,12 +35,13 @@ partial class RawModuleDefV9
 
     internal void RegisterReducer(RawReducerDefV9 reducer) => Reducers.Add(reducer);
 
+    internal void RegisterProcedure(RawProcedureDefV9 procedure) =>
+        MiscExports.Add(new RawMiscModuleExportV9.Procedure(procedure));
+
     internal void RegisterTable(RawTableDefV9 table) => Tables.Add(table);
 
-    internal void RegisterView(RawViewDefV9 view)
-    {
+    internal void RegisterView(RawViewDefV9 view) =>
         MiscExports.Add(new RawMiscModuleExportV9.View(view));
-    }
 
     internal void RegisterRowLevelSecurity(RawRowLevelSecurityDefV9 rls) =>
         RowLevelSecurity.Add(rls);
@@ -60,6 +61,7 @@ public static class Module
 {
     private static readonly RawModuleDefV9 moduleDef = new();
     private static readonly List<IReducer> reducers = [];
+    private static readonly List<IProcedure> procedures = [];
     private static readonly List<Action<BytesSink>> viewDefs = [];
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
@@ -74,9 +76,21 @@ public static class Module
     private static Func<Identity, IViewContext>? newViewContext = null;
     private static Func<IAnonymousViewContext>? newAnonymousViewContext = null;
 
+    private static Func<
+        Identity,
+        ConnectionId?,
+        Random,
+        Timestamp,
+        IProcedureContext
+    >? newProcedureContext = null;
+
     public static void SetReducerContextConstructor(
         Func<Identity, ConnectionId?, Random, Timestamp, IReducerContext> ctor
     ) => newReducerContext = ctor;
+
+    public static void SetProcedureContextConstructor(
+        Func<Identity, ConnectionId?, Random, Timestamp, IProcedureContext> ctor
+    ) => newProcedureContext = ctor;
 
     public static void SetViewContextConstructor(Func<Identity, IViewContext> ctor) =>
         newViewContext = ctor;
@@ -121,6 +135,14 @@ public static class Module
         var reducer = new R();
         reducers.Add(reducer);
         moduleDef.RegisterReducer(reducer.MakeReducerDef(typeRegistrar));
+    }
+
+    public static void RegisterProcedure<P>()
+        where P : IProcedure, new()
+    {
+        var procedure = new P();
+        procedures.Add(procedure);
+        moduleDef.RegisterProcedure(procedure.MakeProcedureDef(typeRegistrar));
     }
 
     public static void RegisterTable<T, View>()
@@ -293,6 +315,50 @@ public static class Module
             var error_str = e.ToString();
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
+            return Errno.HOST_CALL_FAILURE;
+        }
+    }
+
+    public static Errno __call_procedure__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        Timestamp timestamp,
+        BytesSource args,
+        BytesSink resultSink
+    )
+    {
+        try
+        {
+            var sender = Identity.From(
+                MemoryMarshal.AsBytes([sender_0, sender_1, sender_2, sender_3]).ToArray()
+            );
+            var connectionId = ConnectionId.From(
+                MemoryMarshal.AsBytes([conn_id_0, conn_id_1]).ToArray()
+            );
+            var random = new Random((int)timestamp.MicrosecondsSinceUnixEpoch);
+            var time = timestamp.ToStd();
+
+            var ctx = newProcedureContext!(sender, connectionId, random, time);
+
+            using var stream = new MemoryStream(args.Consume());
+            using var reader = new BinaryReader(stream);
+            var bytes = procedures[(int)id].Invoke(reader, ctx);
+            if (stream.Position != stream.Length)
+            {
+                throw new Exception("Unrecognised extra bytes in the procedure arguments");
+            }
+            resultSink.Write(bytes);
+            return Errno.OK;
+        }
+        catch (Exception e)
+        {
+            var errorBytes = System.Text.Encoding.UTF8.GetBytes(e.ToString());
+            resultSink.Write(errorBytes);
             return Errno.HOST_CALL_FAILURE;
         }
     }

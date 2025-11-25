@@ -1,11 +1,12 @@
+use crate::host::module_host::UpdatesRelValue;
 use anyhow::Result;
-use hashbrown::HashMap;
-use spacetimedb_execution::{Datastore, DeltaStore};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_primitives::ColList;
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_subscription::SubscriptionPlan;
 use spacetimedb_vm::relation::RelValue;
-
-use crate::host::module_host::UpdatesRelValue;
 
 /// Evaluate a subscription over a delta update.
 /// Returns `None` for empty updates.
@@ -30,16 +31,26 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
     let mut duplicate_rows_evaluated = 0;
     let mut duplicate_rows_sent = 0;
 
+    let col_list = ColList::from_iter(plan.num_private_cols()..plan.num_cols());
+
+    let maybe_project = |row: Row<'a>| -> Result<RelValue<'a>, InvalidFieldError> {
+        if plan.is_view() {
+            Ok(row.project_product(&col_list)?.into())
+        } else {
+            Ok(row.into())
+        }
+    };
+
     if !plan.is_join() {
         // Single table plans will never return redundant rows,
         // so there's no need to track row counts.
         plan.for_each_insert(tx, metrics, &mut |row| {
-            inserts.push(row.into());
+            inserts.push(maybe_project(row)?);
             Ok(())
         })?;
 
         plan.for_each_delete(tx, metrics, &mut |row| {
-            deletes.push(row.into());
+            deletes.push(maybe_project(row)?);
             Ok(())
         })?;
     } else {
@@ -49,6 +60,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
         let mut delete_counts = HashMap::new();
 
         plan.for_each_insert(tx, metrics, &mut |row| {
+            let row = maybe_project(row)?;
             let n = insert_counts.entry(row).or_default();
             if *n > 0 {
                 duplicate_rows_evaluated += 1;
@@ -58,6 +70,7 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
         })?;
 
         plan.for_each_delete(tx, metrics, &mut |row| {
+            let row = maybe_project(row)?;
             match insert_counts.get_mut(&row) {
                 // We have not seen an insert for this row.
                 // If we have seen a delete, increment the metric.
@@ -93,11 +106,11 @@ pub fn eval_delta<'a, Tx: Datastore + DeltaStore>(
 
         for (row, n) in insert_counts.into_iter().filter(|(_, n)| *n > 0) {
             duplicate_rows_sent += n as u64 - 1;
-            inserts.extend(std::iter::repeat_n(row, n).map(RelValue::from));
+            inserts.extend(std::iter::repeat_n(row, n));
         }
         for (row, n) in delete_counts.into_iter().filter(|(_, n)| *n > 0) {
             duplicate_rows_sent += n as u64 - 1;
-            deletes.extend(std::iter::repeat_n(row, n).map(RelValue::from));
+            deletes.extend(std::iter::repeat_n(row, n));
         }
     }
 

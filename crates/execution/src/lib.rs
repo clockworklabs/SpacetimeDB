@@ -11,7 +11,8 @@ use spacetimedb_lib::{
     AlgebraicValue, ProductValue,
 };
 use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
-use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
@@ -119,6 +120,13 @@ impl Row<'_> {
         match self {
             Self::Ptr(ptr) => ptr.to_product_value(),
             Self::Ref(val) => (*val).clone(),
+        }
+    }
+
+    pub fn project_product(self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
+        match self {
+            Self::Ptr(ptr) => ptr.project_product(cols),
+            Self::Ref(val) => val.project_product(cols),
         }
     }
 }

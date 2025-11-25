@@ -375,6 +375,29 @@ impl SubscriptionPlan {
         self.fragments.insert_plans.len() > 1 && self.fragments.delete_plans.len() > 1
     }
 
+    /// Does this plan return rows from a view?
+    pub fn is_view(&self) -> bool {
+        self.plan_opt.returns_view_table()
+    }
+
+    /// The number of columns returned.
+    /// Only relevant if [`Self::is_view`] is true.
+    pub fn num_cols(&self) -> usize {
+        self.plan_opt
+            .return_table()
+            .map(|schema| schema.num_cols())
+            .unwrap_or_default()
+    }
+
+    /// The number of private columns returned.
+    /// Only relevant if [`Self::is_view`] is true.
+    pub fn num_private_cols(&self) -> usize {
+        self.plan_opt
+            .return_table()
+            .map(|schema| schema.num_private_cols())
+            .unwrap_or_default()
+    }
+
     /// To which table does this plan subscribe?
     pub fn subscribed_table_id(&self) -> TableId {
         self.return_id

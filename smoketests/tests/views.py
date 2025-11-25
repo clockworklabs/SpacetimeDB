@@ -551,19 +551,19 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
 }
 """
 
-    def _test_subscribing_with_different_identities(self):
+    def test_subscribing_with_different_identities(self):
         """Tests different clients subscribing to a client-specific view"""
 
         # Insert an identity for Alice
         self.call("insert_player", "Alice")
 
-        # Generate and insert a new identity for Bob
+        # Generate a new identity for Bob
         self.reset_config()
         self.new_identity()
-        self.call("insert_player", "Bob")
 
         # Subscribe to `my_player` as Bob
-        sub = self.subscribe("select * from my_player", n=0)
+        sub = self.subscribe("select * from my_player", n=1)
+        self.call("insert_player", "Bob")
         events = sub()
 
         # Project out the identity field.

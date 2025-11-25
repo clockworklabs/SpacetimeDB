@@ -60,7 +60,6 @@ flume.workspace = true
 fs2.workspace = true
 futures.workspace = true
 futures-util.workspace = true
-hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
 http.workspace = true

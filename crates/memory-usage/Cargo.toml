@@ -6,11 +6,11 @@ license-file = "LICENSE"
 description = "Provides the trait `MemoryUsage`"
 
 [features]
-hashbrown = ["dep:hashbrown"]
+hash_map = ["dep:hashbrown"]
 smallvec = ["dep:smallvec"]
 ethnum = ["dep:ethnum"]
 decorum = ["dep:decorum"]
-default = ["hashbrown", "smallvec", "ethnum", "decorum"]
+default = ["hash_map", "smallvec", "ethnum", "decorum"]
 
 [dependencies]
 hashbrown = { workspace = true, optional = true }
