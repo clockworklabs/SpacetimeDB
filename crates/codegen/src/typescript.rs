@@ -41,7 +41,7 @@ impl Lang for TypeScript {
             let out = &mut output;
 
             print_file_header(out, false, true);
-            gen_and_print_imports(module, out, product.subtypes(), &[typ.ty], None);
+            gen_and_print_imports(module, out, product.element_types(), &[typ.ty], None);
             writeln!(out);
             define_body_for_product(module, out, &type_name, &product.elements);
             out.newline();
@@ -121,7 +121,7 @@ impl Lang for TypeScript {
         gen_and_print_imports(
             module,
             out,
-            product_def.subtypes(),
+            product_def.element_types(),
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
             None,
         );
@@ -150,7 +150,7 @@ impl Lang for TypeScript {
         gen_and_print_imports(
             module,
             out,
-            reducer.params_for_generate.subtypes(),
+            reducer.params_for_generate.element_types(),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
             None,
@@ -181,7 +181,7 @@ impl Lang for TypeScript {
             out,
             procedure
                 .params_for_generate
-                .subtypes()
+                .element_types()
                 .chain([&procedure.return_type_for_generate]),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],

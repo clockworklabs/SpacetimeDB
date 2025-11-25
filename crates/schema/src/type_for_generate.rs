@@ -228,7 +228,7 @@ impl<'a> IntoIterator for &'a ProductTypeDef {
 }
 
 impl ProductTypeDef {
-    pub fn subtypes(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+    pub fn element_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
         self.elements.iter().map(|(_, ty)| ty)
     }
 }
@@ -257,7 +257,7 @@ impl<'a> IntoIterator for &'a SumTypeDef {
 }
 
 impl SumTypeDef {
-    pub fn subtypes(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+    pub fn variant_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
         self.variants.iter().map(|(_, ty)| ty)
     }
 }
