@@ -2400,6 +2400,7 @@ mod tests {
         begin_tx, insert, make_snapshot, with_auto_commit, with_read_only, TestDB,
     };
     use anyhow::bail;
+    use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use durability::EmptyHistory;
