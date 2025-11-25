@@ -187,7 +187,6 @@ fn find_free_port() -> Result<u16> {
 }
 
 fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
-    let mut args: Vec<_> = args.iter().cloned().collect();
     let server_state = match server_mode {
         StartServer::No => ServerState::None,
         StartServer::Docker {
@@ -209,17 +208,11 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
             };
             let compose_str = compose_file.to_string_lossy();
             bash!(&format!(
-                "{env_string} docker compose -f {compose_str} --project {project} up -d"
+                "{env_string} docker compose -f {compose_str} --project-name {project} up -d"
             ))?;
             ServerState::Docker { compose_file, project }
         }
         StartServer::Yes { random_port } => {
-            // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
-            // before the server is up.
-            // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
-            bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
-            args.push("--no-build-cli".into());
-
             // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
             let arg_string = if random_port {
                 let server_port = find_free_port()?;
@@ -268,7 +261,9 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
         ServerState::Docker { compose_file, project } => {
             println!("Shutting down server..");
             let compose_str = compose_file.to_string_lossy();
-            let _ = bash!(&format!("docker compose -f {compose_str} --project {project} down"));
+            let _ = bash!(&format!(
+                "docker compose -f {compose_str} --project-name {project} down"
+            ));
         }
         ServerState::Yes { pid } => {
             println!("Shutting down server..");
@@ -409,6 +404,14 @@ fn main() -> Result<()> {
                         parts[2].to_string()
                     })
                     .collect();
+
+                if matches!(start_server, StartServer::Yes { .. }) {
+                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
+                    // before the server is up.
+                    // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
+                    bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+                    args.push("--no-build-cli".into());
+                }
 
                 // Run each batch in parallel threads.
                 let mut handles = Vec::new();
