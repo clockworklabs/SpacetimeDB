@@ -1237,7 +1237,7 @@ where
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)
-            .route("/procedure/:procedure", self.call_procedure_post)
+            .route("/unstable/procedure/:procedure", self.call_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)

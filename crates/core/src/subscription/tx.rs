@@ -1,23 +1,20 @@
+use super::module_subscription_manager::QueriedTableIndexIds;
+use itertools::Either;
+use smallvec::SmallVec;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use spacetimedb_datastore::{
+    locking_tx_datastore::{state_view::StateView, TxId},
+    traits::TxData,
+};
+use spacetimedb_execution::{Datastore, DeltaStore, Row};
+use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
 use std::{
     collections::BTreeMap,
     ops::{Deref, RangeBounds},
     sync::Arc,
 };
-
-use hashbrown::HashMap;
-use itertools::Either;
-use smallvec::SmallVec;
-use spacetimedb_execution::{Datastore, DeltaStore, Row};
-use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
-
-use spacetimedb_datastore::{
-    locking_tx_datastore::{state_view::StateView, TxId},
-    traits::TxData,
-};
-
-use super::module_subscription_manager::QueriedTableIndexIds;
 
 /// If an index is defined on a set of columns,
 /// and if that index is used in a subscription query,
