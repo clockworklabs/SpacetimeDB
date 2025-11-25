@@ -276,6 +276,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
                     pid
                 ));
             } else {
+                // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
                 let _ = bash!(&format!("kill {}", pid));
             }
         }
@@ -417,26 +418,29 @@ fn main() -> Result<()> {
                     batch_args.push(batch.clone());
                     batch_args.extend(args.iter().cloned());
 
-                    handles.push(std::thread::spawn(move || {
-                        println!("Running smoketests batch {batch}..");
-                        // TODO: capture output and print it only in contiguous blocks
-                        run_smoketests_batch(start_server_clone, &batch_args, &python_clone)
-                    }));
+                    handles.push((
+                        batch.clone(),
+                        std::thread::spawn(move || {
+                            println!("Running smoketests batch {batch}..");
+                            // TODO: capture output and print it only in contiguous blocks
+                            run_smoketests_batch(start_server_clone, &batch_args, &python_clone)
+                        }),
+                    ));
                 }
 
-                let mut any_failed_batch = false;
-                for handle in handles {
+                let mut failed_batches = vec![];
+                for (batch, handle) in handles {
                     // If the thread panicked or the batch failed, treat it as a failure.
                     let result = handle
                         .join()
                         .unwrap_or_else(|_| Err(anyhow::anyhow!("smoketest batch thread panicked",)));
                     if result.is_err() {
-                        any_failed_batch = true;
+                        failed_batches.push(batch);
                     }
                 }
 
-                if any_failed_batch {
-                    anyhow::bail!("One or more smoketest batches failed");
+                if !failed_batches.is_empty() {
+                    anyhow::bail!("Smoketest batch(es) failed: {}", failed_batches.join(", "));
                 }
             } else {
                 run_smoketests_batch(start_server, &args, &python)?;
