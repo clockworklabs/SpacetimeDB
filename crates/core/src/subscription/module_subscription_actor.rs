@@ -1,4 +1,5 @@
 use super::execution_unit::QueryHash;
+use super::metrics::QueryMetrics;
 use super::module_subscription_manager::{
     from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
     SubscriptionManager, TransactionOffset,
@@ -129,6 +130,24 @@ impl SubscriptionMetrics {
             num_new_queries_subscribed: DB_METRICS.num_new_queries_subscribed.with_label_values(db),
             num_queries_evaluated: DB_METRICS.num_queries_evaluated.with_label_values(db, workload),
         }
+    }
+}
+
+/// Records subscription query metrics
+fn record_query_metrics(database_identity: &Identity, query_metrics: Vec<QueryMetrics>) {
+    for qm in query_metrics {
+        WORKER_METRICS
+            .subscription_rows_examined
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .observe(qm.rows_scanned as f64);
+        WORKER_METRICS
+            .subscription_query_execution_time_micros
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .observe(qm.execution_time_micros as f64);
+        WORKER_METRICS
+            .subscription_queries_total
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .inc();
     }
 }
 
@@ -345,17 +364,22 @@ impl ModuleSubscriptions {
             auth,
         )?;
 
+        let database_identity = self.relational_db.database_identity();
         let tx = DeltaTx::from(tx);
-        match sender.config.protocol {
+        let (update, metrics, query_metrics) = match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
-                Ok((FormatSwitch::Bsatn(update), metrics))
+                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                (FormatSwitch::Bsatn(update), metrics, query_metrics)
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
-                Ok((FormatSwitch::Json(update), metrics))
+                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                (FormatSwitch::Json(update), metrics, query_metrics)
             }
-        }
+        };
+
+        record_query_metrics(&database_identity, query_metrics);
+
+        Ok((update, metrics))
     }
 
     /// Add a subscription to a single query.
@@ -896,12 +920,16 @@ impl ModuleSubscriptions {
         drop(compile_timer);
 
         let tx = DeltaTx::from(&*tx);
-        let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+        let (database_update, metrics, query_metrics) = match sender.config.protocol {
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
+                |(table_update, metrics, query_metrics)| (FormatSwitch::Bsatn(table_update), metrics, query_metrics),
+            )?,
+            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
+                |(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics),
+            )?,
         };
+
+        record_query_metrics(&database_identity, query_metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -1225,7 +1253,6 @@ mod tests {
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use core::fmt;
-    use hashbrown::HashMap;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -1234,6 +1261,7 @@ mod tests {
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_commitlog::{commitlog, repo};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;

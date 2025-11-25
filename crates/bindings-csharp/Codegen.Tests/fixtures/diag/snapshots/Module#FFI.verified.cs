@@ -38,6 +38,32 @@ namespace SpacetimeDB
         }
     }
 
+    public sealed record ProcedureContext : Internal.IProcedureContext
+    {
+        public readonly Identity Sender;
+        public readonly ConnectionId? ConnectionId;
+        public readonly Random Rng;
+        public readonly Timestamp Timestamp;
+        public readonly AuthCtx SenderAuth;
+
+        // We need this property to be non-static for parity with client SDK.
+        public Identity Identity => Internal.IProcedureContext.GetIdentity();
+
+        internal ProcedureContext(
+            Identity identity,
+            ConnectionId? connectionId,
+            Random random,
+            Timestamp time
+        )
+        {
+            Sender = identity;
+            ConnectionId = connectionId;
+            Rng = random;
+            Timestamp = time;
+            SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
+        }
+    }
+
     public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
     {
         public Identity Sender { get; }
@@ -1852,6 +1878,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(
             () => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly())
         );
+        SpacetimeDB.Internal.Module.SetProcedureContextConstructor(
+            (identity, connectionId, random, time) =>
+                new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
+        );
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
@@ -2165,6 +2195,32 @@ static class ModuleRegistration
             timestamp,
             args,
             error
+        );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
+    public static SpacetimeDB.Internal.Errno __call_procedure__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink result_sink
+    ) =>
+        SpacetimeDB.Internal.Module.__call_procedure__(
+            id,
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            conn_id_0,
+            conn_id_1,
+            timestamp,
+            args,
+            result_sink
         );
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
