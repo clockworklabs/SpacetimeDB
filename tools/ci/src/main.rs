@@ -287,6 +287,13 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Remove all Cargo-provided env vars from the subcommand
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CARGO_") && key != "CARGO_TARGET_DIR" {
+            std::env::remove_var(key);
+        }
+    }
+
     match cli.cmd {
         Some(CiCmd::Test) => {
             bash!("cargo test --all -- --skip unreal")?;
