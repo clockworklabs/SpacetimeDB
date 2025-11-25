@@ -317,10 +317,9 @@ jobs:
           fi
 
   update:
-    name: Test spacetimedb-update flow
+    name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
-      target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu, aarch64-apple-darwin, x86_64-pc-windows-msvc]
       matrix:
         include:
           - runner: spacetimedb-new-runner
