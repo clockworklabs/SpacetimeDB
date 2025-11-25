@@ -287,10 +287,19 @@ Procedures can perform additional operations not possible in reducers, including
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 
+Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.
+
 <Tabs groupId="syntax" queryString>
 <TabItem value="rust" label="Rust">
 
-A procedure can be defined in a Rust module:
+Because procedures are unstable, Rust modules that define them must opt in to the `unstable` feature in their `Cargo.toml`:
+
+```toml
+[dependencies]
+spacetimedb = { version = "1.x", features = ["unstable"] }
+```
+
+Then, that module can define a procedure:
 
 ```rust
 #[spacetimedb::procedure]
