@@ -1465,7 +1465,11 @@ impl WasmInstanceEnv {
             AbiCall::ProcedureStartMutTransaction,
             move |mut caller| async move {
                 let (mem, env) = Self::mem_env(&mut caller);
-                let res = env.instance_env.start_mutable_tx().await.map_err(Into::into);
+                let res = async {
+                    env.instance_env.start_mutable_tx()?.await;
+                    Ok(())
+                }
+                .await;
                 let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
                 let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
 
@@ -1508,12 +1512,12 @@ impl WasmInstanceEnv {
             |mut caller| async move {
                 let (_, env) = Self::mem_env(&mut caller);
 
-                let res = env
-                    .instance_env
-                    .commit_mutable_tx()
-                    .await
-                    .map(|()| 0u16.into())
-                    .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err.into()));
+                let res = async {
+                    env.instance_env.commit_mutable_tx()?.await;
+                    Ok(0u16.into())
+                }
+                .await
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err));
 
                 (caller, res)
             },

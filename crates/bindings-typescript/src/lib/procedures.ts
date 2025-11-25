@@ -3,7 +3,7 @@ import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
 import type { HttpClient } from '../server/http_internal';
-import type { ParamsObj } from './reducers';
+import type { ParamsObj, ReducerCtx } from './reducers';
 import {
   MODULE_DEF,
   registerTypesRecursively,
@@ -18,14 +18,18 @@ export type ProcedureFn<
   Ret extends TypeBuilder<any, any>,
 > = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly sender: Identity;
   readonly identity: Identity;
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
+  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface TransactionCtx<S extends UntypedSchemaDef>
+  extends ReducerCtx<S> {}
 
 export function procedure<
   S extends UntypedSchemaDef,

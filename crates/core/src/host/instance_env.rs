@@ -601,7 +601,11 @@ impl InstanceEnv {
         written
     }
 
-    pub async fn start_mutable_tx(&mut self) -> Result<(), NodesError> {
+    // Async procedure syscalls return a `Result<impl Future>`, so that we can check `get_tx()`
+    // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
+    // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
+
+    pub fn start_mutable_tx(&mut self) -> Result<impl Future<Output = ()> + use<'_>, NodesError> {
         if self.get_tx().is_ok() {
             return Err(NodesError::WouldBlockTransaction(
                 super::AbiCall::ProcedureStartMutTransaction,
@@ -610,11 +614,13 @@ impl InstanceEnv {
 
         let stdb = self.replica_ctx.relational_db.clone();
         // TODO(procedure-tx): should we add a new workload, e.g., `AnonTx`?
-        let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
-        self.tx.set_raw(tx);
-        self.in_anon_tx = true;
+        let fut = async move {
+            let tx = asyncify(move || stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal)).await;
+            self.tx.set_raw(tx);
+            self.in_anon_tx = true;
+        };
 
-        Ok(())
+        Ok(fut)
     }
 
     /// Finishes an anonymous transaction,
@@ -637,7 +643,7 @@ impl InstanceEnv {
     // *before* requiring an async runtime. Otherwise, the v8 module host would have to call
     // on `tokio::runtime::Handle::try_current()` before being able to run the `get_tx()` check.
 
-    pub async fn commit_mutable_tx(&mut self) -> Result<(), NodesError> {
+    pub fn commit_mutable_tx(&mut self) -> Result<impl Future<Output = ()> + use<'_>, NodesError> {
         self.finish_anon_tx()?;
 
         let stdb = self.relational_db().clone();
@@ -660,10 +666,12 @@ impl InstanceEnv {
         // This is somewhat expensive,
         // and can block for a while,
         // so we need to asyncify it.
-        let event = asyncify(move || commit_and_broadcast_event(&subs, None, event, tx)).await;
-        self.procedure_last_tx_offset = Some(event.tx_offset);
+        let fut = async move {
+            let event = asyncify(move || commit_and_broadcast_event(&subs, None, event, tx)).await;
+            self.procedure_last_tx_offset = Some(event.tx_offset);
+        };
 
-        Ok(())
+        Ok(fut)
     }
 
     pub fn abort_mutable_tx(&mut self) -> Result<(), NodesError> {
