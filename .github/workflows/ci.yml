@@ -108,10 +108,10 @@ jobs:
         run: |
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
-          cargo ci smoketests --docker .github/docker-compose.yml -- ${SMOKETEST_ARGS}
+          cargo ci smoketests --docker .github/docker-compose.yml --parallel -- ${SMOKETEST_ARGS}
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
-        run: cargo ci smoketests -- ${SMOKETEST_ARGS}
+        run: cargo ci smoketests --parallel -- ${SMOKETEST_ARGS}
 
   test:
     name: Test Suite
