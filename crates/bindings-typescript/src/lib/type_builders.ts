@@ -4,7 +4,7 @@ import type BinaryWriter from './binary_writer';
 import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
 import { Identity, type IdentityAlgebraicType } from './identity';
 import { Option, type OptionAlgebraicType } from './option';
-import ScheduleAt from './schedule_at';
+import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
@@ -1487,6 +1487,26 @@ export const SimpleSumBuilder: {
 export type SimpleSumBuilder<Variants extends SimpleVariantsObj> =
   SimpleSumBuilderImpl<Variants> & SumBuilderVariantConstructors<Variants>;
 
+export class ScheduleAtBuilder
+  extends TypeBuilder<ScheduleAt, ScheduleAtAlgebraicType>
+  implements
+    Defaultable<ScheduleAt, ScheduleAtAlgebraicType>
+{
+  constructor() {
+    super(ScheduleAt.getAlgebraicType());
+  }
+  default(
+    value: ScheduleAt
+  ): ScheduleAtColumnBuilder<
+    SetField<DefaultMetadata, 'defaultValue', ScheduleAt>
+  > {
+    return new ScheduleAtColumnBuilder(
+      this,
+      set(defaultMetadata, { defaultValue: value })
+    );
+  }
+}
+
 export class IdentityBuilder
   extends TypeBuilder<Identity, IdentityAlgebraicType>
   implements
@@ -1748,7 +1768,6 @@ export type ColumnMetadata<Type = any> = {
   isPrimaryKey?: true;
   isUnique?: true;
   isAutoIncrement?: true;
-  isScheduleAt?: true;
   indexType?: IndexTypes;
   defaultValue?: Type;
 };
@@ -2727,6 +2746,23 @@ export class SimpleSumColumnBuilder<
   }
 }
 
+export class ScheduleAtColumnBuilder<
+    M extends ColumnMetadata<ScheduleAt> = DefaultMetadata,
+  >
+  extends ColumnBuilder<ScheduleAt, ScheduleAtAlgebraicType, M>
+  implements
+    Defaultable<ScheduleAt, ScheduleAtAlgebraicType>
+{
+  default(
+    value: ScheduleAt
+  ): ScheduleAtColumnBuilder<SetField<M, 'defaultValue', ScheduleAt>> {
+    return new ScheduleAtColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { defaultValue: value })
+    );
+  }
+}
+
 export class IdentityColumnBuilder<
     M extends ColumnMetadata<Identity> = DefaultMetadata,
   >
@@ -3241,15 +3277,8 @@ export const t = {
    * This is a special helper function for conveniently creating {@link ScheduleAt} type columns.
    * @returns A new ColumnBuilder instance with the {@link ScheduleAt} type.
    */
-  scheduleAt: (): ColumnBuilder<
-    ScheduleAt,
-    ReturnType<typeof ScheduleAt.getAlgebraicType>,
-    Omit<ColumnMetadata<ScheduleAt>, 'isScheduleAt'> & { isScheduleAt: true }
-  > => {
-    return new ColumnBuilder(
-      new TypeBuilder(ScheduleAt.getAlgebraicType()),
-      set(defaultMetadata, { isScheduleAt: true })
-    );
+  scheduleAt: (): ScheduleAtBuilder => {
+    return new ScheduleAtBuilder();
   },
 
   /**
