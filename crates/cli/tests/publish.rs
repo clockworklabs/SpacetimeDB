@@ -29,7 +29,7 @@ fn cli_can_publish_spacetimedb_on_disk() {
 // TODO: Somewhere we should test that data is actually deleted properly in all the expected cases,
 // e.g. when providing --delete-data, or when there's a conflict and --delete-data=on-conflict is provided.
 
-fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bool) -> () {
+fn migration_test(module_name: &str, republish_args: &[&str], expect_success: bool) {
     let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir();
 
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;

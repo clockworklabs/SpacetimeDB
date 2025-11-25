@@ -22,7 +22,7 @@ pub struct SpacetimeDbGuard {
 
 // Remove all Cargo-provided env vars. These are set by the fact that we're running in a cargo command (e.g. `cargo test`).
 // We don't want to inherit any of these to a child cargo process, because it causes unnecessary rebuilds.
-fn unset_cargo_env_vars() -> () {
+fn unset_cargo_env_vars() {
     for (key, _) in std::env::vars() {
         if key.starts_with("CARGO_") && key != "CARGO_TARGET_DIR" {
             std::env::remove_var(key);
