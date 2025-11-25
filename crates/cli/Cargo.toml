@@ -90,7 +90,7 @@ fs_extra.workspace = true
 assert_cmd = "2"
 predicates = "3"
 portpicker = "0.1"
-reqwest = { version = "0.12", features = ["blocking", "json"] }
+reqwest = { workspace = true, features = ["blocking", "json"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true }
