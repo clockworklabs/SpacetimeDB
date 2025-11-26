@@ -343,7 +343,7 @@ function makeTableView(
       const ret = { ...row };
       integrate_generated_columns?.(ret, ret_buf);
 
-      return { ok: true, val: ret };
+      return ret;
     },
     delete: (row: RowType<any>): boolean => {
       const writer = new BinaryWriter(4 + baseSize);
