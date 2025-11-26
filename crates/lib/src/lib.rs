@@ -305,7 +305,7 @@ pub fn from_hex_pad<R: hex::FromHex<Error = hex::FromHexError>, T: AsRef<[u8]>>(
     hex: T,
 ) -> Result<R, hex::FromHexError> {
     let hex = hex.as_ref();
-    let hex = if hex.starts_with(b"0x") {
+    let hex = if hex.starts_with(b"0x") || hex.starts_with(b"\\x") {
         &hex[2..]
     } else if hex.starts_with(b"X'") {
         &hex[2..hex.len()]
