@@ -8,7 +8,7 @@
 export class SpacetimeHostError extends Error {
   public readonly code: number;
   public readonly message: string;
-  constructor(code: number) {
+  constructor(code: number, message?: string) {
     super();
     const proto = Object.getPrototypeOf(this);
     let cls;
@@ -24,7 +24,7 @@ export class SpacetimeHostError extends Error {
     }
     Object.setPrototypeOf(this, cls.prototype);
     this.code = cls.CODE;
-    this.message = cls.MESSAGE;
+    this.message = message ?? cls.MESSAGE;
   }
   get name(): string {
     return errnoToClass.get(this.code)?.name ?? 'SpacetimeHostError';
@@ -46,200 +46,148 @@ export class SenderError extends Error {
   }
 }
 
-/**
- * A generic error class for unknown error codes.
- */
-export class HostCallFailure extends SpacetimeHostError {
-  static CODE = 1;
-  static MESSAGE = 'ABI called by host returned an error';
-  constructor() {
-    super(HostCallFailure.CODE);
-  }
+const errorData = {
+  /**
+   * A generic error class for unknown error codes.
+   */
+  HostCallFailure: [1, 'ABI called by host returned an error'],
+
+  /**
+   * Error indicating that an ABI call was made outside of a transaction.
+   */
+  NotInTransaction: [2, 'ABI call can only be made while in a transaction'],
+
+  /**
+   * Error indicating that BSATN decoding failed.
+   * This typically means that the data could not be decoded to the expected type.
+   */
+  BsatnDecodeError: [3, "Couldn't decode the BSATN to the expected type"],
+
+  /**
+   * Error indicating that a specified table does not exist.
+   */
+  NoSuchTable: [4, 'No such table'],
+
+  /**
+   * Error indicating that a specified index does not exist.
+   */
+  NoSuchIndex: [5, 'No such index'],
+
+  /**
+   * Error indicating that a specified row iterator is not valid.
+   */
+  NoSuchIter: [6, 'The provided row iterator is not valid'],
+
+  /**
+   * Error indicating that a specified console timer does not exist.
+   */
+  NoSuchConsoleTimer: [7, 'The provided console timer does not exist'],
+
+  /**
+   * Error indicating that a specified bytes source or sink is not valid.
+   */
+  NoSuchBytes: [8, 'The provided bytes source or sink is not valid'],
+
+  /**
+   * Error indicating that a provided sink has no more space left.
+   */
+  NoSpace: [9, 'The provided sink has no more space left'],
+
+  /**
+   * Error indicating that there is no more space in the database.
+   */
+  BufferTooSmall: [
+    11,
+    'The provided buffer is not large enough to store the data',
+  ],
+
+  /**
+   * Error indicating that a value with a given unique identifier already exists.
+   */
+  UniqueAlreadyExists: [
+    12,
+    'Value with given unique identifier already exists',
+  ],
+
+  /**
+   * Error indicating that the specified delay in scheduling a row was too long.
+   */
+  ScheduleAtDelayTooLong: [
+    13,
+    'Specified delay in scheduling row was too long',
+  ],
+
+  /**
+   * Error indicating that an index was not unique when it was expected to be.
+   */
+  IndexNotUnique: [14, 'The index was not unique'],
+
+  /**
+   * Error indicating that an index was not unique when it was expected to be.
+   */
+  NoSuchRow: [15, 'The row was not found, e.g., in an update call'],
+
+  /**
+   * Error indicating that an auto-increment sequence has overflowed.
+   */
+  AutoIncOverflow: [16, 'The auto-increment sequence overflowed'],
+
+  WouldBlockTransaction: [
+    17,
+    'Attempted async or blocking op while holding open a transaction',
+  ],
+
+  TransactionNotAnonymous: [
+    18,
+    'Not in an anonymous transaction. Called by a reducer?',
+  ],
+
+  TransactionIsReadOnly: [
+    19,
+    'ABI call can only be made while within a mutable transaction',
+  ],
+
+  TransactionIsMut: [
+    20,
+    'ABI call can only be made while within a read-only transaction',
+  ],
+
+  HttpError: [21, 'The HTTP request failed'],
+} as const;
+
+function mapEntries<const T extends Record<string, any>, U>(
+  x: T,
+  f: (key: keyof T, value: T[keyof T]) => U
+): { [k in keyof T]: U } {
+  return Object.fromEntries(
+    Object.entries(x).map(([k, v]) => [k, f(k, v)])
+  ) as any;
 }
 
-/**
- * Error indicating that an ABI call was made outside of a transaction.
- */
-export class NotInTransaction extends SpacetimeHostError {
-  static CODE = 2;
-  static MESSAGE = 'ABI call can only be made while in a transaction';
-  constructor() {
-    super(NotInTransaction.CODE);
-  }
-}
-
-/**
- * Error indicating that BSATN decoding failed.
- * This typically means that the data could not be decoded to the expected type.
- */
-export class BsatnDecodeError extends SpacetimeHostError {
-  static CODE = 3;
-  static MESSAGE = "Couldn't decode the BSATN to the expected type";
-  constructor() {
-    super(BsatnDecodeError.CODE);
-  }
-}
-
-/**
- * Error indicating that a specified table does not exist.
- */
-export class NoSuchTable extends SpacetimeHostError {
-  static CODE = 4;
-  static MESSAGE = 'No such table';
-  constructor() {
-    super(NoSuchTable.CODE);
-  }
-}
-
-/**
- * Error indicating that a specified index does not exist.
- */
-export class NoSuchIndex extends SpacetimeHostError {
-  static CODE = 5;
-  static MESSAGE = 'No such index';
-  constructor() {
-    super(NoSuchIndex.CODE);
-  }
-}
-
-/**
- * Error indicating that a specified row iterator is not valid.
- */
-export class NoSuchIter extends SpacetimeHostError {
-  static CODE = 6;
-  static MESSAGE = 'The provided row iterator is not valid';
-  constructor() {
-    super(NoSuchIter.CODE);
-  }
-}
-
-/**
- * Error indicating that a specified console timer does not exist.
- */
-export class NoSuchConsoleTimer extends SpacetimeHostError {
-  static CODE = 7;
-  static MESSAGE = 'The provided console timer does not exist';
-  constructor() {
-    super(NoSuchConsoleTimer.CODE);
-  }
-}
-
-/**
- * Error indicating that a specified bytes source or sink is not valid.
- */
-export class NoSuchBytes extends SpacetimeHostError {
-  static CODE = 8;
-  static MESSAGE = 'The provided bytes source or sink is not valid';
-  constructor() {
-    super(NoSuchBytes.CODE);
-  }
-}
-
-/**
- * Error indicating that a provided sink has no more space left.
- */
-export class NoSpace extends SpacetimeHostError {
-  static CODE = 9;
-  static MESSAGE = 'The provided sink has no more space left';
-  constructor() {
-    super(NoSpace.CODE);
-  }
-}
-
-/**
- * Error indicating that there is no more space in the database.
- */
-export class BufferTooSmall extends SpacetimeHostError {
-  static CODE = 11;
-  static MESSAGE = 'The provided buffer is not large enough to store the data';
-  constructor() {
-    super(BufferTooSmall.CODE);
-  }
-}
-
-/**
- * Error indicating that a value with a given unique identifier already exists.
- */
-export class UniqueAlreadyExists extends SpacetimeHostError {
-  static CODE = 12;
-  static MESSAGE = 'Value with given unique identifier already exists';
-  constructor() {
-    super(UniqueAlreadyExists.CODE);
-  }
-}
-
-/**
- * Error indicating that the specified delay in scheduling a row was too long.
- */
-export class ScheduleAtDelayTooLong extends SpacetimeHostError {
-  static CODE = 13;
-  static MESSAGE = 'Specified delay in scheduling row was too long';
-  constructor() {
-    super(ScheduleAtDelayTooLong.CODE);
-  }
-}
-
-/**
- * Error indicating that an index was not unique when it was expected to be.
- */
-export class IndexNotUnique extends SpacetimeHostError {
-  static CODE = 14;
-  static MESSAGE = 'The index was not unique';
-  constructor() {
-    super(IndexNotUnique.CODE);
-  }
-}
-
-/**
- * Error indicating that an index was not unique when it was expected to be.
- */
-export class NoSuchRow extends SpacetimeHostError {
-  static CODE = 15;
-  static MESSAGE = 'The row was not found, e.g., in an update call';
-  constructor() {
-    super(NoSuchRow.CODE);
-  }
-}
-
-/**
- * Error indicating that an auto-increment sequence has overflowed.
- */
-export class AutoIncOverflow extends SpacetimeHostError {
-  static CODE = 16;
-  static MESSAGE = 'The auto-increment sequence overflowed';
-  constructor() {
-    super(AutoIncOverflow.CODE);
-  }
-}
-
-/**
- * List of all SpacetimeError subclasses.
- */
-const errorSubclasses = [
-  HostCallFailure,
-  NotInTransaction,
-  BsatnDecodeError,
-  NoSuchTable,
-  NoSuchIndex,
-  NoSuchIter,
-  NoSuchConsoleTimer,
-  NoSuchBytes,
-  NoSpace,
-  BufferTooSmall,
-  UniqueAlreadyExists,
-  ScheduleAtDelayTooLong,
-  IndexNotUnique,
-  NoSuchRow,
-];
+export const errors = Object.freeze(
+  mapEntries(errorData, (name, [code, message]) =>
+    Object.defineProperty(
+      class extends SpacetimeHostError {
+        static CODE = code;
+        static MESSAGE = message;
+        constructor() {
+          super(code);
+        }
+      },
+      'name',
+      { value: name, writable: false }
+    )
+  )
+);
 
 /**
  * Set of prototypes of all SpacetimeError subclasses for quick lookup.
  */
-const errorProtoypes = new Set(errorSubclasses.map(cls => cls.prototype));
+const errorProtoypes = new Set(Object.values(errors).map(cls => cls.prototype));
 
 /**
  * Map from error codes to their corresponding SpacetimeError subclass.
  */
 const errnoToClass = new Map(
-  errorSubclasses.map(cls => [cls.CODE as number, cls])
+  Object.values(errors).map(cls => [cls.CODE as number, cls])
 );

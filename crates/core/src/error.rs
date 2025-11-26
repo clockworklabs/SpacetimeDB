@@ -267,6 +267,8 @@ pub enum NodesError {
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
     NotInTransaction,
+    #[error("can't perform operation; not inside anonymous transaction")]
+    NotInAnonTransaction,
     #[error("ABI call not allowed while holding open a transaction: {0}")]
     WouldBlockTransaction(AbiCall),
     #[error("table with name {0:?} already exists")]

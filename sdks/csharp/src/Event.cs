@@ -24,6 +24,10 @@ namespace SpacetimeDB
         public Exception Event { get; }
     }
 
+    public interface IProcedureEventContext
+    {
+
+    }
     // The following underscores are needed to work around c#'s unified type-and-function
     // namespace.
 
@@ -33,7 +37,7 @@ namespace SpacetimeDB
     /// <c>DbContext</c> is implemented by <c>DbConnection</c> and <c>EventContext</c>,
     /// both defined in your module-specific codegen.
     /// </summary>
-    public interface IDbContext<DbView, RemoteReducers, SetReducerFlags_, SubscriptionBuilder_>
+    public interface IDbContext<DbView, RemoteReducers, SetReducerFlags_, SubscriptionBuilder_, RemoteProcedures>
     {
         /// <summary>
         /// Access to tables in the client cache, which stores a read-only replica of the remote database state.
@@ -58,6 +62,13 @@ namespace SpacetimeDB
         /// which call-flags for the reducer can be set.
         /// </summary>
         public SetReducerFlags_ SetReducerFlags { get; }
+
+        /// <summary>
+        /// Access to procedures defined by the module.
+        ///
+        /// The returned <c>RemoteProcedures</c> will have a method to invoke each procedure defined by the module.
+        /// </summary>
+        public RemoteProcedures Procedures { get; }
 
         /// <summary>
         /// Returns <c>true</c> if the connection is active, i.e. has not yet disconnected.
@@ -97,6 +108,11 @@ namespace SpacetimeDB
         string ReducerName { get; }
     }
 
+    public interface IProcedureArgs : BSATN.IStructuralReadWrite
+    {
+        string ProcedureName { get; }
+    }
+
     [Type]
     public partial record Status : TaggedEnum<(
         Unit Committed,
@@ -113,6 +129,15 @@ namespace SpacetimeDB
         R Reducer
     );
 
+    public record ProcedureEvent(
+        Timestamp Timestamp,
+        ProcedureStatus Status,
+        Identity CallerIdentity,
+        ConnectionId? CallerConnectionId,
+        TimeDuration TotalHostExecutionDuration,
+        uint RequestId
+    );
+
     public record Event<R>
     {
         private Event() { }
@@ -123,7 +148,6 @@ namespace SpacetimeDB
         public record SubscribeError(Exception Exception) : Event<R>;
         public record UnknownTransaction : Event<R>;
     }
-
 
     public interface ISubscriptionHandle
     {

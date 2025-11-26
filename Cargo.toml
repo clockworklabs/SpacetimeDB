@@ -44,10 +44,12 @@ members = [
   "modules/sdk-test",
   "modules/sdk-test-connect-disconnect",
   "modules/sdk-test-procedure",
+  "modules/sdk-test-view",
   "sdks/rust/tests/test-client",
   "sdks/rust/tests/test-counter",
   "sdks/rust/tests/connect_disconnect_client",
   "sdks/rust/tests/procedure-client",
+  "sdks/rust/tests/view-client",
   "tools/upgrade-version",
   "tools/license-check",
   "tools/replace-spacetimedb",
@@ -94,44 +96,44 @@ inherits = "release"
 debug = true
 
 [workspace.package]
-version = "1.8.0"
+version = "1.9.0"
 edition = "2021"
 # update rust-toolchain.toml too!
 rust-version = "1.90.0"
 
 [workspace.dependencies]
-spacetimedb = { path = "crates/bindings", version = "=1.8.0" }
-spacetimedb-auth = { path = "crates/auth", version = "=1.8.0" }
-spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=1.8.0" }
-spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=1.8.0" }
-spacetimedb-cli = { path = "crates/cli", version = "=1.8.0" }
-spacetimedb-client-api = { path = "crates/client-api", version = "=1.8.0" }
-spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=1.8.0" }
-spacetimedb-codegen = { path = "crates/codegen", version = "=1.8.0" }
-spacetimedb-commitlog = { path = "crates/commitlog", version = "=1.8.0" }
-spacetimedb-core = { path = "crates/core", version = "=1.8.0" }
-spacetimedb-data-structures = { path = "crates/data-structures", version = "=1.8.0" }
-spacetimedb-datastore = { path = "crates/datastore", version = "=1.8.0" }
-spacetimedb-durability = { path = "crates/durability", version = "=1.8.0" }
-spacetimedb-execution = { path = "crates/execution", version = "=1.8.0" }
-spacetimedb-expr = { path = "crates/expr", version = "=1.8.0" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=1.8.0" }
-spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=1.8.0", default-features = false }
-spacetimedb-metrics = { path = "crates/metrics", version = "=1.8.0" }
-spacetimedb-paths = { path = "crates/paths", version = "=1.8.0" }
-spacetimedb-pg = { path = "crates/pg", version = "=1.8.0" }
-spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=1.8.0" }
-spacetimedb-primitives = { path = "crates/primitives", version = "=1.8.0" }
-spacetimedb-query = { path = "crates/query", version = "=1.8.0" }
-spacetimedb-sats = { path = "crates/sats", version = "=1.8.0" }
-spacetimedb-schema = { path = "crates/schema", version = "=1.8.0" }
-spacetimedb-standalone = { path = "crates/standalone", version = "=1.8.0" }
-spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=1.8.0" }
-spacetimedb-table = { path = "crates/table", version = "=1.8.0" }
-spacetimedb-vm = { path = "crates/vm", version = "=1.8.0" }
-spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=1.8.0" }
-spacetimedb-snapshot = { path = "crates/snapshot", version = "=1.8.0" }
-spacetimedb-subscription = { path = "crates/subscription", version = "=1.8.0" }
+spacetimedb = { path = "crates/bindings", version = "=1.9.0" }
+spacetimedb-auth = { path = "crates/auth", version = "=1.9.0" }
+spacetimedb-bindings-macro = { path = "crates/bindings-macro", version = "=1.9.0" }
+spacetimedb-bindings-sys = { path = "crates/bindings-sys", version = "=1.9.0" }
+spacetimedb-cli = { path = "crates/cli", version = "=1.9.0" }
+spacetimedb-client-api = { path = "crates/client-api", version = "=1.9.0" }
+spacetimedb-client-api-messages = { path = "crates/client-api-messages", version = "=1.9.0" }
+spacetimedb-codegen = { path = "crates/codegen", version = "=1.9.0" }
+spacetimedb-commitlog = { path = "crates/commitlog", version = "=1.9.0" }
+spacetimedb-core = { path = "crates/core", version = "=1.9.0" }
+spacetimedb-data-structures = { path = "crates/data-structures", version = "=1.9.0" }
+spacetimedb-datastore = { path = "crates/datastore", version = "=1.9.0" }
+spacetimedb-durability = { path = "crates/durability", version = "=1.9.0" }
+spacetimedb-execution = { path = "crates/execution", version = "=1.9.0" }
+spacetimedb-expr = { path = "crates/expr", version = "=1.9.0" }
+spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=1.9.0" }
+spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=1.9.0", default-features = false }
+spacetimedb-metrics = { path = "crates/metrics", version = "=1.9.0" }
+spacetimedb-paths = { path = "crates/paths", version = "=1.9.0" }
+spacetimedb-pg = { path = "crates/pg", version = "=1.9.0" }
+spacetimedb-physical-plan = { path = "crates/physical-plan", version = "=1.9.0" }
+spacetimedb-primitives = { path = "crates/primitives", version = "=1.9.0" }
+spacetimedb-query = { path = "crates/query", version = "=1.9.0" }
+spacetimedb-sats = { path = "crates/sats", version = "=1.9.0" }
+spacetimedb-schema = { path = "crates/schema", version = "=1.9.0" }
+spacetimedb-standalone = { path = "crates/standalone", version = "=1.9.0" }
+spacetimedb-sql-parser = { path = "crates/sql-parser", version = "=1.9.0" }
+spacetimedb-table = { path = "crates/table", version = "=1.9.0" }
+spacetimedb-vm = { path = "crates/vm", version = "=1.9.0" }
+spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=1.9.0" }
+spacetimedb-snapshot = { path = "crates/snapshot", version = "=1.9.0" }
+spacetimedb-subscription = { path = "crates/subscription", version = "=1.9.0" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
@@ -179,7 +181,7 @@ env_logger = "0.10"
 ethnum = { version = "1.5.0", features = ["serde"] }
 flate2 = "1.0.24"
 flume = { version = "0.11", default-features = false, features = ["async"] }
-foldhash = "0.1.4"
+foldhash = "0.2.0"
 fs-err = "2.9.0"
 fs_extra = "1.3.0"
 fs2 = "0.4.3"
@@ -189,7 +191,7 @@ futures-util = "0.3"
 getrandom02 = { package = "getrandom", version = "0.2" }
 git2 = "0.19"
 glob = "0.3.1"
-hashbrown = { version = "0.15", default-features = false, features = ["equivalent", "inline-more"] }
+hashbrown = { version = "0.16.1", default-features = false, features = ["equivalent", "inline-more", "rayon", "serde"] }
 headers = "0.4"
 heck = "0.4"
 hex = "0.4.3"
