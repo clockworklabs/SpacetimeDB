@@ -207,7 +207,7 @@ fn get_request(ctx: &mut ProcedureContext) {
             let (response, body) = response.into_parts();
             log::info!(
                 "Got response with status {} and body {}",
-                response.status(),
+                response.status,
                 body.into_string_lossy(),
             )
         },
@@ -234,7 +234,7 @@ fn post_request(ctx: &mut spacetimedb::ProcedureContext) {
             let (response, body) = response.into_parts();
             log::info!(
                 "Got response with status {} and body {}",
-                response.status(),
+                response.status,
                 body.into_string_lossy(),
             )
         }
