@@ -118,7 +118,8 @@ export function toCamelCase<T extends string>(str: T): CamelCase<T> {
 
 import type { AlgebraicType } from './algebraic_type';
 import type Typespace from './autogen/typespace_type';
-import type { Infer } from './type_builders';
+import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
+import type { ParamsObj } from './reducers';
 
 export function bsatnBaseSize(
   typespace: Infer<typeof Typespace>,
@@ -162,4 +163,23 @@ export function bsatnBaseSize(
     I256: 32,
     U256: 32,
   }[ty.tag];
+}
+
+export type CoerceTypeBuilder<
+  Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
+> = Col extends ColumnBuilder<any, any> ? Col['typeBuilder'] : Col;
+
+export type CoerceParams<Params extends ParamsObj> = {
+  [k in keyof Params & string]: CoerceTypeBuilder<Params[k]>;
+};
+
+export function coerceParams<Params extends ParamsObj>(
+  params: Params
+): CoerceParams<Params> {
+  return Object.fromEntries(
+    Object.entries(params).map(([n, c]) => [
+      n,
+      'typeBuilder' in c ? c.typeBuilder : c,
+    ])
+  ) as CoerceParams<Params>;
 }
