@@ -11,6 +11,7 @@ use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
 
 mod disk_storage;
 mod host_controller;
+mod memory_storage;
 mod module_common;
 #[allow(clippy::too_many_arguments)]
 pub mod module_host;
@@ -27,6 +28,7 @@ pub use host_controller::{
     extract_schema, CallProcedureReturn, ExternalDurability, ExternalStorage, HostController, MigratePlanResult,
     ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
+pub use memory_storage::MemoryStorage;
 pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
 

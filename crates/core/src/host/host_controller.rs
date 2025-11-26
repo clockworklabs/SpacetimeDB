@@ -38,7 +38,6 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_schema::auto_migrate::{ponder_migrate, AutoMigrateError, MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_table::page_pool::PagePool;
-use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -61,16 +60,7 @@ pub type ExternalDurability = (Arc<dyn Durability<TxData = Txdata>>, DiskSizeFn)
 #[async_trait]
 pub trait ExternalStorage: Send + Sync + 'static {
     async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>>;
-}
-#[async_trait]
-impl<F, Fut> ExternalStorage for F
-where
-    F: Fn(Hash) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = anyhow::Result<Option<Box<[u8]>>>> + Send,
-{
-    async fn lookup(&self, program_hash: Hash) -> anyhow::Result<Option<Box<[u8]>>> {
-        self(program_hash).await
-    }
+    async fn put(&self, program_bytes: &[u8]) -> anyhow::Result<Hash>;
 }
 
 pub type ProgramStorage = Arc<dyn ExternalStorage>;

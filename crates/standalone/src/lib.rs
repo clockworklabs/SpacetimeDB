@@ -13,7 +13,9 @@ use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db;
 use spacetimedb::db::persistence::LocalPersistenceProvider;
 use spacetimedb::energy::{EnergyBalance, EnergyQuanta, NullEnergyMonitor};
-use spacetimedb::host::{DiskStorage, HostController, MigratePlanResult, UpdateDatabaseResult};
+use spacetimedb::host::{
+    DiskStorage, HostController, MemoryStorage, MigratePlanResult, ProgramStorage, UpdateDatabaseResult,
+};
 use spacetimedb::identity::{AuthCtx, Identity};
 use spacetimedb::messages::control_db::{Database, Node, Replica};
 use spacetimedb::util::jobs::JobCores;
@@ -41,11 +43,11 @@ pub struct StandaloneOptions {
 
 pub struct StandaloneEnv {
     control_db: ControlDb,
-    program_store: Arc<DiskStorage>,
+    program_store: ProgramStorage,
     host_controller: HostController,
     client_actor_index: ClientActorIndex,
     metrics_registry: prometheus::Registry,
-    _pid_file: PidFile,
+    _pid_file: Option<PidFile>,
     auth_provider: auth::DefaultJwtAuthProvider,
     websocket_options: WebSocketOptions,
 }
@@ -57,17 +59,24 @@ impl StandaloneEnv {
         data_dir: Arc<ServerDataDir>,
         db_cores: JobCores,
     ) -> anyhow::Result<Arc<Self>> {
-        let _pid_file = data_dir.pid_file()?;
-        let meta_path = data_dir.metadata_toml();
-        let mut meta = MetadataFile::new("standalone");
-        if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
-            meta = existing_meta.check_compatibility_and_update(meta)?;
-        }
-        meta.write(&meta_path).context("failed writing metadata.toml")?;
+        let (pid_file, control_db, program_store): (Option<PidFile>, ControlDb, ProgramStorage) =
+            if config.db_config.storage == db::Storage::Disk {
+                let meta_path = data_dir.metadata_toml();
+                let mut meta = MetadataFile::new("standalone");
+                if let Some(existing_meta) = MetadataFile::read(&meta_path).context("failed reading metadata.toml")? {
+                    meta = existing_meta.check_compatibility_and_update(meta)?;
+                }
+                meta.write(&meta_path).context("failed writing metadata.toml")?;
+                let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
+                let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
+                (Some(data_dir.pid_file()?), control_db, program_store)
+            } else {
+                let control_db = ControlDb::new_in_memory().context("failed to initialize in-memory control db")?;
+                let program_store = Arc::new(MemoryStorage::new().await?);
+                (None, control_db, program_store)
+            };
 
-        let control_db = ControlDb::new(&data_dir.control_db()).context("failed to initialize control db")?;
         let energy_monitor = Arc::new(NullEnergyMonitor);
-        let program_store = Arc::new(DiskStorage::new(data_dir.program_bytes().0).await?);
 
         let persistence_provider = Arc::new(LocalPersistenceProvider::new(data_dir.clone()));
         let host_controller = HostController::new(
@@ -94,7 +103,7 @@ impl StandaloneEnv {
             host_controller,
             client_actor_index,
             metrics_registry,
-            _pid_file,
+            _pid_file: pid_file,
             auth_provider: auth_env,
             websocket_options: config.websocket,
         }))

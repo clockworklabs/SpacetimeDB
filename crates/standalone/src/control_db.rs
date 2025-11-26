@@ -75,6 +75,15 @@ impl ControlDb {
         Ok(Self { db })
     }
 
+    pub fn new_in_memory() -> Result<Self> {
+        let config = sled::Config::default()
+            .temporary(true)
+            .flush_every_ms(Some(50))
+            .mode(sled::Mode::HighThroughput);
+        let db = config.open()?;
+        Ok(Self { db })
+    }
+
     #[cfg(test)]
     pub fn at(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let config = sled::Config::default()
