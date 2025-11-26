@@ -80,7 +80,7 @@ fn cli_can_publish_no_conflict_without_delete_data_flag() {
 fn cli_can_publish_with_automigration_change() {
     migration_test(
         "automigration-test",
-        &["--build-options=--features test-add-column", "--yes-break-clients"],
+        &["--build-options=--features test-add-column", "--break-clients"],
         true,
     );
 }
@@ -103,7 +103,7 @@ fn cli_can_publish_automigration_change_with_on_conflict_and_yes_break_clients()
             // NOTE: deleting data requires --yes,
             // so not providing it here ensures that no data deletion is attempted.
             "--delete-data=on-conflict",
-            "--yes-break-clients",
+            "--break-clients",
         ],
         true,
     );
@@ -140,7 +140,7 @@ fn cli_can_publish_automigration_change_with_delete_data_always_and_yes_break_cl
             "--build-options=--features test-add-column",
             "--delete-data",
             "--yes",
-            "--yes-break-clients",
+            "--break-clients",
         ],
         true,
     );
