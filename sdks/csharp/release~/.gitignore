@@ -1,0 +1,5 @@
+# Ignore DLLs - these will be populated by dotnet restore
+/*/*/*/*/*.dll
+
+# Ignore XML documentation
+*.xml

@@ -1,0 +1,8 @@
+.nupkg.metadata
+.signature.p7s
+LICENSE
+README.md
+logo.png
+spacetimedb.bsatn.runtime.*.nupkg*
+spacetimedb.bsatn.runtime.nuspec
+**/*.xml
