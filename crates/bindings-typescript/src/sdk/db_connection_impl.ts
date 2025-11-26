@@ -1,4 +1,4 @@
-import { ConnectionId, ProductType } from '../';
+import { ConnectionId, ProductBuilder, ProductType } from '../';
 import { AlgebraicType, type ComparablePrimitive } from '../';
 import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
@@ -24,6 +24,7 @@ import type { Identity, Infer, InferTypeOfRow } from '../';
 import type {
   IdentityTokenMessage,
   Message,
+  ProcedureResultMessage,
   SubscribeAppliedMessage,
   UnsubscribeAppliedMessage,
 } from './message_types.ts';
@@ -55,6 +56,7 @@ import type {
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
 import { toCamelCase, toPascalCase } from '../lib/util.ts';
+import type { ProceduresView } from './procedures.ts';
 
 export {
   DbConnectionBuilder,
@@ -101,6 +103,8 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   remoteModule: RemoteModule;
 };
 
+type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
+
 export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   implements DbContext<RemoteModule>
 {
@@ -139,12 +143,19 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   setReducerFlags: SetReducerFlags<RemoteModule>;
 
   /**
+   * The accessor field to access the reducers in the database and associated
+   * callback functions.
+   */
+  procedures: ProceduresView<RemoteModule>;
+
+  /**
    * The `ConnectionId` of the connection to to the database.
    */
   connectionId: ConnectionId = ConnectionId.random();
 
   // These fields are meant to be strictly private.
   #queryId = 0;
+  #requestId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
   #reducerEmitter: EventEmitter<string, ReducerEventCallback<RemoteModule>> =
     new EventEmitter();
@@ -153,6 +164,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
   #subscriptionManager = new SubscriptionManager<RemoteModule>();
   #remoteModule: RemoteModule;
   #callReducerFlags = new Map<string, CallReducerFlags>();
+  #procedureCallbacks = new Map<number, ProcedureCallback>();
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
@@ -199,6 +211,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.db = this.#makeDbView(remoteModule);
     this.reducers = this.#makeReducers(remoteModule);
     this.setReducerFlags = this.#makeSetReducerFlags(remoteModule);
+    this.procedures = this.#makeProcedures(remoteModule);
 
     this.wsPromise = createWSFn({
       url,
@@ -237,6 +250,8 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     this.#queryId += 1;
     return queryId;
   };
+
+  #getNextRequestId = () => this.#requestId++;
 
   #makeDbView(def: RemoteModule): ClientDbView<RemoteModule> {
     const view = Object.create(null) as ClientDbView<RemoteModule>;
@@ -309,6 +324,31 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       });
     }
     return out;
+  }
+
+  #makeProcedures(def: RemoteModule): ProceduresView<RemoteModule> {
+    const out: Record<string, unknown> = {};
+
+    for (const procedure of def.procedures) {
+      const key = toCamelCase(procedure.name);
+
+      const paramsType = new ProductBuilder(procedure.params).algebraicType
+        .value;
+
+      const returnType = procedure.returnType.algebraicType;
+
+      (out as any)[key] = (
+        params: InferTypeOfRow<typeof procedure.params>
+      ): Promise<any> =>
+        this.callProcedureWithParams(
+          procedure.name,
+          paramsType,
+          params,
+          returnType
+        );
+    }
+
+    return out as ProceduresView<RemoteModule>;
   }
 
   #makeEventContext(
@@ -599,6 +639,24 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           error: message.value.error,
         };
       }
+
+      case 'ProcedureResult': {
+        const { status, requestId } = message.value;
+        return {
+          tag: 'ProcedureResult',
+          requestId,
+          result:
+            status.tag === 'Returned'
+              ? { tag: 'Ok', value: status.value }
+              : status.tag === 'OutOfEnergy'
+                ? {
+                    tag: 'Err',
+                    value:
+                      'Procedure execution aborted due to insufficient energy',
+                  }
+                : { tag: 'Err', value: status.value },
+        };
+      }
     }
   }
 
@@ -855,6 +913,14 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
             emitter.emit('error', errorContext, error);
           });
         }
+        break;
+      }
+      case 'ProcedureResult': {
+        const { requestId, result } = message;
+        const cb = this.#procedureCallbacks.get(requestId);
+        this.#procedureCallbacks.delete(requestId);
+        cb?.(result);
+        break;
       }
     }
   }
@@ -911,6 +977,59 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
     ProductType.serializeValue(writer, paramsType, params);
     const argsBuffer = writer.getBuffer();
     this.callReducer(reducerName, argsBuffer, flags);
+  }
+
+  /**
+   * Call a reducer on your SpacetimeDB module.
+   *
+   * @param procedureName The name of the reducer to call
+   * @param argsBuffer The arguments to pass to the reducer
+   */
+  callProcedure(
+    procedureName: string,
+    argsBuffer: Uint8Array
+  ): Promise<Uint8Array> {
+    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const requestId = this.#getNextRequestId();
+    const message = ClientMessage.CallProcedure({
+      procedure: procedureName,
+      args: argsBuffer,
+      requestId,
+      // reserved for future use - 0 is the only valid value
+      flags: 0,
+    });
+    this.#sendMessage(message);
+    this.#procedureCallbacks.set(requestId, result => {
+      if (result.tag === 'Ok') {
+        resolve(result.value);
+      } else {
+        reject(result.value);
+      }
+    });
+    return promise;
+  }
+
+  /**
+   * Call a reducer on your SpacetimeDB module with typed arguments.
+   * @param reducerSchema The schema of the reducer to call
+   * @param callReducerFlags The flags for the reducer call
+   * @param params The arguments to pass to the reducer
+   */
+  callProcedureWithParams(
+    procedureName: string,
+    paramsType: ProductType,
+    params: object,
+    returnType: AlgebraicType
+  ): Promise<any> {
+    const writer = new BinaryWriter(1024);
+    ProductType.serializeValue(writer, paramsType, params);
+    const argsBuffer = writer.getBuffer();
+    return this.callProcedure(procedureName, argsBuffer).then(returnBuf => {
+      return AlgebraicType.deserializeValue(
+        new BinaryReader(returnBuf),
+        returnType
+      );
+    });
   }
 
   /**
