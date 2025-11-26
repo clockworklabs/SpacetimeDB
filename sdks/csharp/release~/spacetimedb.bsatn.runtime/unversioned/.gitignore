@@ -5,4 +5,4 @@ README.md
 logo.png
 spacetimedb.bsatn.runtime.*.nupkg*
 spacetimedb.bsatn.runtime.nuspec
-**/*.xml
+*.xml

@@ -114,12 +114,6 @@ jobs:
               exit 1
           }
 
-        # The Unity meta file check does not let us ignore directories, so we just temporarily move them out
-      - name: Move ignored directories from check
-        run: |
-          # Move ignored directories temporarily
-          mv 'sdks/csharp/release~' '/tmp/release~' || true
-
       - name: Check Unity meta files
         uses: DeNA/unity-meta-check@v3
         with:
@@ -127,12 +121,6 @@ jobs:
           target_path: sdks/csharp
         env:
           GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-
-      - name: Restore ignored directories from check
-        run: |
-          # Move ignored directories temporarily
-          mv '/tmp/release~' 'sdks/csharp/release~' || true
-
 
       - name: Start SpacetimeDB
         run: |
