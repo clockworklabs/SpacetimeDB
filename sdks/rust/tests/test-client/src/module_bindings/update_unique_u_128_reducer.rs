@@ -65,6 +65,7 @@ impl update_unique_u_128 for super::RemoteReducers {
         UpdateUniqueU128CallbackId(self.imp.on_reducer(
             "update_unique_u128",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

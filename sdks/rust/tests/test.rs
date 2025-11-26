@@ -323,6 +323,11 @@ macro_rules! procedure_tests {
             fn http_err() {
                 make_test("procedure-http-err").run()
             }
+
+            #[test]
+            fn schedule_procedure() {
+                make_test("schedule-procedure").run()
+            }
         }
     };
 }

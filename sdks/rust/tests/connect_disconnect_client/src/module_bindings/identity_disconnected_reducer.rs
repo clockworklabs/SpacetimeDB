@@ -59,6 +59,7 @@ impl identity_disconnected for super::RemoteReducers {
         IdentityDisconnectedCallbackId(self.imp.on_reducer(
             "identity_disconnected",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

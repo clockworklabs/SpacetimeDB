@@ -63,6 +63,7 @@ impl send_scheduled_message for super::RemoteReducers {
         SendScheduledMessageCallbackId(self.imp.on_reducer(
             "send_scheduled_message",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

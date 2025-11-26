@@ -60,6 +60,7 @@ impl delete_pk_u_32 for super::RemoteReducers {
         DeletePkU32CallbackId(self.imp.on_reducer(
             "delete_pk_u32",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
