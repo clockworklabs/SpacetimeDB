@@ -60,7 +60,6 @@ impl insert_vec_bool for super::RemoteReducers {
         InsertVecBoolCallbackId(self.imp.on_reducer(
             "insert_vec_bool",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

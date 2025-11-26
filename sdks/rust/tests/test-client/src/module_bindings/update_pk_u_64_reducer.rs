@@ -64,7 +64,6 @@ impl update_pk_u_64 for super::RemoteReducers {
         UpdatePkU64CallbackId(self.imp.on_reducer(
             "update_pk_u64",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

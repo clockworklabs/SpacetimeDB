@@ -65,7 +65,6 @@ impl update_pk_connection_id for super::RemoteReducers {
         UpdatePkConnectionIdCallbackId(self.imp.on_reducer(
             "update_pk_connection_id",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

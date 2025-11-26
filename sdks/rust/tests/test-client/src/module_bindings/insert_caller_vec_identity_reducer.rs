@@ -59,7 +59,6 @@ impl insert_caller_vec_identity for super::RemoteReducers {
         InsertCallerVecIdentityCallbackId(self.imp.on_reducer(
             "insert_caller_vec_identity",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

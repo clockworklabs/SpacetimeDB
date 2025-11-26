@@ -67,7 +67,6 @@ impl update_pk_simple_enum for super::RemoteReducers {
         UpdatePkSimpleEnumCallbackId(self.imp.on_reducer(
             "update_pk_simple_enum",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
