@@ -60,7 +60,26 @@ Support for procedures in C# modules is coming soon!
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-TODO(noa)
+Define a procedure with `spacetimedb.procedure`:
+
+```typescript
+spacetimedb.procedure(
+    "add_two_numbers",
+    { lhs: t.u32(), rhs: t.u32() },
+    t.u64(),
+    (ctx, { lhs, rhs }) => BigInt(lhs) + BigInt(rhs),
+);
+```
+
+The `spacetimedb.procedure` function takes:
+* the procedure name,
+* (optional) an object representing its parameter types,
+* its return type,
+* and the procedure function itself.
+
+The function will receive a `ProcedureContext` and an object of its arguments, and it must return
+a value corresponding to its return type. This return value will be sent to the caller, but will
+not be broadcast to any other clients.
 
 </TabItem>
 </Tabs>
@@ -114,7 +133,49 @@ Avoid capturing mutable state within functions passed to `with_tx`.
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-TODO(noa)
+Unlike reducers, procedures don't automatically run in database transactions.
+This means there's no `ctx.db` field to access the database.
+Instead, procedure code must manage transactions explicitly with `ProcedureCtx.withTx`.
+
+```typescript
+const MyTable = table(
+    { name: "my_table" },
+    {
+        a: t.u32(),
+        b: t.string(),
+    },
+)
+
+const spacetimedb = schema(MyTable);
+
+#[spacetimedb::procedure]
+spacetimedb.procedure("insert_a_value", { a: t.u32(), b: t.u32() }, t.unit(), (ctx, { a, b }) => {
+    ctx.withTx(ctx => {
+        ctx.myTable.insert({ a, b });
+    });
+    return {};
+})
+```
+
+`ProcedureCtx.withTx` takes a function of `(ctx: TransactionCtx) => T`.
+Within that function, the `TransactionCtx` can be used to access the database
+[in all the same ways as a `ReducerCtx`](/modules/typescript#reducercontext)
+When the function returns, the transaction will be committed,
+and its changes to the database state will become permanent and be broadcast to clients.
+If the function throws an error, the transaction will be rolled back, and its changes will be discarded.
+
+:::warning
+The function passed to `ProcedureCtx.withTx` may be invoked multiple times,
+possibly seeing a different version of the database state each time.
+
+If invoked more than once with reference to the same database state,
+it must perform the same operations and return the same result each time.
+
+If invoked more than once with reference to different database states,
+values observed during prior runs must not influence the behavior of the function or the calling procedure.
+
+Avoid capturing mutable state within functions passed to `withTx`.
+:::
 
 </TabItem>
 </Tabs>
@@ -147,7 +208,18 @@ If that function returns `Err`, the transaction will be rolled back, and its cha
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-TODO(noa)
+For fallible database operations, you can throw an error inside the transaction function:
+
+```typescript
+spacetimedb.procedure("maybe_insert_a_value", { a: t.u32(), b: t.string() }, t.unit(), (ctx, { a, b }) => {
+    ctx.withTx(ctx => {
+        if (a < 10) {
+            throw new SenderError("a is less than 10!");
+        }
+        ctx.myTable.insert({ a, b });
+    });
+})
+```
 
 </TabItem>
 </Tabs>
@@ -185,7 +257,38 @@ fn find_highest_level_player(ctx: &mut ProcedureContext) {
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-TODO(noa)
+Functions passed to
+[`ProcedureCtx.withTx`](#accessing-the-database)
+may return a value, and that value will be returned to the calling procedure.
+
+Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
+
+```typescript
+const Player = table(
+    { name: "player" },
+    {
+        id: t.identity(),
+        level: t.u32(),
+    },
+);
+
+const spacetimedb = schema(Player);
+
+spacetimedb.procedure("find_highest_level_player", t.unit(), ctx => {
+    let highestLevelPlayer = ctx.withTx(ctx =>
+        Iterator.from(ctx.db.player).reduce(
+            (a, b) => a == null || b.level > a.level ? b : a,
+            null
+        )
+    );
+    if (highestLevelPlayer != null) {
+        console.log("Congratulations to ", highestLevelPlayer.id);
+    } else {
+        console.warn("No players...");
+    }
+    return {};
+});
+```
 
 </TabItem>
 </Tabs>
@@ -268,7 +371,60 @@ Procedures can't send requests at the same time as holding open a [transaction](
 </TabItem>
 <TabItem value="typescript" label="TypeScript">
 
-TODO(noa)
+Procedures can make HTTP requests to external services using methods contained in `ctx.http`.
+
+`ctx.http.fetch` is similar to the browser `fetch()` API, but is synchronous.
+
+It can perform simple `GET` requests:
+
+```typescript
+#[spacetimedb::procedure]
+spacetimedb.procedure("get_request", t.unit(), ctx => {
+    try {
+        const response = ctx.http.fetch("https://example.invalid");
+        const body = response.text();
+        console.log(`Got response with status ${response.status} and body ${body}`);
+    } catch (e) {
+        console.error("Request failed: ", e);
+    }
+    return {};
+});
+```
+
+It can also accept an options object to specify a body, headers, HTTP method, and timeout:
+
+```typescript
+spacetimedb.procedure("post_request", t.unit(), ctx => {
+    try {
+        const response = ctx.http.fetch("https://example.invalid/upload", {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: "This is the body of the HTTP request",
+        });
+        const body = response.text();
+        console.log(`Got response with status ${response.status} and body {body}`);
+    } catch (e) {
+        console.error("Request failed: ", e);
+    }
+    return {};
+});
+
+spacetimedb.procedure("get_request_with_short_timeout", t.unit(), ctx => {
+    try {
+        const response = ctx.http.fetch("https://example.invalid", {
+            method: "GET",
+            timeout: TimeDuration.fromMillis(10),
+        });
+        const body = response.text();
+        console.log(`Got response with status ${response.status} and body {body}`);
+    } catch (e) {
+        console.error("Request failed: ", e);
+    }
+    return {};
+});
+```
+
+Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
 
 </TabItem>
 </Tabs>
@@ -358,7 +514,7 @@ When a client invokes a procedure, it gets a [`Promise`](https://developer.mozil
 
 ```typescript
 ctx.procedures.addTwoNumbers({ lhs: 1, rhs: 2 }).then(
-    sum => console.log(`1 + 2 = {sum}`)
+    sum => console.log(`1 + 2 = ${sum}`)
 );
 ```
 
