@@ -529,7 +529,7 @@ const proceduresSchema = __procedures(
 
 const REMOTE_MODULE = {
   versionInfo: {
-    cliVersion: "1.9.0" as const,
+    cliVersion: "1.10.0" as const,
   },
   tables: tablesSchema.schemaType.tables,
   reducers: reducersSchema.reducersType.reducers,
