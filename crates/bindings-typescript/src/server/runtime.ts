@@ -424,7 +424,7 @@ function makeTableView(
   const hasAutoIncrement = sequences.length > 0;
 
   const iter = () =>
-    new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
+    tableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
 
   const integrateGeneratedColumns = hasAutoIncrement
     ? (row: RowType<any>, ret_buf: Uint8Array) => {
@@ -541,7 +541,7 @@ function makeTableView(
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           if (numColumns === 1) colVal = [colVal];
           const args = serializeBound(colVal);
-          const iter = new TableIterator(
+          const iter = tableIterator(
             sys.datastore_index_scan_range_bsatn(index_id, ...args),
             rowType
           );
@@ -613,10 +613,10 @@ function makeTableView(
         return [prefix, prefix_elems, rstart, rend];
       };
       index = {
-        filter: (range: any): IterableIterator<RowType<any>> => {
+        filter: (range: any): IteratorObject<RowType<any>> => {
           if (numColumns === 1) range = [range];
           const args = serializeRange(range);
-          return new TableIterator(
+          return tableIterator(
             sys.datastore_index_scan_range_bsatn(index_id, ...args),
             rowType
           );
@@ -649,60 +649,70 @@ function hasOwn<K extends PropertyKey>(
   return Object.hasOwn(o, k);
 }
 
-class TableIterator implements IterableIterator<any, undefined> {
-  #id: u32 | -1;
-  #reader: BinaryReader;
-  #ty: AlgebraicType;
-  constructor(id: u32, ty: AlgebraicType) {
-    this.#id = id;
-    this.#reader = new BinaryReader(new Uint8Array());
-    this.#ty = ty;
-  }
-  [Symbol.iterator](): typeof this {
-    return this;
-  }
-  next(): IteratorResult<any, undefined> {
-    while (true) {
-      if (this.#reader.remaining > 0) {
-        const value = AlgebraicType.deserializeValue(
-          this.#reader,
-          this.#ty,
-          MODULE_DEF.typespace
-        );
-        return { value };
-      }
-      if (this.#id === -1) {
-        return { value: undefined, done: true };
-      }
-      this.#advance_iter();
+function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, void> {
+  using iter = new IteratorHandle(id);
+  const { typespace } = MODULE_DEF;
+
+  let buf;
+  while ((buf = advanceIter(iter)) != null) {
+    const reader = new BinaryReader(buf);
+    while (reader.remaining > 0) {
+      yield AlgebraicType.deserializeValue(reader, ty, typespace);
     }
+  }
+}
+
+function advanceIter(iter: IteratorHandle): Uint8Array | null {
+  let buf_max_len = 0x10000;
+  while (true) {
+    try {
+      return iter.advance(buf_max_len);
+    } catch (e) {
+      if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
+        buf_max_len = e.__buffer_too_small__ as number;
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/** A class to manage the lifecycle of an iterator handle. */
+class IteratorHandle implements Disposable {
+  #id: u32 | -1;
+
+  static #finalizationRegistry = new FinalizationRegistry<u32>(
+    sys.row_iter_bsatn_close
+  );
+
+  constructor(id: u32) {
+    this.#id = id;
+    IteratorHandle.#finalizationRegistry.register(this, id, this);
   }
 
-  #advance_iter() {
-    let buf_max_len = 0x10000;
-    while (true) {
-      try {
-        const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
-          this.#id,
-          buf_max_len
-        );
-        if (done) this.#id = -1;
-        this.#reader = new BinaryReader(buf);
-        return;
-      } catch (e) {
-        if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-          buf_max_len = e.__buffer_too_small__ as number;
-          continue;
-        }
-        throw e;
-      }
-    }
+  /** Unregister this object with the finalization registry and return the id */
+  #detach() {
+    const id = this.#id;
+    this.#id = -1;
+    IteratorHandle.#finalizationRegistry.unregister(this);
+    return id;
+  }
+
+  /** Call `row_iter_bsatn_advance`, returning null if this iterator was already exhausted. */
+  advance(buf_max_len: u32): Uint8Array | null {
+    if (this.#id === -1) return null;
+    const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
+      this.#id,
+      buf_max_len
+    );
+    if (done) this.#detach();
+    return buf;
   }
 
   [Symbol.dispose]() {
     if (this.#id >= 0) {
-      this.#id = -1;
-      sys.row_iter_bsatn_close(this.#id);
+      const id = this.#detach();
+      sys.row_iter_bsatn_close(id);
     }
   }
 }
