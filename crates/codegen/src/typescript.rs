@@ -315,7 +315,6 @@ impl Lang for TypeScript {
         out.dedent(1);
         writeln!(out, ");");
 
-
         writeln!(out);
         writeln!(
             out,
