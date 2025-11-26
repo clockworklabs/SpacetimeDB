@@ -388,7 +388,7 @@ async fn generate_build_and_publish(
 
     println!("{}", "Building...".cyan());
     let (_path_to_program, _host_type) =
-        tasks::build(spacetimedb_dir, Some(Path::new("src")), false).context("Failed to build project")?;
+        tasks::build(spacetimedb_dir, Some(Path::new("src")), false, None).context("Failed to build project")?;
     println!("{}", "Build complete!".green());
 
     println!("{}", "Generating module bindings...".cyan());
@@ -413,15 +413,14 @@ async fn generate_build_and_publish(
         ClearMode::OnConflict => "on-conflict",
     };
     let mut publish_args = vec![
-        "publish",
-        database_name,
-        "--project-path",
-        project_path_str,
-        "--yes",
-        "--delete-data",
-        clear_flag,
+        "publish".to_string(),
+        database_name.to_string(),
+        "--project-path".to_string(),
+        project_path_str.to_string(),
+        "--yes".to_string(),
+        format!("--delete-data={}", clear_flag),
     ];
-    publish_args.extend_from_slice(&["--server", server]);
+    publish_args.extend_from_slice(&["--server".to_string(), server.to_string()]);
 
     let publish_cmd = publish::cli();
     let publish_matches = publish_cmd
