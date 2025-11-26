@@ -182,13 +182,13 @@ where
         let mut result = Vec::with_capacity(sql.len());
         for sql_result in sql {
             let header = row_desc(&sql_result.schema, &Format::UnifiedText);
-            if sql_result.rows.is_empty() && !query.to_uppercase().contains("SELECT") {
-                let tag = Tag::new(&stats(&sql_result));
-                result.push(Response::Execution(tag));
-            } else {
+            if !sql_result.schema.is_empty() {
                 let rows = to_rows(sql_result, header.clone())?;
                 let q = QueryResponse::new(header, rows);
                 result.push(Response::Query(q));
+            } else {
+                let tag = Tag::new(&stats(&sql_result));
+                result.push(Response::Execution(tag));
             }
         }
         Ok(result)
