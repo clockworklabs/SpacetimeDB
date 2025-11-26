@@ -84,7 +84,7 @@ For each `User`, we'll store their `Identity`, an optional name they can set to 
 
 In `spacetimedb/Lib.cs`, add the definition of the table `User` to the `Module` class:
 
-```csharp
+```csharp server
 [Table(Name = "user", Public = true)]
 public partial class User
 {
@@ -143,7 +143,7 @@ For now, we'll just do a bare minimum of validation, rejecting the empty name. Y
 
 In `spacetimedb/Lib.cs`, add to the `Module` class:
 
-```csharp
+```csharp server
 /// Takes a name and checks if it's acceptable as a user's name.
 private static string ValidateName(string name)
 {
@@ -182,7 +182,7 @@ We'll want to validate messages' texts in much the same way we validate users' c
 
 In `spacetimedb/Lib.cs`, add to the `Module` class:
 
-```csharp
+```csharp server
 /// Takes a message's text and checks if it's acceptable to send.
 private static string ValidateMessage(string text)
 {

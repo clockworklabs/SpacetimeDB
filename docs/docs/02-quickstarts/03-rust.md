@@ -65,7 +65,7 @@ spacetime build
 
 To the top of `spacetimedb/src/lib.rs`, add some imports we'll be using:
 
-```rust
+```rust server
 use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
 ```
 
@@ -86,7 +86,7 @@ For each `User`, we'll store their `Identity`, an optional name they can set to 
 
 To `spacetimedb/src/lib.rs`, add the definition of the table `User`:
 
-```rust
+```rust server
 #[table(name = user, public)]
 pub struct User {
     #[primary_key]
@@ -100,7 +100,7 @@ For each `Message`, we'll store the `Identity` of the user who sent it, the `Tim
 
 To `spacetimedb/src/lib.rs`, add the definition of the table `Message`:
 
-```rust
+```rust server
 #[table(name = message, public)]
 pub struct Message {
     sender: Identity,
@@ -119,7 +119,7 @@ It's also possible to call `set_name` via the SpacetimeDB CLI's `spacetime call`
 
 To `spacetimedb/src/lib.rs`, add:
 
-```rust
+```rust server
 #[reducer]
 /// Clients invoke this reducer to set their user names.
 pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
@@ -143,7 +143,7 @@ For now, we'll just do a bare minimum of validation, rejecting the empty name. Y
 
 To `spacetimedb/src/lib.rs`, add:
 
-```rust
+```rust server
 /// Takes a name and checks if it's acceptable as a user's name.
 fn validate_name(name: String) -> Result<String, String> {
     if name.is_empty() {
@@ -160,7 +160,7 @@ We define a reducer `send_message`, which clients will call to send messages. It
 
 To `spacetimedb/src/lib.rs`, add:
 
-```rust
+```rust server
 #[reducer]
 /// Clients invoke this reducer to send messages.
 pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
@@ -179,7 +179,7 @@ We'll want to validate messages' texts in much the same way we validate users' c
 
 To `spacetimedb/src/lib.rs`, add:
 
-```rust
+```rust server
 /// Takes a message's text and checks if it's acceptable to send.
 fn validate_message(text: String) -> Result<String, String> {
     if text.is_empty() {
@@ -203,7 +203,7 @@ We'll use `ctx.db.user().identity().find(ctx.sender)` to look up a `User` row fo
 
 To `spacetimedb/src/lib.rs`, add the definition of the connect reducer:
 
-```rust
+```rust server
 #[reducer(client_connected)]
 // Called when a client connects to a SpacetimeDB database 
 pub fn client_connected(ctx: &ReducerContext) {
@@ -225,7 +225,7 @@ pub fn client_connected(ctx: &ReducerContext) {
 
 Similarly, whenever a client disconnects, the database will run the `#[reducer(client_disconnected)]` reducer if it's defined. By convention, it's named `client_disconnected`. We'll use it to un-set the `online` status of the `User` for the disconnected client.
 
-```rust
+```rust server
 #[reducer(client_disconnected)]
 // Called when a client disconnects from SpacetimeDB database 
 pub fn identity_disconnected(ctx: &ReducerContext) {
