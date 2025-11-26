@@ -63,7 +63,6 @@ impl insert_option_simple_enum for super::RemoteReducers {
         InsertOptionSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_option_simple_enum",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

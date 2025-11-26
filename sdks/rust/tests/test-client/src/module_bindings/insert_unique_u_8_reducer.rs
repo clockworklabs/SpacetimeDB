@@ -65,7 +65,6 @@ impl insert_unique_u_8 for super::RemoteReducers {
         InsertUniqueU8CallbackId(self.imp.on_reducer(
             "insert_unique_u8",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

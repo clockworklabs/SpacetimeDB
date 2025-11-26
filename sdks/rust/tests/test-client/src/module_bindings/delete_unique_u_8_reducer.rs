@@ -60,7 +60,6 @@ impl delete_unique_u_8 for super::RemoteReducers {
         DeleteUniqueU8CallbackId(self.imp.on_reducer(
             "delete_unique_u8",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

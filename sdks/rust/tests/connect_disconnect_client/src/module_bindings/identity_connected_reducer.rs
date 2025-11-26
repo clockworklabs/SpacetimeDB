@@ -58,7 +58,6 @@ impl identity_connected for super::RemoteReducers {
         IdentityConnectedCallbackId(self.imp.on_reducer(
             "identity_connected",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

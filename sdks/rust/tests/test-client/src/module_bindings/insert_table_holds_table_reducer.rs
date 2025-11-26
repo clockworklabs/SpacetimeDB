@@ -65,7 +65,6 @@ impl insert_table_holds_table for super::RemoteReducers {
         InsertTableHoldsTableCallbackId(self.imp.on_reducer(
             "insert_table_holds_table",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

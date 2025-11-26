@@ -60,7 +60,6 @@ impl delete_pk_i_128 for super::RemoteReducers {
         DeletePkI128CallbackId(self.imp.on_reducer(
             "delete_pk_i128",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

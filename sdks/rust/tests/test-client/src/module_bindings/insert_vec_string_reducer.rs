@@ -60,7 +60,6 @@ impl insert_vec_string for super::RemoteReducers {
         InsertVecStringCallbackId(self.imp.on_reducer(
             "insert_vec_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
