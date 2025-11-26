@@ -102,26 +102,6 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-fn confirm_and_clear(
-    name_or_identity: &str,
-    force: bool,
-    mut builder: reqwest::RequestBuilder,
-) -> Result<reqwest::RequestBuilder, anyhow::Error> {
-    println!(
-        "This will DESTROY the current {} module, and ALL corresponding data.",
-        name_or_identity
-    );
-    if !y_or_n(
-        force,
-        format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
-    )? {
-        anyhow::bail!("Aborted.");
-    }
-
-    builder = builder.query(&[("clear", true)]);
-    Ok(builder)
-}
-
 pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::Error> {
     let server = args.get_one::<String>("server").map(|s| s.as_str());
     let name_or_identity = args.get_one::<String>("name|identity");
@@ -195,24 +175,20 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
-        if clear_database == ClearMode::Always {
-            builder = confirm_and_clear(name_or_identity, force, builder)?;
-        } else {
-            builder = apply_pre_publish_if_needed(
-                builder,
-                &client,
-                &database_host,
-                name_or_identity,
-                &domain.to_string(),
-                host_type,
-                &program_bytes,
-                &auth_header,
-                clear_database,
-                force_break_clients,
-                force,
-            )
-            .await?;
-        }
+        builder = apply_pre_publish_if_needed(
+            builder,
+            &client,
+            &database_host,
+            name_or_identity,
+            &domain.to_string(),
+            host_type,
+            &program_bytes,
+            &auth_header,
+            clear_database,
+            force_break_clients,
+            force,
+        )
+        .await?;
 
         builder
     } else {
@@ -347,9 +323,6 @@ async fn apply_pre_publish_if_needed(
     force_break_clients: bool,
     force: bool,
 ) -> Result<reqwest::RequestBuilder, anyhow::Error> {
-    // The caller enforces this
-    assert!(clear_database != ClearMode::Always);
-
     if let Some(pre) = call_pre_publish(
         client,
         base_url,
@@ -362,20 +335,48 @@ async fn apply_pre_publish_if_needed(
     {
         match pre {
             PrePublishResult::ManualMigrate(manual) => {
+                if clear_database == ClearMode::OnConflict {
+                    println!("{}", manual.reason);
+                    println!("Proceeding with database clear due to --delete-data=on-conflict.");
+                }
                 if clear_database == ClearMode::Never {
                     println!("{}", manual.reason);
                     println!("Aborting publish due to required manual migration.");
                     anyhow::bail!("Aborting because publishing would require manual migration or deletion of data and --delete-data was not specified.");
                 }
-                println!("{}", manual.reason);
-                println!("Proceeding with database clear due to --delete-data=on-conflict.");
-
-                builder = confirm_and_clear(name_or_identity, force, builder)?;
+                if clear_database == ClearMode::Always {
+                    println!("{}", manual.reason);
+                    println!("Proceeding with database clear due to --delete-data=always.");
+                }
+                println!(
+                    "This will DESTROY the current {} module, and ALL corresponding data.",
+                    name_or_identity
+                );
+                if !y_or_n(
+                    force,
+                    format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
+                )? {
+                    anyhow::bail!("Aborting");
+                }
+                builder = builder.query(&[("clear", true)]);
             }
             PrePublishResult::AutoMigrate(auto) => {
+                if clear_database == ClearMode::Always {
+                    println!("Auto-migration, does NOT require clearing the database, but proceeding with database clear due to --delete-data=always.");
+                    println!(
+                        "This will DESTROY the current {} module, and ALL corresponding data.",
+                        name_or_identity
+                    );
+                    if !y_or_n(
+                        force,
+                        format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
+                    )? {
+                        anyhow::bail!("Aborting");
+                    }
+                    builder = builder.query(&[("clear", true)]);
+                    return Ok(builder);
+                }
                 println!("{}", auto.migrate_plan);
-                // We only arrive here if you have not specified ClearMode::Always AND there was no
-                // conflict that required manual migration.
                 if auto.break_clients
                     && !y_or_n(
                         force_break_clients || force,
