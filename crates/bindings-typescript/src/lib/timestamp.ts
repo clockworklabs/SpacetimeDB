@@ -44,6 +44,23 @@ export class Timestamp {
     });
   }
 
+  static isTimestamp(
+    algebraicType: AlgebraicType
+  ): algebraicType is TimestampAlgebraicType {
+    if (algebraicType.tag !== 'Product') {
+      return false;
+    }
+    const elements = algebraicType.value.elements;
+    if (elements.length !== 1) {
+      return false;
+    }
+    const microsElement = elements[0];
+    return (
+      microsElement.name === '__timestamp_micros_since_unix_epoch__' &&
+      microsElement.algebraicType.tag === 'I64'
+    );
+  }
+
   /**
    * The Unix epoch, the midnight at the beginning of January 1, 1970, UTC.
    */
