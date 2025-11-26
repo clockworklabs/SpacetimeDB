@@ -58,7 +58,6 @@ impl no_op_succeeds for super::RemoteReducers {
         NoOpSucceedsCallbackId(self.imp.on_reducer(
             "no_op_succeeds",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

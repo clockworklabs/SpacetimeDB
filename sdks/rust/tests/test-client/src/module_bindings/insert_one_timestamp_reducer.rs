@@ -61,7 +61,6 @@ impl insert_one_timestamp for super::RemoteReducers {
         InsertOneTimestampCallbackId(self.imp.on_reducer(
             "insert_one_timestamp",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

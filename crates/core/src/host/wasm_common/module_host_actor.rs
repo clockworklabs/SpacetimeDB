@@ -7,10 +7,11 @@ use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
-    ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, ViewCallResult,
-    ViewOutcome,
+    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ViewCallResult, ViewOutcome,
 };
+use crate::host::scheduler::QueueItem;
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -363,6 +364,17 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
         let mut trapped = false;
         let res = ModuleHost::disconnect_client_inner(client_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(crate) fn call_scheduled_reducer(
+        &mut self,
+        item: QueueItem,
+    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
         self.trapped = trapped;
         res
     }

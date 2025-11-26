@@ -63,7 +63,6 @@ impl insert_primitives_as_strings for super::RemoteReducers {
         InsertPrimitivesAsStringsCallbackId(self.imp.on_reducer(
             "insert_primitives_as_strings",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

@@ -49,9 +49,8 @@ export function procedure<
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
-      algebraicType: registerTypesRecursively(
-        'typeBuilder' in c ? c.typeBuilder : c
-      ).algebraicType,
+      algebraicType:
+        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
     })),
   };
   const returnType = registerTypesRecursively(ret).algebraicType;

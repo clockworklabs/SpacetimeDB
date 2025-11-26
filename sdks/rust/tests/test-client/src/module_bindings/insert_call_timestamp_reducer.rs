@@ -59,7 +59,6 @@ impl insert_call_timestamp for super::RemoteReducers {
         InsertCallTimestampCallbackId(self.imp.on_reducer(
             "insert_call_timestamp",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

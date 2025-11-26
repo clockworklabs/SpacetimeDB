@@ -65,7 +65,6 @@ impl update_unique_bool for super::RemoteReducers {
         UpdateUniqueBoolCallbackId(self.imp.on_reducer(
             "update_unique_bool",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

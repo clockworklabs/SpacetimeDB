@@ -61,7 +61,6 @@ impl insert_one_identity for super::RemoteReducers {
         InsertOneIdentityCallbackId(self.imp.on_reducer(
             "insert_one_identity",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

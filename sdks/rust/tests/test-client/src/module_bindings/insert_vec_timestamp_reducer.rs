@@ -61,7 +61,6 @@ impl insert_vec_timestamp for super::RemoteReducers {
         InsertVecTimestampCallbackId(self.imp.on_reducer(
             "insert_vec_timestamp",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

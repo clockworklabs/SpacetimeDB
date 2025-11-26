@@ -1,7 +1,5 @@
 mod module_bindings;
 
-use core::time::Duration;
-
 use anyhow::Context;
 use module_bindings::*;
 use spacetimedb_lib::db::raw_def::v9::{RawMiscModuleExportV9, RawModuleDefV9};
@@ -45,7 +43,6 @@ fn main() {
         "procedure-http-err" => exec_procedure_http_err(),
         "insert-with-tx-commit" => exec_insert_with_tx_commit(),
         "insert-with-tx-rollback" => exec_insert_with_tx_rollback(),
-        "schedule-procedure" => exec_schedule_procedure(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -100,7 +97,7 @@ fn connect_then(
 }
 
 /// A query that subscribes to all rows from all tables.
-const SUBSCRIBE_ALL: &[&str] = &["SELECT * FROM my_table;", "SELECT * FROM proc_inserts_into;"];
+const SUBSCRIBE_ALL: &[&str] = &["SELECT * FROM my_table;"];
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
     subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
@@ -313,44 +310,5 @@ fn exec_procedure_http_err() {
             })
         }
     });
-
-    test_counter.wait_for_all();
-}
-
-fn exec_schedule_procedure() {
-    let test_counter = TestCounter::new();
-    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
-
-    let mut callback_result = Some(test_counter.add_test("insert_with_tx_commit_callback"));
-
-    connect_then(&test_counter, {
-        move |ctx| {
-            ctx.db().proc_inserts_into().on_insert(move |_, row| {
-                assert_eq!(row.x, 42);
-                assert_eq!(row.y, 24);
-
-                // Ensure that the elapsed time
-                // between the reducer and procedure
-                // is at least 1 second
-                // but no more than 2 seconds.
-                let elapsed = row
-                    .procedure_ts
-                    .duration_since(row.reducer_ts)
-                    .expect("procedure ts > reducer ts");
-                const MS_1000: Duration = Duration::from_secs(1);
-                const MS_2000: Duration = Duration::from_secs(2);
-                assert!(elapsed >= MS_1000);
-                assert!(elapsed <= MS_2000);
-
-                (callback_result.take().unwrap())(Ok(()));
-            });
-
-            subscribe_all_then(ctx, move |ctx| {
-                sub_applied_nothing_result(assert_all_tables_empty(ctx));
-                ctx.reducers.schedule_proc().unwrap();
-            });
-        }
-    });
-
     test_counter.wait_for_all();
 }
