@@ -28,6 +28,7 @@ pub fn cli() -> clap::Command {
                 .value_parser(clap::value_parser!(OsString))
                 .required(false)
                 .help("Additional features to pass to the build process (e.g. `--features feature1,feature2` for Rust modules).")
+                .hide(true)
         )
         .arg(
             Arg::new("debug")
