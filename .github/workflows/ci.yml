@@ -527,7 +527,7 @@ jobs:
 
   unity-testsuite:
     permissions:
-      contents: read
+      contents: write
     runs-on: spacetimedb-new-runner
     container:
       image: localhost:5000/spacetimedb-ci:latest
