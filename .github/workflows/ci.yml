@@ -645,7 +645,7 @@ jobs:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
           useHostNetwork: true
-          uploadArtifacts: false
+          artifactsPath: ""
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
