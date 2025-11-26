@@ -230,7 +230,7 @@ spacetimedb.view(
 // ─────────────────────────────────────────────────────────────────────────────
 
 // init
-spacetimedb.reducer('init', {}, ctx => {
+spacetimedb.init(ctx => {
   ctx.db.repeating_test_arg.insert({
     prev_time: ctx.timestamp,
     scheduled_id: 0n, // u64 autoInc placeholder (engine will assign)
