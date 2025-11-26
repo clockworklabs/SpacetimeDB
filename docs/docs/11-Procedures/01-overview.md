@@ -459,15 +459,6 @@ ctx.procedures.insertAValue({ a: 12, b: "Foo" });
 ```
 
 </TabItem>
-<TabItem value="unreal" label="Unreal">
-
-Clients can invoke procedures using methods on `Ctx->Procedures`:
-
-```cpp
-Ctx->Procedures->InsertAValue(12, "Foo");
-```
-
-</TabItem>
 </Tabs>
 
 ### Observing return values
@@ -517,15 +508,6 @@ ctx.procedures.addTwoNumbers({ lhs: 1, rhs: 2 }).then(
     sum => console.log(`1 + 2 = ${sum}`)
 );
 ```
-
-</TabItem>
-<TabItem value="unreal" label="Unreal">
-
-A client can also invoke a procedure while registering a callback to run when it completes.
-That callback will have access to the return value of the procedure,
-or an error if the procedure fails.
-
-TODO
 
 </TabItem>
 </Tabs>
