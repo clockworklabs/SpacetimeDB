@@ -12,6 +12,7 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
 } from './indexes';
+import ScheduleAt from './schedule_at';
 import { registerTypesRecursively } from './schema';
 import type { TableSchema } from './table_schema';
 import {
@@ -292,12 +293,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     // If this column is shaped like ScheduleAtAlgebraicType, mark it as the schedule‑at column
     if (scheduled) {
       const algebraicType = builder.typeBuilder.algebraicType;
-      if (
-        algebraicType.tag === 'Sum' &&
-        algebraicType.value.variants.length === 2 &&
-        algebraicType.value.variants[0].name === 'Interval' &&
-        algebraicType.value.variants[1].name === 'Time'
-      ) {
+      if (ScheduleAt.isScheduleAt(algebraicType)) {
         scheduleAtCol = colIds.get(name)!;
       }
     }
