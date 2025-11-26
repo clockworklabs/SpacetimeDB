@@ -1,6 +1,6 @@
 use crate::util::{
-    is_reducer_invokable, iter_constraints, iter_indexes, iter_reducers, iter_table_names_and_types, iter_tables,
-    iter_types, iter_views, print_auto_generated_version_comment,
+    is_reducer_invokable, iter_constraints, iter_indexes, iter_procedures, iter_reducers, iter_table_names_and_types,
+    iter_tables, iter_types, iter_views, print_auto_generated_version_comment,
 };
 use crate::OutputFile;
 
@@ -41,7 +41,7 @@ impl Lang for TypeScript {
             let out = &mut output;
 
             print_file_header(out, false, true);
-            gen_and_print_imports(module, out, &product.elements, &[typ.ty], None);
+            gen_and_print_imports(module, out, product.element_types(), &[typ.ty], None);
             writeln!(out);
             define_body_for_product(module, out, &type_name, &product.elements);
             out.newline();
@@ -56,7 +56,7 @@ impl Lang for TypeScript {
             let out = &mut output;
 
             print_file_header(out, false, true);
-            gen_and_print_imports(module, out, variants, &[typ.ty], None);
+            gen_and_print_imports(module, out, variants.iter().map(|(_, ty)| ty), &[typ.ty], None);
             writeln!(out);
             // For the purpose of bootstrapping AlgebraicType, if the name of the type
             // is `AlgebraicType`, we need to use an alias.
@@ -121,7 +121,7 @@ impl Lang for TypeScript {
         gen_and_print_imports(
             module,
             out,
-            &product_def.elements,
+            product_def.element_types(),
             &[], // No need to skip any imports; we're not defining a type, so there's no chance of circular imports.
             None,
         );
@@ -150,7 +150,7 @@ impl Lang for TypeScript {
         gen_and_print_imports(
             module,
             out,
-            &reducer.params_for_generate.elements,
+            reducer.params_for_generate.element_types(),
             // No need to skip any imports; we're not emitting a type that other modules can import.
             &[],
             None,
@@ -166,13 +166,40 @@ impl Lang for TypeScript {
 
     fn generate_procedure_file(
         &self,
-        _module: &ModuleDef,
+        module: &ModuleDef,
         procedure: &spacetimedb_schema::def::ProcedureDef,
     ) -> OutputFile {
-        // TODO(procedure-typescript-client): implement this
+        let mut output = CodeIndenter::new(String::new(), INDENT);
+        let out = &mut output;
+
+        print_file_header(out, false, true);
+
+        out.newline();
+
+        gen_and_print_imports(
+            module,
+            out,
+            procedure
+                .params_for_generate
+                .element_types()
+                .chain([&procedure.return_type_for_generate]),
+            // No need to skip any imports; we're not emitting a type that other modules can import.
+            &[],
+            None,
+        );
+
+        writeln!(out, "export const params = {{");
+        out.with_indent(|out| {
+            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true).unwrap()
+        });
+        writeln!(out, "}};");
+
+        write!(out, "export const returnType = ");
+        write_type_builder(module, out, &procedure.return_type_for_generate).unwrap();
+
         OutputFile {
             filename: procedure_module_name(&procedure.name) + ".ts",
-            code: "".to_string(),
+            code: output.into_inner(),
         }
     }
 
@@ -190,6 +217,16 @@ impl Lang for TypeScript {
             let reducer_module_name = reducer_module_name(reducer_name);
             let args_type = reducer_args_type_name(&reducer.name);
             writeln!(out, "import {args_type} from \"./{reducer_module_name}\";");
+            writeln!(out, "export {{ {args_type} }};");
+        }
+
+        writeln!(out);
+        writeln!(out, "// Import and reexport all procedure arg types");
+        for procedure in iter_procedures(module) {
+            let procedure_name = &procedure.name;
+            let procedure_module_name = procedure_module_name(procedure_name);
+            let args_type = procedure_args_type_name(&procedure.name);
+            writeln!(out, "import * as {args_type} from \"./{procedure_module_name}\";");
             writeln!(out, "export {{ {args_type} }};");
         }
 
@@ -264,6 +301,21 @@ impl Lang for TypeScript {
 
         writeln!(out);
 
+        writeln!(out, "const proceduresSchema = __procedures(");
+        out.indent(1);
+        for procedure in iter_procedures(module) {
+            let procedure_name = &procedure.name;
+            let args_type = procedure_args_type_name(&procedure.name);
+            writeln!(
+                out,
+                "__procedureSchema(\"{procedure_name}\", {args_type}.params, {args_type}.returnType),",
+            );
+        }
+        out.dedent(1);
+        writeln!(out, ");");
+
+        writeln!(out);
+
         writeln!(out, "const REMOTE_MODULE = {{");
         out.indent(1);
         writeln!(out, "versionInfo: {{");
@@ -273,11 +325,13 @@ impl Lang for TypeScript {
         writeln!(out, "}},");
         writeln!(out, "tables: tablesSchema.schemaType.tables,");
         writeln!(out, "reducers: reducersSchema.reducersType.reducers,");
+        writeln!(out, "...proceduresSchema,");
         out.dedent(1);
         writeln!(out, "}} satisfies __RemoteModule<");
         out.indent(1);
         writeln!(out, "typeof tablesSchema.schemaType,");
-        writeln!(out, "typeof reducersSchema.reducersType");
+        writeln!(out, "typeof reducersSchema.reducersType,");
+        writeln!(out, "typeof proceduresSchema");
         out.dedent(1);
         writeln!(out, ">;");
         out.dedent(1);
@@ -383,6 +437,8 @@ fn print_index_imports(out: &mut Indenter) {
         "type Infer as __Infer",
         "reducers as __reducers",
         "reducerSchema as __reducerSchema",
+        "procedures as __procedures",
+        "procedureSchema as __procedureSchema",
         "type DbConnectionConfig as __DbConnectionConfig",
         "t as __t",
     ];
@@ -716,6 +772,10 @@ fn reducer_args_type_name(reducer_name: &Identifier) -> String {
     reducer_name.deref().to_case(Case::Pascal)
 }
 
+fn procedure_args_type_name(reducer_name: &Identifier) -> String {
+    reducer_name.deref().to_case(Case::Pascal) + "Procedure"
+}
+
 fn reducer_module_name(reducer_name: &Identifier) -> String {
     reducer_name.deref().to_case(Case::Snake) + "_reducer"
 }
@@ -841,16 +901,16 @@ fn print_imports(module: &ModuleDef, out: &mut Indenter, imports: Imports, suffi
 /// `this_file` is passed and excluded for the case of recursive types:
 /// without it, the definition for a type like `struct Foo { foos: Vec<Foo> }`
 /// would attempt to include `import { Foo } from "./foo"`.
-fn gen_and_print_imports(
+fn gen_and_print_imports<'a>(
     module: &ModuleDef,
     out: &mut Indenter,
-    roots: &[(Identifier, AlgebraicTypeUse)],
+    roots: impl Iterator<Item = &'a AlgebraicTypeUse>,
     dont_import: &[AlgebraicTypeRef],
     suffix: Option<&str>,
 ) {
     let mut imports = BTreeSet::new();
 
-    for (_, ty) in roots {
+    for ty in roots {
         ty.for_each_ref(|r| {
             imports.insert(r);
         });
