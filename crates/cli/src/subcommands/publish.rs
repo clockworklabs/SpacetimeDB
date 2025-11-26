@@ -202,7 +202,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 builder,
                 &client,
                 &database_host,
-                &name_or_identity,
+                name_or_identity,
                 &domain.to_string(),
                 host_type,
                 &program_bytes,
