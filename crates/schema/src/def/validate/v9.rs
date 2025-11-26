@@ -1197,7 +1197,7 @@ fn identifier(name: Box<str>) -> Result<Identifier> {
 fn check_scheduled_functions_exist(
     tables: &mut IdentifierMap<TableDef>,
     reducers: &IndexMap<Identifier, ReducerDef>,
-    procedures: &IndexMap<Identifier, ProcedureDef>,
+    _procedures: &IndexMap<Identifier, ProcedureDef>,
 ) -> Result<()> {
     let validate_params =
         |params_from_function: &ProductType, table_row_type_ref: AlgebraicTypeRef, function_name: &str| {
