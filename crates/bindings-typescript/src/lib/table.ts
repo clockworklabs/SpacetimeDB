@@ -165,8 +165,8 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
-  iter(): IterableIterator<Prettify<RowType<TableDef>>>;
-  [Symbol.iterator](): IterableIterator<Prettify<RowType<TableDef>>>;
+  iter(): IteratorObject<Prettify<RowType<TableDef>>>;
+  [Symbol.iterator](): IteratorObject<Prettify<RowType<TableDef>>>;
 }
 
 /**
