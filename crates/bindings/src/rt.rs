@@ -424,7 +424,9 @@ pub struct FnKindView {
 /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
 #[cfg_attr(
     feature = "unstable",
-    doc = "It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully."
+    // TODO(scheduled-procedures): uncomment this, delete other line
+    // doc = "It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully."
+    doc = "It will be [`FnKindReducer`] in modules that compile successfully."
 )]
 #[cfg_attr(
     not(feature = "unstable"),
@@ -437,7 +439,7 @@ pub struct FnKindView {
     note = "views cannot be scheduled",
     note = "the scheduled function must take `{TableRow}` as its sole argument",
     note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`",
-    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
+    // note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
 )]
 pub trait ExportFunctionForScheduledTable<'de, TableRow, FnKind> {}
 impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de, (TableRow,)>>
@@ -445,15 +447,16 @@ impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de
 {
 }
 
-#[cfg(feature = "unstable")]
-impl<
-        'de,
-        TableRow: SpacetimeType + Serialize + Deserialize<'de>,
-        Ret: SpacetimeType + Serialize + Deserialize<'de>,
-        F: Procedure<'de, (TableRow,), Ret>,
-    > ExportFunctionForScheduledTable<'de, TableRow, FnKindProcedure<Ret>> for F
-{
-}
+// TODO(scheduled-procedures): uncomment this to syntactically allow scheduled procedures.
+// #[cfg(feature = "unstable")]
+// impl<
+//         'de,
+//         TableRow: SpacetimeType + Serialize + Deserialize<'de>,
+//         Ret: SpacetimeType + Serialize + Deserialize<'de>,
+//         F: Procedure<'de, (TableRow,), Ret>,
+//     > ExportFunctionForScheduledTable<'de, TableRow, FnKindProcedure<Ret>> for F
+// {
+// }
 
 // the macro generates <T as SpacetimeType>::make_type::<DummyTypespace>
 pub struct DummyTypespace;
