@@ -1222,10 +1222,13 @@ fn check_scheduled_functions_exist(
                 if let Some(reducer) = reducers.get(&schedule.function_name) {
                     schedule.function_kind = FunctionKind::Reducer;
                     validate_params(&reducer.params, table.product_type_ref, &reducer.name).map_err(Into::into)
-                } else if let Some(procedure) = procedures.get(&schedule.function_name) {
-                    schedule.function_kind = FunctionKind::Procedure;
-                    validate_params(&procedure.params, table.product_type_ref, &procedure.name).map_err(Into::into)
-                } else {
+                } else
+                // TODO(scheduled-procedures): Uncomment this
+                // if let Some(procedure) = procedures.get(&schedule.function_name) {
+                //     schedule.function_kind = FunctionKind::Procedure;
+                //     validate_params(&procedure.params, table.product_type_ref, &procedure.name).map_err(Into::into)
+                // } else
+                {
                     Err(ValidationError::MissingScheduledFunction {
                         schedule: schedule.name.clone(),
                         function: schedule.function_name.clone(),
