@@ -60,7 +60,6 @@ impl insert_one_bool for super::RemoteReducers {
         InsertOneBoolCallbackId(self.imp.on_reducer(
             "insert_one_bool",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

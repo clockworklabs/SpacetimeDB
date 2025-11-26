@@ -8,7 +8,6 @@ use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::{serde::SeedWrapper, DeserializeSeed};
 use spacetimedb_lib::ProductValue;
 use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
-use spacetimedb_schema::def::ModuleDef;
 
 mod disk_storage;
 mod host_controller;
@@ -42,14 +41,6 @@ pub enum FunctionArgs {
 }
 
 impl FunctionArgs {
-    fn into_tuple_for_def<Def: FunctionDef>(
-        self,
-        module: &ModuleDef,
-        def: &Def,
-    ) -> Result<ArgsTuple, InvalidFunctionArguments> {
-        self.into_tuple(module.arg_seed_for(def))
-    }
-
     fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
         self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,

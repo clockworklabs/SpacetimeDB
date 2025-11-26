@@ -63,7 +63,6 @@ impl insert_one_enum_with_payload for super::RemoteReducers {
         InsertOneEnumWithPayloadCallbackId(self.imp.on_reducer(
             "insert_one_enum_with_payload",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

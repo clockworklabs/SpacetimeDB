@@ -60,7 +60,6 @@ impl insert_vec_f_64 for super::RemoteReducers {
         InsertVecF64CallbackId(self.imp.on_reducer(
             "insert_vec_f64",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

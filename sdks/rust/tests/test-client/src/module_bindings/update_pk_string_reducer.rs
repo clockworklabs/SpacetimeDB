@@ -65,7 +65,6 @@ impl update_pk_string for super::RemoteReducers {
         UpdatePkStringCallbackId(self.imp.on_reducer(
             "update_pk_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

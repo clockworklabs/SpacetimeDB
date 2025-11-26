@@ -308,9 +308,14 @@ impl ModuleDef {
         self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
     }
 
-    /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
-    pub fn arg_seed_for<'a, T>(&'a self, def: &'a T) -> ArgsSeed<'a, T> {
-        ArgsSeed(self.typespace.with_type(def))
+    /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
+    /// at the parameter type of the reducer named `name`.
+    pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
+        &self,
+        name: &K,
+    ) -> Option<(ReducerId, ArgsSeed<'_, ReducerDef>)> {
+        let (id, reducer) = self.reducer_full(name)?;
+        Some((id, ArgsSeed(self.typespace.with_type(reducer))))
     }
 
     /// Look up the name corresponding to an `AlgebraicTypeRef`.

@@ -63,7 +63,6 @@ impl insert_vec_unit_struct for super::RemoteReducers {
         InsertVecUnitStructCallbackId(self.imp.on_reducer(
             "insert_vec_unit_struct",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

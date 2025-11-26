@@ -61,7 +61,6 @@ impl insert_option_string for super::RemoteReducers {
         InsertOptionStringCallbackId(self.imp.on_reducer(
             "insert_option_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
-                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {
