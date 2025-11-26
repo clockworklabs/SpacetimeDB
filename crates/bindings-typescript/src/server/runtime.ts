@@ -312,7 +312,12 @@ function makeTableView(
   const sequences = table.sequences.map(seq => {
     const col = rowType.value.elements[seq.column];
     const colType = col.algebraicType;
-    let sequenceTrigger: any;
+
+    // Determine the sentinel value which users will pass to as a placeholder
+    // to cause the sequence to advance.
+    // For small integer SATS types which fit in V8 `number`s, this is `0: number`,
+    // and for larger integer SATS types it's `0n: BigInt`.
+    let sequenceTrigger: bigint | number;
     switch (colType.tag) {
       case 'U8':
       case 'I8':
