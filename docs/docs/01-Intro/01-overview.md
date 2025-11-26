@@ -356,11 +356,11 @@ void Main()
     {
         if (res.IsSuccess)
         {
-            Log.Debug("Procedure `make_request` returned {Value}", res.Value);
+            Log.Debug($"Procedure `make_request` returned {res.Value!}");
         }
         else
         {
-            throw new Exception(res.Error, "Procedure `make_request` failed!");
+            throw new Exception($"Procedure `make_request` failed: {res.Error!}");
         }
     });
 }

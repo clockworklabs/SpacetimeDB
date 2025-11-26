@@ -1,21 +1,25 @@
 ---
-Title: Procedures
+Title: Overview
 slug: /procedures
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
+# Procedures - Overview
+
 A **procedure** is a function exported by a [database](/#database), similar to a [reducer](/#reducer).
-Connected [clients](/#client-side-sdks) can call procedures.
+Connected [clients](/#client-side-sdks** can call procedures.
 Procedures can perform additional operations not possible in reducers, including making HTTP requests to external services.
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
 For this reason, prefer defining reducers rather than procedures unless you need to use one of the special procedure operators.
 
-Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.
+:::warning
+***Procedures are currently in beta, and their API may change in upcoming SpacetimeDB releases.***
+:::
 
-# Defining Procedures
+## Defining Procedures
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="rust" label="Rust">
@@ -24,7 +28,7 @@ Because procedures are unstable, Rust modules that define them must opt in to th
 
 ```toml
 [dependencies]
-spacetimedb = { version = "1.x", features = ["unstable"] }
+spacetimedb = { version = "1.*", features = ["unstable"] }
 ```
 
 Define a procedure by annotating a function with `#[spacetimedb::procedure]`.
@@ -61,7 +65,7 @@ TODO(noa)
 </TabItem>
 </Tabs>
 
-## Accessing the database
+### Accessing the database
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="rust" label="Rust">
@@ -115,7 +119,7 @@ TODO(noa)
 </TabItem>
 </Tabs>
 
-### Fallible database operations
+#### Fallible database operations
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="rust" label="Rust">
@@ -148,7 +152,7 @@ TODO(noa)
 </TabItem>
 </Tabs>
 
-### Reading values out of the database
+#### Reading values out of the database
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="rust" label="Rust">
@@ -199,11 +203,14 @@ Procedures can make HTTP requests to external services using methods contained i
 #[spacetimedb::procedure]
 fn get_request(ctx: &mut ProcedureContext) {
     match ctx.http.get("https://example.invalid") {
-        Ok(response) => log::info!(
-            "Got response with status {} and body {}",
-            response.status(),
-            response.body().into_string_lossy(),
-        ),
+        Ok(response) => {
+            let (response, body) = response.into_parts();
+            log::info!(
+                "Got response with status {} and body {}",
+                response.status(),
+                body.into_string_lossy(),
+            )
+        },
         Err(error) => log::error!("Request failed: {error:?}"),
     }
 }
@@ -223,11 +230,14 @@ fn post_request(ctx: &mut spacetimedb::ProcedureContext) {
         .body("This is the body of the HTTP request")
         .expect("Building `Request` object failed");
     match ctx.http.send(request) {
-        Ok(response) => log::info!(
-            "Got response with status {} and body {}",
-            response.status(),
-            response.body().into_string_lossy(),
-        ),
+        Ok(response) => {
+            let (response, body) = response.into_parts();
+            log::info!(
+                "Got response with status {} and body {}",
+                response.status(),
+                body.into_string_lossy(),
+            )
+        }
         Err(error) => log::error!("Request failed: {error:?}"),
     }
 }
@@ -244,7 +254,10 @@ fn get_request_with_short_timeout(ctx: &mut spacetimedb::ProcedureContext) {
     let request = spacetimedb::http::Request::builder()
         .uri("https://example.invalid")
         .method("GET")
-        .extension(spacetimedb::http::Timeout(std::time::Duration::from_millis(10)))
+        // Set a timeout of 10 ms.
+        .extension(spacetimedb::http::Timeout(std::time::Duration::from_millis(10).into()))
+        // Empty body for a `GET` request.
+        .body(())
         .expect("Building `Request` object failed");
     ctx.http.send(request).expect("HTTP request failed");
 }
@@ -260,7 +273,7 @@ TODO(noa)
 </TabItem>
 </Tabs>
 
-# Calling procedures
+## Calling procedures
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="rust" label="Rust">
@@ -301,7 +314,7 @@ Ctx->Procedures->InsertAValue(12, "Foo");
 </TabItem>
 </Tabs>
 
-## Observing return values
+### Observing return values
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="rust" label="Rust">
