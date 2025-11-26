@@ -102,7 +102,7 @@ i.e. only lowercase ASCII letters and numbers, separated by dashes."),
         .after_help("Run `spacetime help publish` for more detailed information.")
 }
 
-fn prompt_and_clear(
+fn confirm_and_clear(
     name_or_identity: &str,
     force: bool,
     mut builder: reqwest::RequestBuilder,
@@ -196,7 +196,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
         if clear_database == ClearMode::Always {
-            builder = prompt_and_clear(name_or_identity, force, builder)?;
+            builder = confirm_and_clear(name_or_identity, force, builder)?;
         } else {
             builder = apply_pre_publish_if_needed(
                 builder,
@@ -370,7 +370,7 @@ async fn apply_pre_publish_if_needed(
                 println!("{}", manual.reason);
                 println!("Proceeding with database clear due to --delete-data=on-conflict.");
 
-                builder = prompt_and_clear(name_or_identity, force, builder)?;
+                builder = confirm_and_clear(name_or_identity, force, builder)?;
             }
             PrePublishResult::AutoMigrate(auto) => {
                 println!("{}", auto.migrate_plan);
