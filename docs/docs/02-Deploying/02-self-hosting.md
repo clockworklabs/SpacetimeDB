@@ -116,6 +116,14 @@ server {
         proxy_set_header Host $host;
     }
 
+    # Log streaming benefits from longer read timeout and disabled buffering
+    location ~ ^/v1/database/[^/]+/logs$ {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_buffering    off;
+        proxy_read_timeout 3600s;
+    }
+
     # Uncomment this section to allow all HTTP reducer calls
     # location ~ ^/v1/[^/]+/call/[^/]+$ {
     #     proxy_pass http://localhost:3000;
