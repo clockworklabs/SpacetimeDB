@@ -40,6 +40,7 @@ use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
@@ -489,6 +490,7 @@ fn startup_instance_worker<'scope>(
 fn new_isolate() -> OwnedIsolate {
     let mut isolate = Isolate::new(<_>::default());
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+    isolate.set_slot(SourceMaps::default());
     isolate
 }
 
@@ -667,52 +669,15 @@ fn spawn_instance_worker(
     })
 }
 
-/// Finds the source map in `code`, if any.
-fn find_source_map(code: &str) -> Option<&str> {
-    let sm_ref = "//# sourceMappingURL=";
-    code.match_indices(sm_ref).find_map(|(i, _)| {
-        let (before, after) = code.split_at(i);
-        (before.is_empty() || before.ends_with(['\r', '\n']))
-            .then(|| &after.lines().next().unwrap_or(after)[sm_ref.len()..])
-    })
-}
-
-/// A slot counter for [`ScriptOrigin::script_id`]s.
-struct NextScriptId(i32);
-fn get_script_id(scope: &mut PinScope<'_, '_>) -> i32 {
-    if let Some(x) = scope.get_slot_mut::<NextScriptId>() {
-        let n = x.0;
-        x.0 += 1;
-        n
-    } else {
-        scope.set_slot(NextScriptId(1));
-        0
-    }
-}
-
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
     scope: &mut PinScope<'scope, '_>,
     resource_name: Local<'scope, Value>,
-    source_map_url: Option<Local<'_, Value>>,
     code: Local<'_, v8::String>,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
-    let script_id = get_script_id(scope);
     // Assemble the source.
-    let origin = ScriptOrigin::new(
-        scope,
-        resource_name,
-        0,
-        0,
-        false,
-        script_id,
-        source_map_url,
-        false,
-        false,
-        true,
-        None,
-    );
+    let origin = ScriptOrigin::new(scope, resource_name, 0, 0, false, 0, None, false, false, true, None);
     let source = &mut Source::new(code, Some(&origin));
 
     // Compile the module.
@@ -741,26 +706,39 @@ fn eval_module<'scope>(
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
 
+    let source_map_url = module.get_unbound_module_script(scope).get_source_mapping_url(scope);
+    let source_map_url = (!source_map_url.is_null_or_undefined()).then_some(source_map_url);
+
+    if let Some((script_id, source_map_url)) = Option::zip(module.script_id(), source_map_url) {
+        let mut source_map_url = source_map_url.to_rust_string_lossy(scope);
+        // Hacky workaround for decode_data_url expecting a specific string without `charset=utf-8`
+        if source_map_url.starts_with("data:application/json;charset=utf-8;base64,") {
+            let start = "data:application/json;".len();
+            let len = "charset=utf-8;".len();
+            source_map_url.replace_range(start..start + len, "");
+        }
+        if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+            let SourceMaps(maps) = scope.get_slot_mut().unwrap();
+            maps.insert(script_id, sourcemap);
+        }
+    }
+
     Ok((module, value))
 }
+
+#[derive(Default)]
+struct SourceMaps(IntMap<i32, sourcemap::SourceMap>);
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
     scope: &mut PinScope<'scope, '_>,
     code: &str,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
-    // Get the source map, if any.
-    let source_map_url = find_source_map(code)
-        .map(|sm| sm.into_string(scope))
-        .transpose()
-        .map_err(|e| e.into_range_error().throw(scope))?
-        .map(Into::into);
-
     // Convert the code to a string.
     let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
 
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
-    eval_module(scope, name, source_map_url, code, resolve_sys_module)
+    eval_module(scope, name, code, resolve_sys_module)
 }
 
 /// Compiles, instantiate, and evaluate the user module with `code`

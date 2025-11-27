@@ -5,7 +5,7 @@ use rolldown_utils::js_regex::HybridRegex;
 use rolldown_utils::pattern_filter::StringOrRegex;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use tokio::runtime::{Builder, Handle, Runtime};
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
@@ -62,14 +62,23 @@ pub(crate) fn build_javascript(project_path: &Path, build_debug: bool) -> anyhow
         generated_code: Some(rolldown::GeneratedCodeOptions::es2015()),
         es_module: Some(rolldown::EsModuleFlag::IfDefaultProp), // See https://rollupjs.org/configuration-options/#output-esmodule
         drop_labels: None,
-        hash_characters: None,           // File name hash characters, we don't care
-        banner: None,                    // String to prepend to the bundle
-        footer: None,                    // String to append to the bundle
-        intro: None,                     // Similar to the above, but inside the wrappers
-        outro: None,                     // Similar to the above, but inside the wrappers
-        sourcemap_base_url: None,        // Absolute URLs for the source map
-        sourcemap_ignore_list: None,     // See https://rollupjs.org/configuration-options/#output-sourcemapignorelist
-        sourcemap_path_transform: None,  // Function to transform source map paths
+        hash_characters: None,       // File name hash characters, we don't care
+        banner: None,                // String to prepend to the bundle
+        footer: None,                // String to append to the bundle
+        intro: None,                 // Similar to the above, but inside the wrappers
+        outro: None,                 // Similar to the above, but inside the wrappers
+        sourcemap_base_url: None,    // Absolute URLs for the source map
+        sourcemap_ignore_list: None, // See https://rollupjs.org/configuration-options/#output-sourcemapignorelist
+        // Function to transform source map paths
+        sourcemap_path_transform: Some(rolldown::SourceMapPathTransform::new(Arc::new(
+            |relative_path, _sourcemap_path| {
+                // The output file is ./dist/bundle.js, so all the paths will be relative to it,
+                // e.g. from the perspective of `./dist` the entry file is `../src/index.ts`.
+                // So, strip the leading `../`
+                let path = relative_path.strip_prefix("../").unwrap_or(relative_path);
+                Box::pin(futures::future::ok(path.to_owned()))
+            },
+        ))),
         sourcemap_debug_ids: Some(true), // Seems like a good idea. See: https://rollupjs.org/configuration-options/#output-sourcemapdebugids
         module_types: None, // Lets you associate file extensions with module types, e.g. `.data` -> `json`. We don't need this.
         // Wrapper around https://docs.rs/oxc_resolver/latest/oxc_resolver/struct.ResolveOptions.html, see also https://rolldown.rs/guide/features#module-resolution

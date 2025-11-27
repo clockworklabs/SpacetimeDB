@@ -26,7 +26,7 @@ fn eval_builtin(
 ) -> ExcResult<()> {
     let resource_name = resource_name.string(scope);
     let code = code.string(scope);
-    super::eval_module(scope, resource_name.into(), None, code, resolve_builtins_module)?;
+    super::eval_module(scope, resource_name.into(), code, resolve_builtins_module)?;
     Ok(())
 }
 
