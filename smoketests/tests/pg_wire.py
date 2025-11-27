@@ -92,6 +92,19 @@ pub struct TNested {
    ints: TInts,
 }
 
+#[derive(Clone)]
+#[spacetimedb::table(name = t_enums)]
+pub struct TEnums {
+    bool_opt: Option<bool>,
+    bool_result: Result<bool, String>,
+    action: Action,
+}
+
+#[spacetimedb::table(name = t_enums_tuple)]
+pub struct TEnumsTuple {
+    tuple: TEnums,
+}
+
 #[spacetimedb::reducer]
 pub fn test(ctx: &ReducerContext) {
     let tuple = TInts {
@@ -141,6 +154,15 @@ pub fn test(ctx: &ReducerContext) {
         se: TSimpleEnum { id: 2, action: Action::Active },
         ints,
     });
+    
+    let tuple = TEnums {
+        bool_opt: Some(true),
+        bool_result: Ok(false),
+        action: Action::Active,
+    };
+    
+    ctx.db.t_enums().insert(tuple.clone());
+    ctx.db.t_enums_tuple().insert(TEnumsTuple { tuple });
 }
 """
 
@@ -234,7 +256,19 @@ en                 |                 se                  |                      
 -----------------------------------+-------------------------------------+---------------------------------------------------------------------------------------------------------
  {"id": 1, "color": {"Gray": 128}} | {"id": 2, "action": {"Active": {}}} | {"i8": -25, "i16": -3224, "i32": -23443, "i64": -2344353, "i128": -234434897853, "i256": -234434897853}
 (1 row)""")
-
+        self.assertSql(token,"SELECT * FROM t_enums", """\
+bool_opt    |  bool_result  | action
+----------------+---------------+--------
+ {"some": true} | {"ok": false} | Active
+(1 row)
+""")
+        self.assertSql(token,"SELECT * FROM t_enums_tuple", """\
+tuple
+--------------------------------------------------------------------------------------
+ {"bool_opt": {"some": true}, "bool_result": {"ok": false}, "action": {"Active": {}}}
+(1 row)
+""")
+    
     def test_sql_conn(self):
         """This test is designed to test connecting to the database and executing queries using `psycopg2`"""
         token = self.read_token()

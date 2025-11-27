@@ -621,6 +621,13 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
             write_type(module, out, inner_ty)?;
             write!(out, ">")?;
         }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "Result::<")?;
+            write_type(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type(module, out, err_ty)?;
+            write!(out, ">")?;
+        }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "bool")?,
             PrimitiveType::I8 => write!(out, "i8")?,

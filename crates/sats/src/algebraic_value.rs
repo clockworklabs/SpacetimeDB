@@ -188,6 +188,34 @@ impl AlgebraicValue {
         Self::sum(1, Self::unit())
     }
 
+    /// Converts `self` into an `Result<AlgebraicValue, AlgebraicValue>`, if applicable.
+    pub fn into_result(self) -> Result<Self, Self> {
+        match self {
+            AlgebraicValue::Sum(sum_value) => match sum_value.tag {
+                0 => Ok(*sum_value.value),
+                1 => Err(*sum_value.value),
+                _ => Err(AlgebraicValue::Sum(sum_value)),
+            },
+            _ => Err(self),
+        }
+    }
+
+    /// Returns an [`AlgebraicValue`] for ` Ok: v`.
+    ///
+    /// The `Ok` variant is assigned the tag `0`.
+    #[inline]
+    pub fn ResultOk(v: Self) -> Self {
+        Self::sum(0, v)
+    }
+
+    /// Returns an [`AlgebraicValue`] for ` Err: v`.
+    ///
+    /// The `Err` variant is assigned the tag `1`.
+    #[inline]
+    pub fn ResultErr(v: Self) -> Self {
+        Self::sum(1, v)
+    }
+
     /// Returns an [`AlgebraicValue`] representing a sum value with `tag` and `value`.
     pub fn sum(tag: u8, value: Self) -> Self {
         Self::Sum(SumValue::new(tag, value))
@@ -341,6 +369,17 @@ mod tests {
         let sum_value = AlgebraicValue::OptionNone();
         let typespace = Typespace::new(vec![]);
         assert_eq!("(none = ())", in_space(&typespace, &option, &sum_value).to_satn(),);
+    }
+
+    #[test]
+    fn result() {
+        let result = AlgebraicType::result(AlgebraicType::U8, AlgebraicType::String);
+        let ok = AlgebraicValue::ResultOk(AlgebraicValue::U8(42));
+        let typespace = Typespace::new(vec![]);
+        assert_eq!("(ok = 42)", in_space(&typespace, &result, &ok).to_satn(),);
+
+        let err = AlgebraicValue::ResultErr(AlgebraicValue::String("error".into()));
+        assert_eq!("(err = \"error\")", in_space(&typespace, &result, &err).to_satn(),);
     }
 
     #[test]
