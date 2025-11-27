@@ -338,16 +338,46 @@ pub(super) struct JsStackTraceFrame {
 impl JsStackTraceFrame {
     /// Converts a V8 [`StackFrame`] into one independent of `'scope`.
     fn from_frame<'scope>(scope: &PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
-        let script_name = frame
-            .get_script_name_or_source_url(scope)
-            .map(|s| s.to_rust_string_lossy(scope));
-
+        let script_id = frame.get_script_id();
+        let mut line = frame.get_line_number();
+        let mut column = frame.get_column();
+        let mut script_name = None;
         let fn_name = frame.get_function_name(scope).map(|s| s.to_rust_string_lossy(scope));
 
+        let sourcemap = scope
+            .get_slot()
+            .and_then(|super::SourceMaps(maps)| maps.get(&(script_id as i32)));
+
+        // sourcemap uses 0-based line/column numbers, while v8 uses 1-based
+        if let Some(token) = sourcemap.and_then(|sm| sm.lookup_token(line as u32 - 1, column as u32 - 1)) {
+            line = token.get_src_line() as usize + 1;
+            column = token.get_src_col() as usize + 1;
+            if let Some(file) = token.get_source() {
+                script_name = Some(file.to_owned())
+            }
+
+            // If we ever want to support de-minifying function names, uncomment this.
+            // The process of obtaining the original name of a function given a token
+            // in that function is imperfect and could return an incorrect name for an
+            // unminified identifier. So until we need it, turn it off.
+            //
+            // if let Some((sv, fn_name)) = Option::zip(token.get_source_view(), fn_name.as_mut()) {
+            //     if let Some(new_name) = sv.get_original_function_name(token, fn_name) {
+            //         new_name.clone_into(fn_name)
+            //     }
+            // }
+        }
+
+        let script_name = script_name.or_else(|| {
+            frame
+                .get_script_name_or_source_url(scope)
+                .map(|s| s.to_rust_string_lossy(scope))
+        });
+
         Self {
-            line: frame.get_line_number(),
-            column: frame.get_column(),
-            script_id: frame.get_script_id(),
+            line,
+            column,
+            script_id,
             script_name,
             fn_name,
             is_eval: frame.is_eval(),

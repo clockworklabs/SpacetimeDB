@@ -158,6 +158,10 @@ export function pushReducer(
     lifecycle, // <- lifecycle flag lands here
   });
 
+  if (!fn.name) {
+    Object.defineProperty(fn, 'name', { value: name, writable: false });
+  }
+
   REDUCERS.push(fn);
 }
 

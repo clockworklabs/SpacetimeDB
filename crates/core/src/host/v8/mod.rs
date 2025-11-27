@@ -40,6 +40,7 @@ use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
@@ -489,6 +490,7 @@ fn startup_instance_worker<'scope>(
 fn new_isolate() -> OwnedIsolate {
     let mut isolate = Isolate::new(<_>::default());
     isolate.set_capture_stack_trace_for_uncaught_exceptions(true, 1024);
+    isolate.set_slot(SourceMaps::default());
     isolate
 }
 
@@ -705,8 +707,28 @@ fn eval_module<'scope>(
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
 
+    let source_map_url = module.get_unbound_module_script(scope).get_source_mapping_url(scope);
+    let source_map_url = (!source_map_url.is_null_or_undefined()).then_some(source_map_url);
+
+    if let Some((script_id, source_map_url)) = Option::zip(module.script_id(), source_map_url) {
+        let mut source_map_url = source_map_url.to_rust_string_lossy(scope);
+        // Hacky workaround for decode_data_url expecting a specific string without `charset=utf-8`
+        if source_map_url.starts_with("data:application/json;charset=utf-8;base64,") {
+            let start = "data:application/json;".len();
+            let len = "charset=utf-8;".len();
+            source_map_url.replace_range(start..start + len, "");
+        }
+        if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+            let SourceMaps(maps) = scope.get_slot_mut().unwrap();
+            maps.insert(script_id, sourcemap);
+        }
+    }
+
     Ok((module, value))
 }
+
+#[derive(Default)]
+struct SourceMaps(IntMap<i32, sourcemap::SourceMap>);
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
