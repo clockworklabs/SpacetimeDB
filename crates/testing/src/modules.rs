@@ -111,6 +111,7 @@ impl CompiledModule {
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
+            None,
         )
         .unwrap();
         Self {
