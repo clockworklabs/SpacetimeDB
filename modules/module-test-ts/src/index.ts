@@ -203,7 +203,7 @@ const spacetimedb = schema(
 
   // repeating_test_arg table with scheduled(repeating_test)
   table(
-    { name: 'repeating_test_arg', scheduled: 'repeating_test' } as any,
+    { name: 'repeating_test_arg', scheduled: 'repeating_test' },
     repeatingTestArg
   ),
 
@@ -231,8 +231,8 @@ spacetimedb.view(
 // ─────────────────────────────────────────────────────────────────────────────
 
 // init
-spacetimedb.reducer('init', {}, ctx => {
-  ctx.db.repeating_test_arg.insert({
+spacetimedb.init(ctx => {
+  ctx.db.repeatingTestArg.insert({
     prev_time: ctx.timestamp,
     scheduled_id: 0n, // u64 autoInc placeholder (engine will assign)
     scheduled_at: ScheduleAt.interval(1000000n), // 1000ms
@@ -309,7 +309,7 @@ spacetimedb.reducer(
       });
     }
 
-    const rowCountBefore = ctx.db.test_a.count();
+    const rowCountBefore = ctx.db.testA.count();
     console.info(`Row count before delete: ${rowCountBefore}`);
 
     // Delete rows by the indexed column `x` in [5,10)
@@ -340,7 +340,7 @@ spacetimedb.reducer(
 
     console.info(`Row count after delete: ${rowCountAfter}`);
 
-    const otherRowCount = ctx.db.test_a.count();
+    const otherRowCount = ctx.db.testA.count();
     console.info(`Row count filtered by condition: ${otherRowCount}`);
 
     console.info('MultiColumn');
