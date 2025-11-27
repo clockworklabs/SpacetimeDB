@@ -469,7 +469,7 @@ const tablesSchema = __schema(
     ],
     constraints: [
     ],
-  }, RemoveTableRow),
+  }, TableToRemoveRow),
   __table({
     name: 'test_a',
     indexes: [
