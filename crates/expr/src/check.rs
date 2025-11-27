@@ -15,7 +15,7 @@ use spacetimedb_sql_parser::{
 };
 
 use super::{
-    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
+    errors::{DuplicateName, FunctionCall, TypingError, Unresolved, Unsupported},
     expr::RelExpr,
     type_expr, type_proj, type_select,
 };
@@ -78,12 +78,8 @@ pub trait TypeChecker {
                     delta: None,
                 });
 
-                for SqlJoin {
-                    var: SqlIdent(name),
-                    alias: SqlIdent(alias),
-                    on,
-                } in joins
-                {
+                for SqlJoin { from, on } in joins {
+                    let (SqlIdent(name), SqlIdent(alias)) = from.into_name_alias();
                     // Check for duplicate aliases
                     if vars.contains_key(&alias) {
                         return Err(DuplicateName(alias.into_string()).into());
@@ -113,6 +109,8 @@ pub trait TypeChecker {
 
                 Ok(join)
             }
+            // TODO: support function calls in FROM clause
+            SqlFrom::FuncCall(_, _) => Err(FunctionCall.into()),
         }
     }
 

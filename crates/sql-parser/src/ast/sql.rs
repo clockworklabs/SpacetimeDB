@@ -78,6 +78,7 @@ impl SqlSelect {
                 ..self
             },
             SqlFrom::Join(..) => self,
+            SqlFrom::FuncCall(..) => self,
         }
     }
 
