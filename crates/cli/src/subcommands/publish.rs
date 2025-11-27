@@ -175,46 +175,26 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
-        if clear_database != ClearMode::Always {
-            builder = apply_pre_publish_if_needed(
-                builder,
-                &client,
-                &database_host,
-                &domain.to_string(),
-                host_type,
-                &program_bytes,
-                &auth_header,
-                clear_database,
-                force_break_clients,
-                force,
-            )
-            .await?;
-        }
+        builder = apply_pre_publish_if_needed(
+            builder,
+            &client,
+            &database_host,
+            name_or_identity,
+            &domain.to_string(),
+            host_type,
+            &program_bytes,
+            &auth_header,
+            clear_database,
+            force_break_clients,
+            force,
+        )
+        .await?;
 
         builder
     } else {
         client.post(format!("{database_host}/v1/database"))
     };
 
-    if clear_database == ClearMode::Always || clear_database == ClearMode::OnConflict {
-        // Note: `name_or_identity` should be set, because it is `required` in the CLI arg config.
-        println!(
-            "This will DESTROY the current {} module, and ALL corresponding data.",
-            name_or_identity.unwrap()
-        );
-        if !y_or_n(
-            force,
-            format!(
-                "Are you sure you want to proceed? [deleting {}]",
-                name_or_identity.unwrap()
-            )
-            .as_str(),
-        )? {
-            println!("Aborting");
-            return Ok(());
-        }
-        builder = builder.query(&[("clear", true)]);
-    }
     if let Some(n) = num_replicas {
         eprintln!("WARNING: Use of unstable option `--num-replicas`.\n");
         builder = builder.query(&[("num_replicas", *n)]);
@@ -334,6 +314,7 @@ async fn apply_pre_publish_if_needed(
     mut builder: reqwest::RequestBuilder,
     client: &reqwest::Client,
     base_url: &str,
+    name_or_identity: &str,
     domain: &String,
     host_type: &str,
     program_bytes: &[u8],
@@ -367,11 +348,35 @@ async fn apply_pre_publish_if_needed(
                     println!("{}", manual.reason);
                     println!("Proceeding with database clear due to --delete-data=always.");
                 }
+                println!(
+                    "This will DESTROY the current {} module, and ALL corresponding data.",
+                    name_or_identity
+                );
+                if !y_or_n(
+                    force,
+                    format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
+                )? {
+                    anyhow::bail!("Aborting");
+                }
+                builder = builder.query(&[("clear", true)]);
             }
             PrePublishResult::AutoMigrate(auto) => {
+                if clear_database == ClearMode::Always {
+                    println!("Auto-migration, does NOT require clearing the database, but proceeding with database clear due to --delete-data=always.");
+                    println!(
+                        "This will DESTROY the current {} module, and ALL corresponding data.",
+                        name_or_identity
+                    );
+                    if !y_or_n(
+                        force,
+                        format!("Are you sure you want to proceed? [deleting {}]", name_or_identity).as_str(),
+                    )? {
+                        anyhow::bail!("Aborting");
+                    }
+                    builder = builder.query(&[("clear", true)]);
+                    return Ok(builder);
+                }
                 println!("{}", auto.migrate_plan);
-                // We only arrive here if you have not specified ClearMode::Always AND there was no
-                // conflict that required manual migration.
                 if auto.break_clients
                     && !y_or_n(
                         force_break_clients || force,
