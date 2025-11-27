@@ -68,9 +68,18 @@
 //!     | SUM   '(' columnExpr ')' AS ident
 //!     ;
 //!
+//! paramExpr
+//!    = literal
+//!   ;
+//!
+//! functionCall
+//!     = ident '(' [ paramExpr { ',' paramExpr } ] ')'
+//!     ;
+//!
 //! relation
 //!     = table
 //!     | '(' query ')'
+//!     | functionCall
 //!     | relation [ [AS] ident ] { [INNER] JOIN relation [ [AS] ident ] ON predicate }
 //!     ;
 //!
@@ -442,6 +451,9 @@ mod tests {
             "select a from t where x = :sender",
             "select count(*) as n from t",
             "select count(*) as n from t join s on t.id = s.id where s.x = 1",
+            "select * from sample()",
+            "select * from sample() as s",
+            "select * from sample(1, 'abc', true, 0xFF, 0.1)",
             "insert into t values (1, 2)",
             "delete from t",
             "delete from t where a = 1",
@@ -450,7 +462,7 @@ mod tests {
             "update t set a = 1, b = 2 where c = 3",
             "update t set a = 1, b = 2 where x = :sender",
         ] {
-            assert!(parse_sql(sql).is_ok());
+            assert!(parse_sql(sql).is_ok(), "{}", sql);
         }
     }
 
@@ -465,6 +477,12 @@ mod tests {
             "select a from t where",
             // Empty GROUP BY
             "select a, count(*) from t group by",
+            // Function call in JOIN
+            "select * from t join sample() on t.id = sample().id",
+            // Function call params are not literals
+            "select * from sample(a, b)",
+            // Nested function call
+            "select * from sample(sample(1))",
             // Aggregate without alias
             "select count(*) from t",
             // Empty statement

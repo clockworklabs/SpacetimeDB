@@ -10,9 +10,18 @@
 //!     | ident '.' STAR
 //!     ;
 //!
+//! paramExpr
+//!    = literal
+//!   ;
+//!
+//! functionCall
+//!     = ident '(' [ paramExpr { ',' paramExpr } ] ')'
+//!     ;
+//!
 //! relation
 //!     = table
 //!     | '(' query ')'
+//!     | functionCall
 //!     | relation [ [AS] ident ] { [INNER] JOIN relation [ [AS] ident ] ON predicate }
 //!     ;
 //!
@@ -162,6 +171,12 @@ mod tests {
             "",
             "select distinct a from t",
             "select * from (select * from t) join (select * from s) on a = b",
+            // Function call in JOIN
+            "select * from t join sample() on t.id = sample().id",
+            // Function call params are not literals
+            "select * from sample(a, b)",
+            // Nested function call
+            "select * from sample(sample(1))",
         ] {
             assert!(parse_subscription(sql).is_err());
         }
@@ -178,6 +193,9 @@ mod tests {
             "select t.* from t join s on t.c = s.d",
             "select a.* from t as a join s as b on a.c = b.d",
             "select * from t where x = :sender",
+            "select * from sample()",
+            "select * from sample() as s",
+            "select * from sample(1, 'abc', true, 0xFF, 0.1)",
         ] {
             assert!(parse_subscription(sql).is_ok());
         }

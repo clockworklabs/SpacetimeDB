@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use sqlparser::ast::FunctionArg;
 use sqlparser::{
     ast::{
         BinaryOperator, Expr, Function, ObjectName, Query, Select, SelectItem, SetExpr, TableFactor, TableWithJoins,
@@ -77,6 +78,10 @@ pub enum SqlUnsupported {
     Empty,
     #[error("Names must be qualified when using joins")]
     UnqualifiedNames,
+    #[error("Unsupported function argument: {0}")]
+    FuncArg(FunctionArg),
+    #[error("Unsupported join on function call")]
+    FunctionJoin,
 }
 
 impl SqlUnsupported {
