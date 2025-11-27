@@ -257,11 +257,6 @@ strong {
   }
 }
 
-.navbar__inner {
-  height: 100%;
-  align-items: center;
-}
-
 .navbar__logo {
   height: var(--36px);
 }
