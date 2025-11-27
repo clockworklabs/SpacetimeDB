@@ -593,6 +593,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.name;
     let view_trait_ident = format_ident!("{}__view", table_ident);
+    let query_trait_ident = format_ident!("{}__query", table_ident);
     let table_name = table_ident.unraw().to_string();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
@@ -921,6 +922,15 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #[inline]
             fn #table_ident(&self) -> &#viewhandle_ident {
                 &#viewhandle_ident {}
+            }
+        }
+    };
+
+    let trait_def_query = quote_spanned! {table_ident.span()=>
+        #[allow(non_camel_case_types, dead_code)]
+        #vis trait #query_trait_ident {
+            fn #table_ident(&self) -> spacetimedb::query::Table<#original_struct_ident> {
+                spacetimedb::query::Table::__new()
             }
         }
     };
