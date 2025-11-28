@@ -945,7 +945,7 @@ record ViewDeclaration
             diag.Report(ErrorDescriptor.ViewArgsUnsupported, methodSyntax);
         }
 
-        Name = method.Name;
+        Name = attr.Name ?? method.Name;
         FullName = SymbolToName(method);
         IsPublic = attr.Public;
         IsAnonymous = isAnonymousContext;
