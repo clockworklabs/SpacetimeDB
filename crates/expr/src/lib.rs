@@ -88,6 +88,10 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
     recursion::guard(depth, recursion::MAX_RECURSION_TYP_EXPR, "expr::type_expr")?;
 
     match (expr, expected) {
+        (SqlExpr::Lit(SqlLiteral::Null), None) => Ok(Expr::unit()),
+        (SqlExpr::Lit(SqlLiteral::Null), Some(ty)) if ty.is_unit() => Ok(Expr::unit()),
+        (SqlExpr::Lit(SqlLiteral::Null), Some(ty)) if ty.is_option() => Ok(Expr::OptionNone(ty.clone())),
+        (SqlExpr::Lit(SqlLiteral::Null), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::unit(), ty).into()),
         (SqlExpr::Lit(SqlLiteral::Bool(v)), None | Some(AlgebraicType::Bool)) => Ok(Expr::bool(v)),
         (SqlExpr::Lit(SqlLiteral::Bool(_)), Some(ty)) => Err(UnexpectedType::new(&AlgebraicType::Bool, ty).into()),
         (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => {
