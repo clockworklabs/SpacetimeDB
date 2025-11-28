@@ -2,6 +2,12 @@ use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+use super::{
+    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
+    expr::RelExpr,
+    type_expr, type_proj, type_select,
+};
+use crate::errors::FunctionCall;
 use crate::expr::LeftDeepJoin;
 use crate::expr::{Expr, ProjectList, ProjectName, Relvar};
 use spacetimedb_lib::identity::AuthCtx;
@@ -12,12 +18,6 @@ use spacetimedb_sql_parser::ast::BinOp;
 use spacetimedb_sql_parser::{
     ast::{sub::SqlSelect, SqlFrom, SqlIdent, SqlJoin},
     parser::sub::parse_subscription,
-};
-
-use super::{
-    errors::{DuplicateName, TypingError, Unresolved, Unsupported},
-    expr::RelExpr,
-    type_expr, type_proj, type_select,
 };
 
 /// The result of type checking and name resolution
@@ -113,6 +113,8 @@ pub trait TypeChecker {
 
                 Ok(join)
             }
+            // TODO: support function calls in FROM clause
+            SqlFrom::FuncCall(_, _) => Err(FunctionCall.into()),
         }
     }
 
