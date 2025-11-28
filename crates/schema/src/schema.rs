@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::def::{
     ColumnDef, ConstraintData, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ModuleDefLookup, ScheduleDef,
-    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef,
+    SequenceDef, TableDef, UniqueConstraintData, ViewColumnDef, ViewDef, ViewParamDefSimple,
 };
 use crate::identifier::Identifier;
 
@@ -50,16 +50,16 @@ pub trait Schema: Sized {
     fn check_compatible(&self, module_def: &ModuleDef, def: &Self::Def) -> Result<(), anyhow::Error>;
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ViewDefInfo {
     pub view_id: ViewId,
-    pub has_args: bool,
+    pub args: Vec<ViewParamDefSimple>,
     pub is_anonymous: bool,
 }
 
 impl ViewDefInfo {
     pub fn num_private_cols(&self) -> usize {
-        (if self.is_anonymous { 0 } else { 1 }) + (if self.has_args { 1 } else { 0 })
+        (if self.is_anonymous { 0 } else { 1 }) + (if !self.args.is_empty() { 1 } else { 0 })
     }
 }
 
@@ -77,7 +77,7 @@ impl From<Arc<TableSchema>> for TableOrViewSchema {
     fn from(inner: Arc<TableSchema>) -> Self {
         Self {
             table_id: inner.table_id,
-            view_info: inner.view_info,
+            view_info: inner.view_info.clone(),
             table_name: inner.table_name.clone(),
             table_access: inner.table_access,
             inner,
@@ -110,31 +110,22 @@ impl TableOrViewSchema {
     /// For views in particular it will not include the internal `sender` and `arg_id` columns.
     /// Hence columns in this list should be looked up by their [`ColId`] - not their position.
     pub fn public_columns(&self) -> &[ColumnSchema] {
-        match self.view_info {
-            Some(ViewDefInfo {
-                has_args: true,
-                is_anonymous: false,
-                ..
-            }) => &self.inner.columns[2..],
-            Some(ViewDefInfo {
-                has_args: true,
-                is_anonymous: true,
-                ..
-            }) => &self.inner.columns[1..],
-            Some(ViewDefInfo {
-                has_args: false,
-                is_anonymous: false,
-                ..
-            }) => &self.inner.columns[1..],
-            Some(ViewDefInfo {
-                has_args: false,
-                is_anonymous: true,
-                ..
-            })
-            | None => &self.inner.columns,
-        }
-    }
+        let skip = match &self.view_info {
+            Some(info) => {
+                let has_args = !info.args.is_empty();
 
+                match (has_args, info.is_anonymous) {
+                    (true, false) => 2,  // sender + arg_id
+                    (true, true) => 1,   // arg_id
+                    (false, false) => 1, // sender
+                    (false, true) => 0,  // none
+                }
+            }
+            None => 0,
+        };
+
+        &self.inner.columns[skip..]
+    }
     /// Check if the `col_name` exist on this [`TableOrViewSchema`]
     pub fn get_column_by_name(&self, col_name: &str) -> Option<&ColumnSchema> {
         self.public_columns().iter().find(|x| &*x.col_name == col_name)
@@ -742,7 +733,13 @@ impl TableSchema {
 
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
-            has_args: !param_columns.is_empty(),
+            args: param_columns
+                .iter()
+                .map(|arg| ViewParamDefSimple {
+                    name: arg.name.clone(),
+                    ty: arg.ty.clone(),
+                })
+                .collect(),
             is_anonymous: *is_anonymous,
         };
 
@@ -864,7 +861,13 @@ impl TableSchema {
 
         let view_info = ViewDefInfo {
             view_id: ViewId::SENTINEL,
-            has_args: !param_columns.is_empty(),
+            args: param_columns
+                .iter()
+                .map(|arg| ViewParamDefSimple {
+                    name: arg.name.clone(),
+                    ty: arg.ty.clone(),
+                })
+                .collect(),
             is_anonymous: *is_anonymous,
         };
 

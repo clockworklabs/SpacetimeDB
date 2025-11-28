@@ -1412,7 +1412,10 @@ mod tests {
         identity::AuthCtx,
         AlgebraicType, AlgebraicValue,
     };
-    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
+    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId, ViewId};
+    use spacetimedb_schema::def::ViewParamDefSimple;
+    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::schema::ViewDefInfo;
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
@@ -1447,18 +1450,36 @@ mod tests {
         }
     }
 
-    fn schema(
+    fn schema_with_params(
         table_id: TableId,
         table_name: &str,
         columns: &[(&str, AlgebraicType)],
         indexes: &[&[usize]],
         unique: &[&[usize]],
         primary_key: Option<usize>,
+        params: Option<&[(&str, AlgebraicType)]>,
     ) -> TableOrViewSchema {
+        let mut columns = columns.to_vec();
+        // Need to add the hidden columns for views, see `TableSchema::from_view_def_for_datastore`
+        if params.is_some() {
+            columns.insert(0, ("arg_id", AlgebraicType::U64));
+        }
+        let view = params.map(|params| ViewDefInfo {
+            view_id: ViewId::SENTINEL,
+            args: params
+                .iter()
+                .map(|(name, ty)| ViewParamDefSimple {
+                    name: Identifier::new((*name).into()).unwrap(),
+                    ty: ty.clone(),
+                })
+                .collect(),
+            is_anonymous: true,
+        });
+
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
             table_name.to_owned().into_boxed_str(),
-            None,
+            view,
             columns
                 .iter()
                 .enumerate()
@@ -1499,6 +1520,17 @@ mod tests {
             None,
             primary_key.map(ColId::from),
         )))
+    }
+
+    fn schema(
+        table_id: TableId,
+        table_name: &str,
+        columns: &[(&str, AlgebraicType)],
+        indexes: &[&[usize]],
+        unique: &[&[usize]],
+        primary_key: Option<usize>,
+    ) -> TableOrViewSchema {
+        schema_with_params(table_id, table_name, columns, indexes, unique, primary_key, None)
     }
 
     /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
@@ -2264,5 +2296,68 @@ mod tests {
 
         assert!(plan.plan_iter().any(|plan| plan.has_filter()));
         assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+    }
+
+    // Verify the view parameters are converted to filters in the physical plan
+    #[test]
+    fn view_params() {
+        let t_id = TableId(1);
+        let v_id = TableId(2);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U32)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+        let v = Arc::new(schema_with_params(
+            v_id,
+            "v",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U32)],
+            &[],
+            &[],
+            None,
+            Some(&[("param_id", AlgebraicType::U64)]),
+        ));
+
+        let db = SchemaViewer {
+            schemas: vec![t.clone(), v.clone()],
+        };
+
+        let sql = "select * from v(0)";
+
+        let auth = AuthCtx::for_testing();
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        dbg!(&lp);
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+        dbg!(&pp);
+        match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 1, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(0))));
+
+                match *input {
+                    PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
+                        assert_eq!(schema.table_id, v_id);
+                    }
+                    plan => panic!("unexpected plan: {plan:#?}"),
+                }
+            }
+            proj => panic!("unexpected project: {proj:#?}"),
+        };
+
+        let sql = "select * from v(0) as x JOIN t ON x.id = t.id";
+        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(_, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 1, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(0))));
+            }
+            proj => panic!("unexpected project: {proj:#?}"),
+        };
     }
 }

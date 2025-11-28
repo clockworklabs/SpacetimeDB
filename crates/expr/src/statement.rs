@@ -462,43 +462,61 @@ pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) 
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::Statement;
     use crate::ast::LogOp;
+    use crate::check::test_utils::ViewInfo;
     use crate::check::{
         test_utils::{build_module_def, SchemaViewer},
         Relvars, SchemaView, TypingResult,
     };
     use crate::type_expr;
-    use spacetimedb::TableId;
-    use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, ProductType};
     use spacetimedb_schema::def::ModuleDef;
-    use spacetimedb_schema::schema::{TableOrViewSchema, TableSchema};
     use spacetimedb_sql_parser::ast::{SqlExpr, SqlLiteral};
 
     fn module_def() -> ModuleDef {
-        build_module_def(vec![
-            (
-                "t",
-                ProductType::from([
-                    ("u32", AlgebraicType::U32),
-                    ("f32", AlgebraicType::F32),
-                    ("str", AlgebraicType::String),
-                    ("arr", AlgebraicType::array(AlgebraicType::String)),
-                ]),
-            ),
-            (
-                "s",
-                ProductType::from([
-                    ("id", AlgebraicType::identity()),
-                    ("u32", AlgebraicType::U32),
-                    ("arr", AlgebraicType::array(AlgebraicType::String)),
-                    ("bytes", AlgebraicType::bytes()),
-                ]),
-            ),
-        ])
+        build_module_def(
+            vec![
+                (
+                    "t",
+                    ProductType::from([
+                        ("u32", AlgebraicType::U32),
+                        ("f32", AlgebraicType::F32),
+                        ("str", AlgebraicType::String),
+                        ("arr", AlgebraicType::array(AlgebraicType::String)),
+                    ]),
+                ),
+                (
+                    "s",
+                    ProductType::from([
+                        ("id", AlgebraicType::identity()),
+                        ("u32", AlgebraicType::U32),
+                        ("arr", AlgebraicType::array(AlgebraicType::String)),
+                        ("bytes", AlgebraicType::bytes()),
+                    ]),
+                ),
+            ],
+            vec![
+                ViewInfo {
+                    name: "v",
+                    is_anonymous: true,
+                    columns: &[("a", AlgebraicType::String)],
+                    params: ProductType::unit(),
+                },
+                ViewInfo {
+                    name: "w",
+                    is_anonymous: false,
+                    columns: &[("a", AlgebraicType::U64)],
+                    params: ProductType::from([("x", AlgebraicType::U64)]),
+                },
+                ViewInfo {
+                    name: "x",
+                    is_anonymous: false,
+                    columns: &[("a", AlgebraicType::U32), ("b", AlgebraicType::String)],
+                    params: ProductType::from([("p1", AlgebraicType::U32), ("p2", AlgebraicType::String)]),
+                },
+            ],
+        )
     }
 
     /// A wrapper around [super::parse_and_type_sql] that takes a dummy [AuthCtx]
@@ -563,56 +581,7 @@ mod tests {
 
     #[test]
     fn views() {
-        struct SchemaViewer {
-            module_def: ModuleDef,
-        }
-
-        impl SchemaViewer {
-            fn schema_for_view(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
-                self.module_def
-                    .view(name)
-                    .map(|def| TableSchema::from_view_def_for_datastore(&self.module_def, def))
-                    .map(Arc::new)
-                    .map(TableOrViewSchema::from)
-                    .map(Arc::new)
-            }
-        }
-
-        impl SchemaView for SchemaViewer {
-            fn table_id(&self, _: &str) -> Option<TableId> {
-                None
-            }
-
-            fn schema(&self, name: &str) -> Option<Arc<TableOrViewSchema>> {
-                self.schema_for_view(name)
-            }
-
-            fn schema_for_table(&self, _: TableId) -> Option<Arc<TableOrViewSchema>> {
-                self.schema_for_view("v")
-            }
-
-            fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
-                Ok(vec![])
-            }
-        }
-
-        fn build_view_def(
-            builder: &mut RawModuleDefV9Builder,
-            name: &str,
-            columns: impl Into<ProductType>,
-            is_anonymous: bool,
-        ) {
-            let product_type = AlgebraicType::from(columns.into());
-            let type_ref = builder.add_algebraic_type([], name, product_type, true);
-            let return_type = AlgebraicType::array(AlgebraicType::Ref(type_ref));
-            builder.add_view(name, 0, true, is_anonymous, ProductType::unit(), return_type);
-        }
-
-        let mut builder = RawModuleDefV9Builder::new();
-        build_view_def(&mut builder, "v", [("a", AlgebraicType::String)], true);
-        let module_def: ModuleDef = builder.finish().try_into().expect("failed to generate module def");
-
-        let tx = SchemaViewer { module_def };
+        let tx = SchemaViewer(module_def());
 
         struct TestCase {
             sql: &'static str,
@@ -628,9 +597,19 @@ mod tests {
                 sql: "select * from v where a = 'hello'",
                 msg: "Column selection on view",
             },
+            TestCase {
+                sql: "select * from v",
+                msg: "Function call returning view",
+            },
+            TestCase {
+                sql: "select * from w(1)",
+                msg: "Function call returning view with parameters",
+            },
         ] {
-            let result = parse_and_type_sql(sql, &tx);
-            assert!(result.is_ok(), "{msg}");
+            let result = parse_and_type_sql(sql, &tx).inspect_err(|e| {
+                panic!("Expected OK for `{sql}` but got error: {e}");
+            });
+            assert!(result.is_ok(), "{msg}: {sql}");
         }
 
         for TestCase { sql, msg } in [
@@ -646,9 +625,59 @@ mod tests {
                 sql: "select arg_id from v",
                 msg: "`v` does not have a column named `arg_id`",
             },
+            TestCase {
+                sql: "select * from v(1)",
+                msg: "`v` does not take parameters",
+            },
         ] {
             let result = parse_and_type_sql(sql, &tx);
             assert!(result.is_err(), "{msg}");
+        }
+    }
+
+    #[test]
+    fn params_validation() {
+        let tx = SchemaViewer(module_def());
+
+        struct TestCase {
+            sql: &'static str,
+            msg: &'static str,
+        }
+
+        for TestCase { sql, msg } in [
+            TestCase {
+                sql: "select * from x(1, 'hello')",
+                msg: "Correct parameters",
+            },
+            TestCase {
+                sql: "select * from x()",
+                msg: "Unsupported call to table-valued function with empty params. Use `select * from table_function` syntax instead: x",
+            },
+            TestCase {
+                sql: "select * from x",
+                msg: "Unexpected function type. Expected: (U32, String) != Inferred: ()",
+            },
+            TestCase {
+                sql: "select * from x('hello', 1)",
+                msg: "Unexpected function type. Expected: (U32, String) != Inferred: (String, Num?)",
+            },
+            TestCase {
+                sql: "select * from x(1)",
+                msg: "Unexpected function type. Expected: (U32, String) != Inferred: (U32)",
+            },
+            TestCase {
+                sql: "select * from x(1, 'hello', 2)",
+                msg: "Unexpected function type. Expected: (U32, String) != Inferred: (U32, String, Num?)",
+            },
+        ] {
+            let result = parse_and_type_sql(sql, &tx);
+            if msg == "Correct parameters" {
+                assert!(result.is_ok(), "{msg}: {sql}");
+            } else if let Err(err) = &result {
+                assert_eq!(err.to_string(), msg, "{sql}");
+            } else {
+                panic!("Expected error for SQL `{sql}` but got OK");
+            }
         }
     }
 }

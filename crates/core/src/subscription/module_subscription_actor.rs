@@ -327,7 +327,7 @@ impl ModuleSubscriptions {
         let view_info = plans
             .first()
             .and_then(|plan| plan.return_table())
-            .and_then(|schema| schema.view_info);
+            .and_then(|schema| schema.view_info.clone());
 
         let num_cols = plans
             .first()

@@ -4,6 +4,8 @@ use spacetimedb_execution::{
     pipelined::ProjectListExecutor,
     Datastore, DeltaStore,
 };
+use spacetimedb_expr::errors::TypingError;
+use spacetimedb_expr::expr::CallParams;
 use spacetimedb_expr::{
     check::{parse_and_type_sub, SchemaView},
     expr::ProjectList,
@@ -15,12 +17,26 @@ use spacetimedb_physical_plan::{
     compile::{compile_dml_plan, compile_select, compile_select_list},
     plan::{ProjectListPlan, ProjectPlan},
 };
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{ArgId, TableId};
+use std::collections::HashMap;
 
 /// DIRTY HACK ALERT: Maximum allowed length, in UTF-8 bytes, of SQL queries.
 /// Any query longer than this will be rejected.
 /// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
 const MAX_SQL_LENGTH: usize = 50_000;
+
+pub trait CallParamsExt {
+    fn get_arg(&self, params: &ProductValue) -> Result<ArgId, TypingError>;
+}
+
+pub struct MockCallParams {
+    params: HashMap<ProductValue, ArgId>,
+}
+impl CallParamsExt for MockCallParams {
+    fn get_arg(&self, params: &ProductValue) -> Result<ArgId, TypingError> {
+        todo!()
+    }
+}
 
 pub fn compile_subscription(
     sql: &str,

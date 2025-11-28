@@ -115,6 +115,13 @@ impl UnexpectedType {
 }
 
 #[derive(Debug, Error)]
+#[error("Unexpected function type. Expected: ({expected}) != Inferred: ({inferred})")]
+pub struct UnexpectedFunctionType {
+    pub expected: String,
+    pub inferred: String,
+}
+
+#[derive(Debug, Error)]
 #[error("Duplicate name `{0}`")]
 pub struct DuplicateName(pub String);
 
@@ -129,8 +136,8 @@ pub struct DmlOnView {
 }
 
 #[derive(Debug, Error)]
-#[error("Function calls are not supported")]
-pub struct FunctionCall;
+#[error("Table-valued functions are not supported: `{0}`")]
+pub struct TableFunc(pub String);
 
 #[derive(Error, Debug)]
 pub enum TypingError {
@@ -156,11 +163,15 @@ pub enum TypingError {
     #[error(transparent)]
     Unexpected(#[from] UnexpectedType),
     #[error(transparent)]
+    UnexpectedFunction(#[from] UnexpectedFunctionType),
+    #[error(transparent)]
     Wildcard(#[from] InvalidWildcard),
     #[error(transparent)]
     DuplicateName(#[from] DuplicateName),
     #[error(transparent)]
     FilterReturnType(#[from] FilterReturnType),
     #[error(transparent)]
-    FunctionCall(#[from] FunctionCall),
+    TableFunc(#[from] TableFunc),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }

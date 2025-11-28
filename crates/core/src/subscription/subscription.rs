@@ -609,7 +609,7 @@ impl AuthAccess for ExecutionSet {
     }
 }
 
-/// Querieshttps://github.com/clockworklabs/SpacetimeDBPrivate/pull/2207 all the [`StTableType::User`] tables *right now*
+/// Queries https://github.com/clockworklabs/SpacetimeDBPrivate/pull/2207 all the [`StTableType::User`] tables *right now*
 /// and turns them into [`QueryExpr`],
 /// the moral equivalent of `SELECT * FROM table`.
 pub(crate) fn get_all<T, F, I>(

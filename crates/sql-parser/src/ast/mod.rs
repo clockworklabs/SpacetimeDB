@@ -31,10 +31,10 @@ pub enum SqlFromSource {
 }
 
 impl SqlFromSource {
-    pub fn into_name_alias(self) -> (SqlIdent, SqlIdent) {
+    pub fn into_name_alias(self) -> (SqlIdent, SqlIdent, Option<Vec<SqlLiteral>>) {
         match self {
-            Self::Expr(name, alias) => (name, alias),
-            Self::FuncCall(func, alias) => (func.name, alias),
+            Self::Expr(name, alias) => (name, alias, None),
+            Self::FuncCall(func, alias) => (func.name, alias, Some(func.args)),
         }
     }
 }
@@ -213,7 +213,7 @@ impl From<Ident> for SqlIdent {
 }
 
 /// A SQL constant expression
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SqlLiteral {
     /// A boolean constant
     Bool(bool),

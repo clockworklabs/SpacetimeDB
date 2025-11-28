@@ -362,7 +362,7 @@ fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
         field.table = f(&field.table);
     }
     expr.visit_mut(&mut |expr| match expr {
-        RelExpr::RelVar(rhs) | RelExpr::LeftDeepJoin(LeftDeepJoin { rhs, .. }) => {
+        RelExpr::RelVar(rhs) | RelExpr::FunCall(rhs, ..) | RelExpr::LeftDeepJoin(LeftDeepJoin { rhs, .. }) => {
             rename(rhs, f);
         }
         RelExpr::EqJoin(LeftDeepJoin { rhs, .. }, a, b) => {
@@ -418,7 +418,7 @@ fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
 /// ```
 fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
     match expr {
-        RelExpr::RelVar(rhs) => RelExpr::LeftDeepJoin(LeftDeepJoin {
+        RelExpr::RelVar(rhs) | RelExpr::FunCall(rhs, ..) => RelExpr::LeftDeepJoin(LeftDeepJoin {
             lhs: Box::new(with),
             rhs,
         }),
@@ -443,8 +443,8 @@ fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
 fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) -> RelExpr {
     let ok = |relvar: &Relvar| relvar.schema.table_id == table_id && relvar.alias.as_ref() == alias;
     match expr {
-        RelExpr::RelVar(relvar, ..) if ok(&relvar) => with.clone(),
-        RelExpr::RelVar(..) => expr,
+        RelExpr::RelVar(relvar, ..) | RelExpr::FunCall(relvar, ..) if ok(&relvar) => with.clone(),
+        RelExpr::RelVar(..) | RelExpr::FunCall(..) => expr,
         RelExpr::Select(input, expr) => RelExpr::Select(Box::new(expand_leaf(*input, table_id, alias, with)), expr),
         RelExpr::LeftDeepJoin(join) if ok(&join.rhs) => extend_lhs(with.clone(), *join.lhs),
         RelExpr::LeftDeepJoin(LeftDeepJoin { lhs, rhs }) => RelExpr::LeftDeepJoin(LeftDeepJoin {
@@ -529,20 +529,23 @@ mod tests {
     }
 
     fn module_def() -> ModuleDef {
-        build_module_def(vec![
-            (
-                "users",
-                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
-            ),
-            (
-                "admins",
-                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
-            ),
-            (
-                "player",
-                ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
-            ),
-        ])
+        build_module_def(
+            vec![
+                (
+                    "users",
+                    ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+                ),
+                (
+                    "admins",
+                    ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+                ),
+                (
+                    "player",
+                    ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
+                ),
+            ],
+            vec![],
+        )
     }
 
     /// Parse, type check, and resolve RLS rules

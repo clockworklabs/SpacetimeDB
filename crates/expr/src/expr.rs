@@ -1,7 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
+use crate::errors::TypingError;
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
-use spacetimedb_primitives::{TableId, ViewId};
+use spacetimedb_primitives::{ArgId, TableId, ViewId};
+use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
@@ -96,6 +98,10 @@ impl ProjectName {
             }
         }
     }
+}
+
+pub trait CallParams {
+    fn create_or_get_param(&mut self, param: &ProductValue) -> Result<ArgId, TypingError>;
 }
 
 /// A projection is the root of any relational expression.
@@ -232,6 +238,35 @@ impl ProjectList {
             Self::Agg(_, _, name, ty) => f(name, ty),
         }
     }
+
+    /// Iterate over the function calls in this projection list
+    pub fn for_each_fun_call(
+        &mut self,
+        f: &mut impl FnMut(ProductValue) -> Result<ArgId, TypingError>,
+    ) -> Result<(), TypingError> {
+        match self {
+            ProjectList::Name(input) => {
+                for proj in input {
+                    match proj {
+                        ProjectName::None(expr) | ProjectName::Some(expr, _) => {
+                            expr.for_each_fun_call(f)?;
+                        }
+                    }
+                }
+            }
+            ProjectList::List(input, _) => {
+                for expr in input {
+                    expr.for_each_fun_call(f)?;
+                }
+            }
+            ProjectList::Limit(input, _) => {
+                input.for_each_fun_call(f)?;
+            }
+            ProjectList::Agg(_, _, _, _) => {}
+        }
+
+        Ok(())
+    }
 }
 
 /// A logical relational expression
@@ -245,6 +280,8 @@ pub enum RelExpr {
     LeftDeepJoin(LeftDeepJoin),
     /// A left deep binary equi-join
     EqJoin(LeftDeepJoin, FieldProject, FieldProject),
+    /// A function call
+    FunCall(Relvar, ProductValue),
 }
 
 /// A table reference
@@ -280,7 +317,7 @@ impl RelExpr {
             | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
                 lhs.visit(f);
             }
-            Self::RelVar(..) => {}
+            Self::RelVar(..) | Self::FunCall(..) => {}
         }
     }
 
@@ -293,14 +330,14 @@ impl RelExpr {
             | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
                 lhs.visit_mut(f);
             }
-            Self::RelVar(..) => {}
+            Self::RelVar(..) | Self::FunCall(..) => {}
         }
     }
 
     /// The number of fields this expression returns
     pub fn nfields(&self) -> usize {
         match self {
-            Self::RelVar(..) => 1,
+            Self::RelVar(..) | Self::FunCall(..) => 1,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
             Self::Select(input, _) => input.nfields(),
         }
@@ -310,6 +347,7 @@ impl RelExpr {
     pub fn has_field(&self, field: &str) -> bool {
         match self {
             Self::RelVar(Relvar { alias, .. }) => alias.as_ref() == field,
+            Self::FunCall(Relvar { alias, .. }, ..) => alias.as_ref() == field,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
                 join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }
@@ -359,6 +397,31 @@ impl RelExpr {
             Self::Select(input, _) => input.return_name(),
             _ => None,
         }
+    }
+
+    fn for_each_fun_call(
+        &mut self,
+        f: &mut impl FnMut(ProductValue) -> Result<ArgId, TypingError>,
+    ) -> Result<(), TypingError> {
+        // For function calls, we need to filter by the argument id
+        if let RelExpr::FunCall(relvar, param) = self {
+            let new_arg_id = f(param.clone())?;
+            let arg_id_col = relvar.schema.inner().get_column_by_name("arg_id").unwrap().col_pos;
+
+            *self = RelExpr::Select(
+                Box::new(RelExpr::RelVar(relvar.clone())),
+                Expr::BinOp(
+                    BinOp::Eq,
+                    Box::new(Expr::Field(FieldProject {
+                        table: relvar.alias.clone(),
+                        field: arg_id_col.idx(),
+                        ty: AlgebraicType::U64,
+                    })),
+                    Box::new(Expr::Value(AlgebraicValue::U64(new_arg_id.0), AlgebraicType::U64)),
+                ),
+            );
+        }
+        Ok(())
     }
 }
 

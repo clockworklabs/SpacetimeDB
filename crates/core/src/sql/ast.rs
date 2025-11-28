@@ -4,11 +4,11 @@ use anyhow::Context;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
-use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::check::{SchemaView, TypingResult};
 use spacetimedb_expr::statement::compile_sql_stmt;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_primitives::{ColId, TableId};
-use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
+use spacetimedb_primitives::{ArgId, ColId, TableId};
+use spacetimedb_sats::{AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_schema::def::error::RelationError;
 use spacetimedb_schema::relation::{ColExpr, FieldName};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema, TableSchema};
@@ -477,7 +477,7 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 }
 
 pub struct SchemaViewer<'a, T> {
-    tx: &'a T,
+    pub(crate) tx: &'a T,
     auth: &'a AuthCtx,
 }
 
