@@ -1108,6 +1108,9 @@ impl InstanceCommon {
         (res, trapped)
     }
 
+    /// Compiles and runs a query that was returned from a view.
+    /// This tracks read dependencies for the view.
+    /// Note that this doesn't modify the resulting rows in any way.
     fn run_query_for_view(
         &self,
         tx: &mut MutTxId,
@@ -1119,7 +1122,7 @@ impl InstanceCommon {
             return Ok(Vec::new());
         }
 
-        // Views bypass RLS.
+        // Views bypass RLS, since views should enforce their own access control procedurally.
         let auth = AuthCtx::for_current(self.info.database_identity);
         let schema_view = SchemaViewer::new(&*tx, &auth);
 
