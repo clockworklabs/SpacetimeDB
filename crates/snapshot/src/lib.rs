@@ -954,7 +954,7 @@ impl SnapshotRepository {
             .max())
     }
 
-    pub fn all_snapshots(&self) -> Result<impl Iterator<Item = TxOffset>, SnapshotError> {
+    pub fn all_snapshots(&self) -> Result<impl Iterator<Item = TxOffset> + use<>, SnapshotError> {
         Ok(self
             .root
             // Item = Result<DirEntry>
@@ -984,7 +984,9 @@ impl SnapshotRepository {
     }
 
     /// Return an interator of [`ArchivedSnapshotDirPath`] for all the archived snapshot directories on disk
-    pub fn all_archived_snapshots(&self) -> Result<impl Iterator<Item = ArchivedSnapshotDirPath>, SnapshotError> {
+    pub fn all_archived_snapshots(
+        &self,
+    ) -> Result<impl Iterator<Item = ArchivedSnapshotDirPath> + use<>, SnapshotError> {
         Ok(self
             .root
             // Item = Result<DirEntry>

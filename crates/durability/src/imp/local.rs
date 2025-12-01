@@ -151,7 +151,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain a read-only copy of the durable state that implements [History].
-    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> {
+    pub fn as_history(&self) -> impl History<TxData = Txdata<T>> + use<T> {
         self.clog.clone()
     }
 }
@@ -164,7 +164,7 @@ impl<T: Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -247,9 +247,9 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     // that doesn't require `spawn_blocking`.
                     if self.max_records_in_commit.get() == 1 {
                         self.flush_append(txdata, true).await;
-                    } else if let Err(retry) = self.clog.append(txdata) {
+                    } else { match self.clog.append(txdata) { Err(retry) => {
                         self.flush_append(retry, false).await
-                    }
+                    } _ => {}}}
                 },
             }
         }

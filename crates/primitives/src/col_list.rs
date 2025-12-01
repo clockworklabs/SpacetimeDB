@@ -23,7 +23,7 @@ use itertools::Itertools;
 /// Mostly provided for testing.
 #[macro_export]
 macro_rules! col_list {
-    ($($elem:expr),* $(,)?) => {{
+    ($($elem:expr_2021),* $(,)?) => {{
         $crate::ColList::from([$($elem),*])
     }};
 }
@@ -724,7 +724,7 @@ impl Clone for ColListVec {
 fn is_sorted_and_deduped(data: &[ColId]) -> bool {
     match data {
         [] => true,
-        [mut prev, rest @ ..] => !rest.iter().any(|elem| {
+        &[mut prev, ref rest @ ..] => !rest.iter().any(|elem| {
             let bad = prev >= *elem;
             prev = *elem;
             bad

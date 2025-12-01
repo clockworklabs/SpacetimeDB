@@ -12,7 +12,7 @@ pub(crate) fn build_csharp(project_path: &Path, build_debug: bool) -> anyhow::Re
     // All `dotnet` commands must execute in the project directory, otherwise
     // global.json won't have any effect and wrong .NET SDK might be picked.
     macro_rules! dotnet {
-        ($($arg:expr),*) => {
+        ($($arg:expr_2021),*) => {
             duct::cmd!("dotnet", $($arg),*).dir(project_path)
         };
     }

@@ -32,7 +32,7 @@ use v8::{
 };
 
 macro_rules! create_synthetic_module {
-    ($scope:expr, $module_name:expr $(, ($wrapper:ident, $abi_call:expr, $fun:ident))* $(,)?) => {{
+    ($scope:expr_2021, $module_name:expr_2021 $(, ($wrapper:ident, $abi_call:expr_2021, $fun:ident))* $(,)?) => {{
         let export_names = &[$(str_from_ident!($fun).string($scope)),*];
         let eval_steps = |context, module| {
             callback_scope!(unsafe scope, context);

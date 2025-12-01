@@ -16,7 +16,7 @@ pub const fn range_move(r: Range<usize>, by: usize) -> Range<usize> {
 /// ```
 #[macro_export]
 macro_rules! static_assert_size {
-    ($ty:ty, $size:expr) => {
+    ($ty:ty, $size:expr_2021) => {
         const _: [(); $size] = [(); ::core::mem::size_of::<$ty>()];
     };
 }
@@ -30,7 +30,7 @@ macro_rules! static_assert_size {
 /// ```
 #[macro_export]
 macro_rules! static_assert_align {
-    ($ty:ty, $align:expr) => {
+    ($ty:ty, $align:expr_2021) => {
         const _: [(); $align] = [(); ::core::mem::align_of::<$ty>()];
     };
 }

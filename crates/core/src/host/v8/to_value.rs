@@ -11,7 +11,7 @@ pub(super) trait ToValue {
 
 /// Provides a [`ToValue`] implementation.
 macro_rules! impl_to_value {
-    ($ty:ty, ($val:ident, $scope:ident) => $logic:expr) => {
+    ($ty:ty, ($val:ident, $scope:ident) => $logic:expr_2021) => {
         impl ToValue for $ty {
             fn to_value<'scope>(&self, $scope: &PinScope<'scope, '_>) -> Local<'scope, Value> {
                 let $val = *self;

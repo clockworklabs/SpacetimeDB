@@ -67,7 +67,7 @@ impl Unsupported for sqlparser::ast::GroupByExpr {
 }
 
 macro_rules! unsupported {
-    ($name:literal,$a:expr)=>{{
+    ($name:literal,$a:expr_2021)=>{{
         let name = stringify!($name);
         let it = stringify!($a);
         if $a.unsupported() {
@@ -77,7 +77,7 @@ macro_rules! unsupported {
             });
         }
     }};
-    ($name:literal,$($a:expr),+$(,)?)=> {{
+    ($name:literal,$($a:expr_2021),+$(,)?)=> {{
         $(unsupported!($name,$a);)+
     }};
 }

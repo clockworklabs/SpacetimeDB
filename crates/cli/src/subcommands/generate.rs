@@ -835,7 +835,7 @@ mod tests {
         let mut child_fields = HashMap::new();
         child_fields.insert("database".to_string(), serde_json::json!("my-db"));
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -844,7 +844,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            children: Some(vec![make_gen_config(child_fields, vec![gen])]),
+            children: Some(vec![make_gen_config(child_fields, vec![r#gen])]),
             ..Default::default()
         };
 
@@ -864,7 +864,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("typescript"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -876,7 +876,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            generate: Some(vec![gen]),
+            generate: Some(vec![r#gen]),
             children: Some(vec![
                 {
                     let mut f = HashMap::new();
@@ -1217,7 +1217,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("typescript"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/bindings"));
@@ -1229,7 +1229,7 @@ mod tests {
 
         let spacetime_config = SpacetimeConfig {
             additional_fields: parent_fields,
-            generate: Some(vec![gen]),
+            generate: Some(vec![r#gen]),
             children: Some(vec![
                 {
                     let mut f = HashMap::new();
@@ -1268,7 +1268,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -1284,7 +1284,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m1"));
                         m
                     },
-                    vec![gen.clone()],
+                    vec![r#gen.clone()],
                 ),
                 make_gen_config(
                     {
@@ -1293,7 +1293,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m2"));
                         m
                     },
-                    vec![gen.clone()],
+                    vec![r#gen.clone()],
                 ),
                 make_gen_config(
                     {
@@ -1302,7 +1302,7 @@ mod tests {
                         m.insert("module-path".to_string(), serde_json::json!("./m3"));
                         m
                     },
-                    vec![gen],
+                    vec![r#gen],
                 ),
             ]),
             ..Default::default()
@@ -1321,7 +1321,7 @@ mod tests {
         let cmd = cli();
         let schema = build_generate_config_schema(&cmd).unwrap();
 
-        let gen = {
+        let r#gen = {
             let mut m = HashMap::new();
             m.insert("language".to_string(), serde_json::json!("rust"));
             m.insert("out_dir".to_string(), serde_json::json!("/tmp/out"));
@@ -1335,7 +1335,7 @@ mod tests {
                 m.insert("module-path".to_string(), serde_json::json!("./server"));
                 m
             },
-            vec![gen],
+            vec![r#gen],
         );
 
         let matches = cmd.clone().get_matches_from(vec!["generate", "nonexistent-*"]);

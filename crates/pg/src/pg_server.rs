@@ -246,10 +246,13 @@ impl<T: Sync + Send + ControlStateReadAccess + ControlStateWriteAccess + NodeDel
                 // We don't support `METADATA_USER` because we don't have a user management system.
                 let database = param(METADATA_DATABASE)?;
                 let pwd = pwd.into_password()?;
-                if let Ok(application_name) = param("application_name") {
-                    log::info!("PG: Connecting to database: {database}, by {application_name}",);
-                } else {
-                    log::info!("PG: Connecting to database: {database}");
+                match param("application_name") {
+                    Ok(application_name) => {
+                        log::info!("PG: Connecting to database: {database}, by {application_name}",);
+                    }
+                    _ => {
+                        log::info!("PG: Connecting to database: {database}");
+                    }
                 }
 
                 let name = database::NameOrIdentity::Name(DatabaseName(database.clone()));
