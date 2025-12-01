@@ -596,3 +596,100 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
             ],
             projection,
         )
+
+class SubscriptionUpdateForViews(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{reducer, view, table, ReducerContext, SpacetimeType, Table, ViewContext};
+
+#[derive(SpacetimeType)]
+pub struct TestValue {
+    pub value: i32,
+}
+
+#[table(name = id_and_value)]
+pub struct IdAndValue {
+    #[auto_inc]
+    #[primary_key]
+    pub id: u64,
+    #[index(btree)]
+    pub value: i32,
+}
+
+#[view(name = test_values, public)]
+fn test_values(ctx: &ViewContext) -> Vec<TestValue> {
+    ctx.db.id_and_value().value().filter(5..10).map(|r| TestValue { value: r.value }).collect()
+}
+
+#[reducer]
+fn insert_value(ctx: &ReducerContext, value: i32) -> Result<(), String> {
+    ctx.db.id_and_value().try_insert(IdAndValue {
+        id: 0,
+        value,
+    })?;
+    Ok(())
+}
+
+#[reducer]
+fn update_value(ctx: &ReducerContext, id: u64, value: i32) -> Result<(), String> {
+    if let Some(mut id_and_value) = ctx.db.id_and_value().id().find(id) {
+        id_and_value.value = value;
+        ctx.db.id_and_value().id().update(id_and_value);
+    }
+    Ok(())
+}
+"""
+
+    def test_subscription_update(self):
+        """Asserts that we get the correct view updates when changing the underlying table"""
+
+        sub = self.subscribe("select * from test_values", n=5)
+
+        for i in range(0, 15):
+            self.call("insert_value", i + 1)
+
+        # for i in range(0, 15):
+        #     self.call("update_value", i, i + 2)
+
+        events = sub()
+
+        self.assertEqual(
+            [
+                {
+                    'test_values': {
+                        'deletes': [],
+                        'inserts': [{'value': 5}],
+                    }
+                },
+                {
+                    'test_values': {
+                        'deletes': [],
+                        'inserts': [{'value': 6}],
+                    }
+                },
+                {
+                    'test_values': {
+                        'deletes': [],
+                        'inserts': [{'value': 7}],
+                    }
+                },
+                {
+                    'test_values': {
+                        'deletes': [],
+                        'inserts': [{'value': 8}],
+                    }
+                },
+                {
+                    'test_values': {
+                        'deletes': [],
+                        'inserts': [{'value': 9}],
+                    }
+                },
+                # {
+                #     'test_values': {
+                #         'deletes': [{'value': 5}],
+                #         'inserts': [],
+                #     }
+                # },
+            ],
+            events,
+        )
