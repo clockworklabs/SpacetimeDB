@@ -947,7 +947,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
            #[allow(non_camel_case_types, dead_code)]
            #vis trait #query_trait_ident {
                fn #table_ident(&self) -> spacetimedb::query::Table<#original_struct_ident> {
-                   spacetimedb::query::Table::new()
+                   spacetimedb::query::Table::new(stringify!(#table_ident))
                }
            }
            impl #query_trait_ident for spacetimedb::QueryBuilder {}
