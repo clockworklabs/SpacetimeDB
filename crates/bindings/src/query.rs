@@ -2,6 +2,8 @@ use spacetimedb_lib::{
     sats::algebraic_value::ser::ValueSerializer, ser::Serialize, AlgebraicType, AlgebraicValue, Identity, SpacetimeType,
 };
 
+use crate::table::Column;
+
 pub struct QueryBuilder {}
 
 pub struct Table<T> {
@@ -82,67 +84,48 @@ impl<T: HasCols> Table<T> {
     }
 }
 
-struct ColExpr<T> {
-    name: &'static str,
-    _marker: std::marker::PhantomData<T>,
-}
-pub enum ValueExprType<T, V> {
-    Column(ColExpr<T>),
-    Literal(AlgebraicValue),
-    Parameter(V),
+pub trait RHS<T, V> {
+    fn to_expr(self) -> ValueExpr<T>;
 }
 
-impl<T, V: Serialize> From<ValueExprType<T, V>> for ValueExpr<T> {
-    fn from(value: ValueExprType<T, V>) -> Self {
-        match value {
-            ValueExprType::Column(col_expr) => ValueExpr::Column(col_expr),
-            ValueExprType::Literal(v) => {
-                let serializer = ValueSerializer;
-                let value = v.serialize(serializer).unwrap();
-                ValueExpr::Literal(value)
-            }
-            _ => {
-                panic!("Parameters are not supported in this context");
-            }
+impl<T, V> RHS<T, V> for Col<T, V> {
+    fn to_expr(self) -> ValueExpr<T> {
+        ValueExpr::Column {
+            name: self.column_name,
+            _marker: std::marker::PhantomData,
         }
     }
 }
 
+impl<T, V: Serialize> RHS<T, V> for V {
+    fn to_expr(self) -> ValueExpr<T> {
+        let serializer = ValueSerializer;
+        let value = self.serialize(serializer).unwrap();
+
+        ValueExpr::Literal(value.into())
+    }
+}
+
 impl<T, V: Serialize> Col<T, V> {
-    pub fn eq(self, value: ValueExprType<T, V>) -> Expr<ValueExpr<T>> {
-        Expr::Eq(self.into(), value.into())
+    pub fn eq(self, value: impl RHS<T, V>) -> Expr<ValueExpr<T>> {
+        Expr::Eq(self.into(), value.to_expr())
     }
 }
 
 pub enum ValueExpr<T> {
-    Column(ColExpr<T>),
+    Column {
+        name: &'static str,
+        _marker: std::marker::PhantomData<T>,
+    },
     Literal(AlgebraicValue),
-}
-
-impl<T, V> From<Col<T, V>> for ValueExprType<T, V> {
-    fn from(col: Col<T, V>) -> Self {
-        ValueExprType::Column(ColExpr {
-            name: col.column_name,
-            _marker: std::marker::PhantomData,
-        })
-    }
 }
 
 impl<T, V> From<Col<T, V>> for ValueExpr<T> {
     fn from(col: Col<T, V>) -> Self {
-        ValueExpr::Column(ColExpr {
+        ValueExpr::Column {
             name: col.column_name,
             _marker: std::marker::PhantomData,
-        })
-    }
-}
-
-impl<T, V: Serialize> From<V> for ValueExprType<T, V> {
-    fn from(value: V) -> Self {
-        let serializer = ValueSerializer;
-        let value = value.serialize(serializer).unwrap();
-
-        ValueExprType::Literal(value.into())
+        }
     }
 }
 
