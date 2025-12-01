@@ -355,7 +355,7 @@ pub trait TypespaceBuilder {
 /// ```
 #[macro_export]
 macro_rules! impl_st {
-    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $stty:expr_2021) => {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $stty:expr) => {
         impl<$($generic_wrapped $($other_generics)*)?> $crate::GroundSpacetimeType for $rty
             $(where $generic_wrapped: $crate::GroundSpacetimeType)?
         {
@@ -366,7 +366,7 @@ macro_rules! impl_st {
 
         impl_st!([ $($generic $($other_generics)*)? ] $rty, _ts => $stty);
     };
-    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $ts:ident => $stty:expr_2021) => {
+    ([ $($generic_wrapped:ident $($other_generics:tt)*)? ] $rty:ty, $ts:ident => $stty:expr) => {
         impl<$($generic_wrapped $($other_generics)*)?> $crate::SpacetimeType for $rty
             $(where $generic_wrapped: $crate::SpacetimeType)?
         {

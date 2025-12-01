@@ -278,7 +278,7 @@ pub(crate) const ST_INDEX_ACCESSOR_IDX: usize = 18;
 pub(crate) const ST_COLUMN_ACCESSOR_IDX: usize = 19;
 
 macro_rules! st_fields_enum {
-    ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr_2021, $var:ident = $discr:expr_2021,)* }) => {
+    ($(#[$attr:meta])* enum $ty_name:ident { $($name:expr, $var:ident = $discr:expr,)* }) => {
         #[derive(Copy, Clone, Debug)]
         $(#[$attr])*
         pub enum $ty_name {

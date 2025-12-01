@@ -80,7 +80,7 @@ fn manual_migrate_database(
 
 /// Logs with `info` level to `$logger` as well as via the `log` crate.
 macro_rules! log {
-    ($logger:expr_2021, $($tokens:tt)*) => {
+    ($logger:expr, $($tokens:tt)*) => {
         $logger.info(&format!($($tokens)*));
         log::info!($($tokens)*);
     };

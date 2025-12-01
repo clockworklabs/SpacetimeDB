@@ -32,7 +32,7 @@ fn eval_builtin(
 }
 
 macro_rules! create_synthetic_module {
-    ($scope:expr_2021, $module_name:expr_2021 $(,  $fun:ident)* $(,)?) => {{
+    ($scope:expr, $module_name:expr $(,  $fun:ident)* $(,)?) => {{
         let export_names = &[$(str_from_ident!($fun).string($scope)),*];
         let eval_steps = |context, module| {
             v8::callback_scope!(unsafe scope, context);

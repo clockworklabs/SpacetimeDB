@@ -459,7 +459,7 @@ impl<T, E, I: Iterator<Item = Result<T, ErrorStream<E>>>> CollectAllErrors for I
 /// ```
 #[macro_export]
 macro_rules! expect_error_matching (
-    ($result:expr_2021, $expected:pat => $cond:expr_2021) => {
+    ($result:expr, $expected:pat => $cond:expr) => {
         let result: &::std::result::Result<
             _,
             $crate::error_stream::ErrorStream<_>
@@ -480,7 +480,7 @@ macro_rules! expect_error_matching (
             }
         }
     };
-    ($result:expr_2021, $expected:pat) => {
+    ($result:expr, $expected:pat) => {
         let result: &::std::result::Result<
             _,
             $crate::error_stream::ErrorStream<_>

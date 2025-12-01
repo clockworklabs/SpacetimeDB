@@ -30,7 +30,7 @@ use std::{borrow::Cow, rc::Rc, sync::Arc};
 /// ```
 #[macro_export]
 macro_rules! impl_deserialize {
-    ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, $de:ident => $body:expr_2021) => {
+    ([$($generics:tt)*] $(where [$($wc:tt)*])? $typ:ty, $de:ident => $body:expr) => {
         impl<'de, $($generics)*> $crate::de::Deserialize<'de> for $typ {
             fn deserialize<D: $crate::de::Deserializer<'de>>($de: D) -> Result<Self, D::Error> { $body }
         }
