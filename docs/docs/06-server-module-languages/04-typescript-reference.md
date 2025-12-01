@@ -6,7 +6,7 @@ toc_max_heading_level: 6
 
 # SpacetimeDB TypeScript Module Library
 
-[SpacetimeDB](pathname:///) lets you write server-side applications (called **modules**) that run inside a relational database. Modules define **tables** (your data) and **reducers** (your server endpoints). Clients connect directly to the database to read public data via SQL subscriptions and queries, and they invoke reducers to mutate state.
+[SpacetimeDB](https://spacetimedb.com/) lets you write server-side applications (called **modules**) that run inside a relational database. Modules define **tables** (your data) and **reducers** (your server endpoints). Clients connect directly to the database to read public data via SQL subscriptions and queries, and they invoke reducers to mutate state.
 
 ```text
     Client Application                          SpacetimeDB
@@ -25,7 +25,7 @@ toc_max_heading_level: 6
 └───────────────────────┘                └───────────────────────┘
 ```
 
-TypeScript modules are built with the TypeScript Module Library from [`spacetimedb/server`](https://www.npmjs.com/package/spacetimedb). You define your schema and reducers in TypeScript, and then build and deploy with the [`spacetime` CLI](pathname:///install) using the `spacetime publish` command. Under the hood, SpacetimeDB uses [Rolldown](https://rolldown.rs/) to bundle your application into a single JavaScript artifact before uploading it to the SpacetimeDB host.
+TypeScript modules are built with the TypeScript Module Library from [`spacetimedb/server`](https://www.npmjs.com/package/spacetimedb). You define your schema and reducers in TypeScript, and then build and deploy with the [`spacetime` CLI](https://spacetimedb.com/install) using the `spacetime publish` command. Under the hood, SpacetimeDB uses [Rolldown](https://rolldown.rs/) to bundle your application into a single JavaScript artifact before uploading it to the SpacetimeDB host.
 
 :::note
 SpacetimeDB also provides a TypeScript **client** SDK at `spacetimedb/sdk`, as well as integrations for frameworks like `spacetimedb/react`. This guide focuses exclusively on the **server-side module** library.
@@ -71,7 +71,7 @@ Tables and reducers can use any types built with `t.*` (e.g., `t.string()`, `t.i
 
 ## Setup
 
-1. **[Install the CLI](pathname:///install)**
+1. **[Install the CLI](https://spacetimedb.com/install)**
 
 2. **Initialize a TypeScript module project**
 
@@ -115,7 +115,7 @@ spacetime publish <MY_DATABASE_NAME>
 
 where `<MY_DATABASE_NAME>` is the name of your existing database.
 
-You can also generate client bindings for your schema with `spacetime generate`. See the [client SDK documentation](pathname:///docs/sdks/typescript#generate-module-bindings) for more information.
+You can also generate client bindings for your schema with `spacetime generate`. See the [client SDK documentation](https://spacetimedb.com/docs/sdks/typescript#generate-module-bindings) for more information.
 
 # How it works
 
