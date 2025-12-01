@@ -362,4 +362,9 @@ mod view {
     fn subscribe_view_non_table_return() {
         make_test("view-non-table-return").run()
     }
+
+    #[test]
+    fn subscription_updates_for_view() {
+        make_test("view-subscription-update").run()
+    }
 }
