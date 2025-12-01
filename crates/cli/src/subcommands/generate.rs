@@ -387,13 +387,12 @@ fn detect_default_language(client_project_dir: &Path) -> anyhow::Result<Language
     if client_project_dir.join("Cargo.toml").exists() {
         return Ok(Language::Rust);
     }
-    if let Ok(entries) = fs::read_dir(client_project_dir) {
-        if entries
+    if let Ok(entries) = fs::read_dir(client_project_dir)
+        && entries
             .flatten()
             .any(|entry| entry.path().extension().is_some_and(|e| e == "csproj"))
-        {
-            return Ok(Language::Csharp);
-        }
+    {
+        return Ok(Language::Csharp);
     }
 
     anyhow::bail!(

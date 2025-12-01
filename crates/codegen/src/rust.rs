@@ -84,16 +84,14 @@ impl __sdk::InModule for {type_name} {{
             _ => false,
         };
 
-        if !implemented {
-            if let Some(type_ref) = module
+        if !implemented
+            && let Some(type_ref) = module
                 .views()
                 .map(|v| v.product_type_ref)
                 .find(|type_ref| type_ref_name(module, *type_ref) == name)
-            {
-                implement_query_col_types_for_struct(module, out, type_ref)
-                    .expect("failed to implement query col types");
-                out.newline();
-            }
+        {
+            implement_query_col_types_for_struct(module, out, type_ref).expect("failed to implement query col types");
+            out.newline();
         }
 
         vec![OutputFile {

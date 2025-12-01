@@ -28,25 +28,26 @@ pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {
         .map(|v| v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
 
-    if use_custom && cmd == "generate" {
-        if let Ok(custom_path) = env::var("CUSTOM_SPACETIMEDB_PATH") {
-            // Call the dev CLI exactly like the manual command:
-            // cargo run --bin spacetimedb-cli -- generate ...
-            let status = Command::new("cargo")
-                .current_dir(&custom_path) // Ensure we run in the custom path directory
-                .arg("run")
-                .arg("--bin")
-                .arg("spacetimedb-cli")
-                .arg("--")
-                .args(args) // `args` are like ["generate", "--lang", ...]
-                .status()
-                .expect("Failed to run custom SpacetimeDB CLI via cargo");
+    if use_custom
+        && cmd == "generate"
+        && let Ok(custom_path) = env::var("CUSTOM_SPACETIMEDB_PATH")
+    {
+        // Call the dev CLI exactly like the manual command:
+        // cargo run --bin spacetimedb-cli -- generate ...
+        let status = Command::new("cargo")
+            .current_dir(&custom_path) // Ensure we run in the custom path directory
+            .arg("run")
+            .arg("--bin")
+            .arg("spacetimedb-cli")
+            .arg("--")
+            .args(args) // `args` are like ["generate", "--lang", ...]
+            .status()
+            .expect("Failed to run custom SpacetimeDB CLI via cargo");
 
-            assert!(status.success(), "Custom SpacetimeDB CLI failed");
-            return;
-        }
-        // If CUSTOM_SPACETIMEDB_PATH is missing, fall through to the default behavior.
+        assert!(status.success(), "Custom SpacetimeDB CLI failed");
+        return;
     }
+    // If CUSTOM_SPACETIMEDB_PATH is missing, fall through to the default behavior.
 
     // Default: run in-process CLI (fast/path-friendly for tests).
     let config = Config::new_with_localhost(paths.cli_config_dir.cli_toml());
