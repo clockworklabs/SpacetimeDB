@@ -23,7 +23,7 @@ use itertools::Itertools;
 /// Mostly provided for testing.
 #[macro_export]
 macro_rules! col_list {
-    ($($elem:expr_2021),* $(,)?) => {{
+    ($($elem:expr),* $(,)?) => {{
         $crate::ColList::from([$($elem),*])
     }};
 }

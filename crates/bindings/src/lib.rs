@@ -1695,10 +1695,10 @@ macro_rules! __volatile_nonatomic_schedule_immediate_impl {
     ([$($cur:tt)*] [$next:tt $($rest:tt)*]) => {
         $crate::__volatile_nonatomic_schedule_immediate_impl!([$($cur)* $next] [$($rest)*])
     };
-    (@process_args $repeater:path, ($($args:expr_2021),* $(,)?)) => {
+    (@process_args $repeater:path, ($($args:expr),* $(,)?)) => {
         $crate::__volatile_nonatomic_schedule_immediate_impl!(@call $repeater, ($($args),*))
     };
-    (@call $repeater:path, ($($args:expr_2021),*)) => {
+    (@call $repeater:path, ($($args:expr),*)) => {
         if false {
             let _ = $repeater(&$crate::ReducerContext::__dummy(), $($args,)*);
         } else {

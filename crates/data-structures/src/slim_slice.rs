@@ -116,7 +116,7 @@ pub fn try_into<A, B: TryFrom<A, Error = LenTooLong<A>>>(x: A) -> Result<B, LenT
 
 /// Ensures that `$thing.len() <= u32::MAX`.
 macro_rules! ensure_len_fits {
-    ($thing:expr_2021) => {
+    ($thing:expr) => {
         let Ok(_) = u32::try_from($thing.len()) else {
             return Err(LenTooLong {
                 len: $thing.len(),

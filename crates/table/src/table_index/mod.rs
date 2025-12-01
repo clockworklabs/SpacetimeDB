@@ -318,7 +318,7 @@ enum TypedIndex {
 static_assert_size!(TypedIndex, 64);
 
 macro_rules! same_for_all_types {
-    ($scrutinee:expr_2021, $this:ident => $body:expr_2021) => {
+    ($scrutinee:expr, $this:ident => $body:expr) => {
         match $scrutinee {
             Self::BtreeBool($this) => $body,
             Self::BtreeU8($this) => $body,

@@ -245,7 +245,7 @@ fn query_rows_from_update(
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err {
-    ($expr:expr_2021, $handler:expr_2021, $metrics:expr_2021) => {
+    ($expr:expr, $handler:expr, $metrics:expr) => {
         match $expr {
             Ok(val) => val,
             Err(e) => {
@@ -259,7 +259,7 @@ macro_rules! return_on_err {
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err_with_sql {
-    ($expr:expr_2021, $sql:expr_2021, $handler:expr_2021) => {
+    ($expr:expr, $sql:expr, $handler:expr) => {
         match $expr.map_err(|err| DBError::WithSql {
             sql: $sql.into(),
             error: Box::new(DBError::Other(err.into())),
@@ -276,7 +276,7 @@ macro_rules! return_on_err_with_sql {
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err_with_sql_bool {
-    ($expr:expr_2021, $sql:expr_2021, $handler:expr_2021) => {
+    ($expr:expr, $sql:expr, $handler:expr) => {
         match $expr.map_err(|err| DBError::WithSql {
             sql: $sql.into(),
             error: Box::new(DBError::Other(err.into())),

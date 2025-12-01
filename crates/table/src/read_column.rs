@@ -485,7 +485,7 @@ mod test {
     /// e.g. a Rust integer,
     /// and asserts that the extracted value is as expected.
     macro_rules! test_read_column_primitive {
-        ($name:ident { $algebraic_type:expr_2021 => $rust_type:ty = $val:expr_2021 }) => {
+        ($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr }) => {
             #[test]
             fn $name() {
                 let pool = PagePool::new_for_test();
@@ -500,7 +500,7 @@ mod test {
         };
 
 
-        ($($name:ident { $algebraic_type:expr_2021 => $rust_type:ty = $val:expr_2021 };)*) => {
+        ($($name:ident { $algebraic_type:expr => $rust_type:ty = $val:expr };)*) => {
             $(test_read_column_primitive! {
                 $name { $algebraic_type => $rust_type = $val }
             })*

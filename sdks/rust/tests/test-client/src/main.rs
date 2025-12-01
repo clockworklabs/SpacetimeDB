@@ -48,7 +48,7 @@ fn exit_on_panic() {
 }
 
 macro_rules! assert_eq_or_bail {
-    ($expected:expr_2021, $found:expr_2021) => {{
+    ($expected:expr, $found:expr) => {{
         let expected = &$expected;
         let found = &$found;
         if expected != found {

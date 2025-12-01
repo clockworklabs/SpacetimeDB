@@ -6,7 +6,7 @@ use spacetimedb_sats::algebraic_value::ser::value_serialize;
 use spacetimedb_sats::{satn::Satn, GroundSpacetimeType as _, SumTypeVariant, Typespace, WithTypespace};
 
 macro_rules! de_json_snapshot {
-    ($schema:expr_2021, $json:expr_2021) => {
+    ($schema:expr, $json:expr) => {
         let (schema, json) = (&$schema, &$json);
         let value = de_json(schema, json).unwrap();
         let value = WithTypespace::new(&EMPTY_TYPESPACE, schema)

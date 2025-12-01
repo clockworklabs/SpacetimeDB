@@ -40,7 +40,7 @@ use v8::{
 };
 
 macro_rules! create_synthetic_module {
-    ($scope:expr_2021, $module_name:expr_2021 $(, ($($fun:tt)*))* $(,)?) => {{
+    ($scope:expr, $module_name:expr $(, ($($fun:tt)*))* $(,)?) => {{
         let export_names = &[$(synthetic_module_export_name!($($fun)*).string($scope)),*];
         let eval_steps = |context: Local<v8::Context>, module: Local<Module>| {
             callback_scope!(unsafe scope, context);
@@ -59,23 +59,23 @@ macro_rules! create_synthetic_module {
 }
 macro_rules! synthetic_module_export_name {
     // function exports
-    ($wrapper:ident, $abi_call:expr_2021, $fun:ident) => {
+    ($wrapper:ident, $abi_call:expr, $fun:ident) => {
         str_from_ident!($fun)
     };
     // value exports
-    ($name:ident = $value:expr_2021) => {
+    ($name:ident = $value:expr) => {
         str_from_ident!($name)
     };
 }
 macro_rules! register_synthetic_module_export {
     // function exports
-    ($scope:expr_2021, $module:expr_2021, ($wrapper:ident, $abi_call:expr_2021, $fun:ident)) => {
+    ($scope:expr, $module:expr, ($wrapper:ident, $abi_call:expr, $fun:ident)) => {
         register_module_fun($scope, $module, str_from_ident!($fun), |s, a, rv| {
             $wrapper($abi_call, s, a, rv, $fun)
         })?;
     };
     // value exports
-    ($scope:expr_2021, $module:expr_2021, ($name:ident = $value:expr_2021)) => {
+    ($scope:expr, $module:expr, ($name:ident = $value:expr)) => {
         let name = str_from_ident!($name).string($scope);
         let value = $value($scope);
         $module.set_synthetic_module_export($scope, name, value.into())?;
@@ -201,7 +201,7 @@ macro_rules! impl_returnvalue {
     ($t:ty, self$($field:tt)*) => {
         impl_returnvalue!($t, (me, scope, rv) => me$($field)*.set_return(scope, rv));
     };
-    ($t:ty, ($me:pat, $scope:pat, $rv:ident) => $body:expr_2021) => {
+    ($t:ty, ($me:pat, $scope:pat, $rv:ident) => $body:expr) => {
         impl JsReturnValue for $t {
             fn set_return(self, $scope: &mut PinScope<'_, '_>, #[allow(unused_mut)] mut $rv: v8::ReturnValue<'_>) {
                 let $me = self;

@@ -18,7 +18,7 @@ pub struct ProductValue {
 /// Repeat notation from `vec![x; n]` is not supported.
 #[macro_export]
 macro_rules! product {
-    [$($elems:expr_2021),*$(,)?] => {
+    [$($elems:expr),*$(,)?] => {
         $crate::ProductValue {
             elements: [$($crate::AlgebraicValue::from($elems)),*].into(),
         }

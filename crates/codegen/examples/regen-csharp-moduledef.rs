@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 macro_rules! regex_replace {
-    ($value:expr_2021, $re:expr_2021, $replace:expr_2021) => {{
+    ($value:expr, $re:expr, $replace:expr) => {{
         static RE: OnceLock<Regex> = OnceLock::new();
         RE.get_or_init(|| Regex::new($re).unwrap())
             .replace_all($value, $replace)
