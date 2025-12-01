@@ -380,8 +380,9 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
             let n_fields = fields.len();
 
-            let field_names = fields.iter().map(|f| f.ident.unwrap()).collect::<Vec<_>>();
-            let field_strings = fields.iter().map(|f| f.name.as_deref().unwrap()).collect::<Vec<_>>();
+            let field_members = fields.iter().enumerate().map(|(ii, f)| f.ident.map_or_else(|| ii.into(), |v| v.clone().into())).collect::<Vec<syn::Member>>();
+            let field_names = fields.iter().enumerate().map(|(ii, f)| f.ident.map_or_else(|| syn::Ident::new(("_".to_owned() + &ii.to_string()).as_ref(), Span::call_site()), |v| v.clone())).collect::<Vec<_>>();
+            let field_strings = fields.iter().enumerate().map(|(ii, f)| f.name.clone().unwrap_or_else(|| ii.to_string())).collect::<Vec<_>>();
             let field_types = fields.iter().map(|f| &f.ty);
             let field_types2 = field_types.clone();
             quote! {
@@ -414,7 +415,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
 
                         fn visit_seq_product<A: #spacetimedb_lib::de::SeqProductAccess<'de>>(self, mut tup: A) -> Result<Self::Output, A::Error> {
                             Ok(#name {
-                                #(#field_names:
+                                #(#field_members:
                                     tup.next_element::<#field_types>()?
                                         .ok_or_else(|| #spacetimedb_lib::de::Error::invalid_product_length(#iter_n, &self))?,)*
                             })
@@ -434,7 +435,7 @@ pub(crate) fn derive_deserialize(ty: &SatsType<'_>) -> TokenStream {
                                 }
                             }
                             Ok(#name {
-                                #(#field_names:
+                                #(#field_members:
                                     #field_names.ok_or_else(|| #spacetimedb_lib::de::Error::missing_field(#iter_n3, Some(#field_strings), &self))?,)*
                             })
                         }
@@ -595,13 +596,13 @@ pub(crate) fn derive_serialize(ty: &SatsType) -> TokenStream {
                 });
             }
 
-            let fieldnames = fields.iter().map(|field| field.ident.unwrap());
-            let tys = fields.iter().map(|f| &f.ty);
-            let fieldnamestrings = fields.iter().map(|field| field.name.as_ref().unwrap());
+            let field_members = fields.iter().enumerate().map(|(ii, f)| f.ident.map_or_else(|| ii.into(), |v| v.clone().into())).collect::<Vec<syn::Member>>();
+            let field_strings = fields.iter().enumerate().map(|(ii, f)| f.name.clone().unwrap_or_else(|| ii.to_string())).collect::<Vec<_>>();
+            let field_types = fields.iter().map(|f| &f.ty);
             let nfields = fields.len();
             quote! {
                 let mut __prod = __serializer.serialize_named_product(#nfields)?;
-                #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#tys>(&mut __prod, Some(#fieldnamestrings), &self.#fieldnames)?;)*
+                #(#spacetimedb_lib::ser::SerializeNamedProduct::serialize_element::<#field_types>(&mut __prod, Some(#field_strings), &self.#field_members)?;)*
                 #spacetimedb_lib::ser::SerializeNamedProduct::end(__prod)
             }
         }
