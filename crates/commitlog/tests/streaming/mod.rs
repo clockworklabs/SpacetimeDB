@@ -214,7 +214,7 @@ fn repo(at: &Path) -> repo::Fs {
     repo::Fs::new(CommitLogDir::from_path_unchecked(at), None).unwrap()
 }
 
-fn create_reader(path: &Path, range: impl RangeBounds<u64>) -> impl AsyncBufRead {
+fn create_reader<R: RangeBounds<u64>>(path: &Path, range: R) -> impl AsyncBufRead + use<R> {
     BufReader::new(StreamReader::new(stream::commits(
         repo::Fs::new(CommitLogDir::from_path_unchecked(path), None).unwrap(),
         range,
