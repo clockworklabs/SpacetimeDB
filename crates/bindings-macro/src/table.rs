@@ -593,6 +593,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let original_struct_ident = sats_ty.ident;
     let table_ident = &args.name;
     let view_trait_ident = format_ident!("{}__view", table_ident);
+    let query_trait_ident = format_ident!("{}__query", table_ident);
+    let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
     let table_name = table_ident.unraw().to_string();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
@@ -925,6 +927,46 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     };
 
+    let cols_struct_fields = fields.iter().map(|col| {
+        let ident = col.ident.unwrap();
+        let ty = &col.ty;
+
+        quote! {
+            pub #ident: spacetimedb::query::Col<#original_struct_ident, #ty>,
+        }
+    });
+
+    let cols_init = fields.iter().map(|col| {
+        let ident = col.ident.as_ref().unwrap();
+
+        quote! {
+            #ident: spacetimedb::query::Col::new(stringify!(#ident)),
+        }
+    });
+    let trait_def_query = quote_spanned! {table_ident.span()=>
+           #[allow(non_camel_case_types, dead_code)]
+           #vis trait #query_trait_ident {
+               fn #table_ident(&self) -> spacetimedb::query::Table<#original_struct_ident> {
+                   spacetimedb::query::Table::new()
+               }
+           }
+           impl #query_trait_ident for spacetimedb::QueryBuilder {}
+
+           pub struct #query_cols_struct{
+               #(#cols_struct_fields)*
+           }
+
+           impl spacetimedb::query::HasCols for #original_struct_ident  {
+               type Cols = #query_cols_struct;
+                fn cols() -> Self::Cols {
+                     #query_cols_struct {
+                          #(#cols_init)*
+                     }
+                }
+           }
+
+    };
+
     let tablehandle_def = quote! {
         #[allow(non_camel_case_types)]
         #[non_exhaustive]
@@ -949,6 +991,8 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
         #tablehandle_def
         #viewhandle_def
+        #trait_def_query
+
 
         const _: () = {
             impl #tablehandle_ident {

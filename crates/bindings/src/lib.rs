@@ -19,6 +19,9 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
+#[doc(hidden)]
+pub mod query;
+
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
@@ -866,11 +869,23 @@ pub use spacetimedb_bindings_macro::procedure;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::view;
 
+pub use crate::query::QueryBuilder;
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
+}
+
+impl AnonymousViewContext {
+    pub fn new() -> Self {
+        Self {
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
 }
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
@@ -998,7 +1013,7 @@ impl ReducerContext {
 
     /// Create an anonymous (no sender) read-only view context
     pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
-        AnonymousViewContext { db: LocalReadOnly {} }
+        AnonymousViewContext::new()
     }
 
     /// Create a sender-bound read-only view context using this reducer's caller.

@@ -1053,9 +1053,7 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
     let views = ANONYMOUS_VIEWS.get().unwrap();
     write_to_sink(
         sink,
-        &with_read_args(args, |args| {
-            views[id](AnonymousViewContext { db: LocalReadOnly {} }, args)
-        }),
+        &with_read_args(args, |args| views[id](AnonymousViewContext::new(), args)),
     );
     0
 }
