@@ -864,12 +864,11 @@ impl RelationalDB {
     /// This requires a small amount of additional logic when restoring from a snapshot
     /// to ensure we don't restore a snapshot more recent than the durable TX offset.
     fn maybe_do_snapshot(&self, tx_data: &TxData) {
-        if let Some(snapshot_worker) = &self.snapshot_worker {
-            if let Some(tx_offset) = tx_data.tx_offset() {
-                if tx_offset % SNAPSHOT_FREQUENCY == 0 {
-                    snapshot_worker.request_snapshot();
-                }
-            }
+        if let Some(snapshot_worker) = &self.snapshot_worker
+            && let Some(tx_offset) = tx_data.tx_offset()
+            && tx_offset % SNAPSHOT_FREQUENCY == 0
+        {
+            snapshot_worker.request_snapshot();
         }
     }
 
@@ -1799,10 +1798,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         let snapshot_offset = *snapshot_rx.borrow_and_update();
         let durability = durability.clone();
 
-        if let Some(snap_tx) = &mut snap_tx {
-            if let Err(err) = snap_tx.try_send(snapshot_offset) {
-                tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
-            }
+        if let Some(snap_tx) = &mut snap_tx
+            && let Err(err) = snap_tx.try_send(snapshot_offset)
+        {
+            tracing::warn!("failed to send offset {snapshot_offset} after snapshot creation: {err}");
         }
 
         let res: io::Result<_> = asyncify(move || {
@@ -1835,10 +1834,10 @@ pub async fn snapshot_watching_commitlog_compressor(
         };
         prev_snapshot_offset = snapshot_offset;
 
-        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment) {
-            if let Err(err) = clog_tx.try_send(last_compressed_segment) {
-                tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
-            }
+        if let Some((clog_tx, last_compressed_segment)) = clog_tx.as_mut().zip(last_compressed_segment)
+            && let Err(err) = clog_tx.try_send(last_compressed_segment)
+        {
+            tracing::warn!("failed to send offset {last_compressed_segment} after compression: {err}");
         }
     }
 }

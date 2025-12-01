@@ -784,14 +784,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             }
         }
 
-        if let Some(default_value) = &default_value {
-            if auto_inc.is_some() || primary_key.is_some() || unique.is_some() {
-                return Err(syn::Error::new(
-                    default_value.span(),
-                    "invalid combination: auto_inc, unique index or primary key cannot have a default value",
-                ));
-            };
-        }
+        if let Some(default_value) = &default_value
+            && (auto_inc.is_some() || primary_key.is_some() || unique.is_some())
+        {
+            return Err(syn::Error::new(
+                default_value.span(),
+                "invalid combination: auto_inc, unique index or primary key cannot have a default value",
+            ));
+        };
 
         let column = Column {
             index: col_num,

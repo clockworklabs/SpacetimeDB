@@ -1312,10 +1312,8 @@ impl ModuleHost {
 
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
-            if drop_view_subscribers {
-                if let Err(err) = tx.unsubscribe_views(caller_identity) {
-                    log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
-                }
+            if drop_view_subscribers && let Err(err) = tx.unsubscribe_views(caller_identity) {
+                log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
             }
         };
 

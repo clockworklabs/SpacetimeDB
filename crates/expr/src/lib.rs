@@ -106,10 +106,10 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
                 .get_column_by_name(&field)
                 .ok_or_else(|| Unresolved::var(&field))?;
 
-            if let Some(ty) = expected {
-                if col_type != ty {
-                    return Err(UnexpectedType::new(col_type, ty).into());
-                }
+            if let Some(ty) = expected
+                && col_type != ty
+            {
+                return Err(UnexpectedType::new(col_type, ty).into());
             }
 
             Ok(Expr::Field(FieldProject {

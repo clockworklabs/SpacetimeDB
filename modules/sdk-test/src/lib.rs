@@ -892,10 +892,10 @@ fn sorted_uuids_insert(ctx: &ReducerContext) -> anyhow::Result<()> {
     // Verify UUIDs are sorted
     let mut last_uuid = None;
     for row in ctx.db.pk_uuid().iter() {
-        if let Some(last) = last_uuid {
-            if last >= row.u {
-                return Err(anyhow!("UUIDs are not sorted correctly"));
-            }
+        if let Some(last) = last_uuid
+            && last >= row.u
+        {
+            return Err(anyhow!("UUIDs are not sorted correctly"));
         }
         last_uuid = Some(row.u);
     }

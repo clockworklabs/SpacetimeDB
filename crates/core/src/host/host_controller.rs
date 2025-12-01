@@ -272,11 +272,11 @@ impl HostController {
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         // Try a read lock first.
         {
-            if let Ok(guard) = self.acquire_read_lock(replica_id).await {
-                if let Some(host) = &*guard {
-                    trace!("cached host {}/{}", database.database_identity, replica_id);
-                    return Ok(host.module.subscribe());
-                }
+            if let Ok(guard) = self.acquire_read_lock(replica_id).await
+                && let Some(host) = &*guard
+            {
+                trace!("cached host {}/{}", database.database_identity, replica_id);
+                return Ok(host.module.subscribe());
             }
         }
 

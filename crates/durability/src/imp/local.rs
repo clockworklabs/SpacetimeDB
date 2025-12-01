@@ -247,9 +247,9 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     // that doesn't require `spawn_blocking`.
                     if self.max_records_in_commit.get() == 1 {
                         self.flush_append(txdata, true).await;
-                    } else { match self.clog.append(txdata) { Err(retry) => {
+                    } else if let Err(retry) = self.clog.append(txdata) {
                         self.flush_append(retry, false).await
-                    } _ => {}}}
+                    }
                 },
             }
         }
@@ -288,10 +288,10 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(skip_all)]
     async fn flush_and_sync(&self) -> io::Result<Option<TxOffset>> {
         // Skip if nothing changed.
-        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow()) {
-            if committed == durable {
-                return Ok(None);
-            }
+        if let Some((committed, durable)) = self.clog.max_committed_offset().zip(*self.durable_offset.borrow())
+            && committed == durable
+        {
+            return Ok(None);
         }
 
         let clog = self.clog.clone();

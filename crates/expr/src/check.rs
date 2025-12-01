@@ -99,11 +99,11 @@ pub trait TypeChecker {
                     vars.insert(rhs.alias.clone(), rhs.schema.clone());
 
                     if let Some(on) = on {
-                        if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))? {
-                            if let (Expr::Field(a), Expr::Field(b)) = (*a, *b) {
-                                join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b);
-                                continue;
-                            }
+                        if let Expr::BinOp(BinOp::Eq, a, b) = type_expr(vars, on, Some(&AlgebraicType::Bool))?
+                            && let (Expr::Field(a), Expr::Field(b)) = (*a, *b)
+                        {
+                            join = RelExpr::EqJoin(LeftDeepJoin { lhs, rhs }, a, b);
+                            continue;
                         }
                         unreachable!("Unreachability guaranteed by parser")
                     }

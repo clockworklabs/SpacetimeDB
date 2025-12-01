@@ -298,11 +298,11 @@ impl MutTxId {
         upper: Bound<AlgebraicValue>,
     ) {
         // Check for precise index seek.
-        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper) {
-            if low_val == up_val {
-                self.record_index_scan_point_inner(view, table_id, index_id, low_val.clone());
-                return;
-            }
+        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper)
+            && low_val == up_val
+        {
+            self.record_index_scan_point_inner(view, table_id, index_id, low_val.clone());
+            return;
         }
 
         // Everything else is treated as a table scan.

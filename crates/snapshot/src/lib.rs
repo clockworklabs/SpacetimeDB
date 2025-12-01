@@ -1095,17 +1095,17 @@ impl SnapshotRepository {
             if read.is_compressed() {
                 return Ok(()); // Already compressed
             }
-            if let Some(hash) = hash {
-                if let Some(old_path) = old.get(&hash) {
-                    let old_file = CompressReader::new(o_rdonly().open(old_path)?)?;
-                    if old_file.is_compressed() {
-                        std::fs::hard_link(old_path, src.with_extension("_tmp"))?;
-                        std::fs::rename(src.with_extension("_tmp"), src)?;
-                        if let Some(stats) = stats {
-                            stats.hardlinked += 1;
-                        }
-                        return Ok(());
+            if let Some(hash) = hash
+                && let Some(old_path) = old.get(&hash)
+            {
+                let old_file = CompressReader::new(o_rdonly().open(old_path)?)?;
+                if old_file.is_compressed() {
+                    std::fs::hard_link(old_path, src.with_extension("_tmp"))?;
+                    std::fs::rename(src.with_extension("_tmp"), src)?;
+                    if let Some(stats) = stats {
+                        stats.hardlinked += 1;
                     }
+                    return Ok(());
                 }
             }
 

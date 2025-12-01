@@ -486,20 +486,21 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
 
     // Safety prompt: warn if publishing from spacetime.json (not a dev-specific config)
-    if let Some(ref lc) = loaded_config {
-        if !lc.has_dev_file && !force {
-            eprintln!(
-                "{} Publishing from spacetime.json (not a dev-specific config).",
-                "Warning:".yellow().bold()
-            );
-            eprintln!(
-                "{}",
-                "Consider creating spacetime.dev.json for development settings.".dimmed()
-            );
-            let should_continue = Confirm::new().with_prompt("Continue?").default(true).interact()?;
-            if !should_continue {
-                anyhow::bail!("Aborted.");
-            }
+    if let Some(ref lc) = loaded_config
+        && !lc.has_dev_file
+        && !force
+    {
+        eprintln!(
+            "{} Publishing from spacetime.json (not a dev-specific config).",
+            "Warning:".yellow().bold()
+        );
+        eprintln!(
+            "{}",
+            "Consider creating spacetime.dev.json for development settings.".dimmed()
+        );
+        let should_continue = Confirm::new().with_prompt("Continue?").default(true).interact()?;
+        if !should_continue {
+            anyhow::bail!("Aborted.");
         }
     }
 
@@ -588,13 +589,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                if matches!(
+            if let Ok(event) = res
+                && matches!(
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
-                ) {
-                    let _ = tx.send(());
-                }
+                )
+            {
+                let _ = tx.send(());
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
@@ -887,10 +888,10 @@ async fn generate_build_and_publish(
         }
 
         // Forward per-target build options if set
-        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str()) {
-            if !build_opts.is_empty() {
-                publish_args.extend_from_slice(&["--build-options".to_string(), build_opts.to_string()]);
-            }
+        if let Some(build_opts) = config_entry.get_config_value("build_options").and_then(|v| v.as_str())
+            && !build_opts.is_empty()
+        {
+            publish_args.extend_from_slice(&["--build-options".to_string(), build_opts.to_string()]);
         }
 
         // Forward break-clients if set
@@ -1170,28 +1171,28 @@ fn format_log_record<W: WriteColor>(
     let mut need_space_before_filename = false;
     let mut need_colon_sep = false;
     let dimmed = ColorSpec::new().set_dimmed(true).clone();
-    if let Some(function) = &record.function {
-        if function.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            write!(out, "{function}")?;
-            out.reset()?;
-            need_space_before_filename = true;
-            need_colon_sep = true;
-        }
+    if let Some(function) = &record.function
+        && function.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        write!(out, "{function}")?;
+        out.reset()?;
+        need_space_before_filename = true;
+        need_colon_sep = true;
     }
-    if let Some(filename) = &record.filename {
-        if filename.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            if need_space_before_filename {
-                write!(out, " ")?;
-            }
-            write!(out, "{filename}")?;
-            if let Some(line) = record.line_number {
-                write!(out, ":{line}")?;
-            }
-            out.reset()?;
-            need_colon_sep = true;
+    if let Some(filename) = &record.filename
+        && filename.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        if need_space_before_filename {
+            write!(out, " ")?;
         }
+        write!(out, "{filename}")?;
+        if let Some(line) = record.line_number {
+            write!(out, ":{line}")?;
+        }
+        out.reset()?;
+        need_colon_sep = true;
     }
     if need_colon_sep {
         write!(out, ": ")?;

@@ -243,16 +243,16 @@ pub fn non_context_reserve_tokens_env(vendor: Vendor) -> usize {
         Vendor::DeepSeek => "DEEPSEEK_RESERVE_TOKENS",
         Vendor::Meta => "META_RESERVE_TOKENS",
     };
-    if let Ok(v) = std::env::var(key) {
-        if let Ok(n) = v.parse::<usize>() {
-            return round_500(n.max(2_000));
-        }
+    if let Ok(v) = std::env::var(key)
+        && let Ok(n) = v.parse::<usize>()
+    {
+        return round_500(n.max(2_000));
     }
     // global override
-    if let Ok(v) = std::env::var("LLM_RESERVE_TOKENS") {
-        if let Ok(n) = v.parse::<usize>() {
-            return round_500(n.max(2_000));
-        }
+    if let Ok(v) = std::env::var("LLM_RESERVE_TOKENS")
+        && let Ok(n) = v.parse::<usize>()
+    {
+        return round_500(n.max(2_000));
     }
 
     // defaults (conservative)
