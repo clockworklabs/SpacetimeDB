@@ -499,21 +499,24 @@ fn delete_scheduled_function_row_with_tx(
     id: ScheduledFunctionId,
 ) -> Option<ScheduleAt> {
     if let Ok(Some(schedule_row)) = get_schedule_row_mut(&tx, db, id) {
-        if let Ok(schedule_at) = read_schedule_at(&schedule_row, id.at_column) {
-            // If the schedule is an interval, we handle it as a repeated schedule
-            if let ScheduleAt::Interval(_) = schedule_at {
-                return Some(schedule_at);
-            }
-            let row_ptr = schedule_row.pointer();
-            db.delete(&mut tx, id.table_id, [row_ptr]);
+        match read_schedule_at(&schedule_row, id.at_column) {
+            Ok(schedule_at) => {
+                // If the schedule is an interval, we handle it as a repeated schedule
+                if let ScheduleAt::Interval(_) = schedule_at {
+                    return Some(schedule_at);
+                }
+                let row_ptr = schedule_row.pointer();
+                db.delete(&mut tx, id.table_id, [row_ptr]);
 
-            commit_and_broadcast_deletion_event(tx, module_info);
-        } else {
-            log::debug!(
-                "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
-                id.table_id,
-                id.schedule_id
-            );
+                commit_and_broadcast_deletion_event(tx, module_info);
+            }
+            _ => {
+                log::debug!(
+                    "Failed to read 'scheduled_at' from row: table_id {}, schedule_id {}",
+                    id.table_id,
+                    id.schedule_id
+                );
+            }
         }
     }
     None

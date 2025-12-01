@@ -189,10 +189,9 @@ pub trait Error: Sized {
             ProductKind::Normal => "field",
             ProductKind::ReducerArgs => "reducer argument",
         };
-        if let Some(one_of) = one_of_names(|| expected.field_names()) {
-            Self::custom(format_args!("unknown {el_ty} `{field_name}`, expected {one_of}"))
-        } else {
-            Self::custom(format_args!("unknown {el_ty} `{field_name}`, there are no {el_ty}s"))
+        match one_of_names(|| expected.field_names()) {
+            Some(one_of) => Self::custom(format_args!("unknown {el_ty} `{field_name}`, expected {one_of}")),
+            _ => Self::custom(format_args!("unknown {el_ty} `{field_name}`, there are no {el_ty}s")),
         }
     }
 
@@ -206,10 +205,9 @@ pub trait Error: Sized {
 
     /// The `name` is not that of a variant of the sum type.
     fn unknown_variant_name<'de, T: VariantVisitor<'de>>(name: &str, expected: &T) -> Self {
-        if let Some(one_of) = one_of_names(|| expected.variant_names().map(Some)) {
-            Self::custom(format_args!("unknown variant `{name}`, expected {one_of}",))
-        } else {
-            Self::custom(format_args!("unknown variant `{name}`, there are no variants"))
+        match one_of_names(|| expected.variant_names().map(Some)) {
+            Some(one_of) => Self::custom(format_args!("unknown variant `{name}`, expected {one_of}",)),
+            _ => Self::custom(format_args!("unknown variant `{name}`, there are no variants")),
         }
     }
 }

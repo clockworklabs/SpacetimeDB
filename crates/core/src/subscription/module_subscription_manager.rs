@@ -97,7 +97,7 @@ impl Plan {
     }
 
     /// Returns the index ids from which this subscription reads
-    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         self.plans
             .iter()
             .flat_map(|plan| plan.index_ids())
@@ -115,7 +115,7 @@ impl Plan {
     }
 
     /// Return the search arguments for this query
-    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         let mut args = HashSet::new();
         for arg in self
             .plans
@@ -250,7 +250,7 @@ impl QueryState {
     }
 
     /// Return the search arguments for this query
-    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         self.query.search_args()
     }
 }

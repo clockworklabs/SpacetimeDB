@@ -908,7 +908,7 @@ static ANONYMOUS_VIEWS: OnceLock<Vec<AnonymousFn>> = OnceLock::new();
 /// to define and, to a limited extent, alter the schema at initialization time,
 /// including when modules are updated (re-publishing).
 /// After initialization, the module cannot alter the schema.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __describe_module__(description: BytesSink) {
     // Collect the `module`.
     let mut module = ModuleBuilder::default();
@@ -964,7 +964,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 /// it is expected that `HOST_CALL_FAILURE` is returned.
 /// Otherwise, `0` should be returned, i.e., the reducer completed successfully.
 /// Note that in the future, more failure codes could be supported.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_reducer__(
     id: usize,
     sender_0: u64,
@@ -1061,7 +1061,7 @@ fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
 ///
 /// Procedures always return the error 0. All other return values are reserved.
 #[cfg(feature = "unstable")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_procedure__(
     id: usize,
     sender_0: u64,
@@ -1115,7 +1115,7 @@ extern "C" fn __call_procedure__(
 ///
 /// The current abi is identified by a return code of 2.
 /// The previous abi, which we still support, is identified by a return code of 0.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) -> i16 {
     let views = ANONYMOUS_VIEWS.get().unwrap();
     write_to_sink(
@@ -1143,7 +1143,7 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
 ///
 /// The current abi is identified by a return code of 2.
 /// The previous abi, which we still support, is identified by a return code of 0.
-#[no_mangle]
+#[unsafe(no_mangle)]
 extern "C" fn __call_view__(
     id: usize,
     sender_0: u64,

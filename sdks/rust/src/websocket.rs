@@ -207,7 +207,7 @@ fn request_insert_auth_header(req: &mut http::Request<()>, token: Option<&str>) 
 ///
 /// Could be trivially written as a function, but macro-ifying it preserves the source location of the log.
 macro_rules! maybe_log_error {
-    ($cause:expr, $res:expr) => {
+    ($cause:expr_2021, $res:expr_2021) => {
         if let Err(e) = $res {
             log::warn!("{}: {:?}", $cause, e);
         }

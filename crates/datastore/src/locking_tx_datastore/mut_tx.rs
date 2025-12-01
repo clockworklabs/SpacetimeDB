@@ -108,7 +108,7 @@ impl ViewReadSets {
     }
 
     /// Returns the views that perform a full scan of this table
-    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+    pub fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -146,7 +146,7 @@ impl ViewReadSets {
         &'a self,
         table_id: &TableId,
         row_ptr: RowRef<'a>,
-    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+    ) -> impl Iterator<Item = &'a ViewCallInfo> + use<'a> {
         self.tables
             .get(table_id)
             .into_iter()
@@ -2530,7 +2530,7 @@ impl MutTxId {
             identity: identity.into(),
             connection_id: connection_id.into(),
         };
-        if let Some(ptr) = self
+        match self
             .iter_by_col_eq(
                 ST_CLIENT_ID,
                 // TODO(perf, minor, centril): consider a `const_col_list([x, ..])`
@@ -2541,9 +2541,10 @@ impl MutTxId {
             .next()
             .map(|row| row.pointer())
         {
-            self.delete(ST_CLIENT_ID, ptr).map(drop)?
-        } else {
-            log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
+            Some(ptr) => self.delete(ST_CLIENT_ID, ptr).map(drop)?,
+            _ => {
+                log::error!("[{database_identity}]: delete_st_client: attempting to delete client ({identity}, {connection_id}), but no st_client row for that client is resident");
+            }
         }
         self.delete_st_client_credentials(database_identity, connection_id)
     }
@@ -2879,7 +2880,7 @@ impl MutTxId {
             // This macros can be thought of as a `throw $e` within `'error`.
             // TODO(centril): Get rid of this once we have stable `try` blocks or polonius.
             macro_rules! throw {
-                ($e:expr) => {
+                ($e:expr_2021) => {
                     break 'error $e.into()
                 };
             }
@@ -2918,7 +2919,7 @@ impl MutTxId {
                 commit_table.check_unique_constraints(
                     tx_row_ref,
                     // Don't check this index since we'll do a 1-1 old/new replacement.
-                    |ixs| ixs.filter(|(&id, _)| id != index_id),
+                    |ixs| ixs.filter(|&(&id, _)| id != index_id),
                     is_deleted,
                 )
             } {

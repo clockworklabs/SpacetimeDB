@@ -90,18 +90,18 @@ macro_rules! match_meta {
     (@match $acc:tt, $comparisons:tt, $meta:ident { $sym:path => $body:block $($rest:tt)* }) => {
         match_meta!(@case $acc, $comparisons, $meta, _, $sym, $body, { $($rest)* })
     };
-    (@match $acc:tt, $comparisons:tt, $meta:ident { $sym:path => $body:expr, $($rest:tt)* }) => {
+    (@match $acc:tt, $comparisons:tt, $meta:ident { $sym:path => $body:expr_2021, $($rest:tt)* }) => {
         match_meta!(@case $acc, $comparisons, $meta, _, $sym, $body, { $($rest)* })
     };
 
-    (@match ($($acc:tt)*), ($($comparisons:expr),*), $meta:ident {}) => {
+    (@match ($($acc:tt)*), ($($comparisons:expr_2021),*), $meta:ident {}) => {
         match () {
             $($acc)*
             _ => return Err($meta.error($crate::util::one_of(&[$($comparisons),*]))),
         }
     };
 
-    (@case ($($acc:tt)*), ($($comparisons:expr),*), $meta:ident, $binding:tt, $sym:path, $body:expr, { $($rest:tt)* }) => {
+    (@case ($($acc:tt)*), ($($comparisons:expr_2021),*), $meta:ident, $binding:tt, $sym:path, $body:expr_2021, { $($rest:tt)* }) => {
         match_meta!(@match (
             $($acc)*
             _ if $meta.path == $sym => $body,

@@ -2746,9 +2746,9 @@ mod tests {
                 target.fields.get("module-path").and_then(|v| v.as_str()),
                 Some("./server")
             );
-            let gen = target.generate.as_ref().unwrap();
-            assert_eq!(gen.len(), 1);
-            assert_eq!(gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
+            let r#gen = target.generate.as_ref().unwrap();
+            assert_eq!(r#gen.len(), 1);
+            assert_eq!(r#gen[0].get("language").and_then(|v| v.as_str()), Some("typescript"));
         }
 
         // All have the same (module-path, generate) so dedup should reduce to 1

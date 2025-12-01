@@ -71,16 +71,17 @@ impl __sdk::InModule for {type_name} {{
         // Do not implement query col types for nested types.
         // as querying is only supported on top-level table row types.
         let name = type_ref_name(module, typ.ty);
-        let implemented = if let Some(table) = module
+        let implemented = match module
             .tables()
             .find(|t| type_ref_name(module, t.product_type_ref) == name)
         {
-            implement_query_col_types_for_table_struct(module, out, table)
-                .expect("failed to implement query col types");
-            out.newline();
-            true
-        } else {
-            false
+            Some(table) => {
+                implement_query_col_types_for_table_struct(module, out, table)
+                    .expect("failed to implement query col types");
+                out.newline();
+                true
+            }
+            _ => false,
         };
 
         if !implemented {

@@ -235,7 +235,7 @@ mod async_impls {
         }
     }
     macro_rules! forward_reader {
-    ($self:ident.$method:ident($($args:expr),*)) => {
+    ($self:ident.$method:ident($($args:expr_2021),*)) => {
         match $self.get_mut() {
             AsyncCompressReader::None(r) => Pin::new(r).$method($($args),*),
             AsyncCompressReader::Zstd(r) => Pin::new(r).$method($($args),*),

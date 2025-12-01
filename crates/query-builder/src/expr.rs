@@ -82,7 +82,7 @@ impl LiteralValue {
 }
 
 macro_rules! impl_rhs {
-    ($ty:ty, $formatter:expr) => {
+    ($ty:ty, $formatter:expr_2021) => {
         impl<T> RHS<T, $ty> for $ty {
             fn to_expr(self) -> Operand<T> {
                 Operand::Literal(LiteralValue($formatter(self)))

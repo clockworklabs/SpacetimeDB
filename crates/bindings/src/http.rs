@@ -248,7 +248,7 @@ impl Default for Body {
 }
 
 macro_rules! impl_body_from_bytes {
-    ($bytes:ident : $t:ty => $conv:expr) => {
+    ($bytes:ident : $t:ty => $conv:expr_2021) => {
         impl From<$t> for Body {
             fn from($bytes: $t) -> Body {
                 Body::from_bytes($conv)

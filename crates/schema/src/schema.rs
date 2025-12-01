@@ -686,7 +686,7 @@ fn find_remove<T>(vec: &mut Vec<T>, predicate: impl Fn(&T) -> bool) -> Option<T>
 
 /// Like `assert_eq!` for `anyhow`, but `$msg` is just a string, not a format string.
 macro_rules! ensure_eq {
-    ($a:expr, $b:expr, $msg:expr) => {
+    ($a:expr_2021, $b:expr_2021, $msg:expr_2021) => {
         if $a != $b {
             anyhow::bail!(
                 "{0}: expected {1} == {2}:\n   {1}: {3:?}\n   {2}: {4:?}",

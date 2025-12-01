@@ -33,7 +33,7 @@ struct Fragments {
 
 impl Fragments {
     /// Returns the index ids from which this fragment reads.
-    fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         let mut index_ids = HashSet::new();
         for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
             plan.visit(&mut |plan| match plan {
@@ -384,7 +384,7 @@ impl SubscriptionPlan {
     }
 
     /// From which indexes does this plan read?
-    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         self.fragments.index_ids()
     }
 

@@ -1404,7 +1404,7 @@ impl RelationalDB {
             TableId,
             Bound<AlgebraicValue>,
             Bound<AlgebraicValue>,
-            impl Iterator<Item = RowRef<'a>>,
+            impl Iterator<Item = RowRef<'a>> + use<'a>,
         ),
         DBError,
     > {
@@ -1416,7 +1416,7 @@ impl RelationalDB {
         tx: &'a MutTx,
         index_id: IndexId,
         point: &[u8],
-    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>> + use<'a>), DBError> {
         Ok(tx.index_scan_point(index_id, point)?)
     }
 
@@ -1779,7 +1779,7 @@ pub async fn local_durability(
 /// Open a [History] for replay from the local durable state.
 ///
 /// Currently, this is simply a read-only copy of the commitlog.
-pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata>> {
+pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata> + use<>> {
     let commitlog_dir = replica_dir.commit_log();
     asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }

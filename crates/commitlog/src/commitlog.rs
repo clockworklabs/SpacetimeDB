@@ -311,7 +311,7 @@ impl<R: Repo, T: Encode> Generic<R, T> {
         &self,
         offset: u64,
         decoder: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, R, T>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,

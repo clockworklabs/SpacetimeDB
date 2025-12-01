@@ -150,7 +150,7 @@ macro_rules! require_emscripten {
 
 /// Helper macro for timing operations and printing results
 macro_rules! timed {
-    ($label:expr, $expr:expr) => {{
+    ($label:expr_2021, $expr:expr_2021) => {{
         let start = Instant::now();
         let result = $expr;
         let elapsed = start.elapsed();

@@ -206,10 +206,11 @@ impl<'de, V: super::FieldNameVisitor<'de>> serde::Visitor<'de> for FieldNameVisi
     type Value = V::Output;
 
     fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(one_of) = super::one_of_names(|| self.visitor.field_names()) {
-            write!(f, "a tuple field ({one_of})")
-        } else {
-            f.write_str("a tuple field, but there are no fields")
+        match super::one_of_names(|| self.visitor.field_names()) {
+            Some(one_of) => {
+                write!(f, "a tuple field ({one_of})")
+            }
+            _ => f.write_str("a tuple field, but there are no fields"),
         }
     }
 

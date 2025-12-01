@@ -1442,7 +1442,7 @@ async fn ws_encode_message_v2(
     message: ws_v2::ServerMessage,
     is_large_message: bool,
     bsatn_rlb_pool: &BsatnRowListBuilderPool,
-) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
+) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame> + use<>) {
     let start = Instant::now();
 
     let (in_use, data) = if is_large_message {

@@ -3,7 +3,7 @@ use prometheus::core::{Metric, MetricVec, MetricVecBuilder};
 #[macro_export]
 macro_rules! metrics_group {
     ($(#[$attr:meta])* $type_vis:vis struct $type_name:ident {
-        $(#[name = $name:ident] #[help = $help:expr] $(#[labels($($labels:ident: $labelty:ty),*)])? $(#[buckets($($bucket:literal),*)])? $vis:vis $field:ident: $ty:ident,)*
+        $(#[name = $name:ident] #[help = $help:expr_2021] $(#[labels($($labels:ident: $labelty:ty),*)])? $(#[buckets($($bucket:literal),*)])? $vis:vis $field:ident: $ty:ident,)*
     }) => {
         $(#[$attr])*
         $type_vis struct $type_name {
@@ -58,10 +58,10 @@ pub use {itertools, paste::paste};
 
 #[macro_export]
 macro_rules! make_collector {
-    ($ty:ty, $name:expr, $help:expr $(,)?) => {
+    ($ty:ty, $name:expr_2021, $help:expr_2021 $(,)?) => {
         <$ty>::with_opts(prometheus::Opts::new($name, $help).into()).unwrap()
     };
-    ($ty:ty, $name:expr, $help:expr, $labels:expr $(,)?) => {
+    ($ty:ty, $name:expr_2021, $help:expr_2021, $labels:expr_2021 $(,)?) => {
         <$ty>::new(prometheus::Opts::new($name, $help).into(), $labels).unwrap()
     };
 }

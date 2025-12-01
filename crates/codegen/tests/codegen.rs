@@ -11,7 +11,7 @@ fn compiled_module() -> &'static ModuleDef {
 }
 
 macro_rules! declare_tests {
-    ($($name:ident => $lang:expr,)*) => ($(
+    ($($name:ident => $lang:expr_2021,)*) => ($(
         #[test]
         fn $name() {
             let module = compiled_module();

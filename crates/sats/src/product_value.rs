@@ -18,7 +18,7 @@ pub struct ProductValue {
 /// Repeat notation from `vec![x; n]` is not supported.
 #[macro_export]
 macro_rules! product {
-    [$($elems:expr),*$(,)?] => {
+    [$($elems:expr_2021),*$(,)?] => {
         $crate::ProductValue {
             elements: [$($crate::AlgebraicValue::from($elems)),*].into(),
         }
@@ -189,7 +189,7 @@ impl ProductValue {
 }
 
 impl<'a> ValueWithType<'a, ProductValue> {
-    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> {
+    pub fn elements(&self) -> impl ExactSizeIterator<Item = ValueWithType<'a, AlgebraicValue>> + use<'a> {
         self.ty_s().with_values(self.value())
     }
 }

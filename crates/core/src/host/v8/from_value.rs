@@ -11,7 +11,7 @@ pub(super) trait FromValue: Sized {
 
 /// Provides a [`FromValue`] implementation.
 macro_rules! impl_from_value {
-    ($ty:ty, ($val:ident, $scope:ident) => $logic:expr) => {
+    ($ty:ty, ($val:ident, $scope:ident) => $logic:expr_2021) => {
         impl FromValue for $ty {
             fn from_value<'scope>($val: Local<'_, Value>, $scope: &PinScope<'scope, '_>) -> ValueResult<'scope, Self> {
                 $logic
@@ -35,7 +35,7 @@ where
 
 /// Tries to cast `Value` into `T` or raises a JS exception as a returned `Err` value.
 macro_rules! cast {
-    ($scope:expr, $val:expr, $js_ty:ty, $expected:literal $(, $args:expr)* $(,)?) => {{
+    ($scope:expr_2021, $val:expr_2021, $js_ty:ty, $expected:literal $(, $args:expr_2021)* $(,)?) => {{
         $crate::host::v8::from_value::try_cast::<$js_ty>($scope, $val, |got| format!(concat!("Expected ", $expected, ", got {__got}"), $($args,)* __got = got))
     }};
 }
