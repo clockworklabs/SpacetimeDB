@@ -542,22 +542,18 @@ impl PhysicalPlan {
     /// ```
     fn expand_views(self, auth: &AuthCtx) -> Self {
         match self {
-            Self::TableScan(scan, label)
-                if scan.delta.is_none() && scan.schema.is_view() && !scan.schema.is_anonymous_view() =>
-            {
-                Self::Filter(
-                    Box::new(Self::TableScan(scan, label)),
-                    PhysicalExpr::BinOp(
-                        BinOp::Eq,
-                        Box::new(PhysicalExpr::Value(auth.caller().into())),
-                        Box::new(PhysicalExpr::Field(TupleField {
-                            label,
-                            label_pos: None,
-                            field_pos: 0,
-                        })),
-                    ),
-                )
-            }
+            Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
+                Box::new(Self::TableScan(scan, label)),
+                PhysicalExpr::BinOp(
+                    BinOp::Eq,
+                    Box::new(PhysicalExpr::Value(auth.caller().into())),
+                    Box::new(PhysicalExpr::Field(TupleField {
+                        label,
+                        label_pos: None,
+                        field_pos: 0,
+                    })),
+                ),
+            ),
             Self::IxJoin(
                 IxJoin {
                     lhs,
