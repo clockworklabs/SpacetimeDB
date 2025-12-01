@@ -1277,7 +1277,7 @@ fn write_to_sink(sink: BytesSink, mut buf: &[u8]) {
 macro_rules! __make_register_reftype {
     ($ty:ty, $name:literal) => {
         const _: () = {
-            #[export_name = concat!("__preinit__20_register_describer_", $name)]
+            #[unsafe(export_name = concat!("__preinit__20_register_describer_", $name))]
             extern "C" fn __register_describer() {
                 $crate::rt::register_reftype::<$ty>()
             }

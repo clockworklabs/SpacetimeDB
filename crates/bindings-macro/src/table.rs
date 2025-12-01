@@ -1038,7 +1038,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let register_describer_symbol = format!("__preinit__20_register_describer_{table_ident}");
 
     let describe_table_func = quote! {
-        #[export_name = #register_describer_symbol]
+        #[unsafe(export_name = #register_describer_symbol)]
         extern "C" fn __register_describer() {
             spacetimedb::rt::register_table::<#tablehandle_ident>()
         }
