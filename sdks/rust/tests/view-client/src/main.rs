@@ -39,6 +39,7 @@ fn main() {
         "view-anonymous-subscribe" => exec_anonymous_subscribe(),
         "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe(),
         "view-non-table-return" => exec_non_table_return(),
+        "view-subscription-update" => exec_subscription_update(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -185,5 +186,64 @@ fn exec_non_table_return() {
             ctx.reducers().delete_player(my_identity).unwrap();
         });
     });
+    test_counter.wait_for_all();
+}
+
+fn exec_subscription_update() {
+    let test_counter = TestCounter::new();
+    let mut near_0_2 = Some(test_counter.add_test("near_0_2"));
+    let mut near_0_4 = Some(test_counter.add_test("near_0_4"));
+    let mut far = Some(test_counter.add_test("far_0"));
+    connect_with_then(
+        &test_counter,
+        "0",
+        |builder| builder,
+        move |ctx| {
+            subscribe_these_then(ctx, &["SELECT * FROM nearby_players"], move |ctx| {
+                ctx.db.nearby_players().on_insert(move |_, loc| {
+                    if loc.x == 2 && loc.y == 2 {
+                        return put_result(&mut near_0_2, Ok(()));
+                    }
+                    if loc.x == 4 && loc.y == 4 {
+                        return put_result(&mut near_0_4, Ok(()));
+                    }
+                    unreachable!("Unexpected view insert: {:?}", loc)
+                });
+                ctx.db.nearby_players().on_delete(move |_, _| {
+                    put_result(&mut far, Ok(()));
+                });
+                ctx.reducers().move_player(0, 0).unwrap();
+            });
+        },
+    );
+
+    let mut near_1_2 = Some(test_counter.add_test("near_1_2"));
+    let mut near_1_4 = Some(test_counter.add_test("near_1_4"));
+    let mut far = Some(test_counter.add_test("far_1"));
+    connect_with_then(
+        &test_counter,
+        "1",
+        |builder| builder,
+        move |ctx| {
+            subscribe_these_then(ctx, &["SELECT * FROM nearby_players"], move |ctx| {
+                let mut first_insert = true;
+                ctx.db.nearby_players().on_insert(move |_, loc| {
+                    assert_eq!(loc.x, 0);
+                    assert_eq!(loc.y, 0);
+                    if first_insert {
+                        first_insert = false;
+                        return put_result(&mut near_1_2, Ok(()));
+                    }
+                    put_result(&mut near_1_4, Ok(()));
+                });
+                ctx.db.nearby_players().on_delete(move |_, _| {
+                    put_result(&mut far, Ok(()));
+                });
+                ctx.reducers().move_player(2, 2).unwrap();
+                ctx.reducers().move_player(3, 3).unwrap();
+                ctx.reducers().move_player(-1, -1).unwrap();
+            });
+        },
+    );
     test_counter.wait_for_all();
 }
