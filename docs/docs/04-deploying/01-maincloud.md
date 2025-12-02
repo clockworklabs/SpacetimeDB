@@ -10,7 +10,7 @@ Maincloud is a managed cloud service that provides developers an easy way to dep
 
 ## Deploy via CLI
 
-1. Install the SpacetimeDB CLI for your platform: [Install SpacetimeDB](pathname:///install)
+1. Install the SpacetimeDB CLI for your platform: [Install SpacetimeDB](https://spacetimedb.com/install)
 1. Create your module (see [Getting Started](/getting-started))
 1. Publish to Maincloud:
 
@@ -30,7 +30,7 @@ spacetime login
 ```
 
 1. Open the SpacetimeDB website and log in using your GitHub login.
-1. You should now be able to see your published modules [pathname:///profile](pathname:///profile), or you can navigate to your database directly at [pathname:///my-cool-module](pathname:///my-cool-module).
+1. You should now be able to see your published modules [https://spacetimedb.com/profile](https://spacetimedb.com/profile), or you can navigate to your database directly at [https://spacetimedb.com/my-cool-module](https://spacetimedb.com/my-cool-module).
 
 ---
 

@@ -23,7 +23,7 @@ A reducer is a function that traverses and updates the database. Each reducer ca
 
 ## Install SpacetimeDB
 
-If you haven't already, start by [installing SpacetimeDB](pathname:///install). This will install the `spacetime` command line interface (CLI), which provides all the functionality needed to interact with SpacetimeDB.
+If you haven't already, start by [installing SpacetimeDB](https://spacetimedb.com/install). This will install the `spacetime` command line interface (CLI), which provides all the functionality needed to interact with SpacetimeDB.
 
 <InstallCardLink />
 
