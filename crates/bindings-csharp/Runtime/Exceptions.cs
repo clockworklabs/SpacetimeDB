@@ -77,6 +77,25 @@ public class AutoIncOverflowException : StdbException
     public override string Message => "The auto-increment sequence overflowed";
 }
 
+public class TransactionWouldBlockException : StdbException {
+    public override string Message => "Attempted operation while another transaction is open";
+}
+
+public class TransactionNotAnonymousException : StdbException
+{
+    public override string Message => "The transaction is not anonymous";
+}
+
+public class TransactionIsReadOnlyException : StdbException
+{
+    public override string Message => "The transaction is read-only";
+}
+
+public class TransactionIsMutableException : StdbException {
+    public override string Message =>
+        "ABI call can only be made while inside a read-only transaction";
+}
+
 public class UnknownException : StdbException
 {
     private readonly Errno code;

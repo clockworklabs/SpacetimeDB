@@ -36,7 +36,7 @@ public partial class MyTable
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "ExampleData", Public = true)]
+    [SpacetimeDB.Table(Name = "example_data", Public = true)]
     public partial struct ExampleData
     {
         [SpacetimeDB.PrimaryKey]
@@ -46,7 +46,7 @@ public static partial class Module
         public uint Indexed;
     }
 
-    [SpacetimeDB.Table(Name = "Player", Public = true)]
+    [SpacetimeDB.Table(Name = "player", Public = true)]
     public partial struct Player
     {
         [SpacetimeDB.PrimaryKey]
@@ -59,7 +59,7 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Table(Name = "PlayerLevel", Public = true)]
+    [SpacetimeDB.Table(Name = "player_level", Public = true)]
     public partial struct PlayerLevel
     {
         [SpacetimeDB.Unique]
@@ -79,20 +79,20 @@ public static partial class Module
     }
 
     // At-most-one row: return T?
-    [SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+    [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
-        return ctx.Db.Player.Identity.Find(ctx.Sender) as Player?;
+        return ctx.Db.player.Identity.Find(ctx.Sender) as Player?;
     }
 
     // Multiple rows: return a list
-    [SpacetimeDB.View(Name = "PlayersForLevel", Public = true)]
+    [SpacetimeDB.View(Name = "players_for_level", Public = true)]
     public static List<PlayerAndLevel> PlayersForLevel(AnonymousViewContext ctx)
     {
         var rows = new List<PlayerAndLevel>();
-        foreach (var player in ctx.Db.PlayerLevel.Level.Filter(1))
+        foreach (var player in ctx.Db.player_level.Level.Filter(1))
         {
-            if (ctx.Db.Player.Id.Find(player.PlayerId) is Player p)
+            if (ctx.Db.player.Id.Find(player.PlayerId) is Player p)
             {
                 var row = new PlayerAndLevel
                 {
@@ -110,13 +110,14 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
-        ctx.Db.ExampleData.Id.Delete(id);
+        LogStopwatch sw = new("Delete");
+        ctx.Db.example_data.Id.Delete(id);
     }
 
     [SpacetimeDB.Reducer]
     public static void Add(ReducerContext ctx, uint id, uint indexed)
     {
-        ctx.Db.ExampleData.Insert(new ExampleData { Id = id, Indexed = indexed });
+        ctx.Db.example_data.Insert(new ExampleData { Id = id, Indexed = indexed });
     }
 
     [SpacetimeDB.Reducer]
@@ -130,16 +131,16 @@ public static partial class Module
     {
         Log.Info($"Connect {ctx.Sender}");
 
-        if (ctx.Db.Player.Identity.Find(ctx.Sender) is Player player)
+        if (ctx.Db.player.Identity.Find(ctx.Sender) is Player player)
         {
             // We are not logging player login status, so do nothing
         }
         else
         {
             // Lets setup a new player with a level of 1
-            ctx.Db.Player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
-            var playerId = (ctx.Db.Player.Identity.Find(ctx.Sender)!).Value.Id;
-            ctx.Db.PlayerLevel.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
+            ctx.Db.player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
+            var playerId = (ctx.Db.player.Identity.Find(ctx.Sender)!).Value.Id;
+            ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
     }
 
@@ -172,4 +173,53 @@ public static partial class Module
     {
         throw new InvalidOperationException("This procedure is expected to panic");
     }
+    
+#pragma warning disable STDB_UNSTABLE
+    [SpacetimeDB.Procedure]
+    public static void InsertWithTxCommit(ProcedureContext ctx)
+    {
+        ctx.WithTx(tx =>
+        {
+            tx.Db.my_table.Insert(new MyTable
+            {
+                Field = new ReturnStruct(a: 42, b: "magic")
+            });
+            return 0; // discard result
+        });
+
+        AssertRowCount(ctx, 1);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void InsertWithTxRollback(ProcedureContext ctx)
+    {
+        var _ = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
+        {
+            tx.Db.my_table.Insert(new MyTable
+            {
+                Field = new ReturnStruct(a: 42, b: "magic")
+            });
+
+            return SpacetimeDB.ProcedureContext.TxResult<SpacetimeDB.Unit, InvalidOperationException>.Failure(
+                new InvalidOperationException("rollback"));
+        });
+
+        AssertRowCount(ctx, 0);
+    }
+
+    private static void AssertRowCount(ProcedureContext ctx, ulong expected)
+    {
+        ctx.WithTx(tx =>
+        {
+            ulong actual = tx.Db.my_table.Count;
+            if (actual != expected)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {expected} MyTable rows but found {actual}."
+                );
+            }
+            return 0;
+        });
+    }
+#pragma warning restore STDB_UNSTABLE
 }

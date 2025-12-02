@@ -32,3 +32,9 @@ public interface IProcedure
         );
     }
 }
+
+public interface IInternalProcedureContext : IProcedureContext
+{
+    bool TryTakeTransactionOffset(out TransactionOffset offset);
+    void SetTransactionOffset(TransactionOffset offset);
+}

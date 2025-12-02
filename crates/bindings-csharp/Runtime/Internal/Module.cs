@@ -65,6 +65,7 @@ public static class Module
     private static readonly List<Action<BytesSink>> viewDefs = [];
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
+    private static TransactionOffset? lastProcedureTxOffset;
 
     private static Func<
         Identity,
@@ -178,6 +179,16 @@ public static class Module
         {
             throw new Exception($"Unimplemented row level security type: {rlsFilter}");
         }
+    }
+
+    public static void RecordProcedureTxOffset(TransactionOffset offset) =>
+        lastProcedureTxOffset = offset;
+
+    public static TransactionOffset? TakeProcedureTxOffset()
+    {
+        var tmp = lastProcedureTxOffset;
+        lastProcedureTxOffset = null;
+        return tmp;
     }
 
     public static void RegisterTableDefaultValue(string table, ushort colId, byte[] value) =>
@@ -347,12 +358,20 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
+            using var scope = Procedure.PushContext(ctx);
             var bytes = procedures[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the procedure arguments");
             }
             resultSink.Write(bytes);
+            if (ctx is IInternalProcedureContext internalCtx)
+            {
+                if (internalCtx.TryTakeTransactionOffset(out var offset))
+                {
+                    RecordProcedureTxOffset(offset);
+                }
+            }
             return Errno.OK;
         }
         catch (Exception e)
@@ -361,6 +380,18 @@ public static class Module
             resultSink.Write(errorBytes);
             return Errno.HOST_CALL_FAILURE;
         }
+    }
+    
+    public static bool __take_procedure_tx_offset__(out ulong offset)
+    {
+        if (TakeProcedureTxOffset() is { } tx)
+        {
+            offset = tx.Value;
+            return true;
+        }
+
+        offset = 0;
+        return false;
     }
 
     public static Errno __call_view__(

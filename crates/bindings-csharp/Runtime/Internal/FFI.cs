@@ -37,6 +37,10 @@ public enum Errno : short
     INDEX_NOT_UNIQUE = 14,
     NO_SUCH_ROW = 15,
     AUTO_INC_OVERFLOW = 16,
+    WOULD_BLOCK_TRANSACTION = 17,
+    TRANSACTION_NOT_ANONYMOUS = 18,
+    TRANSACTION_IS_READ_ONLY = 19,
+    TRANSACTION_IS_MUT        = 20,
 }
 
 #pragma warning disable IDE1006 // Naming Styles - Not applicable to FFI stuff.
@@ -68,6 +72,14 @@ internal static partial class FFI
         "bindings"
 #endif
     ;
+    
+    const string StdbNamespace10_3 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.3"
+#else
+        "bindings"
+#endif
+    ;
 
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
@@ -86,30 +98,45 @@ internal static partial class FFI
         {
             public static CheckedStatus ConvertToManaged(Errno status)
             {
-                if (status == 0)
-                {
-                    return default;
-                }
-                throw status switch
-                {
-                    Errno.NOT_IN_TRANSACTION => new NotInTransactionException(),
-                    Errno.BSATN_DECODE_ERROR => new BsatnDecodeException(),
-                    Errno.NO_SUCH_TABLE => new NoSuchTableException(),
-                    Errno.NO_SUCH_INDEX => new NoSuchIndexException(),
-                    Errno.NO_SUCH_ITER => new NoSuchIterException(),
-                    Errno.NO_SUCH_CONSOLE_TIMER => new NoSuchLogStopwatch(),
-                    Errno.NO_SUCH_BYTES => new NoSuchBytesException(),
-                    Errno.NO_SPACE => new NoSpaceException(),
-                    Errno.BUFFER_TOO_SMALL => new BufferTooSmallException(),
-                    Errno.UNIQUE_ALREADY_EXISTS => new UniqueConstraintViolationException(),
-                    Errno.SCHEDULE_AT_DELAY_TOO_LONG => new ScheduleAtDelayTooLongException(),
-                    Errno.INDEX_NOT_UNIQUE => new IndexNotUniqueException(),
-                    Errno.NO_SUCH_ROW => new NoSuchRowException(),
-                    Errno.AUTO_INC_OVERFLOW => new AutoIncOverflowException(),
-                    _ => new UnknownException(status),
-                };
+                ErrnoHelpers.ThrowIfError(status);
+                return default;
             }
         }
+    }
+    
+    internal static class ErrnoHelpers
+    {
+        public static void ThrowIfError(Errno status)
+        {
+            if (status == Errno.OK)
+            {
+                return;
+            }
+
+            throw ToException(status);
+        }
+
+        public static Exception ToException(Errno status) => status switch
+        {
+            Errno.NOT_IN_TRANSACTION        => new NotInTransactionException(),
+            Errno.BSATN_DECODE_ERROR        => new BsatnDecodeException(),
+            Errno.NO_SUCH_TABLE             => new NoSuchTableException(),
+            Errno.NO_SUCH_INDEX             => new NoSuchIndexException(),
+            Errno.NO_SUCH_ITER              => new NoSuchIterException(),
+            Errno.NO_SUCH_CONSOLE_TIMER     => new NoSuchLogStopwatch(),
+            Errno.NO_SUCH_BYTES             => new NoSuchBytesException(),
+            Errno.NO_SPACE                  => new NoSpaceException(),
+            Errno.BUFFER_TOO_SMALL          => new BufferTooSmallException(),
+            Errno.UNIQUE_ALREADY_EXISTS     => new UniqueConstraintViolationException(),
+            Errno.INDEX_NOT_UNIQUE          => new IndexNotUniqueException(),
+            Errno.NO_SUCH_ROW               => new NoSuchRowException(),
+            Errno.AUTO_INC_OVERFLOW         => new AutoIncOverflowException(),
+            Errno.WOULD_BLOCK_TRANSACTION   => new TransactionWouldBlockException(),
+            Errno.TRANSACTION_NOT_ANONYMOUS => new TransactionNotAnonymousException(),
+            Errno.TRANSACTION_IS_READ_ONLY  => new TransactionIsReadOnlyException(),
+            Errno.TRANSACTION_IS_MUT        => new TransactionIsMutableException(),
+            _                               => new UnknownException(status),
+        };
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -318,4 +345,17 @@ internal static partial class FFI
 
     [DllImport(StdbNamespace10_2)]
     public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
+    
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_start_mut_tx")]
+    public static partial Errno procedure_start_mut_tx(out long micros);
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_commit_mut_tx")]
+    public static partial CheckedStatus procedure_commit_mut_tx();
+
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_abort_mut_tx")]
+    public static partial CheckedStatus procedure_abort_mut_tx();
+    
+    [LibraryImport(StdbNamespace10_3, EntryPoint = "__take_procedure_tx_offset__")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    public static partial bool take_procedure_tx_offset(out ulong offset);
 }
