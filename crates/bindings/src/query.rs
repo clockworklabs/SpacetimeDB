@@ -35,21 +35,19 @@ impl Query {
 }
 
 pub struct Table<T> {
-    _marker: std::marker::PhantomData<T>,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Table<T> {
     pub fn new() -> Self {
-        Table {
-            _marker: std::marker::PhantomData,
-        }
+        Table { _marker: PhantomData }
     }
 }
 
 impl<T: HasCols> Table<T> {
     pub fn build(self) -> Query {
         Query {
-            sql: format!("SELECT * FROM {}", T::TABLE_NAME),
+            sql: format!(r#"SELECT * FROM "{}""#, T::TABLE_NAME),
         }
     }
 
@@ -69,86 +67,81 @@ pub struct IxJoinEq<L, R, V> {
     _marker: PhantomData<V>,
 }
 
+fn semijoin<L, R, V>(
+    lix: L::IxCols,
+    rix: R::IxCols,
+    on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
+    where_expr: Option<Expr<ValueExpr<L>>>,
+    kind: JoinKind,
+) -> JoinWhere<L>
+where
+    R: HasIxCols,
+    L: HasIxCols,
+{
+    let join = on(&lix, &rix);
+    JoinWhere::new(join, where_expr, kind)
+}
+
 impl<L: HasIxCols> Table<L> {
     pub fn left_semijoin<R: HasIxCols, V>(
         self,
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    ) -> JoinWhere<L, R>
-    where
-        R: HasIxCols,
-    {
-        let lix = L::idx_cols();
-        let rix = R::idx_cols();
-        let join = on(&lix, &rix);
-        JoinWhere {
-            left_col: join.lhs_col,
-            right_col: join.rhs_col,
-        }
+    ) -> JoinWhere<L> {
+        semijoin(L::idx_cols(), R::idx_cols(), on, None, JoinKind::Left)
+    }
+
+    pub fn right_semijoin<R: HasIxCols, V>(
+        self,
+        _right: Table<R>,
+        on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
+    ) -> JoinWhere<L> {
+        semijoin(L::idx_cols(), R::idx_cols(), on, None, JoinKind::Right)
     }
 }
 
 pub struct Col<T, V> {
     pub(crate) column_name: &'static str,
-    _marker: std::marker::PhantomData<(T, V)>,
+    _marker: PhantomData<(T, V)>,
 }
 
 impl<T, V> Col<T, V> {
     pub fn new(column_name: &'static str) -> Self {
         Col {
             column_name,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         }
     }
 }
 
 impl<T, V> Clone for Col<T, V> {
     fn clone(&self) -> Self {
-        Col {
-            column_name: self.column_name,
-            _marker: std::marker::PhantomData,
-        }
+        Col::new(self.column_name)
     }
 }
-
 impl<T, V> Copy for Col<T, V> {}
 
-/// NOTE: no `V: Serialize` bound here.
-/// That’s the key: column–column comparisons work even if V is not serializable.
-/// The constraint only applies on the RHS when you actually use a literal V.
 impl<T: TableName, V> Col<T, V> {
-    pub fn eq<R>(self, rhs: R) -> Expr<ValueExpr<T>>
-    where
-        R: RHS<T, V>,
-    {
+    pub fn eq<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
         Expr::Eq(self.into(), rhs.to_expr())
     }
 
-    pub fn neq<R>(self, rhs: R) -> Expr<ValueExpr<T>>
-    where
-        R: RHS<T, V>,
-    {
+    pub fn neq<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
         Expr::Neq(self.into(), rhs.to_expr())
     }
 
-    pub fn gt<R>(self, rhs: R) -> Expr<ValueExpr<T>>
-    where
-        R: RHS<T, V>,
-    {
+    pub fn gt<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
         Expr::Gt(self.into(), rhs.to_expr())
     }
 
-    pub fn lt<R>(self, rhs: R) -> Expr<ValueExpr<T>>
-    where
-        R: RHS<T, V>,
-    {
+    pub fn lt<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
         Expr::Lt(self.into(), rhs.to_expr())
     }
 }
 
 pub struct IxCol<T, V> {
     col: ColumnRef<T>,
-    _marker: std::marker::PhantomData<V>,
+    _marker: PhantomData<V>,
 }
 
 impl<T, V> IxCol<T, V> {
@@ -156,18 +149,6 @@ impl<T, V> IxCol<T, V> {
         IxCol {
             col: ColumnRef {
                 column_name,
-                _marker: std::marker::PhantomData,
-            },
-            _marker: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T, V> Clone for IxCol<T, V> {
-    fn clone(&self) -> Self {
-        IxCol {
-            col: ColumnRef {
-                column_name: self.col.column_name,
                 _marker: PhantomData,
             },
             _marker: PhantomData,
@@ -175,11 +156,15 @@ impl<T, V> Clone for IxCol<T, V> {
     }
 }
 
+impl<T, V> Clone for IxCol<T, V> {
+    fn clone(&self) -> Self {
+        IxCol::new(self.col.column_name)
+    }
+}
 impl<T, V> Copy for IxCol<T, V> {}
 
 impl<T, V> IxCol<T, V> {
-    pub fn eq<R: HasIxCols>(self, rhs: IxCol<R, V>) -> IxJoinEq<T, R, V>
-where {
+    pub fn eq<R: HasIxCols>(self, rhs: IxCol<R, V>) -> IxJoinEq<T, R, V> {
         IxJoinEq {
             lhs_col: self.col,
             rhs_col: rhs.col,
@@ -197,11 +182,9 @@ impl<T: HasCols> FromWhere<T> {
     where
         F: Fn(&T::Cols) -> Expr<ValueExpr<T>>,
     {
-        let cols = T::cols();
-        let expr = f(&cols);
-
+        let extra = f(&T::cols());
         FromWhere {
-            expr: self.expr.and(expr),
+            expr: self.expr.and(extra),
         }
     }
 
@@ -209,7 +192,7 @@ impl<T: HasCols> FromWhere<T> {
         let where_clause = format_expr(&self.expr);
 
         Query {
-            sql: format!("SELECT * FROM {} WHERE {}", T::TABLE_NAME, where_clause),
+            sql: format!(r#"SELECT * FROM "{}" WHERE {}"#, T::TABLE_NAME, where_clause),
         }
     }
 }
@@ -219,73 +202,113 @@ impl<L: HasIxCols> FromWhere<L> {
         self,
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    ) -> JoinWhere<L, R>
-    where
-        R: HasIxCols,
-    {
-        let lix = L::idx_cols();
-        let rix = R::idx_cols();
-        let join = on(&lix, &rix);
-        JoinWhere::new(join)
+    ) -> JoinWhere<L> {
+        semijoin(L::idx_cols(), R::idx_cols(), on, Some(self.expr), JoinKind::Left)
+    }
+
+    pub fn right_semijoin<R: HasIxCols, V>(
+        self,
+        _right: Table<R>,
+        on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
+    ) -> JoinWhere<L> {
+        semijoin(L::idx_cols(), R::idx_cols(), on, Some(self.expr), JoinKind::Right)
     }
 }
 
 /// After a join.
-pub struct JoinWhere<T, R> {
-    left_col: ColumnRef<T>,
-    right_col: ColumnRef<R>,
+pub struct JoinWhere<T> {
+    kind: JoinKind,
+    col: ColumnRef<T>,
+    right_table: &'static str,
+    right_col: &'static str,
     where_expr: Option<Expr<ValueExpr<T>>>,
 }
 
-impl<T, R> JoinWhere<T, R> {
-    fn new<V>(join: IxJoinEq<T, R, V>) -> Self {
+enum JoinKind {
+    Left,
+    Right,
+}
+
+impl<T: TableName> JoinWhere<T> {
+    fn new<R, V>(join: IxJoinEq<T, R, V>, where_expr: Option<Expr<ValueExpr<T>>>, kind: JoinKind) -> Self
+    where
+        R: TableName,
+    {
         JoinWhere {
-            left_col: join.lhs_col,
-            right_col: join.rhs_col,
-            where_expr: None,
+            kind,
+            col: join.lhs_col,
+            right_table: R::TABLE_NAME,
+            right_col: join.rhs_col.column_name,
+            where_expr,
         }
     }
 }
 
-impl<T: HasCols, R: HasCols> JoinWhere<T, R> {
+impl<T: HasCols> JoinWhere<T> {
     pub fn r#where<F>(self, f: F) -> Self
     where
         F: Fn(&T::Cols) -> Expr<ValueExpr<T>>,
     {
-        let cols = T::cols();
-        let expr = f(&cols);
+        let extra = f(&T::cols());
+        let where_expr = match self.where_expr {
+            Some(existing) => Some(existing.and(extra)),
+            None => Some(extra),
+        };
 
         JoinWhere {
-            left_col: self.left_col,
+            kind: self.kind,
+            col: self.col,
+            right_table: self.right_table,
             right_col: self.right_col,
-            //TODO: combine with existing join condition
-            where_expr: Some(expr),
+            where_expr,
         }
     }
 
     pub fn build(self) -> Query {
-        Query {
-            sql: String::from("SELECT * FROM ..."), // Placeholder
-        }
+        let JoinWhere {
+            kind,
+            col: left_col_ref,
+            right_table,
+            right_col,
+            where_expr,
+        } = self;
+
+        let select_side = match kind {
+            JoinKind::Left => "left",
+            JoinKind::Right => "right",
+        };
+        let where_clause = where_expr
+            .map(|expr| format!(" WHERE {}", format_expr(&expr)))
+            .unwrap_or_default();
+
+        let sql = format!(
+            r#"SELECT "{}".* FROM "{}" "left" JOIN "{}" "right" ON "left"."{}" = "right"."{}"{}"#,
+            select_side,
+            T::TABLE_NAME,
+            right_table,
+            left_col_ref.column_name,
+            right_col,
+            where_clause
+        );
+
+        Query { sql }
     }
 }
-/// RHS of a comparison: either a column of the same table/column-type, or a literal V: Serialize.
-/// The `<T, V>` here preserves type safety: you can only compare compatible things.
+
+/// RHS of a comparison
 pub trait RHS<T, V> {
     fn to_expr(self) -> ValueExpr<T>;
 }
 
-/// RHS is a column of the same table and same Rust type V.
 impl<T, V> RHS<T, V> for Col<T, V> {
     fn to_expr(self) -> ValueExpr<T> {
         ValueExpr::Column(ColumnRef {
             column_name: self.column_name,
-            _marker: std::marker::PhantomData,
+            _marker: PhantomData,
         })
     }
 }
 
-/// RHS is a literal of type V, which must be serializable to AlgebraicValue.
 impl<T, V: Serialize> RHS<T, V> for V {
     fn to_expr(self) -> ValueExpr<T> {
         let serializer = ValueSerializer;
@@ -310,25 +333,19 @@ impl<T> ColumnRef<T> {
 
 impl<T> Clone for ColumnRef<T> {
     fn clone(&self) -> Self {
-        ColumnRef {
-            column_name: self.column_name,
-            _marker: PhantomData,
-        }
+        ColumnRef::new(self.column_name)
     }
 }
 impl<T> Copy for ColumnRef<T> {}
 
-pub enum ValueExpr<T> {
+enum ValueExpr<T> {
     Column(ColumnRef<T>),
     Literal(AlgebraicValue),
 }
 
 impl<T: TableName, V> From<Col<T, V>> for ValueExpr<T> {
     fn from(col: Col<T, V>) -> Self {
-        ValueExpr::Column(ColumnRef {
-            column_name: col.column_name,
-            _marker: PhantomData,
-        })
+        ValueExpr::Column(ColumnRef::new(col.column_name))
     }
 }
 
@@ -338,13 +355,6 @@ pub enum Expr<T> {
     Gt(T, T),
     Lt(T, T),
     And(Box<Expr<T>>, Box<Expr<T>>),
-
-    // Semi-join predicate encoded as EXISTS subquery
-    ExistsSemiJoin {
-        right_table: &'static str,
-        lhs_col: &'static str,
-        rhs_col: &'static str,
-    },
 }
 
 impl<T> Expr<T> {
@@ -355,33 +365,31 @@ impl<T> Expr<T> {
 
 pub fn format_expr<T: TableName>(expr: &Expr<ValueExpr<T>>) -> String {
     match expr {
-        Expr::Eq(lhs, rhs) => format!("{} = {}", format_value_expr(lhs), format_value_expr(rhs)),
-        Expr::Neq(lhs, rhs) => format!("{} <> {}", format_value_expr(lhs), format_value_expr(rhs)),
-        Expr::Gt(lhs, rhs) => format!("{} > {}", format_value_expr(lhs), format_value_expr(rhs)),
-        Expr::Lt(lhs, rhs) => format!("{} < {}", format_value_expr(lhs), format_value_expr(rhs)),
-        Expr::And(a, b) => format!("({}) AND ({})", format_expr(a), format_expr(b)),
-        _ => {
-            // For simplicity, we only implement the above cases for now.
-            unimplemented!("Expression formatting not implemented for this variant")
-        }
+        Expr::Eq(l, r) => format!("({} = {})", format_value_expr(l), format_value_expr(r)),
+        Expr::Neq(l, r) => format!("({} <> {})", format_value_expr(l), format_value_expr(r)),
+        Expr::Gt(l, r) => format!("({} > {})", format_value_expr(l), format_value_expr(r)),
+        Expr::Lt(l, r) => format!("({} < {})", format_value_expr(l), format_value_expr(r)),
+        Expr::And(a, b) => format!("({} AND {})", format_expr(a), format_expr(b)),
     }
 }
 
 fn format_value_expr<T: TableName>(v: &ValueExpr<T>) -> String {
     match v {
-        ValueExpr::Column(ColumnRef { column_name, .. }) => format!("{}.{}", T::TABLE_NAME, column_name),
-        ValueExpr::Literal(av) => format_algebraic_literal(av),
+        ValueExpr::Column(ColumnRef { column_name, .. }) => format!("\"{}\".\"{}\"", T::TABLE_NAME, column_name),
+
+        ValueExpr::Literal(av) => format_literal(av),
     }
 }
 
-fn format_algebraic_literal(v: &AlgebraicValue) -> String {
-    v.to_satn()
+fn format_literal(v: &AlgebraicValue) -> String {
+    match v {
+        AlgebraicValue::String(s) => format!("'{}'", s.replace("'", "''")),
+        _ => v.to_satn(),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::marker::PhantomData;
-
     use super::*;
 
     struct User;
@@ -418,23 +426,53 @@ mod tests {
         Table::new()
     }
 
+    fn other() -> Table<Other> {
+        Table::new()
+    }
+
+    struct IxUserCols {
+        pub id: IxCol<User, i32>,
+    }
+
+    impl HasIxCols for User {
+        type IxCols = IxUserCols;
+        fn idx_cols() -> Self::IxCols {
+            IxUserCols { id: IxCol::new("id") }
+        }
+    }
+
+    // --- define "Other" table + IxCols ---
+    struct Other;
+    impl TableName for Other {
+        const TABLE_NAME: &'static str = "other";
+    }
+
+    #[derive(Clone)]
+    struct IxOtherCols {
+        pub uid: IxCol<Other, i32>,
+    }
+
+    impl HasIxCols for Other {
+        type IxCols = IxOtherCols;
+        fn idx_cols() -> Self::IxCols {
+            IxOtherCols { uid: IxCol::new("uid") }
+        }
+    }
+
     fn norm(s: &str) -> String {
         s.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
-    // ---- Tests -------------------------------------------------------------
-
     #[test]
     fn test_simple_select() {
         let q = users().build();
-        assert_eq!(q.sql(), "SELECT * FROM users");
+        assert_eq!(q.sql(), r#"SELECT * FROM "users""#);
     }
 
     #[test]
     fn test_where_literal() {
         let q = users().r#where(|c| c.id.eq(10)).build();
-
-        let expected = "SELECT * FROM users WHERE id = 10";
+        let expected = r#"SELECT * FROM "users" WHERE ("users"."id" = 10)"#;
         assert_eq!(norm(q.sql()), norm(expected));
     }
 
@@ -442,40 +480,100 @@ mod tests {
     fn test_where_multiple_predicates() {
         let q = users().r#where(|c| c.id.eq(10)).r#where(|c| c.age.gt(18)).build();
 
-        let expected = "SELECT * FROM users WHERE (id = 10) AND (age > 18)";
+        let expected = r#"SELECT * FROM "users" WHERE (("users"."id" = 10) AND ("users"."age" > 18))"#;
         assert_eq!(norm(q.sql()), norm(expected));
     }
 
     #[test]
     fn test_column_column_comparison() {
-        // age > id
         let q = users().r#where(|c| c.age.gt(c.id)).build();
 
-        let expected = "SELECT * FROM users WHERE age > id";
+        let expected = r#"SELECT * FROM "users" WHERE ("users"."age" > "users"."id")"#;
         assert_eq!(norm(q.sql()), norm(expected));
     }
 
     #[test]
     fn test_ne_comparison() {
         let q = users().r#where(|c| c.name.neq("Shub".to_string())).build();
-
-        // This uses Debug formatting for literal (your current implementation)
-        let contains = q.sql().contains("name <> ");
-        assert!(contains, "Query did not contain `name <> ...`");
+        assert!(q.sql().contains("name"), "Expected a name comparison");
+        assert!(q.sql().contains("<>"));
     }
 
     #[test]
     fn test_format_expr_column_literal() {
         let expr = Expr::Eq(
-            ValueExpr::Column(ColumnRef {
-                column_name: "id",
-                _marker: PhantomData::<User>,
-            }),
+            ValueExpr::Column(ColumnRef::<User>::new("id")),
             ValueExpr::Literal(AlgebraicValue::from(42)),
         );
 
         let sql = format_expr(&expr);
-        assert!(sql.contains("id ="), "left side missing");
-        assert!(sql.contains("42"), "right literal missing");
+        assert!(sql.contains("id"), "Missing col");
+        assert!(sql.contains("42"), "Missing literal");
+    }
+
+    #[test]
+    fn test_format_semi_join_expr() {
+        let user = users();
+        let other = other();
+
+        let sql = user.left_semijoin(other, |u, o| u.id.eq(o.uid)).build().sql;
+
+        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid""#;
+
+        assert_eq!(sql, expected);
+    }
+
+    #[test]
+    fn test_left_semijoin_with_where_expr() {
+        let user = users();
+        let o = other();
+        let sql = user
+            .left_semijoin(o, |u, o| u.id.eq(o.uid))
+            .r#where(|u| u.id.eq(1))
+            .r#where(|u| u.id.gt(10))
+            .build()
+            .sql;
+
+        let expected = r#"SELECT "left".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE (("users"."id" = 1) AND ("users"."id" > 10))"#;
+
+        assert_eq!(sql, expected);
+
+        // Test chaining where before join
+        let user = users();
+        let other = other();
+        let sql2 = user
+            .r#where(|u| u.id.eq(1))
+            .r#where(|u| u.id.gt(10))
+            .left_semijoin(other, |u, o| u.id.eq(o.uid))
+            .build()
+            .sql;
+        assert_eq!(sql2, expected);
+    }
+
+    #[test]
+    fn test_right_semijoin_with_where_expr() {
+        let user = users();
+        let o = other();
+        let sql = user
+            .right_semijoin(o, |u, o| u.id.eq(o.uid))
+            .r#where(|u| u.id.eq(1))
+            .r#where(|u| u.id.gt(10))
+            .build()
+            .sql;
+
+        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE (("users"."id" = 1) AND ("users"."id" > 10))"#;
+        assert_eq!(sql, expected);
+
+        // Change order
+        let user = users();
+        let o = other();
+        let sql = user
+            .r#where(|u| u.id.eq(1))
+            .right_semijoin(o, |u, o| u.id.eq(o.uid))
+            .r#where(|u| u.id.gt(10))
+            .build()
+            .sql;
+
+        assert_eq!(sql, expected);
     }
 }
