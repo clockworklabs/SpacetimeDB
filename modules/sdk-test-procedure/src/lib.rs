@@ -1,4 +1,4 @@
-use spacetimedb::{procedure, ProcedureContext, SpacetimeType};
+use spacetimedb::{procedure, table, ProcedureContext, SpacetimeType, Table, TxContext};
 
 #[derive(SpacetimeType)]
 struct ReturnStruct {
@@ -37,16 +37,64 @@ fn will_panic(_ctx: &mut ProcedureContext) {
     panic!("This procedure is expected to panic")
 }
 
-// TODO(procedure-http): Add a procedure here which does an HTTP request against a SpacetimeDB route (as `http://localhost:3000/v1/`)
-// and returns some value derived from the response.
-// Then write a test which invokes it in the Rust client SDK test suite.
+#[procedure]
+fn read_my_schema(ctx: &mut ProcedureContext) -> String {
+    let module_identity = ctx.identity();
+    match ctx.http.get(format!(
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+    )) {
+        Ok(result) => result.into_body().into_string_lossy(),
+        Err(e) => panic!("{e}"),
+    }
+}
 
-// TODO(procedure-http): Add a procedure here which does an HTTP request against an invalid SpacetimeDB route
-// and returns some value derived from the error.
-// Then write a test which invokes it in the Rust client SDK test suite.
+#[procedure]
+fn invalid_request(ctx: &mut ProcedureContext) -> String {
+    match ctx.http.get("http://foo.invalid/") {
+        Ok(result) => panic!(
+            "Got result from requesting `http://foo.invalid`... huh?\n{}",
+            result.into_body().into_string_lossy()
+        ),
+        Err(e) => e.to_string(),
+    }
+}
 
-// TODO(procedure-tx): Add a procedure here which acquires a transaction, inserts a row, commits, then returns.
-// Then write a test which invokes it and asserts observing the row in the Rust client SDK test suite.
+#[table(public, name = my_table)]
+struct MyTable {
+    field: ReturnStruct,
+}
 
-// TODO(procedure-tx): Add a procedure here which acquires a transaction, inserts a row, rolls back, then returns.
-// Then write a test which invokes it and asserts not observing the row in the Rust client SDK test suite.
+fn insert_my_table(ctx: &TxContext) {
+    ctx.db.my_table().insert(MyTable {
+        field: ReturnStruct {
+            a: 42,
+            b: "magic".into(),
+        },
+    });
+}
+
+fn assert_row_count(ctx: &mut ProcedureContext, count: u64) {
+    ctx.with_tx(|ctx| {
+        assert_eq!(count, ctx.db.my_table().count());
+    });
+}
+
+#[procedure]
+fn insert_with_tx_commit(ctx: &mut ProcedureContext) {
+    // Insert a row and commit.
+    ctx.with_tx(insert_my_table);
+
+    // Assert that there's a row.
+    assert_row_count(ctx, 1);
+}
+
+#[procedure]
+fn insert_with_tx_rollback(ctx: &mut ProcedureContext) {
+    let _: Result<(), u32> = ctx.try_with_tx(|ctx| {
+        insert_my_table(ctx);
+        Err(24)
+    });
+
+    // Assert that there's not a row.
+    assert_row_count(ctx, 0);
+}

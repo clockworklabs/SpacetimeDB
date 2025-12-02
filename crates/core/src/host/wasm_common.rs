@@ -344,17 +344,21 @@ decl_index!(TimingSpanIdx => TimingSpan);
 pub(super) type TimingSpanSet = ResourceSlab<TimingSpanIdx>;
 
 /// Converts a [`NodesError`] to an error code, if possible.
-pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
-    match err {
-        NodesError::NotInTransaction => Some(errno::NOT_IN_TRANSACTION),
-        NodesError::DecodeRow(_) => Some(errno::BSATN_DECODE_ERROR),
-        NodesError::TableNotFound => Some(errno::NO_SUCH_TABLE),
-        NodesError::IndexNotFound => Some(errno::NO_SUCH_INDEX),
-        NodesError::IndexNotUnique => Some(errno::INDEX_NOT_UNIQUE),
-        NodesError::IndexRowNotFound => Some(errno::NO_SUCH_ROW),
-        NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => Some(errno::SCHEDULE_AT_DELAY_TOO_LONG),
-        NodesError::AlreadyExists(_) => Some(errno::UNIQUE_ALREADY_EXISTS),
-        NodesError::Internal(internal) => match **internal {
+pub fn err_to_errno(err: NodesError) -> Result<(NonZeroU16, Option<String>), NodesError> {
+    let errno = match err {
+        NodesError::NotInTransaction => errno::NOT_IN_TRANSACTION,
+        NodesError::NotInAnonTransaction => errno::TRANSACTION_NOT_ANONYMOUS,
+        NodesError::WouldBlockTransaction(_) => errno::WOULD_BLOCK_TRANSACTION,
+        NodesError::DecodeRow(_) => errno::BSATN_DECODE_ERROR,
+        NodesError::DecodeValue(_) => errno::BSATN_DECODE_ERROR,
+        NodesError::TableNotFound => errno::NO_SUCH_TABLE,
+        NodesError::IndexNotFound => errno::NO_SUCH_INDEX,
+        NodesError::IndexNotUnique => errno::INDEX_NOT_UNIQUE,
+        NodesError::IndexRowNotFound => errno::NO_SUCH_ROW,
+        NodesError::ScheduleError(ScheduleError::DelayTooLong(_)) => errno::SCHEDULE_AT_DELAY_TOO_LONG,
+        NodesError::AlreadyExists(_) => errno::UNIQUE_ALREADY_EXISTS,
+        NodesError::HttpError(message) => return Ok((errno::HTTP_ERROR, Some(message))),
+        NodesError::Internal(ref internal) => match **internal {
             DBError::Datastore(DatastoreError::Index(IndexError::UniqueConstraintViolation(
                 UniqueConstraintViolation {
                     constraint_name: _,
@@ -362,23 +366,22 @@ pub fn err_to_errno(err: &NodesError) -> Option<NonZeroU16> {
                     cols: _,
                     value: _,
                 },
-            ))) => Some(errno::UNIQUE_ALREADY_EXISTS),
-            _ => None,
+            ))) => errno::UNIQUE_ALREADY_EXISTS,
+            _ => return Err(err),
         },
-        _ => None,
-    }
+        _ => return Err(err),
+    };
+    Ok((errno, None))
 }
 
 /// Converts a [`NodesError`] to an error code and logs, if possible.
-pub fn err_to_errno_and_log<C: From<u16>>(func: AbiCall, err: NodesError) -> anyhow::Result<C> {
-    let Some(errno) = err_to_errno(&err) else {
-        return Err(AbiRuntimeError { func, err }.into());
-    };
+pub fn err_to_errno_and_log<C: From<u16>>(func: AbiCall, err: NodesError) -> anyhow::Result<(C, Option<String>)> {
+    let (errno, message) = err_to_errno(err).map_err(|err| AbiRuntimeError { func, err })?;
     log::debug!(
         "abi call to {func} returned an errno: {errno} ({})",
         errno::strerror(errno).unwrap_or("<unknown>")
     );
-    Ok(errno.get().into())
+    Ok((errno.get().into(), message))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -422,6 +425,10 @@ macro_rules! abi_funcs {
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
+            "spacetime_10.3"::procedure_http_request,
         }
     };
 }

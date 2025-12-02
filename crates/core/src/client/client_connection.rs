@@ -12,7 +12,7 @@ use super::{message_handlers, ClientActorId, MessageHandleError};
 use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
-use crate::host::{FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
+use crate::host::{CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::util::asyncify;
@@ -335,6 +335,7 @@ impl ClientConnectionSender {
             audience: vec![],
             iat: SystemTime::now(),
             exp: None,
+            extra: None,
         };
         let sender = Self {
             id,
@@ -390,6 +391,11 @@ impl ClientConnectionSender {
                     connection_id = %self.id.connection_id,
                     confirmed_reads = self.config.confirmed_reads,
                     "client channel capacity exceeded"
+                );
+                log::warn!(
+                    "Client {:?} exceeded channel capacity of {}, kicking",
+                    self.id,
+                    self.sendtx.capacity(),
                 );
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);
@@ -848,7 +854,7 @@ impl ClientConnection {
         request_id: RequestId,
         timer: Instant,
     ) -> Result<(), BroadcastError> {
-        let res = self
+        let CallProcedureReturn { result, tx_offset } = self
             .module()
             .call_procedure(
                 self.id.identity,
@@ -859,9 +865,11 @@ impl ClientConnection {
             )
             .await;
 
+        let message = ProcedureResultMessage::from_result(&result, request_id);
+
         self.module()
             .subscriptions()
-            .send_procedure_message(self.sender(), ProcedureResultMessage::from_result(&res, request_id))
+            .send_procedure_message(self.sender(), message, tx_offset)
     }
 
     pub async fn subscribe_single(

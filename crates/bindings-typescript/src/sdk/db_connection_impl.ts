@@ -1,18 +1,13 @@
-import { ConnectionId } from '../';
-import {
-  AlgebraicType,
-  type AlgebraicTypeVariants,
-  type ComparablePrimitive,
-} from '../';
-import { parseValue } from '../';
+import { ConnectionId, ProductBuilder, ProductType } from '../';
+import { AlgebraicType, type ComparablePrimitive } from '../';
 import { BinaryReader } from '../';
 import { BinaryWriter } from '../';
-import { BsatnRowList } from './client_api/bsatn_row_list_type.ts';
-import { ClientMessage } from './client_api/client_message_type.ts';
-import { DatabaseUpdate } from './client_api/database_update_type.ts';
-import { QueryUpdate } from './client_api/query_update_type.ts';
-import { ServerMessage } from './client_api/server_message_type.ts';
-import { TableUpdate as RawTableUpdate } from './client_api/table_update_type.ts';
+import BsatnRowList from './client_api/bsatn_row_list_type.ts';
+import ClientMessage from './client_api/client_message_type.ts';
+import DatabaseUpdate from './client_api/database_update_type.ts';
+import QueryUpdate from './client_api/query_update_type.ts';
+import ServerMessage from './client_api/server_message_type.ts';
+import RawTableUpdate from './client_api/table_update_type.ts';
 import { ClientCache } from './client_cache.ts';
 import { DbConnectionBuilder } from './db_connection_builder.ts';
 import { type DbContext } from './db_context.ts';
@@ -25,17 +20,18 @@ import {
 } from './event_context.ts';
 import { EventEmitter } from './event_emitter.ts';
 import { decompress } from './decompress.ts';
-import type { Identity } from '../';
+import type { Identity, Infer, InferTypeOfRow } from '../';
 import type {
   IdentityTokenMessage,
   Message,
+  ProcedureResultMessage,
   SubscribeAppliedMessage,
   UnsubscribeAppliedMessage,
 } from './message_types.ts';
 import type { ReducerEvent } from './reducer_event.ts';
-import type RemoteModule from './spacetime_module.ts';
+import { type UntypedRemoteModule } from './spacetime_module.ts';
 import {
-  TableCache,
+  type TableCache,
   type Operation,
   type PendingCallback,
   type TableUpdate as CacheTableUpdate,
@@ -49,10 +45,29 @@ import {
   type SubscribeEvent,
 } from './subscription_builder_impl.ts';
 import { stdbLogger } from './logger.ts';
-import { type ReducerRuntimeTypeInfo } from './spacetime_module.ts';
 import { fromByteArray } from 'base64-js';
+import type {
+  ReducerEventCallback,
+  ReducerEventInfo,
+  ReducersView,
+  SetReducerFlags,
+  SubscriptionEventCallback,
+} from './reducers.ts';
+import type { ClientDbView } from './db_view.ts';
+import type { UntypedTableDef } from '../lib/table.ts';
+import { toCamelCase, toPascalCase } from '../lib/util.ts';
+import type { ProceduresView } from './procedures.ts';
 
-export { DbConnectionBuilder, SubscriptionBuilderImpl, TableCache, type Event };
+export {
+  DbConnectionBuilder,
+  SubscriptionBuilderImpl,
+  SubscriptionHandleImpl,
+  type TableCache,
+  type Event,
+};
+
+export type RemoteModuleOf<C> =
+  C extends DbConnectionImpl<infer RM> ? RM : never;
 
 export type {
   DbContext,
@@ -66,14 +81,6 @@ export type {
 export type ConnectionEvent = 'connect' | 'disconnect' | 'connectError';
 export type CallReducerFlags = 'FullUpdate' | 'NoSuccessNotify';
 
-type ReducerEventCallback<ReducerArgs extends any[] = any[]> = (
-  ctx: ReducerEventContextInterface,
-  ...args: ReducerArgs
-) => void;
-type SubscriptionEventCallback = (
-  ctx: SubscriptionEventContextInterface
-) => void;
-
 function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   switch (flags) {
     case 'FullUpdate':
@@ -83,24 +90,23 @@ function callReducerFlagsToNumber(flags: CallReducerFlags): number {
   }
 }
 
-type DbConnectionConfig = {
+export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
   uri: URL;
   nameOrAddress: string;
   identity?: Identity;
   token?: string;
   emitter: EventEmitter<ConnectionEvent>;
-  remoteModule: RemoteModule;
   createWSFn: typeof WebsocketDecompressAdapter.createWebSocketFn;
   compression: 'gzip' | 'none';
   lightMode: boolean;
   confirmedReads?: boolean;
+  remoteModule: RemoteModule;
 };
 
-export class DbConnectionImpl<
-  DBView = any,
-  Reducers = any,
-  SetReducerFlags = any,
-> implements DbContext<DBView, Reducers>
+type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
+
+export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
+  implements DbContext<RemoteModule>
 {
   /**
    * Whether or not the connection is active.
@@ -121,20 +127,26 @@ export class DbConnectionImpl<
    * The accessor field to access the tables in the database and associated
    * callback functions.
    */
-  db: DBView;
+  db: ClientDbView<RemoteModule>;
 
   /**
    * The accessor field to access the reducers in the database and associated
    * callback functions.
    */
-  reducers: Reducers;
+  reducers: ReducersView<RemoteModule>;
 
   /**
    * The accessor field to access functions related to setting flags on
    * reducers regarding how the server should handle the reducer call and
    * the events that it sends back to the client.
    */
-  setReducerFlags: SetReducerFlags;
+  setReducerFlags: SetReducerFlags<RemoteModule>;
+
+  /**
+   * The accessor field to access the reducers in the database and associated
+   * callback functions.
+   */
+  procedures: ProceduresView<RemoteModule>;
 
   /**
    * The `ConnectionId` of the connection to to the database.
@@ -143,19 +155,22 @@ export class DbConnectionImpl<
 
   // These fields are meant to be strictly private.
   #queryId = 0;
+  #requestId = 0;
   #emitter: EventEmitter<ConnectionEvent>;
-  #reducerEmitter: EventEmitter<string, ReducerEventCallback> =
+  #reducerEmitter: EventEmitter<string, ReducerEventCallback<RemoteModule>> =
     new EventEmitter();
-  #onApplied?: SubscriptionEventCallback;
-  #remoteModule: RemoteModule;
+  #onApplied?: SubscriptionEventCallback<RemoteModule>;
   #messageQueue = Promise.resolve();
-  #subscriptionManager = new SubscriptionManager();
+  #subscriptionManager = new SubscriptionManager<RemoteModule>();
+  #remoteModule: RemoteModule;
+  #callReducerFlags = new Map<string, CallReducerFlags>();
+  #procedureCallbacks = new Map<number, ProcedureCallback>();
 
   // These fields are not part of the public API, but in a pinch you
   // could use JavaScript to access them by bypassing TypeScript's
   // private fields.
   // We use them in testing.
-  private clientCache: ClientCache;
+  private clientCache: ClientCache<RemoteModule>;
   private ws?: WebsocketDecompressAdapter | WebsocketTestAdapter;
   private wsPromise: Promise<
     WebsocketDecompressAdapter | WebsocketTestAdapter | undefined
@@ -172,7 +187,7 @@ export class DbConnectionImpl<
     compression,
     lightMode,
     confirmedReads,
-  }: DbConnectionConfig) {
+  }: DbConnectionConfig<RemoteModule>) {
     stdbLogger('info', 'Connecting to SpacetimeDB WS...');
 
     // We use .toString() here because some versions of React Native contain a bug where the URL constructor
@@ -192,13 +207,11 @@ export class DbConnectionImpl<
     const connectionId = this.connectionId.toHexString();
     url.searchParams.set('connection_id', connectionId);
 
-    this.clientCache = new ClientCache();
-    this.db = this.#remoteModule.dbViewConstructor(this);
-    this.setReducerFlags = this.#remoteModule.setReducerFlagsConstructor();
-    this.reducers = this.#remoteModule.reducersConstructor(
-      this,
-      this.setReducerFlags
-    );
+    this.clientCache = new ClientCache<RemoteModule>();
+    this.db = this.#makeDbView(remoteModule);
+    this.reducers = this.#makeReducers(remoteModule);
+    this.setReducerFlags = this.#makeSetReducerFlags(remoteModule);
+    this.procedures = this.#makeProcedures(remoteModule);
 
     this.wsPromise = createWSFn({
       url,
@@ -214,9 +227,11 @@ export class DbConnectionImpl<
 
         this.ws.onclose = () => {
           this.#emitter.emit('disconnect', this);
+          this.isActive = false;
         };
         this.ws.onerror = (e: ErrorEvent) => {
           this.#emitter.emit('connectError', this, e);
+          this.isActive = false;
         };
         this.ws.onopen = this.#handleOnOpen.bind(this);
         this.ws.onmessage = this.#handleOnMessage.bind(this);
@@ -236,6 +251,126 @@ export class DbConnectionImpl<
     return queryId;
   };
 
+  #getNextRequestId = () => this.#requestId++;
+
+  #makeDbView(def: RemoteModule): ClientDbView<RemoteModule> {
+    const view = Object.create(null) as ClientDbView<RemoteModule>;
+
+    for (const tbl of def.tables) {
+      // ClientDbView uses this name verbatim
+      const key = tbl.accessorName;
+      Object.defineProperty(view, key, {
+        enumerable: true,
+        configurable: false,
+        get: () => {
+          return this.clientCache.getOrCreateTable(tbl);
+        },
+      });
+    }
+
+    return view;
+  }
+
+  #makeReducers(def: RemoteModule): ReducersView<RemoteModule> {
+    const out: Record<string, unknown> = {};
+
+    for (const reducer of def.reducers) {
+      const key = toCamelCase(reducer.name);
+
+      (out as any)[key] = (params: InferTypeOfRow<typeof reducer.params>) => {
+        const flags = this.#callReducerFlags.get(reducer.name) ?? 'FullUpdate';
+        this.callReducerWithParams(
+          reducer.name,
+          reducer.paramsType,
+          params,
+          flags
+        );
+      };
+
+      const onReducerEventKey = `on${toPascalCase(reducer.name)}`;
+      (out as any)[onReducerEventKey] = (
+        callback: ReducerEventCallback<
+          RemoteModule,
+          InferTypeOfRow<typeof reducer.params>
+        >
+      ) => {
+        this.onReducer(reducer.name, callback);
+      };
+
+      const offReducerEventKey = `removeOn${toPascalCase(reducer.name)}`;
+      (out as any)[offReducerEventKey] = (
+        callback: ReducerEventCallback<
+          RemoteModule,
+          InferTypeOfRow<typeof reducer.params>
+        >
+      ) => {
+        this.offReducer(reducer.name, callback);
+      };
+    }
+
+    return out as ReducersView<RemoteModule>;
+  }
+
+  #makeSetReducerFlags(defs: RemoteModule): SetReducerFlags<RemoteModule> {
+    const out = Object.create(null) as SetReducerFlags<RemoteModule>;
+    for (const r of defs.reducers) {
+      const key = toCamelCase(r.name);
+      Object.defineProperty(out, key, {
+        enumerable: true,
+        configurable: false,
+        value: (flags: CallReducerFlags) => {
+          this.#callReducerFlags.set(r.name, flags);
+        },
+      });
+    }
+    return out;
+  }
+
+  #makeProcedures(def: RemoteModule): ProceduresView<RemoteModule> {
+    const out: Record<string, unknown> = {};
+
+    for (const procedure of def.procedures) {
+      const key = toCamelCase(procedure.name);
+
+      const paramsType = new ProductBuilder(procedure.params).algebraicType
+        .value;
+
+      const returnType = procedure.returnType.algebraicType;
+
+      (out as any)[key] = (
+        params: InferTypeOfRow<typeof procedure.params>
+      ): Promise<any> =>
+        this.callProcedureWithParams(
+          procedure.name,
+          paramsType,
+          params,
+          returnType
+        );
+    }
+
+    return out as ProceduresView<RemoteModule>;
+  }
+
+  #makeEventContext(
+    event: Event<
+      ReducerEventInfo<
+        RemoteModule['reducers'][number]['name'],
+        InferTypeOfRow<RemoteModule['reducers'][number]['params']>
+      >
+    >
+  ): EventContextInterface<RemoteModule> {
+    // Bind methods to preserve `this` (#private fields safe)
+    return {
+      db: this.db,
+      reducers: this.reducers,
+      setReducerFlags: this.setReducerFlags,
+      isActive: this.isActive,
+      subscriptionBuilder: this.subscriptionBuilder.bind(this),
+      disconnect: this.disconnect.bind(this),
+      event,
+    };
+  }
+
   // NOTE: This is very important!!! This is the actual function that
   // gets called when you call `connection.subscriptionBuilder()`.
   // The `subscriptionBuilder` function which is generated, just shadows
@@ -243,13 +378,16 @@ export class DbConnectionImpl<
   // Do not remove this function, or shoot yourself in the foot please.
   // It's not clear what would be a better way to do this at this exact
   // moment.
-  subscriptionBuilder = (): SubscriptionBuilderImpl => {
+  subscriptionBuilder = (): SubscriptionBuilderImpl<RemoteModule> => {
     return new SubscriptionBuilderImpl(this);
   };
 
   registerSubscription(
-    handle: SubscriptionHandleImpl<DBView, Reducers, SetReducerFlags>,
-    handleEmitter: EventEmitter<SubscribeEvent, SubscriptionEventCallback>,
+    handle: SubscriptionHandleImpl<RemoteModule>,
+    handleEmitter: EventEmitter<
+      SubscribeEvent,
+      SubscriptionEventCallback<RemoteModule>
+    >,
     querySql: string[]
   ): number {
     const queryId = this.#getNextQueryId();
@@ -282,27 +420,35 @@ export class DbConnectionImpl<
 
   // This function is async because we decompress the message async
   async #processParsedMessage(
-    message: ServerMessage
+    message: Infer<typeof ServerMessage>
   ): Promise<Message | undefined> {
     const parseRowList = (
       type: 'insert' | 'delete',
       tableName: string,
-      rowList: BsatnRowList
+      rowList: Infer<typeof BsatnRowList>
     ): Operation[] => {
       const buffer = rowList.rowsData;
       const reader = new BinaryReader(buffer);
       const rows: Operation[] = [];
-      const rowType = this.#remoteModule.tables[tableName]!.rowType;
+
+      // TODO: performance
+      const table = this.#remoteModule.tables.find(t => t.name === tableName);
+      const rowType = table!.rowType;
+      const columnsArray = Object.entries(table!.columns);
+      const primaryKeyColumnEntry = columnsArray.find(
+        col => col[1].columnMetadata.isPrimaryKey
+      );
       let previousOffset = 0;
-      const primaryKeyInfo =
-        this.#remoteModule.tables[tableName]!.primaryKeyInfo;
       while (reader.remaining > 0) {
-        const row = AlgebraicType.deserializeValue(reader, rowType);
+        const row = ProductType.deserializeValue(reader, rowType);
         let rowId: ComparablePrimitive | undefined = undefined;
-        if (primaryKeyInfo !== undefined) {
+        if (primaryKeyColumnEntry !== undefined) {
+          const primaryKeyColName = primaryKeyColumnEntry[0];
+          const primaryKeyColType =
+            primaryKeyColumnEntry[1].typeBuilder.algebraicType;
           rowId = AlgebraicType.intoMapKey(
-            primaryKeyInfo.colType,
-            row[primaryKeyInfo.colName]
+            primaryKeyColType,
+            row[primaryKeyColName]
           );
         } else {
           // Get a view of the bytes for this row.
@@ -323,16 +469,17 @@ export class DbConnectionImpl<
     };
 
     const parseTableUpdate = async (
-      rawTableUpdate: RawTableUpdate
-    ): Promise<CacheTableUpdate> => {
+      rawTableUpdate: Infer<typeof RawTableUpdate>
+    ): Promise<CacheTableUpdate<UntypedTableDef>> => {
       const tableName = rawTableUpdate.tableName;
       let operations: Operation[] = [];
       for (const update of rawTableUpdate.updates) {
-        let decompressed: QueryUpdate;
+        let decompressed: Infer<typeof QueryUpdate>;
         if (update.tag === 'Gzip') {
           const decompressedBuffer = await decompress(update.value, 'gzip');
-          decompressed = QueryUpdate.deserialize(
-            new BinaryReader(decompressedBuffer)
+          decompressed = AlgebraicType.deserializeValue(
+            new BinaryReader(decompressedBuffer),
+            QueryUpdate.algebraicType
           );
         } else if (update.tag === 'Brotli') {
           throw new Error(
@@ -355,9 +502,9 @@ export class DbConnectionImpl<
     };
 
     const parseDatabaseUpdate = async (
-      dbUpdate: DatabaseUpdate
-    ): Promise<CacheTableUpdate[]> => {
-      const tableUpdates: CacheTableUpdate[] = [];
+      dbUpdate: Infer<typeof DatabaseUpdate>
+    ): Promise<CacheTableUpdate<UntypedTableDef>[]> => {
+      const tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
       for (const rawTableUpdate of dbUpdate.tables) {
         tableUpdates.push(await parseTableUpdate(rawTableUpdate));
       }
@@ -395,7 +542,7 @@ export class DbConnectionImpl<
         const args = txUpdate.reducerCall.args;
         const energyQuantaUsed = txUpdate.energyQuantaUsed;
 
-        let tableUpdates: CacheTableUpdate[] = [];
+        let tableUpdates: CacheTableUpdate<UntypedTableDef>[] = [];
         let errMessage = '';
         switch (txUpdate.status.tag) {
           case 'Committed':
@@ -465,9 +612,7 @@ export class DbConnectionImpl<
         const parsedTableUpdates = await parseDatabaseUpdate(
           message.value.update
         );
-        const subscribeAppliedMessage: SubscribeAppliedMessage<
-          Record<string, any>
-        > = {
+        const subscribeAppliedMessage: SubscribeAppliedMessage = {
           tag: 'SubscribeApplied',
           queryId: message.value.queryId.id,
           tableUpdates: parsedTableUpdates,
@@ -479,9 +624,7 @@ export class DbConnectionImpl<
         const parsedTableUpdates = await parseDatabaseUpdate(
           message.value.update
         );
-        const unsubscribeAppliedMessage: UnsubscribeAppliedMessage<
-          Record<string, any>
-        > = {
+        const unsubscribeAppliedMessage: UnsubscribeAppliedMessage = {
           tag: 'UnsubscribeApplied',
           queryId: message.value.queryId.id,
           tableUpdates: parsedTableUpdates,
@@ -496,14 +639,36 @@ export class DbConnectionImpl<
           error: message.value.error,
         };
       }
+
+      case 'ProcedureResult': {
+        const { status, requestId } = message.value;
+        return {
+          tag: 'ProcedureResult',
+          requestId,
+          result:
+            status.tag === 'Returned'
+              ? { tag: 'Ok', value: status.value }
+              : status.tag === 'OutOfEnergy'
+                ? {
+                    tag: 'Err',
+                    value:
+                      'Procedure execution aborted due to insufficient energy',
+                  }
+                : { tag: 'Err', value: status.value },
+        };
+      }
     }
   }
 
-  #sendMessage(message: ClientMessage): void {
+  #sendMessage(message: Infer<typeof ClientMessage>): void {
     this.wsPromise.then(wsResolved => {
       if (wsResolved) {
         const writer = new BinaryWriter(1024);
-        ClientMessage.serialize(writer, message);
+        AlgebraicType.serializeValue(
+          writer,
+          ClientMessage.algebraicType,
+          message
+        );
         const encoded = writer.getBuffer();
         wsResolved.send(encoded);
       }
@@ -518,15 +683,18 @@ export class DbConnectionImpl<
   }
 
   #applyTableUpdates(
-    tableUpdates: CacheTableUpdate[],
-    eventContext: EventContextInterface
+    tableUpdates: CacheTableUpdate<UntypedTableDef>[],
+    eventContext: EventContextInterface<RemoteModule>
   ): PendingCallback[] {
     const pendingCallbacks: PendingCallback[] = [];
     for (const tableUpdate of tableUpdates) {
       // Get table information for the table being updated
       const tableName = tableUpdate.tableName;
-      const tableTypeInfo = this.#remoteModule.tables[tableName]!;
-      const table = this.clientCache.getOrCreateTable(tableTypeInfo);
+      // TODO: performance
+      const tableDef = this.#remoteModule.tables.find(
+        t => t.name === tableName
+      )!;
+      const table = this.clientCache.getOrCreateTable(tableDef);
       const newCallbacks = table.applyOperations(
         tableUpdate.operations,
         eventContext
@@ -539,7 +707,10 @@ export class DbConnectionImpl<
   }
 
   async #processMessage(data: Uint8Array): Promise<void> {
-    const serverMessage = parseValue(ServerMessage, data);
+    const serverMessage = AlgebraicType.deserializeValue(
+      new BinaryReader(data),
+      ServerMessage.algebraicType
+    );
     const message = await this.#processParsedMessage(serverMessage);
     if (!message) {
       return;
@@ -547,11 +718,7 @@ export class DbConnectionImpl<
     switch (message.tag) {
       case 'InitialSubscription': {
         const event: Event<never> = { tag: 'SubscribeApplied' };
-
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         // Remove the event from the subscription event context
         // It is not a field in the type narrowed SubscriptionEventContext
         const { event: _, ...subscriptionEventContext } = eventContext;
@@ -570,10 +737,7 @@ export class DbConnectionImpl<
       }
       case 'TransactionUpdateLight': {
         const event: Event<never> = { tag: 'UnknownTransaction' };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const callbacks = this.#applyTableUpdates(
           message.tableUpdates,
           eventContext
@@ -586,18 +750,19 @@ export class DbConnectionImpl<
       case 'TransactionUpdate': {
         let reducerInfo = message.reducerInfo;
         let unknownTransaction = false;
-        let reducerArgs: any | undefined;
-        let reducerTypeInfo: ReducerRuntimeTypeInfo | undefined;
+        let reducerArgs: InferTypeOfRow<typeof reducer.params> | undefined;
+        const reducer = this.#remoteModule.reducers.find(
+          t => t.name === reducerInfo!.reducerName
+        )!;
         if (!reducerInfo) {
           unknownTransaction = true;
         } else {
-          reducerTypeInfo =
-            this.#remoteModule.reducers[reducerInfo.reducerName];
+          // TODO: performance
           try {
             const reader = new BinaryReader(reducerInfo.args as Uint8Array);
-            reducerArgs = AlgebraicType.deserializeValue(
+            reducerArgs = ProductType.deserializeValue(
               reader,
-              reducerTypeInfo.argsType
+              reducer?.paramsType
             );
           } catch {
             // This should only be printed in development, since it's
@@ -610,10 +775,7 @@ export class DbConnectionImpl<
 
         if (unknownTransaction) {
           const event: Event<never> = { tag: 'UnknownTransaction' };
-          const eventContext = this.#remoteModule.eventContextConstructor(
-            this,
-            event
-          );
+          const eventContext = this.#makeEventContext(event);
           const callbacks = this.#applyTableUpdates(
             message.tableUpdates,
             eventContext
@@ -628,7 +790,7 @@ export class DbConnectionImpl<
         // At this point, we know that `reducerInfo` is not null because
         // we return if `unknownTransaction` is true.
         reducerInfo = reducerInfo!;
-        reducerTypeInfo = reducerTypeInfo!;
+        reducerArgs = reducerArgs!;
 
         // Thus this must be a reducer event create it and emit it.
         const reducerEvent = {
@@ -646,10 +808,7 @@ export class DbConnectionImpl<
           tag: 'Reducer',
           value: reducerEvent,
         };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const reducerEventContext = {
           ...eventContext,
           event: reducerEvent,
@@ -660,16 +819,10 @@ export class DbConnectionImpl<
           eventContext
         );
 
-        const argsArray: any[] = [];
-        (
-          reducerTypeInfo.argsType as AlgebraicTypeVariants.Product
-        ).value.elements.forEach(element => {
-          argsArray.push(reducerArgs[element.name!]);
-        });
         this.#reducerEmitter.emit(
           reducerInfo.reducerName,
           reducerEventContext,
-          ...argsArray
+          reducerArgs
         );
         for (const callback of callbacks) {
           callback.cb();
@@ -698,10 +851,7 @@ export class DbConnectionImpl<
           break;
         }
         const event: Event<never> = { tag: 'SubscribeApplied' };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const { event: _, ...subscriptionEventContext } = eventContext;
         const callbacks = this.#applyTableUpdates(
           message.tableUpdates,
@@ -726,10 +876,7 @@ export class DbConnectionImpl<
           break;
         }
         const event: Event<never> = { tag: 'UnsubscribeApplied' };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const { event: _, ...subscriptionEventContext } = eventContext;
         const callbacks = this.#applyTableUpdates(
           message.tableUpdates,
@@ -745,10 +892,7 @@ export class DbConnectionImpl<
       case 'SubscriptionError': {
         const error = Error(message.error);
         const event: Event<never> = { tag: 'Error', value: error };
-        const eventContext = this.#remoteModule.eventContextConstructor(
-          this,
-          event
-        );
+        const eventContext = this.#makeEventContext(event);
         const errorContext = {
           ...eventContext,
           event: error,
@@ -769,6 +913,14 @@ export class DbConnectionImpl<
             emitter.emit('error', errorContext, error);
           });
         }
+        break;
+      }
+      case 'ProcedureResult': {
+        const { requestId, result } = message;
+        const cb = this.#procedureCallbacks.get(requestId);
+        this.#procedureCallbacks.delete(requestId);
+        cb?.(result);
+        break;
       }
     }
   }
@@ -810,6 +962,77 @@ export class DbConnectionImpl<
   }
 
   /**
+   * Call a reducer on your SpacetimeDB module with typed arguments.
+   * @param reducerSchema The schema of the reducer to call
+   * @param callReducerFlags The flags for the reducer call
+   * @param params The arguments to pass to the reducer
+   */
+  callReducerWithParams(
+    reducerName: string,
+    paramsType: ProductType,
+    params: object,
+    flags: CallReducerFlags
+  ) {
+    const writer = new BinaryWriter(1024);
+    ProductType.serializeValue(writer, paramsType, params);
+    const argsBuffer = writer.getBuffer();
+    this.callReducer(reducerName, argsBuffer, flags);
+  }
+
+  /**
+   * Call a reducer on your SpacetimeDB module.
+   *
+   * @param procedureName The name of the reducer to call
+   * @param argsBuffer The arguments to pass to the reducer
+   */
+  callProcedure(
+    procedureName: string,
+    argsBuffer: Uint8Array
+  ): Promise<Uint8Array> {
+    const { promise, resolve, reject } = Promise.withResolvers<Uint8Array>();
+    const requestId = this.#getNextRequestId();
+    const message = ClientMessage.CallProcedure({
+      procedure: procedureName,
+      args: argsBuffer,
+      requestId,
+      // reserved for future use - 0 is the only valid value
+      flags: 0,
+    });
+    this.#sendMessage(message);
+    this.#procedureCallbacks.set(requestId, result => {
+      if (result.tag === 'Ok') {
+        resolve(result.value);
+      } else {
+        reject(result.value);
+      }
+    });
+    return promise;
+  }
+
+  /**
+   * Call a reducer on your SpacetimeDB module with typed arguments.
+   * @param reducerSchema The schema of the reducer to call
+   * @param callReducerFlags The flags for the reducer call
+   * @param params The arguments to pass to the reducer
+   */
+  callProcedureWithParams(
+    procedureName: string,
+    paramsType: ProductType,
+    params: object,
+    returnType: AlgebraicType
+  ): Promise<any> {
+    const writer = new BinaryWriter(1024);
+    ProductType.serializeValue(writer, paramsType, params);
+    const argsBuffer = writer.getBuffer();
+    return this.callProcedure(procedureName, argsBuffer).then(returnBuf => {
+      return AlgebraicType.deserializeValue(
+        new BinaryReader(returnBuf),
+        returnType
+      );
+    });
+  }
+
+  /**
    * Close the current connection.
    *
    * @example
@@ -829,63 +1052,69 @@ export class DbConnectionImpl<
 
   private on(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on(eventName, callback);
   }
 
   private off(
     eventName: ConnectionEvent,
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off(eventName, callback);
   }
 
   private onConnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connect', callback);
   }
 
   private onDisconnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on('disconnect', callback);
   }
 
   private onConnectError(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.on('connectError', callback);
   }
 
-  private removeOnConnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  removeOnConnect(
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connect', callback);
   }
 
-  private removeOnDisconnect(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  removeOnDisconnect(
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('disconnect', callback);
   }
 
-  private removeOnConnectError(
-    callback: (ctx: DbConnectionImpl, ...args: any[]) => void
+  removeOnConnectError(
+    callback: (ctx: DbConnectionImpl<RemoteModule>, ...args: any[]) => void
   ): void {
     this.#emitter.off('connectError', callback);
   }
 
   // Note: This is required to be public because it needs to be
   // called from the `RemoteReducers` class.
-  onReducer(reducerName: string, callback: ReducerEventCallback): void {
+  onReducer(
+    reducerName: string,
+    callback: ReducerEventCallback<RemoteModule>
+  ): void {
     this.#reducerEmitter.on(reducerName, callback);
   }
 
   // Note: This is required to be public because it needs to be
   // called from the `RemoteReducers` class.
-  offReducer(reducerName: string, callback: ReducerEventCallback): void {
+  offReducer(
+    reducerName: string,
+    callback: ReducerEventCallback<RemoteModule>
+  ): void {
     this.#reducerEmitter.off(reducerName, callback);
   }
 }

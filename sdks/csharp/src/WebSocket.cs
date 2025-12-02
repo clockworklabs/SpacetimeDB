@@ -61,7 +61,7 @@ namespace SpacetimeDB
         private bool _isConnected = false;
         private bool _isConnecting = false;
         public bool IsConnected => _isConnected;
-#else 
+#else
         public bool IsConnected { get { return Ws != null && Ws.State == WebSocketState.Open; } }
 #endif
 
@@ -136,22 +136,28 @@ namespace SpacetimeDB
         var messagePtr = Marshal.GetFunctionPointerForDelegate((Action<int, IntPtr, int>)WebGLOnMessage);
         var closePtr = Marshal.GetFunctionPointerForDelegate((Action<int, int, IntPtr>)WebGLOnClose);
         var errorPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)WebGLOnError);
-        
+
         WebSocket_Init(openPtr, messagePtr, closePtr, errorPtr);
     }
 #endif
 
-        public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light)
+        public async Task Connect(string? auth, string host, string nameOrAddress, ConnectionId connectionId, Compression compression, bool light, bool? confirmedReads)
         {
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (_isConnecting || _isConnected) return;
-    
+
             _isConnecting = true;
             try
             {
                 var uri = $"{host}/v1/database/{nameOrAddress}/subscribe?connection_id={connectionId}&compression={compression}";
                 if (light) uri += "&light=true";
-        
+                if (confirmedReads.HasValue)
+                {
+                    // Ensure to transmit the bool as lowercase.
+                    var enabled = confirmedReads.GetValueOrDefault() ? "true" : "false";
+                    uri += $"&confirmed={enabled}";
+                }
+
                 _socketId = new TaskCompletionSource<int>();
                 var callbackPtr = Marshal.GetFunctionPointerForDelegate((Action<int>)OnSocketIdReceived);
                 WebSocket_Connect(host, uri, _options.Protocol, auth, callbackPtr);
@@ -176,6 +182,12 @@ namespace SpacetimeDB
             if (light)
             {
                 uri += "&light=true";
+            }
+            if (confirmedReads.HasValue)
+            {
+                // Ensure to transmit the bool as lowercase.
+                var enabled = confirmedReads.GetValueOrDefault() ? "true" : "false";
+                uri += $"&confirmed={enabled}";
             }
             var url = new Uri(uri);
             Ws.Options.AddSubProtocol(_options.Protocol);
@@ -457,7 +469,7 @@ namespace SpacetimeDB
                     dispatchQueue.Enqueue(() => OnConnect());
             }
         }
-        
+
         public void HandleWebGLMessage(int socketId, byte[] message)
         {
             if (socketId == _webglSocketId && OnMessage != null)
@@ -465,7 +477,7 @@ namespace SpacetimeDB
                 dispatchQueue.Enqueue(() => OnMessage(message, DateTime.UtcNow));
             }
         }
-        
+
         public void HandleWebGLClose(int socketId, int code, string reason)
         {
             UnityEngine.Debug.Log($"HandleWebGLClose: {code} {reason}");
@@ -476,7 +488,7 @@ namespace SpacetimeDB
                 dispatchQueue.Enqueue(() => OnClose?.Invoke(ex));
             }
         }
-        
+
         public void HandleWebGLError(int socketId)
         {
             UnityEngine.Debug.Log($"HandleWebGLError: {socketId}");

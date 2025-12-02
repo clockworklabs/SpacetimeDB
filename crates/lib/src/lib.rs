@@ -11,6 +11,7 @@ pub mod db;
 mod direct_index_key;
 pub mod error;
 mod filterable_value;
+pub mod http;
 pub mod identity;
 pub mod metrics;
 pub mod operator;

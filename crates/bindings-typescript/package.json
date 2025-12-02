@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.8.0",
+  "version": "1.10.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -34,9 +34,12 @@
     "brotli-size": "brotli-size dist/index.js",
     "size": "pnpm -s build && size-limit",
     "generate:moduledef": "cargo run -p spacetimedb-codegen --example regen-typescript-moduledef && prettier --write src/lib/autogen",
-    "generate:client-api": "cargo build -p spacetimedb-standalone && cargo run -p spacetimedb-client-api-messages --example get_ws_schema > ws_schema.json && cargo run -p spacetimedb-cli generate --lang typescript --out-dir src/sdk/client_api --module-def ws_schema.json && rm ws_schema.json && find src/sdk/client_api -type f -exec perl -pi -e 's#spacetimedb#../../index#g' {} + && prettier --write src/sdk/client_api",
+    "generate:client-api": "cargo run -p generate-client-api && prettier --write src/sdk/client_api",
     "generate:test-app": "pnpm --filter @clockworklabs/test-app generate",
-    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app",
+    "generate:examples:quickstart-chat": "pnpm --filter @clockworklabs/quickstart-chat generate",
+    "generate:examples:basic-react": "pnpm --filter @clockworklabs/basic-react generate",
+    "generate:examples:empty": "pnpm --filter @clockworklabs/empty-client generate",
+    "generate": "pnpm generate:moduledef && pnpm generate:client-api && pnpm generate:test-app && pnpm generate:examples:quickstart-chat && pnpm generate:examples:basic-react && pnpm generate:examples:empty",
     "prepublishOnly": "pnpm run build && pnpm run test && pnpm run size"
   },
   "main": "dist/index.cjs",
@@ -79,43 +82,43 @@
       "name": "cjs (brotli)",
       "path": "dist/index.cjs",
       "brotli": true,
-      "limit": "25 kB"
+      "limit": "54 kB"
     },
     {
       "name": "esm (brotli)",
       "path": "dist/index.mjs",
       "brotli": true,
-      "limit": "20 kB"
+      "limit": "62 kB"
     },
     {
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "25 kB"
+      "limit": "31 kB"
     },
     {
       "name": "esm (uncompressed)",
       "path": "dist/index.mjs",
       "brotli": false,
-      "limit": "150 kB"
+      "limit": "328 kB"
     },
     {
       "name": "esm min (brotli)",
       "path": "dist/min/index.browser.mjs",
       "brotli": true,
-      "limit": "12 kB"
+      "limit": "30 kB"
     },
     {
       "name": "esm min (gzip)",
       "path": "dist/min/index.browser.mjs",
       "gzip": true,
-      "limit": "15 kB"
+      "limit": "34 kB"
     },
     {
       "name": "esm min (uncompressed)",
       "path": "dist/min/index.browser.mjs",
       "brotli": false,
-      "limit": "60 kB"
+      "limit": "134 kB"
     },
     {
       "name": "react esm min (brotli)",
@@ -138,24 +141,27 @@
       "name": "sdk esm min (brotli)",
       "path": "dist/min/sdk/index.browser.mjs",
       "brotli": true,
-      "limit": "10 kB"
+      "limit": "14 kB"
     },
     {
       "name": "sdk esm min (gzip)",
       "path": "dist/min/sdk/index.browser.mjs",
       "gzip": true,
-      "limit": "15 kB"
+      "limit": "16 kB"
     },
     {
       "name": "sdk esm min (uncompressed)",
       "path": "dist/min/sdk/index.browser.mjs",
-      "limit": "10 kB"
+      "limit": "14 kB"
     }
   ],
   "dependencies": {
     "base64-js": "^1.5.1",
     "fast-text-encoding": "^1.0.0",
-    "prettier": "^3.3.3"
+    "headers-polyfill": "^4.0.3",
+    "prettier": "^3.3.3",
+    "statuses": "^2.0.2",
+    "url-polyfill": "^1.1.14"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
@@ -174,6 +180,7 @@
     "@size-limit/file": "^11.2.0",
     "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "^19.1.13",
+    "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "@vitest/coverage-v8": "^3.2.4",

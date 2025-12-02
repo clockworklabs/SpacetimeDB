@@ -4,6 +4,7 @@ pub use jsonwebtoken::{DecodingKey, EncodingKey};
 use serde::Deserializer;
 use serde::{Deserialize, Serialize};
 use spacetimedb_lib::Identity;
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,9 @@ pub struct SpacetimeIdentityClaims {
     pub iat: SystemTime,
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
     pub exp: Option<SystemTime>,
+
+    #[serde(flatten)]
+    pub extra: Option<HashMap<String, serde_json::Value>>,
 }
 
 fn deserialize_audience<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -84,6 +88,10 @@ pub struct IncomingClaims {
     pub iat: SystemTime,
     #[serde_as(as = "Option<serde_with::TimestampSeconds>")]
     pub exp: Option<SystemTime>,
+
+    /// All remaining claims from the JWT payload
+    #[serde(flatten)]
+    pub extra: Option<HashMap<String, serde_json::Value>>,
 }
 
 impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
@@ -122,6 +130,7 @@ impl TryInto<SpacetimeIdentityClaims> for IncomingClaims {
             audience: self.audience,
             iat: self.iat,
             exp: self.exp,
+            extra: self.extra,
         })
     }
 }

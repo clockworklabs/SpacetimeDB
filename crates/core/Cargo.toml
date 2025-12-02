@@ -60,9 +60,10 @@ flume.workspace = true
 fs2.workspace = true
 futures.workspace = true
 futures-util.workspace = true
-hashbrown = { workspace = true, features = ["rayon", "serde"] }
 hex.workspace = true
 hostname.workspace = true
+http.workspace = true
+http-body-util.workspace = true
 hyper.workspace = true
 imara-diff.workspace = true
 indexmap.workspace = true
@@ -81,6 +82,7 @@ prometheus.workspace = true
 rayon.workspace = true
 rayon-core.workspace = true
 regex.workspace = true
+reqwest.workspace = true
 rustc-demangle.workspace = true
 rustc-hash.workspace = true
 scopeguard.workspace = true
@@ -155,7 +157,6 @@ env_logger.workspace = true
 pretty_assertions.workspace = true
 jsonwebtoken.workspace = true
 axum.workspace = true
-reqwest.workspace = true
 fs_extra.workspace = true
 
 [lints]

@@ -921,14 +921,6 @@ record ViewDeclaration
     public readonly EquatableArray<MemberDeclaration> Parameters;
     public readonly Scope Scope;
 
-    public static uint ViewIndexCounter = 0;
-
-    public static uint GetNextViewIndex() => ViewIndexCounter++;
-
-    public static uint AnonViewIndexCounter = 0;
-
-    public static uint GetNextAnonViewIndex() => AnonViewIndexCounter++;
-
     public ViewDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
@@ -997,14 +989,16 @@ record ViewDeclaration
                 IsPublic: {{{IsPublic.ToString().ToLower()}}},
                 IsAnonymous: {{{IsAnonymous.ToString().ToLower()}}},
                 Params: [{{{MemberDeclaration.GenerateDefs(Parameters)}}}],
-                ReturnType: new {{{ReturnType.BSATNName.Replace(
-                "Module.",
-                "global::Module."
-            )}}}().GetAlgebraicType(registrar)
+                ReturnType: new {{{ReturnType.BSATNName}}}().GetAlgebraicType(registrar)
             );
             """;
 
-    public string GenerateDispatcherClass()
+    /// <summary>
+    /// Generates the class responsible for evaluating a view.
+    /// If this is an anonymous view, the index corresponds to the position of this dispatcher in the `viewDispatchers` list of `RegisterView`.
+    /// Otherwise it corresponds to the position of this dispatcher in the `anonymousViewDispatchers` list of `RegisterAnonymousView`.
+    /// </summary>
+    public string GenerateDispatcherClass(uint index)
     {
         var paramReads = string.Join(
             "\n                        ",
@@ -1025,14 +1019,29 @@ record ViewDeclaration
             ? "SpacetimeDB.AnonymousViewContext"
             : "SpacetimeDB.ViewContext";
 
+        var isValueOption = ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption");
+        var writeOutput = isValueOption
+            ? $$$"""
+                    var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
+                    var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
+                    using var output = new System.IO.MemoryStream();
+                    using var writer = new System.IO.BinaryWriter(output);
+                    listSerializer.Write(writer, listValue);
+                    return output.ToArray();
+                """
+            : $$$"""
+                    {{{ReturnType.BSATNName}}} returnRW = new();
+                    using var output = new System.IO.MemoryStream();
+                    using var writer = new System.IO.BinaryWriter(output);
+                    returnRW.Write(writer, returnValue);
+                    return output.ToArray();            
+                """;
+
         var invocationArgs =
             Parameters.Length == 0 ? "" : ", " + string.Join(", ", Parameters.Select(p => p.Name));
-        var index = IsAnonymous ? GetNextAnonViewIndex() : GetNextViewIndex();
         return $$$"""
             sealed class {{{Name}}}ViewDispatcher : {{{interfaceName}}} {
                 {{{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Parameters)}}}
-                
-                private static readonly {{{ReturnType.BSATNName}}} returnRW = new();
                 
                 public SpacetimeDB.Internal.RawViewDefV9 {{{makeViewDefMethod}}}(SpacetimeDB.BSATN.ITypeRegistrar registrar)
                     => {{{GenerateViewDef(index)}}}
@@ -1044,10 +1053,7 @@ record ViewDeclaration
                     try {
                         {{{paramReads}}}
                         var returnValue = {{{FullName}}}(({{{concreteContext}}})ctx{{{invocationArgs}}});
-                        using var output = new System.IO.MemoryStream();
-                        using var writer = new System.IO.BinaryWriter(output);
-                        returnRW.Write(writer, returnValue);
-                        return output.ToArray();
+                        {{{writeOutput}}}
                     } catch (System.Exception e) {
                         global::SpacetimeDB.Log.Error("Error in view '{{{Name}}}': " + e);
                         throw;
@@ -1055,13 +1061,6 @@ record ViewDeclaration
                 }
             }
             """;
-    }
-
-    public string GenerateClass()
-    {
-        var builder = new Scope.Extensions(Scope, FullName);
-        builder.Contents.Append(GenerateDispatcherClass());
-        return builder.ToString();
     }
 }
 
@@ -1172,6 +1171,121 @@ record ReducerDeclaration
                     Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
+            }
+            """
+        );
+
+        return extensions;
+    }
+}
+
+/// <summary>
+/// Represents a procedure method declaration in a module.
+/// </summary>
+record ProcedureDeclaration
+{
+    public readonly string Name;
+    public readonly string FullName;
+    public readonly EquatableArray<MemberDeclaration> Args;
+    public readonly Scope Scope;
+    private readonly bool HasWrongSignature;
+    public readonly TypeUse ReturnType;
+
+    public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
+    {
+        var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
+        var method = (IMethodSymbol)context.TargetSymbol;
+        var attr = context.Attributes.Single().ParseAs<ProcedureAttribute>();
+
+        if (
+            method.Parameters.FirstOrDefault()?.Type
+            is not INamedTypeSymbol { Name: "ProcedureContext" }
+        )
+        {
+            diag.Report(ErrorDescriptor.ProcedureContextParam, methodSyntax);
+            HasWrongSignature = true;
+        }
+
+        Name = method.Name;
+        if (Name.Length >= 2)
+        {
+            var prefix = Name[..2];
+            if (prefix is "__" or "on" or "On")
+            {
+                diag.Report(ErrorDescriptor.ProcedureReservedPrefix, (methodSyntax, prefix));
+            }
+        }
+
+        ReturnType = TypeUse.Parse(method, method.ReturnType, diag);
+
+        FullName = SymbolToName(method);
+        Args = new(
+            method
+                .Parameters.Skip(1)
+                .Select(p => new MemberDeclaration(p, p.Type, diag))
+                .ToImmutableArray()
+        );
+        Scope = new Scope(methodSyntax.Parent as MemberDeclarationSyntax);
+    }
+
+    public string GenerateClass()
+    {
+        var invocationArgs =
+            Args.Length == 0 ? "" : ", " + string.Join(", ", Args.Select(a => a.Name));
+
+        var invokeBody = HasWrongSignature
+            ? "throw new System.InvalidOperationException(\"Invalid procedure signature.\");"
+            : $$"""
+                    var result = {{FullName}}((SpacetimeDB.ProcedureContext)ctx{{invocationArgs}});
+                    using var output = new MemoryStream();
+                    using var writer = new BinaryWriter(output);
+                    new {{ReturnType.BSATNName}}().Write(writer, result);
+                    return output.ToArray();
+                """;
+
+        return $$"""
+            class {{Name}} : SpacetimeDB.Internal.IProcedure {
+                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
+
+                public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
+                    nameof({{Name}}),
+                    [{{MemberDeclaration.GenerateDefs(Args)}}],
+                    new {{ReturnType.BSATNName}}().GetAlgebraicType(registrar)
+                );
+
+                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
+                    {{string.Join(
+                "\n",
+                Args.Select(a => $"var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);")
+            )}}
+                    {{invokeBody}}
+                }
+            }
+            """;
+    }
+
+    public Scope.Extensions GenerateSchedule()
+    {
+        var extensions = new Scope.Extensions(Scope, FullName);
+
+        // Mark the API as unstable. We use name `STDB_UNSTABLE` because:
+        // 1. It's a close equivalent of the `unstable` Cargo feature in Rust.
+        // 2. Our diagnostic IDs use either BSATN or STDB prefix depending on the package.
+        // 3. We don't expect to mark individual experimental features with numeric IDs, so we don't use the standard 1234 suffix.
+        extensions.Contents.Append(
+            $$"""
+            [System.Diagnostics.CodeAnalysis.Experimental("STDB_UNSTABLE")]
+            public static void VolatileNonatomicScheduleImmediate{{Name}}({{string.Join(
+                ", ",
+                Args.Select(a => $"{a.Type.Name} {a.Name}")
+            )}}) {
+                using var stream = new MemoryStream();
+                using var writer = new BinaryWriter(stream);
+                {{string.Join(
+                    "\n",
+                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                )}}
+                SpacetimeDB.Internal.IProcedure.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
             """
         );
@@ -1359,6 +1473,31 @@ public class Module : IIncrementalGenerator
             r => r.FullName
         );
 
+        var procedures = context
+            .SyntaxProvider.ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: typeof(ProcedureAttribute).FullName,
+                predicate: (node, ct) => true, // already covered by attribute restrictions
+                transform: (context, ct) =>
+                    context.ParseWithDiags(diag => new ProcedureDeclaration(context, diag))
+            )
+            .ReportDiagnostics(context)
+            .WithTrackingName("SpacetimeDB.Procedure.Parse");
+
+        procedures
+            .Select((p, ct) => p.GenerateSchedule())
+            .WithTrackingName("SpacetimeDB.Procedure.GenerateSchedule")
+            .RegisterSourceOutputs(context);
+
+        var addProcedures = CollectDistinct(
+            "Procedure",
+            context,
+            procedures
+                .Select((p, ct) => (p.Name, p.FullName, Class: p.GenerateClass()))
+                .WithTrackingName("SpacetimeDB.Procedure.GenerateClass"),
+            p => p.Name,
+            p => p.FullName
+        );
+
         var tableAccessors = CollectDistinct(
             "Table",
             context,
@@ -1417,6 +1556,7 @@ public class Module : IIncrementalGenerator
         context.RegisterSourceOutput(
             tableAccessors
                 .Combine(addReducers)
+                .Combine(addProcedures)
                 .Combine(readOnlyAccessors)
                 .Combine(views)
                 .Combine(rlsFiltersArray)
@@ -1424,11 +1564,21 @@ public class Module : IIncrementalGenerator
             (context, tuple) =>
             {
                 var (
-                    ((((tableAccessors, addReducers), readOnlyAccessors), views), rlsFilters),
+                    (
+                        (
+                            (((tableAccessors, addReducers), addProcedures), readOnlyAccessors),
+                            views
+                        ),
+                        rlsFilters
+                    ),
                     columnDefaultValues
                 ) = tuple;
                 // Don't generate the FFI boilerplate if there are no tables or reducers.
-                if (tableAccessors.Array.IsEmpty && addReducers.Array.IsEmpty)
+                if (
+                    tableAccessors.Array.IsEmpty
+                    && addReducers.Array.IsEmpty
+                    && addProcedures.Array.IsEmpty
+                )
                 {
                     return;
                 }
@@ -1466,6 +1616,25 @@ public class Module : IIncrementalGenerator
                             }
                         }
                         
+                        public sealed record ProcedureContext : Internal.IProcedureContext {
+                            public readonly Identity Sender;
+                            public readonly ConnectionId? ConnectionId;
+                            public readonly Random Rng;
+                            public readonly Timestamp Timestamp;
+                            public readonly AuthCtx SenderAuth;
+                        
+                            // We need this property to be non-static for parity with client SDK.
+                            public Identity Identity => Internal.IProcedureContext.GetIdentity();
+                        
+                            internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
+                                Sender = identity;
+                                ConnectionId = connectionId;
+                                Rng = random;
+                                Timestamp = time;
+                                SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
+                            }
+                        }
+                        
                         public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
                         {
                             public Identity Sender { get; }
@@ -1492,8 +1661,15 @@ public class Module : IIncrementalGenerator
                         }
                     }
                     
-                    {{string.Join("\n", views.Array.Select(v => v.GenerateDispatcherClass()))}}
-                    
+                    {{string.Join("\n", 
+                        views.Array.Where(v => !v.IsAnonymous)
+                            .Select((v, i) => v.GenerateDispatcherClass((uint)i))
+                            .Concat(
+                                views.Array.Where(v => v.IsAnonymous)
+                                    .Select((v, i) => v.GenerateDispatcherClass((uint)i))
+                            )
+                    )}}
+                        
                     namespace SpacetimeDB.Internal.ViewHandles {
                         {{string.Join("\n", readOnlyAccessors.Array.Select(v => v.readOnlyAccessor))}}
                     }
@@ -1506,6 +1682,11 @@ public class Module : IIncrementalGenerator
                     
                     static class ModuleRegistration {
                         {{string.Join("\n", addReducers.Select(r => r.Class))}}
+                        
+                        {{string.Join("\n", addProcedures.Select(r => r.Class))}}
+
+                        public static List<T> ToListOrEmpty<T>(T? value) where T : struct
+                                => value is null ? new List<T>() : new List<T> { value.Value };
 
                     #if EXPERIMENTAL_WASM_AOT
                         // In AOT mode we're building a library.
@@ -1519,6 +1700,7 @@ public class Module : IIncrementalGenerator
                           SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
                           SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.Internal.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly()));
+                          SpacetimeDB.Internal.Module.SetProcedureContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ProcedureContext(identity, connectionId, random, time));
                           var __memoryStream = new MemoryStream();
                           var __writer = new BinaryWriter(__memoryStream);
 
@@ -1530,12 +1712,23 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                views.Array.Select(v =>
-                                    v.IsAnonymous
-                                        ? $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();"
-                                        : $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();"
+                                addProcedures.Select(r =>
+                                    $"SpacetimeDB.Internal.Module.RegisterProcedure<{r.Name}>();"
                                 )
                             )}}
+
+                            // IMPORTANT: The order in which we register views matters.
+                            // It must correspond to the order in which we call `GenerateDispatcherClass`.
+                            // See the comment on `GenerateDispatcherClass` for more explanation.
+                            {{string.Join("\n", 
+                                views.Array.Where(v => !v.IsAnonymous)
+                                    .Select(v => $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();")
+                                    .Concat(
+                                        views.Array.Where(v => v.IsAnonymous)
+                                            .Select(v => $"SpacetimeDB.Internal.Module.RegisterAnonymousView<{v.Name}ViewDispatcher>();")
+                                    )
+                            )}}                            
+
                             {{string.Join(
                                 "\n",
                                 tableAccessors.Select(t => $"SpacetimeDB.Internal.Module.RegisterTable<{t.tableName}, SpacetimeDB.Internal.TableHandles.{t.tableAccessorName}>();")
@@ -1587,6 +1780,61 @@ public class Module : IIncrementalGenerator
                             args,
                             error
                         );
+                        
+                        [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
+                        public static SpacetimeDB.Internal.Errno __call_procedure__(
+                            uint id,
+                            ulong sender_0,
+                            ulong sender_1,
+                            ulong sender_2,
+                            ulong sender_3,
+                            ulong conn_id_0,
+                            ulong conn_id_1,
+                            SpacetimeDB.Timestamp timestamp,
+                            SpacetimeDB.Internal.BytesSource args,
+                            SpacetimeDB.Internal.BytesSink result_sink
+                        ) => SpacetimeDB.Internal.Module.__call_procedure__(
+                            id,
+                            sender_0,
+                            sender_1,
+                            sender_2,
+                            sender_3,
+                            conn_id_0,
+                            conn_id_1,
+                            timestamp,
+                            args,
+                            result_sink
+                        );
+
+                        [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
+                        public static SpacetimeDB.Internal.Errno __call_view__(
+                            uint id,
+                            ulong sender_0,
+                            ulong sender_1,
+                            ulong sender_2,
+                            ulong sender_3,
+                            SpacetimeDB.Internal.BytesSource args,
+                            SpacetimeDB.Internal.BytesSink sink
+                        ) => SpacetimeDB.Internal.Module.__call_view__(
+                            id,
+                            sender_0,
+                            sender_1,
+                            sender_2,
+                            sender_3,
+                            args,
+                            sink
+                        );
+
+                        [UnmanagedCallersOnly(EntryPoint = "__call_view_anon__")]
+                        public static SpacetimeDB.Internal.Errno __call_view_anon__(
+                            uint id,
+                            SpacetimeDB.Internal.BytesSource args,
+                            SpacetimeDB.Internal.BytesSink sink
+                        ) => SpacetimeDB.Internal.Module.__call_view_anon__(
+                            id,
+                            args,
+                            sink
+                        );                                                
                     #endif
                     }
                     

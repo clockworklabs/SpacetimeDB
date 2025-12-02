@@ -42,7 +42,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity,
 };
 use spacetimedb_primitives::{
-    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewId,
+    col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
@@ -76,7 +76,7 @@ type DecodeResult<T> = core::result::Result<T, DecodeError>;
 pub struct ViewCallInfo {
     pub view_id: ViewId,
     pub table_id: TableId,
-    pub view_name: Box<str>,
+    pub fn_ptr: ViewFnPtr,
     pub sender: Option<Identity>,
 }
 
@@ -102,14 +102,14 @@ impl ViewReadSets {
     }
 
     /// Record that a view performs a full scan of this table
-    fn insert_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
-        self.tables.entry(table_id).or_default().insert_scan(call);
+    pub fn insert_full_table_scan(&mut self, table_id: TableId, call: ViewCallInfo) {
+        self.tables.entry(table_id).or_default().insert_table_scan(call);
     }
 
     /// Removes keys for `view_id` from the read set
-    pub fn remove_view(&mut self, view_id: ViewId) {
+    pub fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
         self.tables.retain(|_, readset| {
-            readset.remove_view(view_id);
+            readset.remove_view(view_id, sender);
             !readset.is_empty()
         });
     }
@@ -120,17 +120,39 @@ impl ViewReadSets {
             self.tables.entry(table_id).or_default().merge(rs);
         }
     }
+
+    /// Record that a view reads a specific index key
+    pub fn insert_index_scan(&mut self, table_id: TableId, cols: ColList, proj: AlgebraicValue, call: ViewCallInfo) {
+        let table_readset = self.tables.entry(table_id).or_default();
+        table_readset.insert_index_scan(cols, proj, call);
+    }
+
+    /// Returns the views that index seek on the given row pointer
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ptr: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.tables
+            .get(table_id)
+            .into_iter()
+            .flat_map(move |ts| ts.views_for_index_seek(row_ptr))
+    }
 }
+
+type IndexKeyReadSet = HashMap<AlgebraicValue, HashSet<ViewCallInfo>>;
+type IndexColReadSet = HashMap<ColList, IndexKeyReadSet>;
 
 /// A table-level read set for views
 #[derive(Default)]
 struct TableReadSet {
     table_scans: HashSet<ViewCallInfo>,
+    index_reads: IndexColReadSet,
 }
 
 impl TableReadSet {
     /// Record that this view performs a full scan of this read set's table
-    fn insert_scan(&mut self, call: ViewCallInfo) {
+    fn insert_table_scan(&mut self, call: ViewCallInfo) {
         self.table_scans.insert(call);
     }
 
@@ -139,19 +161,60 @@ impl TableReadSet {
         self.table_scans.iter()
     }
 
-    /// Is this read set empty?
+    /// Record that a view reads a specific index key for this table
+    fn insert_index_scan(&mut self, cols: ColList, key: AlgebraicValue, call: ViewCallInfo) {
+        let key_map = self.index_reads.entry(cols).or_default();
+        key_map.entry(key).or_default().insert(call);
+    }
+
+    /// Returns the views that index seek on the given row pointer (for this table)
+    fn views_for_index_seek<'a>(&'a self, row_ptr: RowRef<'a>) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.index_reads.iter().flat_map(move |(cols, av_set)| {
+            row_ptr
+                .project(cols)
+                .ok()
+                .and_then(|av| av_set.get(&av))
+                .into_iter()
+                .flat_map(|views| views.iter())
+        })
+    }
+
+    /// Is this read set empty? (no table scans and no index reads)
     fn is_empty(&self) -> bool {
-        self.table_scans.is_empty()
+        self.table_scans.is_empty() && self.index_reads.is_empty()
     }
 
-    /// Removes keys for `view_id` from the read set
-    fn remove_view(&mut self, view_id: ViewId) {
-        self.table_scans.retain(|info| info.view_id != view_id);
+    /// Removes keys for `view_id` from the read set, optionally filtering by `sender`
+    fn remove_view(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        let matches_call = |call: &ViewCallInfo| {
+            call.view_id == view_id && sender.as_ref().is_none_or(|s| call.sender.as_ref() == Some(s))
+        };
+
+        // Remove from table_scans
+        self.table_scans.retain(|call| !matches_call(call));
+
+        // Remove from index_reads
+        self.index_reads.retain(|_cols, key_map| {
+            key_map.retain(|_key, views| {
+                views.retain(|call| !matches_call(call));
+                !views.is_empty()
+            });
+            !key_map.is_empty()
+        });
     }
 
-    /// Merge or union two read sets for this table
-    fn merge(&mut self, readset: TableReadSet) {
-        self.table_scans.extend(readset.table_scans);
+    /// Merge (union) another table read set into this one
+    fn merge(&mut self, other: TableReadSet) {
+        // merge table scans
+        self.table_scans.extend(other.table_scans);
+
+        // merge index reads: for each cols, for each av, extend the view set
+        for (cols, other_av_set) in other.index_reads {
+            let av_set = self.index_reads.entry(cols).or_default();
+            for (av, other_views) in other_av_set {
+                av_set.entry(av).or_default().extend(other_views);
+            }
+        }
     }
 }
 
@@ -187,7 +250,7 @@ impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
     pub fn record_table_scan(&mut self, op: &FuncCallType, table_id: TableId) {
         if let FuncCallType::View(view) = op {
-            self.read_sets.insert_scan(table_id, view.clone());
+            self.read_sets.insert_full_table_scan(table_id, view.clone());
         }
     }
 
@@ -196,32 +259,94 @@ impl MutTxId {
         &mut self,
         op: &FuncCallType,
         table_id: TableId,
-        _: IndexId,
-        _: Bound<AlgebraicValue>,
-        _: Bound<AlgebraicValue>,
+        index_id: IndexId,
+        lower: Bound<AlgebraicValue>,
+        upper: Bound<AlgebraicValue>,
     ) {
-        // TODO: Implement read set tracking for index scans
-        if let FuncCallType::View(view) = op {
-            self.read_sets.insert_scan(table_id, view.clone());
+        let FuncCallType::View(view) = op else {
+            return;
+        };
+
+        // Check for precise index seek
+        if let (Bound::Included(low_val), Bound::Included(up_val)) = (&lower, &upper) {
+            if low_val == up_val {
+                // Fetch index metadata
+                let Some((_, idx, _)) = self.get_table_and_index(index_id) else {
+                    return;
+                };
+
+                let cols = idx.index().indexed_columns.clone();
+                self.read_sets
+                    .insert_index_scan(table_id, cols, low_val.clone(), view.clone());
+                return;
+            }
         }
+
+        // Everything else is treated as a table scan
+        self.read_sets.insert_full_table_scan(table_id, view.clone());
     }
 
     /// Returns the views whose read sets overlaps with this transaction's write set
-    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> {
-        self.tx_state
+    pub fn view_for_update(&self) -> impl Iterator<Item = &ViewCallInfo> + '_ {
+        let mut res = self
+            .tx_state
             .insert_tables
             .keys()
             .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
             .chain(self.tx_state.delete_tables.keys())
             .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
-            .collect::<HashSet<_>>()
-            .into_iter()
-    }
+            .collect::<HashSet<_>>();
 
+        // Include views that perform precise index seeks.
+        let mut process_views = |table_id: &_, row_ref| {
+            for view_call in self.committed_state_write_lock.views_for_index_seek(table_id, row_ref) {
+                res.insert(view_call);
+            }
+        };
+
+        for (table_id, deleted_table) in &self.tx_state.delete_tables {
+            let (table, blob_store, _) = self
+                .committed_state_write_lock
+                .get_table_and_blob_store(*table_id)
+                .expect("table must exist in committed state for deleted table");
+
+            if table.indexes.is_empty() {
+                continue;
+            }
+
+            for ptr in deleted_table.iter() {
+                if let Some(row_ref) = table.get_row_ref(blob_store, ptr) {
+                    process_views(table_id, row_ref);
+                }
+            }
+        }
+
+        for (table_id, inserted_table) in &self.tx_state.insert_tables {
+            let (table, blob_store, _) = self
+                .committed_state_write_lock
+                .get_table_and_blob_store(*table_id)
+                .expect("table must exist in committed state for inserted table");
+
+            if table.indexes.is_empty() {
+                continue;
+            }
+
+            for row_ref in inserted_table.scan_rows(blob_store) {
+                process_views(table_id, row_ref);
+            }
+        }
+        res.into_iter()
+    }
     /// Removes keys for `view_id` from the committed read set.
     /// Used for dropping views in an auto-migration.
     pub fn drop_view_from_committed_read_set(&mut self, view_id: ViewId) {
-        self.committed_state_write_lock.drop_view_from_read_sets(view_id)
+        self.committed_state_write_lock.drop_view_from_read_sets(view_id, None)
+    }
+
+    /// Removes a specific view call from the committed read set.
+    pub fn drop_view_with_sender_from_committed_read_set(&mut self, view_id: ViewId, sender: Identity) {
+        self.committed_state_write_lock
+            .drop_view_from_read_sets(view_id, Some(sender))
     }
 }
 
@@ -383,6 +508,8 @@ impl MutTxId {
 
         self.insert_into_st_view_param(view_id, param_columns)?;
         self.insert_into_st_view_column(view_id, return_columns)?;
+
+        self.committed_state_write_lock.ephemeral_tables.insert(table_id);
 
         Ok((view_id, table_id))
     }
@@ -1693,7 +1820,7 @@ impl MutTxId {
         //
         // Note that technically the tx could have run against an empty database,
         // in which case we'd wrongly return zero (a non-existent transaction).
-        // This doesn not happen in practice, however, as [RelationalDB::set_initialized]
+        // This doesn't happen in practice, however, as [RelationalDB::set_initialized]
         // creates a transaction.
         let tx_offset = if tx_offset == self.committed_state_write_lock.next_tx_offset {
             tx_offset.saturating_sub(1)
@@ -1957,6 +2084,90 @@ impl MutTxId {
             },
         )?;
         Ok(())
+    }
+
+    /// Clean up views that have no subscribers and haven’t been called recently.
+    ///
+    /// This function will scan for subscription entries in `st_view_sub` where:
+    /// - `has_subscribers == false`, `num_subscribers == 0`.
+    /// - `last_called` is older than `expiration_duration`.
+    ///
+    /// For each such expired view:
+    /// 1. It clears the backing table,
+    /// 2. Removes the view from the committed read set, and
+    /// 3. Deletes the subscription row.
+    ///
+    /// The cleanup is bounded by a total `max_duration`. The function stops when either:
+    /// - all expired views have been processed, or
+    /// - the `max_duration` budget is reached.
+    ///
+    /// Returns a tuple `(cleaned, total_expired)`:
+    /// - `cleaned`: Number of views actually cleaned (deleted) in this run.
+    /// - `total_expired`: Total number of expired views found (even if not all were cleaned due to time budget).
+    pub fn clear_expired_views(
+        &mut self,
+        expiration_duration: Duration,
+        max_duration: Duration,
+    ) -> Result<(usize, usize)> {
+        let start = std::time::Instant::now();
+        let now = Timestamp::now();
+        let expiration_threshold = now - expiration_duration;
+        let mut cleaned_count = 0;
+
+        // Collect all expired views from st_view_sub
+        let expired_items: Vec<(ViewId, Identity, RowPointer)> = self
+            .iter_by_col_eq(
+                ST_VIEW_SUB_ID,
+                StViewSubFields::HasSubscribers,
+                &AlgebraicValue::from(false),
+            )?
+            .filter_map(|row_ref| {
+                let row = StViewSubRow::try_from(row_ref).expect("Failed to deserialize st_view_sub row");
+
+                if !row.has_subscribers && row.num_subscribers == 0 && row.last_called.0 < expiration_threshold {
+                    Some((row.view_id, row.identity.into(), row_ref.pointer()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let total_expired = expired_items.len();
+
+        // For each expired view subscription, clear the backing table and delete the subscription
+        for (view_id, sender, sub_row_ptr) in expired_items {
+            // Check if we've exceeded our time budget
+            if start.elapsed() >= max_duration {
+                break;
+            }
+
+            let StViewRow {
+                table_id, is_anonymous, ..
+            } = self.lookup_st_view(view_id)?;
+            let table_id = table_id.expect("views have backing table");
+
+            if is_anonymous {
+                self.clear_table(table_id)?;
+                self.drop_view_from_committed_read_set(view_id);
+            } else {
+                let rows_to_delete = self
+                    .iter_by_col_eq(table_id, 0, &sender.into())?
+                    .map(|res| res.pointer())
+                    .collect::<Vec<_>>();
+
+                for row_ptr in rows_to_delete {
+                    self.delete(table_id, row_ptr)?;
+                }
+
+                self.drop_view_with_sender_from_committed_read_set(view_id, sender);
+            }
+
+            // Finally, delete the subscription row
+            self.delete(ST_VIEW_SUB_ID, sub_row_ptr)?;
+            cleaned_count += 1;
+        }
+
+        Ok((cleaned_count, total_expired))
     }
 
     /// Decrement `num_subscribers` in `st_view_sub` to effectively unsubscribe a caller from a view.

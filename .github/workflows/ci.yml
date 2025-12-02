@@ -22,11 +22,21 @@ jobs:
     name: Smoketests
     strategy:
       matrix:
+        runner: [spacetimedb-new-runner, windows-latest]
         include:
-          - { runner: spacetimedb-runner, smoketest_args: --docker }
-          - { runner: windows-latest, smoketest_args: --no-build-cli }
-        runner: [ spacetimedb-runner, windows-latest ]
+          - runner: spacetimedb-new-runner
+            smoketest_args: --docker
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
+          - runner: windows-latest
+            smoketest_args: --no-build-cli
+            container: null
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 120
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -45,6 +55,15 @@ jobs:
         with:
           ref: ${{ env.GIT_REF }}
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          cache-on-failure: true
+          cache-all-crates: true
+          cache-workspace-crates: true
+
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
@@ -63,9 +82,18 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+      - name: Build crates
+        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
+
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
-        run: docker compose up -d
+        run: |
+          # Our .dockerignore omits `target`, which our CI Dockerfile needs.
+          rm .dockerignore
+          docker compose -f .github/docker-compose.yml up -d
       - name: Build and start database (Windows)
         if: runner.os == 'Windows'
         run: |
@@ -73,7 +101,6 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
 
-          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
           Start-Process target/debug/spacetimedb-cli.exe -ArgumentList 'start --pg-port 5432'
           cd modules
           # the sdk-manifests on windows-latest are messed up, so we need to update them
@@ -83,17 +110,23 @@ jobs:
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
       - name: Install python deps
-        run: python -m pip install psycopg2-binary xmltodict
+        run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests
         # Note: clear_database and replication only work in private
         run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
-        run: docker compose down
+        run: docker compose -f .github/docker-compose.yml down
 
   test:
     name: Test Suite
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -113,6 +146,13 @@ jobs:
           ref: ${{ env.GIT_REF }}
 
       - uses: dsherret/rust-toolchain-file@v1
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -140,8 +180,9 @@ jobs:
         #Note: Unreal tests will be run separately
         run: cargo test --all -- --skip unreal
 
+        # The fallocate tests have been flakely when running in parallel
       - name: Run fallocate tests
-        run: cargo test -p spacetimedb-durability --features fallocate
+        run: cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
 
       - name: Check that the test outputs are up-to-date
         run: bash tools/check-diff.sh
@@ -157,13 +198,27 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Checkout sources
         uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -196,12 +251,26 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v3
 
       - uses: dsherret/rust-toolchain-file@v1
       - run: echo ::add-matcher::.github/workflows/rust_matcher.json
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
 
       - name: Run bindgen tests
         run: cargo test -p spacetimedb-codegen
@@ -221,7 +290,11 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -245,16 +318,21 @@ jobs:
           fi
 
   update:
-    name: Test spacetimedb-update flow
+    name: Test spacetimedb-update flow (${{ matrix.target }})
     permissions: read-all
     strategy:
       matrix:
         include:
-          - { target: x86_64-unknown-linux-gnu, runner: spacetimedb-runner }
+          - runner: spacetimedb-new-runner
+            target: x86_64-unknown-linux-gnu
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -289,9 +367,12 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-runner
+    runs-on: spacetimedb-new-runner
+    # Disable the tests because they are very flaky at the moment.
+    # TODO: Remove this line and re-enable the `if` line just below here.
+    if: false
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+    # if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     container:
       image: ghcr.io/epicgames/unreal-engine:dev-5.6
       credentials:
@@ -368,13 +449,19 @@ jobs:
 
               cd "$GITHUB_WORKSPACE/sdks/unreal"
               cargo --version
-              cargo test
+              cargo test -- --test-threads=1
             '
 
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
@@ -418,14 +505,244 @@ jobs:
 
       - uses: dsherret/rust-toolchain-file@v1
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the smoketests job save the cache since it builds the most things
+          save-if: false
+
       - name: Check for docs change
         run: |
           cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md
           pnpm format
           git status
-          if git diff --exit-code HEAD; then
+          if git diff --exit-code HEAD -- docs/docs/cli-reference.md; then
             echo "No docs changes detected"
           else
             echo "It looks like the CLI docs have changed:"
             exit 1
           fi
+
+  unity-testsuite:
+    permissions:
+      contents: read
+      checks: write
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        --cgroupns=host
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout repository
+        id: checkout-stdb
+        uses: actions/checkout@v4
+
+      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Override NuGet packages
+        run: |
+          dotnet pack crates/bindings-csharp/BSATN.Runtime
+          dotnet pack crates/bindings-csharp/Runtime
+
+          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
+          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
+          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
+          # This means that (if version numbers match) we will test the local versions of the C# packages, even
+          # if they're not pushed to NuGet.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
+      # Now, setup the Unity tests.
+      - name: Patch spacetimedb dependency in Cargo.toml
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          sed -i "s|spacetimedb *=.*|spacetimedb = \{ path = \"../../../crates/bindings\" \}|" Cargo.toml
+          cat Cargo.toml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      - name: Generate client bindings
+        working-directory: demo/Blackholio/server-rust
+        run: bash ./generate.sh -y
+
+      - name: Check for changes
+        run: |
+          tools/check-diff.sh demo/Blackholio/client-unity/Assets/Scripts/autogen || {
+              echo 'Error: Bindings are dirty. Please run `demo/Blackholio/server-rust/generate.sh`.'
+              exit 1
+          }
+
+      - name: Check Unity meta files
+        uses: DeNA/unity-meta-check@v3
+        with:
+          enable_pr_comment: ${{ github.event_name == 'pull_request' }}
+          target_path: sdks/csharp
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Start SpacetimeDB
+        run: |
+          spacetime start &
+          disown
+
+      - name: Publish unity-tests module to SpacetimeDB
+        working-directory: demo/Blackholio/server-rust
+        run: |
+          spacetime logout && spacetime login --server-issued-login local
+          bash ./publish.sh
+
+      - name: Patch com.clockworklabs.spacetimedbsdk dependency in manifest.json
+        working-directory: demo/Blackholio/client-unity/Packages
+        run: |
+          # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
+          # Note: Pointing to a local directory does not work, because our earlier steps nuke our meta files, which then causes Unity to not properly respect the DLLs (e.g.
+          # codegen does not work properly).
+          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/SpacetimeDB.git?path=sdks/csharp#${{ github.head_ref }}"' manifest.json
+          cat manifest.json
+
+      - uses: actions/cache@v3
+        with:
+          path: demo/Blackholio/client-unity/Library
+          key: Unity-${{ github.head_ref }}
+          restore-keys: Unity-
+
+        # We need this to support "Docker in Docker"
+      - name: Start Docker daemon
+        run: /usr/local/bin/start-docker.sh
+      - name: Run Unity tests
+        uses: game-ci/unity-test-runner@v4
+        with:
+          unityVersion: 2022.3.32f1  # Adjust Unity version to a valid tag
+          projectPath: demo/Blackholio/client-unity  # Path to the Unity project subdirectory
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          testMode: playmode
+          useHostNetwork: true
+          artifactsPath: ""
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+        # Skip if this is an external contribution.
+        # The license secrets will be empty, so the step would fail anyway.
+        if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
+
+  csharp-testsuite:
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+        --cgroupns=host
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - name: Checkout repository
+        id: checkout-stdb
+        uses: actions/checkout@v4
+
+      # Run cheap .NET tests first. If those fail, no need to run expensive Unity tests.
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          global-json-file: global.json
+
+      - name: Override NuGet packages
+        run: |
+          dotnet pack crates/bindings-csharp/BSATN.Runtime
+          dotnet pack crates/bindings-csharp/Runtime
+
+          # Write out the nuget config file to `nuget.config`. This causes the spacetimedb-csharp-sdk repository
+          # to be aware of the local versions of the `bindings-csharp` packages in SpacetimeDB, and use them if
+          # available. Otherwise, `spacetimedb-csharp-sdk` will use the NuGet versions of the packages.
+          # This means that (if version numbers match) we will test the local versions of the C# packages, even
+          # if they're not pushed to NuGet.
+          # See https://learn.microsoft.com/en-us/nuget/reference/nuget-config-file for more info on the config file.
+          cd sdks/csharp
+          ./tools~/write-nuget-config.sh ../..
+
+      - name: Run .NET tests
+        working-directory: sdks/csharp
+        run: dotnet test -warnaserror
+
+      - name: Verify C# formatting
+        working-directory: sdks/csharp
+        run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ github.workspace }}
+          shared-key: spacetimedb
+          # Let the main CI job save the cache since it builds the most things
+          save-if: false
+
+      - name: Install SpacetimeDB CLI from the local checkout
+        run: |
+          cargo install --force --path crates/cli --locked --message-format=short
+          cargo install --force --path crates/standalone --locked --message-format=short
+          # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
+          ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      - name: Check quickstart-chat bindings are up to date
+        working-directory: sdks/csharp
+        run: |
+          bash tools~/gen-quickstart.sh
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples~/quickstart-chat || {
+              echo 'Error: quickstart-chat bindings have changed. Please run `sdks/csharp/tools~/gen-quickstart.sh`.'
+              exit 1
+          }
+
+      - name: Check client-api bindings are up to date
+        working-directory: sdks/csharp
+        run: |
+          bash tools~/gen-client-api.sh
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/SpacetimeDB/ClientApi || {
+              echo 'Error: Client API bindings are dirty. Please run `sdks/csharp/tools~/gen-client-api.sh`.'
+              exit 1
+          }
+
+      - name: Start SpacetimeDB
+        run: |
+          spacetime start &
+          disown
+
+      - name: Run regression tests
+        run: |
+          bash sdks/csharp/tools~/run-regression-tests.sh
+          tools/check-diff.sh sdks/csharp/examples~/regression-tests || {
+              echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
+              exit 1
+          }

@@ -1,15 +1,15 @@
 use super::instrumentation::CallTimes;
-use crate::client::{ClientActorId, ClientConnectionSender};
+use super::*;
+use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::host::instance_env::InstanceEnv;
-use crate::host::instance_env::TxSlot;
+use crate::host::host_controller::CallProcedureReturn;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
-use crate::host::module_host::ViewCallResult;
-use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
     call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
     CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ViewCallResult, ViewOutcome,
 };
 use crate::host::scheduler::QueueItem;
 use crate::host::{
@@ -20,32 +20,29 @@ use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
-use crate::subscription::module_subscription_actor::WriteConflict;
+use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
 use bytes::Bytes;
+use core::future::Future;
+use core::time::Duration;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
-use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
 use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Hash, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
-use std::future::Future;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::span::EnteredSpan;
-
-use super::*;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -84,7 +81,7 @@ pub trait WasmInstance {
         &mut self,
         op: ProcedureOp,
         budget: FunctionBudget,
-    ) -> impl Future<Output = ProcedureExecuteResult>;
+    ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
 }
 
 pub struct EnergyStats {
@@ -154,6 +151,14 @@ pub struct ExecutionResult<T> {
     #[as_ref]
     pub stats: ExecutionStats,
     pub call_result: T,
+}
+
+impl<T> ExecutionResult<T> {
+    pub fn map_result<U>(self, f: impl FnOnce(T) -> U) -> ExecutionResult<U> {
+        let Self { stats, call_result } = self;
+        let call_result = f(call_result);
+        ExecutionResult { stats, call_result }
+    }
 }
 
 pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
@@ -383,14 +388,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub async fn call_procedure(
-        &mut self,
-        params: CallProcedureParams,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let res = self.common.call_procedure(params, &mut self.instance).await;
-        if res.is_err() {
-            self.trapped = true;
-        }
+    pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
+        let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
         res
     }
 }
@@ -519,7 +519,7 @@ impl InstanceCommon {
                         timer: None,
                     };
                     //TODO: Return back event in `UpdateDatabaseResult`?
-                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                    let _ = commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
                 } else {
                     let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
@@ -576,11 +576,11 @@ impl InstanceCommon {
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
-    async fn call_procedure<I: WasmInstance>(
+    pub(crate) async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+    ) -> (CallProcedureReturn, bool) {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -617,7 +617,7 @@ impl InstanceCommon {
         // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let result = inst.call_procedure(op, budget).await;
+        let (result, tx_offset) = inst.call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
             stats:
@@ -635,18 +635,15 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
-        match call_result {
+        let trapped = call_result.is_err();
+
+        let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(
-                        &caller_identity,
-                        &self.info.module_hash,
-                        &caller_connection_id,
-                        procedure_name,
-                    )
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, procedure_name)
                     .inc();
 
                 // TODO(procedure-energy):
@@ -660,16 +657,17 @@ impl InstanceCommon {
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
                 let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
-                let return_val = seed
-                    .deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
-                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))?;
-                Ok(ProcedureCallResult {
-                    return_val,
-                    execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
-                    start_timestamp: timestamp,
-                })
+                seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
+                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
+                    .map(|return_val| ProcedureCallResult {
+                        return_val,
+                        execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
+                        start_timestamp: timestamp,
+                    })
             }
-        }
+        };
+
+        (CallProcedureReturn { result, tx_offset }, trapped)
     }
 
     /// Execute a reducer.
@@ -740,6 +738,11 @@ impl InstanceCommon {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
 
+        // Report the reducer execution metrics
+        vm_metrics.report_energy_used(result.stats.energy_used());
+        vm_metrics.report_total_duration(result.stats.total_duration());
+        vm_metrics.report_abi_duration(result.stats.abi_duration());
+
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
         // handled bad argument from the caller of a reducer.
@@ -752,15 +755,16 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(
-                    &result.stats.energy,
-                    &caller_identity,
-                    &Some(caller_connection_id),
-                    reducer_name,
-                )
+                self.handle_outer_error(&result.stats.energy, reducer_name)
             }
             Err(ExecutionError::User(err)) => {
-                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                log_reducer_error(
+                    inst.replica_ctx(),
+                    timestamp,
+                    reducer_name,
+                    &err,
+                    &self.info.module_hash,
+                );
                 EventStatus::Failed(err.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -778,7 +782,13 @@ impl InstanceCommon {
                     Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                     Err(err) => {
                         let err = err.to_string();
-                        log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                        log_reducer_error(
+                            inst.replica_ctx(),
+                            timestamp,
+                            reducer_name,
+                            &err,
+                            &self.info.module_hash,
+                        );
                         EventStatus::Failed(err)
                     }
                 }
@@ -821,7 +831,7 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&self.info, client, event, out.tx);
+        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -832,21 +842,10 @@ impl InstanceCommon {
         (res, trapped)
     }
 
-    fn handle_outer_error(
-        &mut self,
-        energy: &EnergyStats,
-        caller_identity: &Identity,
-        caller_connection_id: &Option<ConnectionId>,
-        reducer_name: &str,
-    ) -> EventStatus {
+    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
-            .with_label_values(
-                caller_identity,
-                &self.info.module_hash,
-                &caller_connection_id.unwrap_or(ConnectionId::ZERO),
-                reducer_name,
-            )
+            .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
             .inc();
 
         if energy.remaining.get() == 0 {
@@ -969,14 +968,12 @@ impl InstanceCommon {
         let outcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // Materialize anonymous view
             (Ok(bytes), None) => {
@@ -1031,11 +1028,11 @@ impl InstanceCommon {
             .cloned()
             .map(|info| {
                 let view_def = module_def
-                    .view(&*info.view_name)
-                    .unwrap_or_else(|| panic!("view `{}` not found", info.view_name));
+                    .get_view_by_id(info.fn_ptr, info.sender.is_none())
+                    .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: info.view_name,
+                    view_name: view_def.name.clone().into(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,
@@ -1189,8 +1186,19 @@ fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration)
 }
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
-fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
+fn log_reducer_error(
+    replica_ctx: &ReplicaContext,
+    timestamp: Timestamp,
+    reducer: &str,
+    message: &str,
+    module_hash: &Hash,
+) {
     use database_logger::Record;
+
+    WORKER_METRICS
+        .sender_errors
+        .with_label_values(&replica_ctx.database_identity, module_hash, reducer)
+        .inc();
 
     log::info!("reducer returned error: {message}");
 
@@ -1220,24 +1228,6 @@ fn lifecyle_modifications_to_tx(
     .map_err(|e| e.to_string().into())
 }
 */
-
-/// Commits the transaction
-/// and evaluates and broadcasts subscriptions updates.
-fn commit_and_broadcast_event(
-    info: &ModuleInfo,
-    client: Option<Arc<ClientConnectionSender>>,
-    event: ModuleEvent,
-    tx: MutTxId,
-) -> Arc<ModuleEvent> {
-    match info
-        .subscriptions
-        .commit_and_broadcast_event(client, event, tx)
-        .unwrap()
-    {
-        Ok(res) => res.event,
-        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
-    }
-}
 
 pub trait InstanceOp {
     fn name(&self) -> &str;
@@ -1270,7 +1260,7 @@ impl InstanceOp for ViewOp<'_> {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
             table_id: self.table_id,
-            view_name: self.name.to_owned().into_boxed_str(),
+            fn_ptr: self.fn_ptr,
             sender: Some(*self.sender),
         })
     }
@@ -1300,7 +1290,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
             table_id: self.table_id,
-            view_name: self.name.to_owned().into_boxed_str(),
+            fn_ptr: self.fn_ptr,
             sender: None,
         })
     }

@@ -1,6 +1,6 @@
 use super::{
-    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ProcedureCallResult,
-    ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
+    ArgsTuple, FunctionArgs, InvalidProcedureArguments, InvalidReducerArguments, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler,
 };
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
@@ -10,6 +10,7 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
+use crate::host::host_controller::CallProcedureReturn;
 use crate::host::scheduler::{handle_queued_call_reducer_params, QueueItem};
 use crate::host::v8::JsInstance;
 use crate::host::wasmtime::ModuleInstance;
@@ -398,13 +399,6 @@ impl Instance {
         match self {
             Instance::Wasm(inst) => inst.trapped(),
             Instance::Js(inst) => inst.trapped(),
-        }
-    }
-
-    async fn call_procedure(&mut self, params: CallProcedureParams) -> Result<ProcedureCallResult, ProcedureCallError> {
-        match self {
-            Instance::Wasm(inst) => inst.call_procedure(params).await,
-            Instance::Js(inst) => inst.call_procedure(params).await,
         }
     }
 }
@@ -1550,7 +1544,7 @@ impl ModuleHost {
         timer: Option<Instant>,
         procedure_name: &str,
         args: FunctionArgs,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+    ) -> CallProcedureReturn {
         let res = async {
             let (procedure_id, procedure_def) = self
                 .info
@@ -1569,7 +1563,15 @@ impl ModuleHost {
         }
         .await;
 
-        let log_message = match &res {
+        let ret = match res {
+            Ok(ret) => ret,
+            Err(err) => CallProcedureReturn {
+                result: Err(err),
+                tx_offset: None,
+            },
+        };
+
+        let log_message = match &ret.result {
             Err(ProcedureCallError::NoSuchProcedure) => Some(no_such_function_log_message("procedure", procedure_name)),
             Err(ProcedureCallError::Args(_)) => Some(args_error_log_message("procedure", procedure_name)),
             _ => None,
@@ -1579,7 +1581,7 @@ impl ModuleHost {
             self.inject_logs(LogLevel::Error, procedure_name, &log_message)
         }
 
-        res
+        ret
     }
 
     async fn call_procedure_inner(
@@ -1590,25 +1592,28 @@ impl ModuleHost {
         procedure_id: ProcedureId,
         procedure_def: &ProcedureDef,
         args: FunctionArgs,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+    ) -> Result<CallProcedureReturn, ProcedureCallError> {
         let procedure_seed = ArgsSeed(self.info.module_def.typespace().with_type(procedure_def));
-        let args = args.into_tuple(procedure_seed).map_err(InvalidProcedureArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
+        let args = args.into_tuple(procedure_seed).map_err(InvalidProcedureArguments)?;
 
-        self.call_async_with_instance(&procedure_def.name, async move |mut inst| {
-            let res = inst
-                .call_procedure(CallProcedureParams {
-                    timestamp: Timestamp::now(),
-                    caller_identity,
-                    caller_connection_id,
-                    timer,
-                    procedure_id,
-                    args,
-                })
-                .await;
-            (res, inst)
+        let params = CallProcedureParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            timer,
+            procedure_id,
+            args,
+        };
+        self.call_async_with_instance(&procedure_def.name, async move |inst| match inst {
+            Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+            Instance::Js(inst) => {
+                let (r, s) = inst.call_procedure(params).await;
+                (r, Instance::Js(s))
+            }
         })
-        .await?
+        .await
+        .map_err(Into::into)
     }
 
     // Scheduled reducers require a different function here to call their reducer
@@ -1674,12 +1679,18 @@ impl ModuleHost {
         for ViewCallInfo {
             view_id,
             table_id,
-            view_name,
+            fn_ptr,
             sender,
         } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
         {
+            let view_def = self
+                .info
+                .module_def
+                .get_view_by_id(fn_ptr, sender.is_none())
+                .ok_or(ViewCallError::NoSuchView)?;
+
             let result = self
-                .call_view(out.tx, &view_name, view_id, table_id, Nullary, caller, sender)
+                .call_view(out.tx, &view_def.name, view_id, table_id, Nullary, caller, sender)
                 .await?;
 
             // Increment execution stats
