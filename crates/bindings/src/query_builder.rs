@@ -18,6 +18,8 @@ impl Query {
 
 #[cfg(test)]
 mod tests {
+    use spacetimedb_lib::sats::i256;
+
     use super::*;
     struct User;
     #[derive(Clone)]
@@ -107,7 +109,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn test_or_comparison() {
         let q = users()
             .r#where(|c| c.name.neq("Shub".to_string()).or(c.name.neq("Pop".to_string())))
@@ -121,7 +122,7 @@ mod tests {
     fn test_format_expr_column_literal() {
         let expr = Expr::Eq(
             ValueExpr::Column(ColumnRef::<User>::new("id")),
-            ValueExpr::Literal(crate::AlgebraicValue::from(42)),
+            ValueExpr::Literal(LiteralValue::Int(42)),
         );
         let sql = format_expr(&expr);
         assert!(sql.contains("id"), "Missing col");
@@ -180,5 +181,77 @@ mod tests {
             .build()
             .sql;
         assert_eq!(sql, expected);
+    }
+    #[test]
+    fn test_literals() {
+        use spacetimedb_lib::{ConnectionId, Identity};
+
+        struct Player;
+        struct PlayerCols {
+            score: Col<Player, i32>,
+            name: Col<Player, String>,
+            active: Col<Player, bool>,
+            connection_id: Col<Player, ConnectionId>,
+            cells: Col<Player, i256>,
+            identity: Col<Player, Identity>,
+        }
+
+        impl TableName for Player {
+            const TABLE_NAME: &'static str = "player";
+        }
+
+        impl HasCols for Player {
+            type Cols = PlayerCols;
+            fn cols() -> Self::Cols {
+                PlayerCols {
+                    score: Col::new("score"),
+                    name: Col::new("name"),
+                    active: Col::new("active"),
+                    connection_id: Col::new("connection_id"),
+                    cells: Col::new("cells"),
+                    identity: Col::new("identity"),
+                }
+            }
+        }
+
+        let q = Table::<Player>::new().r#where(|c| c.score.eq(100)).build();
+
+        assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."score" = 100)"#);
+
+        let q = Table::<Player>::new()
+            .r#where(|c| c.name.neq("Alice".to_string()))
+            .build();
+
+        assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."name" <> 'Alice')"#);
+
+        let q = Table::<Player>::new().r#where(|c| c.active.eq(true)).build();
+
+        assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."active" = TRUE)"#);
+
+        let q = Table::<Player>::new()
+            .r#where(|c| c.connection_id.eq(ConnectionId::ZERO))
+            .build();
+
+        assert_eq!(
+            q.sql,
+            r#"SELECT * FROM "player" WHERE ("player"."connection_id" = 0x00000000000000000000000000000000)"#
+        );
+
+        let big_int: i256 = (i256::ONE << 120) * i256::from(-1);
+        let q = Table::<Player>::new().r#where(|c| c.cells.gt(big_int)).build();
+
+        assert_eq!(
+            q.sql,
+            r#"SELECT * FROM "player" WHERE ("player"."cells" > -1329227995784915872903807060280344576)"#,
+        );
+
+        let q = Table::<Player>::new()
+            .r#where(|c| c.identity.neq(Identity::ONE))
+            .build();
+
+        assert_eq!(
+            q.sql,
+            r#"SELECT * FROM "player" WHERE ("player"."identity" <> 0x0000000000000000000000000000000000000000000000000000000000000001)"#
+        );
     }
 }

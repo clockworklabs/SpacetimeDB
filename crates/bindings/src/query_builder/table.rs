@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use crate::query_builder::ValueExpr;
+
 use super::{format_expr, Expr, Query, RHS};
 use spacetimedb_lib::{sats::algebraic_value::ser::ValueSerializer, ser::Serialize, AlgebraicValue};
 
@@ -63,6 +65,12 @@ impl<T: TableName, V> Col<T, V> {
     }
 }
 
+impl<T: TableName, V> From<Col<T, V>> for ValueExpr<T> {
+    fn from(col: Col<T, V>) -> Self {
+        ValueExpr::Column(ColumnRef::new(col.column_name))
+    }
+}
+
 pub struct ColumnRef<T> {
     pub(super) column_name: &'static str,
     _marker: PhantomData<T>,
@@ -88,31 +96,6 @@ impl<T> Copy for ColumnRef<T> {}
 impl<T> Clone for ColumnRef<T> {
     fn clone(&self) -> Self {
         *self
-    }
-}
-
-pub enum ValueExpr<T> {
-    Column(ColumnRef<T>),
-    Literal(AlgebraicValue),
-}
-
-impl<T: TableName, V> From<Col<T, V>> for ValueExpr<T> {
-    fn from(col: Col<T, V>) -> Self {
-        ValueExpr::Column(ColumnRef::new(col.column_name))
-    }
-}
-
-impl<T, V> RHS<T, V> for Col<T, V> {
-    fn to_expr(self) -> ValueExpr<T> {
-        ValueExpr::Column(ColumnRef::new(self.column_name))
-    }
-}
-
-impl<T, V: Serialize> RHS<T, V> for V {
-    fn to_expr(self) -> ValueExpr<T> {
-        let serializer = ValueSerializer;
-        let value = self.serialize(serializer).unwrap();
-        ValueExpr::Literal(value.into())
     }
 }
 
