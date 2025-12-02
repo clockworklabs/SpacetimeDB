@@ -191,9 +191,10 @@ fn exec_non_table_return() {
 
 fn exec_subscription_update() {
     let test_counter = TestCounter::new();
-    let mut near_0_2 = Some(test_counter.add_test("near_0_2"));
-    let mut near_0_4 = Some(test_counter.add_test("near_0_4"));
-    let mut far = Some(test_counter.add_test("far_0"));
+
+    let mut insert_0 = Some(test_counter.add_test("insert_0"));
+    let mut delete_0 = Some(test_counter.add_test("delete_0"));
+
     connect_with_then(
         &test_counter,
         "0",
@@ -201,47 +202,44 @@ fn exec_subscription_update() {
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM nearby_players"], move |ctx| {
                 ctx.db.nearby_players().on_insert(move |_, loc| {
-                    if loc.x == 2 && loc.y == 2 {
-                        return put_result(&mut near_0_2, Ok(()));
-                    }
-                    if loc.x == 4 && loc.y == 4 {
-                        return put_result(&mut near_0_4, Ok(()));
-                    }
-                    unreachable!("Unexpected view insert: {:?}", loc)
+                    assert_eq!(loc.x, 2);
+                    assert_eq!(loc.y, 2);
+                    put_result(&mut insert_0, Ok(()));
                 });
-                ctx.db.nearby_players().on_delete(move |_, _| {
-                    put_result(&mut far, Ok(()));
+                ctx.db.nearby_players().on_delete(move |_, loc| {
+                    assert_eq!(loc.x, 2);
+                    assert_eq!(loc.y, 2);
+                    put_result(&mut delete_0, Ok(()));
                 });
+                // Insert player 0 at coords (0, 0)
                 ctx.reducers().move_player(0, 0).unwrap();
             });
         },
     );
 
-    let mut near_1_2 = Some(test_counter.add_test("near_1_2"));
-    let mut near_1_4 = Some(test_counter.add_test("near_1_4"));
-    let mut far = Some(test_counter.add_test("far_1"));
+    let mut insert_1 = Some(test_counter.add_test("insert_1"));
+    let mut delete_1 = Some(test_counter.add_test("delete_1"));
+
     connect_with_then(
         &test_counter,
         "1",
         |builder| builder,
         move |ctx| {
             subscribe_these_then(ctx, &["SELECT * FROM nearby_players"], move |ctx| {
-                let mut first_insert = true;
-                ctx.db.nearby_players().on_insert(move |_, loc| {
+                ctx.db.nearby_players().on_insert(move |ctx, loc| {
                     assert_eq!(loc.x, 0);
                     assert_eq!(loc.y, 0);
-                    if first_insert {
-                        first_insert = false;
-                        return put_result(&mut near_1_2, Ok(()));
-                    }
-                    put_result(&mut near_1_4, Ok(()));
+                    put_result(&mut insert_1, Ok(()));
+                    // Move player 1 outside of visible region
+                    ctx.reducers().move_player(3, 3).unwrap();
                 });
-                ctx.db.nearby_players().on_delete(move |_, _| {
-                    put_result(&mut far, Ok(()));
+                ctx.db.nearby_players().on_delete(move |_, loc| {
+                    assert_eq!(loc.x, 0);
+                    assert_eq!(loc.y, 0);
+                    put_result(&mut delete_1, Ok(()));
                 });
+                // Insert player 1 at coords (2, 2)
                 ctx.reducers().move_player(2, 2).unwrap();
-                ctx.reducers().move_player(3, 3).unwrap();
-                ctx.reducers().move_player(-1, -1).unwrap();
             });
         },
     );
