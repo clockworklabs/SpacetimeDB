@@ -595,6 +595,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let view_trait_ident = format_ident!("{}__view", table_ident);
     let query_trait_ident = format_ident!("{}__query", table_ident);
     let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
+    let query_ix_cols_struct = format_ident!("{}IxCols", original_struct_ident);
     let table_name = table_ident.unraw().to_string();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
@@ -943,11 +944,42 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
             #ident: spacetimedb::query::Col::new(stringify!(#ident)),
         }
     });
+
+    let ix_cols_struct_fields = indices.iter().filter_map(|index| {
+        let ident = index.accessor_name.clone();
+        let ty = match &index.kind {
+            ValidatedIndexType::BTree { cols } => {
+                //TODO: Verify multi-column index does not support joins
+                if cols.len() == 1 {
+                    &cols[0].ty
+                } else {
+                    return None; // skip this index
+                }
+            }
+            ValidatedIndexType::Direct { col } => &col.ty,
+        };
+
+        Some(quote! {
+            pub #ident: spacetimedb::query::IxCol<#original_struct_ident, #ty>,
+        })
+    });
+
+    let ix_cols_init = indices.iter().map(|index| {
+        let ident = index.accessor_name;
+
+        quote! {
+            #ident: spacetimedb::query::IxCol::new(stringify!(#ident)),
+        }
+    });
+
     let trait_def_query = quote_spanned! {table_ident.span()=>
+            impl spacetimedb::query::TableName for #original_struct_ident {
+                const TABLE_NAME: &'static str = stringify!(#table_ident);
+            }
            #[allow(non_camel_case_types, dead_code)]
            #vis trait #query_trait_ident {
                fn #table_ident(&self) -> spacetimedb::query::Table<#original_struct_ident> {
-                   spacetimedb::query::Table::new(stringify!(#table_ident))
+                   spacetimedb::query::Table::new()
                }
            }
            impl #query_trait_ident for spacetimedb::QueryBuilder {}
@@ -964,6 +996,18 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                      }
                 }
            }
+
+        pub struct #query_ix_cols_struct{
+            #(#ix_cols_struct_fields)*
+        }
+        impl spacetimedb::query::HasIxCols for #original_struct_ident {
+            type IxCols = #query_ix_cols_struct;
+            fn idx_cols() -> Self::IxCols {
+                #query_ix_cols_struct {
+                    #(#ix_cols_init)*
+                }
+            }
+        }
 
     };
 
