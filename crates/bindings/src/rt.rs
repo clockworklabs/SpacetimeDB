@@ -1084,11 +1084,10 @@ extern "C" fn __call_view__(
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
     let views = VIEWS.get().unwrap();
-    let db = LocalReadOnly {};
 
     write_to_sink(
         sink,
-        &with_read_args(args, |args| views[id](ViewContext { sender, db }, args)),
+        &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
     0
 }
