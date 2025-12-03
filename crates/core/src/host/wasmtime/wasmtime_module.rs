@@ -9,6 +9,7 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, InitializationError, InstanceOp, ViewOp,
+    ViewReturnData,
 };
 use crate::host::wasm_common::*;
 use crate::replica_context::ReplicaContext;
@@ -105,6 +106,17 @@ fn handle_error_sink_code(code: i32, error: Vec<u8>) -> Result<(), ExecutionErro
 fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, ExecutionError> {
     match code {
         0 => Ok(result),
+        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
+        _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
+    }
+}
+
+/// Handle the return code from a view function using a result sink.
+/// For views, we treat the return code 2 as a successful return using the header format.
+fn handle_view_result_sink_code(code: i32, result: Vec<u8>) -> Result<ViewReturnData, ExecutionError> {
+    match code {
+        0 => Ok(ViewReturnData::Rows(result.into())),
+        2 => Ok(ViewReturnData::HeaderFirst(result.into())),
         CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
         _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
     }
@@ -452,8 +464,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| r.into());
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
@@ -491,8 +502,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| r.into());
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
