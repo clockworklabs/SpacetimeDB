@@ -69,8 +69,8 @@ declare module 'spacetime:sys@1.0' {
 
 declare module 'spacetime:sys@1.1' {
   export type ModuleHooks = {
-    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array;
-    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array;
+    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
+    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
   };
 
   export function register_hooks(hooks: ModuleHooks);
