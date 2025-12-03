@@ -111,9 +111,14 @@ jobs:
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
+      - name: Run smoketests windows
+        # Note: clear_database and replication only work in private
+        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
+        if: runner.os == 'Windows'
       - name: Run smoketests
         # Note: clear_database and replication only work in private
         run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
+        if: runner.os != 'Windows'
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
@@ -292,9 +297,27 @@ jobs:
         run: sudo apt install -y libssl-dev
 
       - name: Build spacetimedb-update
+        run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
+        if: runner.os == 'Windows'
+
+      - name: Run self-install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          ROOT_DIR="$(mktemp -d)"
+          # NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
+          # My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
+          # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
+          cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
+          "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
+        if: runner.os == 'Windows'
+
+      - name: Test spacetimedb-update
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
+        if: runner.os != 'Windows'
 
   unreal_engine_tests:
     name: Unreal Engine Tests
