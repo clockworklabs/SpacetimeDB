@@ -22,6 +22,7 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
 use http::StatusCode;
+use log::info;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
@@ -942,6 +943,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
         PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
     };
 
+    info!("planning migration for database {database_identity}");
     let migrate_plan = ctx
         .migrate_plan(
             DatabaseDef {
@@ -963,6 +965,10 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             breaks_client,
             plan,
         } => {
+            info!(
+                "planned auto-migration of database {} from {} to {}",
+                database_identity, old_module_hash, new_module_hash
+            );
             let token = MigrationToken {
                 database_identity,
                 old_module_hash,
@@ -977,6 +983,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             }))
         }
         MigratePlanResult::AutoMigrationError(e) => {
+            info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
             }))
