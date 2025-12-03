@@ -60,6 +60,16 @@ mod tests {
     fn other() -> Table<Other> {
         Table::default()
     }
+    struct OtherCols {
+        pub uid: Col<Other, i32>,
+    }
+
+    impl HasCols for Other {
+        type Cols = OtherCols;
+        fn cols() -> Self::Cols {
+            OtherCols { uid: Col::new("uid") }
+        }
+    }
     struct IxUserCols {
         pub id: IxCol<User, i32>,
     }
@@ -174,22 +184,28 @@ mod tests {
         let o = other();
         let sql = user
             .right_semijoin(o, |u, o| u.id.eq(o.uid))
-            .r#where(|u| u.id.eq(1))
-            .r#where(|u| u.id.gt(10))
+            .r#where(|o| o.uid.eq(1))
+            .r#where(|o| o.uid.gt(10))
             .build()
             .sql;
-        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE (("users"."id" = 1) AND ("users"."id" > 10))"#;
+        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE (("other"."uid" = 1) AND ("other"."uid" > 10))"#;
         assert_eq!(sql, expected);
+    }
+
+    #[test]
+    fn test_right_semijoin_with_left_and_right_where_expr() {
         let user = users();
         let o = other();
         let sql = user
             .r#where(|u| u.id.eq(1))
             .right_semijoin(o, |u, o| u.id.eq(o.uid))
-            .r#where(|u| u.id.gt(10))
+            .r#where(|o| o.uid.gt(10))
             .build()
             .sql;
+        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE ("users"."id" = 1) AND ("other"."uid" > 10)"#;
         assert_eq!(sql, expected);
     }
+
     #[test]
     fn test_literals() {
         use spacetimedb_lib::{ConnectionId, Identity};

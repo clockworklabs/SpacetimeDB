@@ -1,10 +1,9 @@
-use std::marker::PhantomData;
-
 use super::{
     expr::{format_expr, BoolExpr},
     table::{ColumnRef, HasCols, HasIxCols, Table},
     Query,
 };
+use std::marker::PhantomData;
 
 pub struct IxCol<T, V> {
     pub(super) col: ColumnRef<T>,
@@ -43,39 +42,21 @@ impl<T, V> IxCol<T, V> {
     }
 }
 
-pub(super) enum JoinKind {
-    Left,
-    Right,
-}
-
-pub struct JoinWhere<T> {
-    pub(super) kind: JoinKind,
-    pub(super) left_col: ColumnRef<T>,
+// Left semijoin: filters and returns left table rows
+pub struct LeftSemiJoin<L> {
+    pub(super) left_col: ColumnRef<L>,
     pub(super) right_table: &'static str,
     pub(super) right_col: &'static str,
-    pub(super) where_expr: Option<BoolExpr<T>>,
+    pub(super) where_expr: Option<BoolExpr<L>>,
 }
 
-fn semijoin<L, R, V>(
-    lix: L::IxCols,
-    rix: R::IxCols,
-    on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    where_expr: Option<BoolExpr<L>>,
-    kind: JoinKind,
-) -> JoinWhere<L>
-where
-    L: HasIxCols,
-    R: HasIxCols,
-{
-    let join = on(&lix, &rix);
-
-    JoinWhere {
-        kind,
-        left_col: join.lhs_col,
-        right_table: R::TABLE_NAME,
-        right_col: join.rhs_col.column_name(),
-        where_expr,
-    }
+// Right semijoin: returns right table rows, but remembers left conditions
+pub struct RightSemiJoin<R, L> {
+    pub(super) left_col: ColumnRef<L>,
+    pub(super) right_col: ColumnRef<R>,
+    pub(super) left_where_expr: Option<BoolExpr<L>>,
+    pub(super) right_where_expr: Option<BoolExpr<R>>,
+    _left_marker: PhantomData<L>,
 }
 
 impl<L: HasIxCols> Table<L> {
@@ -83,16 +64,29 @@ impl<L: HasIxCols> Table<L> {
         self,
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    ) -> JoinWhere<L> {
-        semijoin(L::ix_cols(), R::ix_cols(), on, None, JoinKind::Left)
+    ) -> LeftSemiJoin<L> {
+        let join = on(&L::ix_cols(), &R::ix_cols());
+        LeftSemiJoin {
+            left_col: join.lhs_col,
+            right_table: R::TABLE_NAME,
+            right_col: join.rhs_col.column_name(),
+            where_expr: None,
+        }
     }
 
     pub fn right_semijoin<R: HasIxCols, V>(
         self,
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    ) -> JoinWhere<L> {
-        semijoin(L::ix_cols(), R::ix_cols(), on, None, JoinKind::Right)
+    ) -> RightSemiJoin<R, L> {
+        let join = on(&L::ix_cols(), &R::ix_cols());
+        RightSemiJoin {
+            left_col: join.lhs_col,
+            right_col: join.rhs_col,
+            left_where_expr: None,
+            right_where_expr: None,
+            _left_marker: PhantomData,
+        }
     }
 }
 
@@ -101,32 +95,44 @@ impl<L: HasIxCols> super::FromWhere<L> {
         self,
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    ) -> JoinWhere<L> {
-        semijoin(L::ix_cols(), R::ix_cols(), on, Some(self.expr), JoinKind::Left)
+    ) -> LeftSemiJoin<L> {
+        let join = on(&L::ix_cols(), &R::ix_cols());
+        LeftSemiJoin {
+            left_col: join.lhs_col,
+            right_table: R::TABLE_NAME,
+            right_col: join.rhs_col.column_name(),
+            where_expr: Some(self.expr),
+        }
     }
 
     pub fn right_semijoin<R: HasIxCols, V>(
         self,
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    ) -> JoinWhere<L> {
-        semijoin(L::ix_cols(), R::ix_cols(), on, Some(self.expr), JoinKind::Right)
+    ) -> RightSemiJoin<R, L> {
+        let join = on(&L::ix_cols(), &R::ix_cols());
+        RightSemiJoin {
+            left_col: join.lhs_col,
+            right_col: join.rhs_col,
+            left_where_expr: Some(self.expr),
+            right_where_expr: None,
+            _left_marker: PhantomData,
+        }
     }
 }
 
-impl<T: HasCols> JoinWhere<T> {
+// LeftSemiJoin where() operates on L
+impl<L: HasCols> LeftSemiJoin<L> {
     pub fn r#where<F>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> BoolExpr<T>,
+        F: Fn(&L::Cols) -> BoolExpr<L>,
     {
-        let extra = f(&T::cols());
+        let extra = f(&L::cols());
         let new = match self.where_expr {
             Some(existing) => Some(existing.and(extra)),
             None => Some(extra),
         };
-
         Self {
-            kind: self.kind,
             left_col: self.left_col,
             right_table: self.right_table,
             right_col: self.right_col,
@@ -134,27 +140,69 @@ impl<T: HasCols> JoinWhere<T> {
         }
     }
 
-    pub fn build(self) -> Query<T> {
-        let alias = match self.kind {
-            JoinKind::Left => "left",
-            JoinKind::Right => "right",
-        };
-
+    pub fn build(self) -> Query<L> {
         let where_clause = self
             .where_expr
             .map(|e| format!(" WHERE {}", format_expr(&e)))
             .unwrap_or_default();
 
         let sql = format!(
-            r#"SELECT "{}".* FROM "{}" "left" JOIN "{}" "right" ON "left"."{}" = "right"."{}"{}"#,
-            alias,
-            T::TABLE_NAME,
+            r#"SELECT "left".* FROM "{}" "left" JOIN "{}" "right" ON "left"."{}" = "right"."{}"{}"#,
+            L::TABLE_NAME,
             self.right_table,
             self.left_col.column_name(),
             self.right_col,
             where_clause
         );
+        Query::new(sql)
+    }
+}
 
+// RightSemiJoin where() operates on R
+impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
+    pub fn r#where<F>(self, f: F) -> Self
+    where
+        F: Fn(&R::Cols) -> BoolExpr<R>,
+    {
+        let extra = f(&R::cols());
+        let new = match self.right_where_expr {
+            Some(existing) => Some(existing.and(extra)),
+            None => Some(extra),
+        };
+        Self {
+            left_col: self.left_col,
+            right_col: self.right_col,
+            left_where_expr: self.left_where_expr,
+            right_where_expr: new,
+            _left_marker: PhantomData,
+        }
+    }
+
+    pub fn build(self) -> Query<R> {
+        let mut where_parts = Vec::new();
+
+        if let Some(left_expr) = self.left_where_expr {
+            where_parts.push(format_expr(&left_expr));
+        }
+
+        if let Some(right_expr) = self.right_where_expr {
+            where_parts.push(format_expr(&right_expr));
+        }
+
+        let where_clause = if !where_parts.is_empty() {
+            format!(" WHERE {}", where_parts.join(" AND "))
+        } else {
+            String::new()
+        };
+
+        let sql = format!(
+            r#"SELECT "right".* FROM "{}" "left" JOIN "{}" "right" ON "left"."{}" = "right"."{}"{}"#,
+            L::TABLE_NAME,
+            R::TABLE_NAME,
+            self.left_col.column_name(),
+            self.right_col.column_name(),
+            where_clause
+        );
         Query::new(sql)
     }
 }
