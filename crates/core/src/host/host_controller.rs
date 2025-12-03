@@ -19,7 +19,7 @@ use crate::subscription::module_subscription_manager::{spawn_send_worker, Subscr
 use crate::util::asyncify;
 use crate::util::jobs::{JobCores, SingleCoreExecutor};
 use crate::worker_metrics::WORKER_METRICS;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
@@ -41,10 +41,12 @@ use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
 use tokio::task::AbortHandle;
+use tokio::time::error::Elapsed;
+use tokio::time::{interval_at, timeout, Instant};
 
 // TODO:
 //
@@ -252,17 +254,23 @@ impl HostController {
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         // Try a read lock first.
         {
-            let guard = self.acquire_read_lock(replica_id).await;
-            if let Some(host) = &*guard {
-                trace!("cached host {}/{}", database.database_identity, replica_id);
-                return Ok(host.module.subscribe());
+            if let Ok(guard) = self.acquire_read_lock(replica_id).await {
+                if let Some(host) = &*guard {
+                    trace!("cached host {}/{}", database.database_identity, replica_id);
+                    return Ok(host.module.subscribe());
+                }
             }
         }
 
         // We didn't find a running module, so take a write lock.
         // Since [`tokio::sync::RwLock`] doesn't support upgrading of read locks,
         // we'll need to check again if a module was added meanwhile.
-        let mut guard = self.acquire_write_lock(replica_id).await;
+        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
+            bail!(
+                "unable to lock database {} for initialization",
+                database.database_identity
+            );
+        };
         if let Some(host) = &*guard {
             trace!(
                 "cached host {}/{} (lock upgrade)",
@@ -381,7 +389,9 @@ impl HostController {
             program.hash
         );
 
-        let mut guard = self.acquire_write_lock(replica_id).await;
+        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
+            bail!("unable to lock database {} for update", database.database_identity);
+        };
 
         // `HostController::clone` is fast,
         // as all of its fields are either `Copy` or wrapped in `Arc`.
@@ -453,7 +463,12 @@ impl HostController {
             program.hash
         );
 
-        let guard = self.acquire_read_lock(replica_id).await;
+        let Ok(guard) = self.acquire_read_lock(replica_id).await else {
+            bail!(
+                "unable to lock database {} for migration planning",
+                database.database_identity
+            );
+        };
         let host = guard.as_ref().ok_or(NoSuchModule)?;
 
         host.migrate_plan(host_type, program, style).await
@@ -463,14 +478,43 @@ impl HostController {
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
-        trace!("exit module host {replica_id}");
-        let lock = self.hosts.lock().remove(&replica_id);
-        if let Some(lock) = lock {
-            if let Some(host) = lock.write_owned().await.take() {
-                let module = host.module.borrow().clone();
-                module.exit().await;
-                let table_names = module.info().module_def.tables().map(|t| t.name.deref());
-                remove_database_gauges(&module.info().database_identity, table_names);
+        let Some(lock) = self.hosts.lock().remove(&replica_id) else {
+            return Ok(());
+        };
+        // To debug the potential deadlock issue reported in
+        // https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
+        // we'll log a warning every 5s if we can't acquire an exclusive lock.
+        let start = Instant::now();
+        let mut t = interval_at(start + Duration::from_secs(5), Duration::from_secs(5));
+        // Spawn so we don't lose our place in the queue.
+        let mut excl = tokio::spawn(lock.write_owned());
+        loop {
+            tokio::select! {
+                guard = &mut excl => {
+                    let Ok(mut guard) = guard else {
+                        warn!("cancelled shutdown of module of replica {replica_id}");
+                        break;
+                    };
+                    let Some(host) = guard.take() else {
+                        break;
+                    };
+                    let module = host.module.borrow().clone();
+                    let info = module.info();
+                    info!("exiting replica {} of database {}", replica_id, info.database_identity);
+                    module.exit().await;
+                    let table_names = info.module_def.tables().map(|t| t.name.deref());
+                    remove_database_gauges(&info.database_identity, table_names);
+                    info!("replica {} of database {} exited", replica_id, info.database_identity);
+
+                    break;
+                },
+                _ = t.tick() => {
+                    warn!(
+                        "blocked waiting to exit module for replica {} since {}s",
+                        replica_id,
+                        start.elapsed().as_secs_f32()
+                    );
+                }
             }
         }
 
@@ -485,7 +529,10 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
         trace!("get module host {replica_id}");
-        let guard = self.acquire_read_lock(replica_id).await;
+        let guard = self.acquire_read_lock(replica_id).await.map_err(|_| {
+            warn!("timeout waiting for read lock on replica {replica_id} in `get_module_host`");
+            NoSuchModule
+        })?;
         guard
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
@@ -500,7 +547,10 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         trace!("watch module host {replica_id}");
-        let guard = self.acquire_read_lock(replica_id).await;
+        let guard = self.acquire_read_lock(replica_id).await.map_err(|_| {
+            warn!("timeout waiting for read lock on {replica_id} in `watch_module_host`");
+            NoSuchModule
+        })?;
         guard
             .as_ref()
             .map(|Host { module, .. }| module.subscribe())
@@ -510,7 +560,12 @@ impl HostController {
     /// `true` if the module host `replica_id` is currently registered with
     /// the controller.
     pub async fn has_module_host(&self, replica_id: u64) -> bool {
-        self.acquire_read_lock(replica_id).await.is_some()
+        let Ok(maybe_host) = self.acquire_read_lock(replica_id).await else {
+            warn!("timeout waiting for read lock on replica {replica_id} in `has_module_host`");
+            return false;
+        };
+
+        maybe_host.is_some()
     }
 
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
@@ -525,14 +580,22 @@ impl HostController {
         }
     }
 
-    async fn acquire_write_lock(&self, replica_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
+    /// Acquire a write lock on the [HostCell] for `replica_id`.
+    ///
+    /// This will time out after 5s to aid debugging of
+    /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
+    async fn acquire_write_lock(&self, replica_id: u64) -> Result<OwnedRwLockWriteGuard<Option<Host>>, Elapsed> {
         let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        lock.write_owned().await
+        timeout(Duration::from_secs(5), lock.write_owned()).await
     }
 
-    async fn acquire_read_lock(&self, replica_id: u64) -> OwnedRwLockReadGuard<Option<Host>> {
+    /// Acquire a read lock on the [HostCell] for `replica_id`.
+    ///
+    /// This will time out after 5s to aid debugging of
+    /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
+    async fn acquire_read_lock(&self, replica_id: u64) -> Result<OwnedRwLockReadGuard<Option<Host>>, Elapsed> {
         let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        lock.read_owned().await
+        timeout(Duration::from_secs(5), lock.read_owned()).await
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
