@@ -20,7 +20,7 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
-import type { QueryBuilder } from '../server/query';
+import type { QueryBuilder, TypedQuery } from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -42,17 +42,19 @@ export type ViewOpts = {
   public: true;
 };
 
+// TODO: restrict the type of the query to match the return type.
 export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
+> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret> | TypedQuery<any>;
 
+// TODO: restrict the type of the query to match the return type.
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
+> = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret> | TypedQuery<any>;
 
 export type ViewReturnTypeBuilder =
   | TypeBuilder<
