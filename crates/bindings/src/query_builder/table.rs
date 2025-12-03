@@ -1,8 +1,8 @@
 use std::marker::PhantomData;
 
-use crate::query_builder::ValueExpr;
+use crate::query_builder::Operand;
 
-use super::{format_expr, Expr, Query, RHS};
+use super::{format_expr, BoolExpr, Query, RHS};
 use spacetimedb_lib::{sats::algebraic_value::ser::ValueSerializer, ser::Serialize, AlgebraicValue};
 
 pub trait TableName {
@@ -16,7 +16,7 @@ pub trait HasCols: TableName {
 
 pub trait HasIxCols: TableName {
     type IxCols;
-    fn idx_cols() -> Self::IxCols;
+    fn ix_cols() -> Self::IxCols;
 }
 
 pub struct Table<T> {
@@ -51,44 +51,48 @@ impl<T, V> Clone for Col<T, V> {
 }
 
 impl<T: TableName, V> Col<T, V> {
-    pub fn eq<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
-        Expr::Eq(self.into(), rhs.to_expr())
+    pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+        BoolExpr::Eq(self.into(), rhs.to_expr())
     }
-    pub fn neq<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
-        Expr::Neq(self.into(), rhs.to_expr())
+    pub fn ne<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+        BoolExpr::Ne(self.into(), rhs.to_expr())
     }
-    pub fn gt<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
-        Expr::Gt(self.into(), rhs.to_expr())
+    pub fn gt<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+        BoolExpr::Gt(self.into(), rhs.to_expr())
     }
-    pub fn lt<R: RHS<T, V>>(self, rhs: R) -> Expr<ValueExpr<T>> {
-        Expr::Lt(self.into(), rhs.to_expr())
+    pub fn lt<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+        BoolExpr::Lt(self.into(), rhs.to_expr())
     }
 }
 
-impl<T: TableName, V> From<Col<T, V>> for ValueExpr<T> {
+impl<T: TableName, V> From<Col<T, V>> for Operand<T> {
     fn from(col: Col<T, V>) -> Self {
-        ValueExpr::Column(ColumnRef::new(col.column_name))
+        Operand::Column(ColumnRef::new(col.column_name))
     }
 }
 
-pub struct ColumnRef<T> {
-    pub(super) column_name: &'static str,
+pub(super) struct ColumnRef<T> {
+    column_name: &'static str,
     _marker: PhantomData<T>,
 }
 
 impl<T> ColumnRef<T> {
-    pub fn new(column_name: &'static str) -> Self {
+    pub(super) fn new(column_name: &'static str) -> Self {
         Self {
             column_name,
             _marker: PhantomData,
         }
     }
 
-    pub fn fmt(&self) -> String
+    pub(super) fn fmt(&self) -> String
     where
         T: TableName,
     {
         format!("\"{}\".\"{}\"", T::TABLE_NAME, self.column_name)
+    }
+
+    pub(super) fn column_name(&self) -> &'static str {
+        self.column_name
     }
 }
 
@@ -100,19 +104,18 @@ impl<T> Clone for ColumnRef<T> {
 }
 
 pub struct FromWhere<T: TableName> {
-    pub(super) expr: Expr<ValueExpr<T>>,
+    pub(super) expr: BoolExpr<T>,
 }
 
 impl<T: HasCols> Table<T> {
-    pub fn build(self) -> Query {
-        Query {
-            sql: format!(r#"SELECT * FROM "{}""#, T::TABLE_NAME),
-        }
+    pub fn build(self) -> Query<T> {
+        let sql = format!(r#"SELECT * FROM "{}""#, T::TABLE_NAME);
+        Query::new(sql)
     }
 
     pub fn r#where<F>(self, f: F) -> FromWhere<T>
     where
-        F: Fn(&T::Cols) -> Expr<ValueExpr<T>>,
+        F: Fn(&T::Cols) -> BoolExpr<T>,
     {
         let expr = f(&T::cols());
         FromWhere { expr }
@@ -122,7 +125,7 @@ impl<T: HasCols> Table<T> {
 impl<T: HasCols> FromWhere<T> {
     pub fn r#where<F>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> Expr<ValueExpr<T>>,
+        F: Fn(&T::Cols) -> BoolExpr<T>,
     {
         let extra = f(&T::cols());
         Self {
@@ -130,9 +133,8 @@ impl<T: HasCols> FromWhere<T> {
         }
     }
 
-    pub fn build(self) -> Query {
-        Query {
-            sql: format!(r#"SELECT * FROM "{}" WHERE {}"#, T::TABLE_NAME, format_expr(&self.expr)),
-        }
+    pub fn build(self) -> Query<T> {
+        let sql = format!(r#"SELECT * FROM "{}" WHERE {}"#, T::TABLE_NAME, format_expr(&self.expr));
+        Query::new(sql)
     }
 }

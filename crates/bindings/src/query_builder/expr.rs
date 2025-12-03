@@ -7,55 +7,55 @@ use crate::query_builder::{Col, ColumnRef};
 
 use super::TableName;
 
-pub enum ValueExpr<T> {
+pub(super) enum Operand<T> {
     Column(ColumnRef<T>),
     Literal(LiteralValue),
 }
 
-pub enum Expr<T> {
-    Eq(T, T),
-    Neq(T, T),
-    Gt(T, T),
-    Lt(T, T),
-    And(Box<Expr<T>>, Box<Expr<T>>),
-    Or(Box<Expr<T>>, Box<Expr<T>>),
+pub enum BoolExpr<T> {
+    Eq(Operand<T>, Operand<T>),
+    Ne(Operand<T>, Operand<T>),
+    Gt(Operand<T>, Operand<T>),
+    Lt(Operand<T>, Operand<T>),
+    And(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
+    Or(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
 }
 
-impl<T> Expr<T> {
-    pub fn and(self, other: Expr<T>) -> Expr<T> {
-        Expr::And(Box::new(self), Box::new(other))
+impl<T> BoolExpr<T> {
+    pub fn and(self, other: BoolExpr<T>) -> BoolExpr<T> {
+        BoolExpr::And(Box::new(self), Box::new(other))
     }
 
-    pub fn or(self, other: Expr<T>) -> Expr<T> {
-        Expr::Or(Box::new(self), Box::new(other))
+    pub fn or(self, other: BoolExpr<T>) -> BoolExpr<T> {
+        BoolExpr::Or(Box::new(self), Box::new(other))
     }
 }
 
 pub trait RHS<T, V> {
-    fn to_expr(self) -> ValueExpr<T>;
+    fn to_expr(self) -> Operand<T>;
 }
 
 impl<T, V> RHS<T, V> for Col<T, V> {
-    fn to_expr(self) -> ValueExpr<T> {
-        ValueExpr::Column(ColumnRef::new(self.column_name))
+    fn to_expr(self) -> Operand<T> {
+        Operand::Column(ColumnRef::new(self.column_name))
     }
 }
 
-fn format_value_expr<T: TableName>(v: &ValueExpr<T>) -> String {
+fn format_bool_expr<T: TableName>(v: &Operand<T>) -> String {
     match v {
-        ValueExpr::Column(col) => format!("\"{}\".\"{}\"", T::TABLE_NAME, col.column_name),
-        ValueExpr::Literal(lit) => format_literal(lit),
+        Operand::Column(col) => col.fmt(),
+        Operand::Literal(lit) => format_literal(lit),
     }
 }
 
-pub fn format_expr<T: TableName>(expr: &Expr<ValueExpr<T>>) -> String {
+pub fn format_expr<T: TableName>(expr: &BoolExpr<T>) -> String {
     match expr {
-        Expr::Eq(l, r) => format!("({} = {})", format_value_expr(l), format_value_expr(r)),
-        Expr::Neq(l, r) => format!("({} <> {})", format_value_expr(l), format_value_expr(r)),
-        Expr::Gt(l, r) => format!("({} > {})", format_value_expr(l), format_value_expr(r)),
-        Expr::Lt(l, r) => format!("({} < {})", format_value_expr(l), format_value_expr(r)),
-        Expr::And(a, b) => format!("({} AND {})", format_expr(a), format_expr(b)),
-        Expr::Or(a, b) => format!("({} OR {})", format_expr(a), format_expr(b)),
+        BoolExpr::Eq(l, r) => format!("({} = {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Ne(l, r) => format!("({} <> {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Gt(l, r) => format!("({} > {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Lt(l, r) => format!("({} < {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::And(a, b) => format!("({} AND {})", format_expr(a), format_expr(b)),
+        BoolExpr::Or(a, b) => format!("({} OR {})", format_expr(a), format_expr(b)),
     }
 }
 
@@ -89,16 +89,16 @@ pub fn format_literal(l: &LiteralValue) -> String {
 }
 
 impl<T> RHS<T, &str> for &str {
-    fn to_expr(self) -> ValueExpr<T> {
-        ValueExpr::Literal(LiteralValue::String(self.to_string()))
+    fn to_expr(self) -> Operand<T> {
+        Operand::Literal(LiteralValue::String(self.to_string()))
     }
 }
 
 macro_rules! impl_rhs {
     ($ty:ty, $variant:ident $(, $map:expr )? ) => {
         impl<T> RHS<T, $ty> for $ty {
-            fn to_expr(self) -> ValueExpr<T> {
-                ValueExpr::Literal(
+            fn to_expr(self) -> Operand<T> {
+                Operand::Literal(
                     LiteralValue::$variant(
                         impl_rhs!(@map self $(, $map )? )
                     )

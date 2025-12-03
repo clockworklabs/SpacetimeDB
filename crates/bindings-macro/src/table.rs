@@ -949,11 +949,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let ident = index.accessor_name.clone();
         let ty = match &index.kind {
             ValidatedIndexType::BTree { cols } => {
-                //TODO: Verify multi-column index does not support joins
                 if cols.len() == 1 {
                     &cols[0].ty
                 } else {
-                    return None; // skip this index
+                    return None;
                 }
             }
             ValidatedIndexType::Direct { col } => &col.ty,
@@ -1002,7 +1001,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
         impl spacetimedb::query_builder::HasIxCols for #original_struct_ident {
             type IxCols = #query_ix_cols_struct;
-            fn idx_cols() -> Self::IxCols {
+            fn ix_cols() -> Self::IxCols {
                 #query_ix_cols_struct {
                     #(#ix_cols_init)*
                 }

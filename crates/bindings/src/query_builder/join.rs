@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
 use super::{
-    expr::{format_expr, Expr},
+    expr::{format_expr, BoolExpr},
     table::{ColumnRef, HasCols, HasIxCols, Table},
-    Query, ValueExpr,
+    Query,
 };
 
 pub struct IxCol<T, V> {
@@ -53,14 +53,14 @@ pub struct JoinWhere<T> {
     pub(super) left_col: ColumnRef<T>,
     pub(super) right_table: &'static str,
     pub(super) right_col: &'static str,
-    pub(super) where_expr: Option<Expr<ValueExpr<T>>>,
+    pub(super) where_expr: Option<BoolExpr<T>>,
 }
 
 fn semijoin<L, R, V>(
     lix: L::IxCols,
     rix: R::IxCols,
     on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
-    where_expr: Option<Expr<ValueExpr<L>>>,
+    where_expr: Option<BoolExpr<L>>,
     kind: JoinKind,
 ) -> JoinWhere<L>
 where
@@ -73,7 +73,7 @@ where
         kind,
         left_col: join.lhs_col,
         right_table: R::TABLE_NAME,
-        right_col: join.rhs_col.column_name,
+        right_col: join.rhs_col.column_name(),
         where_expr,
     }
 }
@@ -84,7 +84,7 @@ impl<L: HasIxCols> Table<L> {
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
     ) -> JoinWhere<L> {
-        semijoin(L::idx_cols(), R::idx_cols(), on, None, JoinKind::Left)
+        semijoin(L::ix_cols(), R::ix_cols(), on, None, JoinKind::Left)
     }
 
     pub fn right_semijoin<R: HasIxCols, V>(
@@ -92,7 +92,7 @@ impl<L: HasIxCols> Table<L> {
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
     ) -> JoinWhere<L> {
-        semijoin(L::idx_cols(), R::idx_cols(), on, None, JoinKind::Right)
+        semijoin(L::ix_cols(), R::ix_cols(), on, None, JoinKind::Right)
     }
 }
 
@@ -102,7 +102,7 @@ impl<L: HasIxCols> super::FromWhere<L> {
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
     ) -> JoinWhere<L> {
-        semijoin(L::idx_cols(), R::idx_cols(), on, Some(self.expr), JoinKind::Left)
+        semijoin(L::ix_cols(), R::ix_cols(), on, Some(self.expr), JoinKind::Left)
     }
 
     pub fn right_semijoin<R: HasIxCols, V>(
@@ -110,14 +110,14 @@ impl<L: HasIxCols> super::FromWhere<L> {
         _right: Table<R>,
         on: impl Fn(&L::IxCols, &R::IxCols) -> IxJoinEq<L, R, V>,
     ) -> JoinWhere<L> {
-        semijoin(L::idx_cols(), R::idx_cols(), on, Some(self.expr), JoinKind::Right)
+        semijoin(L::ix_cols(), R::ix_cols(), on, Some(self.expr), JoinKind::Right)
     }
 }
 
 impl<T: HasCols> JoinWhere<T> {
     pub fn r#where<F>(self, f: F) -> Self
     where
-        F: Fn(&T::Cols) -> Expr<ValueExpr<T>>,
+        F: Fn(&T::Cols) -> BoolExpr<T>,
     {
         let extra = f(&T::cols());
         let new = match self.where_expr {
@@ -134,7 +134,7 @@ impl<T: HasCols> JoinWhere<T> {
         }
     }
 
-    pub fn build(self) -> Query {
+    pub fn build(self) -> Query<T> {
         let alias = match self.kind {
             JoinKind::Left => "left",
             JoinKind::Right => "right",
@@ -150,11 +150,11 @@ impl<T: HasCols> JoinWhere<T> {
             alias,
             T::TABLE_NAME,
             self.right_table,
-            self.left_col.column_name,
+            self.left_col.column_name(),
             self.right_col,
             where_clause
         );
 
-        Query { sql }
+        Query::new(sql)
     }
 }

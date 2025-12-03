@@ -6,11 +6,19 @@ pub use expr::*;
 pub use join::*;
 pub use table::*;
 
-pub struct Query {
+pub struct Query<T> {
     pub(crate) sql: String,
+    _marker: std::marker::PhantomData<T>,
 }
 
-impl Query {
+impl<T> Query<T> {
+    pub fn new(sql: String) -> Self {
+        Self {
+            sql,
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     pub fn sql(&self) -> &str {
         &self.sql
     }
@@ -57,7 +65,7 @@ mod tests {
     }
     impl HasIxCols for User {
         type IxCols = IxUserCols;
-        fn idx_cols() -> Self::IxCols {
+        fn ix_cols() -> Self::IxCols {
             IxUserCols { id: IxCol::new("id") }
         }
     }
@@ -71,7 +79,7 @@ mod tests {
     }
     impl HasIxCols for Other {
         type IxCols = IxOtherCols;
-        fn idx_cols() -> Self::IxCols {
+        fn ix_cols() -> Self::IxCols {
             IxOtherCols { uid: IxCol::new("uid") }
         }
     }
@@ -103,7 +111,7 @@ mod tests {
     }
     #[test]
     fn test_ne_comparison() {
-        let q = users().r#where(|c| c.name.neq("Shub".to_string())).build();
+        let q = users().r#where(|c| c.name.ne("Shub".to_string())).build();
         assert!(q.sql().contains("name"), "Expected a name comparison");
         assert!(q.sql().contains("<>"));
     }
@@ -111,7 +119,7 @@ mod tests {
     #[test]
     fn test_or_comparison() {
         let q = users()
-            .r#where(|c| c.name.neq("Shub".to_string()).or(c.name.neq("Pop".to_string())))
+            .r#where(|c| c.name.ne("Shub".to_string()).or(c.name.ne("Pop".to_string())))
             .build();
 
         let expected = r#"SELECT * FROM "users" WHERE (("users"."name" <> 'Shub') OR ("users"."name" <> 'Pop'))"#;
@@ -120,9 +128,9 @@ mod tests {
 
     #[test]
     fn test_format_expr_column_literal() {
-        let expr = Expr::Eq(
-            ValueExpr::Column(ColumnRef::<User>::new("id")),
-            ValueExpr::Literal(LiteralValue::Int(42)),
+        let expr = BoolExpr::Eq(
+            Operand::Column(ColumnRef::<User>::new("id")),
+            Operand::Literal(LiteralValue::Int(42)),
         );
         let sql = format_expr(&expr);
         assert!(sql.contains("id"), "Missing col");
@@ -219,7 +227,7 @@ mod tests {
         assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."score" = 100)"#);
 
         let q = Table::<Player>::new()
-            .r#where(|c| c.name.neq("Alice".to_string()))
+            .r#where(|c| c.name.ne("Alice".to_string()))
             .build();
 
         assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."name" <> 'Alice')"#);
@@ -245,9 +253,7 @@ mod tests {
             r#"SELECT * FROM "player" WHERE ("player"."cells" > -1329227995784915872903807060280344576)"#,
         );
 
-        let q = Table::<Player>::new()
-            .r#where(|c| c.identity.neq(Identity::ONE))
-            .build();
+        let q = Table::<Player>::new().r#where(|c| c.identity.ne(Identity::ONE)).build();
 
         assert_eq!(
             q.sql,
