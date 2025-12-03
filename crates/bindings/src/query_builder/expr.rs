@@ -37,7 +37,7 @@ pub trait RHS<T, V> {
 
 impl<T, V> RHS<T, V> for Col<T, V> {
     fn to_expr(self) -> Operand<T> {
-        Operand::Column(ColumnRef::new(self.column_name))
+        Operand::Column(ColumnRef::new(self.col.column_name()))
     }
 }
 

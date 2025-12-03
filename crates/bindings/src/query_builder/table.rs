@@ -29,14 +29,14 @@ impl<T> Default for Table<T> {
 }
 
 pub struct Col<T, V> {
-    pub(super) column_name: &'static str,
-    _marker: PhantomData<(T, V)>,
+    pub(super) col: ColumnRef<T>,
+    _marker: PhantomData<V>,
 }
 
 impl<T, V> Col<T, V> {
     pub fn new(column_name: &'static str) -> Self {
         Self {
-            column_name,
+            col: ColumnRef::new(column_name),
             _marker: PhantomData,
         }
     }
@@ -66,7 +66,7 @@ impl<T: TableName, V> Col<T, V> {
 
 impl<T: TableName, V> From<Col<T, V>> for Operand<T> {
     fn from(col: Col<T, V>) -> Self {
-        Operand::Column(ColumnRef::new(col.column_name))
+        Operand::Column(ColumnRef::new(col.col.column_name()))
     }
 }
 
