@@ -23,6 +23,16 @@ pub fn cli() -> clap::Command {
                 .help("The directory to lint for nonfunctional print statements. If set to the empty string, skips linting.")
         )
         .arg(
+            // TODO: Make this into --extra-build-args (or something similar) that will get passed along to the language's compiler.
+            Arg::new("features")
+                .long("features")
+                .value_parser(clap::value_parser!(OsString))
+                .required(false)
+                .help("Additional features to pass to the build process (e.g. `--features feature1,feature2` for Rust modules).")
+                // We're hiding this because we think it deserves a refactor first (see the TODO above)
+                .hide(true)
+        )
+        .arg(
             Arg::new("debug")
                 .long("debug")
                 .short('d')
@@ -33,6 +43,7 @@ pub fn cli() -> clap::Command {
 
 pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'static str), anyhow::Error> {
     let project_path = args.get_one::<PathBuf>("project_path").unwrap();
+    let features = args.get_one::<OsString>("features");
     let lint_dir = args.get_one::<OsString>("lint_dir").unwrap();
     let lint_dir = if lint_dir.is_empty() {
         None
@@ -56,7 +67,7 @@ pub async fn exec(_config: Config, args: &ArgMatches) -> Result<(PathBuf, &'stat
         ));
     }
 
-    let result = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug)?;
+    let result = crate::tasks::build(project_path, lint_dir.as_deref(), build_debug, features)?;
     println!("Build finished successfully.");
 
     Ok(result)
