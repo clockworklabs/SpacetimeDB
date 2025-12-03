@@ -38,6 +38,32 @@ namespace SpacetimeDB
         }
     }
 
+    public sealed record ProcedureContext : Internal.IProcedureContext
+    {
+        public readonly Identity Sender;
+        public readonly ConnectionId? ConnectionId;
+        public readonly Random Rng;
+        public readonly Timestamp Timestamp;
+        public readonly AuthCtx SenderAuth;
+
+        // We need this property to be non-static for parity with client SDK.
+        public Identity Identity => Internal.IProcedureContext.GetIdentity();
+
+        internal ProcedureContext(
+            Identity identity,
+            ConnectionId? connectionId,
+            Random random,
+            Timestamp time
+        )
+        {
+            Sender = identity;
+            ConnectionId = connectionId;
+            Rng = random;
+            Timestamp = time;
+            SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
+        }
+    }
+
     public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
     {
         public Identity Sender { get; }
@@ -1055,13 +1081,13 @@ namespace SpacetimeDB
     }
 }
 
-sealed class PublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class public_table_viewViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "PublicTableByIdentity",
+            Name: "public_table_view",
             Index: 0,
             IsPublic: true,
             IsAnonymous: false,
@@ -1092,19 +1118,20 @@ sealed class PublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'PublicTableByIdentity': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'public_table_view': " + e);
             throw;
         }
     }
 }
 
-sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+sealed class find_public_table__by_identityViewDispatcher
+    : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "FindPublicTableByIdentity",
+            Name: "find_public_table__by_identity",
             Index: 0,
             IsPublic: true,
             IsAnonymous: true,
@@ -1137,7 +1164,7 @@ sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Inter
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'FindPublicTableByIdentity': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'find_public_table__by_identity': " + e);
             throw;
         }
     }
@@ -1646,6 +1673,10 @@ static class ModuleRegistration
         SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(
             () => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly())
         );
+        SpacetimeDB.Internal.Module.SetProcedureContextConstructor(
+            (identity, connectionId, random, time) =>
+                new SpacetimeDB.ProcedureContext(identity, connectionId, random, time)
+        );
         var __memoryStream = new MemoryStream();
         var __writer = new BinaryWriter(__memoryStream);
 
@@ -1659,8 +1690,8 @@ static class ModuleRegistration
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
         // See the comment on `GenerateDispatcherClass` for more explanation.
-        SpacetimeDB.Internal.Module.RegisterView<PublicTableByIdentityViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<FindPublicTableByIdentityViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<public_table_viewViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<find_public_table__by_identityViewDispatcher>();
 
         SpacetimeDB.Internal.Module.RegisterTable<
             global::BTreeMultiColumn,
@@ -1729,6 +1760,32 @@ static class ModuleRegistration
             timestamp,
             args,
             error
+        );
+
+    [UnmanagedCallersOnly(EntryPoint = "__call_procedure__")]
+    public static SpacetimeDB.Internal.Errno __call_procedure__(
+        uint id,
+        ulong sender_0,
+        ulong sender_1,
+        ulong sender_2,
+        ulong sender_3,
+        ulong conn_id_0,
+        ulong conn_id_1,
+        SpacetimeDB.Timestamp timestamp,
+        SpacetimeDB.Internal.BytesSource args,
+        SpacetimeDB.Internal.BytesSink result_sink
+    ) =>
+        SpacetimeDB.Internal.Module.__call_procedure__(
+            id,
+            sender_0,
+            sender_1,
+            sender_2,
+            sender_3,
+            conn_id_0,
+            conn_id_1,
+            timestamp,
+            args,
+            result_sink
         );
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]

@@ -3,6 +3,7 @@ import {
   AlgebraicType,
   ConnectionId,
   Identity,
+  ScheduleAt,
   type IdentityTokenMessage,
 } from '../src/index';
 import type { ColumnBuilder } from '../src/server';
@@ -104,7 +105,7 @@ describe('TypeBuilder', () => {
 
   it('builds a ScheduleAt column with the correct type and metadata', () => {
     const col = t.scheduleAt();
-    expect(col.typeBuilder.algebraicType).toEqual({
+    expect(col.algebraicType).toEqual({
       tag: 'Sum',
       value: {
         variants: [
@@ -139,7 +140,7 @@ describe('TypeBuilder', () => {
         ],
       },
     });
-    expect(col.columnMetadata.isScheduleAt).toEqual(true);
+    expect(ScheduleAt.isScheduleAt(col.algebraicType)).toEqual(true);
   });
 });
 

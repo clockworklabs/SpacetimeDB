@@ -728,16 +728,17 @@ pub use spacetimedb_bindings_macro::reducer;
 // TODO(procedure-http): add example with an HTTP request.
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
-/// # Scheduled procedures
+// TODO(scheduled-procedures): Uncomment below docs.
+// /// # Scheduled procedures
 // TODO(docs): after moving scheduled reducer docs into table secion, link there.
-///
-/// Like [reducer]s, procedures can be made **scheduled**.
-/// This allows calling procedures at a particular time, or in a loop.
-/// It also allows reducers to enqueue procedure runs.
-///
-/// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
-/// when a database is under heavy load.
-///
+// ///
+// /// Like [reducer]s, procedures can be made **scheduled**.
+// /// This allows calling procedures at a particular time, or in a loop.
+// /// It also allows reducers to enqueue procedure runs.
+// ///
+// /// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
+// /// when a database is under heavy load.
+// ///
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
@@ -1251,6 +1252,14 @@ pub trait DbContext {
     fn db(&self) -> &Self::DbView;
 }
 
+impl DbContext for AnonymousViewContext {
+    type DbView = LocalReadOnly;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1262,6 +1271,14 @@ impl DbContext for ReducerContext {
 #[cfg(feature = "unstable")]
 impl DbContext for TxContext {
     type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+impl DbContext for ViewContext {
+    type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
         &self.db

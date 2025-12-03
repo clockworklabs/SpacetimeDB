@@ -16,7 +16,6 @@
 
     // This library is ESM-only, do not import commonjs modules
     "esModuleInterop": false,
-    "allowSyntheticDefaultImports": false,
     "useDefineForClassFields": true,
 
     // Crucial when using esbuild/swc/babel instead of tsc emit:

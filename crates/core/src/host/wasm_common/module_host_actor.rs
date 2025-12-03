@@ -37,7 +37,7 @@ use spacetimedb_lib::buffer::DecodeError;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
+use spacetimedb_lib::{bsatn, ConnectionId, Hash, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
 use spacetimedb_schema::def::{ModuleDef, ViewDef};
@@ -151,6 +151,14 @@ pub struct ExecutionResult<T> {
     #[as_ref]
     pub stats: ExecutionStats,
     pub call_result: T,
+}
+
+impl<T> ExecutionResult<T> {
+    pub fn map_result<U>(self, f: impl FnOnce(T) -> U) -> ExecutionResult<U> {
+        let Self { stats, call_result } = self;
+        let call_result = f(call_result);
+        ExecutionResult { stats, call_result }
+    }
 }
 
 pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
@@ -381,11 +389,9 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        let ret = self.common.call_procedure(params, &mut self.instance).await;
-        if ret.result.is_err() {
-            self.trapped = true;
-        }
-        ret
+        let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
     }
 }
 
@@ -570,11 +576,11 @@ impl InstanceCommon {
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
-    async fn call_procedure<I: WasmInstance>(
+    pub(crate) async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> CallProcedureReturn {
+    ) -> (CallProcedureReturn, bool) {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -629,6 +635,8 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
+        let trapped = call_result.is_err();
+
         let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
@@ -659,7 +667,7 @@ impl InstanceCommon {
             }
         };
 
-        CallProcedureReturn { result, tx_offset }
+        (CallProcedureReturn { result, tx_offset }, trapped)
     }
 
     /// Execute a reducer.
@@ -730,6 +738,11 @@ impl InstanceCommon {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
 
+        // Report the reducer execution metrics
+        vm_metrics.report_energy_used(result.stats.energy_used());
+        vm_metrics.report_total_duration(result.stats.total_duration());
+        vm_metrics.report_abi_duration(result.stats.abi_duration());
+
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
         // handled bad argument from the caller of a reducer.
@@ -745,7 +758,13 @@ impl InstanceCommon {
                 self.handle_outer_error(&result.stats.energy, reducer_name)
             }
             Err(ExecutionError::User(err)) => {
-                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                log_reducer_error(
+                    inst.replica_ctx(),
+                    timestamp,
+                    reducer_name,
+                    &err,
+                    &self.info.module_hash,
+                );
                 EventStatus::Failed(err.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -763,7 +782,13 @@ impl InstanceCommon {
                     Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                     Err(err) => {
                         let err = err.to_string();
-                        log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                        log_reducer_error(
+                            inst.replica_ctx(),
+                            timestamp,
+                            reducer_name,
+                            &err,
+                            &self.info.module_hash,
+                        );
                         EventStatus::Failed(err)
                     }
                 }
@@ -1003,11 +1028,11 @@ impl InstanceCommon {
             .cloned()
             .map(|info| {
                 let view_def = module_def
-                    .view(&*info.view_name)
-                    .unwrap_or_else(|| panic!("view `{}` not found", info.view_name));
+                    .get_view_by_id(info.fn_ptr, info.sender.is_none())
+                    .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: info.view_name,
+                    view_name: view_def.name.clone().into(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,
@@ -1161,8 +1186,19 @@ fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration)
 }
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
-fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
+fn log_reducer_error(
+    replica_ctx: &ReplicaContext,
+    timestamp: Timestamp,
+    reducer: &str,
+    message: &str,
+    module_hash: &Hash,
+) {
     use database_logger::Record;
+
+    WORKER_METRICS
+        .sender_errors
+        .with_label_values(&replica_ctx.database_identity, module_hash, reducer)
+        .inc();
 
     log::info!("reducer returned error: {message}");
 
@@ -1224,7 +1260,7 @@ impl InstanceOp for ViewOp<'_> {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
             table_id: self.table_id,
-            view_name: self.name.to_owned().into_boxed_str(),
+            fn_ptr: self.fn_ptr,
             sender: Some(*self.sender),
         })
     }
@@ -1254,7 +1290,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
             table_id: self.table_id,
-            view_name: self.name.to_owned().into_boxed_str(),
+            fn_ptr: self.fn_ptr,
             sender: None,
         })
     }

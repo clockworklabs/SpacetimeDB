@@ -31,6 +31,13 @@ export interface ReducerEventContextInterface<
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ProcedureEventContextInterface<
+  RemoteModule extends UntypedRemoteModule,
+> extends DbContext<RemoteModule> {
+  /** No event is provided */
+}
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface SubscriptionEventContextInterface<
   RemoteModule extends UntypedRemoteModule,
 > extends DbContext<RemoteModule> {

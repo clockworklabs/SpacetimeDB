@@ -8,5 +8,6 @@ packages:
   - 'modules/module-test-ts'
   - 'modules/quickstart-chat-ts'
   - 'modules/sdk-test-connect-disconnect-ts'
+  - 'modules/sdk-test-procedure-ts'
   - 'modules/sdk-test-ts'
   - 'docs'

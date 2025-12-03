@@ -12,7 +12,7 @@
 //!   It is not optimize and is mainly intended for testing purposes.
 
 use blake3::hash;
-use spacetimedb_data_structures::map::{Entry, HashMap};
+use spacetimedb_data_structures::map::{hash_map::Entry, HashMap};
 use spacetimedb_lib::{de::Deserialize, ser::Serialize};
 use spacetimedb_memory_usage::MemoryUsage;
 
