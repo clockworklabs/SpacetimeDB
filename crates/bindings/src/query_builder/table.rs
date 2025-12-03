@@ -28,6 +28,7 @@ impl<T> Default for Table<T> {
     }
 }
 
+/// Represents a column of type V in table T.
 pub struct Col<T, V> {
     pub(super) col: ColumnRef<T>,
     _marker: PhantomData<V>,

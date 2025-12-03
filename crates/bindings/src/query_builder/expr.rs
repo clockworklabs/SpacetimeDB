@@ -31,6 +31,10 @@ impl<T> BoolExpr<T> {
     }
 }
 
+/// Trait for types that can be used as the right-hand side of a comparison with a column of type V
+/// in table T.
+///
+/// This trait is implemented for Col<T, V> and various literal types.
 pub trait RHS<T, V> {
     fn to_expr(self) -> Operand<T>;
 }

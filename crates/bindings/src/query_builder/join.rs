@@ -5,6 +5,10 @@ use super::{
 };
 use std::marker::PhantomData;
 
+/// Indexed columns for joins
+///
+/// Joins are performed on indexed columns, Tables that implement `HasIxCols`
+/// provide access to their indexed columns.
 pub struct IxCol<T, V> {
     pub(super) col: ColumnRef<T>,
     _marker: PhantomData<V>,
