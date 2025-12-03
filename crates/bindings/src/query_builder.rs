@@ -26,7 +26,7 @@ impl<T> Query<T> {
 
 #[cfg(test)]
 mod tests {
-    use spacetimedb_lib::sats::i256;
+    use spacetimedb_lib::{sats::i256, TimeDuration};
 
     use super::*;
     struct User;
@@ -202,6 +202,8 @@ mod tests {
             connection_id: Col<Player, ConnectionId>,
             cells: Col<Player, i256>,
             identity: Col<Player, Identity>,
+            ts: Col<Player, spacetimedb_lib::Timestamp>,
+            bytes: Col<Player, Vec<u8>>,
         }
 
         impl TableName for Player {
@@ -218,6 +220,8 @@ mod tests {
                     connection_id: Col::new("connection_id"),
                     cells: Col::new("cells"),
                     identity: Col::new("identity"),
+                    ts: Col::new("ts"),
+                    bytes: Col::new("bytes"),
                 }
             }
         }
@@ -258,6 +262,22 @@ mod tests {
         assert_eq!(
             q.sql,
             r#"SELECT * FROM "player" WHERE ("player"."identity" <> 0x0000000000000000000000000000000000000000000000000000000000000001)"#
+        );
+
+        let ts = spacetimedb_lib::Timestamp::UNIX_EPOCH + TimeDuration::from_micros(1000);
+        let q = Table::<Player>::new().r#where(|c| c.ts.eq(ts)).build();
+        assert_eq!(
+            q.sql,
+            r#"SELECT * FROM "player" WHERE ("player"."ts" = '1970-01-01T00:00:00.001+00:00')"#
+        );
+
+        let q = Table::<Player>::new()
+            .r#where(|c| c.bytes.eq(vec![1, 2, 3, 4, 255]))
+            .build();
+
+        assert_eq!(
+            q.sql,
+            r#"SELECT * FROM "player" WHERE ("player"."bytes" = 0x01020304ff)"#
         );
     }
 }

@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use crate::query_builder::Operand;
 
 use super::{format_expr, BoolExpr, Query, RHS};
-use spacetimedb_lib::{sats::algebraic_value::ser::ValueSerializer, ser::Serialize, AlgebraicValue};
 
 pub trait TableName {
     const TABLE_NAME: &'static str;
@@ -71,7 +70,7 @@ impl<T: TableName, V> From<Col<T, V>> for Operand<T> {
     }
 }
 
-pub(super) struct ColumnRef<T> {
+pub struct ColumnRef<T> {
     column_name: &'static str,
     _marker: PhantomData<T>,
 }

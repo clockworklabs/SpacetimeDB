@@ -594,8 +594,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     let table_ident = &args.name;
     let view_trait_ident = format_ident!("{}__view", table_ident);
     let query_trait_ident = format_ident!("{}__query", table_ident);
-    let query_cols_struct = format_ident!("{}Cols", original_struct_ident);
-    let query_ix_cols_struct = format_ident!("{}IxCols", original_struct_ident);
+    let query_struct_ident = format_ident!("{}_{}", original_struct_ident, table_ident);
+    let query_cols_struct = format_ident!("{}Cols", query_struct_ident);
+    let query_ix_cols_struct = format_ident!("{}IxCols", query_struct_ident);
     let table_name = table_ident.unraw().to_string();
     let sats::SatsTypeData::Product(fields) = &sats_ty.data else {
         return Err(syn::Error::new(Span::call_site(), "spacetimedb table must be a struct"));
@@ -972,22 +973,26 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     });
 
     let trait_def_query = quote_spanned! {table_ident.span()=>
-            impl spacetimedb::query_builder::TableName for #original_struct_ident {
+            #[allow(non_camel_case_types)]
+            pub struct #query_struct_ident {}
+            impl spacetimedb::query_builder::TableName for #query_struct_ident {
                 const TABLE_NAME: &'static str = stringify!(#table_ident);
             }
-           #[allow(non_camel_case_types, dead_code)]
+
+           #[allow(non_camel_case_types)]
            #vis trait #query_trait_ident {
-               fn #table_ident(&self) -> spacetimedb::query_builder::Table<#original_struct_ident> {
+               fn #table_ident(&self) -> spacetimedb::query_builder::Table<#query_struct_ident> {
                    spacetimedb::query_builder::Table::new()
                }
            }
            impl #query_trait_ident for spacetimedb::QueryBuilder {}
 
+           #[allow(non_camel_case_types, dead_code)]
            pub struct #query_cols_struct{
                #(#cols_struct_fields)*
            }
 
-           impl spacetimedb::query_builder::HasCols for #original_struct_ident  {
+           impl spacetimedb::query_builder::HasCols for #query_struct_ident  {
                type Cols = #query_cols_struct;
                 fn cols() -> Self::Cols {
                      #query_cols_struct {
@@ -996,10 +1001,11 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 }
            }
 
+        #[allow(non_camel_case_types, dead_code)]
         pub struct #query_ix_cols_struct{
             #(#ix_cols_struct_fields)*
         }
-        impl spacetimedb::query_builder::HasIxCols for #original_struct_ident {
+        impl spacetimedb::query_builder::HasIxCols for #query_struct_ident {
             type IxCols = #query_ix_cols_struct;
             fn ix_cols() -> Self::IxCols {
                 #query_ix_cols_struct {

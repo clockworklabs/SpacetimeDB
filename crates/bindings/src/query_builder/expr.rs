@@ -1,13 +1,13 @@
 use spacetimedb_lib::{
     sats::{i256, u256},
-    ConnectionId, Identity,
+    ConnectionId, Identity, Timestamp,
 };
 
 use crate::query_builder::{Col, ColumnRef};
 
 use super::TableName;
 
-pub(super) enum Operand<T> {
+pub enum Operand<T> {
     Column(ColumnRef<T>),
     Literal(LiteralValue),
 }
@@ -68,6 +68,8 @@ pub enum LiteralValue {
     Bool(bool),
     Identity(Identity),
     ConnectionId(ConnectionId),
+    Bytes(Vec<u8>),
+    Timestamp(Timestamp),
 }
 
 pub fn format_literal(l: &LiteralValue) -> String {
@@ -85,6 +87,11 @@ pub fn format_literal(l: &LiteralValue) -> String {
         LiteralValue::Identity(identity) => format!("0x{}", identity.to_hex()),
         LiteralValue::ConnectionId(connection) => format!("0x{}", connection.to_hex()),
         LiteralValue::BigInt(bi) => bi.to_string(),
+        LiteralValue::Bytes(b) => {
+            let hex_string: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
+            format!("0x{}", hex_string)
+        }
+        LiteralValue::Timestamp(ts) => format!("'{}'", ts),
     }
 }
 
@@ -137,3 +144,6 @@ impl_rhs!(bool, Bool);
 
 impl_rhs!(Identity, Identity);
 impl_rhs!(ConnectionId, ConnectionId);
+
+impl_rhs!(Vec<u8>, Bytes);
+impl_rhs!(Timestamp, Timestamp);
