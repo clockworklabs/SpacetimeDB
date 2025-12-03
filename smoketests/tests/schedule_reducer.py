@@ -146,6 +146,97 @@ pub fn my_reducer(ctx: &ReducerContext, arg: ScheduledTable) {
         )
 
 
+class SubscribeScheduledProcedureTable(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{log, duration, ReducerContext, ProcedureContext, Table, Timestamp};
+
+#[spacetimedb::table(name = scheduled_table, public, scheduled(my_procedure, at = sched_at))]
+pub struct ScheduledTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    sched_at: spacetimedb::ScheduleAt,
+    prev: Timestamp,
+}
+
+#[spacetimedb::reducer]
+fn schedule_procedure(ctx: &ReducerContext) {
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_unix_epoch(0), scheduled_id: 2, sched_at: Timestamp::from_micros_since_unix_epoch(0).into(), });
+}
+
+#[spacetimedb::reducer]
+fn schedule_repeated_procedure(ctx: &ReducerContext) {
+    ctx.db.scheduled_table().insert(ScheduledTable { prev: Timestamp::from_micros_since_unix_epoch(0), scheduled_id: 1, sched_at: duration!(100ms).into(), });
+}
+
+#[spacetimedb::procedure]
+pub fn my_procedure(ctx: &mut ProcedureContext, arg: ScheduledTable) {
+    log::info!("Invoked: ts={:?}, delta={:?}", ctx.timestamp, ctx.timestamp.duration_since(arg.prev));
+}
+"""
+
+    def test_scheduled_table_subscription(self):
+        """This test deploys a module with a scheduled procedure and check if client receives subscription update for scheduled table entry and deletion of procedure once it ran"""
+        # subscribe to empty scheduled_table
+        sub = self.subscribe("SELECT * FROM scheduled_table", n=2)
+        # call a reducer to schedule a procedure
+        self.call("schedule_procedure")
+
+        time.sleep(2)
+        lines = sum(1 for line in self.logs(100) if "Invoked:" in line)
+        # scheduled procedure should be ran by now
+        self.assertEqual(lines, 1)
+
+        row_entry = {
+            "prev": TIMESTAMP_ZERO,
+            "scheduled_id": 2,
+            "sched_at": {"Time": TIMESTAMP_ZERO},
+        }
+        # subscription should have 2 updates, first for row insert in scheduled table and second for row deletion.
+        self.assertEqual(
+            sub(),
+            [
+                {"scheduled_table": {"deletes": [], "inserts": [row_entry]}},
+                {"scheduled_table": {"deletes": [row_entry], "inserts": []}},
+            ],
+        )
+
+    def test_scheduled_table_subscription_repeated_procedure(self):
+        """This test deploys a module with a  repeated procedure and check if client receives subscription update for scheduled table entry and no delete entry"""
+        # subscribe to empty scheduled_table
+        sub = self.subscribe("SELECT * FROM scheduled_table", n=2)
+        # call a reducer to schedule a procedure
+        self.call("schedule_repeated_procedure")
+
+        time.sleep(2)
+        lines = sum(1 for line in self.logs(100) if "Invoked:" in line)
+        # repeated procedure should have run more than once.
+        self.assertLess(2, lines)
+
+        # scheduling repeated procedure again just to get 2nd subscription update.
+        self.call("schedule_procedure")
+
+        repeated_row_entry = {
+            "prev": TIMESTAMP_ZERO,
+            "scheduled_id": 1,
+            "sched_at": {"Interval": {"__time_duration_micros__": 100000}},
+        }
+        row_entry = {
+            "prev": TIMESTAMP_ZERO,
+            "scheduled_id": 2,
+            "sched_at": {"Time": TIMESTAMP_ZERO},
+        }
+
+        # subscription should have 2 updates and should not have any deletes
+        self.assertEqual(
+            sub(),
+            [
+                {"scheduled_table": {"deletes": [], "inserts": [repeated_row_entry]}},
+                {"scheduled_table": {"deletes": [], "inserts": [row_entry]}},
+            ],
+        )
+
+
 class VolatileNonatomicScheduleImmediate(Smoketest):
     BINDINGS_FEATURES = ["unstable"]
     MODULE_CODE = """
