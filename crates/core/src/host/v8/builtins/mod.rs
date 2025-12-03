@@ -1,9 +1,9 @@
 use v8::{FunctionCallbackArguments, Local, PinScope};
 
 use super::de::scratch_buf;
-use super::error::{exception_already_thrown, ExcResult, Throwable, TypeError};
+use super::error::{exception_already_thrown, ExcResult, StringTooLongError, Throwable, TypeError};
 use super::string::{str_from_ident, StringConst};
-use super::FnRet;
+use super::{FnRet, IntoJsString};
 
 pub(super) fn evalute_builtins(scope: &mut PinScope<'_, '_>) -> ExcResult<()> {
     macro_rules! eval_builtin {
@@ -106,37 +106,49 @@ fn internal_builtins_module<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'
     create_synthetic_module!(scope, "spacetime:internal_builtins", utf8_encode, utf8_decode)
 }
 
-/// From ./types.d.ts:
+/// Encode a JS string into UTF-8.
+///
+/// Implementing this as a host call is much faster than implementing it as userspace JS.
+///
+/// Signature from ./types.d.ts:
 /// ```ts
 /// export function utf8_encode(s: string): Uint8Array<ArrayBuffer>;
 /// ```
 fn utf8_encode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
-    let v = args.get(0);
-    let v = v.to_string(scope).ok_or_else(exception_already_thrown)?;
-    let s = v.to_rust_string_lossy(scope);
-    let byte_length = s.len();
-    let buf = v8::ArrayBuffer::new_backing_store_from_bytes(s.into_bytes()).make_shared();
+    let string_val = args.get(0);
+    let string = string_val
+        .to_string(scope)
+        .ok_or_else(exception_already_thrown)?
+        .to_rust_string_lossy(scope);
+    let byte_length = string.len();
+    let buf = v8::ArrayBuffer::new_backing_store_from_bytes(string.into_bytes()).make_shared();
     let buf = v8::ArrayBuffer::with_backing_store(scope, &buf);
     v8::Uint8Array::new(scope, buf, 0, byte_length)
         .map(Into::into)
         .ok_or_else(exception_already_thrown)
 }
 
-/// From ./types.d.ts:
+/// Decode a UTF-8 string from an `ArrayBuffer` into a JS string.
+///
+/// If `fatal` is true, throw an error if the data is not valid UTF-8.
+///
+/// Signature fom ./types.d.ts:
 /// ```ts
 /// export function utf8_decode(s: ArrayBufferView, fatal: boolean): string;
 /// ```
 fn utf8_decode<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'scope>) -> FnRet<'scope> {
-    let v = args.get(0);
+    let buf = args.get(0);
     let fatal = args.get(1).boolean_value(scope);
-    if let Ok(v) = v.try_cast::<v8::ArrayBufferView>() {
-        let buffer = v.get_contents(&mut []);
-        if fatal {
-            std::str::from_utf8(buffer).map_err(|e| TypeError(e.to_string()).throw(scope))?;
-        }
-        v8::String::new_from_utf8(scope, buffer, v8::NewStringType::Normal)
-            .map(Into::into)
-            .ok_or_else(|| TypeError("decoded string too long").throw(scope))
+    if let Ok(buf) = buf.try_cast::<v8::ArrayBufferView>() {
+        let buffer = buf.get_contents(&mut []);
+        let res = if fatal {
+            let s = std::str::from_utf8(buffer).map_err(|e| TypeError(e.to_string()).throw(scope))?;
+            s.into_string(scope)
+        } else {
+            v8::String::new_from_utf8(scope, buffer, v8::NewStringType::Normal)
+                .ok_or_else(|| StringTooLongError::new(&String::from_utf8_lossy(buffer)))
+        };
+        res.map(Into::into).map_err(|e| e.into_range_error().throw(scope))
     } else {
         Err(TypeError("argument is not an `ArrayBuffer` or a view on one").throw(scope))
     }
