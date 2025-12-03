@@ -879,15 +879,14 @@ pub struct AnonymousViewContext {
     pub from: QueryBuilder,
 }
 
-impl AnonymousViewContext {
-    pub fn new() -> Self {
+impl Default for AnonymousViewContext {
+    fn default() -> Self {
         Self {
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
     }
 }
-
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
@@ -1024,7 +1023,7 @@ impl ReducerContext {
 
     /// Create an anonymous (no sender) read-only view context
     pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
-        AnonymousViewContext::new()
+        AnonymousViewContext::default()
     }
 
     /// Create a sender-bound read-only view context using this reducer's caller.

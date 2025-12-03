@@ -22,8 +22,8 @@ pub struct Table<T> {
     _marker: PhantomData<T>,
 }
 
-impl<T> Table<T> {
-    pub fn new() -> Self {
+impl<T> Default for Table<T> {
+    fn default() -> Self {
         Table { _marker: PhantomData }
     }
 }

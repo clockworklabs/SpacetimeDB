@@ -966,6 +966,14 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let ix_cols_init = indices.iter().map(|index| {
         let ident = index.accessor_name;
+        match &index.kind {
+            ValidatedIndexType::BTree { cols } => {
+                if cols.len() != 1 {
+                    return quote! {};
+                }
+            }
+            ValidatedIndexType::Direct { .. } => {}
+        }
 
         quote! {
             #ident: spacetimedb::query_builder::IxCol::new(stringify!(#ident)),
@@ -979,10 +987,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
                 const TABLE_NAME: &'static str = stringify!(#table_ident);
             }
 
-           #[allow(non_camel_case_types)]
+           #[allow(non_camel_case_types, dead_code)]
            #vis trait #query_trait_ident {
                fn #table_ident(&self) -> spacetimedb::query_builder::Table<#query_struct_ident> {
-                   spacetimedb::query_builder::Table::new()
+                   spacetimedb::query_builder::Table::default()
                }
            }
            impl #query_trait_ident for spacetimedb::QueryBuilder {}
