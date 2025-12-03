@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.10.0",
+  "version": "1.11.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -47,7 +47,6 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "development": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "browser": "./dist/index.browser.mjs",
       "import": "./dist/index.mjs",
@@ -55,7 +54,6 @@
       "default": "./dist/index.mjs"
     },
     "./sdk": {
-      "development": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "browser": "./dist/sdk/index.browser.mjs",
       "import": "./dist/sdk/index.mjs",
@@ -63,14 +61,12 @@
       "default": "./dist/sdk/index.mjs"
     },
     "./react": {
-      "development": "./src/react/index.ts",
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.mjs",
       "require": "./dist/react/index.cjs",
       "default": "./dist/react/index.mjs"
     },
     "./server": {
-      "development": "./src/server/index.ts",
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
