@@ -32,10 +32,43 @@ export interface TypedQuery<TableDef extends TypedTableDef> {
   readonly __table?: TableDef;
 }
 
+export function convert<Q extends TypedQuery<any>>(query: Q): ToRowQuery<Q> {
+  return query as any;
+}
+
 export type Query<TableDef extends TypedTableDef> = TypedQuery<TableDef>;
+
+const RowQueryBrand: unique symbol = Symbol('RowQuery');
+export interface RowTypedQuery<Row> {
+  readonly [RowQueryBrand]: { __row: Row };
+}
+
+type RowFromTableQuery<Q> = Q extends TypedQuery<infer TD> ? RowType<TD> : never;
+
+export type ToRowQuery<Q> = RowTypedQuery<RowFromTableQuery<Q>>;
 
 export const isTypedQuery = (val: unknown): val is TypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
+
+const RowSatsQueryBrand: unique symbol = Symbol('RowSatsQuery');
+/** Brand a query by its row's Spacetime (SATS) type instead of the TS value type */
+export interface RowSatsTypedQuery<RowSats> {
+  readonly [RowSatsQueryBrand]: { __rowSats: RowSats };
+}
+
+type SpacetimeRowType<TableDef extends TypedTableDef> = {
+  [K in keyof TableDef['columns'] & string]: InferSpacetimeTypeOfColumn<
+    TableDef,
+    K
+  >;
+};
+
+type RowSatsFromTableQuery<Q> = Q extends TypedQuery<infer TD>
+  ? SpacetimeRowType<TD>
+  : never;
+
+/** Convert a table-branded query to a row-sats-branded query */
+export type ToRowSatsQuery<Q> = RowSatsTypedQuery<RowSatsFromTableQuery<Q>>;
 
 type From<TableDef extends TypedTableDef> = Readonly<{
   where(

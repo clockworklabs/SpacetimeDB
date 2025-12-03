@@ -12,7 +12,7 @@ import {
   resolveType,
   type UntypedSchemaDef,
 } from './schema';
-import type { ReadonlyTable } from './table';
+import type { ReadonlyTable, RowType } from './table';
 import {
   RowBuilder,
   type Infer,
@@ -20,7 +20,7 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
-import type { QueryBuilder, TypedQuery } from '../server/query';
+import type { QueryBuilder, TypedQuery, RowTypedQuery, TypedTableDef } from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -42,19 +42,23 @@ export type ViewOpts = {
   public: true;
 };
 
-// TODO: restrict the type of the query to match the return type.
+type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
+
+type ViewReturn<Ret extends ViewReturnTypeBuilder> =
+  | Infer<Ret>
+  | RowTypedQuery<FlattenedArray<Infer<Ret>>>;
+
 export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret> | TypedQuery<any>;
+> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => ViewReturn<Ret>;
 
-// TODO: restrict the type of the query to match the return type.
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret> | TypedQuery<any>;
+> = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => ViewReturn<Ret>;
 
 export type ViewReturnTypeBuilder =
   | TypeBuilder<

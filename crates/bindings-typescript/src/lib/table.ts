@@ -34,7 +34,7 @@ type ColList = ColId[];
 /**
  * A helper type to extract the row type from a TableDef
  */
-export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
+export type RowType<TableDef extends Pick<UntypedTableDef, 'columns'>> = InferTypeOfRow<
   TableDef['columns']
 >;
 
