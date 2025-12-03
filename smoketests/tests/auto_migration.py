@@ -100,13 +100,6 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
 """
     )
 
-    def assertSql(self, sql, expected):
-        self.maxDiff = None
-        sql_out = self.spacetime("sql", self.database_identity, sql)
-        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
-        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
-        self.assertMultiLineEqual(sql_out, expected)
-
     def test_add_table_auto_migration(self):
         """This tests uploading a module with a schema change that should not require clearing the database."""
         logging.info("Initial publish complete")

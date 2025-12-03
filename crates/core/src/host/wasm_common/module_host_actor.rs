@@ -816,6 +816,11 @@ impl InstanceCommon {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
 
+        // Report the reducer execution metrics
+        vm_metrics.report_energy_used(result.stats.energy_used());
+        vm_metrics.report_total_duration(result.stats.total_duration());
+        vm_metrics.report_abi_duration(result.stats.abi_duration());
+
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
         // handled bad argument from the caller of a reducer.

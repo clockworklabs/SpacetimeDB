@@ -55,6 +55,12 @@ export type SubscriptionError = {
   error: string;
 };
 
+export type ProcedureResultMessage = {
+  tag: 'ProcedureResult';
+  requestId: number;
+  result: { tag: 'Ok'; value: Uint8Array } | { tag: 'Err'; value: string };
+};
+
 export type Message =
   | InitialSubscriptionMessage
   | TransactionUpdateMessage
@@ -62,4 +68,5 @@ export type Message =
   | IdentityTokenMessage
   | SubscribeAppliedMessage
   | UnsubscribeAppliedMessage
-  | SubscriptionError;
+  | SubscriptionError
+  | ProcedureResultMessage;

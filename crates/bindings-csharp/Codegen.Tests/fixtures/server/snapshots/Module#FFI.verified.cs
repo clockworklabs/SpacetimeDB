@@ -1081,13 +1081,13 @@ namespace SpacetimeDB
     }
 }
 
-sealed class PublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class public_table_viewViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "PublicTableByIdentity",
+            Name: "public_table_view",
             Index: 0,
             IsPublic: true,
             IsAnonymous: false,
@@ -1118,19 +1118,20 @@ sealed class PublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'PublicTableByIdentity': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'public_table_view': " + e);
             throw;
         }
     }
 }
 
-sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+sealed class find_public_table__by_identityViewDispatcher
+    : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "FindPublicTableByIdentity",
+            Name: "find_public_table__by_identity",
             Index: 0,
             IsPublic: true,
             IsAnonymous: true,
@@ -1163,7 +1164,7 @@ sealed class FindPublicTableByIdentityViewDispatcher : global::SpacetimeDB.Inter
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'FindPublicTableByIdentity': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'find_public_table__by_identity': " + e);
             throw;
         }
     }
@@ -1689,8 +1690,8 @@ static class ModuleRegistration
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
         // See the comment on `GenerateDispatcherClass` for more explanation.
-        SpacetimeDB.Internal.Module.RegisterView<PublicTableByIdentityViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<FindPublicTableByIdentityViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<public_table_viewViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<find_public_table__by_identityViewDispatcher>();
 
         SpacetimeDB.Internal.Module.RegisterTable<
             global::BTreeMultiColumn,
