@@ -18,6 +18,7 @@ use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallViewParams, ClientConnectedError, Instance, ViewCallResult,
 };
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
@@ -390,6 +391,20 @@ impl JsInstance {
             .await;
         (*r, s)
     }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        self: Box<Self>,
+        params: ScheduledFunctionParams,
+    ) -> (CallScheduledFunctionResult, Box<Self>) {
+        // Get a handle to the current tokio runtime, and pass it to the worker
+        // so that it can execute futures.
+        let rt = tokio::runtime::Handle::current();
+        self.send_recv(
+            JsWorkerReply::into_call_scheduled_function,
+            JsWorkerRequest::CallScheduledFunction(params, rt),
+        )
+        .await
+    }
 }
 
 /// A reply from the worker in [`spawn_instance_worker`].
@@ -404,6 +419,7 @@ enum JsWorkerReply {
     CallIdentityDisconnected(Result<(), ReducerCallError>),
     DisconnectClient(Result<(), ReducerCallError>),
     InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
+    CallScheduledFunction(CallScheduledFunctionResult),
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
@@ -438,6 +454,8 @@ enum JsWorkerRequest {
     DisconnectClient(ClientActorId),
     /// See [`JsInstance::init_database`].
     InitDatabase(Program),
+    /// See [`JsInstance::call_scheduled_function`].
+    CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -626,6 +644,15 @@ fn spawn_instance_worker(
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
                     reply("init_database", InitDatabase(res), trapped);
+                }
+                JsWorkerRequest::CallScheduledFunction(params, rt) => {
+                    let _guard = rt.enter();
+
+                    let (res, trapped) = instance_common
+                        .call_scheduled_function(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+                    reply("call_scheduled_function", CallScheduledFunction(res), trapped);
                 }
             }
         }

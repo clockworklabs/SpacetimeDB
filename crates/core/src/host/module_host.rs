@@ -11,6 +11,7 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::JsInstance;
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -1466,7 +1467,12 @@ impl ModuleHost {
         };
 
         Ok(self
-            .call_reducer_with_params(&reducer_def.name, None, call_reducer_params)
+            .call(
+                &reducer_def.name,
+                (None, call_reducer_params),
+                |(tx, p), inst| inst.call_reducer(tx, p),
+                |(tx, p), inst| inst.call_reducer(tx, p),
+            )
             .await?)
     }
 
@@ -1584,9 +1590,16 @@ impl ModuleHost {
             procedure_id,
             args,
         };
-        self.call_procedure_with_params(&procedure_def.name, params)
-            .await
-            .map_err(Into::into)
+
+        Ok(self
+            .call_async_with_instance(&procedure_def.name, async move |inst| match inst {
+                Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+                Instance::Js(inst) => {
+                    let (r, s) = inst.call_procedure(params).await;
+                    (r, Instance::Js(s))
+                }
+            })
+            .await?)
     }
 
     // This is not reused in `call_procedure_inner`
@@ -1603,6 +1616,33 @@ impl ModuleHost {
                 (r, Instance::Js(s))
             }
         })
+        .await
+    }
+
+    pub(super) async fn call_scheduled_function(
+        &self,
+        params: ScheduledFunctionParams,
+    ) -> Result<CallScheduledFunctionResult, NoSuchModule> {
+        self.with_instance(
+            "scheduled function",
+            "<unknown>",
+            |l| self.start_call_timer(l),
+            async move |timer_guard, executor, inst| match inst {
+                Instance::Wasm(mut inst) => {
+                    executor
+                        .run_job(async move {
+                            drop(timer_guard);
+                            (inst.call_scheduled_function(params).await, Instance::Wasm(inst))
+                        })
+                        .await
+                }
+                Instance::Js(inst) => {
+                    drop(timer_guard);
+                    let (r, s) = inst.call_scheduled_function(params).await;
+                    (r, Instance::Js(s))
+                }
+            },
+        )
         .await
     }
 
