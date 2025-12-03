@@ -6,8 +6,9 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
-use std::{env, fs, thread};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
+use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -187,6 +188,19 @@ fn find_free_port() -> Result<u16> {
     Ok(port)
 }
 
+fn wait_until_http_ready(timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+
+    while Instant::now() < deadline {
+        match bash!("cargo run -p spacetimedb-cli -- server ping localhost") {
+            Ok(_) => return Ok(()),
+            Err(e) => {}
+        }
+        sleep(Duration::from_millis(500));
+    }
+    anyhow::bail!("Timed out waiting for SpacetimeDB");
+}
+
 fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
     // TODO: If we set --remote-server, check that it's not already in there.
     let mut args: Vec<_> = args.iter().cloned().collect();
@@ -253,6 +267,8 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
                 .read()
                 .unwrap_or_default();
             }
+            println!("Waiting for server to start..");
+            wait_until_http_ready(Duration::from_secs(60))?;
             ServerState::Yes {
                 pid: pid_str
                     .trim()
@@ -261,10 +277,6 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
             }
         }
     };
-
-    // TODO: be smarter about this
-    println!("Waiting for server to start..");
-    thread::sleep(Duration::from_secs(5));
 
     println!("Running smoketests..");
     let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
