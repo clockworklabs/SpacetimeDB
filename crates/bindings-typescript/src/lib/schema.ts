@@ -37,6 +37,7 @@ import {
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
 import type { TableSchema } from './table_schema';
+import type { QueryBuilder } from '../server/query';
 import { toCamelCase } from './util';
 import {
   defineView,
@@ -58,6 +59,15 @@ export type TableNamesOf<S extends UntypedSchemaDef> =
 export type UntypedSchemaDef = {
   tables: readonly UntypedTableDef[];
 };
+
+let REGISTERED_SCHEMA: UntypedSchemaDef | null = null;
+
+export function getRegisteredSchema(): UntypedSchemaDef {
+  if (REGISTERED_SCHEMA == null) {
+    throw new Error('Schema has not been registered yet. Call schema() first.');
+  }
+  return REGISTERED_SCHEMA;
+}
 
 /**
  * Helper type to convert an array of TableSchema into a schema definition
@@ -636,6 +646,16 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   // Modify the `MODULE_DEF` which will be read by
   // __describe_module__
   MODULE_DEF.tables.push(...tableDefs);
+  REGISTERED_SCHEMA = {
+    tables: handles.map(handle => ({
+      name: handle.tableName,
+      accessorName: handle.tableName,
+      columns: handle.rowType.row,
+      rowType: handle.rowSpacetimeType,
+      indexes: handle.idxs,
+      constraints: handle.constraints,
+    })),
+  };
   // MODULE_DEF.typespace = typespace;
   // throw new Error(
   //   MODULE_DEF.tables

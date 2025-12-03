@@ -20,14 +20,17 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
+import type { QueryBuilder } from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
+  from: QueryBuilder<S>;
 }>;
 
 export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
+  from: QueryBuilder<S>;
 }>;
 
 export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {

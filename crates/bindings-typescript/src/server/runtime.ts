@@ -25,7 +25,11 @@ import {
   type JwtClaims,
   type ReducerCtx,
 } from '../lib/reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import {
+  MODULE_DEF,
+  getRegisteredSchema,
+  type UntypedSchemaDef,
+} from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
@@ -36,6 +40,7 @@ import {
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
+import { makeQueryBuilder } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
@@ -237,6 +242,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
@@ -255,6 +261,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
