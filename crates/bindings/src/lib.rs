@@ -1274,6 +1274,14 @@ pub trait DbContext {
     fn db(&self) -> &Self::DbView;
 }
 
+impl DbContext for AnonymousViewContext {
+    type DbView = LocalReadOnly;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1285,6 +1293,14 @@ impl DbContext for ReducerContext {
 #[cfg(feature = "unstable")]
 impl DbContext for TxContext {
     type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+impl DbContext for ViewContext {
+    type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
         &self.db

@@ -94,6 +94,8 @@
 
   --ifm-tabs-padding-horizontal: 16px;
   --ifm-tabs-padding-vertical: 8px;
+
+  --ifm-navbar-height: 56px;
 }
 
 :root .alert--info {
@@ -234,8 +236,8 @@ strong {
 .navbar {
   background-color: var(--ifm-background-color);
   border-bottom: 1px solid var(--clockworklabs-navbar-border-color);
-  height: 64px;
-  
+  height: var(--ifm-navbar-height);
+
   .navbar__items--right {
     color: var(--clockworklabs-color-n4);
     font-family: var(--clockworklabs-font-source);
@@ -256,7 +258,7 @@ strong {
 }
 
 .navbar__logo {
-  height: 48px;
+  height: var(--36px);
 }
 
 .navbar__button {
