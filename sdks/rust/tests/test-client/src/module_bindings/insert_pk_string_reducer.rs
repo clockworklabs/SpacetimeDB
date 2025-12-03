@@ -65,6 +65,7 @@ impl insert_pk_string for super::RemoteReducers {
         InsertPkStringCallbackId(self.imp.on_reducer(
             "insert_pk_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

@@ -64,6 +64,7 @@ impl insert_user for super::RemoteReducers {
         InsertUserCallbackId(self.imp.on_reducer(
             "insert_user",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

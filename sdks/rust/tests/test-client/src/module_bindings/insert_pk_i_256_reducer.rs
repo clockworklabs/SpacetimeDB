@@ -64,6 +64,7 @@ impl insert_pk_i_256 for super::RemoteReducers {
         InsertPkI256CallbackId(self.imp.on_reducer(
             "insert_pk_i256",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

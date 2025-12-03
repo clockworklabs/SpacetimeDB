@@ -61,6 +61,7 @@ impl delete_unique_connection_id for super::RemoteReducers {
         DeleteUniqueConnectionIdCallbackId(self.imp.on_reducer(
             "delete_unique_connection_id",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

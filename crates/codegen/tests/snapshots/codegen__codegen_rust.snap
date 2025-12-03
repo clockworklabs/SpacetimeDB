@@ -72,6 +72,7 @@ impl add_player for super::RemoteReducers {
         AddPlayerCallbackId(self.imp.on_reducer(
             "add_player",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::AddPlayer {
@@ -181,6 +182,7 @@ impl add_private for super::RemoteReducers {
         AddPrivateCallbackId(self.imp.on_reducer(
             "add_private",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::AddPrivate {
@@ -294,6 +296,7 @@ age: u8,
         AddCallbackId(self.imp.on_reducer(
             "add",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::Add {
@@ -398,6 +401,7 @@ impl assert_caller_identity_is_module_identity for super::RemoteReducers {
         AssertCallerIdentityIsModuleIdentityCallbackId(self.imp.on_reducer(
             "assert_caller_identity_is_module_identity",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::AssertCallerIdentityIsModuleIdentity {
@@ -527,6 +531,7 @@ impl client_connected for super::RemoteReducers {
         ClientConnectedCallbackId(self.imp.on_reducer(
             "client_connected",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::ClientConnected {
@@ -636,6 +641,7 @@ impl delete_player for super::RemoteReducers {
         DeletePlayerCallbackId(self.imp.on_reducer(
             "delete_player",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::DeletePlayer {
@@ -745,6 +751,7 @@ impl delete_players_by_name for super::RemoteReducers {
         DeletePlayersByNameCallbackId(self.imp.on_reducer(
             "delete_players_by_name",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::DeletePlayersByName {
@@ -1066,6 +1073,7 @@ impl list_over_age for super::RemoteReducers {
         ListOverAgeCallbackId(self.imp.on_reducer(
             "list_over_age",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::ListOverAge {
@@ -1170,6 +1178,7 @@ impl log_module_identity for super::RemoteReducers {
         LogModuleIdentityCallbackId(self.imp.on_reducer(
             "log_module_identity",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::LogModuleIdentity {
@@ -3567,6 +3576,7 @@ impl query_private for super::RemoteReducers {
         QueryPrivateCallbackId(self.imp.on_reducer(
             "query_private",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::QueryPrivate {
@@ -3852,6 +3862,7 @@ impl repeating_test for super::RemoteReducers {
         RepeatingTestCallbackId(self.imp.on_reducer(
             "repeating_test",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::RepeatingTest {
@@ -4015,6 +4026,7 @@ impl say_hello for super::RemoteReducers {
         SayHelloCallbackId(self.imp.on_reducer(
             "say_hello",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::SayHello {
@@ -4325,6 +4337,7 @@ impl test_btree_index_args for super::RemoteReducers {
         TestBtreeIndexArgsCallbackId(self.imp.on_reducer(
             "test_btree_index_args",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::TestBtreeIndexArgs {
@@ -4878,6 +4891,7 @@ arg_4: NamespaceTestF,
         TestCallbackId(self.imp.on_reducer(
             "test",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event: __sdk::ReducerEvent {
                         reducer: super::Reducer::Test {
