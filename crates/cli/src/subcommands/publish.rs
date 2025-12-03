@@ -195,6 +195,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         let domain = percent_encoding::percent_encode(name_or_identity.as_bytes(), encode_set);
         let mut builder = client.put(format!("{database_host}/v1/database/{domain}"));
 
+        // note that this only happens in the case where we've passed a `name_or_identity`, but that's required if we pass `--clear-database`.
         if clear_database == ClearMode::Always {
             builder = confirm_and_clear(name_or_identity, force, builder)?;
         } else {
