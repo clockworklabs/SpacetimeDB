@@ -39,6 +39,7 @@ fn main() {
         "view-anonymous-subscribe" => exec_anonymous_subscribe(),
         "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe(),
         "view-non-table-return" => exec_non_table_return(),
+        "view-subscription-update" => exec_subscription_update(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -185,5 +186,62 @@ fn exec_non_table_return() {
             ctx.reducers().delete_player(my_identity).unwrap();
         });
     });
+    test_counter.wait_for_all();
+}
+
+fn exec_subscription_update() {
+    let test_counter = TestCounter::new();
+
+    let mut insert_0 = Some(test_counter.add_test("insert_0"));
+    let mut delete_0 = Some(test_counter.add_test("delete_0"));
+
+    connect_with_then(
+        &test_counter,
+        "0",
+        |builder| builder,
+        move |ctx| {
+            subscribe_these_then(ctx, &["SELECT * FROM nearby_players"], move |ctx| {
+                ctx.db.nearby_players().on_insert(move |_, loc| {
+                    assert_eq!(loc.x, 2);
+                    assert_eq!(loc.y, 2);
+                    put_result(&mut insert_0, Ok(()));
+                });
+                ctx.db.nearby_players().on_delete(move |_, loc| {
+                    assert_eq!(loc.x, 2);
+                    assert_eq!(loc.y, 2);
+                    put_result(&mut delete_0, Ok(()));
+                });
+                // Insert player 0 at coords (0, 0)
+                ctx.reducers().move_player(0, 0).unwrap();
+            });
+        },
+    );
+
+    let mut insert_1 = Some(test_counter.add_test("insert_1"));
+    let mut delete_1 = Some(test_counter.add_test("delete_1"));
+
+    connect_with_then(
+        &test_counter,
+        "1",
+        |builder| builder,
+        move |ctx| {
+            subscribe_these_then(ctx, &["SELECT * FROM nearby_players"], move |ctx| {
+                ctx.db.nearby_players().on_insert(move |ctx, loc| {
+                    assert_eq!(loc.x, 0);
+                    assert_eq!(loc.y, 0);
+                    put_result(&mut insert_1, Ok(()));
+                    // Move player 1 outside of visible region
+                    ctx.reducers().move_player(3, 3).unwrap();
+                });
+                ctx.db.nearby_players().on_delete(move |_, loc| {
+                    assert_eq!(loc.x, 0);
+                    assert_eq!(loc.y, 0);
+                    put_result(&mut delete_1, Ok(()));
+                });
+                // Insert player 1 at coords (2, 2)
+                ctx.reducers().move_player(2, 2).unwrap();
+            });
+        },
+    );
     test_counter.wait_for_all();
 }

@@ -121,7 +121,7 @@ A database exports [tables](#table), which store data, and [reducers](#reducer),
 
 A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](#module-libraries) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](pathname:///install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](#module-libraries) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
 ### Table
 
@@ -401,6 +401,49 @@ ctx.procedures.makeRequest().then(
     err => console.error(`Procedure make_request failed! ${err}`),
 );
 ```
+
+</TabItem>
+<TabItem value="cpp" label="Unreal C++">
+
+An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+
+```cpp
+{
+...
+   // Call the procedure without a callback
+   Context.Procedures->MakeRequest({});
+}
+
+```
+
+A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+
+```cpp
+{
+...
+   FOnMakeRequestComplete Callback;
+   BIND_DELEGATE_SAFE(Callback, this, AGameManager, OnMakeRequestComplete);
+   Context.Procedures->MakeRequest(Callback);
+}
+
+// Make sure to mark any callback functions as UFUNCTION() or they will not be executed
+void AGameManager::OnMakeRequestComplete(const FProcedureEventContext& Context, const FString& Result, bool bSuccess)
+{
+   UE_LOG(LogTemp, Log, TEXT("Procedure `MakeRequest` returned %s"), *Result);
+}
+
+```
+
+</TabItem>
+<TabItem value="blueprint" label="Unreal Blueprint">
+
+An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+
+![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
+
+A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+
+![MakeRequest with callback](/images/unreal/intro/ue-blueprint-makerequest-with-callback.png)
 
 </TabItem>
 </Tabs>
