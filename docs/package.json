@@ -15,10 +15,11 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@docusaurus/core": "3.9.1",
-    "@docusaurus/plugin-content-docs": "^3.9.2",
-    "@docusaurus/preset-classic": "3.9.1",
-    "@docusaurus/theme-common": "^3.9.1",
+    "@docusaurus/core": "3.9.2",
+    "@docusaurus/plugin-client-redirects": "^3.9.2",
+    "@docusaurus/plugin-content-docs": "3.9.2",
+    "@docusaurus/preset-classic": "3.9.2",
+    "@docusaurus/theme-common": "3.9.2",
     "@easyops-cn/docusaurus-search-local": "^0.49.2",
     "@fontsource-variable/inter": "^5.2.8",
     "@fontsource-variable/source-code-pro": "^5.2.7",
@@ -29,15 +30,24 @@
     "@shikijs/rehype": "^3.3.0",
     "clsx": "^2.0.0",
     "prism-react-renderer": "^2.3.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "shiki": "^3.3.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.9.1",
-    "@docusaurus/tsconfig": "3.9.1",
-    "@docusaurus/types": "3.9.1",
+    "@docusaurus/module-type-aliases": "3.9.2",
+    "@docusaurus/tsconfig": "3.9.2",
+    "@docusaurus/types": "3.9.2",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.0",
     "typescript": "~5.6.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@docusaurus/*": "3.9.2",
+      "react": "18.3.1",
+      "react-dom": "18.3.1"
+    }
   },
   "browserslist": {
     "production": [

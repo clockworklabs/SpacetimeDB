@@ -1,5 +1,12 @@
-use clap::Arg;
 use clap::ArgAction::SetTrue;
+use clap::{value_parser, Arg, ValueEnum};
+
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq)]
+pub enum ClearMode {
+    Always,     // parses as "always"
+    OnConflict, // parses as "on-conflict"
+    Never,      // parses as "never"
+}
 
 pub fn server() -> Arg {
     Arg::new("server")
@@ -36,4 +43,21 @@ pub fn confirmed() -> Arg {
         .long("confirmed")
         .action(SetTrue)
         .help("Instruct the server to deliver only updates of confirmed transactions")
+}
+
+pub fn clear_database() -> Arg {
+    Arg::new("clear-database")
+        .long("delete-data")
+        .alias("clear-database")
+        .short('c')
+        .num_args(0..=1)
+        .value_parser(value_parser!(ClearMode))
+        // Because we have a default value for this flag, invocations can be ambiguous between
+        //passing a value to this flag, vs using the default value and passing an anonymous arg
+        // to the rest of the command. Adding `require_equals` resolves this ambiguity.
+        .require_equals(true)
+        .default_missing_value("always")
+        .help(
+            "When publishing to an existing database identity, first DESTROY all data associated with the module. With 'on-conflict': only when breaking schema changes occur."
+        )
 }

@@ -1,13 +1,12 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use crate::query_builder::Query;
 use crate::table::IndexAlgo;
-use crate::{
-    sys, AnonymousViewContext, IterBuf, LocalReadOnly, ProcedureContext, ProcedureResult, ReducerContext,
-    ReducerResult, SpacetimeType, Table, ViewContext,
-};
+use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
+use spacetimedb_lib::bsatn::EncodeError;
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
-use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
-use spacetimedb_lib::de::{self, Deserialize, Error as _, SeqProductAccess};
+use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType, ViewResultHeader};
+use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
 use spacetimedb_lib::sats::typespace::TypespaceBuilder;
 use spacetimedb_lib::sats::{impl_deserialize, impl_serialize, ProductTypeElement};
 use spacetimedb_lib::ser::{Serialize, SerializeSeqProduct};
@@ -17,7 +16,10 @@ use std::convert::Infallible;
 use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Mutex, OnceLock};
-use sys::raw::{BytesSink, BytesSource};
+pub use sys::raw::{BytesSink, BytesSource};
+
+#[cfg(feature = "unstable")]
+use crate::{ProcedureContext, ProcedureResult};
 
 pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
@@ -50,6 +52,7 @@ pub fn invoke_reducer<'a, A: Args<'a>>(
     reducer.invoke(&ctx, args)
 }
 
+#[cfg(feature = "unstable")]
 pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     procedure: impl Procedure<'a, A, Ret>,
     mut ctx: ProcedureContext,
@@ -58,8 +61,6 @@ pub fn invoke_procedure<'a, A: Args<'a>, Ret: IntoProcedureResult>(
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
 
-    // TODO(procedure-async): get a future out of `procedure.invoke` and call `FutureExt::now_or_never` on it?
-    // Or maybe do that within the `Procedure::invoke` method?
     let res = procedure.invoke(&mut ctx, args);
 
     res.to_result()
@@ -81,16 +82,16 @@ pub trait Reducer<'de, A: Args<'de>> {
 
 /// Invoke a caller-specific view.
 /// Returns a BSATN encoded `Vec` of rows.
-pub fn invoke_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+pub fn invoke_view<'a, A: Args<'a>, T: ViewReturn>(
     view: impl View<'a, A, T>,
     ctx: ViewContext,
     args: &'a [u8],
 ) -> Vec<u8> {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
-    let rows: Vec<T> = view.invoke(&ctx, args);
+    let retn = view.invoke(&ctx, args);
     let mut buf = IterBuf::take();
-    buf.serialize_into(&rows).expect("unable to encode rows");
+    retn.to_writer(&mut buf).expect("unable to encode view return value");
     std::mem::take(&mut *buf)
 }
 /// A trait for types representing the execution logic of a caller-specific view.
@@ -103,22 +104,22 @@ pub fn invoke_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
     note = "where each `Ti` implements `SpacetimeType`.",
     note = ""
 )]
-pub trait View<'de, A: Args<'de>, T: SpacetimeType + Serialize> {
-    fn invoke(&self, ctx: &ViewContext, args: A) -> Vec<T>;
+pub trait View<'de, A: Args<'de>, T: ViewReturn> {
+    fn invoke(&self, ctx: &ViewContext, args: A) -> T;
 }
 
 /// Invoke an anonymous view.
 /// Returns a BSATN encoded `Vec` of rows.
-pub fn invoke_anonymous_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
+pub fn invoke_anonymous_view<'a, A: Args<'a>, T: ViewReturn>(
     view: impl AnonymousView<'a, A, T>,
     ctx: AnonymousViewContext,
     args: &'a [u8],
 ) -> Vec<u8> {
     // Deserialize the arguments from a bsatn encoding.
     let SerDeArgs(args) = bsatn::from_slice(args).expect("unable to decode args");
-    let rows: Vec<T> = view.invoke(&ctx, args);
+    let retn = view.invoke(&ctx, args);
     let mut buf = IterBuf::take();
-    buf.serialize_into(&rows).expect("unable to encode rows");
+    retn.to_writer(&mut buf).expect("unable to encode view return value");
     std::mem::take(&mut *buf)
 }
 /// A trait for types representing the execution logic of an anonymous view.
@@ -131,8 +132,8 @@ pub fn invoke_anonymous_view<'a, A: Args<'a>, T: SpacetimeType + Serialize>(
     note = "where each `Ti` implements `SpacetimeType`.",
     note = ""
 )]
-pub trait AnonymousView<'de, A: Args<'de>, T: SpacetimeType + Serialize> {
-    fn invoke(&self, ctx: &AnonymousViewContext, args: A) -> Vec<T>;
+pub trait AnonymousView<'de, A: Args<'de>, T: ViewReturn> {
+    fn invoke(&self, ctx: &AnonymousViewContext, args: A) -> T;
 }
 
 /// A trait for types that can *describe* a callable function such as a reducer or view.
@@ -140,7 +141,11 @@ pub trait FnInfo {
     /// The type of function to invoke.
     type Invoke;
 
-    /// One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`].
+    #[cfg_attr(
+        feature = "unstable",
+        doc = "One of [`FnKindReducer`], [`FnKindProcedure`] or [`FnKindView`]."
+    )]
+    #[cfg_attr(not(feature = "unstable"), doc = "Either [`FnKindReducer`] or [`FnKindView`].")]
     ///
     /// Used as a type argument to [`ExportFunctionForScheduledTable`] and [`scheduled_typecheck`].
     /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
@@ -165,6 +170,7 @@ pub trait FnInfo {
     }
 }
 
+#[cfg(feature = "unstable")]
 pub trait Procedure<'de, A: Args<'de>, Ret: IntoProcedureResult> {
     fn invoke(&self, ctx: &mut ProcedureContext, args: A) -> Ret;
 }
@@ -211,6 +217,7 @@ impl<E: fmt::Display> IntoReducerResult for Result<(), E> {
     }
 }
 
+#[cfg(feature = "unstable")]
 #[diagnostic::on_unimplemented(
     message = "The procedure return type `{Self}` does not implement `SpacetimeType`",
     note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
@@ -221,6 +228,7 @@ pub trait IntoProcedureResult: SpacetimeType + Serialize {
         bsatn::to_vec(&self).expect("Failed to serialize procedure result")
     }
 }
+#[cfg(feature = "unstable")]
 impl<T: SpacetimeType + Serialize> IntoProcedureResult for T {}
 
 #[diagnostic::on_unimplemented(
@@ -246,6 +254,7 @@ pub trait ReducerArg {
 }
 impl<T: SpacetimeType> ReducerArg for T {}
 
+#[cfg(feature = "unstable")]
 #[diagnostic::on_unimplemented(
     message = "the first argument of a procedure must be `&mut ProcedureContext`",
     label = "first argument must be `&mut ProcedureContext`"
@@ -255,9 +264,11 @@ pub trait ProcedureContextArg {
     #[doc(hidden)]
     const _ITEM: () = ();
 }
+#[cfg(feature = "unstable")]
 impl ProcedureContextArg for &mut ProcedureContext {}
 
 /// A trait of types that can be an argument of a procedure.
+#[cfg(feature = "unstable")]
 #[diagnostic::on_unimplemented(
     message = "the procedure argument `{Self}` does not implement `SpacetimeType`",
     note = "if you own the type, try adding `#[derive(SpacetimeType)]` to its definition"
@@ -267,6 +278,7 @@ pub trait ProcedureArg {
     #[doc(hidden)]
     const _ITEM: () = ();
 }
+#[cfg(feature = "unstable")]
 impl<T: SpacetimeType> ProcedureArg for T {}
 
 #[diagnostic::on_unimplemented(
@@ -295,9 +307,29 @@ impl<T: SpacetimeType> ViewArg for T {}
 pub trait ViewReturn {
     #[doc(hidden)]
     const _ITEM: () = ();
+
+    fn to_writer(self, w: &mut Vec<u8>) -> Result<(), EncodeError>;
 }
-impl<T: SpacetimeType> ViewReturn for Vec<T> {}
-impl<T: SpacetimeType> ViewReturn for Option<T> {}
+
+impl<T: SpacetimeType + Serialize> ViewReturn for Vec<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        bsatn::to_writer(buf, &ViewResultHeader::RowData)?;
+        bsatn::to_writer(buf, &self)
+    }
+}
+
+impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        bsatn::to_writer(buf, &ViewResultHeader::RowData)?;
+        bsatn::to_writer(buf, self.as_slice())
+    }
+}
+
+impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql))
+    }
+}
 
 /// Map the correct dispatcher based on the `Ctx` type
 pub struct ViewKind<Ctx> {
@@ -326,7 +358,7 @@ impl ViewDispatcher<ViewContext> {
     pub fn invoke<'a, A, T, V>(view: V, ctx: ViewContext, args: &'a [u8]) -> Vec<u8>
     where
         A: Args<'a>,
-        T: SpacetimeType + Serialize,
+        T: ViewReturn,
         V: View<'a, A, T>,
     {
         invoke_view(view, ctx, args)
@@ -338,7 +370,7 @@ impl ViewDispatcher<AnonymousViewContext> {
     pub fn invoke<'a, A, T, V>(view: V, ctx: AnonymousViewContext, args: &'a [u8]) -> Vec<u8>
     where
         A: Args<'a>,
-        T: SpacetimeType + Serialize,
+        T: ViewReturn,
         V: AnonymousView<'a, A, T>,
     {
         invoke_anonymous_view(view, ctx, args)
@@ -355,7 +387,7 @@ impl ViewRegistrar<ViewContext> {
     pub fn register<'a, A, I, T, V>(view: V)
     where
         A: Args<'a>,
-        T: SpacetimeType + Serialize,
+        T: ViewReturn,
         I: FnInfo<Invoke = ViewFn>,
         V: View<'a, A, T>,
     {
@@ -368,7 +400,7 @@ impl ViewRegistrar<AnonymousViewContext> {
     pub fn register<'a, A, I, T, V>(view: V)
     where
         A: Args<'a>,
-        T: SpacetimeType + Serialize,
+        T: ViewReturn,
         I: FnInfo<Invoke = AnonymousFn>,
         V: AnonymousView<'a, A, T>,
     {
@@ -389,6 +421,7 @@ pub struct FnKindReducer {
     _never: Infallible,
 }
 
+#[cfg(feature = "unstable")]
 /// Tacit marker argument to [`ExportFunctionForScheduledTable`] for procedures.
 ///
 /// Holds the procedure's return type in order to avoid an error due to an unconstrained type argument.
@@ -409,15 +442,24 @@ pub struct FnKindView {
 ///
 /// The `FnKind` parameter here is a coherence-defeating marker, which Will Crichton calls a "tacit parameter."
 /// See <https://willcrichton.net/notes/defeating-coherence-rust/> for details on this technique.
-/// It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully.
+#[cfg_attr(
+    feature = "unstable",
+    // TODO(scheduled-procedures): uncomment this, delete other line
+    // doc = "It will be one of [`FnKindReducer`] or [`FnKindProcedure`] in modules that compile successfully."
+    doc = "It will be [`FnKindReducer`] in modules that compile successfully."
+)]
+#[cfg_attr(
+    not(feature = "unstable"),
+    doc = "It will be [`FnKindReducer`] in modules that compile successfully."
+)]
+///
 /// It may be [`FnKindView`], but that will always fail to typecheck, as views cannot be used as scheduled functions.
 #[diagnostic::on_unimplemented(
     message = "invalid signature for scheduled table reducer or procedure",
     note = "views cannot be scheduled",
     note = "the scheduled function must take `{TableRow}` as its sole argument",
     note = "e.g: `fn scheduled_reducer(ctx: &ReducerContext, arg: {TableRow})`",
-    // TODO(procedure-async): amend this to `async fn` once procedures are `async`-ified
-    note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`",
+    // note = "or `fn scheduled_procedure(ctx: &mut ProcedureContext, arg: {TableRow})`"
 )]
 pub trait ExportFunctionForScheduledTable<'de, TableRow, FnKind> {}
 impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de, (TableRow,)>>
@@ -425,14 +467,16 @@ impl<'de, TableRow: SpacetimeType + Serialize + Deserialize<'de>, F: Reducer<'de
 {
 }
 
-impl<
-        'de,
-        TableRow: SpacetimeType + Serialize + Deserialize<'de>,
-        Ret: SpacetimeType + Serialize + Deserialize<'de>,
-        F: Procedure<'de, (TableRow,), Ret>,
-    > ExportFunctionForScheduledTable<'de, TableRow, FnKindProcedure<Ret>> for F
-{
-}
+// TODO(scheduled-procedures): uncomment this to syntactically allow scheduled procedures.
+// #[cfg(feature = "unstable")]
+// impl<
+//         'de,
+//         TableRow: SpacetimeType + Serialize + Deserialize<'de>,
+//         Ret: SpacetimeType + Serialize + Deserialize<'de>,
+//         F: Procedure<'de, (TableRow,), Ret>,
+//     > ExportFunctionForScheduledTable<'de, TableRow, FnKindProcedure<Ret>> for F
+// {
+// }
 
 // the macro generates <T as SpacetimeType>::make_type::<DummyTypespace>
 pub struct DummyTypespace;
@@ -560,6 +604,7 @@ macro_rules! impl_reducer_procedure_view {
             }
         }
 
+        #[cfg(feature = "unstable")]
         impl<'de, Func, Ret, $($T: SpacetimeType + Deserialize<'de> + Serialize),*> Procedure<'de, ($($T,)*), Ret> for Func
         where
             Func: Fn(&mut ProcedureContext, $($T),*) -> Ret,
@@ -573,34 +618,32 @@ macro_rules! impl_reducer_procedure_view {
         }
 
         // Implement `View<..., ViewContext>` for the tuple type `($($T,)*)`.
-        impl<'de, Func, Elem, Retn, $($T),*>
-            View<'de, ($($T,)*), Elem> for Func
+        impl<'de, Func, Retn, $($T),*>
+            View<'de, ($($T,)*), Retn> for Func
         where
             $($T: SpacetimeType + Deserialize<'de> + Serialize,)*
             Func: Fn(&ViewContext, $($T),*) -> Retn,
-            Retn: IntoVec<Elem>,
-            Elem: SpacetimeType + Serialize,
+            Retn: ViewReturn,
         {
             #[allow(non_snake_case)]
-            fn invoke(&self, ctx: &ViewContext, args: ($($T,)*)) -> Vec<Elem> {
+            fn invoke(&self, ctx: &ViewContext, args: ($($T,)*)) -> Retn {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*).into_vec()
+                self(ctx, $($T),*)
             }
         }
 
         // Implement `View<..., AnonymousViewContext>` for the tuple type `($($T,)*)`.
-        impl<'de, Func, Elem, Retn, $($T),*>
-            AnonymousView<'de, ($($T,)*), Elem> for Func
+        impl<'de, Func, Retn, $($T),*>
+            AnonymousView<'de, ($($T,)*), Retn> for Func
         where
             $($T: SpacetimeType + Deserialize<'de> + Serialize,)*
             Func: Fn(&AnonymousViewContext, $($T),*) -> Retn,
-            Retn: IntoVec<Elem>,
-            Elem: SpacetimeType + Serialize,
+            Retn: ViewReturn,
         {
             #[allow(non_snake_case)]
-            fn invoke(&self, ctx: &AnonymousViewContext, args: ($($T,)*)) -> Vec<Elem> {
+            fn invoke(&self, ctx: &AnonymousViewContext, args: ($($T,)*)) -> Retn {
                 let ($($T,)*) = args;
-                self(ctx, $($T),*).into_vec()
+                self(ctx, $($T),*)
             }
         }
     };
@@ -711,6 +754,7 @@ pub fn register_reducer<'a, A: Args<'a>, I: FnInfo<Invoke = ReducerFn>>(_: impl 
     })
 }
 
+#[cfg(feature = "unstable")]
 pub fn register_procedure<'a, A, Ret, I>(_: impl Procedure<'a, A, Ret>)
 where
     A: Args<'a>,
@@ -730,7 +774,7 @@ pub fn register_view<'a, A, I, T>(_: impl View<'a, A, T>)
 where
     A: Args<'a>,
     I: FnInfo<Invoke = ViewFn>,
-    T: SpacetimeType + Serialize,
+    T: ViewReturn,
 {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
@@ -747,7 +791,7 @@ pub fn register_anonymous_view<'a, A, I, T>(_: impl AnonymousView<'a, A, T>)
 where
     A: Args<'a>,
     I: FnInfo<Invoke = AnonymousFn>,
-    T: SpacetimeType + Serialize,
+    T: ViewReturn,
 {
     register_describer(|module| {
         let params = A::schema::<I>(&mut module.inner);
@@ -774,6 +818,7 @@ pub struct ModuleBuilder {
     /// The reducers of the module.
     reducers: Vec<ReducerFn>,
     /// The procedures of the module.
+    #[cfg(feature = "unstable")]
     procedures: Vec<ProcedureFn>,
     /// The client specific views of the module.
     views: Vec<ViewFn>,
@@ -789,7 +834,9 @@ static DESCRIBERS: Mutex<Vec<Box<dyn DescriberFn>>> = Mutex::new(Vec::new());
 pub type ReducerFn = fn(ReducerContext, &[u8]) -> ReducerResult;
 static REDUCERS: OnceLock<Vec<ReducerFn>> = OnceLock::new();
 
+#[cfg(feature = "unstable")]
 pub type ProcedureFn = fn(ProcedureContext, &[u8]) -> ProcedureResult;
+#[cfg(feature = "unstable")]
 static PROCEDURES: OnceLock<Vec<ProcedureFn>> = OnceLock::new();
 
 /// A view function takes in `(ViewContext, Args)` and returns a Vec of bytes.
@@ -830,6 +877,7 @@ extern "C" fn __describe_module__(description: BytesSink) {
 
     // Write the sets of reducers, procedures and views.
     REDUCERS.set(module.reducers).ok().unwrap();
+    #[cfg(feature = "unstable")]
     PROCEDURES.set(module.procedures).ok().unwrap();
     VIEWS.set(module.views).ok().unwrap();
     ANONYMOUS_VIEWS.set(module.views_anon).ok().unwrap();
@@ -966,6 +1014,7 @@ fn convert_err_to_errno(res: Result<(), Box<str>>, out: BytesSink) -> i16 {
 /// the BSATN-serialized bytes of a value of the procedure's return type.
 ///
 /// Procedures always return the error 0. All other return values are reserved.
+#[cfg(feature = "unstable")]
 #[no_mangle]
 extern "C" fn __call_procedure__(
     id: usize,
@@ -992,6 +1041,7 @@ extern "C" fn __call_procedure__(
         connection_id: conn_id,
         sender,
         timestamp,
+        http: crate::http::HttpClient {},
     };
 
     // Grab the list of procedures, which is populated by the preinit functions.
@@ -1016,16 +1066,22 @@ extern "C" fn __call_procedure__(
 ///
 /// The output of the view is written to a `BytesSink`,
 /// registered on the host side, with `bytes_sink_write`.
+///
+/// Note, a previous version of the abi used a different return format for views.
+/// We used to write the return rows of the view directly to the sink.
+/// However the current version first writes a [`ViewResultHeader`].
+/// This is to distinguish between views that return rows vs ones that return queries.
+///
+/// The current abi is identified by a return code of 2.
+/// The previous abi, which we still support, is identified by a return code of 0.
 #[no_mangle]
 extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) -> i16 {
     let views = ANONYMOUS_VIEWS.get().unwrap();
     write_to_sink(
         sink,
-        &with_read_args(args, |args| {
-            views[id](AnonymousViewContext { db: LocalReadOnly {} }, args)
-        }),
+        &with_read_args(args, |args| views[id](AnonymousViewContext::default(), args)),
     );
-    0
+    2
 }
 
 /// Called by the host to execute a view when the `sender` calls the view identified by `id` with `args`.
@@ -1038,6 +1094,14 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
 ///
 /// The output of the view is written to a `BytesSink`,
 /// registered on the host side, with `bytes_sink_write`.
+///
+/// Note, a previous version of the abi used a different return format for views.
+/// We used to write the return rows of the view directly to the sink.
+/// However the current version first writes a [`ViewResultHeader`].
+/// This is to distinguish between views that return rows vs ones that return queries.
+///
+/// The current abi is identified by a return code of 2.
+/// The previous abi, which we still support, is identified by a return code of 0.
 #[no_mangle]
 extern "C" fn __call_view__(
     id: usize,
@@ -1054,13 +1118,12 @@ extern "C" fn __call_view__(
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
     let views = VIEWS.get().unwrap();
-    let db = LocalReadOnly {};
 
     write_to_sink(
         sink,
-        &with_read_args(args, |args| views[id](ViewContext { sender, db }, args)),
+        &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
-    0
+    2
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.
@@ -1096,7 +1159,7 @@ pub fn get_jwt(connection_id: ConnectionId) -> Option<String> {
 }
 
 /// Read `source` from the host fully into `buf`.
-fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
+pub(crate) fn read_bytes_source_into(source: BytesSource, buf: &mut Vec<u8>) {
     const INVALID: i16 = NO_SUCH_BYTES as i16;
 
     // For reducer arguments, the `buf` will almost certainly already be large enough,
@@ -1191,4 +1254,16 @@ pub fn volatile_nonatomic_schedule_immediate<'de, A: Args<'de>, R: Reducer<'de, 
 
     // Schedule the reducer.
     sys::volatile_nonatomic_schedule_immediate(R2::NAME, &arg_bytes)
+}
+
+/// Read `source` completely into a temporary buffer, then BSATN-deserialize it as a `T`.
+///
+/// Panics if the bytes from `source` fail to deserialize as `T`.
+/// The type name of `T` will be included in the panic message.
+#[cfg_attr(not(feature = "unstable"), allow(unused))]
+pub(crate) fn read_bytes_source_as<T: DeserializeOwned + 'static>(source: BytesSource) -> T {
+    let mut buf = IterBuf::take();
+    read_bytes_source_into(source, &mut buf);
+    bsatn::from_slice::<T>(&buf)
+        .unwrap_or_else(|err| panic!("Failed to BSATN-deserialize `{}`: {err:#?}", std::any::type_name::<T>()))
 }

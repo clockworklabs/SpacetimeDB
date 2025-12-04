@@ -1,5 +1,5 @@
 //Include Tables
-#include "ModuleBindings/Tables/BTreeU32Table.g.h"
+#include "ModuleBindings/Tables/BtreeU32Table.g.h"
 #include "ModuleBindings/Tables/IndexedSimpleEnumTable.g.h"
 #include "ModuleBindings/Tables/IndexedTable2Table.g.h"
 #include "ModuleBindings/Tables/IndexedTableTable.g.h"

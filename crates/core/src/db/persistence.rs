@@ -1,6 +1,7 @@
 use std::{io, sync::Arc};
 
 use async_trait::async_trait;
+use spacetimedb_commitlog::SizeOnDisk;
 use spacetimedb_durability::{DurabilityExited, TxOffset};
 use spacetimedb_paths::server::ServerDataDir;
 use spacetimedb_snapshot::SnapshotRepository;
@@ -23,7 +24,7 @@ pub type Durability = dyn spacetimedb_durability::Durability<TxData = Txdata>;
 /// It is not part of the [`Durability`] trait because it must report disk
 /// usage of the local instance only, even if exclusively remote durability is
 /// configured or the database is in follower state.
-pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<u64> + Send + Sync>;
+pub type DiskSizeFn = Arc<dyn Fn() -> io::Result<SizeOnDisk> + Send + Sync>;
 
 /// Persistence services for a database.
 pub struct Persistence {
@@ -46,7 +47,7 @@ impl Persistence {
     /// Convenience constructor of a [Persistence] that handles boxing.
     pub fn new(
         durability: impl spacetimedb_durability::Durability<TxData = Txdata> + 'static,
-        disk_size: impl Fn() -> io::Result<u64> + Send + Sync + 'static,
+        disk_size: impl Fn() -> io::Result<SizeOnDisk> + Send + Sync + 'static,
         snapshots: Option<SnapshotWorker>,
     ) -> Self {
         Self {

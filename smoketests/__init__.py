@@ -48,7 +48,7 @@ USE_SPACETIME_LOGIN = False
 REMOTE_SERVER = False
 
 # default value can be overridden by `--compose-file` flag
-COMPOSE_FILE = "./docker-compose.yml"
+COMPOSE_FILE = ".github/docker-compose.yml"
 
 # this will be initialized by main()
 STDB_CONFIG = ''
@@ -387,7 +387,7 @@ class Smoketest(unittest.TestCase):
         if "database_identity" in self.__dict__:
             try:
                 # TODO: save the credentials in publish_module()
-                self.spacetime("delete", self.database_identity)
+                self.spacetime("delete", "--yes", self.database_identity)
             except Exception:
                 pass
 
@@ -396,7 +396,7 @@ class Smoketest(unittest.TestCase):
        if hasattr(cls, "database_identity"):
            try:
                # TODO: save the credentials in publish_module()
-               cls.spacetime("delete", cls.database_identity)
+               cls.spacetime("delete", "--yes", cls.database_identity)
            except Exception:
                pass
 
@@ -407,7 +407,14 @@ class Smoketest(unittest.TestCase):
             result = cm.__enter__()
             cls.addClassCleanup(cm.__exit__, None, None, None)
             return result
-
+    
+    def assertSql(self, sql: str, expected: str):
+        """Assert that executing `sql` produces the expected output."""
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.database_identity, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        self.assertMultiLineEqual(sql_out, expected)
 
 # This is a custom thread class that will propagate an exception to the caller of `.join()`.
 # This is required because, by default, threads do not propagate exceptions to their callers,

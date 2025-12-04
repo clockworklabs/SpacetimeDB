@@ -23,7 +23,7 @@ pub async fn database_identity(
     }
     spacetime_dns(config, name_or_identity, server)
         .await?
-        .with_context(|| format!("the dns resolution of `{name_or_identity}` failed."))
+        .with_context(|| format!("failed to find database `{name_or_identity}`."))
 }
 
 pub(crate) trait ResponseExt: Sized {
@@ -279,15 +279,6 @@ pub fn y_or_n(force: bool, prompt: &str) -> anyhow::Result<bool> {
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim().to_lowercase();
     Ok(input == "y" || input == "yes")
-}
-
-pub fn unauth_error_context<T>(res: anyhow::Result<T>, identity: &str, server: &str) -> anyhow::Result<T> {
-    res.with_context(|| {
-        format!(
-            "Identity {identity} is not valid for server {server}.
-Please log back in with `spacetime logout` and then `spacetime login`."
-        )
-    })
 }
 
 pub fn decode_identity(token: &String) -> anyhow::Result<String> {

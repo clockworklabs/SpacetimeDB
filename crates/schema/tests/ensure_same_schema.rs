@@ -32,7 +32,10 @@ fn assert_identical_modules(module_name_prefix: &str, lang_name: &str, suffix: &
     diff.retain(|step| {
         !matches!(
             step,
-            AutoMigrateStep::AddView(_) | AutoMigrateStep::RemoveView(_) | AutoMigrateStep::UpdateView(_)
+            AutoMigrateStep::DisconnectAllUsers
+                | AutoMigrateStep::AddView(_)
+                | AutoMigrateStep::RemoveView(_)
+                | AutoMigrateStep::UpdateView(_)
         )
     });
 

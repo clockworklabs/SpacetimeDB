@@ -743,7 +743,7 @@ impl FieldNameVisitor<'_> for TupleNameVisitor<'_> {
 
 impl_deserialize!([] spacetimedb_primitives::ArgId, de => u64::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::TableId, de => u32::deserialize(de).map(Self));
-impl_deserialize!([] spacetimedb_primitives::ViewDatabaseId, de => u32::deserialize(de).map(Self));
+impl_deserialize!([] spacetimedb_primitives::ViewId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::SequenceId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::IndexId, de => u32::deserialize(de).map(Self));
 impl_deserialize!([] spacetimedb_primitives::ConstraintId, de => u32::deserialize(de).map(Self));

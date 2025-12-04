@@ -1,6 +1,9 @@
 ﻿namespace SpacetimeDB.Internal;
 
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using SpacetimeDB.BSATN;
 
 public abstract class IndexBase<Row>
@@ -82,6 +85,13 @@ public abstract class IndexBase<Row>
     }
 }
 
+public abstract class ReadOnlyIndexBase<Row>(string name) : IndexBase<Row>(name)
+    where Row : IStructuralReadWrite, new()
+{
+    protected IEnumerable<Row> Filter<Bounds>(Bounds bounds)
+        where Bounds : IBTreeIndexBounds => DoFilter(bounds);
+}
+
 public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
     where Handle : ITableView<Handle, Row>
     where Row : IStructuralReadWrite, new()
@@ -102,4 +112,43 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
 
         return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
     }
+}
+
+public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
+    : ReadOnlyIndexBase<Row>(name)
+    where Handle : ReadOnlyTableView<Row>
+    where Row : IStructuralReadWrite, new()
+    where RW : struct, BSATN.IReadWrite<T>
+{
+    private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
+
+    protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
+
+    protected Row? FindSingle(T key) => Filter(key).Cast<Row?>().SingleOrDefault();
+}
+
+public abstract class ReadOnlyTableView<Row>
+    where Row : IStructuralReadWrite, new()
+{
+    private readonly FFI.TableId tableId;
+
+    private sealed class TableIter(FFI.TableId tableId) : RawTableIterBase<Row>
+    {
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI.datastore_table_scan_bsatn(tableId, out handle);
+    }
+
+    protected ReadOnlyTableView(string tableName)
+    {
+        var nameBytes = Encoding.UTF8.GetBytes(tableName);
+        FFI.table_id_from_name(nameBytes, (uint)nameBytes.Length, out tableId);
+    }
+
+    protected ulong DoCount()
+    {
+        FFI.datastore_table_row_count(tableId, out var count);
+        return count;
+    }
+
+    protected IEnumerable<Row> DoIter() => new TableIter(tableId).Parse();
 }

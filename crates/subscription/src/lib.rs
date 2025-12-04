@@ -6,10 +6,10 @@ use spacetimedb_execution::{
     },
     Datastore, DeltaStore, Row,
 };
-use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::{check::SchemaView, expr::CollectViews};
 use spacetimedb_lib::{identity::AuthCtx, metrics::ExecutionMetrics, query::Delta, AlgebraicValue};
 use spacetimedb_physical_plan::plan::{IxJoin, IxScan, Label, PhysicalPlan, ProjectPlan, Sarg, TableScan, TupleField};
-use spacetimedb_primitives::{ColId, ColList, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColList, IndexId, TableId, ViewId};
 use spacetimedb_query::compile_subscription;
 use std::sync::Arc;
 use std::{collections::HashSet, ops::RangeBounds};
@@ -363,10 +363,39 @@ pub struct SubscriptionPlan {
     plan_opt: ProjectPlan,
 }
 
+impl CollectViews for SubscriptionPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.plan_opt.collect_views(views);
+    }
+}
+
 impl SubscriptionPlan {
     /// Is this a plan for a join?
     pub fn is_join(&self) -> bool {
         self.fragments.insert_plans.len() > 1 && self.fragments.delete_plans.len() > 1
+    }
+
+    /// Does this plan return rows from a view?
+    pub fn is_view(&self) -> bool {
+        self.plan_opt.returns_view_table()
+    }
+
+    /// The number of columns returned.
+    /// Only relevant if [`Self::is_view`] is true.
+    pub fn num_cols(&self) -> usize {
+        self.plan_opt
+            .return_table()
+            .map(|schema| schema.num_cols())
+            .unwrap_or_default()
+    }
+
+    /// The number of private columns returned.
+    /// Only relevant if [`Self::is_view`] is true.
+    pub fn num_private_cols(&self) -> usize {
+        self.plan_opt
+            .return_table()
+            .map(|schema| schema.num_private_cols())
+            .unwrap_or_default()
     }
 
     /// To which table does this plan subscribe?

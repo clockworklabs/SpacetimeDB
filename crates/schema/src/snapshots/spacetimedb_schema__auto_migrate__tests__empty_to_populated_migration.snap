@@ -61,3 +61,4 @@ expression: "plan.pretty_print(PrettyPrintStyle::AnsiColor).expect(\"should pret
 
 ▸ [0m[1m[32mCreated[0m row level security policy:
     `[0m[34mSELECT * FROM Apples[0m`
+[0m[1m[41m!!! Warning: All clients will be disconnected due to breaking schema changes[0m

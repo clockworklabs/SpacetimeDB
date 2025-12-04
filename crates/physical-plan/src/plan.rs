@@ -1,5 +1,6 @@
 use std::{
     borrow::Cow,
+    collections::HashSet,
     ops::{Bound, Deref, DerefMut},
     sync::Arc,
 };
@@ -7,9 +8,12 @@ use std::{
 use anyhow::{bail, Result};
 use derive_more::From;
 use either::Either;
-use spacetimedb_expr::{expr::AggType, StatementSource};
+use spacetimedb_expr::{
+    expr::{AggType, CollectViews},
+    StatementSource,
+};
 use spacetimedb_lib::{identity::AuthCtx, query::Delta, sats::size_of::SizeOf, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId};
+use spacetimedb_primitives::{ColId, ColSet, IndexId, TableId, ViewId};
 use spacetimedb_schema::schema::{IndexSchema, TableSchema};
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 use spacetimedb_table::table::RowRef;
@@ -68,6 +72,14 @@ impl DerefMut for ProjectPlan {
     }
 }
 
+impl CollectViews for ProjectPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.collect_views(views),
+        }
+    }
+}
+
 impl ProjectPlan {
     pub fn optimize(self, auth: &AuthCtx) -> Result<Self> {
         match self {
@@ -102,6 +114,13 @@ impl ProjectPlan {
     /// Does this plan select or return whole (unprojected) rows from a view?
     pub fn returns_view_table(&self) -> bool {
         self.return_table().is_some_and(|schema| schema.is_view())
+    }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        match self {
+            Self::None(plan) | Self::Name(plan, ..) => plan.reads_from_view(anonymous),
+        }
     }
 }
 
@@ -201,6 +220,15 @@ impl ProjectListPlan {
     pub fn returns_view_table(&self) -> bool {
         self.return_table().is_some_and(|schema| schema.is_view())
     }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        match self {
+            Self::Limit(plan, _) => plan.reads_from_view(anonymous),
+            Self::Name(plans) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+            Self::List(plans, ..) | Self::Agg(plans, ..) => plans.iter().any(|plan| plan.reads_from_view(anonymous)),
+        }
+    }
 }
 
 /// Query operators return tuples of rows.
@@ -238,6 +266,22 @@ pub enum PhysicalPlan {
     NLJoin(Box<PhysicalPlan>, Box<PhysicalPlan>),
     /// A tuple-at-a-time filter
     Filter(Box<PhysicalPlan>, PhysicalExpr),
+}
+
+impl CollectViews for PhysicalPlan {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.visit(&mut |plan| {
+            let view_info = match plan {
+                Self::TableScan(scan, _) => &scan.schema.view_info,
+                Self::IxScan(scan, _) => &scan.schema.view_info,
+                Self::IxJoin(join, _) => &join.rhs.view_info,
+                _ => return,
+            };
+            if let Some(info) = view_info {
+                views.insert(info.view_id);
+            }
+        });
+    }
 }
 
 impl PhysicalPlan {
@@ -498,22 +542,18 @@ impl PhysicalPlan {
     /// ```
     fn expand_views(self, auth: &AuthCtx) -> Self {
         match self {
-            Self::TableScan(scan, label)
-                if scan.delta.is_none() && scan.schema.is_view() && !scan.schema.is_anonymous_view() =>
-            {
-                Self::Filter(
-                    Box::new(Self::TableScan(scan, label)),
-                    PhysicalExpr::BinOp(
-                        BinOp::Eq,
-                        Box::new(PhysicalExpr::Value(auth.caller.into())),
-                        Box::new(PhysicalExpr::Field(TupleField {
-                            label,
-                            label_pos: None,
-                            field_pos: 0,
-                        })),
-                    ),
-                )
-            }
+            Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
+                Box::new(Self::TableScan(scan, label)),
+                PhysicalExpr::BinOp(
+                    BinOp::Eq,
+                    Box::new(PhysicalExpr::Value(auth.caller().into())),
+                    Box::new(PhysicalExpr::Field(TupleField {
+                        label,
+                        label_pos: None,
+                        field_pos: 0,
+                    })),
+                ),
+            ),
             Self::IxJoin(
                 IxJoin {
                     lhs,
@@ -1096,6 +1136,19 @@ impl PhysicalPlan {
     pub fn returns_view_table(&self) -> bool {
         self.return_table().is_some_and(|schema| schema.is_view())
     }
+
+    /// Does this plan read from an (anonymous) view?
+    pub fn reads_from_view(&self, anonymous: bool) -> bool {
+        self.any(&|plan| match plan {
+            Self::TableScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
+            Self::TableScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
+            Self::IxScan(scan, _) if anonymous => scan.schema.is_anonymous_view(),
+            Self::IxScan(scan, _) => scan.schema.is_view() && !scan.schema.is_anonymous_view(),
+            Self::IxJoin(join, _) if anonymous => join.rhs.is_anonymous_view(),
+            Self::IxJoin(join, _) => join.rhs.is_view() && !join.rhs.is_anonymous_view(),
+            _ => false,
+        })
+    }
 }
 
 /// Scan a table row by row, returning row ids
@@ -1525,11 +1578,11 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
     ///
     /// This test takes the following logical plan:
     ///
@@ -1712,12 +1765,12 @@ mod tests {
 
     /// Given the following operator notation:
     ///
-    /// x:  join  
-    /// p:  project  
-    /// s:  select  
-    /// ix: index scan  
-    /// rx: right index semijoin  
-    /// rj: right hash semijoin  
+    /// x:  join
+    /// p:  project
+    /// s:  select
+    /// ix: index scan
+    /// rx: right index semijoin
+    /// rj: right hash semijoin
     ///
     /// This test takes the following logical plan:
     ///

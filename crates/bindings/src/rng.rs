@@ -1,13 +1,10 @@
-use std::cell::UnsafeCell;
-use std::marker::PhantomData;
-
-use crate::rand;
-
+use crate::{rand, ReducerContext};
+use core::cell::UnsafeCell;
+use core::marker::PhantomData;
 use rand::distributions::{Distribution, Standard};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
-
-use crate::ReducerContext;
+use spacetimedb_lib::Timestamp;
 
 impl ReducerContext {
     /// Generates a random value.
@@ -48,10 +45,7 @@ impl ReducerContext {
     ///
     /// For more information, see [`StdbRng`] and [`rand::Rng`].
     pub fn rng(&self) -> &StdbRng {
-        self.rng.get_or_init(|| StdbRng {
-            rng: StdRng::seed_from_u64(self.timestamp.to_micros_since_unix_epoch() as u64).into(),
-            _marker: PhantomData,
-        })
+        self.rng.get_or_init(|| StdbRng::seed_from_ts(self.timestamp))
     }
 }
 
@@ -80,6 +74,16 @@ pub struct StdbRng {
 
     // !Send + !Sync
     _marker: PhantomData<*mut ()>,
+}
+
+impl StdbRng {
+    /// Seeds a [`StdbRng`] from a timestamp.
+    fn seed_from_ts(timestamp: Timestamp) -> Self {
+        Self {
+            rng: StdRng::seed_from_u64(timestamp.to_micros_since_unix_epoch() as u64).into(),
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl RngCore for StdbRng {

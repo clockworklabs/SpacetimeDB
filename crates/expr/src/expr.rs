@@ -1,9 +1,27 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
-use spacetimedb_primitives::TableId;
+use spacetimedb_primitives::{TableId, ViewId};
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
+
+pub trait CollectViews {
+    fn collect_views(&self, views: &mut HashSet<ViewId>);
+}
+
+impl<T: CollectViews> CollectViews for Arc<T> {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.as_ref().collect_views(views);
+    }
+}
+
+impl<T: CollectViews> CollectViews for Vec<T> {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        for item in self {
+            item.collect_views(views);
+        }
+    }
+}
 
 /// A projection is the root of any relational expression.
 /// This type represents a projection that returns relvars.
@@ -23,6 +41,14 @@ use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 pub enum ProjectName {
     None(RelExpr),
     Some(RelExpr, Box<str>),
+}
+
+impl CollectViews for ProjectName {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        match self {
+            Self::None(expr) | Self::Some(expr, _) => expr.collect_views(views),
+        }
+    }
 }
 
 impl ProjectName {
@@ -146,6 +172,26 @@ pub enum AggType {
     Count,
 }
 
+impl CollectViews for ProjectList {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        match self {
+            Self::Limit(proj, _) => {
+                proj.collect_views(views);
+            }
+            Self::Name(exprs) => {
+                for expr in exprs {
+                    expr.collect_views(views);
+                }
+            }
+            Self::List(exprs, _) | Self::Agg(exprs, ..) => {
+                for expr in exprs {
+                    expr.collect_views(views);
+                }
+            }
+        }
+    }
+}
+
 impl ProjectList {
     /// Does this expression project a single relvar?
     /// If so, we return it's [`TableOrViewSchema`].
@@ -210,6 +256,18 @@ pub struct Relvar {
     pub alias: Box<str>,
     /// Does this relvar represent a delta table?
     pub delta: Option<Delta>,
+}
+
+impl CollectViews for RelExpr {
+    fn collect_views(&self, views: &mut HashSet<ViewId>) {
+        self.visit(&mut |expr| {
+            if let Self::RelVar(Relvar { schema, .. }) = expr {
+                if let Some(info) = &schema.view_info {
+                    views.insert(info.view_id);
+                }
+            }
+        });
+    }
 }
 
 impl RelExpr {

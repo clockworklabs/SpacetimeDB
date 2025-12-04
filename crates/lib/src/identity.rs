@@ -1,37 +1,111 @@
+use crate::db::auth::StAccess;
 use crate::from_hex_pad;
 use blake3;
 use core::mem;
 use spacetimedb_bindings_macro::{Deserialize, Serialize};
 use spacetimedb_sats::hex::HexString;
 use spacetimedb_sats::{impl_st, u256, AlgebraicType, AlgebraicValue};
+use std::sync::Arc;
 use std::{fmt, str::FromStr};
 
 pub type RequestId = u32;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// Set of permissions the SQL engine may ask for.
+pub enum SqlPermission {
+    /// Read permissions given the [StAccess] of a table.
+    ///
+    /// [StAccess] must be passed in order to allow external implementations
+    /// to fail compilation should the [StAccess] enum ever gain additional
+    /// variants. Implementations should always do an exhaustive match thus.
+    ///
+    /// [SqlAuthorization::has_sql_permission] must return true if
+    /// [StAccess::Public].
+    Read(StAccess),
+    /// Write access, i.e. executing DML.
+    Write,
+    /// If granted, no row limit checks will be performed for subscription queries.
+    ExceedRowLimit,
+    /// RLS does not apply to database owners (for some definition of owner).
+    /// If the subject qualifies as an owner, the permission should be granted.
+    BypassRLS,
+}
+
+/// Types than can grant or deny [SqlPermission]s.
+pub trait SqlAuthorization {
+    /// Returns `true` if permission `p` is granted, `false` otherwise.
+    fn has_sql_permission(&self, p: SqlPermission) -> bool;
+}
+
+impl<T: Fn(SqlPermission) -> bool> SqlAuthorization for T {
+    fn has_sql_permission(&self, p: SqlPermission) -> bool {
+        self(p)
+    }
+}
+
+/// [SqlAuthorization] trait object.
+pub type SqlPermissions = Arc<dyn SqlAuthorization + Send + Sync + 'static>;
+
+/// The legacy permissions (sans "teams") grant everything if the owner is
+/// equal to the caller.
+fn owner_permissions(owner: Identity, caller: Identity) -> SqlPermissions {
+    let is_owner = owner == caller;
+    Arc::new(move |p| match p {
+        SqlPermission::Read(access) => match access {
+            StAccess::Public => true,
+            StAccess::Private => is_owner,
+        },
+        _ => is_owner,
+    })
+}
+
+/// Authorization for SQL operations (queries, DML, subscription queries).
+#[derive(Clone)]
 pub struct AuthCtx {
-    pub owner: Identity,
-    pub caller: Identity,
+    caller: Identity,
+    permissions: SqlPermissions,
 }
 
 impl AuthCtx {
     pub fn new(owner: Identity, caller: Identity) -> Self {
-        Self { owner, caller }
+        Self::with_permissions(caller, owner_permissions(owner, caller))
     }
+
+    pub fn with_permissions(caller: Identity, permissions: SqlPermissions) -> Self {
+        Self { caller, permissions }
+    }
+
     /// For when the owner == caller
     pub fn for_current(owner: Identity) -> Self {
-        Self { owner, caller: owner }
+        Self::new(owner, owner)
     }
-    /// Does `owner == caller`
-    pub fn is_owner(&self) -> bool {
-        self.owner == self.caller
+
+    pub fn has_permission(&self, p: SqlPermission) -> bool {
+        self.permissions.has_sql_permission(p)
     }
+
+    pub fn has_read_access(&self, table_access: StAccess) -> bool {
+        self.has_permission(SqlPermission::Read(table_access))
+    }
+
+    pub fn has_write_access(&self) -> bool {
+        self.has_permission(SqlPermission::Write)
+    }
+
+    pub fn exceed_row_limit(&self) -> bool {
+        self.has_permission(SqlPermission::ExceedRowLimit)
+    }
+
+    pub fn bypass_rls(&self) -> bool {
+        self.has_permission(SqlPermission::BypassRLS)
+    }
+
+    pub fn caller(&self) -> Identity {
+        self.caller
+    }
+
     /// WARNING: Use this only for simple test were the `auth` don't matter
     pub fn for_testing() -> Self {
-        AuthCtx {
-            owner: Identity::__dummy(),
-            caller: Identity::__dummy(),
-        }
+        Self::new(Identity::__dummy(), Identity::__dummy())
     }
 }
 

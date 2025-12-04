@@ -94,7 +94,7 @@ public partial record TestTableTaggedEnum : SpacetimeDB.TaggedEnum<(int X, int Y
       Message: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0013,
+        Id: STDB0015,
         Title: Index attribute on a field must not specify Columns,
         MessageFormat: Index attribute on a field applies directly to that field, so it doesn't accept the Columns parameter.,
         Category: SpacetimeDB,
@@ -145,7 +145,7 @@ public partial struct TestIndexIssues
       Message: Could not find the specified column UnknownColumn in TestIndexIssues.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0014,
+        Id: STDB0016,
         Title: Unknown column,
         MessageFormat: Could not find the specified column {0} in {1}.,
         Category: SpacetimeDB,
@@ -170,7 +170,7 @@ public partial struct TestIndexIssues
       Message: TestScheduleWithoutPrimaryKey is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0012,
+        Id: STDB0014,
         Title: Invalid scheduled table declaration,
         MessageFormat: {0},
         Category: SpacetimeDB,
@@ -195,7 +195,7 @@ public partial struct TestIndexIssues
       Message: TestScheduleWithWrongPrimaryKeyType is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0012,
+        Id: STDB0014,
         Title: Invalid scheduled table declaration,
         MessageFormat: {0},
         Category: SpacetimeDB,
@@ -212,7 +212,7 @@ public partial struct TestIndexIssues
       Message: Could not find the specified column ScheduledAt in TestScheduleIssues.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0014,
+        Id: STDB0016,
         Title: Unknown column,
         MessageFormat: Could not find the specified column {0} in {1}.,
         Category: SpacetimeDB,
@@ -237,7 +237,7 @@ public partial struct TestIndexIssues
       Message: TestScheduleWithWrongScheduleAtType is a scheduled table but doesn't have a primary key of type `ulong`.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0012,
+        Id: STDB0014,
         Title: Invalid scheduled table declaration,
         MessageFormat: {0},
         Category: SpacetimeDB,
@@ -262,9 +262,93 @@ public partial struct TestScheduleIssues
       Message: Could not find the specified column MissingField in TestScheduleIssues.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0014,
+        Id: STDB0016,
         Title: Unknown column,
         MessageFormat: Could not find the specified column {0} in {1}.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: View definition missing Public=true
+    [SpacetimeDB.View(Name = "view_def_no_public")]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static List<Player> ViewDefNoPublic(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return new List<Player>();
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefNoPublic' must have Public = true. Views are always public in SpacetimeDB.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0025,
+        Title: Views must be public,
+        MessageFormat: View '{0}' must have Public = true. Views are always public in SpacetimeDB.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Name = "view_def_no_context", Public = true)]
+    public static List<Player> ViewDefNoContext()
+                                               ^^
+    {
+*/
+      Message: View method ViewDefNoContext must have a first parameter of type ViewContext or AnonymousViewContext.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0022,
+        Title: Views must start with ViewContext or AnonymousViewContext,
+        MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    [SpacetimeDB.View(Name = "view_def_wrong_context", Public = true)]
+    public static List<Player> ViewDefWrongContext(ReducerContext ctx)
+                                                  ^^^^^^^^^^^^^^^^^^^^
+    {
+*/
+      Message: View method ViewDefWrongContext must have a first parameter of type ViewContext or AnonymousViewContext.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0022,
+        Title: Views must start with ViewContext or AnonymousViewContext,
+        MessageFormat: View method {0} must have a first parameter of type ViewContext or AnonymousViewContext.,
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
+    {/*
+    // Invalid: Wrong return type is not Vec<T> or Option<T>
+    [SpacetimeDB.View(Name = "view_def_wrong_return", Public = true)]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    public static Player ViewDefWrongReturn(ViewContext ctx)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    {
+^^^^^
+        return new Player { Identity = new() };
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    }
+^^^^^
+
+*/
+      Message: View 'ViewDefWrongReturn' must return Vec<T> or Option<T>.,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0024,
+        Title: Views must return Vec<T> or Option<T>,
+        MessageFormat: View '{0}' must return Vec<T> or Option<T>.,
         Category: SpacetimeDB,
         DefaultSeverity: Error,
         IsEnabledByDefault: true
@@ -313,7 +397,7 @@ public partial struct TestScheduleIssues
       Message: Reducer method OnReducerWithReservedPrefix starts with 'On', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0009,
+        Id: STDB0010,
         Title: Reducer method has a reserved name prefix,
         MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
         Category: SpacetimeDB,
@@ -330,7 +414,7 @@ public partial struct TestScheduleIssues
       Message: Reducer method __ReducerWithReservedPrefix starts with '__', which is a reserved prefix.,
       Severity: Error,
       Descriptor: {
-        Id: STDB0009,
+        Id: STDB0010,
         Title: Reducer method has a reserved name prefix,
         MessageFormat: Reducer method {0} starts with '{1}', which is a reserved prefix.,
         Category: SpacetimeDB,
@@ -343,7 +427,7 @@ public partial struct TestScheduleIssues
       Message: Several reducers are assigned to the same lifecycle kind Init: Reducers.TestDuplicateReducerKind1, Reducers.TestDuplicateReducerKind2,
       Severity: Error,
       Descriptor: {
-        Id: STDB0011,
+        Id: STDB0013,
         Title: Multiple reducers of the same kind,
         MessageFormat: Several reducers are assigned to the same lifecycle kind {0}: {1},
         Category: SpacetimeDB,
@@ -377,6 +461,19 @@ public partial struct TestScheduleIssues
         IsEnabledByDefault: true
       }
     },
+    {
+      Location: ,
+      Message: TableReadOnly with the same export name TestDuplicateTableNameReadOnly is registered in multiple places: global::TestDuplicateTableName, global::InAnotherNamespace.TestDuplicateTableName,
+      Severity: Error,
+      Descriptor: {
+        Id: STDB0007,
+        Title: Duplicate exports,
+        MessageFormat: {0} with the same export name {1} is registered in multiple places: {2},
+        Category: SpacetimeDB,
+        DefaultSeverity: Error,
+        IsEnabledByDefault: true
+      }
+    },
     {/*
     [SpacetimeDB.ClientVisibilityFilter]
     private Filter MY_FILTER = new Filter.Sql("SELECT * FROM TestAutoIncNotInteger");
@@ -386,7 +483,7 @@ public partial struct TestScheduleIssues
       Message: Field MY_FILTER is marked as [ClientVisibilityFilter] but it is not public static readonly,
       Severity: Error,
       Descriptor: {
-        Id: STDB0016,
+        Id: STDB0018,
         Title: ClientVisibilityFilters must be public static readonly,
         MessageFormat: Field {0} is marked as [ClientVisibilityFilter] but it is not public static readonly,
         Category: SpacetimeDB,
@@ -403,7 +500,7 @@ public partial struct TestScheduleIssues
       Message: Field MY_SECOND_FILTER is marked as [ClientVisibilityFilter] but it is not public static readonly,
       Severity: Error,
       Descriptor: {
-        Id: STDB0016,
+        Id: STDB0018,
         Title: ClientVisibilityFilters must be public static readonly,
         MessageFormat: Field {0} is marked as [ClientVisibilityFilter] but it is not public static readonly,
         Category: SpacetimeDB,
@@ -420,7 +517,7 @@ public partial struct TestScheduleIssues
       Message: Field MY_THIRD_FILTER is marked as ClientVisibilityFilter but it has type string which is not SpacetimeDB.Filter,
       Severity: Error,
       Descriptor: {
-        Id: STDB0015,
+        Id: STDB0017,
         Title: ClientVisibilityFilters must be Filters,
         MessageFormat: Field {0} is marked as ClientVisibilityFilter but it has type {1} which is not SpacetimeDB.Filter,
         Category: SpacetimeDB,

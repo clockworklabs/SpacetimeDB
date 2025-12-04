@@ -55,7 +55,7 @@ pub(super) extern "C" fn cb_log_long_running(isolate: &mut Isolate, _: *mut c_vo
         return;
     };
     let database = env.instance_env.replica_ctx.database_identity;
-    let reducer = env.reducer_name();
+    let reducer = env.funcall_name();
     let dur = env.reducer_start().elapsed();
     tracing::warn!(reducer, ?database, "JavaScript has been running for {dur:?}");
 }

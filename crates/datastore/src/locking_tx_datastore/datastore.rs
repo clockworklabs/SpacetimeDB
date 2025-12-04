@@ -35,7 +35,7 @@ use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
 use spacetimedb_lib::{ConnectionId, Identity};
 use spacetimedb_paths::server::SnapshotDirPath;
-use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewDatabaseId};
+use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId, ViewId};
 use spacetimedb_sats::{
     algebraic_value::de::ValueDeserializer, bsatn, buffer::BufReader, AlgebraicValue, ProductValue,
 };
@@ -146,6 +146,8 @@ impl Locking {
         committed_state.build_indexes()?;
         // Figure out where to pick up for each sequence.
         *self.sequence_state.lock() = committed_state.build_sequence_state()?;
+
+        committed_state.collect_ephemeral_tables()?;
         Ok(())
     }
 
@@ -512,7 +514,7 @@ impl MutTxDatastore for Locking {
         tx.rename_table(table_id, new_name)
     }
 
-    fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewDatabaseId>> {
+    fn view_id_from_name_mut_tx(&self, tx: &Self::MutTx, view_name: &str) -> Result<Option<ViewId>> {
         tx.view_id_from_name(view_name)
     }
 
@@ -736,8 +738,7 @@ impl TxMetrics {
         // For each table, collect the extra stats, that we don't have in `tx_data`.
         let table_stats = tx_data
             .map(|tx_data| {
-                let mut table_stats =
-                    <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
+                let mut table_stats = HashMap::with_capacity(tx_data.num_tables_affected());
                 for (table_id, _) in tx_data.table_ids_and_names() {
                     let stats = committed_state.get_table(table_id).map(|table| TableStats {
                         row_count: table.row_count,
@@ -1272,7 +1273,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::st_var::StVarValue;
     use spacetimedb_lib::{resolved_type_via_v9, ScheduleAt, TimeDuration};
-    use spacetimedb_primitives::{col_list, ArgId, ColId, ScheduleId, ViewDatabaseId};
+    use spacetimedb_primitives::{col_list, ArgId, ColId, ScheduleId, ViewId};
     use spacetimedb_sats::algebraic_value::ser::value_serialize;
     use spacetimedb_sats::bsatn::ToBsatn;
     use spacetimedb_sats::layout::RowTypeLayout;
@@ -1778,23 +1779,23 @@ mod tests {
             ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 0, name: "connection_id", ty: AlgebraicType::U128 },
             ColRow { table: ST_CONNECTION_CREDENTIALS_ID.into(), pos: 1, name: "jwt_payload", ty: AlgebraicType::String },
 
-            ColRow { table: ST_VIEW_ID.into(), pos: 0, name: "view_id", ty: ViewDatabaseId::get_type() },
+            ColRow { table: ST_VIEW_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
             ColRow { table: ST_VIEW_ID.into(), pos: 1, name: "view_name", ty: AlgebraicType::String },
             ColRow { table: ST_VIEW_ID.into(), pos: 2, name: "table_id", ty: AlgebraicType::option(TableId::get_type()) },
             ColRow { table: ST_VIEW_ID.into(), pos: 3, name: "is_public", ty: AlgebraicType::Bool },
             ColRow { table: ST_VIEW_ID.into(), pos: 4, name: "is_anonymous", ty: AlgebraicType::Bool },
 
-            ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 0, name: "view_id", ty: ViewDatabaseId::get_type() },
+            ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
             ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 1, name: "param_pos", ty: ColId::get_type() },
             ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 2, name: "param_name", ty: AlgebraicType::String },
             ColRow { table: ST_VIEW_PARAM_ID.into(), pos: 3, name: "param_type", ty: AlgebraicType::bytes() },
 
-            ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 0, name: "view_id", ty: ViewDatabaseId::get_type() },
+            ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
             ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 1, name: "col_pos", ty: ColId::get_type() },
             ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 2, name: "col_name", ty: AlgebraicType::String },
             ColRow { table: ST_VIEW_COLUMN_ID.into(), pos: 3, name: "col_type", ty: AlgebraicType::bytes() },
 
-            ColRow { table: ST_VIEW_SUB_ID.into(), pos: 0, name: "view_id", ty: ViewDatabaseId::get_type() },
+            ColRow { table: ST_VIEW_SUB_ID.into(), pos: 0, name: "view_id", ty: ViewId::get_type() },
             ColRow { table: ST_VIEW_SUB_ID.into(), pos: 1, name: "arg_id", ty: ArgId::get_type() },
             ColRow { table: ST_VIEW_SUB_ID.into(), pos: 2, name: "identity", ty: AlgebraicType::U256 },
             ColRow { table: ST_VIEW_SUB_ID.into(), pos: 3, name: "num_subscribers", ty: AlgebraicType::U64 },

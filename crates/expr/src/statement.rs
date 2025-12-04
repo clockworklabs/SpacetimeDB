@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use bytes::Bytes;
 use spacetimedb_lib::{identity::AuthCtx, st_var::StVarValue, AlgebraicType, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{ColId, TableId};
 use spacetimedb_schema::schema::{ColumnSchema, TableOrViewSchema};
@@ -30,13 +29,6 @@ use super::{
 pub enum Statement {
     Select(ProjectList),
     DML(DML),
-}
-
-impl Statement {
-    pub fn views(&self) -> Vec<(&str, Bytes)> {
-        //TODO: implement view name extraction
-        vec![]
-    }
 }
 
 pub enum DML {
@@ -448,7 +440,7 @@ impl TypeChecker for SqlChecker {
 }
 
 pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
-    match parse_sql(sql)?.resolve_sender(auth.caller) {
+    match parse_sql(sql)?.resolve_sender(auth.caller()) {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
         SqlAst::Delete(delete) => Ok(Statement::DML(DML::Delete(type_delete(delete, tx)?))),

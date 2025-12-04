@@ -25,10 +25,10 @@ use crate::schema::{Schema, TableSchema};
 use crate::type_for_generate::{AlgebraicTypeUse, ProductTypeDef, TypespaceForGenerate};
 use deserialize::ArgsSeed;
 use enum_map::EnumMap;
-use hashbrown::{Equivalent, HashMap};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use spacetimedb_data_structures::error_stream::{CollectAllErrors, CombineErrors, ErrorStream};
+use spacetimedb_data_structures::map::{Equivalent, HashMap};
 use spacetimedb_lib::db::raw_def;
 use spacetimedb_lib::db::raw_def::v9::{
     Lifecycle, RawColumnDefaultValueV9, RawConstraintDataV9, RawConstraintDefV9, RawIdentifier, RawIndexAlgorithm,
@@ -37,7 +37,7 @@ use spacetimedb_lib::db::raw_def::v9::{
     RawUniqueConstraintDataV9, RawViewDefV9, TableAccess, TableType,
 };
 use spacetimedb_lib::{ProductType, RawModuleDef};
-use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewId};
+use spacetimedb_primitives::{ColId, ColList, ColOrCols, ColSet, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::{AlgebraicType, AlgebraicValue};
 use spacetimedb_sats::{AlgebraicTypeRef, Typespace};
 
@@ -246,9 +246,9 @@ impl ModuleDef {
     }
 
     /// Convenience method to look up a view, possibly by a string, returning its id as well.
-    pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewId, &ViewDef)> {
+    pub fn view_full<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<(ViewFnPtr, &ViewDef)> {
         // If the string IS a valid identifier, we can just look it up.
-        self.views.get(name).map(|def| (def.index, def))
+        self.views.get(name).map(|def| (def.fn_ptr, def))
     }
 
     /// Convenience method to look up a reducer, possibly by a string.
@@ -276,6 +276,14 @@ impl ModuleDef {
         self.reducers.get_index(id.idx()).map(|(_, def)| def)
     }
 
+    /// Look up a view by its id, and whether it is anonymous.
+    pub fn get_view_by_id(&self, id: ViewFnPtr, is_anonymous: bool) -> Option<&ViewDef> {
+        self.views
+            .iter()
+            .find(|(_, def)| def.fn_ptr == id && def.is_anonymous == is_anonymous)
+            .map(|(_, def)| def)
+    }
+
     /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
     pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
@@ -293,15 +301,6 @@ impl ModuleDef {
     /// Look up a procuedure by its id, returning `None` if it doesn't exist.
     pub fn get_procedure_by_id(&self, id: ProcedureId) -> Option<&ProcedureDef> {
         self.procedures.get_index(id.idx()).map(|(_, def)| def)
-    }
-
-    /// Look up a view by its id, panicking if it doesn't exist.
-    pub fn view_by_id(&self, id: ViewId, is_anonymoys: bool) -> &ViewDef {
-        self.views
-            .iter()
-            .find(|(_, def)| def.index == id && def.is_anonymous == is_anonymoys)
-            .expect("view id not found")
-            .1
     }
 
     /// Looks up a lifecycle reducer defined in the module.
@@ -1118,7 +1117,7 @@ pub struct ViewDef {
     /// It represents the unique index of this view within the module.
     /// Module contains separate list for anonymous and non-anonymous views,
     /// so `is_anonymous` is needed to fully identify the view along with this index.
-    pub index: ViewId,
+    pub fn_ptr: ViewFnPtr,
 
     /// The parameters of the view.
     ///
@@ -1180,7 +1179,7 @@ impl From<ViewDef> for RawViewDefV9 {
             is_public,
             params,
             return_type,
-            index,
+            fn_ptr: index,
             ..
         } = val;
         RawViewDefV9 {
@@ -1443,7 +1442,7 @@ impl ModuleDefLookup for ViewDef {
     }
 }
 
-fn to_raw<Def, RawDef, Name, A>(data: HashMap<Name, Def, A>) -> Vec<RawDef>
+fn to_raw<Def, RawDef, Name>(data: HashMap<Name, Def>) -> Vec<RawDef>
 where
     Def: ModuleDefLookup + Into<RawDef>,
     Name: Eq + Ord + 'static,
@@ -1458,7 +1457,7 @@ mod tests {
 
     use super::*;
     use proptest::prelude::*;
-    use spacetimedb_data_structures::expect_error_matching;
+    use spacetimedb_data_structures::{expect_error_matching, map::HashCollectionExt as _};
     use spacetimedb_lib::db::raw_def::v9::RawModuleDefV9Builder;
 
     proptest! {

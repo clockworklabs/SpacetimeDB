@@ -59,6 +59,7 @@ fn increment_counter(ctx: &ReducerContext) -> Result<(), String> {
 fn clear_counter(ctx: &ReducerContext) {
     for row in ctx.db.counter().iter() {
         ctx.db.counter().id().delete(row.id);
+        ctx.db.counter().insert(Counter { id: 0, count: 0 });
     }
 
     for row in ctx.db.user().iter() {

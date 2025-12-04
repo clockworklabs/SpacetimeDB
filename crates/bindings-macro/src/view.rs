@@ -95,6 +95,14 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
         ));
     };
 
+    // TODO: Re-enable parameterized views once we can pass args from sql
+    if !arg_tys.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &original_function.sig,
+            "Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`",
+        ));
+    }
+
     // Extract the context type
     let ctx_ty = match ctx_ty {
         syn::Type::Reference(ctx_ty) => ctx_ty.elem.as_ref(),

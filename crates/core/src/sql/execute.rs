@@ -6,9 +6,12 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
+use crate::host::module_host::{
+    DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ViewCallError, ViewCallResult,
+    ViewOutcome,
+};
 use crate::host::{ArgsTuple, ModuleHost};
-use crate::subscription::module_subscription_actor::{ModuleSubscriptions, WriteConflict};
+use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
 use crate::util::slow::SlowQueryLogger;
@@ -20,8 +23,8 @@ use spacetimedb_datastore::traits::IsolationLevel;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
-use spacetimedb_lib::{Identity, Timestamp};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
@@ -122,7 +125,7 @@ pub fn execute_sql(
         let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql);
         let mut updates = Vec::with_capacity(ast.len());
         let res = execute(
-            &mut DbProgram::new(db, &mut (&mut tx).into(), auth),
+            &mut DbProgram::new(db, &mut (&mut tx).into(), auth.clone()),
             ast,
             sql,
             &mut updates,
@@ -130,7 +133,7 @@ pub fn execute_sql(
         if res.is_ok() && !updates.is_empty() {
             let event = ModuleEvent {
                 timestamp: Timestamp::now(),
-                caller_identity: auth.caller,
+                caller_identity: auth.caller(),
                 caller_connection_id: None,
                 function_call: ModuleFunctionCall {
                     reducer: String::new(),
@@ -143,10 +146,8 @@ pub fn execute_sql(
                 request_id: None,
                 timer: None,
             };
-            match subs.unwrap().commit_and_broadcast_event(None, event, tx).unwrap() {
-                Ok(_) => res,
-                Err(WriteConflict) => todo!("See module_host_actor::call_reducer_with_tx"),
-            }
+            commit_and_broadcast_event(subs.unwrap(), None, event, tx);
+            res
         } else {
             db.finish_tx(tx, res)
         }
@@ -192,49 +193,28 @@ pub async fn run(
     auth: AuthCtx,
     subs: Option<&ModuleSubscriptions>,
     module: Option<&ModuleHost>,
-    caller_identity: Identity,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
-    let (mut tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
         compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
 
-    for (view_name, args) in stmt.views() {
-        let (is_materialized, args) = tx
-            .is_materialized(view_name, args, caller_identity)
-            .map_err(|e| DBError::Other(anyhow!("Failed to check memoized view: {e}")))?;
-
-        // Skip if already memoized
-        if is_materialized {
-            continue;
-        }
-
-        let module = module
-            .as_ref()
-            .ok_or_else(|| anyhow!("Cannot execute view `{view_name}` without module context"))?;
-
-        let res = module
-            .call_view(
-                tx,
-                view_name,
-                crate::host::FunctionArgs::Bsatn(args),
-                caller_identity,
-                None,
-            )
-            .await
-            .map_err(|e| DBError::Other(anyhow!("Failed to execute view `{view_name}`: {e}")))?;
-
-        tx = res.tx;
-    }
-
     match stmt {
         Statement::Select(stmt) => {
-            // Up to this point, the tx has been read-only,
-            // and hence there are no deltas to process.
+            // Materialize views and downgrade to a read-only transaction
+            let tx = match module {
+                Some(module) => {
+                    module
+                        .materialize_views(tx, &stmt, auth.caller(), Workload::Sql)
+                        .await?
+                }
+                None => tx,
+            };
+
             let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
@@ -279,8 +259,8 @@ pub async fn run(
         }
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
-            if auth.caller != auth.owner {
-                return Err(anyhow!("Only owners are authorized to run SQL DML statements").into());
+            if !auth.has_write_access() {
+                return Err(anyhow!("Caller {} is not authorized to run SQL DML statements", auth.caller()).into());
             }
 
             // Evaluate the mutation
@@ -288,6 +268,21 @@ pub async fn run(
 
             // Update transaction metrics
             tx.metrics.merge(metrics);
+
+            // Update views
+            let result = match module {
+                Some(module) => module.call_views_with_tx(tx, auth.caller()).await?,
+                None => ViewCallResult::default(tx),
+            };
+
+            // Rollback transaction and report metrics if view execution failed
+            if let ViewOutcome::Failed(err) = result.outcome {
+                let (_, metrics, reducer) = db.rollback_mut_tx(result.tx);
+                db.report_mut_tx_metrics(reducer, metrics, None);
+                return Err(DBError::View(ViewCallError::InternalError(err)));
+            }
+
+            let tx = result.tx;
 
             // Commit the tx if there are no deltas to process
             if subs.is_none() {
@@ -311,38 +306,27 @@ pub async fn run(
             // Note, we get the delta by downgrading the tx.
             // Hence we just pass a default `DatabaseUpdate` here.
             // It will ultimately be replaced with the correct one.
-            match subs
-                .unwrap()
-                .commit_and_broadcast_event(
-                    None,
-                    ModuleEvent {
-                        timestamp: Timestamp::now(),
-                        caller_identity: auth.caller,
-                        caller_connection_id: None,
-                        function_call: ModuleFunctionCall {
-                            reducer: String::new(),
-                            reducer_id: u32::MAX.into(),
-                            args: ArgsTuple::default(),
-                        },
-                        status: EventStatus::Committed(DatabaseUpdate::default()),
-                        energy_quanta_used: EnergyQuanta::ZERO,
-                        host_execution_duration: Duration::ZERO,
-                        request_id: None,
-                        timer: None,
-                    },
-                    tx,
-                )
-                .unwrap()
-            {
-                Err(WriteConflict) => {
-                    todo!("See module_host_actor::call_reducer_with_tx")
-                }
-                Ok(res) => Ok(SqlResult {
-                    tx_offset: res.tx_offset,
-                    rows: vec![],
-                    metrics,
-                }),
-            }
+            let event = ModuleEvent {
+                timestamp: Timestamp::now(),
+                caller_identity: auth.caller(),
+                caller_connection_id: None,
+                function_call: ModuleFunctionCall {
+                    reducer: String::new(),
+                    reducer_id: u32::MAX.into(),
+                    args: ArgsTuple::default(),
+                },
+                status: EventStatus::Committed(DatabaseUpdate::default()),
+                energy_quanta_used: EnergyQuanta::ZERO,
+                host_execution_duration: Duration::ZERO,
+                request_id: None,
+                timer: None,
+            };
+            let res = commit_and_broadcast_event(subs.unwrap(), None, event, tx);
+            Ok(SqlResult {
+                tx_offset: res.tx_offset,
+                rows: vec![],
+                metrics,
+            })
         }
     }
 }
@@ -397,7 +381,6 @@ pub(crate) mod tests {
                 AuthCtx::for_testing(),
                 Some(&subs),
                 None,
-                Identity::ZERO,
                 &mut vec![],
             ))
             .map(|x| x.rows)
@@ -550,7 +533,7 @@ pub(crate) mod tests {
         expected: impl IntoIterator<Item = ProductValue>,
     ) {
         assert_eq!(
-            run(db, sql, *auth, None, None, Identity::ZERO, &mut vec![])
+            run(db, sql, auth.clone(), None, None, &mut vec![])
                 .await
                 .unwrap()
                 .rows
@@ -1505,30 +1488,28 @@ pub(crate) mod tests {
 
         let rt = db.runtime().expect("runtime should be there");
 
-        let run = |db, sql, auth, subs, mut tmp_vec| {
-            rt.block_on(run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec))
-        };
+        let run = |db, sql, auth, subs, mut tmp_vec| rt.block_on(run(db, sql, auth, subs, None, &mut tmp_vec));
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None, tmp_vec.clone()).is_ok());
 
         // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SET row_limit = 4", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
 
         // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_err());
+        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None, tmp_vec.clone()).is_err());
 
         // Increase row limit.
         assert!(run(
             &db,
             "DELETE FROM st_var WHERE name = 'row_limit'",
-            internal_auth,
+            internal_auth.clone(),
             None,
             tmp_vec.clone()
         )
         .is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(&db, "SET row_limit = 5", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
 
         // Both queries pass.
         assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
@@ -1557,9 +1538,7 @@ pub(crate) mod tests {
         let internal_auth = AuthCtx::new(server, server);
 
         let tmp_vec = Vec::new();
-        let run = |db, sql, auth, subs, mut tmp_vec| async move {
-            run(db, sql, auth, subs, None, Identity::ZERO, &mut tmp_vec).await
-        };
+        let run = |db, sql, auth, subs, mut tmp_vec| async move { run(db, sql, auth, subs, None, &mut tmp_vec).await };
 
         let check = |db, sql, auth, metrics: ExecutionMetrics| {
             let result = rt.block_on(run(db, sql, auth, None, tmp_vec.clone()))?;
@@ -1584,11 +1563,17 @@ pub(crate) mod tests {
             ..ExecutionMetrics::default()
         };
 
-        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth, ins)?;
-        check(&db, "UPDATE T SET a = 2", internal_auth, upd)?;
+        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth.clone(), ins)?;
+        check(&db, "UPDATE T SET a = 2", internal_auth.clone(), upd)?;
         assert_eq!(
-            rt.block_on(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()))?
-                .rows,
+            rt.block_on(run(
+                &db,
+                "SELECT * FROM T",
+                internal_auth.clone(),
+                None,
+                tmp_vec.clone()
+            ))?
+            .rows,
             vec![product!(2u8)]
         );
         check(&db, "DELETE FROM T", internal_auth, del)?;

@@ -4,85 +4,18 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
 
-export type RawSequenceDefV8 = {
-  sequenceName: string;
-  colPos: number;
-  increment: bigint;
-  start: bigint | undefined;
-  minValue: bigint | undefined;
-  maxValue: bigint | undefined;
-  allocated: bigint;
-};
-let _cached_RawSequenceDefV8_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawSequenceDefV8 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawSequenceDefV8_type_value)
-      return _cached_RawSequenceDefV8_type_value;
-    _cached_RawSequenceDefV8_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawSequenceDefV8_type_value.value.elements.push(
-      { name: 'sequenceName', algebraicType: __AlgebraicTypeValue.String },
-      { name: 'colPos', algebraicType: __AlgebraicTypeValue.U16 },
-      { name: 'increment', algebraicType: __AlgebraicTypeValue.I128 },
-      {
-        name: 'start',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.I128
-        ),
-      },
-      {
-        name: 'minValue',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.I128
-        ),
-      },
-      {
-        name: 'maxValue',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.I128
-        ),
-      },
-      { name: 'allocated', algebraicType: __AlgebraicTypeValue.I128 }
-    );
-    return _cached_RawSequenceDefV8_type_value;
-  },
-
-  serialize(writer: __BinaryWriter, value: RawSequenceDefV8): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawSequenceDefV8.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawSequenceDefV8 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawSequenceDefV8.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawSequenceDefV8;
+export default __t.object('RawSequenceDefV8', {
+  sequenceName: __t.string(),
+  colPos: __t.u16(),
+  increment: __t.i128(),
+  start: __t.option(__t.i128()),
+  minValue: __t.option(__t.i128()),
+  maxValue: __t.option(__t.i128()),
+  allocated: __t.i128(),
+});

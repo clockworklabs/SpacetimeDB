@@ -97,6 +97,50 @@ pub struct RawModuleDefV9 {
     pub row_level_security: Vec<RawRowLevelSecurityDefV9>,
 }
 
+impl RawModuleDefV9 {
+    /// Find a [`RawTableDefV9`] by name in this raw module def
+    fn find_table_def(&self, table_name: &str) -> Option<&RawTableDefV9> {
+        self.tables
+            .iter()
+            .find(|table_def| table_def.name.as_ref() == table_name)
+    }
+
+    /// Find a [`RawViewDefV9`] by name in this raw module def
+    fn find_view_def(&self, view_name: &str) -> Option<&RawViewDefV9> {
+        self.misc_exports.iter().find_map(|misc_export| match misc_export {
+            RawMiscModuleExportV9::View(view_def) if view_def.name.as_ref() == view_name => Some(view_def),
+            _ => None,
+        })
+    }
+
+    /// Find and return the product type ref for a table in this module def
+    fn type_ref_for_table(&self, table_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_table_def(table_name)
+            .map(|table_def| table_def.product_type_ref)
+    }
+
+    /// Find and return the product type ref for a view in this module def
+    fn type_ref_for_view(&self, view_name: &str) -> Option<AlgebraicTypeRef> {
+        self.find_view_def(view_name)
+            .map(|view_def| &view_def.return_type)
+            .and_then(|return_type| {
+                return_type
+                    .as_option()
+                    .and_then(|inner| inner.clone().into_ref().ok())
+                    .or_else(|| {
+                        return_type
+                            .as_array()
+                            .and_then(|inner| inner.elem_ty.clone().into_ref().ok())
+                    })
+            })
+    }
+
+    /// Find and return the product type ref for a table or view in this module def
+    pub fn type_ref_for_table_like(&self, name: &str) -> Option<AlgebraicTypeRef> {
+        self.type_ref_for_table(name).or_else(|| self.type_ref_for_view(name))
+    }
+}
+
 /// The definition of a database table.
 ///
 /// This struct holds information about the table, including its name, columns, indexes,
@@ -482,6 +526,19 @@ pub struct RawViewDefV9 {
     /// All elements of the inner `ProductType` must have names.
     /// This again will be validated by the server on publish.
     pub return_type: AlgebraicType,
+}
+
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+pub enum ViewResultHeader {
+    // This means the row data will follow, as a bsatn-encoded Vec<RowType>.
+    // We could make RowData contain an Vec<u8> of the bytes, but that forces us to make an extra copy when we serialize and
+    // when we deserialize.
+    RowData,
+    // This means we the view wants to return the results of the sql query.
+    RawSql(String),
+    // We can add an option for parameterized queries later,
+    // which would make it easier to cache query plans on the host side.
 }
 
 /// A reducer definition.
