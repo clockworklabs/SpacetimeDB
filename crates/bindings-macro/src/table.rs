@@ -974,7 +974,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         let ident = col.ident.as_ref().unwrap();
 
         quote! {
-            #ident: spacetimedb::query_builder::Col::new(table_name, stringify!(#ident)),
+            #ident: spacetimedb::query_builder::Col::new(_table_name, stringify!(#ident)),
         }
     });
 
@@ -990,7 +990,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
 
         quote! {
-            #ident: spacetimedb::query_builder::IxCol::new(table_name, stringify!(#ident)),
+            #ident: spacetimedb::query_builder::IxCol::new(_table_name, stringify!(#ident)),
         }
     });
 
@@ -1002,7 +1002,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
            impl spacetimedb::query_builder::HasCols for #original_struct_ident  {
                type Cols = #query_cols_struct;
-                fn cols(table_name: &'static str) -> Self::Cols {
+                fn cols(_table_name: &'static str) -> Self::Cols {
                      #query_cols_struct {
                           #(#cols_init)*
                      }
@@ -1015,7 +1015,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
         impl spacetimedb::query_builder::HasIxCols for #original_struct_ident {
             type IxCols = #query_ix_cols_struct;
-            fn ix_cols(table_name: &'static str) -> Self::IxCols {
+            fn ix_cols(_table_name: &'static str) -> Self::IxCols {
                 #query_ix_cols_struct {
                     #(#ix_cols_init)*
                 }
