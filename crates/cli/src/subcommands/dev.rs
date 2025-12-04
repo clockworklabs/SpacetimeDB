@@ -94,7 +94,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let clear_database = args
         .get_one::<ClearMode>("clear-database")
         .copied()
-        .unwrap_or(ClearMode::Never);
+        .unwrap_or(ClearMode::OnConflict);
     let force = args.get_flag("force");
 
     // If you don't specify a server, we default to your default server
