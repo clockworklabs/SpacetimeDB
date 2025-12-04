@@ -12,6 +12,7 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
 } from './indexes';
+import ScheduleAt from './schedule_at';
 import { registerTypesRecursively } from './schema';
 import type { TableSchema } from './table_schema';
 import {
@@ -116,6 +117,7 @@ type NormalizeIndexColumns<
  * - `name`: The name of the table.
  * - `public`: Whether the table is publicly accessible. Defaults to `false`.
  * - `indexes`: An array of index configurations for the table.
+ * - `constraints`: An array of constraint configurations for the table.
  * - `scheduled`: The name of the reducer to be executed based on the scheduled rows in this table.
  */
 export type TableOpts<Row extends RowObj> = {
@@ -197,7 +199,7 @@ export interface TableMethods<TableDef extends UntypedTableDef>
  * const playerTable = table(
  *   { name: 'player', public: true },
  *   t.object({
- *     id: t.u32().primary_key(),
+ *     id: t.u32().primaryKey(),
  *     name: t.string().index('btree')
  *   })
  * );
@@ -288,8 +290,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       });
     }
 
-    if (meta.isScheduleAt) {
-      scheduleAtCol = colIds.get(name)!;
+    // If this column is shaped like ScheduleAtAlgebraicType, mark it as the schedule‑at column
+    if (scheduled) {
+      const algebraicType = builder.typeBuilder.algebraicType;
+      if (ScheduleAt.isScheduleAt(algebraicType)) {
+        scheduleAtCol = colIds.get(name)!;
+      }
     }
   }
 

@@ -4,7 +4,7 @@ use crate::util::{
     collect_case, fmt_fn, iter_table_names_and_types, print_auto_generated_file_comment,
     print_auto_generated_version_comment,
 };
-use crate::util::{iter_indexes, iter_reducers};
+use crate::util::{iter_indexes, iter_procedures, iter_reducers};
 use crate::Lang;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
@@ -602,17 +602,163 @@ impl Lang for UnrealCpp<'_> {
 
     fn generate_procedure_file(
         &self,
-        _module: &ModuleDef,
+        module: &ModuleDef,
         procedure: &spacetimedb_schema::def::ProcedureDef,
     ) -> OutputFile {
-        // TODO(procedure-unreal-client): implement this
+        let procedure_snake = procedure.name.deref();
+        let pascal = procedure_snake.to_case(Case::Pascal);
+
+        // Collect includes for parameter types
+        let mut includes = HashSet::<String>::new();
+        for (_param_name, param_type) in &procedure.params_for_generate.elements {
+            collect_includes_for_type(module, param_type, &mut includes, self.module_name);
+        }
+        collect_includes_for_type(
+            module,
+            &procedure.return_type_for_generate,
+            &mut includes,
+            self.module_name,
+        );
+
+        // Convert to sorted vector
+        let mut include_vec: Vec<String> = includes.into_iter().collect();
+        include_vec.sort();
+
+        // Convert to string references
+        let include_refs: Vec<&str> = include_vec.iter().map(|s| s.as_str()).collect();
+
+        let mut header = UnrealCppAutogen::new(&include_refs, &pascal, false);
+
+        let args_struct = format!("F{pascal}Args");
+
+        // Generate procedure arguments struct
+        writeln!(header, "// Procedure arguments struct for {pascal}");
+        writeln!(header, "USTRUCT(BlueprintType)");
+        writeln!(header, "struct {} {args_struct}", self.get_api_macro());
+        writeln!(header, "{{");
+        writeln!(header, "    GENERATED_BODY()");
+        writeln!(header);
+
+        // Generate properties for each parameter
+        for (param_name, param_type) in &procedure.params_for_generate.elements {
+            let param_pascal = param_name.deref().to_case(Case::Pascal);
+            let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
+            let field_decl = format!("{type_str} {param_pascal}");
+
+            // Check if the type is blueprintable
+            if is_blueprintable(module, param_type) {
+                writeln!(header, "    UPROPERTY(BlueprintReadWrite, Category=\"SpacetimeDB\")");
+            } else {
+                // Add comment explaining why the field isn't exposed as UPROPERTY
+                writeln!(
+                    header,
+                    "    // NOTE: {type_str} field not exposed to Blueprint due to non-blueprintable elements"
+                );
+            }
+            writeln!(header, "    {field_decl};");
+            writeln!(header);
+        }
+
+        // Generate default constructor
+        writeln!(header, "    {args_struct}() = default;");
+        writeln!(header);
+
+        // Generate parameterized constructor (for BSATN/internal use)
+        if !procedure.params_for_generate.elements.is_empty() {
+            write!(header, "    {args_struct}(");
+            let mut first = true;
+            for (param_name, param_type) in &procedure.params_for_generate.elements {
+                if !first {
+                    write!(header, ", ");
+                }
+                first = false;
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
+
+                write!(header, "const {type_str}& In{param_pascal}");
+            }
+            writeln!(header, ")");
+
+            write!(header, "        : ");
+            let mut first = true;
+            for (param_name, _) in &procedure.params_for_generate.elements {
+                if !first {
+                    write!(header, ", ");
+                }
+                first = false;
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(header, "{param_pascal}(In{param_pascal})");
+            }
+            writeln!(header);
+            writeln!(header, "    {{}}");
+            writeln!(header);
+        }
+
+        // Add operator== and operator!=
+        writeln!(header);
+        writeln!(
+            header,
+            "    FORCEINLINE bool operator==(const {args_struct}& Other) const"
+        );
+        writeln!(header, "    {{");
+
+        // Generate comparison for each field
+        let mut comparisons = Vec::new();
+        for (param_name, _) in &procedure.params_for_generate.elements {
+            let param_pascal = param_name.deref().to_case(Case::Pascal);
+
+            // For value types, direct comparison
+            comparisons.push(format!("{param_pascal} == Other.{param_pascal}"));
+        }
+
+        if comparisons.is_empty() {
+            writeln!(header, "        return true;");
+        } else {
+            writeln!(header, "        return {};", comparisons.join(" && "));
+        }
+
+        writeln!(header, "    }}");
+        writeln!(
+            header,
+            "    FORCEINLINE bool operator!=(const {args_struct}& Other) const"
+        );
+        writeln!(header, "    {{");
+        writeln!(header, "        return !(*this == Other);");
+        writeln!(header, "    }}");
+
+        writeln!(header, "}};");
+        writeln!(header);
+
+        // Add BSATN serialization support for procedure args struct
+        writeln!(header, "namespace UE::SpacetimeDB");
+        writeln!(header, "{{");
+
+        // Generate the field list for the UE_SPACETIMEDB_STRUCT macro
+        let field_names: Vec<String> = procedure
+            .params_for_generate
+            .elements
+            .iter()
+            .map(|(name, _)| name.deref().to_case(Case::Pascal))
+            .collect();
+
+        if field_names.is_empty() {
+            writeln!(header, "    UE_SPACETIMEDB_STRUCT_EMPTY({args_struct});");
+        } else {
+            writeln!(
+                header,
+                "    UE_SPACETIMEDB_STRUCT({args_struct}, {});",
+                field_names.join(", ")
+            );
+        }
+
+        writeln!(header, "}}");
+
         OutputFile {
             filename: format!(
                 "Source/{}/Public/ModuleBindings/Procedures/{}.g.h",
-                self.module_name,
-                procedure.name.deref().to_case(Case::Pascal)
+                self.module_name, pascal
             ),
-            code: "".to_string(),
+            code: header.into_inner(),
         }
     }
 
@@ -651,7 +797,11 @@ impl Lang for UnrealCpp<'_> {
             let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
             includes.insert(format!("ModuleBindings/Reducers/{reducer_pascal}.g.h"));
         }
-
+        // Include procedures
+        for procedure in iter_procedures(module) {
+            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+            includes.insert(format!("ModuleBindings/Procedures/{procedure_pascal}.g.h"));
+        }
         // Collect includes for types used in delegates and contexts
         // FSpacetimeDBIdentity is used in FOnConnectDelegate and context methods
         collect_includes_for_type(module, &AlgebraicTypeUse::Identity, &mut includes, self.module_name);
@@ -663,6 +813,19 @@ impl Lang for UnrealCpp<'_> {
             for (_param_name, param_type) in &reducer.params_for_generate.elements {
                 collect_includes_for_type(module, param_type, &mut includes, self.module_name);
             }
+        }
+
+        // Collect includes for all procedure parameter types
+        for procedure in iter_procedures(module) {
+            for (_param_name, param_type) in &procedure.params_for_generate.elements {
+                collect_includes_for_type(module, param_type, &mut includes, self.module_name);
+            }
+            collect_includes_for_type(
+                module,
+                &procedure.return_type_for_generate,
+                &mut includes,
+                self.module_name,
+            );
         }
 
         // Convert to sorted vector
@@ -679,6 +842,7 @@ impl Lang for UnrealCpp<'_> {
         writeln!(client_h, "class UDbConnection;");
         writeln!(client_h, "class URemoteTables;");
         writeln!(client_h, "class URemoteReducers;");
+        writeln!(client_h, "class URemoteProcedures;");
         writeln!(client_h, "class USubscriptionBuilder;");
         writeln!(client_h, "class USubscriptionHandle;");
         writeln!(client_h);
@@ -728,6 +892,9 @@ impl Lang for UnrealCpp<'_> {
 
         // RemoteReducers class
         generate_remote_reducers_class(&mut client_h, module, &self.get_api_macro(), self.module_name);
+
+        // RemoteProcedures class
+        generate_remote_procedures_class(&mut client_h, module, &self.get_api_macro(), self.module_name);
 
         // SubscriptionBuilder class
         generate_subscription_builder_class(&mut client_h, &self.get_api_macro());
@@ -1062,7 +1229,7 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output);
     writeln!(
         output,
-        "\tFContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Conn(nullptr) {{}};"
+        "\tFContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Procedures(nullptr), Conn(nullptr) {{}};"
     );
     writeln!(output, "\tFContextBase(UDbConnection* InConn);");
     writeln!(output);
@@ -1074,6 +1241,9 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output);
     writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
     writeln!(output, "\tUSetReducerFlags* SetReducerFlags;");
+    writeln!(output);
+    writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+    writeln!(output, "\tURemoteProcedures* Procedures;");
     writeln!(output);
     writeln!(output, "\tbool IsActive() const;");
     writeln!(output, "\tvoid Disconnect();");
@@ -1120,6 +1290,11 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
         "\tstatic USetReducerFlags* GetSetReducerFlags(const FContextBase& Ctx) {{ return Ctx.SetReducerFlags; }}"
     );
     writeln!(output);
+    writeln!(
+        output,
+        "\tstatic URemoteProcedures* GetProcedures(const FContextBase& Ctx) {{ return Ctx.Procedures; }}"
+    );
+    writeln!(output);
     writeln!(output, "\tUFUNCTION(BlueprintPure, Category=\"SpacetimeDB\")");
     writeln!(
         output,
@@ -1129,248 +1304,8 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "}};");
     writeln!(output);
 
-    // ---------------------------------------------------------------------
-    // Per-module typed Reducer tagged union + typed Event
-    // ---------------------------------------------------------------------
-    writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
-    writeln!(output, "enum class EReducerTag : uint8");
-    writeln!(output, "{{");
-    {
-        let mut first = true;
-        for reducer in iter_reducers(module) {
-            let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-            if !first {
-                writeln!(output, ",");
-            } else {
-                first = false;
-            }
-            write!(output, "    {reducer_pascal}");
-        }
-        writeln!(output);
-    }
-    writeln!(output, "}};");
-    writeln!(output);
-
-    // FReducer: tagged union over reducer args, with optional metadata
-    writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {api_macro} FReducer");
-    writeln!(output, "{{");
-    writeln!(output, "    GENERATED_BODY()");
-    writeln!(output);
-    writeln!(output, "public:");
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "    EReducerTag Tag = static_cast<EReducerTag>(0);");
-    writeln!(output);
-    write!(output, "    TVariant<");
-    {
-        let mut first = true;
-        for reducer in iter_reducers(module) {
-            let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-            if !first {
-                write!(output, ", ");
-            } else {
-                first = false;
-            }
-            write!(output, "F{reducer_pascal}Args");
-        }
-    }
-    writeln!(output, "> Data;");
-    writeln!(output);
-    writeln!(output, "    // Optional metadata");
-    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
-    writeln!(output, "    FString ReducerName;");
-    writeln!(output, "    uint32 ReducerId = 0;");
-    writeln!(output, "    uint32 RequestId = 0;");
-    writeln!(output);
-
-    // Static constructors, Is*, GetAs*
-    for reducer in iter_reducers(module) {
-        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        writeln!(
-            output,
-            "    static FReducer {reducer_pascal}(const F{reducer_pascal}Args& Value)"
-        );
-        writeln!(output, "    {{");
-        writeln!(output, "        FReducer Out;");
-        writeln!(output, "        Out.Tag = EReducerTag::{reducer_pascal};");
-        writeln!(output, "        Out.Data.Set<F{reducer_pascal}Args>(Value);");
-        writeln!(output, "        Out.ReducerName = TEXT(\"{}\");", reducer.name.deref());
-        writeln!(output, "        return Out;");
-        writeln!(output, "    }}");
-        writeln!(output);
-        writeln!(
-            output,
-            "    FORCEINLINE bool Is{reducer_pascal}() const {{ return Tag == EReducerTag::{reducer_pascal}; }}"
-        );
-        writeln!(
-            output,
-            "    FORCEINLINE F{reducer_pascal}Args GetAs{reducer_pascal}() const"
-        );
-        writeln!(output, "    {{");
-        writeln!(
-            output,
-            "        ensureMsgf(Is{reducer_pascal}(), TEXT(\"Reducer does not hold {reducer_pascal}!\"));"
-        );
-        writeln!(output, "        return Data.Get<F{reducer_pascal}Args>();");
-        writeln!(output, "    }}");
-        writeln!(output);
-    }
-    writeln!(output, "    FORCEINLINE bool operator==(const FReducer& Other) const");
-    writeln!(output, "    {{");
-    writeln!(output, "        if (Tag != Other.Tag || ReducerId != Other.ReducerId || RequestId != Other.RequestId || ReducerName != Other.ReducerName) return false;");
-    writeln!(output, "        switch (Tag)");
-    writeln!(output, "        {{");
-    for reducer in iter_reducers(module) {
-        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        writeln!(output, "        case EReducerTag::{reducer_pascal}:");
-        writeln!(
-            output,
-            "            return GetAs{reducer_pascal}() == Other.GetAs{reducer_pascal}();"
-        );
-    }
-    writeln!(output, "        default: return false;");
-    writeln!(output, "        }}");
-    writeln!(output, "    }}");
-    writeln!(
-        output,
-        "    FORCEINLINE bool operator!=(const FReducer& Other) const {{ return !(*this == Other); }}"
-    );
-    writeln!(output, "}};");
-    writeln!(output);
-
-    // BPLib for FReducer
-    writeln!(output, "UCLASS()");
-    writeln!(
-        output,
-        "class {api_macro} UReducerBpLib : public UBlueprintFunctionLibrary"
-    );
-    writeln!(output, "{{");
-    writeln!(output, "    GENERATED_BODY()");
-    writeln!(output);
-    writeln!(output, "private:");
-
-    for reducer in iter_reducers(module) {
-        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        // ---- Static constructors ----
-        writeln!(output);
-        writeln!(
-            output,
-            "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|Reducer\")"
-        );
-        writeln!(
-            output,
-            "    static FReducer {reducer_pascal}(const F{reducer_pascal}Args& Value) {{"
-        );
-        writeln!(output, "        return FReducer::{reducer_pascal}(Value);");
-        writeln!(output, "    }}");
-        writeln!(output);
-
-        // Is*
-        writeln!(
-            output,
-            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Reducer\")"
-        );
-        writeln!(
-            output,
-            "    static bool Is{reducer_pascal}(const FReducer& Reducer) {{ return Reducer.Is{reducer_pascal}(); }}"
-        );
-        writeln!(output);
-
-        // GetAs*
-        writeln!(
-            output,
-            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Reducer\")"
-        );
-        writeln!(
-            output,
-            "    static F{reducer_pascal}Args GetAs{reducer_pascal}(const FReducer& Reducer) {{"
-        );
-        writeln!(output, "        return Reducer.GetAs{reducer_pascal}();");
-        writeln!(output, "    }}");
-    }
-
-    writeln!(output, "}};");
-    writeln!(output);
-
-    // FReducerEvent: metadata about a reducer invocation, with typed args
-    writeln!(output, "/** Metadata describing a reducer run. */");
-    writeln!(output, "USTRUCT(BlueprintType)");
-    writeln!(output, "struct {api_macro} F{module_name}ReducerEvent");
-    writeln!(output, "{{");
-    writeln!(output, "\tGENERATED_BODY()");
-    writeln!(output);
-
-    writeln!(output, "\t/** Timestamp for when the reducer executed */");
-    writeln!(
-        output,
-        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
-    );
-    writeln!(output, "\tFSpacetimeDBTimestamp Timestamp;");
-    writeln!(output);
-
-    writeln!(output, "\t/** Result status of the reducer */");
-    writeln!(
-        output,
-        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
-    );
-    writeln!(output, "\tFSpacetimeDBStatus Status;");
-    writeln!(output);
-
-    writeln!(output, "\t/** Identity that initiated the call */");
-    writeln!(
-        output,
-        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
-    );
-    writeln!(output, "\tFSpacetimeDBIdentity CallerIdentity;");
-    writeln!(output);
-
-    writeln!(output, "\t/** Connection ID for the caller */");
-    writeln!(
-        output,
-        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
-    );
-    writeln!(output, "\tFSpacetimeDBConnectionId CallerConnectionId;");
-    writeln!(output);
-
-    writeln!(output, "\t/** Energy consumed while executing */");
-    writeln!(
-        output,
-        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
-    );
-    writeln!(output, "\tFEnergyQuantaType EnergyConsumed;");
-    writeln!(output);
-
-    writeln!(output, "\t/** Detailed call information */");
-    writeln!(
-        output,
-        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
-    );
-    writeln!(output, "\tFReducer Reducer;");
-    writeln!(output);
-
-    writeln!(
-        output,
-        "\tFORCEINLINE bool operator==(const F{module_name}ReducerEvent& Other) const"
-    );
-    writeln!(output, "\t{{");
-    writeln!(output, "\t\treturn Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&");
-    writeln!(
-        output,
-        "\t\t\tCallerConnectionId == Other.CallerConnectionId && EnergyConsumed == Other.EnergyConsumed &&"
-    );
-    writeln!(output, "\t\t\tReducer == Other.Reducer;");
-    writeln!(output, "\t}}");
-    writeln!(output);
-
-    writeln!(
-        output,
-        "\tFORCEINLINE bool operator!=(const F{module_name}ReducerEvent& Other) const"
-    );
-    writeln!(output, "\t{{");
-    writeln!(output, "\t\treturn !(*this == Other);");
-    writeln!(output, "\t}}");
-    writeln!(output, "}};");
-    writeln!(output);
+    generate_reducer_bindings(output, module, api_macro, module_name);
+    generate_procedure_bindings(output, module, api_macro, module_name);
 
     // {}Event: union-like struct representing SpacetimeDB event messages
     writeln!(output, "/** Represents event with variant message data. */");
@@ -1405,7 +1340,6 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "\t\treturn Obj;");
     writeln!(output, "\t}}");
     writeln!(output);
-
     writeln!(
         output,
         "\tstatic F{module_name}Event SubscribeApplied(const FSpacetimeDBUnit& Value)"
@@ -1805,6 +1739,8 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "\tF{module_name}Event Event;");
     writeln!(output, "}};");
     writeln!(output);
+
+    // FReducerEventContext
     writeln!(output, "USTRUCT(BlueprintType)");
     writeln!(output, "struct {api_macro} FReducerEventContext : public FContextBase");
     writeln!(output, "{{");
@@ -1817,6 +1753,25 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "\tF{module_name}ReducerEvent Event;");
     writeln!(output, "}};");
     writeln!(output);
+
+    // FProcedureEventContext
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(
+        output,
+        "struct {api_macro} FProcedureEventContext : public FContextBase"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "\tFProcedureEventContext() = default;");
+    writeln!(output, "\tFProcedureEventContext(UDbConnection* InConn, F{module_name}ProcedureEvent InEvent) : FContextBase(InConn), Event(InEvent) {{}}");
+    writeln!(output, "\t");
+    writeln!(output, "\tUPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\") ");
+    writeln!(output, "\tF{module_name}ProcedureEvent Event;");
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // FErrorContext
     writeln!(output, "USTRUCT(BlueprintType)");
     writeln!(output, "struct {api_macro} FErrorContext : public FContextBase");
     writeln!(output, "{{");
@@ -1833,6 +1788,8 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output);
     writeln!(output, "}};");
     writeln!(output);
+
+    // FSubscriptionEventContext
     writeln!(output, "USTRUCT(BlueprintType)");
     writeln!(
         output,
@@ -1856,6 +1813,509 @@ fn generate_context_structs(output: &mut UnrealCppAutogen, module: &ModuleDef, a
     writeln!(output, "DECLARE_DYNAMIC_DELEGATE_OneParam(");
     writeln!(output, "\tFOnSubscriptionError,");
     writeln!(output, "\tFErrorContext, Context);");
+    writeln!(output);
+}
+
+fn generate_reducer_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, api_macro: &str, module_name: &str) {
+    let reducer_count: usize = iter_reducers(module).count();
+    // ---------------------------------------------------------------------
+    // Per-module typed Reducer tagged union + typed Event
+    // ---------------------------------------------------------------------
+    writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
+    writeln!(output, "enum class EReducerTag : uint8");
+    writeln!(output, "{{");
+    {
+        let mut first = true;
+        for reducer in iter_reducers(module) {
+            let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
+            if !first {
+                writeln!(output, ",");
+            } else {
+                first = false;
+            }
+            write!(output, "    {reducer_pascal}");
+        }
+        writeln!(output);
+    }
+    if reducer_count == 0 {
+        writeln!(output, "    // (No reducers defined in module)");
+        writeln!(output, "    None");
+    }
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // FReducer: tagged union over reducer args, with optional metadata
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(output, "struct {api_macro} FReducer");
+    writeln!(output, "{{");
+    writeln!(output, "    GENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "public:");
+    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+    writeln!(output, "    EReducerTag Tag = static_cast<EReducerTag>(0);");
+    writeln!(output);
+    write!(output, "    TVariant<");
+    {
+        let mut first = true;
+        for reducer in iter_reducers(module) {
+            let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
+            if !first {
+                write!(output, ", ");
+            } else {
+                first = false;
+            }
+            write!(output, "F{reducer_pascal}Args");
+        }
+    }
+    if reducer_count == 0 {
+        write!(output, "FSpacetimeDBUnit");
+    }
+    writeln!(output, "> Data;");
+    writeln!(output);
+    writeln!(output, "    // Optional metadata");
+    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+    writeln!(output, "    FString ReducerName;");
+    writeln!(output, "    uint32 ReducerId = 0;");
+    writeln!(output, "    uint32 RequestId = 0;");
+    writeln!(output);
+
+    // Static constructors, Is*, GetAs*
+    for reducer in iter_reducers(module) {
+        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
+        writeln!(
+            output,
+            "    static FReducer {reducer_pascal}(const F{reducer_pascal}Args& Value)"
+        );
+        writeln!(output, "    {{");
+        writeln!(output, "        FReducer Out;");
+        writeln!(output, "        Out.Tag = EReducerTag::{reducer_pascal};");
+        writeln!(output, "        Out.Data.Set<F{reducer_pascal}Args>(Value);");
+        writeln!(output, "        Out.ReducerName = TEXT(\"{}\");", reducer.name.deref());
+        writeln!(output, "        return Out;");
+        writeln!(output, "    }}");
+        writeln!(output);
+        writeln!(
+            output,
+            "    FORCEINLINE bool Is{reducer_pascal}() const {{ return Tag == EReducerTag::{reducer_pascal}; }}"
+        );
+        writeln!(
+            output,
+            "    FORCEINLINE F{reducer_pascal}Args GetAs{reducer_pascal}() const"
+        );
+        writeln!(output, "    {{");
+        writeln!(
+            output,
+            "        ensureMsgf(Is{reducer_pascal}(), TEXT(\"Reducer does not hold {reducer_pascal}!\"));"
+        );
+        writeln!(output, "        return Data.Get<F{reducer_pascal}Args>();");
+        writeln!(output, "    }}");
+        writeln!(output);
+    }
+    writeln!(output, "    FORCEINLINE bool operator==(const FReducer& Other) const");
+    writeln!(output, "    {{");
+    writeln!(output, "        if (Tag != Other.Tag || ReducerId != Other.ReducerId || RequestId != Other.RequestId || ReducerName != Other.ReducerName) return false;");
+    writeln!(output, "        switch (Tag)");
+    writeln!(output, "        {{");
+    for reducer in iter_reducers(module) {
+        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
+        writeln!(output, "        case EReducerTag::{reducer_pascal}:");
+        writeln!(
+            output,
+            "            return GetAs{reducer_pascal}() == Other.GetAs{reducer_pascal}();"
+        );
+    }
+    if reducer_count == 0 {
+        writeln!(output, "        case EReducerTag::None:");
+        writeln!(output, "            return true;");
+    }
+
+    writeln!(output, "        default: return false;");
+    writeln!(output, "        }}");
+    writeln!(output, "    }}");
+    writeln!(
+        output,
+        "    FORCEINLINE bool operator!=(const FReducer& Other) const {{ return !(*this == Other); }}"
+    );
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // BPLib for FReducer
+    writeln!(output, "UCLASS()");
+    writeln!(
+        output,
+        "class {api_macro} UReducerBpLib : public UBlueprintFunctionLibrary"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "    GENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "private:");
+
+    for reducer in iter_reducers(module) {
+        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
+        // ---- Static constructors ----
+        writeln!(output);
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|Reducer\")"
+        );
+        writeln!(
+            output,
+            "    static FReducer {reducer_pascal}(const F{reducer_pascal}Args& Value) {{"
+        );
+        writeln!(output, "        return FReducer::{reducer_pascal}(Value);");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        // Is*
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Reducer\")"
+        );
+        writeln!(
+            output,
+            "    static bool Is{reducer_pascal}(const FReducer& Reducer) {{ return Reducer.Is{reducer_pascal}(); }}"
+        );
+        writeln!(output);
+
+        // GetAs*
+        writeln!(
+            output,
+            "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Reducer\")"
+        );
+        writeln!(
+            output,
+            "    static F{reducer_pascal}Args GetAs{reducer_pascal}(const FReducer& Reducer) {{"
+        );
+        writeln!(output, "        return Reducer.GetAs{reducer_pascal}();");
+        writeln!(output, "    }}");
+    }
+
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // FReducerEvent: metadata about a reducer invocation, with typed args
+    writeln!(output, "/** Metadata describing a reducer run. */");
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(output, "struct {api_macro} F{module_name}ReducerEvent");
+    writeln!(output, "{{");
+    writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output);
+
+    writeln!(output, "\t/** Timestamp for when the reducer executed */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBTimestamp Timestamp;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Result status of the reducer */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBStatus Status;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Identity that initiated the call */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBIdentity CallerIdentity;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Connection ID for the caller */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBConnectionId CallerConnectionId;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Energy consumed while executing */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFEnergyQuantaType EnergyConsumed;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Detailed call information */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFReducer Reducer;");
+    writeln!(output);
+
+    writeln!(
+        output,
+        "\tFORCEINLINE bool operator==(const F{module_name}ReducerEvent& Other) const"
+    );
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\treturn Status == Other.Status && Timestamp == Other.Timestamp && CallerIdentity == Other.CallerIdentity &&");
+    writeln!(
+        output,
+        "\t\t\tCallerConnectionId == Other.CallerConnectionId && EnergyConsumed == Other.EnergyConsumed &&"
+    );
+    writeln!(output, "\t\t\tReducer == Other.Reducer;");
+    writeln!(output, "\t}}");
+    writeln!(output);
+
+    writeln!(
+        output,
+        "\tFORCEINLINE bool operator!=(const F{module_name}ReducerEvent& Other) const"
+    );
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\treturn !(*this == Other);");
+    writeln!(output, "\t}}");
+    writeln!(output, "}};");
+    writeln!(output);
+}
+
+fn generate_procedure_bindings(output: &mut UnrealCppAutogen, module: &ModuleDef, api_macro: &str, module_name: &str) {
+    let procedure_count: usize = iter_procedures(module).count();
+    if procedure_count > 0 {
+        // ---------------------------------------------------------------------
+        // Per-module typed Procedure tagged union + typed Event
+        // ---------------------------------------------------------------------
+        writeln!(output, "UENUM(BlueprintType, Category = \"SpacetimeDB\")");
+        writeln!(output, "enum class EProcedureTag : uint8");
+        writeln!(output, "{{");
+        {
+            let mut first = true;
+            for procedure in iter_procedures(module) {
+                let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+                if !first {
+                    writeln!(output, ",");
+                } else {
+                    first = false;
+                }
+                write!(output, "    {procedure_pascal}");
+            }
+            writeln!(output);
+        }
+        writeln!(output, "}};");
+        writeln!(output);
+
+        // FProcedure: tagged union over procedure args, with optional metadata
+        writeln!(output, "USTRUCT(BlueprintType)");
+        writeln!(output, "struct {api_macro} FProcedure");
+        writeln!(output, "{{");
+        writeln!(output, "    GENERATED_BODY()");
+        writeln!(output);
+        writeln!(output, "public:");
+        writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+        writeln!(output, "    EProcedureTag Tag = static_cast<EProcedureTag>(0);");
+        writeln!(output);
+        write!(output, "    TVariant<");
+        {
+            let mut first = true;
+            for procedure in iter_procedures(module) {
+                let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+                if !first {
+                    write!(output, ", ");
+                } else {
+                    first = false;
+                }
+                write!(output, "F{procedure_pascal}Args");
+            }
+        }
+        writeln!(output, "> Data;");
+        writeln!(output);
+        writeln!(output, "    // Optional metadata");
+        writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category = \"SpacetimeDB\")");
+        writeln!(output, "    FString ProcedureName;");
+        writeln!(output, "    uint32 ProcedureId = 0;");
+        writeln!(output, "    uint32 RequestId = 0;");
+        writeln!(output);
+
+        // Static constructors, Is*, GetAs*
+        for procedure in iter_procedures(module) {
+            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+            writeln!(
+                output,
+                "    static FProcedure {procedure_pascal}(const F{procedure_pascal}Args& Value)"
+            );
+            writeln!(output, "    {{");
+            writeln!(output, "        FProcedure Out;");
+            writeln!(output, "        Out.Tag = EProcedureTag::{procedure_pascal};");
+            writeln!(output, "        Out.Data.Set<F{procedure_pascal}Args>(Value);");
+            writeln!(
+                output,
+                "        Out.ProcedureName = TEXT(\"{}\");",
+                procedure.name.deref()
+            );
+            writeln!(output, "        return Out;");
+            writeln!(output, "    }}");
+            writeln!(output);
+            writeln!(
+            output,
+            "    FORCEINLINE bool Is{procedure_pascal}() const {{ return Tag == EProcedureTag::{procedure_pascal}; }}"
+        );
+            writeln!(
+                output,
+                "    FORCEINLINE F{procedure_pascal}Args GetAs{procedure_pascal}() const"
+            );
+            writeln!(output, "    {{");
+            writeln!(
+                output,
+                "        ensureMsgf(Is{procedure_pascal}(), TEXT(\"Procedure does not hold {procedure_pascal}!\"));"
+            );
+            writeln!(output, "        return Data.Get<F{procedure_pascal}Args>();");
+            writeln!(output, "    }}");
+            writeln!(output);
+        }
+        writeln!(output, "    FORCEINLINE bool operator==(const FProcedure& Other) const");
+        writeln!(output, "    {{");
+        writeln!(output, "        if (Tag != Other.Tag || ProcedureId != Other.ProcedureId || RequestId != Other.RequestId || ProcedureName != Other.ProcedureName) return false;");
+        writeln!(output, "        switch (Tag)");
+        writeln!(output, "        {{");
+        for procedure in iter_procedures(module) {
+            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+            writeln!(output, "        case EProcedureTag::{procedure_pascal}:");
+            writeln!(
+                output,
+                "            return GetAs{procedure_pascal}() == Other.GetAs{procedure_pascal}();"
+            );
+        }
+        writeln!(output, "        default: return false;");
+        writeln!(output, "        }}");
+        writeln!(output, "    }}");
+        writeln!(
+            output,
+            "    FORCEINLINE bool operator!=(const FProcedure& Other) const {{ return !(*this == Other); }}"
+        );
+        writeln!(output, "}};");
+        writeln!(output);
+
+        // BPLib for FProcedure
+        writeln!(output, "UCLASS()");
+        writeln!(
+            output,
+            "class {api_macro} UProcedureBpLib : public UBlueprintFunctionLibrary"
+        );
+        writeln!(output, "{{");
+        writeln!(output, "    GENERATED_BODY()");
+        writeln!(output);
+        writeln!(output, "private:");
+
+        for procedure in iter_procedures(module) {
+            let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+            // ---- Static constructors ----
+            writeln!(output);
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|Procedure\")"
+            );
+            writeln!(
+                output,
+                "    static FProcedure {procedure_pascal}(const F{procedure_pascal}Args& Value) {{"
+            );
+            writeln!(output, "        return FProcedure::{procedure_pascal}(Value);");
+            writeln!(output, "    }}");
+            writeln!(output);
+
+            // Is*
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Procedure\")"
+            );
+            writeln!(
+                output,
+                "    static bool Is{procedure_pascal}(const FProcedure& Procedure) {{ return Procedure.Is{procedure_pascal}(); }}"
+            );
+            writeln!(output);
+
+            // GetAs*
+            writeln!(
+                output,
+                "    UFUNCTION(BlueprintPure, Category = \"SpacetimeDB|Procedure\")"
+            );
+            writeln!(
+                output,
+                "    static F{procedure_pascal}Args GetAs{procedure_pascal}(const FProcedure& Procedure) {{"
+            );
+            writeln!(output, "        return Procedure.GetAs{procedure_pascal}();");
+            writeln!(output, "    }}");
+        }
+
+        writeln!(output, "}};");
+        writeln!(output);
+    } else {
+        writeln!(output, "// No procedures defined in this module.");
+    }
+    // FProcedureEvent: metadata about a procedure invocation, with typed args
+    writeln!(output, "/** Metadata describing a procedure run. */");
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(output, "struct {api_macro} F{module_name}ProcedureEvent");
+    writeln!(output, "{{");
+    writeln!(output, "\tGENERATED_BODY()");
+    writeln!(output);
+
+    writeln!(output, "\t/** Timestamp for when the procedure executed */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBTimestamp Timestamp;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Result status of the procedure */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBProcedureStatus Status;");
+    writeln!(output);
+
+    writeln!(output, "\t/** Identity that initiated the call */");
+    writeln!(
+        output,
+        "\tUPROPERTY(EditAnywhere, BlueprintReadWrite, Category=\"SpacetimeDB\")"
+    );
+    writeln!(output, "\tFSpacetimeDBTimeDuration TotalHostExecutionDuration;");
+    writeln!(output);
+
+    writeln!(output, "\tF{module_name}ProcedureEvent() {{");
+    writeln!(output, "\t}}");
+    writeln!(output, "\tF{module_name}ProcedureEvent(FProcedureEvent Event) {{");
+    writeln!(output, "\t\tTimestamp = Event.Timestamp;");
+    writeln!(
+        output,
+        "\t\tStatus = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);"
+    );
+    writeln!(
+        output,
+        "\t\tTotalHostExecutionDuration = Event.TotalHostExecutionDuration;"
+    );
+    writeln!(output, "\t}}");
+
+    writeln!(
+        output,
+        "\tFORCEINLINE bool operator==(const F{module_name}ProcedureEvent& Other) const"
+    );
+    writeln!(output, "\t{{");
+    writeln!(
+        output,
+        "\t\treturn Status == Other.Status && Timestamp == Other.Timestamp &&"
+    );
+    writeln!(
+        output,
+        "\t\t\tTotalHostExecutionDuration == Other.TotalHostExecutionDuration;"
+    );
+    writeln!(output, "\t}}");
+    writeln!(output);
+
+    writeln!(
+        output,
+        "\tFORCEINLINE bool operator!=(const F{module_name}ProcedureEvent& Other) const"
+    );
+    writeln!(output, "\t{{");
+    writeln!(output, "\t\treturn !(*this == Other);");
+    writeln!(output, "\t}}");
+    writeln!(output, "}};");
     writeln!(output);
 }
 
@@ -2076,6 +2536,147 @@ fn generate_remote_reducers_class(
     writeln!(output);
 }
 
+fn generate_remote_procedures_class(
+    output: &mut UnrealCppAutogen,
+    module: &ModuleDef,
+    api_macro: &str,
+    module_name: &str,
+) {
+    for procedure in iter_procedures(module) {
+        let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+        let blueprintable_type_for_return =
+            is_type_blueprintable_for_delegates(module, &procedure.return_type_for_generate);
+
+        // In generate_remote_procedures_class, before the existing event delegate generation:
+        let return_type_str =
+            cpp_ty_fmt_with_module(module, &procedure.return_type_for_generate, module_name).to_string();
+        let return_type_ref = if return_type_str.starts_with('F') && return_type_str != "FSpacetimeDBUnit" {
+            format!("const {}&", return_type_str)
+        } else {
+            return_type_str.clone()
+        };
+
+        if !blueprintable_type_for_return {
+            writeln!(
+                output,
+                "// NOTE: Procedure {procedure_pascal} has non-Blueprint-compatible return type: {return_type_str}"
+            );
+            writeln!(output, "DECLARE_DELEGATE_ThreeParams(FOn{procedure_pascal}Complete,");
+            writeln!(output, "    const FProcedureEventContext&, /*Context*/");
+            writeln!(output, "    {return_type_ref}, /*Result,*/");
+            writeln!(output, "    bool /*bSuccess*/);");
+            writeln!(output);
+        } else {
+            writeln!(
+                output,
+                "DECLARE_DYNAMIC_DELEGATE_ThreeParams(FOn{procedure_pascal}Complete,"
+            );
+            writeln!(output, "    const FProcedureEventContext&, Context,");
+            writeln!(output, "    {}, Result,", return_type_ref);
+            writeln!(output, "    bool, bSuccess);");
+            writeln!(output);
+        }
+    }
+
+    writeln!(output, "// RemoteProcedures class");
+    writeln!(output, "UCLASS(BlueprintType)");
+    writeln!(output, "class {api_macro} URemoteProcedures : public UObject");
+    writeln!(output, "{{");
+    writeln!(output, "    GENERATED_BODY()");
+    writeln!(output);
+    writeln!(output, "public:");
+    writeln!(output);
+
+    // Generate procedure events and call methods
+    for procedure in iter_procedures(module) {
+        let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+
+        let mut non_blueprintable_types_for_function = Vec::new();
+
+        for (_, param_type) in &procedure.params_for_generate.elements {
+            if !is_type_blueprintable_for_delegates(module, param_type) {
+                let type_str = cpp_ty_fmt_with_module(module, param_type, module_name).to_string();
+                non_blueprintable_types_for_function.push(type_str);
+            }
+        }
+        let blueprintable_type_for_return =
+            is_type_blueprintable_for_delegates(module, &procedure.return_type_for_generate);
+
+        // Generate call method
+        if non_blueprintable_types_for_function.is_empty() && blueprintable_type_for_return {
+            write!(
+                output,
+                "    UFUNCTION(BlueprintCallable, Category=\"SpacetimeDB\")\n    void {procedure_pascal}("
+            );
+        } else {
+            // Generate specific message about which types are not Blueprint-compatible
+            let types_str = non_blueprintable_types_for_function.join(", ");
+            write!(
+                output,
+                "    // NOTE: Not exposed to Blueprint because return type or {types_str} types are not Blueprint-compatible\n    void {procedure_pascal}("
+            );
+        }
+
+        let mut first = true;
+        for (param_name, param_type) in &procedure.params_for_generate.elements {
+            if !first {
+                write!(output, ", ");
+            }
+            first = false;
+
+            // For UFUNCTION parameters, use Blueprint-compatible types
+            let type_str = if non_blueprintable_types_for_function.is_empty() {
+                cpp_ty_fmt_blueprint_compatible(module, param_type, module_name).to_string()
+            } else {
+                cpp_ty_fmt_with_module(module, param_type, module_name).to_string()
+            };
+
+            if should_pass_by_value_in_delegate(module, param_type) {
+                // Primitives use const by-value in functions
+                write!(
+                    output,
+                    "const {} {}",
+                    type_str,
+                    param_name.deref().to_case(Case::Pascal)
+                );
+            } else {
+                // Complex types (including FSpacetimeDB structs) use const references
+                write!(
+                    output,
+                    "const {}& {}",
+                    type_str,
+                    param_name.deref().to_case(Case::Pascal)
+                );
+            }
+        }
+        if !first {
+            write!(output, ", ");
+        }
+        writeln!(output, "FOn{}Complete Callback);", procedure_pascal);
+        writeln!(output);
+
+        writeln!(output);
+    }
+
+    // Internal error handling
+    writeln!(output, "    // Internal error handling");
+    writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FInternalOnUnhandledProcedureError, const FProcedureEventContext&, Context, const FString&, Error);");
+    writeln!(
+        output,
+        "    FInternalOnUnhandledProcedureError InternalOnUnhandledProcedureError;"
+    );
+    writeln!(output);
+
+    writeln!(output, "private:");
+    writeln!(output);
+    writeln!(output, "    friend UDbConnection;");
+    writeln!(output);
+    writeln!(output, "    UPROPERTY()");
+    writeln!(output, "    class UDbConnection* Conn;");
+    writeln!(output, "}};");
+    writeln!(output);
+}
+
 fn generate_subscription_builder_class(output: &mut UnrealCppAutogen, api_macro: &str) {
     writeln!(output, "// SubscriptionBuilder class");
     writeln!(output, "UCLASS(BlueprintType)");
@@ -2252,6 +2853,9 @@ fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleD
     writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
     writeln!(output, "    USetReducerFlags* SetReducerFlags;");
     writeln!(output);
+    writeln!(output, "    UPROPERTY(BlueprintReadOnly, Category=\"SpacetimeDB\")");
+    writeln!(output, "    URemoteProcedures* Procedures;");
+    writeln!(output);
     writeln!(
         output,
         "    // Delegates that allow users to bind with the concrete connection type."
@@ -2274,10 +2878,15 @@ fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleD
     writeln!(output, "    UPROPERTY(BlueprintAssignable, Category=\"SpacetimeDB\")");
     writeln!(output, "    FOnUnhandledReducerError OnUnhandledReducerError;");
     writeln!(output);
+    writeln!(output, "    // Error handling");
+    writeln!(output, "    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnUnhandledProcedureError, const FProcedureEventContext&, Context, const FString&, Error);");
+    writeln!(output, "    UPROPERTY(BlueprintAssignable, Category=\"SpacetimeDB\")");
+    writeln!(output, "    FOnUnhandledProcedureError OnUnhandledProcedureError;");
+    writeln!(output);
     writeln!(output);
     writeln!(output, "protected:");
     writeln!(output);
-    writeln!(output, "    // Hook up error handling to reducers");
+    writeln!(output, "    // Hook up error handling to reducers and procedures");
     writeln!(output, "    virtual void PostInitProperties() override;");
     writeln!(output);
     writeln!(output, "    UFUNCTION()");
@@ -2292,6 +2901,12 @@ fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleD
     writeln!(
         output,
         "    void OnUnhandledReducerErrorHandler(const FReducerEventContext& Context, const FString& Error);"
+    );
+    writeln!(output);
+    writeln!(output, "    UFUNCTION()");
+    writeln!(
+        output,
+        "    void OnUnhandledProcedureErrorHandler(const FProcedureEventContext& Context, const FString& Error);"
     );
     writeln!(output);
     writeln!(
@@ -2316,6 +2931,11 @@ fn generate_db_connection_class(output: &mut UnrealCppAutogen, _module: &ModuleD
     writeln!(
         output,
         "    virtual void ReducerEventFailed(const FReducerEvent& Event, const FString ErrorMessage) override;"
+    );
+    writeln!(output, "    // Override the procedure event failed handler");
+    writeln!(
+        output,
+        "    virtual void ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage) override;"
     );
     writeln!(output, "}};");
     writeln!(output);
@@ -2371,6 +2991,13 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "\tReducers->SetCallReducerFlags = SetReducerFlags;");
     writeln!(output, "\tReducers->Conn = this;");
     writeln!(output);
+    writeln!(
+        output,
+        "\tProcedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT(\"RemoteProcedures\"));"
+    );
+    writeln!(output, "\tProcedures->Conn = this;");
+    writeln!(output);
+
     for (table_name, product_type_ref) in iter_table_names_and_types(module) {
         let struct_name = type_ref_name(module, product_type_ref);
         let table_name = table_name.deref();
@@ -2392,6 +3019,7 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "\tDb = InConn->Db;");
     writeln!(output, "\tReducers = InConn->Reducers;");
     writeln!(output, "\tSetReducerFlags = InConn->SetReducerFlags;");
+    writeln!(output, "\tProcedures = InConn->Procedures;");
     writeln!(output, "\tConn = InConn;");
     writeln!(output, "}}");
 
@@ -2461,127 +3089,8 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     }
     writeln!(output);
 
-    // Reducer implementations
-    for reducer in iter_reducers(module) {
-        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
-        let reducer_snake = reducer.name.deref();
-
-        // Call method implementation
-        write!(output, "void URemoteReducers::{reducer_pascal}(");
-        let mut first = true;
-        for (param_name, param_type) in &reducer.params_for_generate.elements {
-            if !first {
-                write!(output, ", ");
-            }
-            first = false;
-            // Use Blueprint-compatible types (same as UFUNCTION and delegates)
-            let type_str = cpp_ty_fmt_blueprint_compatible(module, param_type, module_name).to_string();
-            if should_pass_by_value_in_delegate(module, param_type) {
-                // Primitives use const by-value in URemoteReducers methods (same as UFUNCTION)
-                write!(
-                    output,
-                    "const {} {}",
-                    type_str,
-                    param_name.deref().to_case(Case::Pascal)
-                );
-            } else {
-                // Complex types (including FSpacetimeDB structs) use const references
-                write!(
-                    output,
-                    "const {}& {}",
-                    type_str,
-                    param_name.deref().to_case(Case::Pascal)
-                );
-            }
-        }
-        writeln!(output, ")");
-        writeln!(output, "{{");
-        writeln!(output, "    if (!Conn)");
-        writeln!(output, "    {{");
-        writeln!(
-            output,
-            "        UE_LOG(LogTemp, Error, TEXT(\"SpacetimeDB connection is null\"));"
-        );
-        writeln!(output, "        return;");
-        writeln!(output, "    }}");
-        writeln!(output);
-        // Call reducer using typed helper to hide serialization
-        if reducer.params_for_generate.elements.is_empty() {
-            writeln!(
-                output,
-                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args(), SetCallReducerFlags);"
-            );
-        } else {
-            write!(
-                output,
-                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args("
-            );
-            let mut first = true;
-            for (param_name, _) in &reducer.params_for_generate.elements {
-                if !first {
-                    write!(output, ", ");
-                }
-                first = false;
-                let param_pascal = param_name.deref().to_case(Case::Pascal);
-                write!(output, "{param_pascal}");
-            }
-            writeln!(output, "), SetCallReducerFlags);");
-        }
-        writeln!(output, "}}");
-        writeln!(output);
-
-        // Invoke method implementation
-        write!(
-            output,
-            "bool URemoteReducers::Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args)"
-        );
-        writeln!(output);
-        writeln!(output, "{{");
-        writeln!(output, "    if (!On{reducer_pascal}.IsBound())");
-        writeln!(output, "    {{");
-        writeln!(output, "        // Handle unhandled reducer error");
-        writeln!(output, "        if (InternalOnUnhandledReducerError.IsBound())");
-        writeln!(output, "        {{");
-        writeln!(
-            output,
-            "            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases"
-        );
-        writeln!(output, "            // For now, just broadcast any error");
-        writeln!(
-            output,
-            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {reducer_pascal}\"));"
-        );
-        writeln!(output, "        }}");
-        writeln!(output, "        return false;");
-        writeln!(output, "    }}");
-        writeln!(output);
-
-        // Check if we're using args struct (more than 9 params including context)
-        let param_count = reducer.params_for_generate.elements.len() + 1; // +1 for context
-        let use_args_struct = param_count > 9;
-
-        if use_args_struct {
-            // Create args struct from individual fields
-            writeln!(output, "    F{reducer_pascal}Args ArgsStruct;");
-            for (param_name, _) in &reducer.params_for_generate.elements {
-                let param_pascal = param_name.deref().to_case(Case::Pascal);
-                writeln!(output, "    ArgsStruct.{param_pascal} = Args->{param_pascal};");
-            }
-            writeln!(output, "    On{reducer_pascal}.Broadcast(Context, ArgsStruct);");
-        } else {
-            // Use individual parameters
-            write!(output, "    On{reducer_pascal}.Broadcast(Context");
-            for (param_name, _) in &reducer.params_for_generate.elements {
-                let param_pascal = param_name.deref().to_case(Case::Pascal);
-                write!(output, ", Args->{param_pascal}");
-            }
-            writeln!(output, ");");
-        }
-
-        writeln!(output, "    return true;");
-        writeln!(output, "}}");
-        writeln!(output);
-    }
+    generate_remote_reducer_calls(output, module, module_name);
+    generate_remote_procedure_calls(output, module, module_name);
 
     // Hook up error handling
     writeln!(output, "void UDbConnection::PostInitProperties()");
@@ -2596,10 +3105,19 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    {{");
     writeln!(output, "        Reducers->InternalOnUnhandledReducerError.AddDynamic(this, &UDbConnection::OnUnhandledReducerErrorHandler);");
     writeln!(output, "    }}");
+    writeln!(output);
+    writeln!(
+        output,
+        "    // Connect OnUnhandledProcedureError to Procedures.InternalOnUnhandledProcedureError"
+    );
+    writeln!(output, "    if (Procedures)");
+    writeln!(output, "    {{");
+    writeln!(output, "        Procedures->InternalOnUnhandledProcedureError.AddDynamic(this, &UDbConnection::OnUnhandledProcedureErrorHandler);");
+    writeln!(output, "    }}");
     writeln!(output, "}}");
     writeln!(output);
 
-    // Error handler method
+    // Error handler method for reducers
     writeln!(output, "UFUNCTION()");
     writeln!(
         output,
@@ -2609,6 +3127,20 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output, "    if (OnUnhandledReducerError.IsBound())");
     writeln!(output, "    {{");
     writeln!(output, "        OnUnhandledReducerError.Broadcast(Context, Error);");
+    writeln!(output, "    }}");
+    writeln!(output, "}}");
+    writeln!(output);
+
+    // Error handler method for procedures
+    writeln!(output, "UFUNCTION()");
+    writeln!(
+        output,
+        "void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContext& Context, const FString& Error)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "    if (OnUnhandledProcedureError.IsBound())");
+    writeln!(output, "    {{");
+    writeln!(output, "        OnUnhandledProcedureError.Broadcast(Context, Error);");
     writeln!(output, "    }}");
     writeln!(output, "}}");
     writeln!(output);
@@ -2706,6 +3238,39 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(
         output,
         "        Reducers->InternalOnUnhandledReducerError.Broadcast(Context, ErrorMessage);"
+    );
+    writeln!(output, "    }}");
+    writeln!(output, "}}");
+    writeln!(output);
+
+    // ProcedureEventFailed method implementation
+    writeln!(
+        output,
+        "void UDbConnection::ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage)"
+    );
+    writeln!(output, "{{");
+    writeln!(output, "    if (!Procedures) {{ return; }}");
+    writeln!(output);
+
+    // Build the {}ProcedureEvent object
+    writeln!(output, "    F{module_name_pascal}ProcedureEvent ProcedureEvent;");
+    writeln!(
+        output,
+        "    ProcedureEvent.Status             = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);"
+    );
+    writeln!(output, "    ProcedureEvent.Timestamp          = Event.Timestamp;");
+    writeln!(output);
+
+    writeln!(output, "    FProcedureEventContext Context(this, ProcedureEvent);");
+    writeln!(output);
+    writeln!(
+        output,
+        "    if (Procedures->InternalOnUnhandledProcedureError.IsBound())"
+    );
+    writeln!(output, "    {{");
+    writeln!(
+        output,
+        "        Procedures->InternalOnUnhandledProcedureError.Broadcast(Context, ErrorMessage);"
     );
     writeln!(output, "    }}");
     writeln!(output, "}}");
@@ -3016,6 +3581,239 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
     writeln!(output);
 }
 
+fn generate_remote_reducer_calls(output: &mut UnrealCppAutogen, module: &ModuleDef, module_name: &str) {
+    // Reducer implementations
+    for reducer in iter_reducers(module) {
+        let reducer_pascal = reducer.name.deref().to_case(Case::Pascal);
+        let reducer_snake = reducer.name.deref();
+
+        // Call method implementation
+        write!(output, "void URemoteReducers::{reducer_pascal}(");
+        let mut first = true;
+        for (param_name, param_type) in &reducer.params_for_generate.elements {
+            if !first {
+                write!(output, ", ");
+            }
+            first = false;
+            // Use Blueprint-compatible types (same as UFUNCTION and delegates)
+            let type_str = cpp_ty_fmt_blueprint_compatible(module, param_type, module_name).to_string();
+            if should_pass_by_value_in_delegate(module, param_type) {
+                // Primitives use const by-value in URemoteReducers methods (same as UFUNCTION)
+                write!(
+                    output,
+                    "const {} {}",
+                    type_str,
+                    param_name.deref().to_case(Case::Pascal)
+                );
+            } else {
+                // Complex types (including FSpacetimeDB structs) use const references
+                write!(
+                    output,
+                    "const {}& {}",
+                    type_str,
+                    param_name.deref().to_case(Case::Pascal)
+                );
+            }
+        }
+        writeln!(output, ")");
+        writeln!(output, "{{");
+        writeln!(output, "    if (!Conn)");
+        writeln!(output, "    {{");
+        writeln!(
+            output,
+            "        UE_LOG(LogTemp, Error, TEXT(\"SpacetimeDB connection is null\"));"
+        );
+        writeln!(output, "        return;");
+        writeln!(output, "    }}");
+        writeln!(output);
+        // Call reducer using typed helper to hide serialization
+        if reducer.params_for_generate.elements.is_empty() {
+            writeln!(
+                output,
+                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args(), SetCallReducerFlags);"
+            );
+        } else {
+            write!(
+                output,
+                "\tConn->CallReducerTyped(TEXT(\"{reducer_snake}\"), F{reducer_pascal}Args("
+            );
+            let mut first = true;
+            for (param_name, _) in &reducer.params_for_generate.elements {
+                if !first {
+                    write!(output, ", ");
+                }
+                first = false;
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(output, "{param_pascal}");
+            }
+            writeln!(output, "), SetCallReducerFlags);");
+        }
+        writeln!(output, "}}");
+        writeln!(output);
+
+        // Invoke method implementation
+        write!(
+            output,
+            "bool URemoteReducers::Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args)"
+        );
+        writeln!(output);
+        writeln!(output, "{{");
+        writeln!(output, "    if (!On{reducer_pascal}.IsBound())");
+        writeln!(output, "    {{");
+        writeln!(output, "        // Handle unhandled reducer error");
+        writeln!(output, "        if (InternalOnUnhandledReducerError.IsBound())");
+        writeln!(output, "        {{");
+        writeln!(
+            output,
+            "            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases"
+        );
+        writeln!(output, "            // For now, just broadcast any error");
+        writeln!(
+            output,
+            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {reducer_pascal}\"));"
+        );
+        writeln!(output, "        }}");
+        writeln!(output, "        return false;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        // Check if we're using args struct (more than 9 params including context)
+        let param_count = reducer.params_for_generate.elements.len() + 1; // +1 for context
+        let use_args_struct = param_count > 9;
+
+        if use_args_struct {
+            // Create args struct from individual fields
+            writeln!(output, "    F{reducer_pascal}Args ArgsStruct;");
+            for (param_name, _) in &reducer.params_for_generate.elements {
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                writeln!(output, "    ArgsStruct.{param_pascal} = Args->{param_pascal};");
+            }
+            writeln!(output, "    On{reducer_pascal}.Broadcast(Context, ArgsStruct);");
+        } else {
+            // Use individual parameters
+            write!(output, "    On{reducer_pascal}.Broadcast(Context");
+            for (param_name, _) in &reducer.params_for_generate.elements {
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(output, ", Args->{param_pascal}");
+            }
+            writeln!(output, ");");
+        }
+
+        writeln!(output, "    return true;");
+        writeln!(output, "}}");
+        writeln!(output);
+    }
+}
+
+fn generate_remote_procedure_calls(output: &mut UnrealCppAutogen, module: &ModuleDef, module_name: &str) {
+    // Procedure implementations
+    for procedure in iter_procedures(module) {
+        let procedure_pascal = procedure.name.deref().to_case(Case::Pascal);
+        let procedure_snake = procedure.name.deref();
+
+        // Call method implementation
+        write!(output, "void URemoteProcedures::{procedure_pascal}(");
+        let mut first = true;
+        for (param_name, param_type) in &procedure.params_for_generate.elements {
+            if !first {
+                write!(output, ", ");
+            }
+            first = false;
+            // Use Blueprint-compatible types (same as UFUNCTION and delegates)
+            let type_str = cpp_ty_fmt_blueprint_compatible(module, param_type, module_name).to_string();
+            if should_pass_by_value_in_delegate(module, param_type) {
+                // Primitives use const by-value in URemoteProcedures methods (same as UFUNCTION)
+                write!(
+                    output,
+                    "const {} {}",
+                    type_str,
+                    param_name.deref().to_case(Case::Pascal)
+                );
+            } else {
+                // Complex types (including FSpacetimeDB structs) use const references
+                write!(
+                    output,
+                    "const {}& {}",
+                    type_str,
+                    param_name.deref().to_case(Case::Pascal)
+                );
+            }
+        }
+        if !first {
+            write!(output, ", ");
+        }
+        writeln!(output, "FOn{}Complete Callback)", procedure_pascal);
+        writeln!(output, "{{");
+        writeln!(output, "    if (!Conn)");
+        writeln!(output, "    {{");
+        writeln!(
+            output,
+            "        UE_LOG(LogTemp, Error, TEXT(\"SpacetimeDB connection is null\"));"
+        );
+        writeln!(output, "        return;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        // Get the actual return type for this procedure
+        let return_type_str =
+            cpp_ty_fmt_with_module(module, &procedure.return_type_for_generate, module_name).to_string();
+
+        writeln!(output, "    FOnProcedureCompleteDelegate Wrapper;");
+        writeln!(output, "    Wrapper.BindLambda(");
+        writeln!(output, "        [Callback = MoveTemp(Callback), Conn = this->Conn]");
+        writeln!(output, "        (const FSpacetimeDBEvent& Event,");
+        writeln!(output, "            const TArray<uint8>& ResultData,");
+        writeln!(output, "            bool bSuccess) mutable");
+        writeln!(output, "        {{");
+        writeln!(output, "            {} ResultValue{{}};", return_type_str);
+        writeln!(output);
+        writeln!(output, "            if (bSuccess) {{");
+        writeln!(
+            output,
+            "                ResultValue = UE::SpacetimeDB::Deserialize<{}>(ResultData);",
+            return_type_str
+        );
+        writeln!(output, "            }}");
+        writeln!(output);
+        writeln!(output, "            F{module_name}ProcedureEvent ProcedureEvent = F{module_name}ProcedureEvent(Event.GetAsProcedure());");
+        writeln!(
+            output,
+            "            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);"
+        );
+        writeln!(output, "            // Fire the user's typed delegate");
+        writeln!(
+            output,
+            "            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);"
+        );
+        writeln!(output, "        }});");
+
+        // Call procedure using typed helper to hide serialization
+        if procedure.params_for_generate.elements.is_empty() {
+            writeln!(
+                output,
+                "\tConn->CallProcedureTyped(TEXT(\"{procedure_snake}\"), F{procedure_pascal}Args(), Wrapper);"
+            );
+        } else {
+            write!(
+                output,
+                "\tConn->CallProcedureTyped(TEXT(\"{procedure_snake}\"), F{procedure_pascal}Args("
+            );
+            let mut first = true;
+            for (param_name, _) in &procedure.params_for_generate.elements {
+                if !first {
+                    write!(output, ", ");
+                }
+                first = false;
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(output, "{param_pascal}");
+            }
+            writeln!(output, "), Wrapper);");
+        }
+        writeln!(output, "}}");
+        writeln!(output);
+    }
+}
+
 struct UnrealCppAutogen {
     output: CodeIndenter<String>,
 }
@@ -3139,6 +3937,13 @@ fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
         }
     }
 
+    // Collect from procedure parameters
+    for procedure in iter_procedures(module) {
+        for (_, param_ty) in &procedure.params_for_generate.elements {
+            collect_from_type(module, param_ty, &mut optional_types);
+        }
+        collect_from_type(module, &procedure.return_type_for_generate, &mut optional_types);
+    }
     optional_types
 }
 

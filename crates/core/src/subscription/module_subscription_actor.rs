@@ -1,4 +1,5 @@
 use super::execution_unit::QueryHash;
+use super::metrics::QueryMetrics;
 use super::module_subscription_manager::{
     from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
     SubscriptionManager, TransactionOffset,
@@ -41,6 +42,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
+use spacetimedb_table::static_assert_size;
 use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
@@ -55,10 +57,11 @@ pub struct ModuleSubscriptions {
     subscriptions: Subscriptions,
     broadcast_queue: BroadcastQueue,
     stats: Arc<SubscriptionGauges>,
+    metrics: Arc<SubscriptionMetricsForWorkloads>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionGauges {
+struct SubscriptionGauges {
     db_identity: Identity,
     num_queries: IntGauge,
     num_connections: IntGauge,
@@ -110,17 +113,36 @@ impl SubscriptionGauges {
     }
 }
 
-pub struct SubscriptionMetrics {
-    pub lock_waiters: IntGauge,
-    pub lock_wait_time: Histogram,
-    pub compilation_time: Histogram,
-    pub num_queries_subscribed: IntCounter,
-    pub num_new_queries_subscribed: IntCounter,
-    pub num_queries_evaluated: IntCounter,
+struct SubscriptionMetricsForWorkloads {
+    update: SubscriptionMetrics,
+    subscribe: SubscriptionMetrics,
+    unsubscribe: SubscriptionMetrics,
 }
 
+impl SubscriptionMetricsForWorkloads {
+    fn new(db: &Identity) -> Self {
+        Self {
+            update: SubscriptionMetrics::new(db, WorkloadType::Update),
+            subscribe: SubscriptionMetrics::new(db, WorkloadType::Subscribe),
+            unsubscribe: SubscriptionMetrics::new(db, WorkloadType::Unsubscribe),
+        }
+    }
+}
+
+struct SubscriptionMetrics {
+    lock_waiters: IntGauge,
+    lock_wait_time: Histogram,
+    compilation_time: Histogram,
+    num_queries_subscribed: IntCounter,
+    num_new_queries_subscribed: IntCounter,
+    num_queries_evaluated: IntCounter,
+}
+
+static_assert_size!(SubscriptionMetrics, 48);
+
 impl SubscriptionMetrics {
-    pub fn new(db: &Identity, workload: &WorkloadType) -> Self {
+    fn new(db: &Identity, workload: WorkloadType) -> Self {
+        let workload = &workload;
         Self {
             lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db, workload),
             lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db, workload),
@@ -129,6 +151,24 @@ impl SubscriptionMetrics {
             num_new_queries_subscribed: DB_METRICS.num_new_queries_subscribed.with_label_values(db),
             num_queries_evaluated: DB_METRICS.num_queries_evaluated.with_label_values(db, workload),
         }
+    }
+}
+
+/// Records subscription query metrics
+fn record_query_metrics(database_identity: &Identity, query_metrics: Vec<QueryMetrics>) {
+    for qm in query_metrics {
+        WORKER_METRICS
+            .subscription_rows_examined
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .observe(qm.rows_scanned as f64);
+        WORKER_METRICS
+            .subscription_query_execution_time_micros
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .observe(qm.execution_time_micros as f64);
+        WORKER_METRICS
+            .subscription_queries_total
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .inc();
     }
 }
 
@@ -199,12 +239,14 @@ impl ModuleSubscriptions {
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
+        let metrics = Arc::new(SubscriptionMetricsForWorkloads::new(db));
 
         Self {
             relational_db,
             subscriptions,
             broadcast_queue,
             stats,
+            metrics,
         }
     }
 
@@ -345,17 +387,22 @@ impl ModuleSubscriptions {
             auth,
         )?;
 
+        let database_identity = self.relational_db.database_identity();
         let tx = DeltaTx::from(tx);
-        match sender.config.protocol {
+        let (update, metrics, query_metrics) = match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
-                Ok((FormatSwitch::Bsatn(update), metrics))
+                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                (FormatSwitch::Bsatn(update), metrics, query_metrics)
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
-                Ok((FormatSwitch::Json(update), metrics))
+                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                (FormatSwitch::Json(update), metrics, query_metrics)
             }
-        }
+        };
+
+        record_query_metrics(&database_identity, query_metrics);
+
+        Ok((update, metrics))
     }
 
     /// Add a subscription to a single query.
@@ -555,8 +602,7 @@ impl ModuleSubscriptions {
             )
         };
 
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
+        let subscription_metrics = &self.metrics.unsubscribe;
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
@@ -756,12 +802,9 @@ impl ModuleSubscriptions {
             );
         };
 
-        let num_queries = request.query_strings.len();
-
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = return_on_err!(
@@ -770,7 +813,7 @@ impl ModuleSubscriptions {
                 auth,
                 &request.query_strings,
                 num_queries,
-                &subscription_metrics
+                subscription_metrics
             ),
             send_err_msg,
             None
@@ -861,11 +904,9 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
-        let num_queries = subscription.query_strings.len();
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = subscription.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
@@ -873,7 +914,7 @@ impl ModuleSubscriptions {
             auth,
             &subscription.query_strings,
             num_queries,
-            &subscription_metrics,
+            subscription_metrics,
         )?;
 
         let (tx, tx_offset) = self
@@ -896,12 +937,16 @@ impl ModuleSubscriptions {
         drop(compile_timer);
 
         let tx = DeltaTx::from(&*tx);
-        let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+        let (database_update, metrics, query_metrics) = match sender.config.protocol {
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
+                |(table_update, metrics, query_metrics)| (FormatSwitch::Bsatn(table_update), metrics, query_metrics),
+            )?,
+            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
+                |(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics),
+            )?,
         };
+
+        record_query_metrics(&self.relational_db.database_identity(), query_metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -966,8 +1011,7 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
+        let subscription_metrics = &self.metrics.update;
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
@@ -1225,7 +1269,6 @@ mod tests {
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use core::fmt;
-    use hashbrown::HashMap;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -1234,6 +1277,7 @@ mod tests {
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_commitlog::{commitlog, repo};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;

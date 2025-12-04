@@ -210,7 +210,7 @@ fn exec_insert_with_tx_commit() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
 
                 ctx.procedures.insert_with_tx_commit_then(move |ctx, res| {
-                    assert!(res.is_ok());
+                    assert!(res.is_ok(), "Expected Ok result but got {res:?}");
                     let row = ctx.db().my_table().iter().next().unwrap();
                     assert_eq!(row.field, expected());
                     inspect_result(Ok(()));
@@ -237,7 +237,7 @@ fn exec_insert_with_tx_rollback() {
                 sub_applied_nothing_result(assert_all_tables_empty(ctx));
 
                 ctx.procedures.insert_with_tx_rollback_then(move |ctx, res| {
-                    assert!(res.is_ok());
+                    assert!(res.is_ok(), "Expected Ok result but got {res:?}");
                     assert_eq!(ctx.db().my_table().iter().next(), None);
                     inspect_result(Ok(()));
                 });
@@ -264,7 +264,7 @@ fn exec_procedure_http_ok() {
                     // It's a try block!
                     #[allow(clippy::redundant_closure_call)]
                     (|| {
-                        anyhow::ensure!(res.is_ok());
+                        anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
                         let module_def: RawModuleDefV9 = spacetimedb_lib::de::serde::deserialize_from(
                             &mut serde_json::Deserializer::from_str(&res.unwrap()),
                         )?;
@@ -300,7 +300,7 @@ fn exec_procedure_http_err() {
                     // It's a try block!
                     #[allow(clippy::redundant_closure_call)]
                     (|| {
-                        anyhow::ensure!(res.is_ok());
+                        anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
                         let error = res.unwrap();
                         anyhow::ensure!(error.contains("error"));
                         anyhow::ensure!(error.contains("http://foo.invalid/"));

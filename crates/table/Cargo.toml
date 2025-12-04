@@ -31,7 +31,7 @@ blake3_pure = ["blake3/pure"]
 
 [dependencies]
 spacetimedb-data-structures = { workspace = true, features = ["memory-usage"] }
-spacetimedb-memory-usage = { workspace = true, features = ["hashbrown", "ethnum", "smallvec"] }
+spacetimedb-memory-usage = { workspace = true, features = ["hash_map", "ethnum", "smallvec"] }
 spacetimedb-primitives.workspace = true
 spacetimedb-sats = { workspace = true, features = ["blake3"] }
 spacetimedb-lib = { workspace = true, features = ["memory-usage"] }

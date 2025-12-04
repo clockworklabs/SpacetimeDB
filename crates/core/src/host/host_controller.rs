@@ -179,6 +179,7 @@ pub struct ProcedureCallResult {
     pub start_timestamp: Timestamp,
 }
 
+#[derive(Debug)]
 pub struct CallProcedureReturn {
     pub result: Result<ProcedureCallResult, ProcedureCallError>,
     pub tx_offset: Option<TransactionOffset>,

@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.8.0",
+  "version": "1.11.0",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -47,7 +47,6 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "development": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "browser": "./dist/index.browser.mjs",
       "import": "./dist/index.mjs",
@@ -55,7 +54,6 @@
       "default": "./dist/index.mjs"
     },
     "./sdk": {
-      "development": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "browser": "./dist/sdk/index.browser.mjs",
       "import": "./dist/sdk/index.mjs",
@@ -63,14 +61,12 @@
       "default": "./dist/sdk/index.mjs"
     },
     "./react": {
-      "development": "./src/react/index.ts",
       "types": "./dist/react/index.d.ts",
       "import": "./dist/react/index.mjs",
       "require": "./dist/react/index.cjs",
       "default": "./dist/react/index.mjs"
     },
     "./server": {
-      "development": "./src/server/index.ts",
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
@@ -82,43 +78,43 @@
       "name": "cjs (brotli)",
       "path": "dist/index.cjs",
       "brotli": true,
-      "limit": "25 kB"
+      "limit": "54 kB"
     },
     {
       "name": "esm (brotli)",
       "path": "dist/index.mjs",
       "brotli": true,
-      "limit": "20 kB"
+      "limit": "62 kB"
     },
     {
       "name": "esm (gzip)",
       "path": "dist/index.mjs",
       "gzip": true,
-      "limit": "25 kB"
+      "limit": "31 kB"
     },
     {
       "name": "esm (uncompressed)",
       "path": "dist/index.mjs",
       "brotli": false,
-      "limit": "150 kB"
+      "limit": "328 kB"
     },
     {
       "name": "esm min (brotli)",
       "path": "dist/min/index.browser.mjs",
       "brotli": true,
-      "limit": "12 kB"
+      "limit": "30 kB"
     },
     {
       "name": "esm min (gzip)",
       "path": "dist/min/index.browser.mjs",
       "gzip": true,
-      "limit": "15 kB"
+      "limit": "34 kB"
     },
     {
       "name": "esm min (uncompressed)",
       "path": "dist/min/index.browser.mjs",
       "brotli": false,
-      "limit": "60 kB"
+      "limit": "134 kB"
     },
     {
       "name": "react esm min (brotli)",
@@ -141,24 +137,27 @@
       "name": "sdk esm min (brotli)",
       "path": "dist/min/sdk/index.browser.mjs",
       "brotli": true,
-      "limit": "10 kB"
+      "limit": "14 kB"
     },
     {
       "name": "sdk esm min (gzip)",
       "path": "dist/min/sdk/index.browser.mjs",
       "gzip": true,
-      "limit": "15 kB"
+      "limit": "16 kB"
     },
     {
       "name": "sdk esm min (uncompressed)",
       "path": "dist/min/sdk/index.browser.mjs",
-      "limit": "10 kB"
+      "limit": "14 kB"
     }
   ],
   "dependencies": {
     "base64-js": "^1.5.1",
     "fast-text-encoding": "^1.0.0",
-    "prettier": "^3.3.3"
+    "headers-polyfill": "^4.0.3",
+    "prettier": "^3.3.3",
+    "statuses": "^2.0.2",
+    "url-polyfill": "^1.1.14"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
@@ -177,6 +176,7 @@
     "@size-limit/file": "^11.2.0",
     "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "^19.1.13",
+    "@types/statuses": "^2.0.6",
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "@vitest/coverage-v8": "^3.2.4",

@@ -93,6 +93,15 @@ impl CommittedState {
     pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)
     }
+
+    /// Returns the views that perform an precise index seek on given `row_ref` of `table_id`
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ref: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.read_sets.views_for_index_seek(table_id, row_ref)
+    }
 }
 
 impl MemoryUsage for CommittedState {
