@@ -131,11 +131,15 @@ const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 /// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
 /// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`FutureExt::now_or_never`],
 /// an "async executor" which invokes [`std::task::Future::poll`] exactly once.
-fn call_sync_typed_func<Args: WasmParams, Ret: WasmResults>(
+fn call_sync_typed_func<Args, Ret>(
     typed_func: &TypedFunc<Args, Ret>,
     store: &mut Store<WasmInstanceEnv>,
     args: Args,
-) -> anyhow::Result<Ret> {
+) -> anyhow::Result<Ret>
+where
+    Args: WasmParams + Sync,
+    Ret: WasmResults + Sync,
+{
     let fut = typed_func.call_async(store, args);
     fut.now_or_never()
         .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
