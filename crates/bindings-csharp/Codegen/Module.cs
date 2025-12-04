@@ -1190,12 +1190,19 @@ record ProcedureDeclaration
     public readonly Scope Scope;
     private readonly bool HasWrongSignature;
     public readonly TypeUse ReturnType;
+    private readonly IMethodSymbol _methodSymbol;
+    private readonly ITypeSymbol _returnTypeSymbol;
+    private readonly DiagReporter _diag;
 
     public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
         var attr = context.Attributes.Single().ParseAs<ProcedureAttribute>();
+
+        _methodSymbol = method;
+        _returnTypeSymbol = method.ReturnType;
+        _diag = diag;
 
         if (
             method.Parameters.FirstOrDefault()?.Type
@@ -1234,6 +1241,12 @@ record ProcedureDeclaration
             Args.Length == 0 ? "" : ", " + string.Join(", ", Args.Select(a => a.Name));
         var invocation = $"{FullName}((SpacetimeDB.ProcedureContext)ctx{invocationArgs})";
 
+        var hasTxOutcome = TryGetTxOutcomeType(out var txOutcomePayload);
+        var hasTxResult = TryGetTxResultTypes(out var txResultPayload, out _);
+        var hasTxWrapper = hasTxOutcome || hasTxResult;
+        var txPayload = hasTxOutcome ? txOutcomePayload : txResultPayload;
+        var txPayloadIsUnit = hasTxWrapper && txPayload.BSATNName == "SpacetimeDB.BSATN.Unit";
+
         string[] bodyLines;
 
         if (HasWrongSignature)
@@ -1242,6 +1255,30 @@ record ProcedureDeclaration
             {
                 "throw new System.InvalidOperationException(\"Invalid procedure signature.\");",
             };
+        }
+        else if (hasTxWrapper)
+        {
+            var successLines = txPayloadIsUnit
+                ? new[] { "return System.Array.Empty<byte>();" }
+                : new[]
+                {
+                    "using var output = new MemoryStream();",
+                    "using var writer = new BinaryWriter(output);",
+                    "__txReturnRW.Write(writer, outcome.Value!);",
+                    "return output.ToArray();",
+                };
+
+            bodyLines =
+                new[]
+                {
+                    $"var outcome = {invocation};",
+                    "if (!outcome.IsSuccess)",
+                    "{",
+                    "    throw outcome.Error ?? new System.InvalidOperationException(\"Transaction failed.\");",
+                    "}",
+                }
+                .Concat(successLines)
+                .ToArray();
         }
         else if (ReturnType.IsVoid)
         {
@@ -1268,30 +1305,46 @@ record ProcedureDeclaration
         var paramReads = Args.Length == 0
             ? string.Empty
             : string.Join(
-                  "\n",
-                  Args.Select(a =>
-                      $"                    var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);"
-                  )
-              ) + "\n";
-        var returnTypeExpr = ReturnType.IsVoid
-            ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-            : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)";
+                "\n",
+                Args.Select(a =>
+                    $"                    var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);"
+                )
+            ) + "\n";
+
+        var returnTypeExpr = hasTxWrapper
+            ? (
+                txPayloadIsUnit
+                    ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
+                    : $"new {txPayload.BSATNName}().GetAlgebraicType(registrar)"
+            )
+            : (
+                ReturnType.IsVoid
+                    ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
+                    : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)"
+            );
+
+        var classFields = MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args);
+        if (hasTxWrapper && !txPayloadIsUnit)
+        {
+            classFields +=
+                $"\n        private {txPayload.BSATNName} __txReturnRW = new {txPayload.BSATNName}();";
+        }
 
         return $$$"""
-            class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
-                {{{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}}
+                  class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
+                      {{{classFields}}}
 
-                public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
-                    nameof({{{Name}}}),
-                    [{{{MemberDeclaration.GenerateDefs(Args)}}}],
-                    {{{returnTypeExpr}}}
-                );
+                      public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
+                          nameof({{{Name}}}),
+                          [{{{MemberDeclaration.GenerateDefs(Args)}}}],
+                          {{{returnTypeExpr}}}
+                      );
 
-                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
-                    {{{paramReads}}}{{{invokeBody}}}
-                }
-            }
-            """;
+                      public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
+                          {{{paramReads}}}{{{invokeBody}}}
+                      }
+                  }
+                  """;
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -1321,6 +1374,46 @@ record ProcedureDeclaration
         );
 
         return extensions;
+    }
+    
+    private bool TryGetTxOutcomeType(out TypeUse payloadType)
+    {
+        if (
+            _returnTypeSymbol is INamedTypeSymbol
+            {
+                Name: "TxOutcome",
+                ContainingType: { Name: "ProcedureContext" }
+            } named &&
+            named.TypeArguments.Length == 1
+        )
+        {
+            payloadType = TypeUse.Parse(_methodSymbol, named.TypeArguments[0], _diag);
+            return true;
+        }
+
+        payloadType = default!;
+        return false;
+    }
+
+    private bool TryGetTxResultTypes(out TypeUse payloadType, out TypeUse errorType)
+    {
+        if (
+            _returnTypeSymbol is INamedTypeSymbol
+            {
+                Name: "TxResult",
+                ContainingType: { Name: "ProcedureContext" }
+            } named &&
+            named.TypeArguments.Length == 2
+        )
+        {
+            payloadType = TypeUse.Parse(_methodSymbol, named.TypeArguments[0], _diag);
+            errorType = TypeUse.Parse(_methodSymbol, named.TypeArguments[1], _diag);
+            return true;
+        }
+
+        payloadType = default!;
+        errorType = default!;
+        return false;
     }
 }
 
@@ -1626,6 +1719,8 @@ public class Module : IIncrementalGenerator
                     using System.Diagnostics.CodeAnalysis;
                     using System.Runtime.CompilerServices;
                     using System.Runtime.InteropServices;
+                    using Internal = SpacetimeDB.Internal;
+                    using TxContext = SpacetimeDB.Internal.TxContext;
 
                     namespace SpacetimeDB {
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
@@ -1649,280 +1744,60 @@ public class Module : IIncrementalGenerator
                             }
                         }
                         
-                        public sealed record ProcedureContext : Internal.IInternalProcedureContext {
-                            public readonly Identity Sender;
-                            public readonly ConnectionId? ConnectionId;
-                            public readonly Random Rng;
-                            public Timestamp Timestamp { get; private set; }
-                            public readonly AuthCtx SenderAuth;
-                        
-                            // We need this property to be non-static for parity with client SDK.
-                            public Identity Identity => Internal.IProcedureContext.GetIdentity();
-                        
-                            internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
-                                Sender = identity;
-                                ConnectionId = connectionId;
-                                Rng = random;
-                                Timestamp = time;
-                                SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
-                            }
-                            
-                            private Internal.TransactionOffset? pendingTxOffset;
-                    
-                            public bool TryTakeTransactionOffset(out Internal.TransactionOffset offset)
-                            {
-                                if (pendingTxOffset is { } value)
-                                {
-                                    pendingTxOffset = null;
-                                    offset = value;
-                                    return true;
-                                }
-                                offset = default;
-                                return false;
-                            }
-                    
-                            public void SetTransactionOffset(Internal.TransactionOffset offset) =>
-                                pendingTxOffset = offset;
+                        public sealed class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
+                            private readonly Local _db = new();
+
+                            internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time)
+                                : base(identity, connectionId, random, time) {}
+
+                            protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+                            protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(Internal.TxContext inner) =>
+                                _cached ??= new ProcedureTxContext(inner);
+
+                            private ProcedureTxContext? _cached;
+
+                            [Experimental("STDB_UNSTABLE")]
+                            public Local Db => _db;
                             
                             [Experimental("STDB_UNSTABLE")]
-                            public sealed record TxContext(Local Db, ReducerContext Reducer) : DbContext<Local>(Db)
-                            {
-                                public Identity Sender => Reducer.Sender;
-                                public ConnectionId? ConnectionId => Reducer.ConnectionId;
-                                public Timestamp Timestamp => Reducer.Timestamp;
-                                public Random Rng => Reducer.Rng;
-                                public AuthCtx SenderAuth => Reducer.SenderAuth;
-                            }
-                            
-                            private sealed class AbortGuard : IDisposable
-                            {
-                                private readonly Action abort;
-                                private bool disarmed;
-                                public AbortGuard(Action abort) => this.abort = abort;
-                                public void Disarm() => disarmed = true;
-                                public void Dispose() { if (!disarmed) abort(); }
-                            }
+                            public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
+                                base.WithTx(tx => body((ProcedureTxContext)tx));
                             
                             [Experimental("STDB_UNSTABLE")]
                             public TxOutcome<TResult> TryWithTx<TResult, TError>(
-                                Func<TxContext, TxResult<TResult, TError>> body)
-                                where TError : Exception
-                            {
-                                try
-                                {
-                                    var result = RunWithRetry(body);
-                                    return result.IsSuccess
-                                        ? TxOutcome<TResult>.Success(result.Value!)
-                                        : TxOutcome<TResult>.Failure(result.Error!);
-                                }
-                                catch (Exception ex)
-                                {
-                                    return TxOutcome<TResult>.Failure(ex);
-                                }
-                            }
-                            
-                            [Experimental("STDB_UNSTABLE")]
-                            public T WithTx<T>(Func<TxContext, T> body)
-                            {
-                                var outcome = TryWithTx<T, Exception>(ctx =>
-                                    TxResult<T, Exception>.Success(body(ctx)));
-                                if (outcome.IsSuccess) return outcome.Value!;
-                                throw outcome.Error!;
-                            }
-                            
-                            [Experimental("STDB_UNSTABLE")]
-                            public readonly record struct TxOutcome<T>(bool IsSuccess, T? Value, Exception? Error)
-                            {
-                                public static TxOutcome<T> Success(T value) => new(true, value, null);
-                                public static TxOutcome<T> Failure(Exception error) => new(false, default, error);
-                            
-                                public TxOutcome<TResult> Map<TResult>(Func<T, TResult> mapper) =>
-                                    IsSuccess ? TxOutcome<TResult>.Success(mapper(Value!)) : TxOutcome<TResult>.Failure(Error!);
-                            }
-                            
-                            private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
-                                Func<TxContext, TxResult<TResult, TError>> body)
-                                where TError : Exception
-                            {
-                                var result = RunOnce<TResult, TError>(body);
-                            
-                                bool retry()
-                                {
-                                    result = RunOnce<TResult, TError>(body);
-                                    return true;
-                                }
-                            
-                                if (!SpacetimeDB.Internal.Procedure.CommitMutTxWithRetry(retry))
-                                {
-                                    SpacetimeDB.Internal.Procedure.AbortMutTx();
-                                }
-                                
-                                if (TryTakeTransactionOffset(out var offset))
-                                {
-                                    SpacetimeDB.Internal.Module.RecordProcedureTxOffset(offset);
-                                }
-                                return result;
-                            }
-                            
-                            [Experimental("STDB_UNSTABLE")]
-                            public async Task<T> WithTxAsync<T>(Func<TxContext, Task<T>> body)
-                            {
-                                var outcome = await TryWithTxAsync<T, Exception>(async ctx =>
-                                    TxResult<T, Exception>.Success(await body(ctx).ConfigureAwait(false))).ConfigureAwait(false);
-                                if (outcome.IsSuccess) return outcome.Value!;
-                                throw outcome.Error!;
-                            }
-                            
-                            public async Task<TxOutcome<TResult>> TryWithTxAsync<TResult, TError>(
-                                Func<TxContext, Task<TxResult<TResult, TError>>> body)
-                                where TError : Exception
-                            {
-                                try
-                                {
-                                    return (await RunWithRetryAsync(body).ConfigureAwait(false)).Match(
-                                        onSuccess: TxOutcome<TResult>.Success,
-                                        onError: TxOutcome<TResult>.Failure);
-                                }
-                                catch (Exception ex)
-                                {
-                                    return TxOutcome<TResult>.Failure(ex);
-                                }
-                            }
-                            
-                            [Experimental("STDB_UNSTABLE")]
-                            public readonly record struct TxResult<TSuccess, TError>
-                                where TError : Exception
-                            {
-                                public bool IsSuccess { get; }
-                                public TSuccess? Value { get; }
-                                public TError? Error { get; }
-                            
-                                private TxResult(bool isSuccess, TSuccess? value, TError? error)
-                                {
-                                    IsSuccess = isSuccess;
-                                    Value = value;
-                                    Error = error;
-                                }
-                            
-                                public static TxResult<TSuccess, TError> Success(TSuccess value) =>
-                                    new(true, value, default);
-                            
-                                public static TxResult<TSuccess, TError> Failure(TError error) =>
-                                    new(false, default, error);
-                                    
-                                public TResult Match<TResult>(
-                                    Func<TSuccess, TResult> onSuccess,
-                                    Func<TError, TResult> onError)
-                                {
-                                    if (onSuccess is null) throw new ArgumentNullException(nameof(onSuccess));
-                                    if (onError is null) throw new ArgumentNullException(nameof(onError));
-                                    return IsSuccess ? onSuccess(Value!) : onError(Error!);
-                                }
-                            }
-                            
-                            private async Task<TxResult<TResult, TError>> RunWithRetryAsync<TResult, TError>(
-                                Func<TxContext, Task<TxResult<TResult, TError>>> body)
-                                where TError : Exception
-                            {
-                                var result = await RunOnceAsync<TResult, TError>(body).ConfigureAwait(false);
-                    
-                                async Task<bool> Retry()
-                                {
-                                    result = await RunOnceAsync<TResult, TError>(body).ConfigureAwait(false);
-                                    return true;
-                                }
-                                
-                                if (!await SpacetimeDB.Internal.Procedure.CommitMutTxWithRetryAsync(Retry).ConfigureAwait(false)) 
-                                {
-                                    await SpacetimeDB.Internal.Procedure.AbortMutTxAsync().ConfigureAwait(false);
-                                }
-                                if (TryTakeTransactionOffset(out var offset)) { 
-                                    SpacetimeDB.Internal.Module.RecordProcedureTxOffset(offset); 
-                                }
-                            
-                                return result;
-                            }
-                            
-                            private async Task<TxResult<TResult, TError>> RunOnceAsync<TResult, TError>(
-                                Func<TxContext, Task<TxResult<TResult, TError>>> body)
-                                where TError : Exception
-                            {
-                                var micros = SpacetimeDB.Internal.Procedure.StartMutTx();
-                                await using var guard = new AsyncAbortGuard(SpacetimeDB.Internal.Procedure.AbortMutTxAsync);
-                                var txCtx = MakeTxContext(micros);
-                                var output = await body(txCtx).ConfigureAwait(false);
-                                await guard.DisarmAsync().ConfigureAwait(false);
-                                return output;
-                            }
-                            
-                            private sealed class AsyncAbortGuard : IAsyncDisposable
-                            {
-                                private readonly Func<Task> abort;
-                                private bool disarmed;
-                                public AsyncAbortGuard(Func<Task> abort) => this.abort = abort;
-                                public Task DisarmAsync() { disarmed = true; return Task.CompletedTask; }
-                                public async ValueTask DisposeAsync()
-                                {
-                                    if (!disarmed) await abort().ConfigureAwait(false);
-                                }
-                            }
-                            
-                            private bool RetryOnce<TResult, TError>(
-                                Func<TxContext, TxResult<TResult, TError>> body,
-                                out TxResult<TResult, TError> result)
-                                where TError : Exception
-                            {
-                                result = RunOnce<TResult, TError>(body);
-                                return true;
-                            }
-                            
-                            private TxResult<TResult, TError> RunOnce<TResult, TError>(
-                                Func<TxContext, TxResult<TResult, TError>> body)
-                                where TError : Exception
-                            {
-                                var micros = SpacetimeDB.Internal.Procedure.StartMutTx();
-                                using var guard = new AbortGuard(SpacetimeDB.Internal.Procedure.AbortMutTx);
-                                var txCtx = MakeTxContext(micros);
-                                var output = body(txCtx);
-                                guard.Disarm();
-                                return output;
-                            }
-                            
-                            private TxContext MakeTxContext(long micros)
-                            {
-                                var txTimestamp = new Timestamp(micros);
-                                Timestamp = txTimestamp;
-                                var reducerCtx = new ReducerContext(
-                                    Sender, ConnectionId, new Random(unchecked((int)micros)),
-                                    txTimestamp, SenderAuth);
-                                return new TxContext(new Local(), reducerCtx);
-                            }
-                        }
-                        
-                        public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
-                        {
-                            public Identity Sender { get; }
-                        
-                            internal ViewContext(Identity sender, Internal.LocalReadOnly db)
-                                : base(db)
-                            {
-                                Sender = sender;
-                            }
+                                Func<ProcedureTxContext, TxResult<TResult, TError>> body)
+                                where TError : Exception =>
+                                base.TryWithTx(tx => body((ProcedureTxContext)tx));
                         }
 
-                        public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext 
-                        {
-                            internal AnonymousViewContext(Internal.LocalReadOnly db)
-                                : base(db) { }
+                        [Experimental("STDB_UNSTABLE")]
+                        public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase {
+                            internal ProcedureTxContext(Internal.TxContext inner) : base(inner) {}
+
+                            public new Local Db => (Local)base.Db;
                         }
-                    
-                        namespace Internal.TableHandles {
-                            {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
-                        }
-                                            
-                        public sealed class Local {
+
+                        public sealed class Local : global::SpacetimeDB.LocalBase {
                             {{string.Join("\n", tableAccessors.Select(v => v.getter))}}
                         }
+
+                        public sealed class LocalReadOnly : global::SpacetimeDB.LocalReadOnlyBase {
+                            {{string.Join("\n", readOnlyAccessors.Select(v => v.readOnlyGetter))}}
+                        }
+                        
+                        public sealed record ViewContext : DbContext<LocalReadOnly>, Internal.IViewContext
+                        {
+                            public Identity Sender { get; }
+                            internal ViewContext(Identity sender, LocalReadOnly db) : base(db) => Sender = sender;
+                        }
+
+                        public sealed record AnonymousViewContext : DbContext<LocalReadOnly>, Internal.IAnonymousViewContext {
+                            internal AnonymousViewContext(LocalReadOnly db) : base(db) { }
+                        }
+                    }
+                    
+                    namespace SpacetimeDB.Internal.TableHandles {
+                        {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
                     }
                     
                     {{string.Join("\n", 
@@ -1936,12 +1811,6 @@ public class Module : IIncrementalGenerator
                         
                     namespace SpacetimeDB.Internal.ViewHandles {
                         {{string.Join("\n", readOnlyAccessors.Array.Select(v => v.readOnlyAccessor))}}
-                    }
-                    
-                    namespace SpacetimeDB.Internal {
-                        public sealed partial class LocalReadOnly {
-                            {{string.Join("\n", readOnlyAccessors.Select(v => v.readOnlyGetter))}}
-                        }
                     }
                     
                     static class ModuleRegistration {
@@ -1962,8 +1831,8 @@ public class Module : IIncrementalGenerator
                     #endif
                         public static void Main() {
                           SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
-                          SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.Internal.LocalReadOnly()));
-                          SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly()));
+                          SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.LocalReadOnly()));
+                          SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetProcedureContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ProcedureContext(identity, connectionId, random, time));
                           var __memoryStream = new MemoryStream();
                           var __writer = new BinaryWriter(__memoryStream);

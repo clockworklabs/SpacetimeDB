@@ -443,10 +443,19 @@ public static class Module
 }
 
 /// <summary>
+/// Read-write database access for procedure contexts.
+/// The code generator will extend this partial class with table accessors.
+/// </summary>
+public partial class Local
+{
+    // Intentionally empty – generated code adds table handles here.
+}
+
+/// <summary>
 /// Read-only database access for view contexts.
 /// The code generator will extend this partial class to add table accessors.
 /// </summary>
-public sealed partial class LocalReadOnly
+public partial class LocalReadOnly
 {
     // This class is intentionally empty - the code generator will add
     // read-only table accessors for each table in the module.

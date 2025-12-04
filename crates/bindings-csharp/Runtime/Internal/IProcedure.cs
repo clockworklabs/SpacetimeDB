@@ -37,4 +37,6 @@ public interface IInternalProcedureContext : IProcedureContext
 {
     bool TryTakeTransactionOffset(out TransactionOffset offset);
     void SetTransactionOffset(TransactionOffset offset);
+    TxContext EnterTxContext(long timestampMicros);
+    void ExitTxContext();
 }

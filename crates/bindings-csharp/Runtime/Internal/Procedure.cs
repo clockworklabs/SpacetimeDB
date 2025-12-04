@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace SpacetimeDB.Internal;
 
 public static class Procedure
@@ -31,14 +29,17 @@ public static class Procedure
     {
         var status = FFI.procedure_start_mut_tx(out var micros);
         FFI.ErrnoHelpers.ThrowIfError(status);
+        var ctx = RequireContext();
+        ctx.EnterTxContext(micros);
         return micros;
     }
 
     public static void CommitMutTx()
     {
         FFI.procedure_commit_mut_tx(); // throws on error
-        if (RequireContext() is IInternalProcedureContext ctx &&
-            TryTakeOffsetFromHost(out var offset))
+        var ctx = RequireContext();
+        ctx.ExitTxContext();
+        if (TryTakeOffsetFromHost(out var offset))
         {
             ctx.SetTransactionOffset(offset);
             Module.RecordProcedureTxOffset(offset);
@@ -48,8 +49,9 @@ public static class Procedure
     public static void AbortMutTx()
     {
         FFI.procedure_abort_mut_tx(); // throws on error
-        if (RequireContext() is IInternalProcedureContext ctx &&
-            TryTakeOffsetFromHost(out var offset))
+        var ctx = RequireContext();
+        ctx.ExitTxContext();
+        if (TryTakeOffsetFromHost(out var offset))
         {
             ctx.SetTransactionOffset(offset);
             Module.RecordProcedureTxOffset(offset);
