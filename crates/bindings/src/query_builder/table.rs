@@ -29,7 +29,7 @@ impl<T> Table<T> {
         }
     }
 
-    pub fn name(&self) -> TableNameStr {
+    pub(super) fn name(&self) -> TableNameStr {
         self.table_name
     }
 }
