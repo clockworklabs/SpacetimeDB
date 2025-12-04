@@ -1,4 +1,3 @@
-import { literal } from '.';
 import { schema } from '../lib/schema';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
@@ -52,14 +51,15 @@ spacetime.anonymousView({ name: 'v3', public: true }, arrayRetValue, ctx => {
 });
 
 spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
-  // @ts-expect-error this uses a literal of the wrong type.
-  const _x = ctx.from.person.where(row => row.id.eq(literal('string'))).build();
-  return ctx.from.person.where(row => row.id.eq(literal(5))).build();
+  // @ts-expect-error returns a query of the wrong type.
+  const _invalid = ctx.from.person.where(row => row.id.eq('string')).build();
+  const _columnEqs = ctx.from.person.where(row => row.id.eq(row.id)).build();
+  return ctx.from.person.where(row => row.id.eq(5)).build();
 });
 
 spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
   return ctx.from.person
-    .where(row => row.id.eq(literal(5)))
+    .where(row => row.id.eq(5))
     .semijoinLeft(ctx.from.order, (p, o) => p.id.eq(o.id))
     .build();
 });

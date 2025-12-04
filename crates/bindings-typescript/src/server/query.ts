@@ -426,7 +426,7 @@ export class ColumnExpression<
     this.spacetimeType = spacetimeType;
   }
 
-  eq(literal: LiteralExpr<RowType<TableDef>[ColumnName]>): EqExpr<TableDef>;
+  eq(literal: LiteralValue & RowType<TableDef>[ColumnName]): EqExpr<TableDef>;
   eq<OtherCol extends ColumnExpr<any, any>>(
     value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
   ): EqExpr<TableDef | ExtractTable<OtherCol>>;
@@ -509,6 +509,7 @@ export function literal<Value extends LiteralValue>(
   return { type: 'literal', value };
 }
 
+// This is here to take literal values and wrap them in an AST node.
 function normalizeValue(val: ValueInput<any>): ValueExpr<any, any> {
   if ((val as LiteralExpr<any>).type === 'literal')
     return val as LiteralExpr<any>;
