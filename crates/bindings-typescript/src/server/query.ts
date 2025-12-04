@@ -1,6 +1,6 @@
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import type { IndexOpts } from '../lib/indexes';
+import type { ColumnIndex, IndexColumns, IndexOpts } from '../lib/indexes';
 import type { UntypedSchemaDef } from '../lib/schema';
 import type { TableSchema } from '../lib/table_schema';
 import type {
@@ -231,7 +231,10 @@ class TableRefImpl<TableDef extends TypedTableDef>
     this.name = tableDef.name;
     this.cols = createRowExpr(tableDef);
     // this.indexedCols = createIndexedRowExpr(tableDef, this.cols);
-    this.indexedCols = createRowExpr(tableDef) as IndexedRowExpr<TableDef>;
+    // TODO: we could create an indexedRowExpr to avoid having the extra columns.
+    // Right now, the objects we pass will actually have all the columns, but the
+    // type system will consider it an error.
+    this.indexedCols = this.cols;
     this.tableDef = tableDef;
     Object.freeze(this);
   }
@@ -460,10 +463,36 @@ type InferSpacetimeTypeOfColumn<
 type ColumnNames<TableDef extends TypedTableDef> = keyof RowType<TableDef> &
   string;
 
-// TODO: Fix this to actually only include indexed columns.
+// For composite indexes, we only consider it as an index over the first column in the index.
+type FirstIndexColumn<I extends IndexOpts<any>> =
+  IndexColumns<I> extends readonly [infer Head extends string, ...infer _Rest]
+    ? Head
+    : never;
+
+// Columns that are indexed by something in the indexes: [...] part.
+type ExplicitIndexedColumns<TableDef extends TypedTableDef> =
+  TableDef['indexes'][number] extends infer I
+    ? I extends IndexOpts<ColumnNames<TableDef>>
+      ? FirstIndexColumn<I> & ColumnNames<TableDef>
+      : never
+    : never;
+
+// Columns with an index defined on the column definition.
+type MetadataIndexedColumns<TableDef extends TypedTableDef> = {
+  [K in ColumnNames<TableDef>]: ColumnIndex<
+    K,
+    TableDef['columns'][K]['columnMetadata']
+  > extends never
+    ? never
+    : K;
+}[ColumnNames<TableDef>];
+
+export type IndexedColumnNames<TableDef extends TypedTableDef> =
+  | ExplicitIndexedColumns<TableDef>
+  | MetadataIndexedColumns<TableDef>;
+
 export type IndexedRowExpr<TableDef extends TypedTableDef> = Readonly<{
-  //readonly [C in IndexedColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
-  readonly [C in ColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
+  readonly [C in IndexedColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
 }>;
 
 /**
@@ -667,10 +696,11 @@ function _createIndexedRowExpr<TableDef extends TypedTableDef>(
   tableDef: TableDef,
   cols: RowExpr<TableDef>
 ): IndexedRowExpr<TableDef> {
-  const indexed = new Set<string>();
+  const indexed = new Set<ColumnNames<TableDef>>();
   for (const idx of tableDef.indexes) {
     if ('columns' in idx) {
-      indexed.add(idx.columns.at(0));
+      const [first] = idx.columns;
+      if (first) indexed.add(first);
     } else if ('column' in idx) {
       indexed.add(idx.column);
     }

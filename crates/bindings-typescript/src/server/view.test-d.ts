@@ -3,7 +3,16 @@ import { table } from '../lib/table';
 import t from '../lib/type_builders';
 
 const person = table(
-  { name: 'person' },
+  {
+    name: 'person',
+    indexes: [
+      {
+        name: 'name_id_idx',
+        algorithm: 'btree',
+        columns: ['name', 'id'] as const,
+      },
+    ],
+  },
   {
     id: t.u32().primaryKey(),
     name: t.string(),
@@ -20,10 +29,19 @@ const personWithExtra = table(
 );
 
 const order = table(
-  { name: 'order' },
+  {
+    name: 'order',
+    indexes: [
+      {
+        name: 'id_person_id', // We are adding this to make sure `person_id` still isn't considered indexed.
+        algorithm: 'btree',
+        columns: ['id', 'person_id'] as const,
+      },
+    ],
+  },
   {
     id: t.u32().primaryKey(),
-    name2: t.string(),
+    person_name: t.string().index(),
     person_id: t.u32(),
   }
 );
@@ -58,6 +76,15 @@ spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
 });
 
 spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
+  const _nonIndexedSemijoin = ctx.from.person
+    .where(row => row.id.eq(5))
+    // @ts-expect-error person_id is not indexed.
+    .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.person_id))
+    .build();
+  const _fromCompositeIndex = ctx.from.person
+    .where(row => row.id.eq(5))
+    .leftSemijoin(ctx.from.order, (p, o) => p.name.eq(o.person_name))
+    .build();
   return ctx.from.person
     .where(row => row.id.eq(5))
     .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id))
