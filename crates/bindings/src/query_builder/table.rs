@@ -4,27 +4,33 @@ use crate::query_builder::Operand;
 
 use super::{format_expr, BoolExpr, Query, RHS};
 
-pub trait TableName {
-    const TABLE_NAME: &'static str;
-}
+pub type TableNameStr = &'static str;
 
-pub trait HasCols: TableName {
+pub trait HasCols {
     type Cols;
-    fn cols() -> Self::Cols;
+    fn cols(name: TableNameStr) -> Self::Cols;
 }
 
-pub trait HasIxCols: TableName {
+pub trait HasIxCols {
     type IxCols;
-    fn ix_cols() -> Self::IxCols;
+    fn ix_cols(name: TableNameStr) -> Self::IxCols;
 }
 
 pub struct Table<T> {
+    pub(super) table_name: TableNameStr,
     _marker: PhantomData<T>,
 }
 
-impl<T> Default for Table<T> {
-    fn default() -> Self {
-        Table { _marker: PhantomData }
+impl<T> Table<T> {
+    pub fn new(table_name: TableNameStr) -> Self {
+        Self {
+            table_name,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(super) fn name(&self) -> TableNameStr {
+        self.table_name
     }
 }
 
@@ -35,9 +41,9 @@ pub struct Col<T, V> {
 }
 
 impl<T, V> Col<T, V> {
-    pub fn new(column_name: &'static str) -> Self {
+    pub fn new(table_name: &'static str, column_name: &'static str) -> Self {
         Self {
-            col: ColumnRef::new(column_name),
+            col: ColumnRef::new(table_name, column_name),
             _marker: PhantomData,
         }
     }
@@ -50,7 +56,7 @@ impl<T, V> Clone for Col<T, V> {
     }
 }
 
-impl<T: TableName, V> Col<T, V> {
+impl<T, V> Col<T, V> {
     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
         BoolExpr::Eq(self.into(), rhs.to_expr())
     }
@@ -65,34 +71,37 @@ impl<T: TableName, V> Col<T, V> {
     }
 }
 
-impl<T: TableName, V> From<Col<T, V>> for Operand<T> {
+impl<T, V> From<Col<T, V>> for Operand<T> {
     fn from(col: Col<T, V>) -> Self {
-        Operand::Column(ColumnRef::new(col.col.column_name()))
+        Operand::Column(col.col)
     }
 }
 
 pub struct ColumnRef<T> {
+    table_name: &'static str,
     column_name: &'static str,
     _marker: PhantomData<T>,
 }
 
 impl<T> ColumnRef<T> {
-    pub(super) fn new(column_name: &'static str) -> Self {
+    pub(super) fn new(table_name: &'static str, column_name: &'static str) -> Self {
         Self {
+            table_name,
             column_name,
             _marker: PhantomData,
         }
     }
 
-    pub(super) fn fmt(&self) -> String
-    where
-        T: TableName,
-    {
-        format!("\"{}\".\"{}\"", T::TABLE_NAME, self.column_name)
+    pub(super) fn fmt(&self) -> String {
+        format!("\"{}\".\"{}\"", self.table_name, self.column_name)
     }
 
     pub(super) fn column_name(&self) -> &'static str {
         self.column_name
+    }
+
+    pub(super) fn table_name(&self) -> &'static str {
+        self.table_name
     }
 }
 
@@ -103,13 +112,14 @@ impl<T> Clone for ColumnRef<T> {
     }
 }
 
-pub struct FromWhere<T: TableName> {
+pub struct FromWhere<T> {
+    pub(super) table_name: TableNameStr,
     pub(super) expr: BoolExpr<T>,
 }
 
 impl<T: HasCols> Table<T> {
     pub fn build(self) -> Query<T> {
-        let sql = format!(r#"SELECT * FROM "{}""#, T::TABLE_NAME);
+        let sql = format!(r#"SELECT * FROM "{}""#, self.table_name);
         Query::new(sql)
     }
 
@@ -117,8 +127,11 @@ impl<T: HasCols> Table<T> {
     where
         F: Fn(&T::Cols) -> BoolExpr<T>,
     {
-        let expr = f(&T::cols());
-        FromWhere { expr }
+        let expr = f(&T::cols(self.table_name));
+        FromWhere {
+            table_name: self.table_name,
+            expr,
+        }
     }
 }
 
@@ -127,14 +140,19 @@ impl<T: HasCols> FromWhere<T> {
     where
         F: Fn(&T::Cols) -> BoolExpr<T>,
     {
-        let extra = f(&T::cols());
+        let extra = f(&T::cols(self.table_name));
         Self {
+            table_name: self.table_name,
             expr: self.expr.and(extra),
         }
     }
 
     pub fn build(self) -> Query<T> {
-        let sql = format!(r#"SELECT * FROM "{}" WHERE {}"#, T::TABLE_NAME, format_expr(&self.expr));
+        let sql = format!(
+            r#"SELECT * FROM "{}" WHERE {}"#,
+            self.table_name,
+            format_expr(&self.expr)
+        );
         Query::new(sql)
     }
 }
