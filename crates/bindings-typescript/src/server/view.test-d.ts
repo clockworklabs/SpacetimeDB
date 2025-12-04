@@ -1,7 +1,7 @@
-import { literal } from '../server';
-import { schema } from './schema';
-import { table } from './table';
-import t from './type_builders';
+import { literal } from '.';
+import { schema } from '../lib/schema';
+import { table } from '../lib/table';
+import t from '../lib/type_builders';
 
 const person = table(
   { name: 'person' },
