@@ -459,6 +459,22 @@ ctx.procedures.insertAValue({ a: 12, b: "Foo" });
 ```
 
 </TabItem>
+<TabItem value="cpp" label="Unreal C++">
+
+Clients can invoke procedures using methods on `ctx.Procedures`:
+
+```cpp
+Context.Procedures->InsertAValue(12, TEXT("Foo"), {});
+```
+
+</TabItem>
+<TabItem value="blueprint" label="Unreal Blueprint">
+
+Clients can invoke procedures using methods on `ctx.Procedures`:
+
+![Calling Procedures](/images/unreal/procedures/ue-blueprint-calling-procedure.png)
+
+</TabItem>
 </Tabs>
 
 ### Observing return values
@@ -485,7 +501,7 @@ That callback will have access to the return value of the procedure,
 or an error if the procedure fails.
 
 ```csharp
-ctx.Procedures.AddTwoNumbers(12, "Foo", (ctx, result) =>
+ctx.Procedures.AddTwoNumbers(1, 2, (ctx, result) =>
 {
     if (result.IsSuccess)
     {
@@ -508,6 +524,48 @@ ctx.procedures.addTwoNumbers({ lhs: 1, rhs: 2 }).then(
     sum => console.log(`1 + 2 = ${sum}`)
 );
 ```
+
+</TabItem>
+<TabItem value="cpp" label="Unreal C++">
+
+A client can also invoke a procedure while registering a callback to run when it completes.
+That callback will have access to the return value of the procedure,
+or an error if the procedure fails.
+
+```cpp
+{
+    ...    
+    FOnAddTwoNumbersComplete ReturnCallback;
+    BIND_DELEGATE_SAFE(ReturnCallback, this, AGameManager, OnAddTwoNumbersComplete);
+    Context.Procedures->AddTwoNumbers(1, 2, ReturnCallback);
+}
+
+void AGameManager::OnAddTwoNumbersComplete(const FProcedureEventContext& Context, int32 Result, bool bSuccess)
+{
+    if (bSuccess)
+    {
+        UE_LOG(LogTemp, Log, TEXT("1 + 2 = %d"), Result);
+    }
+    else
+    {
+        if (Context.Event.Status.IsInternalError())
+        {
+            UE_LOG(LogTemp, Error, TEXT("Error: %s"), *Context.Event.Status.GetAsInternalError());
+            return;
+        }
+        UE_LOG(LogTemp, Error, TEXT("Out of energy!"));
+    }
+}
+```
+
+</TabItem>
+<TabItem value="blueprint" label="Unreal Blueprint">
+
+A client can also invoke a procedure while registering a callback to run when it completes.
+That callback will have access to the return value of the procedure,
+or an error if the procedure fails.
+
+![Procedure Callbacks](/images/unreal/procedures/ue-blueprint-procedure-callback.png)
 
 </TabItem>
 </Tabs>

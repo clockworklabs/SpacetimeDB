@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use anyhow::Context;
-use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
+use spacetimedb_paths::server::ServerDataDir;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, FunctionBudget};
@@ -71,9 +71,18 @@ impl WasmtimeRuntime {
         #[cfg(feature = "perfmap")]
         config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
-        // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
         if let Some(data_dir) = data_dir {
-            let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+            let mut cache_config = wasmtime::CacheConfig::new();
+            cache_config.with_directory(data_dir.wasmtime_cache().0);
+            match wasmtime::Cache::new(cache_config) {
+                Ok(cache) => {
+                    config.cache(Some(cache));
+                }
+                Err(e) => {
+                    // caching is just an optimization, so if it fails, just log and continue
+                    tracing::warn!("failed to set up wasmtime cache: {e:#}")
+                }
+            }
         }
 
         let engine = Engine::new(&config).unwrap();
@@ -89,20 +98,6 @@ impl WasmtimeRuntime {
         WasmtimeModule::link_imports(&mut linker).unwrap();
 
         WasmtimeRuntime { engine, linker }
-    }
-
-    fn set_cache_config(config: &mut wasmtime::Config, cache_dir: WasmtimeCacheDir) -> anyhow::Result<()> {
-        use std::io::Write;
-        let cache_config = toml::toml! {
-            // see <https://docs.wasmtime.dev/cli-cache.html> for options here
-            [cache]
-            enabled = true
-            directory = (toml::Value::try_from(cache_dir.0)?)
-        };
-        let tmpfile = tempfile::NamedTempFile::new()?;
-        write!(&tmpfile, "{cache_config}")?;
-        config.cache_config_load(tmpfile.path())?;
-        Ok(())
     }
 }
 
@@ -244,12 +239,15 @@ impl Mem {
 
     /// Creates and returns a view into the actual memory `store`.
     /// This view allows for reads and writes.
-    pub fn view_and_store_mut<'a, T>(&self, store: impl Into<StoreContextMut<'a, T>>) -> (&'a mut MemView, &'a mut T) {
+    pub fn view_and_store_mut<'a, T: 'static>(
+        &self,
+        store: impl Into<StoreContextMut<'a, T>>,
+    ) -> (&'a mut MemView, &'a mut T) {
         let (mem, store_data) = self.memory.data_and_store_mut(store);
         (MemView::from_slice_mut(mem), store_data)
     }
 
-    fn view<'a, T: 'a>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
+    fn view<'a, T: 'static>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
         MemView::from_slice(self.memory.data(store))
     }
 }
