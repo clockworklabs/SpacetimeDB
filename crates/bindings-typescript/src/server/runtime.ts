@@ -40,10 +40,11 @@ import {
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
-import { makeQueryBuilder } from './query';
+import { isRowTypedQuery, makeQueryBuilder } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
+import ViewResultHeader from '../lib/autogen/view_result_header_type';
 
 const { freeze } = Object;
 
@@ -244,6 +245,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       db: getDbView(),
       from: makeQueryBuilder(getRegisteredSchema()),
     });
+    // ViewResultHeader.RawSql
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
@@ -251,8 +253,35 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = (ret as unknown as { toSql(): string }).toSql();
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
   __call_view_anon__(id, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
@@ -270,8 +299,35 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = (ret as unknown as { toSql(): string }).toSql();
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
 };
 

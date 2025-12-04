@@ -30,8 +30,6 @@ export interface TableTypedQuery<TableDef extends TypedTableDef> {
   readonly __table?: TableDef;
 }
 
-const RowQueryBrand: unique symbol = Symbol('RowQuery');
-
 export interface RowTypedQuery<Row> {
   readonly [QueryBrand]: true;
   // Phantom type to track the row type.
@@ -50,7 +48,7 @@ export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
 >;
 
 export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any> =>
-  !!val && typeof val === 'object' && RowQueryBrand in (val as object);
+  !!val && typeof val === 'object' && QueryBrand in (val as object);
 
 export const isTypedQuery = (val: unknown): val is TableTypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);

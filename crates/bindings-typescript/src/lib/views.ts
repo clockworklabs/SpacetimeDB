@@ -20,12 +20,13 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
-import type {
-  QueryBuilder,
-  TableTypedQuery,
-  RowTypedQuery,
-  TypedTableDef,
-  ToRowQuery,
+import {
+  type QueryBuilder,
+  type TableTypedQuery,
+  type RowTypedQuery,
+  type TypedTableDef,
+  type ToRowQuery,
+  isRowTypedQuery,
 } from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
@@ -117,6 +118,7 @@ export function defineView<
     },
   });
 
+  // If it is an option, we wrap the function to make the return look like an array.
   if (returnType.tag == 'Sum') {
     const originalFn = fn;
     fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {
