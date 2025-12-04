@@ -589,3 +589,135 @@ pub fn insert_player(ctx: &ReducerContext, name: String) {
             ],
             projection,
         )
+
+
+class QueryView(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::{Query, ReducerContext, Table, ViewContext};
+
+#[spacetimedb::table(name = user, public)]
+pub struct User {
+    #[primary_key]
+    identity: u8,
+    name: String,
+    online: bool,
+}
+
+#[spacetimedb::table(name = person, public)]
+pub struct Person {
+    #[primary_key]
+    identity: u8,
+    name: String,
+    #[index(btree)]
+    age: u8,
+}
+
+#[spacetimedb::reducer(init)]
+fn init(ctx: &ReducerContext) {
+    ctx.db.user().insert(User {
+        identity: 1,
+        name: "Alice".to_string(),
+        online: true,
+    });
+
+    ctx.db.user().insert(User {
+        identity: 2,
+        name: "BOB".to_string(),
+        online: false,
+    });
+
+
+    ctx.db.user().insert(User {
+        identity: 3,
+        name: "POP".to_string(),
+        online: false,
+    });
+
+    ctx.db.person().insert(Person {
+        identity: 1,
+        name: "Alice".to_string(),
+        age: 30,
+    });
+
+
+    ctx.db.person().insert(Person {
+        identity: 2,
+        name: "BOB".to_string(),
+
+        age: 20,
+    });
+
+}
+
+#[spacetimedb::view(name = online_users, public)]
+fn online_users(ctx: &ViewContext) -> Query<User> {
+    ctx.from.user().r#where(|c| c.online.eq(true)).build()
+}
+
+#[spacetimedb::view(name = online_users_age, public)]
+fn online_users_age(ctx: &ViewContext) -> Query<Person> {
+    ctx.from
+        .user()
+        .r#where(|u| u.online.eq(true))
+        .right_semijoin(ctx.from.person(), |u, p| u.identity.eq(p.identity))
+        .build()
+}
+
+#[spacetimedb::view(name = offline_user_20_years_old, public)]
+fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.eq(20))
+        .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
+        .r#where(|u| u.online.eq(true))
+        .build()
+}
+
+#[spacetimedb::view(name = users_whos_age_is_known, public)]
+fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
+    ctx.from
+        .user()
+        .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
+        .build()
+}
+"""
+
+
+    def test_query_view(self):
+        """Tests that views returning Query types work as expected"""
+
+        self.assertSql("SELECT * FROM online_users", """\
+ identity | name    | online
+----------+---------+--------
+ 1        | "Alice" | true
+""")
+
+    def test_query_right_semijoin_view(self):
+        """Tests that views returning Query types with right semijoin work as expected"""
+
+        self.assertSql("SELECT * FROM online_users_age", """\
+ identity | name    | age
+----------+---------+-----
+ 1        | "Alice" | 30
+""")
+
+    def test_query_left_semijoin_view(self):
+        """Tests that views returning Query types with left semijoin work as expected"""
+
+        self.assertSql("SELECT * FROM users_whos_age_is_known", """\
+ identity | name    | online
+----------+---------+--------
+ 1        | "Alice" | true
+ 2        | "BOB"   | false
+""")
+
+#    def test_query_complex_right_semijoin_view(self):
+#        """Tests that views returning Query types with right semijoin work as expected"""
+#
+#        self.assertSql("SELECT * FROM offline_user_20_years_old", """\
+# identity | name    | online
+#----------+---------+-----
+# 2        | "Bob" | false
+#""")
+
+
