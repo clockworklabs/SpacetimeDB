@@ -36,29 +36,26 @@ mod tests {
         pub name: Col<User, String>,
         pub age: Col<User, i32>,
     }
-    impl Default for UserCols {
-        fn default() -> Self {
+    impl UserCols {
+        fn new(table_name: &'static str) -> Self {
             Self {
-                id: Col::new("id"),
-                name: Col::new("name"),
-                age: Col::new("age"),
+                id: Col::new(table_name, "id"),
+                name: Col::new(table_name, "name"),
+                age: Col::new(table_name, "age"),
             }
         }
     }
-    impl TableName for User {
-        const TABLE_NAME: &'static str = "users";
-    }
     impl HasCols for User {
         type Cols = UserCols;
-        fn cols() -> Self::Cols {
-            UserCols::default()
+        fn cols(table_name: &'static str) -> Self::Cols {
+            UserCols::new(table_name)
         }
     }
     fn users() -> Table<User> {
-        Table::default()
+        Table::new("users")
     }
     fn other() -> Table<Other> {
-        Table::default()
+        Table::new("other")
     }
     struct OtherCols {
         pub uid: Col<Other, i32>,
@@ -66,8 +63,10 @@ mod tests {
 
     impl HasCols for Other {
         type Cols = OtherCols;
-        fn cols() -> Self::Cols {
-            OtherCols { uid: Col::new("uid") }
+        fn cols(table: &'static str) -> Self::Cols {
+            OtherCols {
+                uid: Col::new(table, "uid"),
+            }
         }
     }
     struct IxUserCols {
@@ -75,22 +74,23 @@ mod tests {
     }
     impl HasIxCols for User {
         type IxCols = IxUserCols;
-        fn ix_cols() -> Self::IxCols {
-            IxUserCols { id: IxCol::new("id") }
+        fn ix_cols(table_name: &'static str) -> Self::IxCols {
+            IxUserCols {
+                id: IxCol::new(table_name, "id"),
+            }
         }
     }
     struct Other;
-    impl TableName for Other {
-        const TABLE_NAME: &'static str = "other";
-    }
     #[derive(Clone)]
     struct IxOtherCols {
         pub uid: IxCol<Other, i32>,
     }
     impl HasIxCols for Other {
         type IxCols = IxOtherCols;
-        fn ix_cols() -> Self::IxCols {
-            IxOtherCols { uid: IxCol::new("uid") }
+        fn ix_cols(table_name: &'static str) -> Self::IxCols {
+            IxOtherCols {
+                uid: IxCol::new(table_name, "uid"),
+            }
         }
     }
     fn norm(s: &str) -> String {
@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn test_format_expr_column_literal() {
         let expr = BoolExpr::Eq(
-            Operand::Column(ColumnRef::<User>::new("id")),
+            Operand::Column(ColumnRef::<User>::new("user", "id")),
             Operand::Literal(LiteralValue::new("42".to_string())),
         );
         let sql = format_expr(&expr);
@@ -222,43 +222,39 @@ mod tests {
             bytes: Col<Player, Vec<u8>>,
         }
 
-        impl TableName for Player {
-            const TABLE_NAME: &'static str = "player";
-        }
-
         impl HasCols for Player {
             type Cols = PlayerCols;
-            fn cols() -> Self::Cols {
+            fn cols(table_name: &'static str) -> Self::Cols {
                 PlayerCols {
-                    score: Col::new("score"),
-                    name: Col::new("name"),
-                    active: Col::new("active"),
-                    connection_id: Col::new("connection_id"),
-                    cells: Col::new("cells"),
-                    identity: Col::new("identity"),
-                    ts: Col::new("ts"),
-                    bytes: Col::new("bytes"),
+                    score: Col::new(table_name, "score"),
+                    name: Col::new(table_name, "name"),
+                    active: Col::new(table_name, "active"),
+                    connection_id: Col::new(table_name, "connection_id"),
+                    cells: Col::new(table_name, "cells"),
+                    identity: Col::new(table_name, "identity"),
+                    ts: Col::new(table_name, "ts"),
+                    bytes: Col::new(table_name, "bytes"),
                 }
             }
         }
 
-        let q = Table::<Player>::default().r#where(|c| c.score.eq(100)).build();
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.score.eq(100)).build();
 
         assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."score" = 100)"#);
 
-        let q = Table::<Player>::default()
-            .r#where(|c| c.name.ne("Alice".to_string()))
-            .build();
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.name.ne("Alice".to_string())).build();
 
         assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."name" <> 'Alice')"#);
 
-        let q = Table::<Player>::default().r#where(|c| c.active.eq(true)).build();
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.active.eq(true)).build();
 
         assert_eq!(q.sql, r#"SELECT * FROM "player" WHERE ("player"."active" = TRUE)"#);
 
-        let q = Table::<Player>::default()
-            .r#where(|c| c.connection_id.eq(ConnectionId::ZERO))
-            .build();
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.connection_id.eq(ConnectionId::ZERO)).build();
 
         assert_eq!(
             q.sql,
@@ -266,16 +262,17 @@ mod tests {
         );
 
         let big_int: i256 = (i256::ONE << 120) * i256::from(-1);
-        let q = Table::<Player>::default().r#where(|c| c.cells.gt(big_int)).build();
+
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.cells.gt(big_int)).build();
 
         assert_eq!(
             q.sql,
             r#"SELECT * FROM "player" WHERE ("player"."cells" > -1329227995784915872903807060280344576)"#,
         );
 
-        let q = Table::<Player>::default()
-            .r#where(|c| c.identity.ne(Identity::ONE))
-            .build();
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.identity.ne(Identity::ONE)).build();
 
         assert_eq!(
             q.sql,
@@ -283,15 +280,16 @@ mod tests {
         );
 
         let ts = spacetimedb_lib::Timestamp::UNIX_EPOCH + TimeDuration::from_micros(1000);
-        let q = Table::<Player>::default().r#where(|c| c.ts.eq(ts)).build();
+
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.ts.eq(ts)).build();
         assert_eq!(
             q.sql,
             r#"SELECT * FROM "player" WHERE ("player"."ts" = '1970-01-01T00:00:00.001+00:00')"#
         );
 
-        let q = Table::<Player>::default()
-            .r#where(|c| c.bytes.eq(vec![1, 2, 3, 4, 255]))
-            .build();
+        let table = Table::<Player>::new("player");
+        let q = table.r#where(|c| c.bytes.eq(vec![1, 2, 3, 4, 255])).build();
 
         assert_eq!(
             q.sql,
