@@ -562,7 +562,8 @@ impl HostController {
     pub async fn has_module_host(&self, replica_id: u64) -> bool {
         let Ok(maybe_host) = self.acquire_read_lock(replica_id).await else {
             warn!("timeout waiting for read lock on replica {replica_id} in `has_module_host`");
-            return false;
+            // Technically, we have it.
+            return true;
         };
 
         maybe_host.is_some()
@@ -1122,6 +1123,10 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
+        info!(
+            "dropping host {}/{}",
+            self.replica_ctx.database.database_identity, self.replica_ctx.replica_id
+        );
         self.disk_metrics_recorder_task.abort();
         self.tx_metrics_recorder_task.abort();
         self.view_cleanup_task.abort();
