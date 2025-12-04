@@ -237,6 +237,7 @@ error[E0277]: Views must return `Vec<T>` or `Option<T>` where `T` is a `Spacetim
     |
     = help: the following other types implement trait `ViewReturn`:
               Option<T>
+              Query<T>
               Vec<T>
 
 error[E0277]: invalid view signature

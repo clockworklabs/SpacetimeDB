@@ -1,5 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use crate::query_builder::Query;
 use crate::table::IndexAlgo;
 use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 use spacetimedb_lib::bsatn::EncodeError;
@@ -307,20 +308,26 @@ pub trait ViewReturn {
     #[doc(hidden)]
     const _ITEM: () = ();
 
-    fn to_writer(&self, w: &mut Vec<u8>) -> Result<(), EncodeError>;
+    fn to_writer(self, w: &mut Vec<u8>) -> Result<(), EncodeError>;
 }
 
 impl<T: SpacetimeType + Serialize> ViewReturn for Vec<T> {
-    fn to_writer(&self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
         bsatn::to_writer(buf, &ViewResultHeader::RowData)?;
-        bsatn::to_writer(buf, self)
+        bsatn::to_writer(buf, &self)
     }
 }
 
 impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
-    fn to_writer(&self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
         bsatn::to_writer(buf, &ViewResultHeader::RowData)?;
         bsatn::to_writer(buf, self.as_slice())
+    }
+}
+
+impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
+    fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
+        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql))
     }
 }
 
