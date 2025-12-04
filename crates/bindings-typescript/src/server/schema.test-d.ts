@@ -34,18 +34,17 @@ const person = table(
   }
 );
 
-const orderLikeRow = t.row("order", {
+const orderLikeRow = t.row('order', {
   order_id: t.u32().primaryKey(),
   item_name: t.string(),
   person_id: t.u32().index(),
 });
 const order = table(
   {
-    name: "order",
+    name: 'order',
   },
-  orderLikeRow,
+  orderLikeRow
 );
-
 
 const spacetimedb = schema(person);
 

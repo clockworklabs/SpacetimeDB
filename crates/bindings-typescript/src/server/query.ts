@@ -1,8 +1,6 @@
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import type {
-  IndexOpts,
-} from '../lib/indexes';
+import type { IndexOpts } from '../lib/indexes';
 import type { UntypedSchemaDef } from '../lib/schema';
 import type { TableSchema } from '../lib/table_schema';
 import type {
@@ -39,36 +37,18 @@ export function convert<Q extends TypedQuery<any>>(query: Q): ToRowQuery<Q> {
 export type Query<TableDef extends TypedTableDef> = TypedQuery<TableDef>;
 
 const RowQueryBrand: unique symbol = Symbol('RowQuery');
+
 export interface RowTypedQuery<Row> {
   readonly [RowQueryBrand]: { __row: Row };
 }
 
-type RowFromTableQuery<Q> = Q extends TypedQuery<infer TD> ? RowType<TD> : never;
+type RowFromTableQuery<Q> =
+  Q extends TypedQuery<infer TD> ? RowType<TD> : never;
 
 export type ToRowQuery<Q> = RowTypedQuery<RowFromTableQuery<Q>>;
 
 export const isTypedQuery = (val: unknown): val is TypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
-
-const RowSatsQueryBrand: unique symbol = Symbol('RowSatsQuery');
-/** Brand a query by its row's Spacetime (SATS) type instead of the TS value type */
-export interface RowSatsTypedQuery<RowSats> {
-  readonly [RowSatsQueryBrand]: { __rowSats: RowSats };
-}
-
-type SpacetimeRowType<TableDef extends TypedTableDef> = {
-  [K in keyof TableDef['columns'] & string]: InferSpacetimeTypeOfColumn<
-    TableDef,
-    K
-  >;
-};
-
-type RowSatsFromTableQuery<Q> = Q extends TypedQuery<infer TD>
-  ? SpacetimeRowType<TD>
-  : never;
-
-/** Convert a table-branded query to a row-sats-branded query */
-export type ToRowSatsQuery<Q> = RowSatsTypedQuery<RowSatsFromTableQuery<Q>>;
 
 type From<TableDef extends TypedTableDef> = Readonly<{
   where(
@@ -105,7 +85,8 @@ type SemijoinI<TableDef extends TypedTableDef> = Readonly<{
 }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
-  implements SemijoinI<TableDef>, TypedQuery<TableDef> {
+  implements SemijoinI<TableDef>, TypedQuery<TableDef>
+{
   readonly [QueryBrand] = true;
   type: 'semijoin' = 'semijoin';
   constructor(
@@ -162,12 +143,13 @@ class SemijoinImpl<TableDef extends TypedTableDef>
 }
 
 class FromBuilder<TableDef extends TypedTableDef>
-  implements From<TableDef>, TypedQuery<TableDef> {
+  implements From<TableDef>, TypedQuery<TableDef>
+{
   readonly [QueryBrand] = true;
   constructor(
     readonly table: TableRef<TableDef>,
-    readonly whereClause?: BooleanExpr<TableDef>,
-  ) { }
+    readonly whereClause?: BooleanExpr<TableDef>
+  ) {}
 
   where(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
@@ -218,10 +200,9 @@ class FromBuilder<TableDef extends TypedTableDef>
   }
 }
 
-
 export type QueryBuilder<SchemaDef extends UntypedSchemaDef> = {
-  readonly [Tbl in SchemaDef['tables'][number]as Tbl['name']]: TableRef<Tbl> &
-  From<Tbl>;
+  readonly [Tbl in SchemaDef['tables'][number] as Tbl['name']]: TableRef<Tbl> &
+    From<Tbl>;
 } & {};
 
 /**
@@ -238,7 +219,8 @@ export type TableRef<TableDef extends TypedTableDef> = Readonly<{
 }>;
 
 class TableRefImpl<TableDef extends TypedTableDef>
-  implements TableRef<TableDef>, From<TableDef> {
+  implements TableRef<TableDef>, From<TableDef>
+{
   readonly type = 'table' as const;
   name: string;
   cols: RowExpr<TableDef>;
@@ -408,8 +390,8 @@ type RowType<TableDef extends TypedTableDef> = {
     any,
     any
   >
-  ? T
-  : never;
+    ? T
+    : never;
 };
 
 export type ColumnExpr<
@@ -419,8 +401,8 @@ export type ColumnExpr<
 
 type ColumnSpacetimeType<Col extends ColumnExpr<any, any>> =
   Col extends ColumnExpr<infer T, infer N>
-  ? InferSpacetimeTypeOfColumn<T, N>
-  : never;
+    ? InferSpacetimeTypeOfColumn<T, N>
+    : never;
 
 // TODO: This checks that they match, but we also need to make sure that they are comparable types,
 // since you can use product types at all.
@@ -432,10 +414,10 @@ type ColumnSameSpacetime<
   ColumnSpacetimeType<OtherCol>,
 ]
   ? [ColumnSpacetimeType<OtherCol>] extends [
-    InferSpacetimeTypeOfColumn<ThisTable, ThisCol>,
-  ]
-  ? OtherCol
-  : never
+      InferSpacetimeTypeOfColumn<ThisTable, ThisCol>,
+    ]
+    ? OtherCol
+    : never
   : never;
 
 // Helper to get the table back from a column.
@@ -489,8 +471,8 @@ type InferSpacetimeTypeOfColumn<
     any,
     infer U
   >
-  ? U
-  : never;
+    ? U
+    : never;
 
 type ColumnNames<TableDef extends TypedTableDef> = keyof RowType<TableDef> &
   string;
@@ -523,8 +505,8 @@ export type RowExpr<TableDef extends TypedTableDef> = Readonly<{
  */
 export type ColumnExprForValue<Table extends TypedTableDef, Value> = {
   [C in ColumnNames<Table>]: InferSpacetimeTypeOfColumn<Table, C> extends Value
-  ? ColumnExpr<Table, C>
-  : never;
+    ? ColumnExpr<Table, C>
+    : never;
 }[ColumnNames<Table>];
 
 type LiteralValue =
@@ -582,36 +564,38 @@ type EqExpr<Table extends TypedTableDef = any> = {
 declare const BooleanExprBrand: unique symbol;
 type BooleanExpr<Table extends TypedTableDef> = (
   | {
-    type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
-    left: ValueExpr<Table, any>;
-    right: ValueExpr<Table, any>;
-  }
+      type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
+      left: ValueExpr<Table, any>;
+      right: ValueExpr<Table, any>;
+    }
   | {
-    type: 'and';
-    clauses: readonly [
-      BooleanExpr<Table>,
-      BooleanExpr<Table>,
-      ...BooleanExpr<Table>[],
-    ];
-  }
+      type: 'and';
+      clauses: readonly [
+        BooleanExpr<Table>,
+        BooleanExpr<Table>,
+        ...BooleanExpr<Table>[],
+      ];
+    }
   | {
-    type: 'or';
-    clauses: readonly [
-      BooleanExpr<Table>,
-      BooleanExpr<Table>,
-      ...BooleanExpr<Table>[],
-    ];
-  }
+      type: 'or';
+      clauses: readonly [
+        BooleanExpr<Table>,
+        BooleanExpr<Table>,
+        ...BooleanExpr<Table>[],
+      ];
+    }
   | {
-    type: 'not';
-    clause: BooleanExpr<Table>;
-  }
+      type: 'not';
+      clause: BooleanExpr<Table>;
+    }
 ) & {
   _tableType?: Table;
   // readonly [BooleanExprBrand]: Table?;
 };
 
-export function not<T extends TypedTableDef>(clause: BooleanExpr<T>): BooleanExpr<T> {
+export function not<T extends TypedTableDef>(
+  clause: BooleanExpr<T>
+): BooleanExpr<T> {
   return { type: 'not', clause };
 }
 
@@ -622,11 +606,7 @@ export function and<T extends TypedTableDef>(
 }
 
 export function or<T extends TypedTableDef>(
-  ...clauses: readonly [
-    BooleanExpr<T>,
-    BooleanExpr<T>,
-    ...BooleanExpr<T>[],
-  ]
+  ...clauses: readonly [BooleanExpr<T>, BooleanExpr<T>, ...BooleanExpr<T>[]]
 ): BooleanExpr<T> {
   return { type: 'or', clauses };
 }

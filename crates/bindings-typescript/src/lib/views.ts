@@ -20,7 +20,13 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
-import type { QueryBuilder, TypedQuery, RowTypedQuery, TypedTableDef } from '../server/query';
+import type {
+  QueryBuilder,
+  TypedQuery,
+  RowTypedQuery,
+  TypedTableDef,
+  ToRowQuery,
+} from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -48,6 +54,8 @@ type ViewReturn<Ret extends ViewReturnTypeBuilder> =
   | Infer<Ret>
   | RowTypedQuery<FlattenedArray<Infer<Ret>>>;
 
+// ToRowQuery<X> = RowTypedQuery<FlattenedArray<Infer<Ret>>>
+
 export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
@@ -58,7 +66,10 @@ export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => ViewReturn<Ret>;
+> = (
+  ctx: AnonymousViewCtx<S>,
+  params: InferTypeOfRow<Params>
+) => ViewReturn<Ret>;
 
 export type ViewReturnTypeBuilder =
   | TypeBuilder<
