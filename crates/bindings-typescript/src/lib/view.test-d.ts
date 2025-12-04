@@ -2,7 +2,7 @@ import { schema } from './schema';
 import { table } from './table';
 import { type ViewFn } from './views';
 import t from './type_builders';
-import { convert, type RowTypedQuery } from '../server/query';
+import { type RowTypedQuery } from '../server/query';
 
 const person = table(
   { name: 'person' },
@@ -35,7 +35,7 @@ const spacetime = schema(person, order, personWithExtra);
 const arrayRetValue = t.array(person.rowType);
 
 spacetime.anonymousView({ name: 'idk', public: true }, arrayRetValue, ctx => {
-  return convert(ctx.from.person.build());
+  return ctx.from.person.build();
 });
 
 spacetime.anonymousView(
@@ -43,10 +43,10 @@ spacetime.anonymousView(
   arrayRetValue,
   // @ts-expect-error returns a query of the wrong type.
   ctx => {
-    return convert(ctx.from.order.build());
+    return ctx.from.order.build();
   }
 );
 
 spacetime.anonymousView({ name: 'idk', public: true }, arrayRetValue, ctx => {
-  return convert(ctx.from.personWithExtra.build());
+  return ctx.from.personWithExtra.build();
 });

@@ -25,29 +25,34 @@ export type TableDefByName<
 // This is how we make sure queries are only created with our helpers.
 const QueryBrand = Symbol('QueryBrand');
 
-export interface TypedQuery<TableDef extends TypedTableDef> {
+export interface TableTypedQuery<TableDef extends TypedTableDef> {
   readonly [QueryBrand]: true;
   readonly __table?: TableDef;
 }
 
-export function convert<Q extends TypedQuery<any>>(query: Q): ToRowQuery<Q> {
-  return query as any;
-}
-
-export type Query<TableDef extends TypedTableDef> = TypedQuery<TableDef>;
-
 const RowQueryBrand: unique symbol = Symbol('RowQuery');
 
 export interface RowTypedQuery<Row> {
-  readonly [RowQueryBrand]: { __row: Row };
+  readonly [QueryBrand]: true;
+  // Phantom type to track the row type.
+  readonly __row?: Row;
 }
 
 type RowFromTableQuery<Q> =
-  Q extends TypedQuery<infer TD> ? RowType<TD> : never;
+  Q extends TableTypedQuery<infer TD> ? RowType<TD> : never;
 
 export type ToRowQuery<Q> = RowTypedQuery<RowFromTableQuery<Q>>;
 
-export const isTypedQuery = (val: unknown): val is TypedQuery<any> =>
+// export type Query<TableDef extends TypedTableDef> = TableTypedQuery<TableDef>;
+// export type Query<TableDef extends TypedTableDef> = TableTypedQuery<TableDef>;
+export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
+  RowType<TableDef>
+>;
+
+export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any> =>
+  !!val && typeof val === 'object' && RowQueryBrand in (val as object);
+
+export const isTypedQuery = (val: unknown): val is TableTypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
 
 type From<TableDef extends TypedTableDef> = Readonly<{
@@ -85,7 +90,7 @@ type SemijoinI<TableDef extends TypedTableDef> = Readonly<{
 }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
-  implements SemijoinI<TableDef>, TypedQuery<TableDef>
+  implements SemijoinI<TableDef>, TableTypedQuery<TableDef>
 {
   readonly [QueryBrand] = true;
   type: 'semijoin' = 'semijoin';
@@ -143,7 +148,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
 }
 
 class FromBuilder<TableDef extends TypedTableDef>
-  implements From<TableDef>, TypedQuery<TableDef>
+  implements From<TableDef>, TableTypedQuery<TableDef>
 {
   readonly [QueryBrand] = true;
   constructor(

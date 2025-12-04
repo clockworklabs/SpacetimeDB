@@ -22,7 +22,7 @@ import {
 import { bsatnBaseSize, toPascalCase } from './util';
 import type {
   QueryBuilder,
-  TypedQuery,
+  TableTypedQuery,
   RowTypedQuery,
   TypedTableDef,
   ToRowQuery,
