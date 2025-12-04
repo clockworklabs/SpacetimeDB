@@ -589,18 +589,18 @@ fn parse_default_attr(attr: &syn::Attribute, ident: &Ident) -> syn::Result<Colum
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+// Same struct can be annotated with `#[spacetimedb::table]` multiple times.
+// This mutex keeps track of which structs we've already generated code for.
+// This avoids duplicate definitions when the same struct is annotated multiple times.
 static GENERATED_STRUCTS: std::sync::LazyLock<Mutex<HashSet<String>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
 
-fn is_first_struct(struct_name: &str) -> bool {
+fn is_first_appearance(struct_name: &str) -> bool {
     let mut set = GENERATED_STRUCTS.lock().expect("mutex poisoned");
 
     set.insert(struct_name.to_string())
 }
-// Create a marker attribute to detect if we've already generated query code for this struct
-fn query_impl_helper_attr() -> syn::Attribute {
-    syn::parse_quote! { #[derive(__QueryImplHelper)] }
-}
+
 pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::Result<TokenStream> {
     let vis = &item.vis;
     let sats_ty = sats::sats_type_from_derive(item, quote!(spacetimedb::spacetimedb_lib))?;
@@ -994,7 +994,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         }
     });
 
-    let trait_def_query = quote_spanned! {table_ident.span()=>
+    let query_builder_helper_structs = quote_spanned! {table_ident.span()=>
            #[allow(non_camel_case_types, dead_code)]
            pub struct #query_cols_struct{
                #(#cols_struct_fields)*
@@ -1024,7 +1024,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     };
 
-    let queryhandle_def = quote! {
+    let table_query_handle_def = quote! {
            #[allow(non_camel_case_types, dead_code)]
            #vis trait #query_trait_ident {
                fn #table_ident(&self) -> spacetimedb::query_builder::Table<#original_struct_ident> {
@@ -1047,10 +1047,10 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     };
 
     let struct_name = original_struct_ident.to_string();
-    let is_first_table = is_first_struct(&struct_name);
+    let is_first_table = is_first_appearance(&struct_name);
 
     let struct_level_query_impl = if is_first_table {
-        quote! { #trait_def_query }
+        quote! { #query_builder_helper_structs }
     } else {
         quote! {}
     };
@@ -1067,7 +1067,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
         #tablehandle_def
         #viewhandle_def
-        #queryhandle_def
+        #table_query_handle_def
         #struct_level_query_impl
 
         const _: () = {

@@ -4,6 +4,7 @@ pub mod table;
 
 pub use expr::*;
 pub use join::*;
+use spacetimedb_lib::{sats::impl_st, SpacetimeType};
 pub use table::*;
 
 pub struct Query<T> {
@@ -23,6 +24,8 @@ impl<T> Query<T> {
         &self.sql
     }
 }
+
+impl_st!([T: SpacetimeType] Query<T>, ts => T::make_type(ts));
 
 #[cfg(test)]
 mod tests {
