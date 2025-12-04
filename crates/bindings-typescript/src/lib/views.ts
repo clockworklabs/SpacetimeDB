@@ -12,7 +12,7 @@ import {
   resolveType,
   type UntypedSchemaDef,
 } from './schema';
-import type { ReadonlyTable, RowType } from './table';
+import type { ReadonlyTable } from './table';
 import {
   RowBuilder,
   type Infer,
@@ -22,11 +22,7 @@ import {
 import { bsatnBaseSize, toPascalCase } from './util';
 import {
   type QueryBuilder,
-  type TableTypedQuery,
   type RowTypedQuery,
-  type TypedTableDef,
-  type ToRowQuery,
-  isRowTypedQuery,
 } from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{

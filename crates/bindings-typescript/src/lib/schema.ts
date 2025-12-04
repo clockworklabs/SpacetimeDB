@@ -37,7 +37,6 @@ import {
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
 import type { TableSchema } from './table_schema';
-import type { QueryBuilder } from '../server/query';
 import { toCamelCase } from './util';
 import {
   defineView,
