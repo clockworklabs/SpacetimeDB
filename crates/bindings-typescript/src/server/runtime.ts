@@ -25,7 +25,11 @@ import {
   type JwtClaims,
   type ReducerCtx,
 } from '../lib/reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import {
+  MODULE_DEF,
+  getRegisteredSchema,
+  type UntypedSchemaDef,
+} from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
@@ -36,9 +40,11 @@ import {
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
+import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
+import ViewResultHeader from '../lib/autogen/view_result_header_type';
 
 const { freeze } = Object;
 
@@ -237,7 +243,9 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
+    // ViewResultHeader.RawSql
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
@@ -245,8 +253,35 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
   __call_view_anon__(id, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
@@ -255,6 +290,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
@@ -263,8 +299,35 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     );
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
 };
 
