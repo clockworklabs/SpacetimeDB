@@ -418,6 +418,10 @@ pub(super) async fn call_scheduled_function(
     // so we must remove the schedule row before executing.
     match params {
         CallParams::Reducer(params) => {
+            // We don't want a panic in the module host to affect the scheduler, as unlikely
+            // as it might be, so catch it so we can handle it "gracefully". Panics will
+            // print their message and backtrace when they occur, so we don't need to do
+            // anything with the error payload.
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 inst_common.call_reducer_with_tx(Some(tx), params, inst)
             }));
@@ -434,7 +438,7 @@ pub(super) async fn call_scheduled_function(
             // Delete scheduled row.
             let reschedule = delete_scheduled_function_row(Some(tx), Some((timestamp, instant)));
 
-            // Execute the procedure.
+            // Execute the procedure. See above for commentary on `catch_unwind()`.
             let result = panic::AssertUnwindSafe(inst_common.call_procedure(params, inst))
                 .catch_unwind()
                 .await;

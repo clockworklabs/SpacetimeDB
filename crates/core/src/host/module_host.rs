@@ -1625,7 +1625,7 @@ impl ModuleHost {
     ) -> Result<CallScheduledFunctionResult, NoSuchModule> {
         self.with_instance(
             "scheduled function",
-            "<unknown>",
+            "reducer or procedure",
             |l| self.start_call_timer(l),
             async move |timer_guard, executor, inst| match inst {
                 Instance::Wasm(mut inst) => {
