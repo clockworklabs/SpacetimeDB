@@ -1059,6 +1059,14 @@ extern "C" fn __call_procedure__(
 ///
 /// The output of the view is written to a `BytesSink`,
 /// registered on the host side, with `bytes_sink_write`.
+///
+/// Note, a previous version of the abi used a different return format for views.
+/// We used to write the return rows of the view directly to the sink.
+/// However the current version first writes a [`ViewResultHeader`].
+/// This is to distinguish between views that return rows vs ones that return queries.
+///
+/// The current abi is identified by a return code of 2.
+/// The previous abi, which we still support, is identified by a return code of 0.
 #[no_mangle]
 extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) -> i16 {
     let views = ANONYMOUS_VIEWS.get().unwrap();
@@ -1066,7 +1074,7 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
         sink,
         &with_read_args(args, |args| views[id](AnonymousViewContext::default(), args)),
     );
-    0
+    2
 }
 
 /// Called by the host to execute a view when the `sender` calls the view identified by `id` with `args`.
@@ -1079,6 +1087,14 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
 ///
 /// The output of the view is written to a `BytesSink`,
 /// registered on the host side, with `bytes_sink_write`.
+///
+/// Note, a previous version of the abi used a different return format for views.
+/// We used to write the return rows of the view directly to the sink.
+/// However the current version first writes a [`ViewResultHeader`].
+/// This is to distinguish between views that return rows vs ones that return queries.
+///
+/// The current abi is identified by a return code of 2.
+/// The previous abi, which we still support, is identified by a return code of 0.
 #[no_mangle]
 extern "C" fn __call_view__(
     id: usize,
@@ -1100,7 +1116,7 @@ extern "C" fn __call_view__(
         sink,
         &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
-    0
+    2
 }
 
 /// Run `logic` with `args` read from the host into a `&[u8]`.
