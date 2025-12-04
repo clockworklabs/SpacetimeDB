@@ -312,8 +312,35 @@ function makeTableView(
   const sequences = table.sequences.map(seq => {
     const col = rowType.value.elements[seq.column];
     const colType = col.algebraicType;
+
+    // Determine the sentinel value which users will pass to as a placeholder
+    // to cause the sequence to advance.
+    // For small integer SATS types which fit in V8 `number`s, this is `0: number`,
+    // and for larger integer SATS types it's `0n: BigInt`.
+    let sequenceTrigger: bigint | number;
+    switch (colType.tag) {
+      case 'U8':
+      case 'I8':
+      case 'U16':
+      case 'I16':
+      case 'U32':
+      case 'I32':
+        sequenceTrigger = 0;
+        break;
+      case 'U64':
+      case 'I64':
+      case 'U128':
+      case 'I128':
+      case 'U256':
+      case 'I256':
+        sequenceTrigger = 0n;
+        break;
+      default:
+        throw new TypeError('invalid sequence type');
+    }
     return {
       colName: col.name!,
+      sequenceTrigger,
       read: (reader: BinaryReader) =>
         AlgebraicType.deserializeValue(reader, colType, typespace),
     };
@@ -323,11 +350,13 @@ function makeTableView(
   const iter = () =>
     new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
 
-  const integrate_generated_columns = hasAutoIncrement
+  const integrateGeneratedColumns = hasAutoIncrement
     ? (row: RowType<any>, ret_buf: Uint8Array) => {
         const reader = new BinaryReader(ret_buf);
-        for (const { colName, read } of sequences) {
-          row[colName] = read(reader);
+        for (const { colName, read, sequenceTrigger } of sequences) {
+          if (row[colName] === sequenceTrigger) {
+            row[colName] = read(reader);
+          }
         }
       }
     : null;
@@ -341,9 +370,9 @@ function makeTableView(
       AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
       const ret = { ...row };
-      integrate_generated_columns?.(ret, ret_buf);
+      integrateGeneratedColumns?.(ret, ret_buf);
 
-      return { ok: true, val: ret };
+      return ret;
     },
     delete: (row: RowType<any>): boolean => {
       const writer = new BinaryWriter(4 + baseSize);
@@ -465,7 +494,7 @@ function makeTableView(
             index_id,
             writer.getBuffer()
           );
-          integrate_generated_columns?.(row, ret_buf);
+          integrateGeneratedColumns?.(row, ret_buf);
           return row;
         },
       } as UniqueIndex<any, any>;

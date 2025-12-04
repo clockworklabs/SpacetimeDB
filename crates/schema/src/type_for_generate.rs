@@ -227,6 +227,12 @@ impl<'a> IntoIterator for &'a ProductTypeDef {
     }
 }
 
+impl ProductTypeDef {
+    pub fn element_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+        self.elements.iter().map(|(_, ty)| ty)
+    }
+}
+
 /// A sum type definition.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SumTypeDef {
@@ -247,6 +253,12 @@ impl<'a> IntoIterator for &'a SumTypeDef {
     type IntoIter = std::slice::Iter<'a, (Identifier, AlgebraicTypeUse)>;
     fn into_iter(self) -> Self::IntoIter {
         self.variants.iter()
+    }
+}
+
+impl SumTypeDef {
+    pub fn variant_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+        self.variants.iter().map(|(_, ty)| ty)
     }
 }
 
