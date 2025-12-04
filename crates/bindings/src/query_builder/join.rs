@@ -153,10 +153,13 @@ impl<L: HasCols> LeftSemiJoin<L> {
             .unwrap_or_default();
 
         let sql = format!(
-            r#"SELECT "left".* FROM "{}" "left" JOIN "{}" "right" ON "left"."{}" = "right"."{}"{}"#,
+            r#"SELECT "{}".* FROM "{}" JOIN "{}" ON "{}"."{}" = "{}"."{}"{}"#,
+            self.left_col.table_name(),
             self.left_col.table_name(),
             self.right_table,
+            self.left_col.table_name(),
             self.left_col.column_name(),
+            self.right_table,
             self.right_col,
             where_clause
         );
@@ -202,10 +205,13 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
         };
 
         let sql = format!(
-            r#"SELECT "right".* FROM "{}" "left" JOIN "{}" "right" ON "left"."{}" = "right"."{}"{}"#,
+            r#"SELECT "{}".* FROM "{}" JOIN "{}" ON "{}"."{}" = "{}"."{}"{}"#,
+            self.right_col.table_name(),
             self.left_col.table_name(),
             self.right_col.table_name(),
+            self.left_col.table_name(),
             self.left_col.column_name(),
+            self.right_col.table_name(),
             self.right_col.column_name(),
             where_clause
         );

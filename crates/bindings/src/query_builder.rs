@@ -25,7 +25,7 @@ impl<T> Query<T> {
     }
 }
 
-impl_st!([T: SpacetimeType] Query<T>, ts => T::make_type(ts));
+impl_st!([T: SpacetimeType] Query<T>, ts => spacetimedb_lib::AlgebraicType::option(T::make_type(ts)));
 
 #[cfg(test)]
 mod tests {
