@@ -1,9 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::table::IndexAlgo;
-use crate::{
-    sys, AnonymousViewContext, IterBuf, LocalReadOnly, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext,
-};
+use crate::{sys, AnonymousViewContext, IterBuf, ReducerContext, ReducerResult, SpacetimeType, Table, ViewContext};
 pub use spacetimedb_lib::db::raw_def::v9::Lifecycle as LifecycleReducer;
 use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder, TableType};
 use spacetimedb_lib::de::{self, Deserialize, DeserializeOwned, Error as _, SeqProductAccess};
@@ -1053,9 +1051,7 @@ extern "C" fn __call_view_anon__(id: usize, args: BytesSource, sink: BytesSink) 
     let views = ANONYMOUS_VIEWS.get().unwrap();
     write_to_sink(
         sink,
-        &with_read_args(args, |args| {
-            views[id](AnonymousViewContext { db: LocalReadOnly {} }, args)
-        }),
+        &with_read_args(args, |args| views[id](AnonymousViewContext::default(), args)),
     );
     0
 }
@@ -1086,11 +1082,10 @@ extern "C" fn __call_view__(
     let sender = Identity::from_byte_array(sender); // The LITTLE-ENDIAN constructor.
 
     let views = VIEWS.get().unwrap();
-    let db = LocalReadOnly {};
 
     write_to_sink(
         sink,
-        &with_read_args(args, |args| views[id](ViewContext { sender, db }, args)),
+        &with_read_args(args, |args| views[id](ViewContext::new(sender), args)),
     );
     0
 }

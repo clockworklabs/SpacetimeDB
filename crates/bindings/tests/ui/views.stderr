@@ -89,8 +89,8 @@ error[E0599]: no method named `iter` found for reference `&test__ViewHandle` in 
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `iter`, perhaps you need to implement one of them:
-           candidate #1: `Table`
-           candidate #2: `bitflags::traits::Flags`
+           candidate #1: `bitflags::traits::Flags`
+           candidate #2: `spacetimedb::Table`
 
 error[E0599]: `&test__ViewHandle` is not an iterator
   --> tests/ui/views.rs:22:33
@@ -113,7 +113,7 @@ note: the trait `Iterator` must be implemented
    | ^^^^^^^^^^^^^^^^^^
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `count`, perhaps you need to implement one of them:
-           candidate #1: `Table`
+           candidate #1: `spacetimedb::Table`
    = note: the trait `Iterator` defines an item `count`, but is explicitly unimplemented
 
 error[E0599]: no method named `insert` found for reference `&test__ViewHandle` in the current scope
@@ -124,11 +124,11 @@ error[E0599]: no method named `insert` found for reference `&test__ViewHandle` i
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `insert`, perhaps you need to implement one of them:
-           candidate #1: `Table`
-           candidate #2: `bitflags::traits::Flags`
-           candidate #3: `ppv_lite86::types::Vec2`
-           candidate #4: `ppv_lite86::types::Vec4`
-           candidate #5: `similar::algorithms::DiffHook`
+           candidate #1: `bitflags::traits::Flags`
+           candidate #2: `ppv_lite86::types::Vec2`
+           candidate #3: `ppv_lite86::types::Vec4`
+           candidate #4: `similar::algorithms::DiffHook`
+           candidate #5: `spacetimedb::Table`
 
 error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:36:25
@@ -138,8 +138,8 @@ error[E0599]: no method named `try_insert` found for reference `&test__ViewHandl
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `try_insert`, perhaps you need to implement one of them:
-           candidate #1: `Table`
-           candidate #2: `http::header::map::into_header_name::Sealed`
+           candidate #1: `http::header::map::into_header_name::Sealed`
+           candidate #2: `spacetimedb::Table`
 help: there is a method `try_into` with a similar name, but with different arguments
   --> $RUST/core/src/convert/mod.rs
    |
@@ -154,8 +154,8 @@ error[E0599]: no method named `delete` found for reference `&test__ViewHandle` i
    |
    = help: items from traits can only be used if the trait is implemented and in scope
    = note: the following traits define an item `delete`, perhaps you need to implement one of them:
-           candidate #1: `Table`
-           candidate #2: `similar::algorithms::DiffHook`
+           candidate #1: `similar::algorithms::DiffHook`
+           candidate #2: `spacetimedb::Table`
 
 error[E0599]: no method named `delete` found for struct `UniqueColumnReadOnly` in the current scope
   --> tests/ui/views.rs:50:30
