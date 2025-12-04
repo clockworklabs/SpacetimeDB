@@ -51,26 +51,32 @@ export type ViewOpts = {
 
 type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
 
-type ViewReturn<Ret extends ViewReturnTypeBuilder> =
-  | Infer<Ret>
-  | RowTypedQuery<FlattenedArray<Infer<Ret>>>;
-
-// ToRowQuery<X> = RowTypedQuery<FlattenedArray<Infer<Ret>>>
+// // If we allowed functions to return either.
+// type ViewReturn<Ret extends ViewReturnTypeBuilder> =
+//   | Infer<Ret>
+//   | RowTypedQuery<FlattenedArray<Infer<Ret>>>;
 
 export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => ViewReturn<Ret>;
+> =
+  | ((ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
+  | ((
+      ctx: ViewCtx<S>,
+      params: InferTypeOfRow<Params>
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>>);
 
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (
-  ctx: AnonymousViewCtx<S>,
-  params: InferTypeOfRow<Params>
-) => ViewReturn<Ret>;
+> =
+  | ((ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
+  | ((
+      ctx: AnonymousViewCtx<S>,
+      params: InferTypeOfRow<Params>
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>>);
 
 export type ViewReturnTypeBuilder =
   | TypeBuilder<
