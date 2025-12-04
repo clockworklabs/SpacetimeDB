@@ -48,7 +48,7 @@ impl<T, V> RHS<T, V> for Col<T, V> {
 fn format_bool_expr<T: TableName>(v: &Operand<T>) -> String {
     match v {
         Operand::Column(col) => col.fmt(),
-        Operand::Literal(lit) => format_literal(lit),
+        Operand::Literal(lit) => lit.0.clone(),
     }
 }
 
@@ -64,90 +64,53 @@ pub fn format_expr<T: TableName>(expr: &BoolExpr<T>) -> String {
 }
 
 #[derive(Clone, Debug)]
-pub enum LiteralValue {
-    String(String),
-    Int(i64),
-    Float(f64),
-    BigInt(String),
-    Bool(bool),
-    Identity(Identity),
-    ConnectionId(ConnectionId),
-    Bytes(Vec<u8>),
-    Timestamp(Timestamp),
-}
+pub struct LiteralValue(String);
 
-pub fn format_literal(l: &LiteralValue) -> String {
-    match l {
-        LiteralValue::String(s) => format!("'{}'", s.replace('\'', "''")),
-        LiteralValue::Int(v) => v.to_string(),
-        LiteralValue::Float(v) => v.to_string(),
-        LiteralValue::Bool(b) => {
-            if *b {
-                "TRUE".into()
-            } else {
-                "FALSE".into()
-            }
-        }
-        LiteralValue::Identity(identity) => format!("0x{}", identity.to_hex()),
-        LiteralValue::ConnectionId(connection) => format!("0x{}", connection.to_hex()),
-        LiteralValue::BigInt(bi) => bi.to_string(),
-        LiteralValue::Bytes(b) => {
-            let hex_string: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
-            format!("0x{}", hex_string)
-        }
-        LiteralValue::Timestamp(ts) => format!("'{}'", ts),
-    }
-}
-
-impl<T> RHS<T, &str> for &str {
-    fn to_expr(self) -> Operand<T> {
-        Operand::Literal(LiteralValue::String(self.to_string()))
+impl LiteralValue {
+    pub fn new(s: String) -> Self {
+        Self(s)
     }
 }
 
 macro_rules! impl_rhs {
-    ($ty:ty, $variant:ident $(, $map:expr )? ) => {
+    ($ty:ty, $formatter:expr) => {
         impl<T> RHS<T, $ty> for $ty {
             fn to_expr(self) -> Operand<T> {
-                Operand::Literal(
-                    LiteralValue::$variant(
-                        impl_rhs!(@map self $(, $map )? )
-                    )
-                )
+                Operand::Literal(LiteralValue($formatter(self)))
             }
         }
     };
-
-    (@map $value:expr, $map:expr) => { $map($value) };
-    (@map $value:expr) => { $value };
 }
 
-impl_rhs!(String, String);
+impl_rhs!(String, |v: String| format!("'{}'", v.replace('\'', "''")));
+impl_rhs!(&str, |v: &str| format!("'{}'", v.replace('\'', "''")));
 
-// Integers → Int(i64)
-impl_rhs!(i8, Int, |v: i8| v as i64);
-impl_rhs!(i16, Int, |v: i16| v as i64);
-impl_rhs!(i32, Int, |v: i32| v as i64);
-impl_rhs!(i64, Int);
+impl_rhs!(i8, |v: i8| v.to_string());
+impl_rhs!(i16, |v: i16| v.to_string());
+impl_rhs!(i32, |v: i32| v.to_string());
+impl_rhs!(i64, |v: i64| v.to_string());
+impl_rhs!(i128, |v: i128| v.to_string());
 
-impl_rhs!(u8, Int, |v: u8| v as i64);
-impl_rhs!(u16, Int, |v: u16| v as i64);
-impl_rhs!(u32, Int, |v: u32| v as i64);
+impl_rhs!(u8, |v: u8| v.to_string());
+impl_rhs!(u16, |v: u16| v.to_string());
+impl_rhs!(u32, |v: u32| v.to_string());
+impl_rhs!(u64, |v: u64| v.to_string());
+impl_rhs!(u128, |v: u128| v.to_string());
+impl_rhs!(usize, |v: usize| v.to_string());
 
-// Big integers → BigInt
-impl_rhs!(i128, BigInt, |v: i128| v.to_string());
-impl_rhs!(u64, BigInt, |v: u64| v.to_string());
-impl_rhs!(usize, BigInt, |v: usize| v.to_string());
-impl_rhs!(u128, BigInt, |v: u128| v.to_string());
-impl_rhs!(u256, BigInt, |v: u256| v.to_string());
-impl_rhs!(i256, BigInt, |v: i256| v.to_string());
+impl_rhs!(u256, |v: u256| v.to_string());
+impl_rhs!(i256, |v: i256| v.to_string());
 
-impl_rhs!(f32, Float, |v: f32| v as f64);
-impl_rhs!(f64, Float);
-impl_rhs!(bool, Bool);
+impl_rhs!(f32, |v: f32| (v as f64).to_string());
+impl_rhs!(f64, |v: f64| v.to_string());
 
-impl_rhs!(Identity, Identity);
-impl_rhs!(ConnectionId, ConnectionId);
+impl_rhs!(bool, |b: bool| if b { "TRUE".into() } else { "FALSE".into() });
 
-impl_rhs!(Vec<u8>, Bytes);
-impl_rhs!(Timestamp, Timestamp);
+impl_rhs!(Identity, |id: Identity| format!("0x{}", id.to_hex()));
+impl_rhs!(ConnectionId, |id: ConnectionId| format!("0x{}", id.to_hex()));
+impl_rhs!(Timestamp, |ts: Timestamp| format!("'{}'", ts));
+
+impl_rhs!(Vec<u8>, |b: Vec<u8>| {
+    let hex: String = b.iter().map(|x| format!("{:02x}", x)).collect();
+    format!("0x{}", hex)
+});

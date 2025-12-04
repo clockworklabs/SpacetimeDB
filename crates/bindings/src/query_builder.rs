@@ -140,7 +140,7 @@ mod tests {
     fn test_format_expr_column_literal() {
         let expr = BoolExpr::Eq(
             Operand::Column(ColumnRef::<User>::new("id")),
-            Operand::Literal(LiteralValue::Int(42)),
+            Operand::Literal(LiteralValue::new("42".to_string())),
         );
         let sql = format_expr(&expr);
         assert!(sql.contains("id"), "Missing col");
@@ -162,7 +162,7 @@ mod tests {
         let o = other();
         let sql = user
             .left_semijoin(o, |u, o| u.id.eq(o.uid))
-            .r#where(|u| u.id.eq(1))
+            .r#where(|u| u.id.eq(1i32))
             .r#where(|u| u.id.gt(10))
             .build()
             .sql;
