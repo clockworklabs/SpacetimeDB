@@ -870,6 +870,7 @@ pub use spacetimedb_bindings_macro::procedure;
 pub use spacetimedb_bindings_macro::view;
 
 pub struct QueryBuilder {}
+pub use query_builder::Query;
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
