@@ -53,7 +53,7 @@ spacetime.anonymousView({ name: 'v3', public: true }, arrayRetValue, ctx => {
 
 spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
   // @ts-expect-error this uses a literal of the wrong type.
-  const x = ctx.from.person.where(row => row.id.eq(literal('string'))).build();
+  const _x = ctx.from.person.where(row => row.id.eq(literal('string'))).build();
   return ctx.from.person.where(row => row.id.eq(literal(5))).build();
 });
 

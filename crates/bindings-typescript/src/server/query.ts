@@ -91,7 +91,7 @@ class SemijoinImpl<TableDef extends TypedTableDef>
   implements SemijoinI<TableDef>, TableTypedQuery<TableDef>
 {
   readonly [QueryBrand] = true;
-  type: 'semijoin' = 'semijoin';
+  readonly type = 'semijoin' as const;
   constructor(
     readonly sourceQuery: FromBuilder<TableDef>,
     readonly filterQuery: FromBuilder<any>,
@@ -336,33 +336,13 @@ function resolveTableRef<TableDef extends TypedTableDef>(
   return source as TableRef<TableDef>;
 }
 
-function renderSelectSql<Table extends TypedTableDef>(
-  tableName: string,
-  where?: BooleanExpr<Table>,
-  extraClauses: readonly string[] = []
-): string {
-  const quotedTable = quoteIdentifier(tableName);
-  const base = `SELECT * FROM ${quotedTable}`;
-  const clauses: string[] = [];
-  if (where) {
-    clauses.push(booleanExprToSql(where));
-  }
-  clauses.push(...extraClauses);
-  if (clauses.length === 0) {
-    return base;
-  }
-  const whereSql =
-    clauses.length === 1 ? clauses[0] : clauses.map(wrapInParens).join(' AND ');
-  return `${base} WHERE ${whereSql}`;
-}
-
 function renderSelectSqlWithJoins<Table extends TypedTableDef>(
   table: TableRef<Table>,
   where?: BooleanExpr<Table>,
   extraClauses: readonly string[] = []
 ): string {
   const quotedTable = quoteIdentifier(table.name);
-  let sql = `SELECT * FROM ${quotedTable}`;
+  const sql = `SELECT * FROM ${quotedTable}`;
   const clauses: string[] = [];
   if (where) clauses.push(booleanExprToSql(where));
   clauses.push(...extraClauses);
@@ -480,15 +460,6 @@ type InferSpacetimeTypeOfColumn<
 type ColumnNames<TableDef extends TypedTableDef> = keyof RowType<TableDef> &
   string;
 
-type AnyColumnExpr<Table extends TypedTableDef> = {
-  [C in ColumnNames<Table>]: ColumnExpr<Table, C>;
-}[ColumnNames<Table>];
-
-// type IndexedColumnNames<TableDef extends TypedTableDef> =
-//   TableDef['indexes'][number] extends infer I extends IndexOpts<any>
-//   ? IndexColumns<I>[number]
-//   : never;
-
 // TODO: Fix this to actually only include indexed columns.
 export type IndexedRowExpr<TableDef extends TypedTableDef> = Readonly<{
   //readonly [C in IndexedColumnNames<TableDef>]: ColumnExpr<TableDef, C>;
@@ -540,8 +511,6 @@ export function literal<Value extends LiteralValue>(
   return { type: 'literal', value };
 }
 
-type ComparisonTag = 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
-
 function normalizeValue(val: ValueInput<any>): ValueExpr<any, any> {
   if ((val as LiteralExpr<any>).type === 'literal')
     return val as LiteralExpr<any>;
@@ -564,7 +533,6 @@ type EqExpr<Table extends TypedTableDef = any> = {
   _tableType?: Table;
 };
 
-declare const BooleanExprBrand: unique symbol;
 type BooleanExpr<Table extends TypedTableDef> = (
   | {
       type: 'eq' | 'ne' | 'gt' | 'lt' | 'gte' | 'lte';
@@ -694,7 +662,7 @@ function isLiteralExpr<Value>(
 }
 
 // TODO: Fix this.
-function createIndexedRowExpr<TableDef extends TypedTableDef>(
+function _createIndexedRowExpr<TableDef extends TypedTableDef>(
   tableDef: TableDef,
   cols: RowExpr<TableDef>
 ): IndexedRowExpr<TableDef> {
