@@ -40,7 +40,7 @@ import {
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
-import { isRowTypedQuery, makeQueryBuilder } from './query';
+import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
@@ -254,7 +254,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     if (isRowTypedQuery(ret)) {
-      const query = (ret as unknown as { toSql(): string }).toSql();
+      const query = toSql(ret);
       const v = ViewResultHeader.RawSql(query);
       AlgebraicType.serializeValue(
         retBuf,
@@ -300,7 +300,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     const ret = fn(ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     if (isRowTypedQuery(ret)) {
-      const query = (ret as unknown as { toSql(): string }).toSql();
+      const query = toSql(ret);
       const v = ViewResultHeader.RawSql(query);
       AlgebraicType.serializeValue(
         retBuf,

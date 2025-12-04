@@ -53,6 +53,10 @@ export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any> =>
 export const isTypedQuery = (val: unknown): val is TableTypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
 
+export function toSql(q: Query<any>): string {
+  return (q as unknown as { toSql(): string }).toSql();
+}
+
 // A query builder with a single table.
 type From<TableDef extends TypedTableDef> = Readonly<{
   where(
@@ -73,7 +77,6 @@ type From<TableDef extends TypedTableDef> = Readonly<{
     ) => EqExpr<TableDef | RightTable>
   ): SemijoinBuilder<TableDef>;
   build(): Query<TableDef>;
-  toSql(): string;
 }>;
 
 // A query builder with a semijoin.
@@ -82,7 +85,6 @@ type SemijoinBuilder<TableDef extends TypedTableDef> = Readonly<{
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
   ): SemijoinBuilder<TableDef>;
   build(): Query<TableDef>;
-  toSql(): string;
 }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
