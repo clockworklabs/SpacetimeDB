@@ -13,35 +13,41 @@ import { table } from '../src/lib/table';
 import { t } from '../src/lib/type_builders';
 
 const personTable = table(
-  { name: 'person' },
+  {
+    name: 'person',
+
+    indexes: [
+      {
+        name: 'id_name_idx',
+        algorithm: 'btree',
+        columns: ['id', 'name'] as const,
+      },
+    ] as const,
+  },
   {
     id: t.identity(),
     name: t.string(),
     age: t.u32(),
-  },
-  [
-    {
-      name: 'person_id_idx',
-      algorithm: 'btree',
-      columns: ['id'],
-    },
-  ]
+  }
 );
 
 const ordersTable = table(
-  { name: 'orders' },
+  {
+    name: 'orders',
+    indexes: [
+      {
+        name: 'orders_person_id_idx',
+        algorithm: 'btree',
+        columns: ['person_id'],
+      },
+    ] as const,
+  },
+
   {
     order_id: t.identity(),
     person_id: t.identity(),
     item_name: t.string(),
-  },
-  [
-    {
-      name: 'orders_person_id_idx',
-      algorithm: 'btree',
-      columns: ['person_id'],
-    },
-  ]
+  }
 );
 
 const schemaDef = {

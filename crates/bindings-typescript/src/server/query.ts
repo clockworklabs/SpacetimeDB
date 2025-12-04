@@ -669,7 +669,7 @@ function _createIndexedRowExpr<TableDef extends TypedTableDef>(
   const indexed = new Set<string>();
   for (const idx of tableDef.indexes) {
     if ('columns' in idx) {
-      idx.columns.forEach(c => indexed.add(c));
+      indexed.add(idx.columns.at(0));
     } else if ('column' in idx) {
       indexed.add(idx.column);
     }
