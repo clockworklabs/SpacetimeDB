@@ -669,7 +669,7 @@ fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
         .person()
         .r#where(|p| p.age.eq(20))
         .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
-        .r#where(|u| u.online.eq(true))
+        .r#where(|u| u.online.eq(false))
         .build()
 }
 
@@ -711,13 +711,13 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
  2        | "BOB"   | false
 """)
 
-#    def test_query_complex_right_semijoin_view(self):
-#        """Tests that views returning Query types with right semijoin work as expected"""
-#
-#        self.assertSql("SELECT * FROM offline_user_20_years_old", """\
-# identity | name    | online
-#----------+---------+-----
-# 2        | "Bob" | false
-#""")
+    def test_query_complex_right_semijoin_view(self):
+        """Tests that views returning Query types with right semijoin work as expected"""
+
+        self.assertSql("SELECT * FROM offline_user_20_years_old", """\
+ identity | name  | online
+----------+-------+--------
+ 2        | "BOB" | false
+""")
 
 
