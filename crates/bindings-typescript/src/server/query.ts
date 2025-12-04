@@ -375,6 +375,8 @@ type RowType<TableDef extends TypedTableDef> = {
     : never;
 };
 
+// TODO: Consider making a smaller version of these types that doesn't expose the internals.
+// Restricting it later should not break anyone in practice.
 export type ColumnExpr<
   TableDef extends TypedTableDef,
   ColumnName extends ColumnNames<TableDef>,
