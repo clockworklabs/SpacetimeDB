@@ -155,7 +155,7 @@ mod tests {
         let user = users();
         let other = other();
         let sql = user.left_semijoin(other, |u, o| u.id.eq(o.uid)).build().sql;
-        let expected = r#"SELECT "left".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid""#;
+        let expected = r#"SELECT "users".* FROM "users" JOIN "other" ON "users"."id" = "other"."uid""#;
         assert_eq!(sql, expected);
     }
 
@@ -169,7 +169,7 @@ mod tests {
             .r#where(|u| u.id.gt(10))
             .build()
             .sql;
-        let expected = r#"SELECT "left".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE (("users"."id" = 1) AND ("users"."id" > 10))"#;
+        let expected = r#"SELECT "users".* FROM "users" JOIN "other" ON "users"."id" = "other"."uid" WHERE (("users"."id" = 1) AND ("users"."id" > 10))"#;
         assert_eq!(sql, expected);
         let user = users();
         let other = other();
@@ -191,7 +191,7 @@ mod tests {
             .r#where(|o| o.uid.gt(10))
             .build()
             .sql;
-        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE (("other"."uid" = 1) AND ("other"."uid" > 10))"#;
+        let expected = r#"SELECT "other".* FROM "users" JOIN "other" ON "users"."id" = "other"."uid" WHERE (("other"."uid" = 1) AND ("other"."uid" > 10))"#;
         assert_eq!(sql, expected);
     }
 
@@ -205,7 +205,7 @@ mod tests {
             .r#where(|o| o.uid.gt(10))
             .build()
             .sql;
-        let expected = r#"SELECT "right".* FROM "users" "left" JOIN "other" "right" ON "left"."id" = "right"."uid" WHERE ("users"."id" = 1) AND ("other"."uid" > 10)"#;
+        let expected = r#"SELECT "other".* FROM "users" JOIN "other" ON "users"."id" = "other"."uid" WHERE ("users"."id" = 1) AND ("other"."uid" > 10)"#;
         assert_eq!(sql, expected);
     }
 
