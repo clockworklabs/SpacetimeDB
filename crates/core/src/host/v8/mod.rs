@@ -54,6 +54,7 @@ use v8::{
 };
 
 mod budget;
+mod builtins;
 mod de;
 mod error;
 mod from_value;
@@ -522,6 +523,9 @@ fn spawn_instance_worker(
         let mut isolate = new_isolate();
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
 
+        catch_exception(scope, |scope| Ok(builtins::evalute_builtins(scope)?))
+            .expect("our builtin code shouldn't error");
+
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
             if result_tx.send(res).is_err() {
@@ -663,48 +667,16 @@ fn spawn_instance_worker(
     })
 }
 
-/// Finds the source map in `code`, if any.
-fn find_source_map(code: &str) -> Option<&str> {
-    let sm_ref = "//# sourceMappingURL=";
-    code.match_indices(sm_ref).find_map(|(i, _)| {
-        let (before, after) = code.split_at(i);
-        (before.is_empty() || before.ends_with(['\r', '\n']))
-            .then(|| &after.lines().next().unwrap_or(after)[sm_ref.len()..])
-    })
-}
-
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     resource_name: Local<'scope, Value>,
-    script_id: i32,
-    code: &str,
+    code: Local<'_, v8::String>,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
-    // Get the source map, if any.
-    let source_map_url = find_source_map(code)
-        .map(|sm| sm.into_string(scope))
-        .transpose()
-        .map_err(|e| e.into_range_error().throw(scope))?
-        .map(Into::into);
-
-    // Convert the code to a string.
-    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
-
-    // Assemble the source.
-    let origin = ScriptOrigin::new(
-        scope,
-        resource_name,
-        0,
-        0,
-        false,
-        script_id,
-        source_map_url,
-        false,
-        false,
-        true,
-        None,
-    );
+    // Assemble the source. v8 figures out things like the `script_id` and
+    // `source_map_url` itself, so we don't actually have to provide them.
+    let origin = ScriptOrigin::new(scope, resource_name, 0, 0, false, 0, None, false, false, true, None);
     let source = &mut Source::new(code, Some(&origin));
 
     // Compile the module.
@@ -738,11 +710,14 @@ fn eval_module<'scope>(
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     code: &str,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
+    // Convert the code to a string.
+    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
+
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
-    eval_module(scope, name, 0, code, resolve_sys_module)
+    eval_module(scope, name, code, resolve_sys_module)
 }
 
 /// Compiles, instantiate, and evaluate the user module with `code`
