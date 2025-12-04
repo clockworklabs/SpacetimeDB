@@ -191,12 +191,10 @@ public readonly record struct ConnectionId
         // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
-            new AlgebraicType.Product(
-                [
-                    // Using this specific name here is important.
-                    new("__connection_id__", new AlgebraicType.U128(default)),
-                ]
-            );
+            new AlgebraicType.Product([
+                // Using this specific name here is important.
+                new("__connection_id__", new AlgebraicType.U128(default)),
+            ]);
         // --- / customized ---
     }
 
@@ -283,12 +281,10 @@ public readonly record struct Identity : IEquatable<Identity>, IComparable, ICom
         // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
-            new AlgebraicType.Product(
-                [
-                    // Using this specific name here is important.
-                    new("__identity__", new AlgebraicType.U256(default)),
-                ]
-            );
+            new AlgebraicType.Product([
+                // Using this specific name here is important.
+                new("__identity__", new AlgebraicType.U256(default)),
+            ]);
         // --- / customized ---
     }
 
@@ -414,9 +410,10 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
             new AlgebraicType.Product(
-                // Using this specific name here is important.
-                [new("__timestamp_micros_since_unix_epoch__", new AlgebraicType.I64(default))]
-            );
+            // Using this specific name here is important.
+            [
+                new("__timestamp_micros_since_unix_epoch__", new AlgebraicType.I64(default)),
+            ]);
         // --- / customized ---
     }
 }
@@ -516,9 +513,10 @@ public record struct TimeDuration(long Microseconds) : IStructuralReadWrite
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Product directly, not a Ref, because this is a special type.
             new AlgebraicType.Product(
-                // Using this specific name here is important.
-                [new("__time_duration_micros__", new AlgebraicType.I64(default))]
-            );
+            // Using this specific name here is important.
+            [
+                new("__time_duration_micros__", new AlgebraicType.I64(default)),
+            ]);
         // --- / customized ---
     }
 }
@@ -595,13 +593,11 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
         // --- customized ---
         public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
             // Return a Sum directly, not a Ref, because this is a special type.
-            new AlgebraicType.Sum(
-                [
-                    // Using these specific names here is important.
-                    new("Interval", Interval.GetAlgebraicType(registrar)),
-                    new("Time", Time.GetAlgebraicType(registrar)),
-                ]
-            );
+            new AlgebraicType.Sum([
+                // Using these specific names here is important.
+                new("Interval", Interval.GetAlgebraicType(registrar)),
+                new("Time", Time.GetAlgebraicType(registrar)),
+            ]);
         // --- / customized ---
     }
 }

@@ -516,7 +516,7 @@ public abstract record BaseTypeDeclaration<M>
                                 public override string ToString() =>
                                     $"{{m.Name}}({ SpacetimeDB.BSATN.StringUtil.GenericToString({{m.Name}}_) })";
                             }
-                        
+
                         """
                     )
                 )
@@ -659,7 +659,7 @@ public abstract record BaseTypeDeclaration<M>
                 {
                     {{getHashCode}}
                 }
-            
+
             """
         );
 

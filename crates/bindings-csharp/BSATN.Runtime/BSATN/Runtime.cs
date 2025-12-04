@@ -577,8 +577,9 @@ public readonly struct List<Element, ElementRW> : IReadWrite<List<Element>>
 // reduce amount of noisy compilation errors when a used type is not supported by BSATN.
 public readonly struct Unsupported<T> : IReadWrite<T>
 {
-    private static readonly NotSupportedException Exception =
-        new($"Type {typeof(T)} is not supported by BSATN.");
+    private static readonly NotSupportedException Exception = new(
+        $"Type {typeof(T)} is not supported by BSATN."
+    );
 
     public T Read(BinaryReader reader) => throw Exception;
 

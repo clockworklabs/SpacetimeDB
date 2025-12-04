@@ -8,7 +8,8 @@ public sealed class TxContext
         ConnectionId? connectionId,
         Timestamp timestamp,
         AuthCtx senderAuth,
-        Random rng)
+        Random rng
+    )
     {
         Db = db;
         Sender = sender;

@@ -173,7 +173,7 @@ public static partial class Module
     {
         throw new InvalidOperationException("This procedure is expected to panic");
     }
-    
+
 #pragma warning disable STDB_UNSTABLE
     [SpacetimeDB.Procedure]
     public static void InsertWithTxCommit(ProcedureContext ctx)
@@ -211,7 +211,7 @@ public static partial class Module
     {
         ctx.WithTx(tx =>
         {
-            ulong actual = tx.Db.my_table.Count;
+            var actual = tx.Db.my_table.Count;
             if (actual != expected)
             {
                 throw new InvalidOperationException(

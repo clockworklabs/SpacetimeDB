@@ -381,7 +381,7 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
-    
+
     public static bool __take_procedure_tx_offset__(out ulong offset)
     {
         if (TakeProcedureTxOffset() is { } tx)

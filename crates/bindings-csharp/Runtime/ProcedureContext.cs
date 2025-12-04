@@ -9,7 +9,8 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         Identity sender,
         ConnectionId? connectionId,
         Random random,
-        Timestamp time)
+        Timestamp time
+    )
     {
         Sender = sender;
         ConnectionId = connectionId;
@@ -34,7 +35,9 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
 
     private protected ProcedureTxContextBase RequireTxContext()
     {
-        var inner = txContext ?? throw new InvalidOperationException("Transaction context was not initialised.");
+        var inner =
+            txContext
+            ?? throw new InvalidOperationException("Transaction context was not initialised.");
         cachedUserTxContext ??= CreateTxContext(inner);
         cachedUserTxContext.Refresh(inner);
         return cachedUserTxContext;
@@ -44,15 +47,22 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
     {
         var timestamp = new Timestamp(timestampMicros);
         Timestamp = timestamp;
-        txContext = txContext?.WithTimestamp(timestamp)
-            ?? new Internal.TxContext(CreateLocal(), Sender, ConnectionId, timestamp, SenderAuth, Rng);
+        txContext =
+            txContext?.WithTimestamp(timestamp)
+            ?? new Internal.TxContext(
+                CreateLocal(),
+                Sender,
+                ConnectionId,
+                timestamp,
+                SenderAuth,
+                Rng
+            );
         return txContext;
     }
 
     public void ExitTxContext() => txContext = null;
 
-    public void SetTransactionOffset(Internal.TransactionOffset offset) =>
-        pendingTxOffset = offset;
+    public void SetTransactionOffset(Internal.TransactionOffset offset) => pendingTxOffset = offset;
 
     public bool TryTakeTransactionOffset(out Internal.TransactionOffset offset)
     {
@@ -75,24 +85,27 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
             Value = value;
             Error = error;
         }
-    
+
         public bool IsSuccess { get; }
         public TResult? Value { get; }
         public Exception? Error { get; }
-    
-        public static TxOutcome<TResult> Success(TResult value) =>
-            new(true, value, null);
-    
-        public static TxOutcome<TResult> Failure(Exception error) =>
-            new(false, default, error);
-    
+
+        public static TxOutcome<TResult> Success(TResult value) => new(true, value, null);
+
+        public static TxOutcome<TResult> Failure(Exception error) => new(false, default, error);
+
         public TResult UnwrapOrThrow() =>
-            IsSuccess ? Value! : throw (Error ?? new InvalidOperationException("Transaction failed without an error object."));
-    
+            IsSuccess
+                ? Value!
+                : throw (
+                    Error
+                    ?? new InvalidOperationException("Transaction failed without an error object.")
+                );
+
         public TResult UnwrapOrThrow(Func<Exception> fallbackFactory) =>
             IsSuccess ? Value! : throw (Error ?? fallbackFactory());
     }
-    
+
     public readonly struct TxResult<TResult, TError>
         where TError : Exception
     {
@@ -102,40 +115,39 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
             Value = value;
             Error = error;
         }
-        
+
         public bool IsSuccess { get; }
         public TResult? Value { get; }
         public TError? Error { get; }
-    
-        public static TxResult<TResult, TError> Success(TResult value) =>
-            new(true, value, null);
-    
-        public static TxResult<TResult, TError> Failure(TError error) =>
-            new(false, default, error);
-    
+
+        public static TxResult<TResult, TError> Success(TResult value) => new(true, value, null);
+
+        public static TxResult<TResult, TError> Failure(TError error) => new(false, default, error);
+
         public TResult UnwrapOrThrow()
         {
             if (IsSuccess)
             {
                 return Value!;
             }
-    
+
             if (Error is not null)
             {
                 throw Error;
             }
-    
+
             throw new InvalidOperationException("Transaction failed without an error object.");
         }
     }
-    
+
     [Experimental("STDB_UNSTABLE")]
     public TResult WithTx<TResult>(Func<ProcedureTxContextBase, TResult> body) =>
         TryWithTx(tx => TxResult<TResult, Exception>.Success(body(tx))).UnwrapOrThrow();
-    
+
     [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body)
+        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+    )
         where TError : Exception
     {
         try
@@ -150,9 +162,10 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
             return TxOutcome<TResult>.Failure(ex);
         }
     }
-    
+
     private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body)
+        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+    )
         where TError : Exception
     {
         var result = RunOnce(body);
@@ -160,29 +173,30 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         {
             return result;
         }
-    
+
         bool Retry()
         {
             result = RunOnce(body);
             return result.IsSuccess;
         }
-    
+
         if (!SpacetimeDB.Internal.Procedure.CommitMutTxWithRetry(Retry))
         {
             return result;
         }
-    
+
         if (TryTakeTransactionOffset(out var offset))
         {
             SetTransactionOffset(offset);
             SpacetimeDB.Internal.Module.RecordProcedureTxOffset(offset);
         }
-    
+
         return result;
     }
-    
+
     private TxResult<TResult, TError> RunOnce<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body)
+        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+    )
         where TError : Exception
     {
         _ = SpacetimeDB.Internal.Procedure.StartMutTx();
@@ -194,21 +208,21 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
             guard.Disarm();
             return result;
         }
-    
+
         SpacetimeDB.Internal.Procedure.AbortMutTx();
         guard.Disarm();
         return result;
     }
-    
+
     private sealed class AbortGuard : IDisposable
     {
         private readonly Action abort;
         private bool disarmed;
-    
+
         public AbortGuard(Action abort) => this.abort = abort;
-    
+
         public void Disarm() => disarmed = true;
-    
+
         public void Dispose()
         {
             if (!disarmed)
@@ -238,13 +252,9 @@ public abstract class ProcedureTxContextBase
     public Random Rng => Inner.Rng;
 }
 
-public abstract class LocalBase : Internal.Local
-{
-}
+public abstract class LocalBase : Internal.Local { }
 
-public abstract class LocalReadOnlyBase : Internal.LocalReadOnly
-{
-}
+public abstract class LocalReadOnlyBase : Internal.LocalReadOnly { }
 
 public sealed class ProcedureContext : ProcedureContextBase
 {
@@ -254,12 +264,12 @@ public sealed class ProcedureContext : ProcedureContextBase
         Identity sender,
         ConnectionId? connectionId,
         Random random,
-        Timestamp timestamp)
-        : base(sender, connectionId, random, timestamp)
-    {
-    }
+        Timestamp timestamp
+    )
+        : base(sender, connectionId, random, timestamp) { }
 
     protected internal override LocalBase CreateLocal() => _db;
+
     protected override ProcedureTxContextBase CreateTxContext(Internal.TxContext inner) =>
         _cached ??= new ProcedureTxContext(inner);
 
@@ -269,18 +279,12 @@ public sealed class ProcedureContext : ProcedureContextBase
 public sealed class ProcedureTxContext : ProcedureTxContextBase
 {
     internal ProcedureTxContext(Internal.TxContext inner)
-        : base(inner)
-    {
-    }
+        : base(inner) { }
 
     public new Local Db => (Local)base.Db;
 }
 
-public sealed class Local : LocalBase
-{
-}
+public sealed class Local : LocalBase { }
 
-public sealed class LocalReadOnly : LocalReadOnlyBase
-{
-}
+public sealed class LocalReadOnly : LocalReadOnlyBase { }
 #pragma warning restore STDB_UNSTABLE

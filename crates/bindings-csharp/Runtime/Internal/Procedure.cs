@@ -21,9 +21,8 @@ public static class Procedure
         new ContextScope(ctx as IInternalProcedureContext);
 
     private static IInternalProcedureContext RequireContext() =>
-        current.Value ?? throw new InvalidOperationException(
-            "Transaction syscalls require a procedure context."
-        );
+        current.Value
+        ?? throw new InvalidOperationException("Transaction syscalls require a procedure context.");
 
     public static long StartMutTx()
     {
@@ -45,7 +44,7 @@ public static class Procedure
             Module.RecordProcedureTxOffset(offset);
         }
     }
-    
+
     public static void AbortMutTx()
     {
         FFI.procedure_abort_mut_tx(); // throws on error
@@ -84,14 +83,16 @@ public static class Procedure
         }
         catch (StdbException)
         {
-            if (retryBody()) {
+            Log.Warn("Committing anonymous transaction failed; retrying once.");
+            if (retryBody())
+            {
                 CommitMutTx();
                 return true;
             }
             return false;
         }
     }
-    
+
     public static async Task<bool> CommitMutTxWithRetryAsync(Func<Task<bool>> retryBody)
     {
         try
@@ -105,6 +106,7 @@ public static class Procedure
         }
         catch (StdbException)
         {
+            Log.Warn("Committing anonymous transaction failed; retrying once.");
             if (await retryBody().ConfigureAwait(false))
             {
                 await CommitMutTxAsync().ConfigureAwait(false);
@@ -133,6 +135,5 @@ public readonly struct TransactionOffset
 
     private TransactionOffset(ulong value) => Value = value;
 
-    public static TransactionOffset FromRaw(long raw) =>
-        new(unchecked((ulong)raw));
+    public static TransactionOffset FromRaw(long raw) => new(unchecked((ulong)raw));
 }

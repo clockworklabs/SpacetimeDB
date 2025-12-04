@@ -34,8 +34,7 @@ internal abstract class RawTableIterBase<T>
                     // Iterator advanced and may also be `EXHAUSTED`.
                     // When `OK`, we'll need to advance the iterator in the next call to `MoveNext`.
                     // In both cases, copy over the row data to `Current` from the scratch `buffer`.
-                    case Errno.EXHAUSTED
-                    or Errno.OK:
+                    case Errno.EXHAUSTED or Errno.OK:
                         Current = new byte[buffer_len];
                         Array.Copy(buffer, 0, Current, 0, buffer_len);
                         return buffer_len != 0;
@@ -112,13 +111,12 @@ public interface ITableView<View, T>
     private static readonly string tableName = typeof(View).Name;
 
     // Note: this must be Lazy to ensure that we don't try to get the tableId during startup, before the module is initialized.
-    private static readonly Lazy<FFI.TableId> tableId_ =
-        new(() =>
-        {
-            var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
-            FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
-            return out_;
-        });
+    private static readonly Lazy<FFI.TableId> tableId_ = new(() =>
+    {
+        var name_bytes = System.Text.Encoding.UTF8.GetBytes(tableName);
+        FFI.table_id_from_name(name_bytes, (uint)name_bytes.Length, out var out_);
+        return out_;
+    });
 
     internal static FFI.TableId tableId => tableId_.Value;
 

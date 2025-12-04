@@ -557,7 +557,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                         public ulong Delete({{argsBounds}}) =>
                             DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
-                    
+
                     """;
             }
 
@@ -1268,25 +1268,20 @@ record ProcedureDeclaration
                     "return output.ToArray();",
                 };
 
-            bodyLines =
-                new[]
-                {
-                    $"var outcome = {invocation};",
-                    "if (!outcome.IsSuccess)",
-                    "{",
-                    "    throw outcome.Error ?? new System.InvalidOperationException(\"Transaction failed.\");",
-                    "}",
-                }
+            bodyLines = new[]
+            {
+                $"var outcome = {invocation};",
+                "if (!outcome.IsSuccess)",
+                "{",
+                "    throw outcome.Error ?? new System.InvalidOperationException(\"Transaction failed.\");",
+                "}",
+            }
                 .Concat(successLines)
                 .ToArray();
         }
         else if (ReturnType.IsVoid)
         {
-            bodyLines = new[]
-            {
-                $"{invocation};",
-                "return System.Array.Empty<byte>();",
-            };
+            bodyLines = new[] { $"{invocation};", "return System.Array.Empty<byte>();" };
         }
         else
         {
@@ -1302,14 +1297,15 @@ record ProcedureDeclaration
         }
 
         var invokeBody = string.Join("\n", bodyLines.Select(line => $"                    {line}"));
-        var paramReads = Args.Length == 0
-            ? string.Empty
-            : string.Join(
-                "\n",
-                Args.Select(a =>
-                    $"                    var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);"
-                )
-            ) + "\n";
+        var paramReads =
+            Args.Length == 0
+                ? string.Empty
+                : string.Join(
+                    "\n",
+                    Args.Select(a =>
+                        $"                    var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);"
+                    )
+                ) + "\n";
 
         var returnTypeExpr = hasTxWrapper
             ? (
@@ -1331,20 +1327,20 @@ record ProcedureDeclaration
         }
 
         return $$$"""
-                  class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
-                      {{{classFields}}}
+            class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
+                {{{classFields}}}
 
-                      public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
-                          nameof({{{Name}}}),
-                          [{{{MemberDeclaration.GenerateDefs(Args)}}}],
-                          {{{returnTypeExpr}}}
-                      );
+                public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
+                    nameof({{{Name}}}),
+                    [{{{MemberDeclaration.GenerateDefs(Args)}}}],
+                    {{{returnTypeExpr}}}
+                );
 
-                      public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
-                          {{{paramReads}}}{{{invokeBody}}}
-                      }
-                  }
-                  """;
+                public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
+                    {{{paramReads}}}{{{invokeBody}}}
+                }
+            }
+            """;
     }
 
     public Scope.Extensions GenerateSchedule()
@@ -1375,16 +1371,17 @@ record ProcedureDeclaration
 
         return extensions;
     }
-    
+
     private bool TryGetTxOutcomeType(out TypeUse payloadType)
     {
         if (
-            _returnTypeSymbol is INamedTypeSymbol
-            {
-                Name: "TxOutcome",
-                ContainingType: { Name: "ProcedureContext" }
-            } named &&
-            named.TypeArguments.Length == 1
+            _returnTypeSymbol
+                is INamedTypeSymbol
+                {
+                    Name: "TxOutcome",
+                    ContainingType: { Name: "ProcedureContext" }
+                } named
+            && named.TypeArguments.Length == 1
         )
         {
             payloadType = TypeUse.Parse(_methodSymbol, named.TypeArguments[0], _diag);
@@ -1398,12 +1395,13 @@ record ProcedureDeclaration
     private bool TryGetTxResultTypes(out TypeUse payloadType, out TypeUse errorType)
     {
         if (
-            _returnTypeSymbol is INamedTypeSymbol
-            {
-                Name: "TxResult",
-                ContainingType: { Name: "ProcedureContext" }
-            } named &&
-            named.TypeArguments.Length == 2
+            _returnTypeSymbol
+                is INamedTypeSymbol
+                {
+                    Name: "TxResult",
+                    ContainingType: { Name: "ProcedureContext" }
+                } named
+            && named.TypeArguments.Length == 2
         )
         {
             payloadType = TypeUse.Parse(_methodSymbol, named.TypeArguments[0], _diag);

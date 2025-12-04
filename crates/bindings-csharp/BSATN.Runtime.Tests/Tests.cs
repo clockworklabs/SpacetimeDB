@@ -137,8 +137,8 @@ public static partial class BSATNRuntimeTests
     public static void NonHexStrings()
     {
         // n.b. 32 chars long
-        Assert.ThrowsAny<Exception>(
-            () => ConnectionId.FromHexString("these are not hex characters....")
+        Assert.ThrowsAny<Exception>(() =>
+            ConnectionId.FromHexString("these are not hex characters....")
         );
     }
 
@@ -626,7 +626,6 @@ public static partial class BSATNRuntimeTests
         .Select(list => new ContainsNestedList(list));
 #pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
 
-
     static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList =
         Gen.Select(GenContainsNestedList, GenContainsNestedList, (e1, e2) => (e1, e2));
 
@@ -797,26 +796,22 @@ public static partial class BSATNRuntimeTests
         );
         Assert.Equal(
             "ContainsList { TheList = [ X(1), Y(\"hi\"), W(BasicDataRecord { X = 1, Y = \"hi\", Z = null, W = null }) ] }",
-            new ContainsList(
-                [
-                    new BasicEnum.X(1),
-                    new BasicEnum.Y("hi"),
-                    new BasicEnum.W(new BasicDataRecord((1, "hi", null, null))),
-                ]
-            ).ToString()
+            new ContainsList([
+                new BasicEnum.X(1),
+                new BasicEnum.Y("hi"),
+                new BasicEnum.W(new BasicDataRecord((1, "hi", null, null))),
+            ]).ToString()
         );
 #pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.
         Assert.Equal(
             "ContainsNestedList { TheList = [ [ [ X(1), null ], null ], null ] }",
-            new ContainsNestedList(
+            new ContainsNestedList([
                 [
-                    [
-                        [new BasicEnum.X(1), null],
-                        null,
-                    ],
+                    [new BasicEnum.X(1), null],
                     null,
-                ]
-            ).ToString()
+                ],
+                null,
+            ]).ToString()
         );
 #pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
     }

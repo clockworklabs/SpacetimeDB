@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.BSATN.Codegen</AssemblyName>
     <Version>1.11.0</Version>
@@ -27,5 +26,4 @@
     <!-- dev-dependency to add internal C# classes and attributes not included in .NET Standard -->
     <PackageReference Include="PolySharp" Version="1.14.1" PrivateAssets="all" />
   </ItemGroup>
-
 </Project>
