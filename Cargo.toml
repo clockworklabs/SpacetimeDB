@@ -323,7 +323,7 @@ zstd-framed = { version = "0.1.1", features = ["tokio"] }
 openssl = { version = "0.10", features = ["vendored"] }
 
 [workspace.dependencies.wasmtime]
-version = "25"
+version = "39"
 default-features = false
 features = [
   "addr2line",
@@ -333,7 +333,7 @@ features = [
   "demangle",
   "parallel-compilation",
   "runtime",
-  "std",
+  "std", 
 ]
 
 [workspace.dependencies.tracing-tracy]
