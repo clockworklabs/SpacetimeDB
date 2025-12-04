@@ -13,10 +13,10 @@ struct TESTPROCCLIENT_API FReturnPrimitiveArgs
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 Lhs;
+    uint32 Lhs = 0;
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 Rhs;
+    uint32 Rhs = 0;
 
     FReturnPrimitiveArgs() = default;
 

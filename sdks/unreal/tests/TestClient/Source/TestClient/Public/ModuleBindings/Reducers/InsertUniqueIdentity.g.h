@@ -18,7 +18,7 @@ struct TESTCLIENT_API FInsertUniqueIdentityArgs
     FSpacetimeDBIdentity I;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertUniqueIdentityArgs() = default;
 

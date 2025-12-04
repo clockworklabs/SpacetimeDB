@@ -15,10 +15,10 @@ struct TESTCLIENT_API FUpdateIndexedSimpleEnumArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    ESimpleEnumType A;
+    ESimpleEnumType A = static_cast<ESimpleEnumType>(0);
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    ESimpleEnumType B;
+    ESimpleEnumType B = static_cast<ESimpleEnumType>(0);
 
     FUpdateIndexedSimpleEnumArgs() = default;
 

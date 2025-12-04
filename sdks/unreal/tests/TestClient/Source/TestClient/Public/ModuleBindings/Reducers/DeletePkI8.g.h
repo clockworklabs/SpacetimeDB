@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeletePkI8Args
     GENERATED_BODY()
 
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 N;
+    int8 N = 0;
 
     FDeletePkI8Args() = default;
 

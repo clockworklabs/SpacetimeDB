@@ -18,7 +18,7 @@ struct TESTCLIENT_API FUpdateUniqueIdentityArgs
     FSpacetimeDBIdentity I;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdateUniqueIdentityArgs() = default;
 

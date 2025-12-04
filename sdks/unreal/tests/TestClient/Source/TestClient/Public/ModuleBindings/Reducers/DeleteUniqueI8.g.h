@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeleteUniqueI8Args
     GENERATED_BODY()
 
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 N;
+    int8 N = 0;
 
     FDeleteUniqueI8Args() = default;
 

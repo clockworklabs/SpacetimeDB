@@ -14,10 +14,10 @@ struct TESTCLIENT_API FInsertUniqueI8Args
     GENERATED_BODY()
 
     // NOTE: int8 field not exposed to Blueprint due to non-blueprintable elements
-    int8 N;
+    int8 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertUniqueI8Args() = default;
 
