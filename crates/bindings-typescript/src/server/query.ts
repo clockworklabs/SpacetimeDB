@@ -53,6 +53,7 @@ export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any> =>
 export const isTypedQuery = (val: unknown): val is TableTypedQuery<any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
 
+// A query builder with a single table.
 type From<TableDef extends TypedTableDef> = Readonly<{
   where(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
@@ -63,32 +64,29 @@ type From<TableDef extends TypedTableDef> = Readonly<{
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
-  ): SemijoinI<RightTable>;
+  ): SemijoinBuilder<RightTable>;
   semijoinLeft<RightTable extends TypedTableDef>(
     other: TableRef<RightTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
-  ): SemijoinI<TableDef>;
+  ): SemijoinBuilder<TableDef>;
   build(): Query<TableDef>;
   toSql(): string;
 }>;
 
-type SemijoinI<TableDef extends TypedTableDef> = Readonly<{
-  type: 'semijoin';
-  sourceQuery: FromBuilder<TableDef>;
-  filterQuery: FromBuilder<any>;
-  joinCondition: EqExpr<any>;
+// A query builder with a semijoin.
+type SemijoinBuilder<TableDef extends TypedTableDef> = Readonly<{
   where(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
-  ): SemijoinI<TableDef>;
+  ): SemijoinBuilder<TableDef>;
   build(): Query<TableDef>;
   toSql(): string;
 }>;
 
 class SemijoinImpl<TableDef extends TypedTableDef>
-  implements SemijoinI<TableDef>, TableTypedQuery<TableDef>
+  implements SemijoinBuilder<TableDef>, TableTypedQuery<TableDef>
 {
   readonly [QueryBrand] = true;
   readonly type = 'semijoin' as const;
@@ -170,7 +168,7 @@ class FromBuilder<TableDef extends TypedTableDef>
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<OtherTable>
     ) => EqExpr<TableDef | OtherTable>
-  ): SemijoinI<OtherTable> {
+  ): SemijoinBuilder<OtherTable> {
     const sourceQuery = new FromBuilder(right);
     const joinCondition = on(
       this.table.indexedCols,
@@ -185,7 +183,7 @@ class FromBuilder<TableDef extends TypedTableDef>
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<OtherTable>
     ) => EqExpr<TableDef | OtherTable>
-  ): SemijoinI<TableDef> {
+  ): SemijoinBuilder<TableDef> {
     const filterQuery = new FromBuilder(right);
     const joinCondition = on(
       this.table.indexedCols,
@@ -248,7 +246,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
-  ): SemijoinI<RightTable> {
+  ): SemijoinBuilder<RightTable> {
     return this.asFrom().semijoinRight(other, on);
   }
 
@@ -258,7 +256,7 @@ class TableRefImpl<TableDef extends TypedTableDef>
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
-  ): SemijoinI<TableDef> {
+  ): SemijoinBuilder<TableDef> {
     return this.asFrom().semijoinLeft(other, on);
   }
 
