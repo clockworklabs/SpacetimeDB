@@ -1,6 +1,5 @@
-using SpacetimeDB;
-
 namespace Benchmarks;
+using SpacetimeDB;
 
 public static partial class synthetic
 {
@@ -250,7 +249,7 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void update_bulk_unique_0_u32_u64_u64(ReducerContext ctx, uint row_count)
     {
-        int hit = 0;
+        var hit = 0;
         foreach (
             unique_0_u32_u64_u64_t loc in ctx.Db.unique_0_u32_u64_u64.Iter().Take((int)row_count)
         )
@@ -545,7 +544,7 @@ public static partial class synthetic
     [SpacetimeDB.Reducer]
     public static void print_many_things(ReducerContext ctx, uint n)
     {
-        for (int i = 0; i < n; i++)
+        for (var i = 0; i < n; i++)
         {
             Log.Info("hello again!");
         }

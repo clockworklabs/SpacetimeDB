@@ -3,28 +3,19 @@ namespace SpacetimeDB;
 using System.Diagnostics.CodeAnalysis;
 
 #pragma warning disable STDB_UNSTABLE
-public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
+public abstract class ProcedureContextBase(
+    Identity sender,
+    ConnectionId? connectionId,
+    Random random,
+    Timestamp time
+) : Internal.IInternalProcedureContext
 {
-    protected ProcedureContextBase(
-        Identity sender,
-        ConnectionId? connectionId,
-        Random random,
-        Timestamp time
-    )
-    {
-        Sender = sender;
-        ConnectionId = connectionId;
-        Rng = random;
-        Timestamp = time;
-        SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, sender);
-    }
-
     public Identity Identity => Internal.IProcedureContext.GetIdentity();
-    public Identity Sender { get; }
-    public ConnectionId? ConnectionId { get; }
-    public Random Rng { get; }
-    public Timestamp Timestamp { get; private set; }
-    public AuthCtx SenderAuth { get; }
+    public Identity Sender { get; } = sender;
+    public ConnectionId? ConnectionId { get; } = connectionId;
+    public Random Rng { get; } = random;
+    public Timestamp Timestamp { get; private set; } = time;
+    public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
 
     private Internal.TransactionOffset? pendingTxOffset;
     private Internal.TxContext? txContext;
@@ -77,18 +68,11 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         return false;
     }
 
-    public readonly struct TxOutcome<TResult>
+    public readonly struct TxOutcome<TResult>(bool isSuccess, TResult? value, Exception? error)
     {
-        public TxOutcome(bool isSuccess, TResult? value, Exception? error)
-        {
-            IsSuccess = isSuccess;
-            Value = value;
-            Error = error;
-        }
-
-        public bool IsSuccess { get; }
-        public TResult? Value { get; }
-        public Exception? Error { get; }
+        public bool IsSuccess { get; } = isSuccess;
+        public TResult? Value { get; } = value;
+        public Exception? Error { get; } = error;
 
         public static TxOutcome<TResult> Success(TResult value) => new(true, value, null);
 
@@ -106,19 +90,12 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
             IsSuccess ? Value! : throw (Error ?? fallbackFactory());
     }
 
-    public readonly struct TxResult<TResult, TError>
+    public readonly struct TxResult<TResult, TError>(bool isSuccess, TResult? value, TError? error)
         where TError : Exception
     {
-        public TxResult(bool isSuccess, TResult? value, TError? error)
-        {
-            IsSuccess = isSuccess;
-            Value = value;
-            Error = error;
-        }
-
-        public bool IsSuccess { get; }
-        public TResult? Value { get; }
-        public TError? Error { get; }
+        public bool IsSuccess { get; } = isSuccess;
+        public TResult? Value { get; } = value;
+        public TError? Error { get; } = error;
 
         public static TxResult<TResult, TError> Success(TResult value) => new(true, value, null);
 
@@ -214,12 +191,10 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
         return result;
     }
 
-    private sealed class AbortGuard : IDisposable
+    private sealed class AbortGuard(Action abort) : IDisposable
     {
-        private readonly Action abort;
+        private readonly Action abort = abort;
         private bool disarmed;
-
-        public AbortGuard(Action abort) => this.abort = abort;
 
         public void Disarm() => disarmed = true;
 
@@ -233,14 +208,9 @@ public abstract class ProcedureContextBase : Internal.IInternalProcedureContext
     }
 }
 
-public abstract class ProcedureTxContextBase
+public abstract class ProcedureTxContextBase(Internal.TxContext inner)
 {
-    protected ProcedureTxContextBase(Internal.TxContext inner)
-    {
-        Inner = inner;
-    }
-
-    internal Internal.TxContext Inner { get; private set; }
+    internal Internal.TxContext Inner { get; private set; } = inner;
 
     internal void Refresh(Internal.TxContext inner) => Inner = inner;
 
@@ -256,17 +226,14 @@ public abstract class LocalBase : Internal.Local { }
 
 public abstract class LocalReadOnlyBase : Internal.LocalReadOnly { }
 
-public sealed class ProcedureContext : ProcedureContextBase
+public sealed class ProcedureContext(
+    Identity sender,
+    ConnectionId? connectionId,
+    Random random,
+    Timestamp timestamp
+) : ProcedureContextBase(sender, connectionId, random, timestamp)
 {
     private readonly Local _db = new();
-
-    public ProcedureContext(
-        Identity sender,
-        ConnectionId? connectionId,
-        Random random,
-        Timestamp timestamp
-    )
-        : base(sender, connectionId, random, timestamp) { }
 
     protected internal override LocalBase CreateLocal() => _db;
 

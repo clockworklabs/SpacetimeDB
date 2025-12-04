@@ -557,7 +557,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
                         public ulong Delete({{argsBounds}}) =>
                             DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<{{types}}>({{argName}}));
-
+                    
                     """;
             }
 
@@ -1798,7 +1798,7 @@ public class Module : IIncrementalGenerator
                         {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
                     }
                     
-                    {{string.Join("\n", 
+                    {{string.Join("\n",
                         views.Array.Where(v => !v.IsAnonymous)
                             .Select((v, i) => v.GenerateDispatcherClass((uint)i))
                             .Concat(
@@ -1851,7 +1851,7 @@ public class Module : IIncrementalGenerator
                             // IMPORTANT: The order in which we register views matters.
                             // It must correspond to the order in which we call `GenerateDispatcherClass`.
                             // See the comment on `GenerateDispatcherClass` for more explanation.
-                            {{string.Join("\n", 
+                            {{string.Join("\n",
                                 views.Array.Where(v => !v.IsAnonymous)
                                     .Select(v => $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();")
                                     .Concat(
@@ -1870,14 +1870,14 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                columnDefaultValues.Select(d => 
+                                columnDefaultValues.Select(d =>
                                     "{\n"
-                                         +$"var value = new {d.BSATNTypeName}();\n"
-                                         +"__memoryStream.Position = 0;\n"
-                                         +"__memoryStream.SetLength(0);\n"
-                                         +$"value.Write(__writer, {d.value});\n"   
-                                         +"var array = __memoryStream.ToArray();\n" 
-                                         +$"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
+                                         + $"var value = new {d.BSATNTypeName}();\n"
+                                         + "__memoryStream.Position = 0;\n"
+                                         + "__memoryStream.SetLength(0);\n"
+                                         + $"value.Write(__writer, {d.value});\n"
+                                         + "var array = __memoryStream.ToArray();\n"
+                                         + $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
                                          + "\n}\n")
                             )}}
                         }

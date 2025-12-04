@@ -134,55 +134,61 @@ internal static class ErrorDescriptor
         ISymbol member,
         ITypeSymbol type,
         Exception e
-    )> UnsupportedType = new(
-        group,
-        "Unsupported type",
-        ctx => $"BSATN implementation for {ctx.type} is not found: {ctx.e.Message}",
-        ctx => ctx.member
-    );
+    )> UnsupportedType =
+        new(
+            group,
+            "Unsupported type",
+            ctx => $"BSATN implementation for {ctx.type} is not found: {ctx.e.Message}",
+            ctx => ctx.member
+        );
 
     public static readonly ErrorDescriptor<(
         EqualsValueClauseSyntax equalsValue,
         EnumMemberDeclarationSyntax enumMember,
         EnumDeclarationSyntax @enum
-    )> EnumWithExplicitValues = new(
-        group,
-        "[SpacetimeDB.Type] enums cannot have explicit values",
-        ctx =>
-            $"{ctx.@enum.Identifier}.{ctx.enumMember.Identifier} has an explicit value {ctx.equalsValue.Value} which is not allowed in SpacetimeDB enums.",
-        ctx => ctx.equalsValue
-    );
+    )> EnumWithExplicitValues =
+        new(
+            group,
+            "[SpacetimeDB.Type] enums cannot have explicit values",
+            ctx =>
+                $"{ctx.@enum.Identifier}.{ctx.enumMember.Identifier} has an explicit value {ctx.equalsValue.Value} which is not allowed in SpacetimeDB enums.",
+            ctx => ctx.equalsValue
+        );
 
-    public static readonly ErrorDescriptor<EnumDeclarationSyntax> EnumTooManyVariants = new(
-        group,
-        "[SpacetimeDB.Type] enums are limited to 256 variants",
-        @enum =>
-            $"{@enum.Identifier} has {@enum.Members.Count} variants which is more than the allowed 256 variants for SpacetimeDB enums.",
-        @enum => @enum.Members[256]
-    );
+    public static readonly ErrorDescriptor<EnumDeclarationSyntax> EnumTooManyVariants =
+        new(
+            group,
+            "[SpacetimeDB.Type] enums are limited to 256 variants",
+            @enum =>
+                $"{@enum.Identifier} has {@enum.Members.Count} variants which is more than the allowed 256 variants for SpacetimeDB enums.",
+            @enum => @enum.Members[256]
+        );
 
-    public static readonly ErrorDescriptor<INamedTypeSymbol> TaggedEnumInlineTuple = new(
-        group,
-        "Tagged enum variants must be declared with inline tuples",
-        baseType =>
-            $"{baseType} does not have the expected format SpacetimeDB.TaggedEnum<(TVariant1 v1, ..., TVariantN vN)>.",
-        baseType => baseType
-    );
+    public static readonly ErrorDescriptor<INamedTypeSymbol> TaggedEnumInlineTuple =
+        new(
+            group,
+            "Tagged enum variants must be declared with inline tuples",
+            baseType =>
+                $"{baseType} does not have the expected format SpacetimeDB.TaggedEnum<(TVariant1 v1, ..., TVariantN vN)>.",
+            baseType => baseType
+        );
 
-    public static readonly ErrorDescriptor<IFieldSymbol> TaggedEnumField = new(
-        group,
-        "Tagged enums cannot have instance fields",
-        field =>
-            $"{field.Name} is an instance field, which are not permitted inside SpacetimeDB tagged enums.",
-        field => field
-    );
+    public static readonly ErrorDescriptor<IFieldSymbol> TaggedEnumField =
+        new(
+            group,
+            "Tagged enums cannot have instance fields",
+            field =>
+                $"{field.Name} is an instance field, which are not permitted inside SpacetimeDB tagged enums.",
+            field => field
+        );
 
-    public static readonly ErrorDescriptor<TypeParameterListSyntax> TypeParams = new(
-        group,
-        "Type parameters are not yet supported",
-        typeParams => $"Type parameters {typeParams} are not supported in SpacetimeDB types.",
-        typeParams => typeParams
-    );
+    public static readonly ErrorDescriptor<TypeParameterListSyntax> TypeParams =
+        new(
+            group,
+            "Type parameters are not yet supported",
+            typeParams => $"Type parameters {typeParams} are not supported in SpacetimeDB types.",
+            typeParams => typeParams
+        );
 }
 
 // This class is used to collect diagnostics during parsing and return them as a combined result.
@@ -208,12 +214,13 @@ public class DiagReporter
 
     private DiagReporter() { }
 
-    private static readonly ErrorDescriptor<(Location location, Exception e)> InternalError = new(
-        new("STDBINT", "SpacetimeDB.Internal"),
-        "Internal SpacetimeDB codegen error",
-        ctx => $"An internal error occurred during codegen: {ctx.e.Message}",
-        ctx => ctx.location
-    );
+    private static readonly ErrorDescriptor<(Location location, Exception e)> InternalError =
+        new(
+            new("STDBINT", "SpacetimeDB.Internal"),
+            "Internal SpacetimeDB codegen error",
+            ctx => $"An internal error occurred during codegen: {ctx.e.Message}",
+            ctx => ctx.location
+        );
 
     public static ParseResult<T> With<T>(Location location, Func<DiagReporter, T> build)
         where T : IEquatable<T>

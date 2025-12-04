@@ -1,6 +1,5 @@
-using SpacetimeDB;
-
 namespace Benchmarks;
+using SpacetimeDB;
 
 public static partial class ia_loop
 {
@@ -196,7 +195,7 @@ public static partial class ia_loop
     {
         for (ulong i = 0; i < players; i++)
         {
-            ulong next_action_timestamp =
+            var next_action_timestamp =
                 (i & 2) == 2 ? MomentMilliseconds() + 2000 : MomentMilliseconds();
 
             ctx.Db.game_enemy_ai_agent_state.Insert(
@@ -234,7 +233,7 @@ public static partial class ia_loop
     {
         List<GameTargetableState> result = new(4);
 
-        for (ulong id = entity_id; id < num_players; id++)
+        for (var id = entity_id; id < num_players; id++)
         {
             foreach (
                 GameLiveTargetableState t in ctx.Db.game_live_targetable_state.quad.Filter((long)id)
@@ -259,7 +258,7 @@ public static partial class ia_loop
         ulong current_time_ms
     )
     {
-        ulong entity_id = agent.entity_id;
+        var entity_id = agent.entity_id;
 
         GameEnemyState enemy =
             ctx.Db.game_enemy_state.entity_id.Find(entity_id)
@@ -277,7 +276,7 @@ public static partial class ia_loop
         GameTargetableState targetable =
             ctx.Db.game_targetable_state.entity_id.Find(entity_id)
             ?? throw new Exception("GameTargetableState Entity ID not found");
-        int new_hash = targetable.quad.GetHashCode();
+        var new_hash = targetable.quad.GetHashCode();
         targetable.quad = new_hash;
         ctx.Db.game_targetable_state.entity_id.Update(targetable);
 
@@ -306,7 +305,7 @@ public static partial class ia_loop
         ulong current_time_ms
     )
     {
-        ulong entity_id = agent.entity_id;
+        var entity_id = agent.entity_id;
 
         GameMobileEntityState? coordinates =
             ctx.Db.game_mobile_entity_state.entity_id.Find(entity_id)
@@ -329,7 +328,7 @@ public static partial class ia_loop
     public static void game_loop_enemy_ia(ReducerContext ctx, ulong players)
     {
         uint count = 0;
-        ulong current_time_ms = MomentMilliseconds();
+        var current_time_ms = MomentMilliseconds();
 
         foreach (GameEnemyAiAgentState agent in ctx.Db.game_enemy_ai_agent_state.Iter())
         {

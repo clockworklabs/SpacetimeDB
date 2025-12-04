@@ -1,6 +1,5 @@
-using System.Runtime.CompilerServices;
-
 namespace Benchmarks;
+using System.Runtime.CompilerServices;
 
 public static class Bench
 {

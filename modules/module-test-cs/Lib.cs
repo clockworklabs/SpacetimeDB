@@ -382,7 +382,7 @@ static partial class Module
     [Reducer]
     public static void delete_player(ReducerContext ctx, ulong id)
     {
-        bool deleted = ctx.Db.test_e.id.Delete(id);
+        var deleted = ctx.Db.test_e.id.Delete(id);
         if (!deleted)
         {
             throw new Exception($"No TestE row with id {id}");
@@ -429,7 +429,7 @@ static partial class Module
     public static void test_btree_index_args(ReducerContext ctx)
     {
         // Testing various acceptable index filter argument types.
-        string s = "String";
+        var s = "String";
         var _1 = ctx.Db.test_e.name.Filter(s);
         var _2 = ctx.Db.test_e.name.Filter("str");
 
