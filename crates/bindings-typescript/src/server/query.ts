@@ -58,14 +58,14 @@ type From<TableDef extends TypedTableDef> = Readonly<{
   where(
     predicate: (row: RowExpr<TableDef>) => BooleanExpr<TableDef>
   ): From<TableDef>;
-  semijoinRight<RightTable extends TypedTableDef>(
+  rightSemijoin<RightTable extends TypedTableDef>(
     other: TableRef<RightTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
   ): SemijoinBuilder<RightTable>;
-  semijoinLeft<RightTable extends TypedTableDef>(
+  leftSemijoin<RightTable extends TypedTableDef>(
     other: TableRef<RightTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
@@ -162,7 +162,7 @@ class FromBuilder<TableDef extends TypedTableDef>
     return new FromBuilder<TableDef>(this.table, nextWhere);
   }
 
-  semijoinRight<OtherTable extends TypedTableDef>(
+  rightSemijoin<OtherTable extends TypedTableDef>(
     right: TableRef<OtherTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
@@ -177,7 +177,7 @@ class FromBuilder<TableDef extends TypedTableDef>
     return new SemijoinImpl<OtherTable>(sourceQuery, this, joinCondition);
   }
 
-  semijoinLeft<OtherTable extends TypedTableDef>(
+  leftSemijoin<OtherTable extends TypedTableDef>(
     right: TableRef<OtherTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
@@ -240,24 +240,24 @@ class TableRefImpl<TableDef extends TypedTableDef>
     return new FromBuilder<TableDef>(this);
   }
 
-  semijoinRight<RightTable extends TypedTableDef>(
+  rightSemijoin<RightTable extends TypedTableDef>(
     other: TableRef<RightTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
   ): SemijoinBuilder<RightTable> {
-    return this.asFrom().semijoinRight(other, on);
+    return this.asFrom().rightSemijoin(other, on);
   }
 
-  semijoinLeft<RightTable extends TypedTableDef>(
+  leftSemijoin<RightTable extends TypedTableDef>(
     other: TableRef<RightTable>,
     on: (
       left: IndexedRowExpr<TableDef>,
       right: IndexedRowExpr<RightTable>
     ) => EqExpr<TableDef | RightTable>
   ): SemijoinBuilder<TableDef> {
-    return this.asFrom().semijoinLeft(other, on);
+    return this.asFrom().leftSemijoin(other, on);
   }
 
   build(): Query<TableDef> {

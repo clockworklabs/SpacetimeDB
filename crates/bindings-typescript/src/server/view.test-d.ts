@@ -60,6 +60,6 @@ spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
 spacetime.anonymousView({ name: 'v5', public: true }, arrayRetValue, ctx => {
   return ctx.from.person
     .where(row => row.id.eq(5))
-    .semijoinLeft(ctx.from.order, (p, o) => p.id.eq(o.id))
+    .leftSemijoin(ctx.from.order, (p, o) => p.id.eq(o.id))
     .build();
 });

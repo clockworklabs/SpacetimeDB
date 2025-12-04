@@ -154,7 +154,7 @@ describe('TableScan.toSql', () => {
   it('renders semijoin queries without additional filters', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = from(qb.person)
-      .semijoinRight(qb.orders, (person, order) =>
+      .rightSemijoin(qb.orders, (person, order) =>
         order.person_id.eq(person.id)
       )
       .toSql();
@@ -168,7 +168,7 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = from(qb.person)
       .where(row => row.age.eq(42))
-      .semijoinRight(qb.orders, (person, order) =>
+      .rightSemijoin(qb.orders, (person, order) =>
         order.person_id.eq(person.id)
       )
       .toSql();
@@ -182,7 +182,7 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = from(qb.person)
       .where(row => row.name.eq("O'Brian"))
-      .semijoinRight(qb.orders, (person, order) =>
+      .rightSemijoin(qb.orders, (person, order) =>
         order.person_id.eq(person.id)
       )
       .toSql();
@@ -196,7 +196,7 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = from(qb.person)
       .where(row => and(row.name.eq('Alice'), row.age.eq(30)))
-      .semijoinRight(qb.orders, (person, order) =>
+      .rightSemijoin(qb.orders, (person, order) =>
         order.person_id.eq(person.id)
       )
       .toSql();
@@ -217,7 +217,7 @@ describe('TableScan.toSql', () => {
   it('basic semijoin', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb.person
-      .semijoinRight(qb.orders, (p, o) => p.id.eq(o.person_id))
+      .rightSemijoin(qb.orders, (p, o) => p.id.eq(o.person_id))
       .toSql();
     expect(sql).toBe(
       `SELECT "orders".* FROM "person" JOIN "orders" ON "person"."id" = "orders"."person_id"`
@@ -227,7 +227,7 @@ describe('TableScan.toSql', () => {
   it('basic left semijoin', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb.person
-      .semijoinLeft(qb.orders, (p, o) => p.id.eq(o.person_id))
+      .leftSemijoin(qb.orders, (p, o) => p.id.eq(o.person_id))
       .toSql();
     expect(sql).toBe(
       `SELECT "person".* FROM "orders" JOIN "person" ON "person"."id" = "orders"."person_id"`
@@ -238,7 +238,7 @@ describe('TableScan.toSql', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = qb.person
       .where(row => row.age.eq(42))
-      .semijoinRight(qb.orders, (p, o) => p.id.eq(o.person_id))
+      .rightSemijoin(qb.orders, (p, o) => p.id.eq(o.person_id))
       .where(row => row.item_name.eq('Gadget'))
       .toSql();
     expect(sql).toBe(
