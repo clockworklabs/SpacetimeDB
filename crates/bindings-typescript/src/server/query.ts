@@ -446,6 +446,68 @@ export class ColumnExpression<
       right: normalizeValue(x) as ValueExpr<TableDef, any>,
     } as EqExpr<TableDef>;
   }
+
+  lt(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
+  lt<OtherCol extends ColumnExpr<any, any>>(
+    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
+  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+
+  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
+  lt(x: any): any {
+    return {
+      type: 'lt',
+      left: this as unknown as ValueExpr<TableDef, any>,
+      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+    } as BooleanExpr<TableDef>;
+  }
+  lte(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
+  lte<OtherCol extends ColumnExpr<any, any>>(
+    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
+  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+
+  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
+  lte(x: any): any {
+    return {
+      type: 'lte',
+      left: this as unknown as ValueExpr<TableDef, any>,
+      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+    } as BooleanExpr<TableDef>;
+  }
+
+  gt(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
+  gt<OtherCol extends ColumnExpr<any, any>>(
+    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
+  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+
+  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
+  gt(x: any): any {
+    return {
+      type: 'gt',
+      left: this as unknown as ValueExpr<TableDef, any>,
+      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+    } as BooleanExpr<TableDef>;
+  }
+  gte(
+    literal: LiteralValue & RowType<TableDef>[ColumnName]
+  ): BooleanExpr<TableDef>;
+  gte<OtherCol extends ColumnExpr<any, any>>(
+    value: ColumnSameSpacetime<TableDef, ColumnName, OtherCol>
+  ): BooleanExpr<TableDef | ExtractTable<OtherCol>>;
+
+  // These types could be tighted, but since we declare the overloads above, it doesn't weaken the API surface.
+  gte(x: any): any {
+    return {
+      type: 'gte',
+      left: this as unknown as ValueExpr<TableDef, any>,
+      right: normalizeValue(x) as ValueExpr<TableDef, any>,
+    } as BooleanExpr<TableDef>;
+  }
 }
 
 /**

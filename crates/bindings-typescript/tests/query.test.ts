@@ -243,6 +243,38 @@ describe('TableScan.toSql', () => {
     );
   });
 
+  it('basic where lt', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.orders.where(o => o.item_name.lt('Gadget')).build());
+    expect(sql).toBe(
+      `SELECT * FROM "orders" WHERE "orders"."item_name" < 'Gadget'`
+    );
+  });
+
+  it('basic where lte', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.orders.where(o => o.item_name.lte('Gadget')).build());
+    expect(sql).toBe(
+      `SELECT * FROM "orders" WHERE "orders"."item_name" <= 'Gadget'`
+    );
+  });
+
+  it('basic where gt', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.orders.where(o => o.item_name.gt('Gadget')).build());
+    expect(sql).toBe(
+      `SELECT * FROM "orders" WHERE "orders"."item_name" > 'Gadget'`
+    );
+  });
+
+  it('basic where gte', () => {
+    const qb = makeQueryBuilder(schemaDef);
+    const sql = toSql(qb.orders.where(o => o.item_name.gte('Gadget')).build());
+    expect(sql).toBe(
+      `SELECT * FROM "orders" WHERE "orders"."item_name" >= 'Gadget'`
+    );
+  });
+
   it('basic semijoin', () => {
     const qb = makeQueryBuilder(schemaDef);
     const sql = toSql(
