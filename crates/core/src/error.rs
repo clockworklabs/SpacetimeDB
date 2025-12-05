@@ -155,10 +155,10 @@ pub enum DBError {
 
 impl DBError {
     pub fn get_auth_error(&self) -> Option<&ErrorLang> {
-        if let Self::VmUser(err) = self {
-            if err.kind == ErrorKind::Unauthorized {
-                return Some(err);
-            }
+        if let Self::VmUser(err) = self
+            && err.kind == ErrorKind::Unauthorized
+        {
+            return Some(err);
         }
         None
     }

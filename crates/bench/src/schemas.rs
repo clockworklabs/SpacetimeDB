@@ -170,7 +170,7 @@ pub fn table_name<T: BenchTable>(style: IndexStrategy) -> String {
 #[derive(Clone)]
 pub struct XorShiftLite(pub u64);
 impl XorShiftLite {
-    fn gen(&mut self) -> u64 {
+    fn r#gen(&mut self) -> u64 {
         let old = self.0;
         self.0 ^= self.0 << 13;
         self.0 ^= self.0 >> 7;
@@ -188,36 +188,36 @@ pub trait RandomTable {
     /// Then in the filter benchmarks, `mean_result_count = table_size / buckets`.
     ///
     /// Currently the same number of buckets is used for all attributes.
-    fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self;
+    fn r#gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self;
 }
 
 impl RandomTable for u32_u64_str {
-    fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
-        let name = nth_name(rng.gen() % buckets).into();
-        let age = rng.gen() % buckets;
+    fn r#gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
+        let name = nth_name(rng.r#gen() % buckets).into();
+        let age = rng.r#gen() % buckets;
         u32_u64_str { id, name, age }
     }
 }
 
 impl RandomTable for u32_u64_u64 {
-    fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
-        let x = rng.gen() % buckets;
-        let y = rng.gen() % buckets;
+    fn r#gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
+        let x = rng.r#gen() % buckets;
+        let y = rng.r#gen() % buckets;
         u32_u64_u64 { id, x, y }
     }
 }
 
 impl RandomTable for u64_u64_u32 {
-    fn gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
-        let x = rng.gen() % buckets;
-        let y = rng.gen() % buckets;
+    fn r#gen(id: u32, rng: &mut XorShiftLite, buckets: u64) -> Self {
+        let x = rng.r#gen() % buckets;
+        let y = rng.r#gen() % buckets;
         u64_u64_u32 { x, y, id }
     }
 }
 
 pub fn create_sequential<T: RandomTable>(seed: u64, count: u32, buckets: u64) -> Vec<T> {
     let mut rng = XorShiftLite(seed);
-    (0..count).map(|id| T::gen(id, &mut rng, buckets)).collect()
+    (0..count).map(|id| T::r#gen(id, &mut rng, buckets)).collect()
 }
 
 /// Create a table whose first `identical` rows are identical except for their `id` column.
@@ -236,13 +236,13 @@ pub fn create_partly_identical<T: RandomTable>(seed: u64, identical: u64, total:
     for _ in 0..identical {
         // clone to preserve rng state
         let mut rng_ = rng.clone();
-        result.push(T::gen(id as u32, &mut rng_, buckets));
+        result.push(T::r#gen(id as u32, &mut rng_, buckets));
         id += 1;
     }
     // advance rng
-    drop(T::gen(id as u32, &mut rng, buckets));
+    drop(T::r#gen(id as u32, &mut rng, buckets));
     for _ in identical..total {
-        result.push(T::gen(id as u32, &mut rng, buckets));
+        result.push(T::r#gen(id as u32, &mut rng, buckets));
         id += 1;
     }
     result
@@ -253,8 +253,8 @@ pub fn create_random<T: RandomTable>(seed: u64, count: u32, buckets: u64) -> Vec
     let mut rng = XorShiftLite(seed);
     (0..count)
         .map(|_| {
-            let id = (rng.gen() % (u32::MAX as u64)) as u32;
-            T::gen(id, &mut rng, buckets)
+            let id = (rng.r#gen() % (u32::MAX as u64)) as u32;
+            T::r#gen(id, &mut rng, buckets)
         })
         .collect()
 }
@@ -361,7 +361,7 @@ mod tests {
             }
             // sample some earlier names to make sure we haven't overlapped
             for _ in 0..30 {
-                let prev = rng.gen() % n;
+                let prev = rng.r#gen() % n;
                 assert!(
                     name != nth_name(prev),
                     "names should not repeat, but {}->{} and {}->{}",

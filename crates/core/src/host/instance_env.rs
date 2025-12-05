@@ -718,7 +718,7 @@ impl InstanceEnv {
         &mut self,
         request: st_http::Request,
         body: bytes::Bytes,
-    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>>, NodesError> {
+    ) -> Result<impl Future<Output = Result<(st_http::Response, bytes::Bytes), NodesError>> + use<>, NodesError> {
         if self.in_tx() {
             // If we're holding a transaction open, refuse to perform this blocking operation.
             return Err(NodesError::WouldBlockTransaction(super::AbiCall::ProcedureHttpRequest));

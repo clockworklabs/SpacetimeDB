@@ -533,7 +533,7 @@ impl<'page> VarView<'page> {
     ///
     /// This has to be done due to `page.row_data.split_at_mut(last_fixed)`.
     #[inline(always)]
-    fn adjuster(&self) -> impl FnOnce(PageOffset) -> PageOffset {
+    fn adjuster(&self) -> impl FnOnce(PageOffset) -> PageOffset + use<> {
         let lf = self.last_fixed;
         move |offset| offset - lf
     }

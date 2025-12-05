@@ -278,7 +278,7 @@ impl PointerMap {
     ///
     /// Returns whether the association was deleted.
     pub fn remove(&mut self, hash: RowHash, ptr: RowPointer) -> bool {
-        let ret = 'fun: {
+        'fun: {
             let Entry::Occupied(mut entry) = self.map.entry(hash) else {
                 break 'fun false;
             };
@@ -309,9 +309,7 @@ impl PointerMap {
             }
 
             true
-        };
-
-        ret
+        }
     }
 }
 

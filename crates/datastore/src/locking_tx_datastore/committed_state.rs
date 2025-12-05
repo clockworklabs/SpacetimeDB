@@ -90,7 +90,7 @@ pub struct CommittedState {
 
 impl CommittedState {
     /// Returns the views that perform a full scan of this table
-    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
+    pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> + use<'_> {
         self.read_sets.views_for_table_scan(table_id)
     }
 
@@ -99,7 +99,7 @@ impl CommittedState {
         &'a self,
         table_id: &TableId,
         row_ref: RowRef<'a>,
-    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+    ) -> impl Iterator<Item = &'a ViewCallInfo> + use<'a> {
         self.read_sets.views_for_index_seek(table_id, row_ref)
     }
 }

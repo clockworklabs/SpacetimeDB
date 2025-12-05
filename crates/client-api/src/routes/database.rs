@@ -711,27 +711,26 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         let name_or_identity = name_or_identity
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
-        if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)? {
-            if ctx
+        if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)?
+            && ctx
                 .get_database_by_identity(&identity)
                 .await
                 .map_err(log_and_500)?
                 .is_some()
-            {
-                return reset(
-                    State(ctx),
-                    Path(ResetDatabaseParams {
-                        name_or_identity: name_or_identity.clone(),
-                    }),
-                    Query(ResetDatabaseQueryParams {
-                        num_replicas,
-                        host_type,
-                    }),
-                    Extension(auth),
-                    Some(program_bytes),
-                )
-                .await;
-            }
+        {
+            return reset(
+                State(ctx),
+                Path(ResetDatabaseParams {
+                    name_or_identity: name_or_identity.clone(),
+                }),
+                Query(ResetDatabaseQueryParams {
+                    num_replicas,
+                    host_type,
+                }),
+                Extension(auth),
+                Some(program_bytes),
+            )
+            .await;
         }
     }
 

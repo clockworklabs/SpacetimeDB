@@ -135,7 +135,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
     }
 
     /// Obtain an iterator over the [`Commit`]s in the underlying log.
-    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> {
+    pub fn commits_from(&self, offset: TxOffset) -> impl Iterator<Item = Result<Commit, error::Traversal>> + use<T> {
         self.clog.commits_from(offset).map_ok(Commit::from)
     }
 
@@ -157,10 +157,10 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         info!("close local durability");
 
         drop(self.queue);
-        if let Err(e) = self.persister_task.await {
-            if e.is_panic() {
-                return Err(e).context("persister task panicked");
-            }
+        if let Err(e) = self.persister_task.await
+            && e.is_panic()
+        {
+            return Err(e).context("persister task panicked");
         }
 
         spawn_blocking(move || self.clog.flush_and_sync())
@@ -274,10 +274,10 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
                 break;
             };
             // Skip if nothing changed.
-            if let Some(committed) = clog.max_committed_offset() {
-                if self.offset.borrow().is_some_and(|durable| durable == committed) {
-                    continue;
-                }
+            if let Some(committed) = clog.max_committed_offset()
+                && self.offset.borrow().is_some_and(|durable| durable == committed)
+            {
+                continue;
             }
 
             let task = spawn_blocking(move || clog.flush_and_sync()).await;

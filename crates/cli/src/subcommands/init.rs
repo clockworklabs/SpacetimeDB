@@ -759,10 +759,10 @@ fn clone_github_template(repo_input: &str, target: &Path, is_server_only: bool) 
     let mut callbacks = git2::RemoteCallbacks::new();
 
     callbacks.credentials(|_url, username_from_url, allowed_types| {
-        if allowed_types.contains(git2::CredentialType::SSH_KEY) {
-            if let Some(username) = username_from_url {
-                return git2::Cred::ssh_key_from_agent(username);
-            }
+        if allowed_types.contains(git2::CredentialType::SSH_KEY)
+            && let Some(username) = username_from_url
+        {
+            return git2::Cred::ssh_key_from_agent(username);
         }
         if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
             return git2::Cred::userpass_plaintext("", "");
@@ -828,10 +828,10 @@ fn update_package_json(dir: &Path, package_name: &str) -> anyhow::Result<()> {
     package["name"] = json!(package_name);
 
     // Update spacetimedb version if it exists in dependencies
-    if let Some(deps) = package.get_mut("dependencies") {
-        if deps.get("spacetimedb").is_some() {
-            deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
-        }
+    if let Some(deps) = package.get_mut("dependencies")
+        && deps.get("spacetimedb").is_some()
+    {
+        deps["spacetimedb"] = json!(format!("^{}", get_spacetimedb_typescript_version()));
     }
 
     let updated_content = serde_json::to_string_pretty(&package)?;
@@ -864,40 +864,40 @@ fn update_cargo_toml_name(dir: &Path, package_name: &str) -> anyhow::Result<()> 
         .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
         .collect::<String>();
 
-    if let Some(package_item) = doc.get_mut("package") {
-        if let Some(package_table) = package_item.as_table_mut() {
-            package_table["name"] = value(safe_name);
-            if let Some(edition_item) = package_table.get_mut("edition") {
-                if edition_uses_workspace(edition_item) {
-                    *edition_item = value(embedded::get_workspace_edition());
-                }
-            }
+    if let Some(package_item) = doc.get_mut("package")
+        && let Some(package_table) = package_item.as_table_mut()
+    {
+        package_table["name"] = value(safe_name);
+        if let Some(edition_item) = package_table.get_mut("edition")
+            && edition_uses_workspace(edition_item)
+        {
+            *edition_item = value(embedded::get_workspace_edition());
         }
     }
 
-    if let Some(deps_item) = doc.get_mut("dependencies") {
-        if let Some(deps_table) = deps_item.as_table_mut() {
-            let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
-            for key in keys {
-                if let Some(dep_item) = deps_table.get_mut(&key) {
-                    if dependency_uses_workspace(dep_item) {
-                        if has_path(dep_item) {
-                            if key == "spacetimedb" {
-                                if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                                    set_dependency_version(dep_item, version, true);
-                                }
-                            } else if key == "spacetimedb-sdk" {
-                                set_dependency_version(dep_item, patch_wildcard.as_str(), true);
-                            }
-                            continue;
+    if let Some(deps_item) = doc.get_mut("dependencies")
+        && let Some(deps_table) = deps_item.as_table_mut()
+    {
+        let keys: Vec<String> = deps_table.iter().map(|(k, _)| k.to_string()).collect();
+        for key in keys {
+            if let Some(dep_item) = deps_table.get_mut(&key)
+                && dependency_uses_workspace(dep_item)
+            {
+                if has_path(dep_item) {
+                    if key == "spacetimedb" {
+                        if let Some(version) = embedded::get_workspace_dependency_version(&key) {
+                            set_dependency_version(dep_item, version, true);
                         }
-
-                        if uses_workspace(dep_item) {
-                            if let Some(version) = embedded::get_workspace_dependency_version(&key) {
-                                set_dependency_version(dep_item, version, key == "spacetimedb");
-                            }
-                        }
+                    } else if key == "spacetimedb-sdk" {
+                        set_dependency_version(dep_item, patch_wildcard.as_str(), true);
                     }
+                    continue;
+                }
+
+                if uses_workspace(dep_item)
+                    && let Some(version) = embedded::get_workspace_dependency_version(&key)
+                {
+                    set_dependency_version(dep_item, version, key == "spacetimedb");
                 }
             }
         }
@@ -977,20 +977,20 @@ fn find_first_csproj(dir: &Path) -> anyhow::Result<Option<PathBuf>> {
 /// Remove every <ProjectReference/> under any <ItemGroup>
 fn remove_all_project_references(project: &mut Element) {
     for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node {
-            if item_group.name == "ItemGroup" {
-                item_group
-                    .children
-                    .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
-            }
+        if let XMLNode::Element(item_group) = node
+            && item_group.name == "ItemGroup"
+        {
+            item_group
+                .children
+                .retain(|n| !matches!(n, XMLNode::Element(el) if el.name == "ProjectReference"));
         }
     }
     // Optional: prune empty ItemGroups
     project.children.retain(|n| {
-        if let XMLNode::Element(el) = n {
-            if el.name == "ItemGroup" {
-                return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
-            }
+        if let XMLNode::Element(el) = n
+            && el.name == "ItemGroup"
+        {
+            return el.children.iter().any(|c| matches!(c, XMLNode::Element(_)));
         }
         true
     });
@@ -1000,19 +1000,18 @@ fn remove_all_project_references(project: &mut Element) {
 fn upsert_packageref(project: &mut Element, include: &str, version: &str) {
     // Try to find an existing PackageReference
     for node in project.children.iter_mut() {
-        if let XMLNode::Element(item_group) = node {
-            if item_group.name == "ItemGroup" {
-                if let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
-                    matches!(n,
-                        XMLNode::Element(e)
-                        if e.name == "PackageReference"
-                           && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
-                    )
-                }) {
-                    existing.attributes.insert("Version".to_string(), version.to_string());
-                    return;
-                }
-            }
+        if let XMLNode::Element(item_group) = node
+            && item_group.name == "ItemGroup"
+            && let Some(XMLNode::Element(existing)) = item_group.children.iter_mut().find(|n| {
+                matches!(n,
+                    XMLNode::Element(e)
+                    if e.name == "PackageReference"
+                       && e.attributes.get("Include").map(|v| v == include).unwrap_or(false)
+                )
+            })
+        {
+            existing.attributes.insert("Version".to_string(), version.to_string());
+            return;
         }
     }
     // Otherwise create one in (or create) an ItemGroup
@@ -1650,15 +1649,15 @@ fn has_path(item: &Item) -> bool {
 }
 
 fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
-    if let Item::Value(val) = item {
-        if let Some(inline) = val.as_inline_table_mut() {
-            inline.remove("workspace");
-            if remove_path {
-                inline.remove("path");
-            }
-            inline.insert("version", toml_edit::Value::from(version.to_string()));
-            return;
+    if let Item::Value(val) = item
+        && let Some(inline) = val.as_inline_table_mut()
+    {
+        inline.remove("workspace");
+        if remove_path {
+            inline.remove("path");
         }
+        inline.insert("version", toml_edit::Value::from(version.to_string()));
+        return;
     }
 
     if let Item::Table(table) = item {

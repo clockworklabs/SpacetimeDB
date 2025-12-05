@@ -118,11 +118,11 @@ impl<'a, K, V> Iterator for MultiMapRangeIter<'a, K, V> {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(inner) = self.inner.as_mut() {
-                if let Some(val) = inner.next() {
-                    // While the inner iterator has elements, yield them.
-                    return Some(val);
-                }
+            if let Some(inner) = self.inner.as_mut()
+                && let Some(val) = inner.next()
+            {
+                // While the inner iterator has elements, yield them.
+                return Some(val);
             }
 
             // This makes the iterator fused.

@@ -117,7 +117,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
     /// Process a parsed WebSocket message,
     /// applying its mutations to the client cache and invoking callbacks.
     fn process_message(&self, msg: ParsedMessage<M>) -> crate::Result<()> {
-        let res = match msg {
+        match msg {
             // Error: treat this as an erroneous disconnect.
             ParsedMessage::Error(e) => {
                 let disconnect_ctx = self.make_event_ctx(Some(e.clone()));
@@ -239,9 +239,7 @@ impl<M: SpacetimeModule> DbContextImpl<M> {
                     .resolve(&ctx, request_id, result);
                 Ok(())
             }
-        };
-
-        res
+        }
     }
 
     fn apply_update(

@@ -307,7 +307,7 @@ impl<T> Commitlog<T> {
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
+    pub fn commits(&self) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
         self.commits_from(0)
     }
 
@@ -320,7 +320,7 @@ impl<T> Commitlog<T> {
     /// Note that the first [`StoredCommit`] yielded is the first commit
     /// containing the given transaction offset, i.e. its `min_tx_offset` may be
     /// smaller than `offset`.
-    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> {
+    pub fn commits_from(&self, offset: u64) -> impl Iterator<Item = Result<StoredCommit, error::Traversal>> + use<T> {
         self.inner.read().unwrap().commits_from(offset)
     }
 
@@ -459,7 +459,10 @@ impl<T: Encode> Commitlog<T> {
     /// This means that, when this iterator yields an `Err` value, the consumer
     /// may want to check if the iterator is exhausted (by calling `next()`)
     /// before treating the `Err` value as an application error.
-    pub fn transactions<'a, D>(&self, de: &'a D) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    pub fn transactions<'a, D>(
+        &self,
+        de: &'a D,
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,
@@ -478,7 +481,7 @@ impl<T: Encode> Commitlog<T> {
         &self,
         offset: u64,
         de: &'a D,
-    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a
+    ) -> impl Iterator<Item = Result<Transaction<T>, D::Error>> + 'a + use<'a, D, T>
     where
         D: Decoder<Record = T>,
         D::Error: From<error::Traversal>,

@@ -195,7 +195,7 @@ mod test {
             self.check_state();
             dt
         }
-        fn iter(&self) -> impl Iterator<Item = RowPointer> {
+        fn iter(&self) -> impl Iterator<Item = RowPointer> + use<> {
             let dt = self.dt.iter().collect::<Vec<_>>();
             let bs = self.bs.iter().copied().collect::<Vec<_>>();
             assert_eq!(dt, bs);

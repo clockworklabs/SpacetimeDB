@@ -466,17 +466,17 @@ pub fn check_row_limit<Query>(
     row_est: impl Fn(&Query, &TxId) -> u64,
     auth: &AuthCtx,
 ) -> Result<(), DBError> {
-    if !auth.exceed_row_limit() {
-        if let Some(limit) = db.row_limit(tx)? {
-            let mut estimate: u64 = 0;
-            for query in queries {
-                estimate = estimate.saturating_add(row_est(query, tx));
-            }
-            if estimate > limit {
-                return Err(DBError::Other(anyhow::anyhow!(
-                    "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
-                )));
-            }
+    if !auth.exceed_row_limit()
+        && let Some(limit) = db.row_limit(tx)?
+    {
+        let mut estimate: u64 = 0;
+        for query in queries {
+            estimate = estimate.saturating_add(row_est(query, tx));
+        }
+        if estimate > limit {
+            return Err(DBError::Other(anyhow::anyhow!(
+                "Estimated cardinality ({estimate} rows) exceeds limit ({limit} rows)"
+            )));
         }
     }
     Ok(())

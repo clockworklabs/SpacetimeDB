@@ -255,13 +255,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
         move |res: Result<Event, notify::Error>| {
-            if let Ok(event) = res {
-                if matches!(
+            if let Ok(event) = res
+                && matches!(
                     event.kind,
                     notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_)
-                ) {
-                    let _ = tx.send(());
-                }
+                )
+            {
+                let _ = tx.send(());
             }
         },
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
@@ -670,28 +670,28 @@ fn format_log_record<W: WriteColor>(out: &mut W, record: &LogRecord<'_>) -> Resu
     let mut need_space_before_filename = false;
     let mut need_colon_sep = false;
     let dimmed = ColorSpec::new().set_dimmed(true).clone();
-    if let Some(function) = &record.function {
-        if function.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            write!(out, "{function}")?;
-            out.reset()?;
-            need_space_before_filename = true;
-            need_colon_sep = true;
-        }
+    if let Some(function) = &record.function
+        && function.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        write!(out, "{function}")?;
+        out.reset()?;
+        need_space_before_filename = true;
+        need_colon_sep = true;
     }
-    if let Some(filename) = &record.filename {
-        if filename.as_ref() != SENTINEL {
-            out.set_color(&dimmed)?;
-            if need_space_before_filename {
-                write!(out, " ")?;
-            }
-            write!(out, "{filename}")?;
-            if let Some(line) = record.line_number {
-                write!(out, ":{line}")?;
-            }
-            out.reset()?;
-            need_colon_sep = true;
+    if let Some(filename) = &record.filename
+        && filename.as_ref() != SENTINEL
+    {
+        out.set_color(&dimmed)?;
+        if need_space_before_filename {
+            write!(out, " ")?;
         }
+        write!(out, "{filename}")?;
+        if let Some(line) = record.line_number {
+            write!(out, ":{line}")?;
+        }
+        out.reset()?;
+        need_colon_sep = true;
     }
     if need_colon_sep {
         write!(out, ": ")?;

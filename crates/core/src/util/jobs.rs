@@ -235,7 +235,7 @@ impl PinnedCoresExecutorManager {
             // likely to be repinned, while younger ones are liable to bounce around.
             // Our use of `swap_remove` above makes this not entirely predictable, however.
             core_info.jobs.push(stolen);
-            let (ref mut stolen_core_id, migrate_tx) = self.database_executor_move.get_mut(&stolen).unwrap();
+            let (stolen_core_id, migrate_tx) = self.database_executor_move.get_mut(&stolen).unwrap();
             *stolen_core_id = freed_core_id;
             migrate_tx.send_replace(core_info.tokio_runtime.handle().clone());
         }

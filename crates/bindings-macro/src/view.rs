@@ -131,7 +131,7 @@ pub(crate) fn view_impl(args: ViewArgs, original_function: &ItemFn) -> syn::Resu
     let lt_where_clause = &lt_params.where_clause;
 
     let generated_describe_function = quote! {
-        #[export_name = #register_describer_symbol]
+        #[unsafe(export_name = #register_describer_symbol)]
         pub extern "C" fn __register_describer() {
             spacetimedb::rt::ViewRegistrar::<#ctx_ty>::register::<_, #func_name, _, _>(#func_name)
         }

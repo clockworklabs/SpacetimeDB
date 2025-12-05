@@ -467,10 +467,10 @@ fn write_if_changed(path: &Path, contents: &[u8]) -> io::Result<()> {
 
 fn copy_if_changed(src: &Path, dst: &Path) -> io::Result<()> {
     let src_bytes = fs::read(src)?;
-    if let Ok(existing) = fs::read(dst) {
-        if existing == src_bytes {
-            return Ok(());
-        }
+    if let Ok(existing) = fs::read(dst)
+        && existing == src_bytes
+    {
+        return Ok(());
     }
 
     if let Some(parent) = dst.parent() {

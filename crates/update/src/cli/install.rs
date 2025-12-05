@@ -83,10 +83,10 @@ pub(super) async fn download_and_install(
         .await?
         .error_for_status()
         .map_err(|e| {
-            if e.status() == Some(reqwest::StatusCode::NOT_FOUND) {
-                if let Some(version) = &version {
-                    return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
-                }
+            if e.status() == Some(reqwest::StatusCode::NOT_FOUND)
+                && let Some(version) = &version
+            {
+                return anyhow::anyhow!(e).context(format!("No release found for version {version}"));
             }
             anyhow::anyhow!(e).context("Could not fetch release info")
         })?

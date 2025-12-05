@@ -261,10 +261,10 @@ pub struct Relvar {
 impl CollectViews for RelExpr {
     fn collect_views(&self, views: &mut HashSet<ViewId>) {
         self.visit(&mut |expr| {
-            if let Self::RelVar(Relvar { schema, .. }) = expr {
-                if let Some(info) = &schema.view_info {
-                    views.insert(info.view_id);
-                }
+            if let Self::RelVar(Relvar { schema, .. }) = expr
+                && let Some(info) = &schema.view_info
+            {
+                views.insert(info.view_id);
             }
         });
     }

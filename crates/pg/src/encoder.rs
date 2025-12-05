@@ -137,13 +137,12 @@ impl TypedWriter for PsqlFormatter<'_> {
         value: ValueWithType<AlgebraicValue>,
     ) -> Result<(), Self::Error> {
         // Is a simple enum?
-        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
-            if sum.is_simple_enum() {
-                if let Some(variant_name) = name {
-                    self.encoder.encode_field(&variant_name)?;
-                    return Ok(());
-                }
-            }
+        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type
+            && sum.is_simple_enum()
+            && let Some(variant_name) = name
+        {
+            self.encoder.encode_field(&variant_name)?;
+            return Ok(());
         }
 
         let PsqlChars { start, sep, end, quote } = ty.client.format_chars();

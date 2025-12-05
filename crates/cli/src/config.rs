@@ -220,22 +220,22 @@ impl RawConfig {
         ecdsa_public_key: Option<String>,
         nickname: Option<String>,
     ) -> anyhow::Result<()> {
-        if let Some(nickname) = &nickname {
-            if let Ok(cfg) = self.find_server(nickname) {
-                anyhow::bail!(
-                    "Server nickname {} already in use: {}://{}",
-                    nickname,
-                    cfg.protocol,
-                    cfg.host,
-                );
-            }
+        if let Some(nickname) = &nickname
+            && let Ok(cfg) = self.find_server(nickname)
+        {
+            anyhow::bail!(
+                "Server nickname {} already in use: {}://{}",
+                nickname,
+                cfg.protocol,
+                cfg.host,
+            );
         }
 
         if let Ok(cfg) = self.find_server(&host) {
-            if let Some(nick) = &cfg.nickname {
-                if nick == &host {
-                    anyhow::bail!("Server host name is ambiguous with existing server nickname: {nick}");
-                }
+            if let Some(nick) = &cfg.nickname
+                && nick == &host
+            {
+                anyhow::bail!("Server host name is ambiguous with existing server nickname: {nick}");
             }
             anyhow::bail!("Server already configured for host: {host}");
         }
@@ -295,10 +295,10 @@ impl RawConfig {
 
             // If we're removing the default server,
             // unset the default server.
-            if let Some(default_server) = &self.default_server {
-                if cfg.nick_or_host_or_url_is(default_server) {
-                    self.default_server = None;
-                }
+            if let Some(default_server) = &self.default_server
+                && cfg.nick_or_host_or_url_is(default_server)
+            {
+                self.default_server = None;
             }
 
             return Ok(());
@@ -370,27 +370,27 @@ Fetch the server's fingerprint with:
     ) -> anyhow::Result<(Option<String>, Option<String>, Option<String>)> {
         // Check if the new nickname or host name would introduce ambiguities between
         // server configurations.
-        if let Some(new_nick) = new_nickname {
-            if let Ok(other_server) = self.find_server(new_nick) {
-                anyhow::bail!(
-                    "Nickname {} conflicts with saved configuration for server {}: {}://{}",
-                    new_nick,
-                    other_server.nick_or_host(),
-                    other_server.protocol,
-                    other_server.host
-                );
-            }
+        if let Some(new_nick) = new_nickname
+            && let Ok(other_server) = self.find_server(new_nick)
+        {
+            anyhow::bail!(
+                "Nickname {} conflicts with saved configuration for server {}: {}://{}",
+                new_nick,
+                other_server.nick_or_host(),
+                other_server.protocol,
+                other_server.host
+            );
         }
-        if let Some(new_host) = new_host {
-            if let Ok(other_server) = self.find_server(new_host) {
-                anyhow::bail!(
-                    "Host {} conflicts with saved configuration for server {}: {}://{}",
-                    new_host,
-                    other_server.nick_or_host(),
-                    other_server.protocol,
-                    other_server.host
-                );
-            }
+        if let Some(new_host) = new_host
+            && let Ok(other_server) = self.find_server(new_host)
+        {
+            anyhow::bail!(
+                "Host {} conflicts with saved configuration for server {}: {}://{}",
+                new_host,
+                other_server.nick_or_host(),
+                other_server.protocol,
+                other_server.host
+            );
         }
 
         let cfg = self.find_server_mut(server)?;
@@ -418,10 +418,10 @@ Fetch the server's fingerprint with:
                 if default_server == old_host {
                     *default_server = new_host.unwrap().to_string();
                 }
-            } else if let Some(old_nick) = &old_nickname {
-                if default_server == old_nick {
-                    *default_server = new_nickname.unwrap().to_string();
-                }
+            } else if let Some(old_nick) = &old_nickname
+                && default_server == old_nick
+            {
+                *default_server = new_nickname.unwrap().to_string();
             }
         }
 

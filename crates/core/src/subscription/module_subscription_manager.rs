@@ -88,7 +88,7 @@ impl Plan {
     }
 
     /// Returns the index ids from which this subscription reads
-    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> {
+    pub fn index_ids(&self) -> impl Iterator<Item = (TableId, IndexId)> + use<> {
         self.plans
             .iter()
             .flat_map(|plan| plan.index_ids())
@@ -106,7 +106,7 @@ impl Plan {
     }
 
     /// Return the search arguments for this query
-    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         let mut args = HashSet::new();
         for arg in self
             .plans
@@ -218,7 +218,7 @@ impl QueryState {
     }
 
     /// Return the search arguments for this query
-    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> {
+    fn search_args(&self) -> impl Iterator<Item = (TableId, ColId, AlgebraicValue)> + use<> {
         self.query.search_args()
     }
 }
@@ -374,16 +374,16 @@ impl QueriedTableIndexIds {
     /// Note, different queries may read from the same index.
     /// Hence we only remove this key from the map if its ref count goes to zero.
     pub fn delete_index_id(&mut self, table_id: TableId, index_id: IndexId) {
-        if let Some(ids) = self.ids.get_mut(&table_id) {
-            if let Some(n) = ids.get_mut(&index_id) {
-                *n -= 1;
+        if let Some(ids) = self.ids.get_mut(&table_id)
+            && let Some(n) = ids.get_mut(&index_id)
+        {
+            *n -= 1;
 
-                if *n == 0 {
-                    ids.remove(&index_id);
+            if *n == 0 {
+                ids.remove(&index_id);
 
-                    if ids.is_empty() {
-                        self.ids.remove(&table_id);
-                    }
+                if ids.is_empty() {
+                    self.ids.remove(&table_id);
                 }
             }
         }
@@ -434,14 +434,14 @@ impl JoinEdges {
     /// If this query has any join edges, remove them from the map.
     fn remove_query(&mut self, query: &Query) {
         for (edge, rhs_val) in query.join_edges() {
-            if let Some(values) = self.edges.get_mut(&edge) {
-                if let Some(hashes) = values.get_mut(&rhs_val) {
-                    hashes.remove(&query.hash);
-                    if hashes.is_empty() {
-                        values.remove(&rhs_val);
-                        if values.is_empty() {
-                            self.edges.remove(&edge);
-                        }
+            if let Some(values) = self.edges.get_mut(&edge)
+                && let Some(hashes) = values.get_mut(&rhs_val)
+            {
+                hashes.remove(&query.hash);
+                if hashes.is_empty() {
+                    values.remove(&rhs_val);
+                    if values.is_empty() {
+                        self.edges.remove(&edge);
                     }
                 }
             }
@@ -782,10 +782,10 @@ impl SubscriptionManager {
     /// Remove any clients that have been marked for removal
     pub fn remove_dropped_clients(&mut self) {
         for id in self.clients.keys().copied().collect::<Vec<_>>() {
-            if let Some(client) = self.clients.get(&id) {
-                if client.dropped.load(Ordering::Relaxed) {
-                    self.remove_all_subscriptions(&id);
-                }
+            if let Some(client) = self.clients.get(&id)
+                && client.dropped.load(Ordering::Relaxed)
+            {
+                self.remove_all_subscriptions(&id);
             }
         }
     }
@@ -1095,14 +1095,14 @@ impl SubscriptionManager {
     fn queries_for_table_update<'a>(
         &'a self,
         table_update: &'a DatabaseTableUpdate,
-        find_rhs_val: &impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
+        find_rhs_val: impl Fn(&JoinEdge, &ProductValue) -> Option<AlgebraicValue>,
     ) -> impl Iterator<Item = &'a QueryHash> {
         let mut queries = HashSet::new();
         for hash in table_update
             .inserts
             .iter()
             .chain(table_update.deletes.iter())
-            .flat_map(|row| self.queries_for_row(table_update.table_id, row, find_rhs_val))
+            .flat_map(|row| self.queries_for_row(table_update.table_id, row, &find_rhs_val))
         {
             queries.insert(hash);
         }
@@ -1182,7 +1182,7 @@ impl SubscriptionManager {
             .iter()
             .filter(|table| !table.inserts.is_empty() || !table.deletes.is_empty())
             .flat_map(|table_update| {
-                self.queries_for_table_update(table_update, &|edge, row| find_rhs_val(edge, row, tx))
+                self.queries_for_table_update(table_update, |edge, row| find_rhs_val(edge, row, tx))
             })
             // deduplicate queries by their hash
             .filter({
@@ -2161,7 +2161,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .collect::<Vec<_>>();
 
         assert!(hashes.len() == 3);
@@ -2179,7 +2179,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .collect::<Vec<_>>();
 
         assert!(hashes.len() == 1);
@@ -2220,7 +2220,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -2236,7 +2236,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -2252,7 +2252,7 @@ mod tests {
         };
 
         let hashes = subscriptions
-            .queries_for_table_update(&table_update, &|_, _| None)
+            .queries_for_table_update(&table_update, |_, _| None)
             .cloned()
             .collect::<Vec<_>>();
 

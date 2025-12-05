@@ -122,10 +122,10 @@ impl SpacetimeDbGuard {
         while Instant::now() < deadline {
             let url = format!("{}/v1/ping", self.host_url);
 
-            if let Ok(resp) = client.get(&url).send() {
-                if resp.status().is_success() {
-                    return; // Fully ready!
-                }
+            if let Ok(resp) = client.get(&url).send()
+                && resp.status().is_success()
+            {
+                return; // Fully ready!
             }
 
             sleep(Duration::from_millis(50));
@@ -141,10 +141,10 @@ impl Drop for SpacetimeDbGuard {
         let _ = self.child.wait();
 
         // Only print logs if the test is currently panicking
-        if std::thread::panicking() {
-            if let Ok(logs) = self.logs.lock() {
-                eprintln!("\n===== SpacetimeDB child logs (only on failure) =====\n{}\n====================================================", *logs);
-            }
+        if std::thread::panicking()
+            && let Ok(logs) = self.logs.lock()
+        {
+            eprintln!("\n===== SpacetimeDB child logs (only on failure) =====\n{}\n====================================================", *logs);
         }
     }
 }

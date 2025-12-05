@@ -279,7 +279,7 @@ pub fn client_visibility_filter(args: StdTokenStream, item: StdTokenStream) -> S
             #item
 
             const _: () = {
-                #[export_name = #register_rls_symbol]
+                #[unsafe(export_name = #register_rls_symbol)]
                 extern "C" fn __register_client_visibility_filter() {
                     spacetimedb::rt::register_row_level_security(#rls_ident.sql_text())
                 }

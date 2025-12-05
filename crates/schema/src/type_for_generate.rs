@@ -499,7 +499,7 @@ impl TypespaceForGenerateBuilder<'_> {
             .get(ref_)
             .ok_or_else(|| ErrorStream::from(ClientCodegenError::TypeRefError(TypeRefError::InvalidTypeRef(ref_))))?;
 
-        let result = match def {
+        match def {
             AlgebraicType::Product(product) => product
                 .elements
                 .iter()
@@ -543,9 +543,7 @@ impl TypespaceForGenerateBuilder<'_> {
                 ty: PrettyAlgebraicType(def.clone()),
             }
             .into()),
-        };
-
-        result
+        }
     }
 
     /// Process an element/variant of a product/sum type.

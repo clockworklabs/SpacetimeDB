@@ -143,7 +143,7 @@ pub(super) fn iter_unique_cols<'a>(
         constraints[&ColList::from(field.col_pos)]
             .has_unique()
             .then(|| {
-                let res @ (_, ref ty) = &product_def.elements[field.col_pos.idx()];
+                let res @ (_, ty) = &product_def.elements[field.col_pos.idx()];
                 is_type_filterable(typespace, ty).then_some(res)
             })
             .flatten()

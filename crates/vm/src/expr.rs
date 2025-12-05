@@ -1928,11 +1928,11 @@ impl QueryExpr {
             query: Vec::with_capacity(self.query.len()),
         };
 
-        if matches!(&*self.query, [Query::IndexJoin(_)]) {
-            if let Some(Query::IndexJoin(join)) = self.query.pop() {
-                q.query.push(Query::IndexJoin(join.reorder(row_count)));
-                return q;
-            }
+        if matches!(&*self.query, [Query::IndexJoin(_)])
+            && let Some(Query::IndexJoin(join)) = self.query.pop()
+        {
+            q.query.push(Query::IndexJoin(join.reorder(row_count)));
+            return q;
         }
 
         for query in self.query {

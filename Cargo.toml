@@ -97,7 +97,7 @@ debug = true
 
 [workspace.package]
 version = "1.11.0"
-edition = "2021"
+edition = "2024"
 # update rust-toolchain.toml too!
 rust-version = "1.90.0"
 

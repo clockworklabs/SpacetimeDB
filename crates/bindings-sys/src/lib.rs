@@ -19,7 +19,7 @@ pub mod raw {
     // with a module identifier with a minor version 1 above the previous highest minor version.
     // For breaking changes, all functions should be moved into one new `spacetime_X.0` block.
     #[link(wasm_import_module = "spacetime_10.0")]
-    extern "C" {
+    unsafe extern "C" {
         /// Queries the `table_id` associated with the given (table) `name`
         /// where `name` is the UTF-8 slice in WASM memory at `name_ptr[..name_len]`.
         ///
@@ -593,7 +593,7 @@ pub mod raw {
 
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.1")]
-    extern "C" {
+    unsafe extern "C" {
         /// Read the remaining length of a [`BytesSource`] and write it to `out`.
         ///
         /// Note that the host automatically frees byte sources which are exhausted.
@@ -622,7 +622,7 @@ pub mod raw {
 
     // See comment on previous `extern "C"` block re: ABI version.
     #[link(wasm_import_module = "spacetime_10.2")]
-    extern "C" {
+    unsafe extern "C" {
         /// Finds the JWT payload associated with `connection_id`.
         /// A `[ByteSourceId]` for the payload will be written to `target_ptr`.
         /// If nothing is found for the connection, `[ByteSourceId::INVALID]` (zero) is written to `target_ptr`.
@@ -647,7 +647,7 @@ pub mod raw {
 
     #[cfg(feature = "unstable")]
     #[link(wasm_import_module = "spacetime_10.3")]
-    extern "C" {
+    unsafe extern "C" {
         /// Suspends execution of this WASM instance until approximately `wake_at_micros_since_unix_epoch`.
         ///
         /// Returns immediately if `wake_at_micros_since_unix_epoch` is in the past.
@@ -949,10 +949,12 @@ fn cvt(x: u16) -> Result<()> {
 ///   before writing a safe and valid `T` to it.
 #[inline]
 unsafe fn call<T: Copy>(f: impl FnOnce(*mut T) -> u16) -> Result<T> {
-    let mut out = MaybeUninit::uninit();
-    let f_code = f(out.as_mut_ptr());
-    cvt(f_code)?;
-    Ok(out.assume_init())
+    unsafe {
+        let mut out = MaybeUninit::uninit();
+        let f_code = f(out.as_mut_ptr());
+        cvt(f_code)?;
+        Ok(out.assume_init())
+    }
 }
 
 /// Runs the given function `f`.

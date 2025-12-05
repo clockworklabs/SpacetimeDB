@@ -895,7 +895,7 @@ mod tests {
         assert_eq!(virtual_plan.head(), expr.head());
         assert_eq!(virtual_plan.query.len(), 1);
         let incr_join = &virtual_plan.query[0];
-        let Query::JoinInner(ref incr_join) = incr_join else {
+        let Query::JoinInner(incr_join) = incr_join else {
             panic!("expected an inner semijoin, but got {incr_join:#?}");
         };
         assert!(incr_join.rhs.source.is_mem_table());

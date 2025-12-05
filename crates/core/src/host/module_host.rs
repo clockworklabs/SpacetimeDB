@@ -776,15 +776,16 @@ impl ModuleInstanceManager {
         }
     }
     async fn get_instance(&mut self) -> Instance {
-        if let Some(inst) = self.instances.pop_back() {
-            inst
-        } else {
-            let start_time = std::time::Instant::now();
-            // TODO: should we be calling `create_instance` on the `SingleCoreExecutor` rather than the calling thread?
-            let res = self.module.create_instance().await;
-            let elapsed_time = start_time.elapsed();
-            self.create_instance_time_metric.observe(elapsed_time);
-            res
+        match self.instances.pop_back() {
+            Some(inst) => inst,
+            _ => {
+                let start_time = std::time::Instant::now();
+                // TODO: should we be calling `create_instance` on the `SingleCoreExecutor` rather than the calling thread?
+                let res = self.module.create_instance().await;
+                let elapsed_time = start_time.elapsed();
+                self.create_instance_time_metric.observe(elapsed_time);
+                res
+            }
         }
     }
 
@@ -1070,7 +1071,7 @@ impl ModuleHost {
         Ok(res)
     }
 
-    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(())> {
+    fn start_call_timer(&self, label: &str) -> ScopeGuard<(), impl FnOnce(()) + use<>> {
         // Record the time until our function starts running.
         let queue_timer = WORKER_METRICS
             .reducer_wait_time
@@ -1288,10 +1289,8 @@ impl ModuleHost {
 
         // Decrement the number of subscribers for each view this caller is subscribed to
         let dec_view_subscribers = |tx: &mut MutTxId| {
-            if drop_view_subscribers {
-                if let Err(err) = tx.unsubscribe_views(caller_identity) {
-                    log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
-                }
+            if drop_view_subscribers && let Err(err) = tx.unsubscribe_views(caller_identity) {
+                log::error!("`call_identity_disconnected`: failed to delete client view data: {err}");
             }
         };
 

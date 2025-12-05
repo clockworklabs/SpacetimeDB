@@ -754,10 +754,10 @@ impl PhysicalPlan {
         match self {
             Self::Filter(input, expr) => {
                 expr.visit(&mut |expr| {
-                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr {
-                        if !reqs.contains(var) {
-                            reqs.push(*var);
-                        }
+                    if let PhysicalExpr::Field(TupleField { label: var, .. }) = expr
+                        && !reqs.contains(var)
+                    {
+                        reqs.push(*var);
                     }
                 });
                 Self::Filter(Box::new(input.introduce_semijoins(reqs)), expr)
@@ -936,12 +936,11 @@ impl PhysicalPlan {
             Self::Filter(input, expr) => {
                 let mut cols: Vec<_> = cols.iter().collect();
                 expr.visit(&mut |plan| {
-                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan {
-                        if let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value) {
-                            if proj.label == *label {
-                                cols.push(proj.field_pos.into());
-                            }
-                        }
+                    if let PhysicalExpr::BinOp(BinOp::Eq, expr, value) = plan
+                        && let (PhysicalExpr::Field(proj), PhysicalExpr::Value(..)) = (&**expr, &**value)
+                        && proj.label == *label
+                    {
+                        cols.push(proj.field_pos.into());
                     }
                 });
                 input.returns_distinct_values(label, &ColSet::from_iter(cols))

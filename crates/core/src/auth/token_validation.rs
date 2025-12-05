@@ -166,14 +166,14 @@ impl TokenValidator for BasicTokenValidator {
     async fn validate_token(&self, token: &str) -> Result<SpacetimeIdentityClaims, TokenValidationError> {
         // This validates everything but the issuer.
         let claims = self.public_key.validate_token(token).await?;
-        if let Some(expected_issuer) = &self.issuer {
-            if claims.issuer != *expected_issuer {
-                return Err(TokenValidationError::Other(anyhow::anyhow!(
-                    "Issuer mismatch: got {:?}, expected {:?}",
-                    claims.issuer,
-                    expected_issuer
-                )));
-            }
+        if let Some(expected_issuer) = &self.issuer
+            && claims.issuer != *expected_issuer
+        {
+            return Err(TokenValidationError::Other(anyhow::anyhow!(
+                "Issuer mismatch: got {:?}, expected {:?}",
+                claims.issuer,
+                expected_issuer
+            )));
         }
         Ok(claims)
     }

@@ -597,7 +597,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     /// >     |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `RangedIndex::<Tbl, IndexType, Idx>::filter`
     /// > ```
     /// <!-- TODO: check if that error is up to date! -->
-    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
@@ -715,7 +715,7 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx>
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
-    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row>
+    pub fn filter<B, K>(&self, b: B) -> impl Iterator<Item = Tbl::Row> + use<B, K, Tbl, IndexType, Idx>
     where
         B: IndexScanRangeBounds<IndexType, K>,
     {
