@@ -7,6 +7,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use fs2::FileExt;
+use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
@@ -1112,6 +1113,7 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
             // in milliseconds, which may be too long for async tasks.
             let db = db.clone();
             let db_identity = db.database_identity();
+            info!("running view cleanup for database {db_identity}");
             tokio::task::spawn_blocking(move || run_view_cleanup(&db))
                 .await
                 .inspect_err(|e| {
@@ -1119,6 +1121,7 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
                 })
                 .ok();
 
+            info!("pausing view cleanup for database {db_identity}");
             tokio::time::sleep(VIEWS_EXPIRATION).await;
         }
     })
