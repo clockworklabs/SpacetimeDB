@@ -149,10 +149,7 @@ pub enum WasmError {
 #[derive(Copy, Clone)]
 struct WasmtimeFuel(u64);
 
-impl WasmtimeFuel {
-    /// 1000 energy quanta == 1 wasmtime fuel unit
-    const QUANTA_MULTIPLIER: u64 = 1_000;
-}
+impl WasmtimeFuel {}
 
 impl From<FunctionBudget> for WasmtimeFuel {
     fn from(v: FunctionBudget) -> Self {
@@ -160,19 +157,19 @@ impl From<FunctionBudget> for WasmtimeFuel {
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
-        WasmtimeFuel(v.get() / Self::QUANTA_MULTIPLIER)
+        WasmtimeFuel(v.get())
     }
 }
 
 impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        FunctionBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0)
     }
 }
 
 impl From<WasmtimeFuel> for EnergyQuanta {
     fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0) * u128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
+        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 
