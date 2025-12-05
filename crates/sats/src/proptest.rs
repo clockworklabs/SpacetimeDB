@@ -232,7 +232,7 @@ fn generate_ref(typespace_len: u32) -> BoxedStrategy<AlgebraicType> {
 }
 
 /// Generate a type valid to be used to generate a type *use* in a client module.
-/// That is, a ref, non-compound type, a special type, or an array, map, or option of the same.
+/// That is, a ref, non-compound type, a special type, or an array, map, option, result of the same.
 fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> {
     let leaf = prop_oneof![
         generate_non_compound_algebraic_type(),
@@ -246,6 +246,7 @@ fn generate_type_valid_for_client_use() -> impl Strategy<Value = AlgebraicType> 
         prop_oneof![
             gen_element.clone().prop_map(AlgebraicType::array),
             gen_element.clone().prop_map(AlgebraicType::option),
+            gen_element.clone().prop_map(|x| AlgebraicType::result(x.clone(), x)),
         ]
     })
 }

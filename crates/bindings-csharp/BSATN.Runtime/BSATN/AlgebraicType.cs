@@ -49,4 +49,8 @@ public partial record AlgebraicType
     // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as an Option<T>.
     internal static AlgebraicType MakeOption(AlgebraicType someType) =>
         new Sum([new("some", someType), new("none", Unit)]);
+
+    // Special AlgebraicType that can be recognised by the SpacetimeDB `generate` CLI as a Result<T, E>.
+    internal static AlgebraicType MakeResult(AlgebraicType okType, AlgebraicType errType) =>
+        new Sum([new("ok", okType), new("err", errType)]);
 }

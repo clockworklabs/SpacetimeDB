@@ -767,6 +767,86 @@ public static partial class Module
         ctx.Db.option_every_primitive_struct.Insert(new OptionEveryPrimitiveStruct { s = s });
     }
 
+   [Table(Name = "result_i32_string", Public = true)]
+   public partial struct ResultI32String
+   {
+       public Result<int, string> r;
+   }
+
+   [Reducer]
+   public static void insert_result_i32_string(ReducerContext ctx, Result<int, string> r)
+   {
+       ctx.Db.result_i32_string.Insert(new ResultI32String { r = r });
+   }
+
+   [Table(Name = "result_string_i32", Public = true)]
+   public partial struct ResultStringI32
+   {
+       public Result<string, int> r;
+   }
+
+   [Reducer]
+   public static void insert_result_string_i32(ReducerContext ctx, Result<string, int> r)
+   {
+       ctx.Db.result_string_i32.Insert(new ResultStringI32 { r = r });
+   }
+
+   [Table(Name = "result_identity_string", Public = true)]
+   public partial struct ResultIdentityString
+   {
+       public Result<Identity, string> r;
+   }
+
+   [Reducer]
+   public static void insert_result_identity_string(ReducerContext ctx, Result<Identity, string> r)
+   {
+       ctx.Db.result_identity_string.Insert(new ResultIdentityString { r = r });
+   }
+
+   [Table(Name = "result_simple_enum_i32", Public = true)]
+   public partial struct ResultSimpleEnumI32
+   {
+       public Result<SimpleEnum, int> r;
+   }
+
+   [Reducer]
+   public static void insert_result_simple_enum_i32(ReducerContext ctx, Result<SimpleEnum, int> r)
+   {
+       ctx.Db.result_simple_enum_i32.Insert(new ResultSimpleEnumI32 { r = r });
+   }
+
+   [Table(Name = "result_every_primitive_struct_string", Public = true)]
+   public partial struct ResultEveryPrimitiveStructString
+   {
+       public Result<EveryPrimitiveStruct, string> r;
+   }
+
+   [Reducer]
+   public static void insert_result_every_primitive_struct_string(
+       ReducerContext ctx,
+       Result<EveryPrimitiveStruct, string> r
+   )
+   {
+       ctx.Db.result_every_primitive_struct_string.Insert(
+           new ResultEveryPrimitiveStructString { r = r }
+       );
+   }
+
+   [Table(Name = "result_vec_i32_string", Public = true)]
+   public partial struct ResultVecI32String
+   {
+       public Result<List<int>, string> r;
+   }
+
+   [Reducer]
+   public static void insert_result_vec_i32_string(
+       ReducerContext ctx,
+       Result<List<int>, string> r
+   )
+   {
+       ctx.Db.result_vec_i32_string.Insert(new ResultVecI32String { r = r });
+   }
+
     [SpacetimeDB.Table(Name = "option_vec_option_i32", Public = true)]
     public partial struct OptionVecOptionI32
     {
