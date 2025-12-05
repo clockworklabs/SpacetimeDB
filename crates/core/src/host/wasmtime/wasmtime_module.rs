@@ -684,6 +684,6 @@ mod tests {
         store.set_fuel(store.get_fuel().unwrap() - 10).unwrap();
         let remaining: EnergyQuanta = get_store_fuel(&store).into();
         let used = EnergyQuanta::from(budget) - remaining;
-        assert_eq!(used, EnergyQuanta::new(10_000));
+        assert_eq!(used, EnergyQuanta::new(10));
     }
 }
