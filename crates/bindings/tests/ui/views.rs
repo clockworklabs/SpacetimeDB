@@ -1,4 +1,4 @@
-use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, ReducerContext, ViewContext};
+use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, ReducerContext, ViewContext, Query};
 
 #[table(name = test)]
 struct Test {
@@ -153,6 +153,73 @@ struct ScheduledTable {
 #[view(name = scheduled_table_view, public)]
 fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
     vec![]
+}
+
+#[table(name = player_info)]
+struct PlayerInfo {
+    #[unique]
+    identity: Identity,
+    #[index(btree)]
+    weight: u32,
+    age: u8,
+}
+
+
+/// Where with mismatched types
+#[view(name = view_bad_where, public)]
+fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
+    ctx.from
+        .player()
+        .r#where(|a| a.identity.eq(42))
+        .build()
+}
+
+// Where with mismatched int types 
+// u8 with 4200u32
+#[view(name = view_bad_where_int_types, public)]
+fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
+    ctx.from
+        .player_info()
+        .r#where(|a| a.age.eq(4200u32))
+        .build()
+}
+
+
+/// Joining incompatible types
+/// -- weight is u32, identity is Identity
+#[view(name = view_bad_join, public)]
+fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
+    ctx.from
+        .player_info()
+        .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity)) 
+        .build()
+}
+
+// Joining non-idx columna
+// -- age is not indexed
+#[view(name = view_join_non_indexed_column, public)]
+fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
+    ctx.from
+        .player()
+        .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age)) 
+        .build()
+}
+
+// Right join returns right table's type
+// -- should be PlayerInfo, not Player
+#[view(name = view_right_join_wrong_return_type, public)]
+fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+    ctx.from
+        .player()
+        .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity)) 
+        .build()
+}
+
+/// Using non-existent table
+/// -- xyz table does not exist
+#[view(name = view_nonexistent_table, public)]
+fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+    ctx.from.xyz().build() 
 }
 
 fn main() {}
