@@ -1114,10 +1114,12 @@ protocol =1
         let config_path = CliTomlPath::from_path_unchecked(tmp.path().join("config.toml"));
 
         let mut local = Config::load(config_path.clone()).unwrap();
-        let mut testnet = Config::load(config_path.clone()).unwrap();
+        let mut testnet = local.clone();
+        let mut maincloud = local.clone();
 
         local.home.default_server = Some("local".to_string());
         testnet.home.default_server = Some("testnet".to_string());
+        maincloud.home.default_server = Some("maincloud".to_string());
 
         let mut handles = vec![];
         let total_threads: usize = 8;
@@ -1154,11 +1156,12 @@ protocol =1
         }
         let local = local.doc().to_string();
         let testnet = testnet.doc().to_string();
+        let maincloud = maincloud.doc().to_string();
 
         // As long the results are any valid config, we're good.
         assert!(results
             .iter()
-            .all(|r| r.trim() == local.trim() || r.trim() == testnet.trim()));
+            .all(|r| r.trim() == local.trim() || r.trim() == testnet.trim() || r.trim() == maincloud.trim()));
         Ok(())
     }
 }

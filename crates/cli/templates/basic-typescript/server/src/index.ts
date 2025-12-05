@@ -9,15 +9,15 @@ export const spacetimedb = schema(
   )
 );
 
-spacetimedb.reducer('init', (_ctx) => {
+spacetimedb.init((_ctx) => {
   // Called when the module is initially published
 });
 
-spacetimedb.reducer('client_connected', (_ctx) => {
+spacetimedb.clientConnected((_ctx) => {
   // Called every time a new client connects
 });
 
-spacetimedb.reducer('client_disconnected', (_ctx) => {
+spacetimedb.clientDisconnected((_ctx) => {
   // Called every time a client disconnects
 });
 

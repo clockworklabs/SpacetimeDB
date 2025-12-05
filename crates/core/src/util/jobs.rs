@@ -74,6 +74,9 @@ impl CoreInfo {
             // Enable the timer system so that `procedure_sleep_until` can work.
             // TODO(procedure-sleep): Remove this.
             .enable_time()
+            // Enable the IO system so that `procedure_http_request` can work.
+            // TODO(perf): Disable this and move HTTP requests to the global executor?
+            .enable_io()
             .on_thread_start({
                 use std::sync::atomic::{AtomicBool, Ordering};
                 let already_spawned_worker = AtomicBool::new(false);

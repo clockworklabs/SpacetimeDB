@@ -86,12 +86,11 @@ fn reformat_update<'a>(
     msg.tables
         .iter()
         .map(|upd| {
-            let table_schema = schema
-                .tables
-                .iter()
-                .find(|tbl| tbl.name == upd.table_name)
-                .context("table not found in schema")?;
-            let table_ty = schema.typespace.resolve(table_schema.product_type_ref);
+            let table_ty = schema.typespace.resolve(
+                schema
+                    .type_ref_for_table_like(&upd.table_name)
+                    .context("table not found in schema")?,
+            );
 
             let reformat_row = |row: &str| -> anyhow::Result<Value> {
                 // TODO: can the following two calls be merged into a single call to reduce allocations?

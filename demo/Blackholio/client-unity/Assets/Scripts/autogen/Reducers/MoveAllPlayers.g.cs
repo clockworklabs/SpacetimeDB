@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void MoveAllPlayersHandler(ReducerEventContext ctx, MoveAllPlayersTimer timer);
+        public delegate void MoveAllPlayersHandler(ReducerEventContext ctx, SpacetimeDB.Types.MoveAllPlayersTimer timer);
         public event MoveAllPlayersHandler? OnMoveAllPlayers;
 
-        public void MoveAllPlayers(MoveAllPlayersTimer timer)
+        public void MoveAllPlayers(SpacetimeDB.Types.MoveAllPlayersTimer timer)
         {
             conn.InternalCallReducer(new Reducer.MoveAllPlayers(timer), this.SetCallReducerFlags.MoveAllPlayersFlags);
         }

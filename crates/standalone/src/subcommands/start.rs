@@ -1,3 +1,4 @@
+use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
 use std::sync::Arc;
 
@@ -185,7 +186,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     db_routes.db_put = db_routes.db_put.layer(DefaultBodyLimit::disable());
     db_routes.pre_publish = db_routes.pre_publish.layer(DefaultBodyLimit::disable());
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
-    let service = router(&ctx, db_routes, extra).with_state(ctx.clone());
+    let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
 
     let tcp = TcpListener::bind(listen_addr).await.context(format!(
         "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"

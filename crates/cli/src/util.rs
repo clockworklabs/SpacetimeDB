@@ -23,7 +23,7 @@ pub async fn database_identity(
     }
     spacetime_dns(config, name_or_identity, server)
         .await?
-        .with_context(|| format!("the dns resolution of `{name_or_identity}` failed."))
+        .with_context(|| format!("failed to find database `{name_or_identity}`."))
 }
 
 pub(crate) trait ResponseExt: Sized {

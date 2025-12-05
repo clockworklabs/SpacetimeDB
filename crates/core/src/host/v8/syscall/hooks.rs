@@ -50,6 +50,7 @@ pub(in super::super) enum ModuleHookKey {
     CallReducer,
     CallView,
     CallAnonymousView,
+    CallProcedure,
 }
 
 impl ModuleHookKey {
@@ -63,6 +64,7 @@ impl ModuleHookKey {
             ModuleHookKey::CallReducer => 21,
             ModuleHookKey::CallView => 22,
             ModuleHookKey::CallAnonymousView => 23,
+            ModuleHookKey::CallProcedure => 24,
         }
     }
 }
@@ -110,6 +112,7 @@ pub(in super::super) struct HookFunctions<'scope> {
     pub call_reducer: Local<'scope, Function>,
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
+    pub call_procedure: Option<Local<'scope, Function>>,
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
@@ -131,5 +134,6 @@ pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> O
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),
+        call_procedure: get(ModuleHookKey::CallProcedure),
     })
 }

@@ -9,9 +9,11 @@ use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::run_describer;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionStats, InitializationError, InstanceOp, ViewOp,
+    ViewReturnData,
 };
 use crate::host::wasm_common::*;
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::string_from_utf8_lossy_owned;
 use futures_util::FutureExt;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
@@ -109,6 +111,17 @@ fn handle_result_sink_code(code: i32, result: Vec<u8>) -> Result<Vec<u8>, Execut
     }
 }
 
+/// Handle the return code from a view function using a result sink.
+/// For views, we treat the return code 2 as a successful return using the header format.
+fn handle_view_result_sink_code(code: i32, result: Vec<u8>) -> Result<ViewReturnData, ExecutionError> {
+    match code {
+        0 => Ok(ViewReturnData::Rows(result.into())),
+        2 => Ok(ViewReturnData::HeaderFirst(result.into())),
+        CALL_FAILURE => Err(ExecutionError::User(string_from_utf8_lossy_owned(result).into())),
+        _ => Err(ExecutionError::Recoverable(anyhow::anyhow!("unknown return code"))),
+    }
+}
+
 const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 
 /// Invoke `typed_func` and assert that it doesn't yield.
@@ -118,11 +131,15 @@ const CALL_FAILURE: i32 = HOST_CALL_FAILURE.get() as i32;
 /// However, most of the WASM we execute, incl. reducers and startup functions, should never block/yield.
 /// Rather than crossing our fingers and trusting, we run [`TypedFunc::call_async`] in [`FutureExt::now_or_never`],
 /// an "async executor" which invokes [`std::task::Future::poll`] exactly once.
-fn call_sync_typed_func<Args: WasmParams, Ret: WasmResults>(
+fn call_sync_typed_func<Args, Ret>(
     typed_func: &TypedFunc<Args, Ret>,
     store: &mut Store<WasmInstanceEnv>,
     args: Args,
-) -> anyhow::Result<Ret> {
+) -> anyhow::Result<Ret>
+where
+    Args: WasmParams + Sync,
+    Ret: WasmResults + Sync,
+{
     let fut = typed_func.call_async(store, args);
     fut.now_or_never()
         .expect("`call_async` of supposedly synchronous WASM function returned `Poll::Pending`")
@@ -451,8 +468,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| r.into());
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
@@ -490,8 +506,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
 
         let call_result = call_result
             .map_err(ExecutionError::Trap)
-            .and_then(|code| handle_result_sink_code(code, result_bytes))
-            .map(|r| r.into());
+            .and_then(|code| handle_view_result_sink_code(code, result_bytes));
 
         module_host_actor::ViewExecuteResult { stats, call_result }
     }
@@ -505,7 +520,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
         &mut self,
         op: module_host_actor::ProcedureOp,
         budget: FunctionBudget,
-    ) -> module_host_actor::ProcedureExecuteResult {
+    ) -> (module_host_actor::ProcedureExecuteResult, Option<TransactionOffset>) {
         let store = &mut self.store;
         prepare_store_for_call(store, budget);
 
@@ -520,7 +535,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                 .start_funcall(&op.name, op.arg_bytes, op.timestamp, FuncCallType::Procedure);
 
         let Some(call_procedure) = self.call_procedure.as_ref() else {
-            return module_host_actor::ProcedureExecuteResult {
+            let res = module_host_actor::ProcedureExecuteResult {
                 stats: zero_execution_stats(store),
                 call_result: Err(anyhow::anyhow!(
                     "Module defines procedure {} but does not export `{}`",
@@ -528,6 +543,7 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
                     CALL_PROCEDURE_DUNDER,
                 )),
             };
+            return (res, None);
         };
         let call_result = call_procedure
             .call_async(
@@ -547,6 +563,10 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             )
             .await;
 
+        // Close any ongoing anonymous transactions by aborting them,
+        // in case of improper ABI use (start but no commit/abort).
+        store.data_mut().terminate_dangling_anon_tx();
+
         // Close the timing span for this procedure and get the BSATN bytes of its result.
         let (stats, result_bytes) = finish_opcall(store, budget);
 
@@ -558,7 +578,13 @@ impl module_host_actor::WasmInstance for WasmtimeInstance {
             })
         });
 
-        module_host_actor::ProcedureExecuteResult { stats, call_result }
+        let res = module_host_actor::ProcedureExecuteResult { stats, call_result };
+
+        // Take the last tx offset.
+        // Only commits for anonymous transactions currently cause this to advance.
+        let tx_offset = store.data_mut().take_procedure_tx_offset();
+
+        (res, tx_offset)
     }
 }
 

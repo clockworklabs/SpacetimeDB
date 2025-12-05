@@ -1,6 +1,6 @@
 // STDB module used for benchmarks based on "realistic" workloads we are focusing in improving.
 
-import { blackBox, newLoad } from './load';
+import { newLoad } from './load';
 import {
   type GameEnemyAiAgentState,
   type GameTargetableState,
@@ -11,12 +11,8 @@ import {
   type Velocity,
 } from './schema';
 import {
-  schema,
-  table,
   t,
-  type InferTypeOfRow,
   type ReducerCtx,
-  type Reducer,
 } from 'spacetimedb/server';
 
 function newPosition(
@@ -98,7 +94,7 @@ spacetimedb.reducer(
 const updatePositionWithVelocity = (ctx, { expected }) => {
   let count = 0;
   for (const velocity of ctx.db.velocity.iter()) {
-    let position = ctx.db.position.entity_id.find(velocity.entity_id);
+    const position = ctx.db.position.entity_id.find(velocity.entity_id);
     if (position == null) {
       continue;
     }
@@ -125,36 +121,36 @@ const insertWorld = (ctx, { players }) => {
     const nextActionTimestamp =
       (i & 2) == 2 ? momentMilliseconds() + 2000n : momentMilliseconds();
 
-    ctx.db.game_enemy_ai_agent_state.insert({
+    ctx.db.gameEnemyAiAgentState.insert({
       entity_id: id_n,
       next_action_timestamp: nextActionTimestamp,
       last_move_timestamps: [id_n, 0n, id_n * 2n],
       action: { tag: 'Idle', value: {} },
     });
 
-    ctx.db.game_live_targetable_state.insert({
+    ctx.db.gameLiveTargetableState.insert({
       entity_id: id_n,
       quad: id_n,
     });
 
-    ctx.db.game_targetable_state.insert({
+    ctx.db.gameTargetableState.insert({
       entity_id: id_n,
       quad: id_n,
     });
 
-    ctx.db.game_mobile_entity_state.insert({
+    ctx.db.gameMobileEntityState.insert({
       entity_id: id_n,
       location_x: id,
       location_y: id,
       timestamp: nextActionTimestamp,
     });
 
-    ctx.db.game_enemy_state.insert({
+    ctx.db.gameEnemyState.insert({
       entity_id: id_n,
       herd_id: id,
     });
 
-    ctx.db.game_herd_cache.insert({
+    ctx.db.gameHerdCache.insert({
       id,
       dimension_id: id,
       max_population: id * 4,
@@ -176,12 +172,12 @@ function getTargetablesNearQuad(
   entityId: bigint,
   numPlayers: bigint
 ): GameTargetableState[] {
-  let result = [];
+  const result = [];
   for (let id = entityId; id < numPlayers; id++) {
-    for (const liveTargetable of ctx.db.game_live_targetable_state.quad.filter(
+    for (const liveTargetable of ctx.db.gameLiveTargetableState.quad.filter(
       id
     )) {
-      const targetable = ctx.db.game_targetable_state.entity_id.find(
+      const targetable = ctx.db.gameTargetableState.entity_id.find(
         liveTargetable.entity_id
       );
       if (targetable == null) {
@@ -203,11 +199,11 @@ function moveAgent(
 ) {
   const entityId = agent.entity_id;
 
-  const enemy = ctx.db.game_enemy_state.entity_id.find(entityId);
+  const enemy = ctx.db.gameEnemyState.entity_id.find(entityId);
   if (enemy == null) {
     throw new Error('GameEnemyState Entity ID not found');
   }
-  ctx.db.game_enemy_state.entity_id.update(enemy);
+  ctx.db.gameEnemyState.entity_id.update(enemy);
 
   agent.next_action_timestamp = currentTimeMs + 2000n;
 
@@ -216,23 +212,23 @@ function moveAgent(
     agent.last_move_timestamps.splice(0, 1);
   }
 
-  let targetable = ctx.db.game_targetable_state.entity_id.find(entityId);
+  const targetable = ctx.db.gameTargetableState.entity_id.find(entityId);
   if (targetable == null) {
     throw new Error('GameTargetableState Entity ID not found');
   }
-  let newHash = calculateHash(targetable.quad);
+  const newHash = calculateHash(targetable.quad);
   targetable.quad = newHash;
-  ctx.db.game_targetable_state.entity_id.update(targetable);
+  ctx.db.gameTargetableState.entity_id.update(targetable);
 
-  if (ctx.db.game_live_targetable_state.entity_id.find(entityId) != null) {
-    ctx.db.game_live_targetable_state.entity_id.update({
+  if (ctx.db.gameLiveTargetableState.entity_id.find(entityId) != null) {
+    ctx.db.gameLiveTargetableState.entity_id.update({
       entity_id: entityId,
       quad: newHash,
     });
   }
 
   const mobileEntityRes =
-    ctx.db.game_mobile_entity_state.entity_id.find(entityId);
+    ctx.db.gameMobileEntityState.entity_id.find(entityId);
   if (mobileEntityRes == null) {
     throw new Error('GameMobileEntityState Entity ID not found');
   }
@@ -243,9 +239,9 @@ function moveAgent(
     timestamp: agent.next_action_timestamp,
   };
 
-  ctx.db.game_enemy_ai_agent_state.entity_id.update(agent);
+  ctx.db.gameEnemyAiAgentState.entity_id.update(agent);
 
-  ctx.db.game_mobile_entity_state.entity_id.update(mobileEntity);
+  ctx.db.gameMobileEntityState.entity_id.update(mobileEntity);
 }
 
 function agentLoop(
@@ -257,17 +253,17 @@ function agentLoop(
 ) {
   const entityId = agent.entity_id;
 
-  const coordinates = ctx.db.game_mobile_entity_state.entity_id.find(entityId);
+  const coordinates = ctx.db.gameMobileEntityState.entity_id.find(entityId);
   if (coordinates == null) {
     throw new Error('GameMobileEntityState Entity ID not found');
   }
 
-  const agentEntity = ctx.db.game_enemy_state.entity_id.find(entityId);
+  const agentEntity = ctx.db.gameEnemyState.entity_id.find(entityId);
   if (agentEntity == null) {
     throw new Error('GameEnemyState Entity ID not found');
   }
 
-  const agentHerd = ctx.db.game_herd_cache.id.find(agentEntity.herd_id);
+  const agentHerd = ctx.db.gameHerdCache.id.find(agentEntity.herd_id);
   if (agentHerd == null) {
     throw new Error('GameHerdCache Entity ID not found');
   }
@@ -279,23 +275,23 @@ function agentLoop(
 
 const gameLoopEnemyIa = (ctx: ReducerCtx<S>, { players }) => {
   let count = 0;
-  let currentTimeMs = momentMilliseconds();
+  const currentTimeMs = momentMilliseconds();
 
-  for (const agent of ctx.db.game_enemy_ai_agent_state.iter()) {
-    const agentTargetable = ctx.db.game_targetable_state.entity_id.find(
+  for (const agent of ctx.db.gameEnemyAiAgentState.iter()) {
+    const agentTargetable = ctx.db.gameTargetableState.entity_id.find(
       agent.entity_id
     );
     if (agentTargetable == null) {
       throw new Error('No TargetableState for AgentState entity');
     }
 
-    let surroundingAgents = getTargetablesNearQuad(
+    const surroundingAgents = getTargetablesNearQuad(
       ctx,
       agentTargetable.entity_id,
       players
     );
 
-    agent.action = { tag: 'Fighting', value: {} };
+    agent.action = { tag: 'Fighting' };
 
     agentLoop(ctx, agent, agentTargetable, surroundingAgents, currentTimeMs);
 
@@ -329,7 +325,7 @@ spacetimedb.reducer(
 const runGameIaLoop = (ctx, { initial_load }) => {
   const load = newLoad(initial_load);
 
-  gameLoopEnemyIa(ctx, load.numPlayers);
+  gameLoopEnemyIa(ctx, { players: load.numPlayers });
 };
 spacetimedb.reducer(
   'run_game_ia_loop',

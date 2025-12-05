@@ -1,20 +1,25 @@
 use self::budget::energy_from_elapsed;
 use self::error::{
-    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, CodeError, ExcResult,
-    JsStackTrace, TerminationError, Throwable,
+    catch_exception, exception_already_thrown, log_traceback, BufferTooSmall, CanContinue, ErrorOrException, ExcResult,
+    ExceptionThrown, JsStackTrace, TerminationError, Throwable,
 };
 use self::ser::serialize_to_js;
 use self::string::{str_from_ident, IntoJsString};
 use self::syscall::{
-    call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks, resolve_sys_module, FnRet,
-    HookFunctions,
+    call_call_procedure, call_call_reducer, call_call_view, call_call_view_anon, call_describe_module, get_hooks,
+    resolve_sys_module, FnRet, HookFunctions,
 };
 use super::module_common::{build_common_module_from_raw, run_describer, ModuleCommon};
 use super::module_host::{CallProcedureParams, CallReducerParams, Module, ModuleInfo, ModuleRuntime};
 use super::UpdateDatabaseResult;
+use crate::client::ClientActorId;
+use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
-use crate::host::module_host::{CallViewParams, Instance, ViewCallResult};
-use crate::host::v8::error::{ErrorOrException, ExceptionThrown};
+use crate::host::module_host::{
+    call_identity_connected, call_scheduled_reducer, init_database, CallViewParams, ClientConnectedError, Instance,
+    ViewCallResult,
+};
+use crate::host::scheduler::QueueItem;
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
@@ -22,20 +27,24 @@ use crate::host::wasm_common::module_host_actor::{
     WasmInstance,
 };
 use crate::host::wasm_common::{RowIters, TimingSpanSet};
-use crate::host::{ReducerCallResult, Scheduler};
+use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::asyncify;
 use anyhow::Context as _;
+use core::any::type_name;
 use core::str;
+use enum_as_inner::EnumAsInner;
+use futures::FutureExt;
 use itertools::Either;
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
 use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
 use spacetimedb_datastore::traits::Program;
-use spacetimedb_lib::{RawModuleDef, Timestamp};
+use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
-use std::sync::mpsc::{Receiver, SyncSender};
-use std::sync::{mpsc, Arc, LazyLock};
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::oneshot;
 use v8::script_compiler::{compile_module, Source};
@@ -45,6 +54,7 @@ use v8::{
 };
 
 mod budget;
+mod builtins;
 mod de;
 mod error;
 mod from_value;
@@ -52,6 +62,7 @@ mod ser;
 mod string;
 mod syscall;
 mod to_value;
+mod util;
 
 /// The V8 runtime, for modules written in e.g., JS or TypeScript.
 #[derive(Default)]
@@ -245,10 +256,8 @@ impl JsInstanceEnv {
 /// which will cause the worker's loop to terminate
 /// and cleanup the isolate and friends.
 pub struct JsInstance {
-    request_tx: SyncSender<JsWorkerRequest>,
-    update_response_rx: Receiver<anyhow::Result<UpdateDatabaseResult>>,
-    call_reducer_response_rx: Receiver<(ReducerCallResult, bool)>,
-    call_view_response_rx: Receiver<(ViewCallResult, bool)>,
+    request_tx: flume::Sender<JsWorkerRequest>,
+    reply_rx: flume::Receiver<(JsWorkerReply, bool)>,
     trapped: bool,
 }
 
@@ -257,76 +266,164 @@ impl JsInstance {
         self.trapped
     }
 
-    pub fn update_database(
-        &mut self,
+    /// Send a request to the worker and wait for a reply.
+    async fn send_recv<T>(
+        mut self: Box<Self>,
+        extract: impl FnOnce(JsWorkerReply) -> Result<T, JsWorkerReply>,
+        request: JsWorkerRequest,
+    ) -> (T, Box<Self>) {
+        // Send the request.
+        self.request_tx
+            .send_async(request)
+            .await
+            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
+
+        // Wait for the response.
+        let (reply, trapped) = self
+            .reply_rx
+            .recv_async()
+            .await
+            .expect("worker's `reply_tx` should be live as `JsInstance::drop` hasn't happened");
+
+        self.trapped = trapped;
+
+        match extract(reply) {
+            Err(err) => unreachable!("should have received {} but got {err:?}", type_name::<T>()),
+            Ok(reply) => (reply, self),
+        }
+    }
+
+    pub async fn update_database(
+        self: Box<Self>,
         program: Program,
         old_module_info: Arc<ModuleInfo>,
         policy: MigrationPolicy,
-    ) -> anyhow::Result<UpdateDatabaseResult> {
-        // Send the request.
-        let request = JsWorkerRequest::UpdateDatabase {
-            program,
-            old_module_info,
-            policy,
-        };
-        self.request_tx
-            .send(request)
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        self.update_response_rx
-            .recv()
-            .expect("worker's `update_response_tx` should be live as `JsInstance::drop` hasn't happened")
+    ) -> (anyhow::Result<UpdateDatabaseResult>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_update_database,
+            JsWorkerRequest::UpdateDatabase {
+                program,
+                old_module_info,
+                policy,
+            },
+        )
+        .await
     }
 
-    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> super::ReducerCallResult {
-        // Send the request.
-        let request = JsWorkerRequest::CallReducer { tx, params };
-        self.request_tx
-            .send(request)
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        let (response, trapped) = self
-            .call_reducer_response_rx
-            .recv()
-            .expect("worker's `call_reducer_response_tx` should be live as `JsInstance::drop` hasn't happened");
-
-        self.trapped = trapped;
-
-        response
+    pub async fn call_reducer(
+        self: Box<Self>,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> (ReducerCallResult, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_reducer,
+            JsWorkerRequest::CallReducer { tx, params },
+        )
+        .await
     }
 
-    pub async fn call_procedure(
-        &mut self,
-        _params: CallProcedureParams,
-    ) -> Result<super::ProcedureCallResult, super::ProcedureCallError> {
-        todo!("JS/TS module procedure support")
+    pub async fn clear_all_clients(self: Box<Self>) -> (anyhow::Result<()>, Box<Self>) {
+        self.send_recv(JsWorkerReply::into_clear_all_clients, JsWorkerRequest::ClearAllClients)
+            .await
     }
 
-    pub fn call_view(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
-        // Send the request.
-        let request = JsWorkerRequest::CallView { tx, params };
-        self.request_tx
-            .send(request)
-            .expect("worker's `request_rx` should be live as `JsInstance::drop` hasn't happened");
-
-        // Wait for the response.
-        let (response, trapped) = self
-            .call_view_response_rx
-            .recv()
-            .expect("worker's `call_view_response_tx` should be live as `JsInstance::drop` hasn't happened");
-
-        self.trapped = trapped;
-
-        response
+    pub async fn call_identity_connected(
+        self: Box<Self>,
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> (Result<(), ClientConnectedError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_identity_connected,
+            JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id),
+        )
+        .await
     }
+
+    pub async fn call_identity_disconnected(
+        self: Box<Self>,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> (Result<(), ReducerCallError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_identity_disconnected,
+            JsWorkerRequest::CallIdentityDisconnected(caller_identity, caller_connection_id, drop_view_subscribers),
+        )
+        .await
+    }
+
+    pub async fn disconnect_client(
+        self: Box<Self>,
+        client_id: ClientActorId,
+    ) -> (Result<(), ReducerCallError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_disconnect_client,
+            JsWorkerRequest::DisconnectClient(client_id),
+        )
+        .await
+    }
+
+    pub(crate) async fn call_scheduled_reducer(
+        self: Box<Self>,
+        item: QueueItem,
+    ) -> (Result<(ReducerCallResult, Timestamp), ReducerCallError>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_call_scheduled_reducer,
+            JsWorkerRequest::CallScheduledReducer(item),
+        )
+        .await
+    }
+
+    pub async fn init_database(
+        self: Box<Self>,
+        program: Program,
+    ) -> (anyhow::Result<Option<ReducerCallResult>>, Box<Self>) {
+        self.send_recv(
+            JsWorkerReply::into_init_database,
+            JsWorkerRequest::InitDatabase(program),
+        )
+        .await
+    }
+
+    pub async fn call_procedure(self: Box<Self>, params: CallProcedureParams) -> (CallProcedureReturn, Box<Self>) {
+        // Get a handle to the current tokio runtime, and pass it to the worker
+        // so that it can execute futures.
+        let rt = tokio::runtime::Handle::current();
+        let (r, s) = self
+            .send_recv(
+                JsWorkerReply::into_call_procedure,
+                JsWorkerRequest::CallProcedure { params, rt },
+            )
+            .await;
+        (*r, s)
+    }
+
+    pub async fn call_view(self: Box<Self>, tx: MutTxId, params: CallViewParams) -> (ViewCallResult, Box<Self>) {
+        let (r, s) = self
+            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { tx, params })
+            .await;
+        (*r, s)
+    }
+}
+
+/// A reply from the worker in [`spawn_instance_worker`].
+#[derive(EnumAsInner, Debug)]
+enum JsWorkerReply {
+    UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
+    CallReducer(ReducerCallResult),
+    CallView(Box<ViewCallResult>),
+    CallProcedure(Box<CallProcedureReturn>),
+    ClearAllClients(anyhow::Result<()>),
+    CallIdentityConnected(Result<(), ClientConnectedError>),
+    CallIdentityDisconnected(Result<(), ReducerCallError>),
+    DisconnectClient(Result<(), ReducerCallError>),
+    CallScheduledReducer(Result<(ReducerCallResult, Timestamp), ReducerCallError>),
+    InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
 // We care about optimizing for `CallReducer` as it happens frequently,
 // so we don't want to box anything in it.
-#[allow(clippy::large_enum_variant)]
 enum JsWorkerRequest {
     /// See [`JsInstance::update_database`].
     UpdateDatabase {
@@ -341,6 +438,23 @@ enum JsWorkerRequest {
     },
     /// See [`JsInstance::call_view`].
     CallView { tx: MutTxId, params: CallViewParams },
+    /// See [`JsInstance::call_procedure`].
+    CallProcedure {
+        params: CallProcedureParams,
+        rt: tokio::runtime::Handle,
+    },
+    /// See [`JsInstance::clear_all_clients`].
+    ClearAllClients,
+    /// See [`JsInstance::call_identity_connected`].
+    CallIdentityConnected(ConnectionAuthCtx, ConnectionId),
+    /// See [`JsInstance::call_identity_disconnected`].
+    CallIdentityDisconnected(Identity, ConnectionId, bool),
+    /// See [`JsInstance::disconnect_client`].
+    DisconnectClient(ClientActorId),
+    /// See [`JsInstance::call_scheduled_reducer`].
+    CallScheduledReducer(QueueItem),
+    /// See [`JsInstance::init_database`].
+    InitDatabase(Program),
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -397,13 +511,9 @@ fn spawn_instance_worker(
     // The use-case is SPSC and all channels are rendezvous channels
     // where each `.send` blocks until it's received.
     // The Instance --Request-> Worker channel:
-    let (request_tx, request_rx) = mpsc::sync_channel(0);
-    // The Worker --UpdateResponse-> Instance channel:
-    let (update_response_tx, update_response_rx) = mpsc::sync_channel(0);
-    // The Worker --ReducerCallResult-> Instance channel:
-    let (call_reducer_response_tx, call_reducer_response_rx) = mpsc::sync_channel(0);
-    // The Worker --ViewCallResult-> Instance channel:
-    let (call_view_response_tx, call_view_response_rx) = mpsc::sync_channel(0);
+    let (request_tx, request_rx) = flume::bounded(0);
+    // The Worker --Reply-> Instance channel:
+    let (reply_tx, reply_rx) = flume::bounded(0);
 
     // This one-shot channel is used for initial startup error handling within the thread.
     let (result_tx, result_rx) = oneshot::channel();
@@ -412,6 +522,9 @@ fn spawn_instance_worker(
         // Create the isolate and scope.
         let mut isolate = new_isolate();
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
+
+        catch_exception(scope, |scope| Ok(builtins::evalute_builtins(scope)?))
+            .expect("our builtin code shouldn't error");
 
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
@@ -435,6 +548,7 @@ fn spawn_instance_worker(
         };
 
         // Setup the instance common and environment.
+        let info = &module_common.info();
         let mut instance_common = InstanceCommon::new(&module_common);
         let replica_ctx: &Arc<ReplicaContext> = module_common.replica_ctx();
         let scheduler = module_common.scheduler().clone();
@@ -451,22 +565,26 @@ fn spawn_instance_worker(
         //
         // The loop is terminated when a `JsInstance` is dropped.
         // This will cause channels, scopes, and the isolate to be cleaned up.
+        let reply = |ctx: &str, reply: JsWorkerReply, trapped| {
+            if let Err(e) = reply_tx.send((reply, trapped)) {
+                // This should never happen as `JsInstance::$function` immediately
+                // does `.recv` on the other end of the channel.
+                unreachable!("should have receiver for `{ctx}` response, {e}");
+            }
+        };
         for request in request_rx.iter() {
+            let mut call_reducer = |tx, params| instance_common.call_reducer_with_tx(tx, params, &mut inst);
+
+            use JsWorkerReply::*;
             match request {
                 JsWorkerRequest::UpdateDatabase {
                     program,
                     old_module_info,
                     policy,
                 } => {
-                    // Update the database.
+                    // Update the database and reply to `JsInstance::update_database`.
                     let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
-
-                    // Reply to `JsInstance::update_database`.
-                    if let Err(e) = update_response_tx.send(res) {
-                        // This should never happen as `JsInstance::update_database` immediately
-                        // does `.recv` on the other end of the channel.
-                        unreachable!("should have receiver for `update_database` response, {e}");
-                    }
+                    reply("update_database", UpdateDatabase(res), false);
                 }
                 JsWorkerRequest::CallReducer { tx, params } => {
                     // Call the reducer.
@@ -474,82 +592,91 @@ fn spawn_instance_worker(
                     // but rather let this happen by `return_instance` using `JsInstance::trapped`
                     // which will cause `JsInstance` to be dropped,
                     // which in turn results in the loop being terminated.
-                    let res = instance_common.call_reducer_with_tx(tx, params, &mut inst);
-
-                    // Reply to `JsInstance::call_reducer`.
-                    if let Err(e) = call_reducer_response_tx.send(res) {
-                        // This should never happen as `JsInstance::call_reducer` immediately
-                        // does `.recv` on the other end of the channel.
-                        unreachable!("should have receiver for `call_reducer` response, {e}");
-                    }
+                    let (res, trapped) = call_reducer(tx, params);
+                    reply("call_reducer", CallReducer(res), trapped);
                 }
                 JsWorkerRequest::CallView { tx, params } => {
-                    let res = instance_common.call_view_with_tx(tx, params, &mut inst);
+                    let (res, trapped) = instance_common.call_view_with_tx(tx, params, &mut inst);
+                    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                }
+                JsWorkerRequest::CallProcedure { params, rt } => {
+                    // The callee passed us a handle to their tokio runtime - enter its
+                    // context so that we can execute futures.
+                    let _guard = rt.enter();
 
-                    if let Err(e) = call_view_response_tx.send(res) {
-                        unreachable!("should have receiver for `call_view` response, {e}");
-                    }
+                    let (res, trapped) = instance_common
+                        .call_procedure(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+
+                    reply("call_procedure", JsWorkerReply::CallProcedure(res.into()), trapped);
+                }
+                JsWorkerRequest::ClearAllClients => {
+                    let res = instance_common.clear_all_clients();
+                    reply("clear_all_clients", ClearAllClients(res), false);
+                }
+                JsWorkerRequest::CallIdentityConnected(caller_auth, caller_connection_id) => {
+                    let mut trapped = false;
+                    let res =
+                        call_identity_connected(caller_auth, caller_connection_id, info, call_reducer, &mut trapped);
+                    reply("call_identity_connected", CallIdentityConnected(res), trapped);
+                }
+                JsWorkerRequest::CallIdentityDisconnected(
+                    caller_identity,
+                    caller_connection_id,
+                    drop_view_subcribers,
+                ) => {
+                    let mut trapped = false;
+                    let res = ModuleHost::call_identity_disconnected_inner(
+                        caller_identity,
+                        caller_connection_id,
+                        info,
+                        drop_view_subcribers,
+                        call_reducer,
+                        &mut trapped,
+                    );
+                    reply("call_identity_disconnected", CallIdentityDisconnected(res), trapped);
+                }
+                JsWorkerRequest::DisconnectClient(client_id) => {
+                    let mut trapped = false;
+                    let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
+                    reply("disconnect_client", DisconnectClient(res), trapped);
+                }
+                JsWorkerRequest::CallScheduledReducer(queue_item) => {
+                    let (res, trapped) = call_scheduled_reducer(info, queue_item, call_reducer);
+                    reply("call_scheduled_reducer", CallScheduledReducer(res), trapped);
+                }
+                JsWorkerRequest::InitDatabase(program) => {
+                    let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
+                        init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
+                    reply("init_database", InitDatabase(res), trapped);
                 }
             }
         }
     });
 
     // Get the module, if any, and get any setup errors from the worker.
-    let res = result_rx.blocking_recv().expect("should have a sender");
+    let res: Result<ModuleCommon, anyhow::Error> = result_rx.blocking_recv().expect("should have a sender");
     res.map(|opt_mc| {
         let inst = JsInstance {
             request_tx,
-            update_response_rx,
-            call_reducer_response_rx,
-            call_view_response_rx,
+            reply_rx,
             trapped: false,
         };
         (opt_mc, inst)
     })
 }
 
-/// Finds the source map in `code`, if any.
-fn find_source_map(code: &str) -> Option<&str> {
-    let sm_ref = "//# sourceMappingURL=";
-    code.match_indices(sm_ref).find_map(|(i, _)| {
-        let (before, after) = code.split_at(i);
-        (before.is_empty() || before.ends_with(['\r', '\n']))
-            .then(|| &after.lines().next().unwrap_or(after)[sm_ref.len()..])
-    })
-}
-
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     resource_name: Local<'scope, Value>,
-    script_id: i32,
-    code: &str,
+    code: Local<'_, v8::String>,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
-    // Get the source map, if any.
-    let source_map_url = find_source_map(code)
-        .map(|sm| sm.into_string(scope))
-        .transpose()
-        .map_err(|e| e.into_range_error().throw(scope))?
-        .map(Into::into);
-
-    // Convert the code to a string.
-    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
-
-    // Assemble the source.
-    let origin = ScriptOrigin::new(
-        scope,
-        resource_name,
-        0,
-        0,
-        false,
-        script_id,
-        source_map_url,
-        false,
-        false,
-        true,
-        None,
-    );
+    // Assemble the source. v8 figures out things like the `script_id` and
+    // `source_map_url` itself, so we don't actually have to provide them.
+    let origin = ScriptOrigin::new(scope, resource_name, 0, 0, false, 0, None, false, false, true, None);
     let source = &mut Source::new(code, Some(&origin));
 
     // Compile the module.
@@ -583,11 +710,14 @@ fn eval_module<'scope>(
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     code: &str,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
+    // Convert the code to a string.
+    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
+
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
-    eval_module(scope, name, 0, code, resolve_sys_module)
+    eval_module(scope, name, code, resolve_sys_module)
 }
 
 /// Compiles, instantiate, and evaluate the user module with `code`
@@ -631,11 +761,10 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
     }
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
-        let ExecutionResult { stats, call_result } = common_call(self.scope, budget, op, |scope, op| {
+        common_call(self.scope, budget, op, |scope, op| {
             Ok(call_call_reducer(scope, self.hooks, op)?)
-        });
-        let call_result = call_result.and_then(|res| res.map_err(ExecutionError::User));
-        ExecutionResult { stats, call_result }
+        })
+        .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
 
     fn call_view(&mut self, op: ViewOp<'_>, budget: FunctionBudget) -> ViewExecuteResult {
@@ -654,8 +783,24 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
         log_traceback(self.replica_ctx, func_type, func, trap)
     }
 
-    async fn call_procedure(&mut self, _op: ProcedureOp, _budget: FunctionBudget) -> ProcedureExecuteResult {
-        todo!("JS/TS module procedure support")
+    async fn call_procedure(
+        &mut self,
+        op: ProcedureOp,
+        budget: FunctionBudget,
+    ) -> (ProcedureExecuteResult, Option<TransactionOffset>) {
+        let result = common_call(self.scope, budget, op, |scope, op| {
+            call_call_procedure(scope, self.hooks, op)
+        })
+        .map_result(|call_result| {
+            call_result.map_err(|e| match e {
+                ExecutionError::User(e) => anyhow::Error::msg(e),
+                ExecutionError::Recoverable(e) | ExecutionError::Trap(e) => e,
+            })
+        });
+        let tx_offset = env_on_isolate_unwrap(self.scope)
+            .instance_env
+            .take_procedure_tx_offset();
+        (result, tx_offset)
     }
 }
 
@@ -664,7 +809,7 @@ fn common_call<'scope, R, O, F>(
     budget: FunctionBudget,
     op: O,
     call: F,
-) -> ExecutionResult<Result<R, ExecutionError>>
+) -> ExecutionResult<R, ExecutionError>
 where
     O: InstanceOp,
     F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,
@@ -685,7 +830,7 @@ where
             CanContinue::Yes => ExecutionError::Recoverable(e.into()),
             CanContinue::YesCancelTermination => {
                 scope.cancel_terminate_execution();
-                ExecutionError::Trap(e.into())
+                ExecutionError::Recoverable(e.into())
             }
         }
     });
