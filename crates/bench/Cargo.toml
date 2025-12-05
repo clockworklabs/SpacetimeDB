@@ -52,6 +52,7 @@ spacetimedb-standalone = { path = "../standalone" }
 spacetimedb-table = { path = "../table" }
 spacetimedb-testing = { path = "../testing" }
 
+ahash.workspace = true
 anyhow.workspace = true
 anymap.workspace = true
 byte-unit.workspace = true
@@ -59,6 +60,7 @@ clap.workspace = true
 criterion.workspace = true
 futures.workspace = true
 foldhash.workspace = true
+hashbrown.workspace = true
 lazy_static.workspace = true
 log.workspace = true
 mimalloc.workspace = true

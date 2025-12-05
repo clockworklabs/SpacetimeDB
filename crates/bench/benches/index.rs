@@ -1,12 +1,12 @@
-use core::{hint::black_box, iter::repeat_with, time::Duration};
+use core::{hash::BuildHasherDefault, hint::black_box, iter::repeat_with, time::Duration};
 use criterion::{
     criterion_group, criterion_main,
     measurement::{Measurement as _, WallTime},
     BenchmarkGroup, Criterion,
 };
 use foldhash::{HashSet, HashSetExt};
+use hashbrown::{hash_map::Entry, HashMap};
 use itertools::Itertools as _;
-use spacetimedb_data_structures::map::{Entry, HashMap};
 use spacetimedb_sats::layout::Size;
 use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
 use spacetimedb_table::table_index::unique_direct_index::UniqueDirectIndex;
@@ -191,7 +191,7 @@ impl Index for IBTree {
 }
 
 #[derive(Clone)]
-struct IAHash(HashMap<K, RowPointer>);
+struct IAHash(HashMap<K, RowPointer, BuildHasherDefault<ahash::AHasher>>);
 impl Index for IAHash {
     const NAME: &'static str = "IAHash";
     fn new() -> Self {

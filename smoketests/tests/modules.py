@@ -65,7 +65,7 @@ pub fn are_we_updated_yet(ctx: &ReducerContext) {
 
 
     def test_module_update(self):
-        """Test publishing a module without the --clear-database option"""
+        """Test publishing a module without the --delete-data option"""
 
         name = random_string()
 
@@ -88,7 +88,7 @@ pub fn are_we_updated_yet(ctx: &ReducerContext) {
         self.write_module_code(self.MODULE_CODE_B)
         with self.assertRaises(CalledProcessError) as cm:
             self.publish_module(name, clear=False)
-        self.assertIn("Error: Pre-publish check failed", cm.exception.stderr)
+        self.assertIn("Error: Aborting because publishing would require manual migration", cm.exception.stderr)
 
         # Check that the old module is still running by calling say_hello
         self.call("say_hello")

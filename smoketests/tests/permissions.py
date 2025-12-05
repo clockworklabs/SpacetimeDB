@@ -54,10 +54,9 @@ class Permissions(Smoketest):
         self.new_identity()
 
         with self.assertRaises(Exception):
-            # TODO: This raises for the wrong reason - `--clear-database` doesn't exist anymore!
-            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--clear-database", "--yes")
+            self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--delete-data", "--yes")
 
-        # Check that this holds without `--clear-database`, too.
+        # Check that this holds without `--delete-data`, too.
         with self.assertRaises(Exception):
             self.spacetime("publish", self.database_identity, "--project-path", self.project_path, "--yes")
 

@@ -1,54 +1,57 @@
-use bytes::Bytes;
-use prometheus::{Histogram, IntCounter, IntGauge};
-use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
-use spacetimedb_datastore::locking_tx_datastore::ViewCallInfo;
-use spacetimedb_lib::db::raw_def::v9::Lifecycle;
-use spacetimedb_lib::de::DeserializeSeed as _;
-use spacetimedb_primitives::ProcedureId;
-use spacetimedb_primitives::TableId;
-use spacetimedb_primitives::ViewFnPtr;
-use spacetimedb_primitives::ViewId;
-use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
-use spacetimedb_schema::def::ModuleDef;
-use spacetimedb_schema::def::ViewDef;
-use std::future::Future;
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::span::EnteredSpan;
-
 use super::instrumentation::CallTimes;
-use crate::client::ClientConnectionSender;
+use super::*;
+use crate::client::ClientActorId;
 use crate::database_logger;
 use crate::energy::{EnergyMonitor, FunctionBudget, FunctionFingerprint};
-use crate::host::instance_env::InstanceEnv;
-use crate::host::instance_env::TxSlot;
+use crate::error::DBError;
+use crate::host::host_controller::CallProcedureReturn;
+use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
-use crate::host::module_host::ViewCallResult;
-use crate::host::module_host::ViewOutcome;
 use crate::host::module_host::{
-    CallProcedureParams, CallReducerParams, CallViewParams, DatabaseUpdate, EventStatus, ModuleEvent,
-    ModuleFunctionCall, ModuleInfo,
+    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
+    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
+    ViewCallResult, ViewOutcome,
 };
+use crate::host::scheduler::QueueItem;
 use crate::host::{
-    ArgsTuple, ProcedureCallError, ProcedureCallResult, ReducerCallResult, ReducerId, ReducerOutcome, Scheduler,
-    UpdateDatabaseResult,
+    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
-use crate::subscription::module_subscription_actor::WriteConflict;
+use crate::sql::ast::SchemaViewer;
+use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
+use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
 use crate::worker_metrics::WORKER_METRICS;
+use anyhow::{anyhow, bail, ensure, Context};
+use bytes::{Buf, Bytes};
+use core::future::Future;
+use core::time::Duration;
+use prometheus::{Histogram, IntCounter, IntGauge};
+use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
+use spacetimedb_datastore::error::{DatastoreError, ViewError};
 use spacetimedb_datastore::execution_context::{self, ReducerContext, Workload};
-use spacetimedb_datastore::locking_tx_datastore::MutTxId;
+use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program};
+use spacetimedb_execution::pipelined::PipelinedProject;
 use spacetimedb_lib::buffer::DecodeError;
+use spacetimedb_lib::db::raw_def::v9::{Lifecycle, ViewResultHeader};
+use spacetimedb_lib::de::DeserializeSeed;
 use spacetimedb_lib::identity::AuthCtx;
-use spacetimedb_lib::{bsatn, ConnectionId, RawModuleDef, Timestamp};
-
-use super::*;
+use spacetimedb_lib::metrics::ExecutionMetrics;
+use spacetimedb_lib::{bsatn, ConnectionId, Hash, ProductType, RawModuleDef, Timestamp};
+use spacetimedb_primitives::{ProcedureId, TableId, ViewFnPtr, ViewId};
+use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
+use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, Deserialize, ProductValue, Typespace, WithTypespace};
+use spacetimedb_schema::auto_migrate::{MigratePlan, MigrationPolicy, MigrationPolicyError};
+use spacetimedb_schema::def::{ModuleDef, ViewDef};
+use spacetimedb_subscription::SubscriptionPlan;
+use std::sync::Arc;
+use tracing::span::EnteredSpan;
 
 pub trait WasmModule: Send + 'static {
     type Instance: WasmInstance;
@@ -87,7 +90,7 @@ pub trait WasmInstance {
         &mut self,
         op: ProcedureOp,
         budget: FunctionBudget,
-    ) -> impl Future<Output = ProcedureExecuteResult>;
+    ) -> impl Future<Output = (ProcedureExecuteResult, Option<TransactionOffset>)>;
 }
 
 pub struct EnergyStats {
@@ -105,6 +108,35 @@ impl EnergyStats {
     fn used(&self) -> FunctionBudget {
         (self.budget.get() - self.remaining.get()).into()
     }
+}
+
+fn deserialize_view_rows(
+    row_type: AlgebraicTypeRef,
+    bytes: Bytes,
+    typespace: &Typespace,
+) -> Result<Vec<ProductValue>, DBError> {
+    // The return type is expected to be an array of products.
+    let row_type = typespace.resolve(row_type);
+    let ret_type = AlgebraicType::array(row_type.ty().clone());
+    let seed = WithTypespace::new(typespace, &ret_type);
+    let rows = seed
+        .deserialize(bsatn::Deserializer::new(&mut &bytes[..]))
+        .map_err(|e| DatastoreError::from(ViewError::DeserializeReturn(e.to_string())))
+        .map_err(DBError::from)?;
+
+    rows.into_array()
+        .map_err(|_| ViewError::SerializeRow)
+        .map_err(DatastoreError::from)
+        .map_err(DBError::from)?
+        .into_iter()
+        .map(|product| {
+            product
+                .into_product()
+                .map_err(|_| ViewError::SerializeRow)
+                .map_err(DatastoreError::from)
+                .map_err(DBError::from)
+        })
+        .collect()
 }
 
 pub struct ExecutionTimings {
@@ -153,17 +185,65 @@ pub enum ExecutionError {
 }
 
 #[derive(derive_more::AsRef)]
-pub struct ExecutionResult<T> {
+pub struct ExecutionResult<T, E> {
     #[as_ref]
     pub stats: ExecutionStats,
-    pub call_result: T,
+    pub call_result: Result<T, E>,
 }
 
-pub type ReducerExecuteResult = ExecutionResult<Result<(), ExecutionError>>;
+pub type ReducerExecuteResult = ExecutionResult<(), ExecutionError>;
 
-pub type ViewExecuteResult = ExecutionResult<Result<Bytes, ExecutionError>>;
+impl<T, E> ExecutionResult<T, E> {
+    pub fn map_result<X, Y>(self, f: impl FnOnce(Result<T, E>) -> Result<X, Y>) -> ExecutionResult<X, Y> {
+        let Self { stats, call_result } = self;
+        let call_result = f(call_result);
+        ExecutionResult { stats, call_result }
+    }
+}
 
-pub type ProcedureExecuteResult = ExecutionResult<anyhow::Result<Bytes>>;
+// The original version of views used a different return format (it returned the rows directly).
+// The newer version uses ViewReturnData to represent the different formats.
+pub enum ViewReturnData {
+    // This view returns a Vec of rows (bsatn encoded).
+    Rows(Bytes),
+    // This view returns a ViewResultHeader, potentially followed by more data.
+    HeaderFirst(Bytes),
+}
+
+// A view result after processing the return header.
+pub enum ViewResult {
+    // The rows are encoded as a bsatn array of products.
+    Rows(Bytes),
+    RawSql(String),
+}
+
+impl ViewResult {
+    pub fn from_return_data(data: ViewReturnData) -> Result<Self, anyhow::Error> {
+        match data {
+            ViewReturnData::Rows(bytes) => Ok(ViewResult::Rows(bytes)),
+            ViewReturnData::HeaderFirst(bytes) => {
+                let mut reader = &bytes[..];
+                let header = {
+                    let deserializer = bsatn::Deserializer::new(&mut reader);
+                    ViewResultHeader::deserialize(deserializer)
+                        .context("failed to deserialize ViewResultHeader from view return data")?
+                };
+                match header {
+                    ViewResultHeader::RawSql(query) => Ok(ViewResult::RawSql(query)),
+                    ViewResultHeader::RowData => {
+                        let at = bytes.len() - reader.remaining();
+                        let remaining_bytes = bytes.slice(at..);
+                        Ok(ViewResult::Rows(remaining_bytes))
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub type ViewExecuteResult = ExecutionResult<ViewReturnData, ExecutionError>;
+
+pub type ProcedureExecuteResult = ExecutionResult<Bytes, anyhow::Error>;
 
 pub struct WasmModuleHostActor<T: WasmModule> {
     module: T::InstancePre,
@@ -314,27 +394,91 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     }
 
     pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        crate::callgrind_flag::invoke_allowing_callgrind(|| self.call_reducer_with_tx(tx, params))
+        let (res, trapped) = self.call_reducer_with_tx(tx, params);
+        self.trapped = trapped;
+        res
     }
 
-    pub async fn call_procedure(
+    pub fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.common.clear_all_clients()
+    }
+
+    pub fn call_identity_connected(
         &mut self,
-        params: CallProcedureParams,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
-        let res = self.common.call_procedure(params, &mut self.instance).await;
-        if res.is_err() {
-            self.trapped = true;
-        }
+        caller_auth: ConnectionAuthCtx,
+        caller_connection_id: ConnectionId,
+    ) -> Result<(), ClientConnectedError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = call_identity_connected(caller_auth, caller_connection_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn call_identity_disconnected(
+        &mut self,
+        caller_identity: Identity,
+        caller_connection_id: ConnectionId,
+        drop_view_subscribers: bool,
+    ) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::call_identity_disconnected_inner(
+            caller_identity,
+            caller_connection_id,
+            module,
+            drop_view_subscribers,
+            call_reducer,
+            &mut trapped,
+        );
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn disconnect_client(&mut self, client_id: ClientActorId) -> Result<(), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let mut trapped = false;
+        let res = ModuleHost::disconnect_client_inner(client_id, module, call_reducer, &mut trapped);
+        self.trapped = trapped;
+        res
+    }
+
+    pub(crate) fn call_scheduled_reducer(
+        &mut self,
+        item: QueueItem,
+    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
+        let module = &self.common.info.clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
+        self.trapped = trapped;
+        res
+    }
+
+    pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
+        let module_def = &self.common.info.clone().module_def;
+        let replica_ctx = &self.instance.replica_ctx().clone();
+        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
+        let (res, trapped) = init_database(replica_ctx, module_def, program, call_reducer);
+        self.trapped = trapped;
+        res
+    }
+
+    pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
+        let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
         res
     }
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
     #[tracing::instrument(level = "trace", skip_all)]
-    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.common.call_reducer_with_tx(tx, params, &mut self.instance);
-        self.trapped = trapped;
-        res
+    fn call_reducer_with_tx(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> (ReducerCallResult, bool) {
+        crate::callgrind_flag::invoke_allowing_callgrind(|| {
+            self.common.call_reducer_with_tx(tx, params, &mut self.instance)
+        })
     }
 
     pub fn call_view_with_tx(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
@@ -386,7 +530,7 @@ impl InstanceCommon {
             Ok(plan) => plan,
             Err(e) => {
                 return match e {
-                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e)),
+                    MigrationPolicyError::AutoMigrateFailure(e) => Ok(UpdateDatabaseResult::AutoMigrateError(e.into())),
                     _ => Ok(UpdateDatabaseResult::ErrorExecutingMigration(e.into())),
                 }
             }
@@ -453,7 +597,7 @@ impl InstanceCommon {
                         timer: None,
                     };
                     //TODO: Return back event in `UpdateDatabaseResult`?
-                    let _ = commit_and_broadcast_event(&self.info, None, event, tx);
+                    let _ = commit_and_broadcast_event(&self.info.subscriptions, None, event, tx);
                 } else {
                     let (_, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
                     stdb.report_mut_tx_metrics(reducer, tx_metrics, None);
@@ -510,11 +654,11 @@ impl InstanceCommon {
         Ok(self.execute_view_calls(tx, view_calls, inst))
     }
 
-    async fn call_procedure<I: WasmInstance>(
+    pub(crate) async fn call_procedure<I: WasmInstance>(
         &mut self,
         params: CallProcedureParams,
         inst: &mut I,
-    ) -> Result<ProcedureCallResult, ProcedureCallError> {
+    ) -> (CallProcedureReturn, bool) {
         let CallProcedureParams {
             timestamp,
             caller_identity,
@@ -551,7 +695,7 @@ impl InstanceCommon {
         // TODO(procedure-energy): replace with call to separate function `procedure_budget`.
         let budget = self.energy_monitor.reducer_budget(&energy_fingerprint);
 
-        let result = inst.call_procedure(op, budget).await;
+        let (result, tx_offset) = inst.call_procedure(op, budget).await;
 
         let ProcedureExecuteResult {
             stats:
@@ -569,18 +713,15 @@ impl InstanceCommon {
             self.allocated_memory = memory_allocation;
         }
 
-        match call_result {
+        let trapped = call_result.is_err();
+
+        let result = match call_result {
             Err(err) => {
                 inst.log_traceback("procedure", &procedure_def.name, &err);
 
                 WORKER_METRICS
                     .wasm_instance_errors
-                    .with_label_values(
-                        &caller_identity,
-                        &self.info.module_hash,
-                        &caller_connection_id,
-                        procedure_name,
-                    )
+                    .with_label_values(&self.info.database_identity, &self.info.module_hash, procedure_name)
                     .inc();
 
                 // TODO(procedure-energy):
@@ -594,16 +735,17 @@ impl InstanceCommon {
             Ok(return_val) => {
                 let return_type = &procedure_def.return_type;
                 let seed = spacetimedb_sats::WithTypespace::new(self.info.module_def.typespace(), return_type);
-                let return_val = seed
-                    .deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
-                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))?;
-                Ok(ProcedureCallResult {
-                    return_val,
-                    execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
-                    start_timestamp: timestamp,
-                })
+                seed.deserialize(bsatn::Deserializer::new(&mut &return_val[..]))
+                    .map_err(|err| ProcedureCallError::InternalError(format!("{err}")))
+                    .map(|return_val| ProcedureCallResult {
+                        return_val,
+                        execution_duration: timer.map(|timer| timer.elapsed()).unwrap_or_default(),
+                        start_timestamp: timestamp,
+                    })
             }
-        }
+        };
+
+        (CallProcedureReturn { result, tx_offset }, trapped)
     }
 
     /// Execute a reducer.
@@ -674,6 +816,11 @@ impl InstanceCommon {
             self.call_function(caller_identity, reducer_name, |budget| inst.call_reducer(op, budget))
         });
 
+        // Report the reducer execution metrics
+        vm_metrics.report_energy_used(result.stats.energy_used());
+        vm_metrics.report_total_duration(result.stats.total_duration());
+        vm_metrics.report_abi_duration(result.stats.abi_duration());
+
         // An outer error occurred.
         // This signifies a logic error in the module rather than a properly
         // handled bad argument from the caller of a reducer.
@@ -686,15 +833,16 @@ impl InstanceCommon {
             Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)) => {
                 inst.log_traceback("reducer", reducer_name, &err);
 
-                self.handle_outer_error(
-                    &result.stats.energy,
-                    &caller_identity,
-                    &Some(caller_connection_id),
-                    reducer_name,
-                )
+                self.handle_outer_error(&result.stats.energy, reducer_name)
             }
             Err(ExecutionError::User(err)) => {
-                log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                log_reducer_error(
+                    inst.replica_ctx(),
+                    timestamp,
+                    reducer_name,
+                    &err,
+                    &self.info.module_hash,
+                );
                 EventStatus::Failed(err.into())
             }
             // We haven't actually committed yet - `commit_and_broadcast_event` will commit
@@ -712,7 +860,13 @@ impl InstanceCommon {
                     Ok(()) => EventStatus::Committed(DatabaseUpdate::default()),
                     Err(err) => {
                         let err = err.to_string();
-                        log_reducer_error(inst.replica_ctx(), timestamp, reducer_name, &err);
+                        log_reducer_error(
+                            inst.replica_ctx(),
+                            timestamp,
+                            reducer_name,
+                            &err,
+                            &self.info.module_hash,
+                        );
                         EventStatus::Failed(err)
                     }
                 }
@@ -755,7 +909,7 @@ impl InstanceCommon {
             request_id,
             timer,
         };
-        let event = commit_and_broadcast_event(&self.info, client, event, out.tx);
+        let event = commit_and_broadcast_event(&info.subscriptions, client, event, out.tx).event;
 
         let res = ReducerCallResult {
             outcome: ReducerOutcome::from(&event.status),
@@ -766,21 +920,10 @@ impl InstanceCommon {
         (res, trapped)
     }
 
-    fn handle_outer_error(
-        &mut self,
-        energy: &EnergyStats,
-        caller_identity: &Identity,
-        caller_connection_id: &Option<ConnectionId>,
-        reducer_name: &str,
-    ) -> EventStatus {
+    fn handle_outer_error(&mut self, energy: &EnergyStats, reducer_name: &str) -> EventStatus {
         WORKER_METRICS
             .wasm_instance_errors
-            .with_label_values(
-                caller_identity,
-                &self.info.module_hash,
-                &caller_connection_id.unwrap_or(ConnectionId::ZERO),
-                reducer_name,
-            )
+            .with_label_values(&self.info.database_identity, &self.info.module_hash, reducer_name)
             .inc();
 
         if energy.remaining.get() == 0 {
@@ -900,42 +1043,62 @@ impl InstanceCommon {
 
         let trapped = matches!(result.call_result, Err(ExecutionError::Trap(_)));
 
-        let outcome = match (result.call_result, sender) {
+        let outcome: ViewOutcome = match (result.call_result, sender) {
             (Err(ExecutionError::Recoverable(err) | ExecutionError::Trap(err)), _) => {
                 inst.log_traceback("view", &view_name, &err);
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
             // TODO: maybe do something else with user errors?
             (Err(ExecutionError::User(err)), _) => {
                 inst.log_traceback("view", &view_name, &anyhow::anyhow!(err));
-                self.handle_outer_error(&result.stats.energy, &caller, &None, &view_name)
-                    .into()
+                self.handle_outer_error(&result.stats.energy, &view_name).into()
             }
-            // Materialize anonymous view
-            (Ok(bytes), None) => {
-                stdb.materialize_anonymous_view(&mut tx, table_id, row_type, bytes, self.info.module_def.typespace())
-                    .inspect_err(|err| {
-                        log::error!("Fatal error materializing view `{view_name}`: {err}");
-                    })
-                    .expect("Fatal error materializing view");
-                ViewOutcome::Success
-            }
-            // Materialize sender view
-            (Ok(bytes), Some(sender)) => {
-                stdb.materialize_view(
-                    &mut tx,
-                    table_id,
-                    sender,
-                    row_type,
-                    bytes,
-                    self.info.module_def.typespace(),
-                )
-                .inspect_err(|err| {
-                    log::error!("Fatal error materializing view `{view_name}`: {err}");
-                })
-                .expect("Fatal error materializing view");
-                ViewOutcome::Success
+            (Ok(raw), sender) => {
+                // This is wrapped in a closure to simplify error handling.
+                let outcome: Result<ViewOutcome, anyhow::Error> = (|| {
+                    let result = ViewResult::from_return_data(raw).context("Error parsing view result")?;
+                    let typespace = self.info.module_def.typespace();
+                    let row_product_type = typespace
+                        .resolve(row_type)
+                        .ty()
+                        .clone()
+                        .into_product()
+                        .map_err(|_| anyhow!("Error resolving row type for view"))?;
+
+                    let rows = match result {
+                        ViewResult::Rows(bytes) => deserialize_view_rows(row_type, bytes, typespace)
+                            .context("Error deserializing rows returned by view".to_string())?,
+                        ViewResult::RawSql(query) => self
+                            .run_query_for_view(
+                                &mut tx,
+                                &query,
+                                &row_product_type,
+                                &ViewCallInfo {
+                                    view_id,
+                                    table_id,
+                                    fn_ptr,
+                                    sender,
+                                },
+                            )
+                            .context("Error executing raw SQL returned by view".to_string())?,
+                    };
+
+                    let res = match sender {
+                        Some(sender) => stdb.materialize_view(&mut tx, table_id, sender, rows),
+                        None => stdb.materialize_anonymous_view(&mut tx, table_id, rows),
+                    };
+
+                    res.context("Error materializing view")?;
+
+                    Ok(ViewOutcome::Success)
+                })();
+                match outcome {
+                    Ok(outcome) => outcome,
+                    Err(err) => {
+                        log::error!("Error materializing view `{view_name}`: {err:?}");
+                        ViewOutcome::Failed(format!("Error materializing view `{view_name}`: {err}"))
+                    }
+                }
             }
         };
 
@@ -950,6 +1113,69 @@ impl InstanceCommon {
         (res, trapped)
     }
 
+    /// Compiles and runs a query that was returned from a view.
+    /// This tracks read dependencies for the view.
+    /// Note that this doesn't modify the resulting rows in any way.
+    fn run_query_for_view(
+        &self,
+        tx: &mut MutTxId,
+        the_query: &str,
+        expected_row_type: &ProductType,
+        call_info: &ViewCallInfo,
+    ) -> anyhow::Result<Vec<ProductValue>> {
+        if the_query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Views bypass RLS, since views should enforce their own access control procedurally.
+        let auth = AuthCtx::for_current(self.info.database_identity);
+        let schema_view = SchemaViewer::new(&*tx, &auth);
+
+        // Compile to subscription plans.
+        let (plans, has_params) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
+        ensure!(
+            !has_params,
+            "parameterized SQL is not supported for view materialization yet"
+        );
+
+        // Validate shape and disallow views-on-views.
+        for plan in &plans {
+            let phys = plan.optimized_physical_plan();
+            let Some(source_schema) = phys.return_table() else {
+                bail!("query does not return plain table rows");
+            };
+            if phys.reads_from_view(true) || phys.reads_from_view(false) {
+                bail!("view definition cannot read from other views");
+            }
+            if source_schema.row_type != *expected_row_type {
+                bail!(
+                    "query returns `{}` but view expects `{}`",
+                    fmt_algebraic_type(&AlgebraicType::Product(source_schema.row_type.clone())),
+                    fmt_algebraic_type(&AlgebraicType::Product(expected_row_type.clone())),
+                );
+            }
+        }
+
+        let op = FuncCallType::View(call_info.clone());
+        let mut metrics = ExecutionMetrics::default();
+        let mut rows = Vec::new();
+
+        for plan in plans {
+            // Track read sets for all tables involved in this plan.
+            // TODO(jsdt): This means we will rerun the view and query for any change to these tables, so we should optimize this asap.
+            for table_id in plan.table_ids() {
+                tx.record_table_scan(&op, table_id);
+            }
+
+            let pipelined = PipelinedProject::from(plan.optimized_physical_plan().clone());
+            pipelined.execute(&*tx, &mut metrics, &mut |row| {
+                rows.push(row.to_product_value());
+                Ok(())
+            })?;
+        }
+
+        Ok(rows)
+    }
     /// A [`MutTxId`] knows which views must be updated (re-evaluated).
     /// This method re-evaluates them and updates their backing tables.
     pub(crate) fn call_views_with_tx<I: WasmInstance>(
@@ -965,11 +1191,11 @@ impl InstanceCommon {
             .cloned()
             .map(|info| {
                 let view_def = module_def
-                    .view(&*info.view_name)
-                    .unwrap_or_else(|| panic!("view `{}` not found", info.view_name));
+                    .get_view_by_id(info.fn_ptr, info.sender.is_none())
+                    .unwrap_or_else(|| panic!("view with fn_ptr `{}` not found", info.fn_ptr));
 
                 CallViewParams {
-                    view_name: info.view_name,
+                    view_name: view_def.name.clone().into(),
                     view_id: info.view_id,
                     table_id: info.table_id,
                     fn_ptr: view_def.fn_ptr,
@@ -1014,6 +1240,11 @@ impl InstanceCommon {
         }
 
         (out, trapped)
+    }
+
+    /// Empty the system tables tracking clients without running any lifecycle reducers.
+    pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
+        self.info.relational_db().clear_all_clients().map_err(Into::into)
     }
 }
 /// VM-related metrics for reducer execution.
@@ -1118,8 +1349,19 @@ fn maybe_log_long_running_function(reducer_name: &str, total_duration: Duration)
 }
 
 /// Logs an error `message` for `reducer` at `timestamp` into `replica_ctx`.
-fn log_reducer_error(replica_ctx: &ReplicaContext, timestamp: Timestamp, reducer: &str, message: &str) {
+fn log_reducer_error(
+    replica_ctx: &ReplicaContext,
+    timestamp: Timestamp,
+    reducer: &str,
+    message: &str,
+    module_hash: &Hash,
+) {
     use database_logger::Record;
+
+    WORKER_METRICS
+        .sender_errors
+        .with_label_values(&replica_ctx.database_identity, module_hash, reducer)
+        .inc();
 
     log::info!("reducer returned error: {message}");
 
@@ -1149,24 +1391,6 @@ fn lifecyle_modifications_to_tx(
     .map_err(|e| e.to_string().into())
 }
 */
-
-/// Commits the transaction
-/// and evaluates and broadcasts subscriptions updates.
-fn commit_and_broadcast_event(
-    info: &ModuleInfo,
-    client: Option<Arc<ClientConnectionSender>>,
-    event: ModuleEvent,
-    tx: MutTxId,
-) -> Arc<ModuleEvent> {
-    match info
-        .subscriptions
-        .commit_and_broadcast_event(client, event, tx)
-        .unwrap()
-    {
-        Ok(res) => res.event,
-        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
-    }
-}
 
 pub trait InstanceOp {
     fn name(&self) -> &str;
@@ -1199,7 +1423,7 @@ impl InstanceOp for ViewOp<'_> {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
             table_id: self.table_id,
-            view_name: self.name.to_owned().into_boxed_str(),
+            fn_ptr: self.fn_ptr,
             sender: Some(*self.sender),
         })
     }
@@ -1229,7 +1453,7 @@ impl InstanceOp for AnonymousViewOp<'_> {
         FuncCallType::View(ViewCallInfo {
             view_id: self.view_id,
             table_id: self.table_id,
-            view_name: self.name.to_owned().into_boxed_str(),
+            fn_ptr: self.fn_ptr,
             sender: None,
         })
     }

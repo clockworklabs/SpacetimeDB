@@ -12,10 +12,10 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteReducers : RemoteBase
     {
-        public delegate void CircleDecayHandler(ReducerEventContext ctx, CircleDecayTimer timer);
+        public delegate void CircleDecayHandler(ReducerEventContext ctx, SpacetimeDB.Types.CircleDecayTimer timer);
         public event CircleDecayHandler? OnCircleDecay;
 
-        public void CircleDecay(CircleDecayTimer timer)
+        public void CircleDecay(SpacetimeDB.Types.CircleDecayTimer timer)
         {
             conn.InternalCallReducer(new Reducer.CircleDecay(timer), this.SetCallReducerFlags.CircleDecayFlags);
         }

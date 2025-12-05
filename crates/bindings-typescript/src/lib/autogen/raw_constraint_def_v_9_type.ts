@@ -4,71 +4,16 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ConnectionId as __ConnectionId,
-  Identity as __Identity,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { RawConstraintDataV9 } from './raw_constraint_data_v_9_type';
-// Mark import as potentially unused
-declare type __keep_RawConstraintDataV9 = RawConstraintDataV9;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import RawConstraintDataV9 from './raw_constraint_data_v_9_type';
 
-export type RawConstraintDefV9 = {
-  name: string | undefined;
-  data: RawConstraintDataV9;
-};
-let _cached_RawConstraintDefV9_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const RawConstraintDefV9 = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_RawConstraintDefV9_type_value)
-      return _cached_RawConstraintDefV9_type_value;
-    _cached_RawConstraintDefV9_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_RawConstraintDefV9_type_value.value.elements.push(
-      {
-        name: 'name',
-        algebraicType: __AlgebraicTypeValue.createOptionType(
-          __AlgebraicTypeValue.String
-        ),
-      },
-      {
-        name: 'data',
-        algebraicType: RawConstraintDataV9.getTypeScriptAlgebraicType(),
-      }
-    );
-    return _cached_RawConstraintDefV9_type_value;
+export default __t.object('RawConstraintDefV9', {
+  name: __t.option(__t.string()),
+  get data() {
+    return RawConstraintDataV9;
   },
-
-  serialize(writer: __BinaryWriter, value: RawConstraintDefV9): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      RawConstraintDefV9.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): RawConstraintDefV9 {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      RawConstraintDefV9.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default RawConstraintDefV9;
+});

@@ -111,6 +111,7 @@ impl CompiledModule {
             &module_path(name),
             Some(PathBuf::from("src")).as_deref(),
             mode == CompilationMode::Debug,
+            None,
         )
         .unwrap();
         Self {
@@ -217,8 +218,8 @@ impl CompiledModule {
         .await
         .unwrap();
 
-        let database = env.get_database_by_identity(&db_identity).unwrap().unwrap();
-        let instance = env.get_leader_replica_by_database(database.id).unwrap();
+        let database = env.get_database_by_identity(&db_identity).await.unwrap().unwrap();
+        let instance = env.get_leader_replica_by_database(database.id).await.unwrap();
 
         let client_id = ClientActorId {
             identity,
