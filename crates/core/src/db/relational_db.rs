@@ -7,6 +7,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use fs2::FileExt;
+use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
 use spacetimedb_data_structures::map::IntSet;
@@ -1112,6 +1113,7 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
             // in milliseconds, which may be too long for async tasks.
             let db = db.clone();
             let db_identity = db.database_identity();
+            info!("running view cleanup for database {db_identity}");
             tokio::task::spawn_blocking(move || run_view_cleanup(&db))
                 .await
                 .inspect_err(|e| {
@@ -1119,6 +1121,7 @@ pub fn spawn_view_cleanup_loop(db: Arc<RelationalDB>) -> tokio::task::AbortHandl
                 })
                 .ok();
 
+            info!("pausing view cleanup for database {db_identity}");
             tokio::time::sleep(VIEWS_EXPIRATION).await;
         }
     })
@@ -2588,7 +2591,40 @@ mod tests {
     }
 
     #[test]
-    fn test_view_tables_are_ephemeral() -> ResultTest<()> {
+    fn test_view_tables_are_ephemeral_in_commitlog() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+
+        let (view_id, table_id, _, _) = setup_view(&stdb)?;
+
+        // Write some rows (reusing the same helper)
+        insert_view_row(&stdb, view_id, table_id, Identity::ONE, 10)?;
+        insert_view_row(&stdb, view_id, table_id, Identity::ZERO, 20)?;
+
+        assert!(
+            !project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should NOT be empty after insert"
+        );
+
+        // Reopen the database — view tables must not persist
+        let stdb = stdb.reopen()?;
+
+        // Validate that the view's backing table has been removed
+        assert!(
+            project_views(&stdb, table_id, Identity::ZERO).is_empty(),
+            "View table should be empty after reopening the database"
+        );
+
+        let tx = begin_mut_tx(&stdb);
+        let subs_rows = tx.lookup_st_view_subs(view_id)?;
+        assert!(
+            subs_rows.is_empty(),
+            "st_view_subs should be empty after reopening the database"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_tables_are_ephemeral_with_snapshot() -> ResultTest<()> {
         let stdb = TestDB::durable()?;
 
         let (view_id, table_id, _, _) = setup_view(&stdb)?;
@@ -2601,6 +2637,10 @@ mod tests {
             !project_views(&stdb, table_id, Identity::ZERO).is_empty(),
             "View table should NOT be empty after insert"
         );
+
+        let root = stdb.path().snapshots();
+        let (_, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, false);
+        stdb.take_snapshot(&repo)?.expect("snapshot should succeed");
 
         // Reopen the database — view tables must not persist
         let stdb = stdb.reopen()?;
