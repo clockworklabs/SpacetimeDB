@@ -313,6 +313,13 @@ impl PointerMap {
 
         ret
     }
+
+    /// Removes all the row pointers from the map.
+    pub fn clear(&mut self) {
+        self.map.clear();
+        self.colliders.clear();
+        self.emptied_collider_slots.clear();
+    }
 }
 
 impl FromIterator<(RowHash, RowPointer)> for PointerMap {

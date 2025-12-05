@@ -3,7 +3,7 @@ use core::ops::RangeBounds;
 use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
-use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_sats::{memory_usage::MemoryUsage, AlgebraicValue};
 use spacetimedb_schema::schema::{ColumnSchema, ConstraintSchema, IndexSchema, SequenceSchema};
 use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
@@ -77,6 +77,23 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
+static_assert_size!(TxState, 88);
+
+impl MemoryUsage for TxState {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            insert_tables,
+            delete_tables,
+            blob_store,
+            pending_schema_changes,
+        } = self;
+        insert_tables.heap_usage()
+            + delete_tables.heap_usage()
+            + blob_store.heap_usage()
+            + pending_schema_changes.heap_usage()
+    }
+}
+
 /// A pending schema change is a change to a `TableSchema`
 /// that has been applied immediately to the [`CommittedState`](super::committed_state::CommittedState)
 /// and which need to be reverted if the transaction fails.
@@ -117,7 +134,30 @@ pub enum PendingSchemaChange {
     SequenceAdded(TableId, SequenceId),
 }
 
-static_assert_size!(TxState, 88);
+impl MemoryUsage for PendingSchemaChange {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::IndexRemoved(table_id, index_id, table_index, index_schema) => {
+                table_id.heap_usage() + index_id.heap_usage() + table_index.heap_usage() + index_schema.heap_usage()
+            }
+            Self::IndexAdded(table_id, index_id, pointer_map) => {
+                table_id.heap_usage() + index_id.heap_usage() + pointer_map.heap_usage()
+            }
+            Self::TableRemoved(table_id, table) => table_id.heap_usage() + table.heap_usage(),
+            Self::TableAdded(table_id) => table_id.heap_usage(),
+            Self::TableAlterAccess(table_id, st_access) => table_id.heap_usage() + st_access.heap_usage(),
+            Self::TableAlterRowType(table_id, column_schemas) => table_id.heap_usage() + column_schemas.heap_usage(),
+            Self::ConstraintRemoved(table_id, constraint_schema) => {
+                table_id.heap_usage() + constraint_schema.heap_usage()
+            }
+            Self::ConstraintAdded(table_id, constraint_id) => table_id.heap_usage() + constraint_id.heap_usage(),
+            Self::SequenceRemoved(table_id, sequence, sequence_schema) => {
+                table_id.heap_usage() + sequence.heap_usage() + sequence_schema.heap_usage()
+            }
+            Self::SequenceAdded(table_id, sequence_id) => table_id.heap_usage() + sequence_id.heap_usage(),
+        }
+    }
+}
 
 impl TxState {
     /// Returns the row count in insert tables
