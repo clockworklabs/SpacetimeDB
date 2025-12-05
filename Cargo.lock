@@ -8031,6 +8031,7 @@ dependencies = [
  "smallvec",
  "spacetimedb-data-structures",
  "spacetimedb-lib 1.11.0",
+ "spacetimedb-memory-usage",
  "spacetimedb-primitives 1.11.0",
  "spacetimedb-sats 1.11.0",
  "spacetimedb-sql-parser",
