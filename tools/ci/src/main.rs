@@ -57,11 +57,22 @@ enum CiCmd {
     /// Executes the smoketests suite with some default exclusions.
     Smoketests {
         #[arg(
-            long = "start-server",
-            default_value_t = true,
-            long_help = "Whether to start a local SpacetimeDB server before running smoketests"
+            long = "python",
+            value_name = "PYTHON_PATH",
+            long_help = "Python interpreter to use for smoketests"
         )]
-        start_server: bool,
+        python: Option<String>,
+
+        /// List the tests that would be run, but don't run them
+        #[arg(
+            long = "list",
+            num_args(0..=1),
+            default_missing_value = "text",
+            value_parser = ["text", "json"]
+        )]
+        list: Option<String>,
+
+        // Args that influence test selection
         #[arg(
             long = "docker",
             value_name = "COMPOSE_FILE",
@@ -70,23 +81,50 @@ enum CiCmd {
             long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
         )]
         docker: Option<String>,
+        /// Ignore tests which require dotnet
+        #[arg(long = "skip-dotnet", default_value_t = false)]
+        skip_dotnet: bool,
+        /// Only run tests which match the given substring (can be specified multiple times)
+        #[arg(short = 'k', action = clap::ArgAction::Append)]
+        test_name_patterns: Vec<String>,
+        /// Exclude tests matching these names/patterns
+        #[arg(short = 'x', default_value = "", num_args(0..))]
+        exclude: Vec<String>,
+        /// Run against a remote server
+        #[arg(long = "remote-server")]
+        remote_server: Option<String>,
+        /// Only run tests that require a local server
+        #[arg(long = "local-only", default_value_t = false)]
+        local_only: bool,
+        /// Use `spacetime login` for these tests (and disable tests that don't work with that)
+        #[arg(long = "spacetime-login", default_value_t = false)]
+        spacetime_login: bool,
+        /// Tests to run (positional); if omitted, run all
+        #[arg(value_name = "TEST")]
+        test: Vec<String>,
+
+        // Args that only influence test running
+        /// Show all stdout/stderr from the tests as they're running
+        #[arg(long = "show-all-output", default_value_t = false)]
+        show_all_output: bool,
+        /// Don't cargo build the CLI in the Python runner
+        #[arg(long = "no-build-cli", default_value_t = false)]
+        no_build_cli: bool,
+        /// Do not stream docker logs alongside test output
+        #[arg(long = "no-docker-logs", default_value_t = false)]
+        no_docker_logs: bool,
+        #[arg(
+            long = "start-server",
+            default_value_t = true,
+            long_help = "Whether to start a local SpacetimeDB server before running smoketests"
+        )]
+        start_server: bool,
         #[arg(
             long = "parallel",
             default_value_t = false,
             long_help = "Run smoketests in parallel batches grouped by test suite"
         )]
         parallel: bool,
-        #[arg(
-            long = "python",
-            value_name = "PYTHON_PATH",
-            long_help = "Python interpreter to use for smoketests"
-        )]
-        python: Option<String>,
-        #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
-        )]
-        args: Vec<String>,
     },
     /// Tests the update flow
     ///
@@ -353,9 +391,19 @@ fn main() -> Result<()> {
         Some(CiCmd::Smoketests {
             start_server,
             docker,
+            test,
+            no_docker_logs,
+            skip_dotnet,
+            show_all_output,
+            test_name_patterns,
+            exclude,
+            no_build_cli,
+            list,
+            remote_server,
+            spacetime_login,
+            local_only,
             parallel,
             python,
-            args,
         }) => {
             let start_server = match (start_server, docker.as_ref()) {
                 (start_server, Some(compose_file)) => {
@@ -370,10 +418,48 @@ fn main() -> Result<()> {
                 (true, None) => StartServer::Yes { random_port: parallel },
                 (false, None) => StartServer::No,
             };
-            let mut args = args.to_vec();
+
+            let mut args: Vec<String> = Vec::new();
+
+            // Options that map 1:1 to the Python smoketests CLI
+            if no_docker_logs {
+                args.push("--no-docker-logs".to_string());
+            }
+            if skip_dotnet {
+                args.push("--skip-dotnet".to_string());
+            }
+            if show_all_output {
+                args.push("--show-all-output".to_string());
+            }
+            for pat in test_name_patterns {
+                args.push("-k".to_string());
+                args.push(pat);
+            }
+            for ex in exclude {
+                args.push("-x".to_string());
+                args.push(ex);
+            }
+            if no_build_cli {
+                args.push("--no-build-cli".to_string());
+            }
+            if let Some(list_mode) = list {
+                args.push(format!("--list={list_mode}").to_string());
+            }
+            if let Some(remote) = remote_server {
+                args.push("--remote-server".to_string());
+                args.push(remote);
+            }
+            if spacetime_login {
+                args.push("--spacetime-login".to_string());
+            }
+            if local_only {
+                args.push("--local-only".to_string());
+            }
+
+            // Preserve any additional raw arguments that the caller provided.
+            args.extend(extra_args.into_iter());
             if let Some(compose_file) = docker.as_ref() {
-                // Note that we do not assume that the user wants to pass --docker to the tests. We leave them the power to
-                // run the server in docker while still retaining full control over what tests they want.
+                args.push("--docker".to_string());
                 args.push("--compose-file".to_string());
                 args.push(compose_file.to_string());
             }
@@ -405,10 +491,15 @@ fn main() -> Result<()> {
                 args.push("--no-build-cli".into());
             }
 
+            // For the non-parallel run we append the positional tests to the
+            // shared `args` set of flags.
+            let mut runner_args: Vec<String> = args.clone();
+            runner_args.extend(test.into_iter());
+
             if parallel {
                 println!("Listing smoketests for parallel execution..");
 
-                let mut list_args: Vec<String> = args.to_vec();
+                let mut list_args: Vec<String> = args.clone();
                 list_args.push("--list=json".to_string());
                 let list_cmdline = format!("{python} -m smoketests {}", list_args.join(" "));
 
