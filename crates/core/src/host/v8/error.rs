@@ -266,6 +266,10 @@ impl JsStackTrace {
                 let frame = trace.get_frame(scope, index).unwrap();
                 JsStackTraceFrame::from_frame(scope, frame)
             })
+            // A call frame with this name is the dividing line between user stack frames
+            // and module-bindings frames (e.g. `__call_reducer__`). See `callUserFunction`
+            // in `src/server/runtime.ts` in the Typescript SDK.
+            .take_while(|frame| frame.fn_name() != "__spacetimedb_end_short_backtrace")
             .collect::<Box<[_]>>();
         Self { frames }
     }

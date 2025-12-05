@@ -17,7 +17,7 @@ import {
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
-import { callProcedure } from './procedures';
+import { callProcedure as callProcedure } from './procedures';
 import {
   REDUCERS,
   type AuthCtx,
@@ -190,6 +190,19 @@ export const makeReducerCtx = (
   senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
 });
 
+/**
+ * Call into a user function `fn` - the backtrace from an exception thrown in
+ * `fn` or one of its descendants in the callgraph will be stripped by host
+ * code in `crates/core/src/host/v8/error.rs` such that `fn` will be shown to
+ * be the root of the call stack.
+ */
+export const callUserFunction = function __spacetimedb_end_short_backtrace<
+  Args extends any[],
+  R,
+>(fn: (...args: Args) => R, ...args: Args): R {
+  return fn(...args);
+};
+
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
@@ -218,7 +231,7 @@ export const hooks: ModuleHooks = {
       )
     );
     try {
-      return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+      return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -243,7 +256,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       params,
       MODULE_DEF.typespace
     );
-    const ret = fn(ctx, args);
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
     return retBuf.getBuffer();
@@ -261,7 +274,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       params,
       MODULE_DEF.typespace
     );
-    const ret = fn(ctx, args);
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
     return retBuf.getBuffer();
