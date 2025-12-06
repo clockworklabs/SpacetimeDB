@@ -20,7 +20,6 @@ use std::collections::HashSet;
 use std::fmt::{self};
 use std::ops::Deref;
 use std::path::Path;
-use std::result;
 
 pub struct UnrealCpp<'opts> {
     pub module_name: &'opts str,
