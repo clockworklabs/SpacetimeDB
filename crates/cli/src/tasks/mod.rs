@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::util::{self, ModuleLanguage};
 
+use self::cpp::build_cpp;
 use self::csharp::build_csharp;
 use self::javascript::build_javascript;
 use self::rust::build_rust;
@@ -23,6 +24,7 @@ pub fn build(
         ModuleLanguage::Rust => build_rust(project_path, features, lint_dir, build_debug),
         ModuleLanguage::Csharp => build_csharp(project_path, build_debug),
         ModuleLanguage::Javascript => build_javascript(project_path, build_debug),
+        ModuleLanguage::Cpp => build_cpp(project_path, build_debug),
     }?;
 
     if lang == ModuleLanguage::Javascript {
@@ -55,6 +57,7 @@ pub fn build(
     }
 }
 
+pub mod cpp;
 pub mod csharp;
 pub mod javascript;
 pub mod rust;
