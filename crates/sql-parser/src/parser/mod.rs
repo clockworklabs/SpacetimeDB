@@ -1,8 +1,8 @@
 use errors::{SqlParseError, SqlRequired, SqlUnsupported};
 use sqlparser::ast::{
-    BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint, JoinOperator,
-    ObjectName, Query, SelectItem, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value,
-    WildcardAdditionalOptions,
+    Array, BinaryOperator, Expr, Function, FunctionArg, FunctionArgExpr, Ident, Join, JoinConstraint,
+    JoinOperator, ObjectName, Query, SelectItem, TableAlias, TableFactor, TableWithJoins, UnaryOperator,
+    Value, WildcardAdditionalOptions,
 };
 
 use crate::ast::{
@@ -225,6 +225,13 @@ fn parse_expr(expr: Expr, depth: usize) -> SqlParseResult<SqlExpr> {
         Expr::Nested(expr) => parse_expr(*expr, depth + 1),
         Expr::Value(Value::Placeholder(param)) if &param == ":sender" => Ok(SqlExpr::Param(Parameter::Sender)),
         Expr::Value(v) => Ok(SqlExpr::Lit(parse_literal(v)?)),
+        Expr::Array(v) => Ok(SqlExpr::Lit(parse_literal_array(v)?)),
+        Expr::Tuple(ref t) => Ok(SqlExpr::Tup(t.iter().map(|x| {
+            match x {
+                Expr::Value(v) => parse_literal(v.clone()),
+                _ => Err(SqlUnsupported::Expr(expr.clone()).into()),
+            }
+        }).collect::<SqlParseResult<Vec<_>>>()?)),
         Expr::UnaryOp {
             op: UnaryOperator::Plus,
             expr,
@@ -297,6 +304,16 @@ pub(crate) fn parse_literal(value: Value) -> SqlParseResult<SqlLiteral> {
         Value::HexStringLiteral(s) => Ok(SqlLiteral::Hex(s.into_boxed_str())),
         _ => Err(SqlUnsupported::Literal(value).into()),
     }
+}
+
+/// Parse a literal array expression
+pub(crate) fn parse_literal_array(array: Array) -> SqlParseResult<SqlLiteral> {
+    Ok(SqlLiteral::Arr(array.elem.into_iter().map(|expr| {
+        match expr {
+            Expr::Value(value) => Ok(parse_literal(value)?),
+            _ => Err(SqlUnsupported::Expr(expr).into()),
+        }
+    }).collect::<SqlParseResult<Box<[SqlLiteral]>>>()?))
 }
 
 /// Parse an identifier
