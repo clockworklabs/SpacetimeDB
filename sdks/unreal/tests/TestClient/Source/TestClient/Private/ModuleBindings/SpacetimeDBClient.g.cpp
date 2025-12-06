@@ -58,6 +58,12 @@
 #include "ModuleBindings/Tables/PkU32TwoTable.g.h"
 #include "ModuleBindings/Tables/PkU64Table.g.h"
 #include "ModuleBindings/Tables/PkU8Table.g.h"
+#include "ModuleBindings/Tables/ResultEveryPrimitiveStructStringTable.g.h"
+#include "ModuleBindings/Tables/ResultI32StringTable.g.h"
+#include "ModuleBindings/Tables/ResultIdentityStringTable.g.h"
+#include "ModuleBindings/Tables/ResultSimpleEnumI32Table.g.h"
+#include "ModuleBindings/Tables/ResultStringI32Table.g.h"
+#include "ModuleBindings/Tables/ResultVecI32StringTable.g.h"
 #include "ModuleBindings/Tables/ScheduledTableTable.g.h"
 #include "ModuleBindings/Tables/TableHoldsTableTable.g.h"
 #include "ModuleBindings/Tables/UniqueBoolTable.g.h"
@@ -701,6 +707,42 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::InsertPrimitivesAsStrings(Args);
     }
 
+    if (ReducerName == TEXT("insert_result_every_primitive_struct_string"))
+    {
+        FInsertResultEveryPrimitiveStructStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultEveryPrimitiveStructStringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultEveryPrimitiveStructString(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_i32_string"))
+    {
+        FInsertResultI32StringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultI32StringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultI32String(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_identity_string"))
+    {
+        FInsertResultIdentityStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultIdentityStringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultIdentityString(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_simple_enum_i32"))
+    {
+        FInsertResultSimpleEnumI32Args Args = UE::SpacetimeDB::Deserialize<FInsertResultSimpleEnumI32Args>(Event.ReducerCall.Args);
+        return FReducer::InsertResultSimpleEnumI32(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_string_i32"))
+    {
+        FInsertResultStringI32Args Args = UE::SpacetimeDB::Deserialize<FInsertResultStringI32Args>(Event.ReducerCall.Args);
+        return FReducer::InsertResultStringI32(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_vec_i32_string"))
+    {
+        FInsertResultVecI32StringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultVecI32StringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultVecI32String(Args);
+    }
+
     if (ReducerName == TEXT("insert_table_holds_table"))
     {
         FInsertTableHoldsTableArgs Args = UE::SpacetimeDB::Deserialize<FInsertTableHoldsTableArgs>(Event.ReducerCall.Args);
@@ -1258,6 +1300,12 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FPkU32TwoType, UPkU32TwoTable, FEventContext>(TEXT("pk_u32_two"), Db->PkU32Two);
 	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u64"), Db->PkU64);
 	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u8"), Db->PkU8);
+	RegisterTable<FResultEveryPrimitiveStructStringType, UResultEveryPrimitiveStructStringTable, FEventContext>(TEXT("result_every_primitive_struct_string"), Db->ResultEveryPrimitiveStructString);
+	RegisterTable<FResultI32StringType, UResultI32StringTable, FEventContext>(TEXT("result_i32_string"), Db->ResultI32String);
+	RegisterTable<FResultIdentityStringType, UResultIdentityStringTable, FEventContext>(TEXT("result_identity_string"), Db->ResultIdentityString);
+	RegisterTable<FResultSimpleEnumI32Type, UResultSimpleEnumI32Table, FEventContext>(TEXT("result_simple_enum_i32"), Db->ResultSimpleEnumI32);
+	RegisterTable<FResultStringI32Type, UResultStringI32Table, FEventContext>(TEXT("result_string_i32"), Db->ResultStringI32);
+	RegisterTable<FResultVecI32StringType, UResultVecI32StringTable, FEventContext>(TEXT("result_vec_i32_string"), Db->ResultVecI32String);
 	RegisterTable<FScheduledTableType, UScheduledTableTable, FEventContext>(TEXT("scheduled_table"), Db->ScheduledTable);
 	RegisterTable<FTableHoldsTableType, UTableHoldsTableTable, FEventContext>(TEXT("table_holds_table"), Db->TableHoldsTable);
 	RegisterTable<FUniqueBoolType, UUniqueBoolTable, FEventContext>(TEXT("unique_bool"), Db->UniqueBool);
@@ -1391,6 +1439,12 @@ void URemoteTables::Initialize()
 	PkU32Two = NewObject<UPkU32TwoTable>(this);
 	PkU64 = NewObject<UPkU64Table>(this);
 	PkU8 = NewObject<UPkU8Table>(this);
+	ResultEveryPrimitiveStructString = NewObject<UResultEveryPrimitiveStructStringTable>(this);
+	ResultI32String = NewObject<UResultI32StringTable>(this);
+	ResultIdentityString = NewObject<UResultIdentityStringTable>(this);
+	ResultSimpleEnumI32 = NewObject<UResultSimpleEnumI32Table>(this);
+	ResultStringI32 = NewObject<UResultStringI32Table>(this);
+	ResultVecI32String = NewObject<UResultVecI32StringTable>(this);
 	ScheduledTable = NewObject<UScheduledTableTable>(this);
 	TableHoldsTable = NewObject<UTableHoldsTableTable>(this);
 	UniqueBool = NewObject<UUniqueBoolTable>(this);
@@ -1492,6 +1546,12 @@ void URemoteTables::Initialize()
 	PkU32Two->PostInitialize();
 	PkU64->PostInitialize();
 	PkU8->PostInitialize();
+	ResultEveryPrimitiveStructString->PostInitialize();
+	ResultI32String->PostInitialize();
+	ResultIdentityString->PostInitialize();
+	ResultSimpleEnumI32->PostInitialize();
+	ResultStringI32->PostInitialize();
+	ResultVecI32String->PostInitialize();
 	ScheduledTable->PostInitialize();
 	TableHoldsTable->PostInitialize();
 	UniqueBool->PostInitialize();
@@ -1934,6 +1994,30 @@ void USetReducerFlags::InsertPkU8(ECallReducerFlags Flag)
 void USetReducerFlags::InsertPrimitivesAsStrings(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertPrimitivesAsStrings", Flag);
+}
+void USetReducerFlags::InsertResultEveryPrimitiveStructString(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultEveryPrimitiveStructString", Flag);
+}
+void USetReducerFlags::InsertResultI32String(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultI32String", Flag);
+}
+void USetReducerFlags::InsertResultIdentityString(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultIdentityString", Flag);
+}
+void USetReducerFlags::InsertResultSimpleEnumI32(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultSimpleEnumI32", Flag);
+}
+void USetReducerFlags::InsertResultStringI32(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultStringI32", Flag);
+}
+void USetReducerFlags::InsertResultVecI32String(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultVecI32String", Flag);
 }
 void USetReducerFlags::InsertTableHoldsTable(ECallReducerFlags Flag)
 {
@@ -5174,6 +5258,180 @@ bool URemoteReducers::InvokeInsertPrimitivesAsStrings(const FReducerEventContext
     }
 
     OnInsertPrimitivesAsStrings.Broadcast(Context, Args->S);
+    return true;
+}
+
+void URemoteReducers::InsertResultEveryPrimitiveStructString(const FTestClientResultEveryPrimitiveStructString& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_every_primitive_struct_string"), FInsertResultEveryPrimitiveStructStringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultEveryPrimitiveStructString(const FReducerEventContext& Context, const UInsertResultEveryPrimitiveStructStringReducer* Args)
+{
+    if (!OnInsertResultEveryPrimitiveStructString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultEveryPrimitiveStructString"));
+        }
+        return false;
+    }
+
+    OnInsertResultEveryPrimitiveStructString.Broadcast(Context, Args->R);
+    return true;
+}
+
+void URemoteReducers::InsertResultI32String(const FTestClientResultInt32String& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_i32_string"), FInsertResultI32StringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultI32String(const FReducerEventContext& Context, const UInsertResultI32StringReducer* Args)
+{
+    if (!OnInsertResultI32String.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultI32String"));
+        }
+        return false;
+    }
+
+    OnInsertResultI32String.Broadcast(Context, Args->R);
+    return true;
+}
+
+void URemoteReducers::InsertResultIdentityString(const FTestClientResultIdentityString& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_identity_string"), FInsertResultIdentityStringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultIdentityString(const FReducerEventContext& Context, const UInsertResultIdentityStringReducer* Args)
+{
+    if (!OnInsertResultIdentityString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultIdentityString"));
+        }
+        return false;
+    }
+
+    OnInsertResultIdentityString.Broadcast(Context, Args->R);
+    return true;
+}
+
+void URemoteReducers::InsertResultSimpleEnumI32(const FTestClientResultSimpleEnumInt32& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_simple_enum_i32"), FInsertResultSimpleEnumI32Args(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultSimpleEnumI32(const FReducerEventContext& Context, const UInsertResultSimpleEnumI32Reducer* Args)
+{
+    if (!OnInsertResultSimpleEnumI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultSimpleEnumI32"));
+        }
+        return false;
+    }
+
+    OnInsertResultSimpleEnumI32.Broadcast(Context, Args->R);
+    return true;
+}
+
+void URemoteReducers::InsertResultStringI32(const FTestClientResultStringInt32& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_string_i32"), FInsertResultStringI32Args(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultStringI32(const FReducerEventContext& Context, const UInsertResultStringI32Reducer* Args)
+{
+    if (!OnInsertResultStringI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultStringI32"));
+        }
+        return false;
+    }
+
+    OnInsertResultStringI32.Broadcast(Context, Args->R);
+    return true;
+}
+
+void URemoteReducers::InsertResultVecI32String(const FTestClientResultVecInt32String& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_vec_i32_string"), FInsertResultVecI32StringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultVecI32String(const FReducerEventContext& Context, const UInsertResultVecI32StringReducer* Args)
+{
+    if (!OnInsertResultVecI32String.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultVecI32String"));
+        }
+        return false;
+    }
+
+    OnInsertResultVecI32String.Broadcast(Context, Args->R);
     return true;
 }
 
@@ -8427,6 +8685,54 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         UInsertPrimitivesAsStringsReducer* Reducer = NewObject<UInsertPrimitivesAsStringsReducer>();
         Reducer->S = Args.S;
         Reducers->InvokeInsertPrimitivesAsStrings(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_every_primitive_struct_string"))
+    {
+        FInsertResultEveryPrimitiveStructStringArgs Args = ReducerEvent.Reducer.GetAsInsertResultEveryPrimitiveStructString();
+        UInsertResultEveryPrimitiveStructStringReducer* Reducer = NewObject<UInsertResultEveryPrimitiveStructStringReducer>();
+        Reducer->R = Args.R;
+        Reducers->InvokeInsertResultEveryPrimitiveStructString(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_i32_string"))
+    {
+        FInsertResultI32StringArgs Args = ReducerEvent.Reducer.GetAsInsertResultI32String();
+        UInsertResultI32StringReducer* Reducer = NewObject<UInsertResultI32StringReducer>();
+        Reducer->R = Args.R;
+        Reducers->InvokeInsertResultI32String(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_identity_string"))
+    {
+        FInsertResultIdentityStringArgs Args = ReducerEvent.Reducer.GetAsInsertResultIdentityString();
+        UInsertResultIdentityStringReducer* Reducer = NewObject<UInsertResultIdentityStringReducer>();
+        Reducer->R = Args.R;
+        Reducers->InvokeInsertResultIdentityString(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_simple_enum_i32"))
+    {
+        FInsertResultSimpleEnumI32Args Args = ReducerEvent.Reducer.GetAsInsertResultSimpleEnumI32();
+        UInsertResultSimpleEnumI32Reducer* Reducer = NewObject<UInsertResultSimpleEnumI32Reducer>();
+        Reducer->R = Args.R;
+        Reducers->InvokeInsertResultSimpleEnumI32(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_string_i32"))
+    {
+        FInsertResultStringI32Args Args = ReducerEvent.Reducer.GetAsInsertResultStringI32();
+        UInsertResultStringI32Reducer* Reducer = NewObject<UInsertResultStringI32Reducer>();
+        Reducer->R = Args.R;
+        Reducers->InvokeInsertResultStringI32(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_vec_i32_string"))
+    {
+        FInsertResultVecI32StringArgs Args = ReducerEvent.Reducer.GetAsInsertResultVecI32String();
+        UInsertResultVecI32StringReducer* Reducer = NewObject<UInsertResultVecI32StringReducer>();
+        Reducer->R = Args.R;
+        Reducers->InvokeInsertResultVecI32String(Context, Reducer);
         return;
     }
     if (ReducerName == TEXT("insert_table_holds_table"))
