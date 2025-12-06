@@ -65,6 +65,12 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertVecTest, "SpacetimeDB.TestClient.InsertV
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertOptionSomeTest, "SpacetimeDB.TestClient.InsertOptionSomeTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 /** Tests inserting none optional types. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertOptionNoneTest, "SpacetimeDB.TestClient.InsertOptionNoneTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+/** Tests inserting Result Ok types. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertResultOkTest, "SpacetimeDB.TestClient.InsertResultOkTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+/** Tests inserting Result Err types. */
+//IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertResultErrTest, "SpacetimeDB.TestClient.InsertResultErrTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
 /** Tests inserting struct types. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FInsertStructTest, "SpacetimeDB.TestClient.InsertStructTest", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 /** Tests inserting simple enum types. */
