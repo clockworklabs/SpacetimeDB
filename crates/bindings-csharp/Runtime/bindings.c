@@ -1,6 +1,7 @@
 #include <assert.h>
 // #include <mono/metadata/appdomain.h>
 // #include <mono/metadata/object.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
 
@@ -108,6 +109,12 @@ IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* ou
 IMPORT(int16_t, get_jwt, (const uint8_t* connection_id_ptr, BytesSource* bytes_ptr), (connection_id_ptr, bytes_ptr));
 #undef SPACETIME_MODULE_VERSION
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.3"
+IMPORT(uint16_t, procedure_start_mut_tx, (int64_t* micros), (micros));
+IMPORT(uint16_t, procedure_commit_mut_tx, (void), ());
+IMPORT(uint16_t, procedure_abort_mut_tx, (void), ());
+#undef SPACETIME_MODULE_VERSION
+
 #ifndef EXPERIMENTAL_WASM_AOT
 static MonoClass* ffi_class;
 
@@ -169,6 +176,9 @@ EXPORT(int16_t, __call_procedure__,
        &sender_0, &sender_1, &sender_2, &sender_3,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &result_sink);
+
+EXPORT(bool, __take_procedure_tx_offset__,
+       (uint64_t* offset), offset);
 
 EXPORT(int16_t, __call_view__,
        (uint32_t id,

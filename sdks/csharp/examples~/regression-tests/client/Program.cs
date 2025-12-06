@@ -2,9 +2,11 @@
 /// To run these, run a local SpacetimeDB via `spacetime start`,
 /// then in a separate terminal run `tools~/run-regression-tests.sh PATH_TO_SPACETIMEDB_REPO_CHECKOUT`.
 /// This is done on CI in .github/workflows/test.yml.
-
+using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -14,25 +16,30 @@ const string DBNAME = "btree-repro";
 DbConnection ConnectToDB()
 {
     DbConnection? conn = null;
-    conn = DbConnection.Builder()
+    conn = DbConnection
+        .Builder()
         .WithUri(HOST)
         .WithModuleName(DBNAME)
         .OnConnect(OnConnected)
-        .OnConnectError((err) =>
-        {
-            throw err;
-        })
-        .OnDisconnect((conn, err) =>
-        {
-            if (err != null)
+        .OnConnectError(
+            (err) =>
             {
                 throw err;
             }
-            else
+        )
+        .OnDisconnect(
+            (conn, err) =>
             {
-                throw new Exception("Unexpected disconnect");
+                if (err != null)
+                {
+                    throw err;
+                }
+                else
+                {
+                    throw new Exception("Unexpected disconnect");
+                }
             }
-        })
+        )
         .Build();
     return conn;
 }
@@ -46,11 +53,17 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
     Log.Debug($"Connected to {DBNAME} on {HOST}");
     handle = conn.SubscriptionBuilder()
         .OnApplied(OnSubscriptionApplied)
-        .OnError((ctx, err) =>
-        {
-            throw err;
-        })
-        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer", "SELECT * FROM PlayersForLevel"]);
+        .OnError(
+            (ctx, err) =>
+            {
+                throw err;
+            }
+        )
+        .Subscribe([
+            "SELECT * FROM ExampleData",
+            "SELECT * FROM MyPlayer",
+            "SELECT * FROM PlayersForLevel",
+        ]);
 
     conn.Reducers.OnAdd += (ReducerEventContext ctx, uint id, uint indexed) =>
     {
@@ -127,30 +140,46 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     // Now unsubscribe and check that the unsubscribe is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
-    handle?.UnsubscribeThen((ctx) =>
-    {
-        Log.Debug("Received Unsubscribe");
-        ValidateBTreeIndexes(ctx);
-        waiting--;
-    });
-
+    handle?.UnsubscribeThen(
+        (ctx) =>
+        {
+            Log.Debug("Received Unsubscribe");
+            ValidateBTreeIndexes(ctx);
+            waiting--;
+        }
+    );
 
     // Views test
 
     Log.Debug("Checking Views are populated");
     Debug.Assert(context.Db.MyPlayer != null, "context.Db.MyPlayer != null");
     Debug.Assert(context.Db.PlayersForLevel != null, "context.Db.PlayersForLevel != null");
-    Debug.Assert(context.Db.MyPlayer.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}");
-    Debug.Assert(context.Db.PlayersForLevel.Count > 0, $"context.Db.PlayersForLevel.Count = {context.Db.PlayersForLevel.Count}");
+    Debug.Assert(
+        context.Db.MyPlayer.Count > 0,
+        $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}"
+    );
+    Debug.Assert(
+        context.Db.PlayersForLevel.Count > 0,
+        $"context.Db.PlayersForLevel.Count = {context.Db.PlayersForLevel.Count}"
+    );
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
-    var expectedPlayer = new Player { Id = 1, Identity = context.Identity!.Value, Name = "NewPlayer" };
-    Log.Debug("MyPlayer Iter count: " + (viewIterRows != null ? viewIterRows.Count().ToString() : "null"));
+    var expectedPlayer = new Player
+    {
+        Id = 1,
+        Identity = context.Identity!.Value,
+        Name = "NewPlayer",
+    };
+    Log.Debug(
+        "MyPlayer Iter count: " + (viewIterRows != null ? viewIterRows.Count().ToString() : "null")
+    );
     Debug.Assert(viewIterRows != null && viewIterRows.Any());
-    Log.Debug("Validating View row data " +
-              $"Id={expectedPlayer.Id}, Identity={expectedPlayer.Identity}, Name={expectedPlayer.Name} => " +
-              $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}");
+    Log.Debug(
+        "Validating View row data "
+            + $"Id={expectedPlayer.Id}, Identity={expectedPlayer.Identity}, Name={expectedPlayer.Name} => "
+            + $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}"
+    );
     Debug.Assert(viewIterRows.First().Equals(expectedPlayer));
 
     Log.Debug("Calling RemoteQuery on View");
@@ -165,18 +194,30 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         Id = 1,
         Identity = context.Identity!.Value,
         Name = "NewPlayer",
-        Level = 1
+        Level = 1,
     };
-    Log.Debug("PlayersForLevel Iter count: " + (anonViewIterRows != null ? anonViewIterRows.Count().ToString() : "null"));
+    Log.Debug(
+        "PlayersForLevel Iter count: "
+            + (anonViewIterRows != null ? anonViewIterRows.Count().ToString() : "null")
+    );
     Debug.Assert(anonViewIterRows != null && anonViewIterRows.Any());
-    Log.Debug("Validating Anonymous View row data " +
-              $"Id={expectedPlayerAndLevel.Id}, Identity={expectedPlayerAndLevel.Identity}, Name={expectedPlayerAndLevel.Name}, Level={expectedPlayerAndLevel.Level} => " +
-              $"Id={anonViewIterRows.First().Id}, Identity={anonViewIterRows.First().Identity}, Name={anonViewIterRows.First().Name}, Level={anonViewIterRows.First().Level}");
+    Log.Debug(
+        "Validating Anonymous View row data "
+            + $"Id={expectedPlayerAndLevel.Id}, Identity={expectedPlayerAndLevel.Identity}, Name={expectedPlayerAndLevel.Name}, Level={expectedPlayerAndLevel.Level} => "
+            + $"Id={anonViewIterRows.First().Id}, Identity={anonViewIterRows.First().Identity}, Name={anonViewIterRows.First().Name}, Level={anonViewIterRows.First().Level}"
+    );
     Debug.Assert(anonViewIterRows.First().Equals(expectedPlayerAndLevel));
 
     Log.Debug("Calling RemoteQuery on Anonymous View");
     var anonViewRemoteQueryRows = context.Db.PlayersForLevel.RemoteQuery("WHERE Level = 1");
-    Log.Debug("PlayersForLevel RemoteQuery count: " + (anonViewRemoteQueryRows != null ? anonViewRemoteQueryRows.Result.Length.ToString() : "null"));
+    Log.Debug(
+        "PlayersForLevel RemoteQuery count: "
+            + (
+                anonViewRemoteQueryRows != null
+                    ? anonViewRemoteQueryRows.Result.Length.ToString()
+                    : "null"
+            )
+    );
     Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
     Debug.Assert(anonViewRemoteQueryRows.Result.First().Equals(expectedPlayerAndLevel));
 }
