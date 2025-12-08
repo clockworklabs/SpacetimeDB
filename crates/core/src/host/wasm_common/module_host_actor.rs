@@ -8,11 +8,11 @@ use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ViewCallResult, ViewOutcome,
+    call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
+    ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, ViewCallResult,
+    ViewOutcome,
 };
-use crate::host::scheduler::QueueItem;
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -446,17 +446,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(crate) fn call_scheduled_reducer(
-        &mut self,
-        item: QueueItem,
-    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
-        let module = &self.common.info.clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
-        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
-        self.trapped = trapped;
-        res
-    }
-
     pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
@@ -468,6 +457,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
 
     pub async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
         let (res, trapped) = self.common.call_procedure(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
+    }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        &mut self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        let (res, trapped) = self.common.call_scheduled_function(params, &mut self.instance).await;
         self.trapped = trapped;
         res
     }
@@ -1245,6 +1243,14 @@ impl InstanceCommon {
     /// Empty the system tables tracking clients without running any lifecycle reducers.
     pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.info.relational_db().clear_all_clients().map_err(Into::into)
+    }
+
+    pub(crate) async fn call_scheduled_function<I: WasmInstance>(
+        &mut self,
+        params: ScheduledFunctionParams,
+        inst: &mut I,
+    ) -> (CallScheduledFunctionResult, bool) {
+        crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
     }
 }
 /// VM-related metrics for reducer execution.

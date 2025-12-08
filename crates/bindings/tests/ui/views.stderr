@@ -63,20 +63,20 @@ error[E0573]: expected type, found function `scheduled_table_view`
     |                             similarly named trait `scheduled_table__view` defined here
 
 error[E0412]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:221:55
+   --> tests/ui/views.rs:220:55
     |
-221 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+220 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
     |                                                       ^ not found in this scope
     |
 help: you might be missing a type parameter
     |
-221 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
+220 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
     |                          +++
 
 error[E0412]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:221:55
+   --> tests/ui/views.rs:220:55
     |
-221 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+220 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
     |                                                       ^ not found in this scope
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
@@ -430,9 +430,9 @@ note: required by a bound in `Col::<T, V>::eq`
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
 
 error[E0277]: the trait bound `u32: RHS<PlayerInfo, u8>` is not satisfied
-   --> tests/ui/views.rs:183:31
+   --> tests/ui/views.rs:182:31
     |
-183 |         .r#where(|a| a.age.eq(4200u32))
+182 |         .r#where(|a| a.age.eq(4200u32))
     |                            -- ^^^^^^^ the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
     |                            |
     |                            required by a bound introduced by this call
@@ -447,9 +447,9 @@ note: required by a bound in `Col::<T, V>::eq`
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
 
 error[E0308]: mismatched types
-   --> tests/ui/views.rs:194:62
+   --> tests/ui/views.rs:193:62
     |
-194 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
+193 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
     |                                                           -- ^^^^^^^^^^ expected `IxCol<Player, u32>`, found `IxCol<Player, Identity>`
     |                                                           |
     |                                                           arguments to this method are incorrect
@@ -463,29 +463,29 @@ note: method defined here
     |            ^^
 
 error[E0609]: no field `age` on type `&PlayerInfoIxCols`
-   --> tests/ui/views.rs:204:72
+   --> tests/ui/views.rs:203:72
     |
-204 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
+203 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
     |                                                                        ^^^ unknown field
     |
     = note: available fields are: `identity`, `weight`
 
 error[E0308]: mismatched types
-   --> tests/ui/views.rs:212:5
+   --> tests/ui/views.rs:211:5
     |
-211 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+210 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
     |                                                              ------------- expected `Query<Player>` because of return type
-212 | /     ctx.from
-213 | |         .player()
-214 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
-215 | |         .build()
+211 | /     ctx.from
+212 | |         .player()
+213 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
+214 | |         .build()
     | |________________^ expected `Query<Player>`, found `Query<PlayerInfo>`
     |
     = note: expected struct `Query<Player>`
                found struct `Query<PlayerInfo>`
 
 error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the current scope
-   --> tests/ui/views.rs:222:14
+   --> tests/ui/views.rs:221:14
     |
-222 |     ctx.from.xyz().build()
+221 |     ctx.from.xyz().build()
     |              ^^^ method not found in `QueryBuilder`
