@@ -220,6 +220,7 @@ pub fn create_segment_writer<R: Repo>(
         bytes_written: Header::LEN as u64,
 
         max_records_in_commit: opts.max_records_in_commit,
+        flush_on_commit: opts.flush_on_commit,
 
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     })
@@ -294,6 +295,7 @@ pub fn resume_segment_writer<R: Repo>(
         bytes_written: size_in_bytes,
 
         max_records_in_commit: opts.max_records_in_commit,
+        flush_on_commit: opts.flush_on_commit,
 
         offset_index_head: create_offset_index_writer(repo, offset, opts),
     }))

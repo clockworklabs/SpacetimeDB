@@ -101,6 +101,7 @@ pub struct Writer<W: io::Write> {
     pub(crate) bytes_written: u64,
 
     pub(crate) max_records_in_commit: NonZeroU16,
+    pub(crate) flush_on_commit: bool,
 
     pub(crate) offset_index_head: Option<OffsetIndexWriter>,
 }
@@ -138,7 +139,9 @@ impl<W: io::Write> Writer<W> {
             return Ok(None);
         }
         let checksum = self.commit.write(&mut self.inner)?;
-        self.inner.flush()?;
+        if self.flush_on_commit {
+            self.inner.flush()?;
+        }
 
         let commit_len = self.commit.encoded_len() as u64;
         self.offset_index_head.as_mut().map(|index| {
@@ -164,6 +167,10 @@ impl<W: io::Write> Writer<W> {
             tx_range: tx_range_start..self.commit.min_tx_offset,
             checksum,
         }))
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
     }
 
     /// Get the current epoch.
@@ -943,6 +950,7 @@ mod tests {
                 bytes_written: 0,
 
                 max_records_in_commit,
+                flush_on_commit: true,
 
                 offset_index_head: None,
             };
@@ -973,6 +981,7 @@ mod tests {
             bytes_written: 0,
 
             max_records_in_commit: NonZeroU16::MAX,
+            flush_on_commit: true,
             offset_index_head: None,
         };
 

@@ -161,6 +161,7 @@ impl<R: Repo, T> Generic<R, T> {
         // results in a huge segment.
         let should_rotate = !writer.is_empty() && writer.len() + sz as u64 > self.opts.max_segment_size;
         let writer = if should_rotate {
+            self.head.flush()?;
             self.sync();
             self.start_new_segment()?
         } else {
@@ -176,6 +177,10 @@ impl<R: Repo, T> Generic<R, T> {
         });
         self.panicked = false;
         ret
+    }
+
+    pub fn flush(&mut self) -> io::Result<()> {
+        self.head.flush()
     }
 
     /// Force the currently active segment to be flushed to storage.

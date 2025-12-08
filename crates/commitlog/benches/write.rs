@@ -14,6 +14,7 @@ struct Params {
     txs_per_commit: NonZeroU16,
     total_appends: u64,
     fsync_every: u64,
+    flush_on_commit: Option<u64>,
 }
 
 impl Params {
@@ -23,6 +24,7 @@ impl Params {
             txs_per_commit: NonZeroU16::new(1).unwrap(),
             total_appends: 1_000,
             fsync_every: 32,
+            flush_on_commit: None,
         }
     }
 }
@@ -31,8 +33,8 @@ impl fmt::Display for Params {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "n={} tx/commit={} fsync={}",
-            self.total_appends, self.txs_per_commit, self.fsync_every
+            "n={} tx/commit={} fsync={} flush-on-commit={:?}",
+            self.total_appends, self.txs_per_commit, self.fsync_every, self.flush_on_commit,
         )
     }
 }
@@ -52,12 +54,14 @@ fn bench_append(c: &mut Criterion, label: &str, params: Params) {
                  txs_per_commit,
                  total_appends,
                  fsync_every,
+                 flush_on_commit,
              }| {
                 let tmp = tempdir_in(".").unwrap();
                 let clog = Commitlog::open(
                     CommitLogDir::from_path_unchecked(tmp.path()),
                     Options {
                         max_records_in_commit: *txs_per_commit,
+                        flush_on_commit: flush_on_commit.is_none(),
                         ..<_>::default()
                     },
                     None,
@@ -74,6 +78,9 @@ fn bench_append(c: &mut Criterion, label: &str, params: Params) {
                                 clog.flush().unwrap();
                                 retry = Some(txdata);
                             }
+                        }
+                        if flush_on_commit.is_some_and(|every| i % every == 0) {
+                            clog.flush_to_disk().unwrap();
                         }
                         if i % fsync_every == 0 {
                             clog.flush_and_sync().unwrap();
@@ -120,11 +127,26 @@ fn mixed_payloads_with_batching(c: &mut Criterion) {
     bench_append(c, "mixed payloads with batching", params);
 }
 
+fn mixed_payloads_with_manual_flush(c: &mut Criterion) {
+    let params = Params {
+        flush_on_commit: Some(16),
+        ..Params::with_payloads([
+            Payload::new([b'a'; 64]),
+            Payload::new([b'b'; 512]),
+            Payload::new([b'c'; 1024]),
+            Payload::new([b'd'; 4096]),
+            Payload::new([b'e'; 8102]),
+        ])
+    };
+    bench_append(c, "mixed payloads with manual flush", params);
+}
+
 criterion_group!(
     benches,
     baseline,
     large_payload,
     mixed_payloads,
-    mixed_payloads_with_batching
+    mixed_payloads_with_batching,
+    mixed_payloads_with_manual_flush,
 );
 criterion_main!(benches);
