@@ -1,52 +1,41 @@
 error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
-  --> tests/ui/views2.rs:17:1
+  --> tests/ui/views2.rs:21:1
    |
-17 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+21 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0573]: expected type, found function `scheduled_table_view`
- --> tests/ui/views2.rs:5:56
+ --> tests/ui/views2.rs:9:56
   |
-5 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
+9 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
   |                             ---------------            ^^^^^^^^^^^^^^^^^^^^ help: a trait with a similar name exists: `scheduled_table__view`
   |                             |
   |                             similarly named trait `scheduled_table__view` defined here
 
-error[E0412]: cannot find type `Player` in this scope
-  --> tests/ui/views2.rs:17:72
-   |
-17 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-   |                                                                        ^^^^^^ not found in this scope
-   |
-help: you might be missing a type parameter
-   |
-17 | fn scheduled_table_view<Player>(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-   |                        ++++++++
-
-warning: unused imports: `Identity` and `table`
- --> tests/ui/views2.rs:1:19
+warning: unused import: `Identity`
+ --> tests/ui/views2.rs:1:32
   |
 1 | use spacetimedb::{table, view, Identity, ViewContext};
-  |                   ^^^^^        ^^^^^^^^
+  |                                ^^^^^^^^
   |
   = note: `#[warn(unused_imports)]` on by default
 
 error[E0631]: type mismatch in function arguments
-  --> tests/ui/views2.rs:5:56
+  --> tests/ui/views2.rs:9:56
    |
- 5 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
+ 9 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
    | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^---
    | |                                                      |
    | |                                                      expected due to this
    | required by a bound introduced by this call
 ...
-17 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+21 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
    | ------------------------------------------------------------------------------ found signature defined here
    |
    = note: expected function signature `for<'a> fn(&'a ReducerContext, ScheduledTable) -> _`
               found function signature `fn(&ViewContext, ScheduledTable) -> _`
-   = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<{type error}, {type error}> {scheduled_table_view}` to implement `Reducer<'_, (ScheduledTable,)>`
-   = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<{type error}, {type error}> {scheduled_table_view}` to implement `ExportFunctionForScheduledTable<'_, ScheduledTable, {type error}>`
+   = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `Reducer<'_, (ScheduledTable,)>`
+   = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `ExportFunctionForScheduledTable<'_, ScheduledTable, {type error}>`
 note: required by a bound in `scheduled_typecheck`
   --> src/rt.rs
    |
@@ -54,5 +43,5 @@ note: required by a bound in `scheduled_typecheck`
    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`
 help: consider wrapping the function in a closure
    |
- 5 | #[spacetimedb::table(name = scheduled_table, scheduled(|arg0: &ReducerContext, arg1: ScheduledTable| scheduled_table_view(/* &ViewContext */, arg1)))]
+ 9 | #[spacetimedb::table(name = scheduled_table, scheduled(|arg0: &ReducerContext, arg1: ScheduledTable| scheduled_table_view(/* &ViewContext */, arg1)))]
    |                                                        +++++++++++++++++++++++++++++++++++++++++++++                     ++++++++++++++++++++++++++

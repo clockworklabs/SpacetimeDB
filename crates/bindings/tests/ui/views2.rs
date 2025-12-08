@@ -1,6 +1,10 @@
 use spacetimedb::{table, view, Identity, ViewContext};
 
-
+#[table(name = player)]
+struct Player {
+    #[primary_key]
+    player_id: u64,
+}
 /// Cannot use a view as a scheduled function
 #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
 struct ScheduledTable {
@@ -19,3 +23,4 @@ fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
 }
 
 fn main() {}
+
