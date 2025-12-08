@@ -712,6 +712,8 @@ fn eval_module<'scope>(
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
 
+    error::parse_and_insert_sourcemap(scope, module);
+
     Ok((module, value))
 }
 
