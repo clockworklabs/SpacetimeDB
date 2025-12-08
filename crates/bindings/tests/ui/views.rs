@@ -1,4 +1,4 @@
-use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, ReducerContext, ViewContext, Query};
+use spacetimedb::{reducer, table, view, AnonymousViewContext, Identity, Query, ReducerContext, ViewContext};
 
 #[table(name = test)]
 struct Test {
@@ -164,25 +164,17 @@ struct PlayerInfo {
     age: u8,
 }
 
-
 /// Comparing incompatible types in `where` condition: Identity != int
 #[view(name = view_bad_where, public)]
 fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
-    ctx.from
-        .player()
-        .r#where(|a| a.identity.eq(42))
-        .build()
+    ctx.from.player().r#where(|a| a.identity.eq(42)).build()
 }
 
 /// Comparing incompatible types in `where` condition: u8 != u32
 #[view(name = view_bad_where_int_types, public)]
 fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
-    ctx.from
-        .player_info()
-        .r#where(|a| a.age.eq(4200u32))
-        .build()
+    ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
 }
-
 
 /// Joining incompatible types
 /// -- weight is u32, identity is Identity
@@ -190,7 +182,7 @@ fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
 fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
     ctx.from
         .player_info()
-        .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity)) 
+        .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
         .build()
 }
 
@@ -200,7 +192,7 @@ fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
 fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
     ctx.from
         .player()
-        .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age)) 
+        .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
         .build()
 }
 
@@ -210,7 +202,7 @@ fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
 fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
     ctx.from
         .player()
-        .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity)) 
+        .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
         .build()
 }
 
@@ -218,7 +210,7 @@ fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
 /// -- xyz table does not exist
 #[view(name = view_nonexistent_table, public)]
 fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
-    ctx.from.xyz().build() 
+    ctx.from.xyz().build()
 }
 
 fn main() {}
