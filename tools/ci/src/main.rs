@@ -350,7 +350,6 @@ impl Drop for ServerState {
 }
 
 fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
-    // TODO: If we set --remote-server, check that it's not already in there.
     let mut args: Vec<_> = args.iter().cloned().collect();
 
     let _server = ServerState::start(server_mode, &mut args)?;
@@ -509,13 +508,15 @@ fn run_smoketests_parallel(
         no_docker_logs,
     );
 
-    // TODO: Handle --local-only tests
     if list.is_some() {
-        anyhow::bail!("--list is not supported in parallel mode");
+        anyhow::bail!("--list does not make sense with --parallel");
     }
     if remote_server.is_some() {
+        // This is just because we manually provide --remote-server later, so it requires some refactoring.
         anyhow::bail!("--remote-server is not supported in parallel mode");
     }
+
+    // TODO: Handle --local-only tests
 
     println!("Listing smoketests for parallel execution..");
 
@@ -527,13 +528,14 @@ fn run_smoketests_parallel(
         }
         let list_cmdline = format!("{python} -m smoketests {}", list_args.join(" "));
 
-        // TODO: do actually check the return code here. and make --list=json not return non-zero if there are errors.
-        let list_output = cmd!("bash", "-lc", list_cmdline)
+        let output = cmd!("bash", "-lc", list_cmdline)
             .stderr_to_stdout()
-            .unchecked()
-            .read()?;
+            .read()
+            .expect("Failed to list smoketests");
 
-        let parsed: serde_json::Value = serde_json::from_str(&list_output)?;
+        println!("Output: {output}");
+
+        let parsed: serde_json::Value = serde_json::from_str(&output)?;
         let tests = parsed.get("tests").and_then(|v| v.as_array()).cloned().unwrap();
         let errors = parsed
             .get("errors")

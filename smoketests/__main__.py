@@ -166,6 +166,7 @@ def main():
                 "errors": failed_tests,
             }
             print(json.dumps(output))
+            exit(0)
 
         exit(1 if any_failed else 0)
 
