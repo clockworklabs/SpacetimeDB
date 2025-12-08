@@ -516,6 +516,7 @@ impl MutTxId {
 
     /// Drop the backing table of a view and update the system tables.
     pub fn drop_view(&mut self, view_id: ViewId) -> Result<()> {
+        let st_view_row = self.lookup_st_view(view_id)?;
         // Drop the view's metadata
         self.drop_st_view(view_id)?;
         self.drop_st_view_param(view_id)?;
@@ -527,7 +528,7 @@ impl MutTxId {
         if let StViewRow {
             table_id: Some(table_id),
             ..
-        } = self.lookup_st_view(view_id)?
+        } = st_view_row
         {
             return self.drop_table(table_id);
         };
