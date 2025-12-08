@@ -8,6 +8,7 @@ use crate::{
     replica_context::ReplicaContext,
 };
 use core::fmt;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_sats::Serialize;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
@@ -350,7 +351,7 @@ impl JsStackTraceFrame {
 
         let sourcemap = scope
             .get_slot()
-            .and_then(|super::SourceMaps(maps)| maps.get(&(script_id as i32)));
+            .and_then(|SourceMaps(maps)| maps.get(&(script_id as i32)));
 
         // sourcemap uses 0-based line/column numbers, while v8 uses 1-based
         if let Some(token) = sourcemap.and_then(|sm| sm.lookup_token(line as u32 - 1, column as u32 - 1)) {
@@ -433,6 +434,37 @@ impl fmt::Display for JsStackTraceFrame {
 
         Ok(())
     }
+}
+
+/// Mappings from a script id to its source map.
+#[derive(Default)]
+pub(super) struct SourceMaps(IntMap<i32, sourcemap::SourceMap>);
+
+pub(super) fn parse_and_insert_sourcemap(scope: &mut PinScope<'_, '_>, module: Local<'_, v8::Module>) {
+    let source_map_url = module.get_unbound_module_script(scope).get_source_mapping_url(scope);
+    let source_map_url = (!source_map_url.is_null_or_undefined()).then_some(source_map_url);
+
+    if let Some((script_id, source_map_url)) = Option::zip(module.script_id(), source_map_url) {
+        let mut source_map_url = source_map_url.to_rust_string_lossy(scope);
+        // Hacky workaround for `decode_data_url` expecting a specific string without `charset=utf-8`
+        // Can remove once <https://github.com/getsentry/rust-sourcemap/pull/137> gets into a release
+        if source_map_url.starts_with("data:application/json;charset=utf-8;base64,") {
+            let start = "data:application/json;".len();
+            let len = "charset=utf-8;".len();
+            source_map_url.replace_range(start..start + len, "");
+        }
+        if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+            let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
+            maps.insert(script_id, sourcemap);
+        }
+    }
+}
+
+fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnce() -> T) -> &mut T {
+    if isolate.get_slot::<T>().is_none() {
+        isolate.set_slot(default());
+    }
+    isolate.get_slot_mut().unwrap()
 }
 
 impl JsError {
