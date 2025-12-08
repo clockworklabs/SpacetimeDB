@@ -657,8 +657,7 @@ fn main() -> Result<()> {
             if matches!(start_server, StartServer::Yes { .. }) {
                 println!("Building SpacetimeDB..");
 
-                // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
-                // before the server is up.
+                // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
                 bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
                 no_build_cli = true;
             }

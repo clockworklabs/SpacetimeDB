@@ -83,8 +83,6 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
-      - name: Build crates
-        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
       - name: Start Docker daemon
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
