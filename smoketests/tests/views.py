@@ -426,6 +426,43 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 """)
 
 
+class AutoMigrateDropView(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    MODULE_CODE_DROP_VIEW = """
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+"""
+
+    def test_auto_migration_drop_view(self):
+        """Assert that views can be dropped in an auto-migration"""
+
+        self.write_module_code(self.MODULE_CODE_DROP_VIEW)
+        self.publish_module(self.database_identity, clear=False, break_clients=False)
+
+
 class AutoMigrateViewsTrapped(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
