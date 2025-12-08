@@ -6,7 +6,7 @@ use serde_json;
 use std::collections::{HashMap, HashSet};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::thread::sleep;
+use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, fs};
 use tempfile::TempDir;
@@ -239,16 +239,22 @@ fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
                 return Ok(());
             }
         }
-        sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(500));
     }
     anyhow::bail!("Timed out waiting for SpacetimeDB");
 }
 
-#[derive(Debug)]
 pub enum ServerState {
     None,
-    Yes { pid: i32, data_dir: TempDir },
-    Docker { compose_file: PathBuf, project: String },
+    Yes {
+        handle: thread::JoinHandle<()>,
+        data_dir: TempDir,
+    },
+    Docker {
+        handle: thread::JoinHandle<()>,
+        compose_file: PathBuf,
+        project: String,
+    },
 }
 
 impl ServerState {
@@ -265,12 +271,22 @@ impl ServerState {
                 args.push("--remote-server".into());
                 let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
-                let compose_str = compose_file.to_string_lossy();
-                bash!(&format!(
-                    "{env_string} docker compose -f {compose_str} --project-name {project} up -d"
-                ))?;
+                let compose_str = compose_file.to_string_lossy().to_string();
+
+                let handle = thread::spawn({
+                    let project = project.clone();
+                    move || {
+                        let _ = bash!(&format!(
+                            "{env_string} docker compose -f {compose_str} --project-name {project} up"
+                        ));
+                    }
+                });
                 wait_until_http_ready(Duration::from_secs(60), &server_url)?;
-                Ok(ServerState::Docker { compose_file, project })
+                Ok(ServerState::Docker {
+                    handle,
+                    compose_file,
+                    project,
+                })
             }
             StartServer::Yes => {
                 // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
@@ -287,34 +303,12 @@ impl ServerState {
                 let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
                 println!("Starting server..");
-                let pid_str;
-                if cfg!(target_os = "windows") {
-                    pid_str = cmd!(
-                        "powershell",
-                        "-NoProfile",
-                        "-Command",
-                        &format!(
-                            "$p = Start-Process cargo -ArgumentList 'run -p spacetimedb-cli -- start {arg_string}' -PassThru; $p.Id"
-                        )
-                    )
-                    .read()
-                    .unwrap_or_default();
-                } else {
-                    let run =
-                        format!("nohup cargo run -p spacetimedb-cli -- start {arg_string} >/dev/null 2>&1 & echo $!");
-                    println!("Running: {run}");
-                    // TODO: Maybe we do this in a thread instead? Then it's easier to kill
-                    pid_str = cmd!("bash", "-lc", &run).read().unwrap_or_default();
-                }
+                let handle = thread::spawn(move || {
+                    let _ = bash!(&format!("cargo run -p spacetimedb-cli -- start {arg_string}"));
+                });
                 println!("Waiting for server to start..");
                 wait_until_http_ready(Duration::from_secs(60), &server_url)?;
-                Ok(ServerState::Yes {
-                    pid: pid_str
-                        .trim()
-                        .parse::<i32>()
-                        .expect("Failed to get PID of started process"),
-                    data_dir,
-                })
+                Ok(ServerState::Yes { handle, data_dir })
             }
         }
     }
@@ -322,27 +316,22 @@ impl ServerState {
 
 impl Drop for ServerState {
     fn drop(&mut self) {
-        // TODO: Make an effort to run the wind-down beahvior if we ctrl-c the process as well
+        // TODO: Consider doing a dance to have the server thread die, instead of just dying with this process.
         match self {
             ServerState::None => {}
-            ServerState::Docker { compose_file, project } => {
+            ServerState::Docker {
+                handle: _,
+                compose_file,
+                project,
+            } => {
                 println!("Shutting down server..");
                 let compose_str = compose_file.to_string_lossy();
                 let _ = bash!(&format!(
                     "docker compose -f {compose_str} --project-name {project} down"
                 ));
             }
-            ServerState::Yes { pid, data_dir } => {
-                println!("Shutting down server..");
-                if cfg!(target_os = "windows") {
-                    let _ = bash!(&format!(
-                        "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
-                        pid
-                    ));
-                } else {
-                    // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
-                    let _ = bash!(&format!("kill {}", pid));
-                }
+            ServerState::Yes { handle: _, data_dir } => {
+                println!("Shutting down server (temp data-dir will be dropped)..");
                 let _ = data_dir;
             }
         }
