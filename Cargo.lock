@@ -875,6 +875,7 @@ dependencies = [
  "log",
  "regex",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

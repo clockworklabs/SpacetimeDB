@@ -11,3 +11,4 @@ clap.workspace = true
 regex.workspace = true
 duct.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true

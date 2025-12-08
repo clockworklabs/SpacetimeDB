@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use std::{env, fs};
+use tempfile::TempDir;
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -205,15 +206,8 @@ fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
 #[derive(Debug, Clone)]
 pub enum StartServer {
     No,
-    Yes { random_port: bool },
-    Docker { compose_file: PathBuf, random_port: bool },
-}
-
-#[derive(Debug, Clone)]
-pub enum ServerState {
-    None,
-    Yes { pid: i32 },
-    Docker { compose_file: PathBuf, project: String },
+    Yes,
+    Docker { compose_file: PathBuf },
 }
 
 fn find_free_port() -> Result<u16> {
@@ -230,69 +224,72 @@ fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
-        match bash!(&format!("cargo run -p spacetimedb-cli -- server ping {server_url}")) {
-            Ok(_) => return Ok(()),
-            Err(_) => {}
+        // Use duct::cmd directly so we can suppress output from the ping command.
+        let status = cmd(
+            "cargo",
+            &["run", "-p", "spacetimedb-cli", "--", "server", "ping", server_url],
+        )
+        .stdout_null()
+        .stderr_null()
+        .unchecked()
+        .run();
+
+        if let Ok(status) = status {
+            if status.status.success() {
+                return Ok(());
+            }
         }
         sleep(Duration::from_millis(500));
     }
     anyhow::bail!("Timed out waiting for SpacetimeDB");
 }
 
-fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
-    // TODO: If we set --remote-server, check that it's not already in there.
-    let mut args: Vec<_> = args.iter().cloned().collect();
+#[derive(Debug)]
+pub enum ServerState {
+    None,
+    Yes { pid: i32, data_dir: TempDir },
+    Docker { compose_file: PathBuf, project: String },
+}
 
-    let server_state = match server_mode {
-        StartServer::No => ServerState::None,
-        StartServer::Docker {
-            compose_file,
-            random_port,
-        } => {
-            println!("Starting server..");
-            let env_string;
-            let project;
-            let server_url;
-            if random_port {
+impl ServerState {
+    fn start(start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
+        match start_mode {
+            StartServer::No => Ok(Self::None),
+            StartServer::Docker { compose_file } => {
+                println!("Starting server..");
                 let server_port = find_free_port()?;
                 let pg_port = find_free_port()?;
                 let tracy_port = find_free_port()?;
-                env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
-                project = format!("spacetimedb-smoketests-{server_port}");
+                let env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
+                let project = format!("spacetimedb-smoketests-{server_port}");
                 args.push("--remote-server".into());
-                server_url = format!("http://localhost:{server_port}");
+                let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
-            } else {
-                env_string = String::new();
-                project = "spacetimedb-smoketests".to_string();
-                server_url = "http://localhost:3000".to_string();
-            };
-            let compose_str = compose_file.to_string_lossy();
-            bash!(&format!(
-                "{env_string} docker compose -f {compose_str} --project-name {project} up -d"
-            ))?;
-            wait_until_http_ready(Duration::from_secs(60), &server_url)?;
-            ServerState::Docker { compose_file, project }
-        }
-        StartServer::Yes { random_port } => {
-            // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
-            let arg_string;
-            let server_url;
-            if random_port {
+                let compose_str = compose_file.to_string_lossy();
+                bash!(&format!(
+                    "{env_string} docker compose -f {compose_str} --project-name {project} up -d"
+                ))?;
+                wait_until_http_ready(Duration::from_secs(60), &server_url)?;
+                Ok(ServerState::Docker { compose_file, project })
+            }
+            StartServer::Yes => {
+                // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
+
+                // Create a temporary data directory for this server instance.
+                let data_dir = TempDir::new()?;
+                let data_dir_str = data_dir.path().to_string_lossy();
+
                 let server_port = find_free_port()?;
                 let pg_port = find_free_port()?;
-                arg_string = format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port}");
+                let arg_string =
+                    format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port} --data-dir {data_dir_str}");
                 args.push("--remote-server".into());
-                server_url = format!("http://localhost:{server_port}");
+                let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
-            } else {
-                arg_string = "--pg-port 5432".into();
-                server_url = "http://localhost:3000".to_string();
-            }
-            println!("Starting server..");
-            let pid_str;
-            if cfg!(target_os = "windows") {
-                pid_str = cmd!(
+                println!("Starting server..");
+                let pid_str;
+                if cfg!(target_os = "windows") {
+                    pid_str = cmd!(
                         "powershell",
                         "-NoProfile",
                         "-Command",
@@ -302,65 +299,78 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
                     )
                     .read()
                     .unwrap_or_default();
-            } else {
-                let run = format!("nohup cargo run -p spacetimedb-cli -- start {arg_string} >/dev/null 2>&1 & echo $!");
-                println!("Running: {run}");
-                // TODO: Maybe we do this in a thread instead? Then it's easier to kill
-                pid_str = cmd!("bash", "-lc", &run).read().unwrap_or_default();
-            }
-            println!("Waiting for server to start..");
-            wait_until_http_ready(Duration::from_secs(60), &server_url)?;
-            ServerState::Yes {
-                pid: pid_str
-                    .trim()
-                    .parse::<i32>()
-                    .expect("Failed to get PID of started process"),
+                } else {
+                    let run =
+                        format!("nohup cargo run -p spacetimedb-cli -- start {arg_string} >/dev/null 2>&1 & echo $!");
+                    println!("Running: {run}");
+                    // TODO: Maybe we do this in a thread instead? Then it's easier to kill
+                    pid_str = cmd!("bash", "-lc", &run).read().unwrap_or_default();
+                }
+                println!("Waiting for server to start..");
+                wait_until_http_ready(Duration::from_secs(60), &server_url)?;
+                Ok(ServerState::Yes {
+                    pid: pid_str
+                        .trim()
+                        .parse::<i32>()
+                        .expect("Failed to get PID of started process"),
+                    data_dir,
+                })
             }
         }
-    };
+    }
+}
 
-    println!("Running smoketests..");
+impl Drop for ServerState {
+    fn drop(&mut self) {
+        // TODO: Make an effort to run the wind-down beahvior if we ctrl-c the process as well
+        match self {
+            ServerState::None => {}
+            ServerState::Docker { compose_file, project } => {
+                println!("Shutting down server..");
+                let compose_str = compose_file.to_string_lossy();
+                let _ = bash!(&format!(
+                    "docker compose -f {compose_str} --project-name {project} down"
+                ));
+            }
+            ServerState::Yes { pid, data_dir } => {
+                println!("Shutting down server..");
+                if cfg!(target_os = "windows") {
+                    let _ = bash!(&format!(
+                        "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
+                        pid
+                    ));
+                } else {
+                    // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
+                    let _ = bash!(&format!("kill {}", pid));
+                }
+                let _ = data_dir;
+            }
+        }
+    }
+}
+
+fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
+    // TODO: If we set --remote-server, check that it's not already in there.
+    let mut args: Vec<_> = args.iter().cloned().collect();
+
+    let _server = ServerState::start(server_mode, &mut args)?;
+
+    println!("Running smoketests: {}", args.join(" "));
     let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
-
-    // TODO: Make an effort to run the wind-down behavior if we ctrl-C this process
-    //    match server_state {
-    //        ServerState::None => {}
-    //        ServerState::Docker { compose_file, project } => {
-    //            println!("Shutting down server..");
-    //            let compose_str = compose_file.to_string_lossy();
-    //            let _ = bash!(&format!(
-    //                "docker compose -f {compose_str} --project-name {project} down"
-    //            ));
-    //        }
-    //        ServerState::Yes { pid } => {
-    //            println!("Shutting down server..");
-    //            if cfg!(target_os = "windows") {
-    //                let _ = bash!(&format!(
-    //                    "powershell -NoProfile -Command \"Stop-Process -Id {} -Force -ErrorAction SilentlyContinue\"",
-    //                    pid
-    //                ));
-    //            } else {
-    //                // TODO: I keep getting errors about the pid not existing.. but the servers seem to shut down?
-    //                let _ = bash!(&format!("kill {}", pid));
-    //            }
-    //        }
-    //    }
-
     test_result
 }
 
-fn server_start_config(start_server: bool, docker: Option<String>, random_port: bool) -> StartServer {
+fn server_start_config(start_server: bool, docker: Option<String>) -> StartServer {
     match (start_server, docker.as_ref()) {
         (start_server, Some(compose_file)) => {
             if !start_server {
                 warn!("--docker implies --start-server=true");
             }
             StartServer::Docker {
-                random_port,
                 compose_file: compose_file.into(),
             }
         }
-        (true, None) => StartServer::Yes { random_port },
+        (true, None) => StartServer::Yes,
         (false, None) => StartServer::No,
     }
 }
@@ -562,7 +572,6 @@ fn run_smoketests_parallel(
         let start_server_clone = start_server.clone();
         let python_clone = python.clone();
         let mut batch_args: Vec<String> = Vec::new();
-        // TODO: this doesn't work properly if the user passed multiple batches as input.
         batch_args.push(batch.clone());
         batch_args.extend(args.iter().cloned());
 
@@ -653,7 +662,7 @@ fn main() -> Result<()> {
             parallel,
             python,
         }) => {
-            let start_server = server_start_config(start_server, docker.clone(), parallel);
+            let start_server = server_start_config(start_server, docker.clone());
             if matches!(start_server, StartServer::Yes { .. }) {
                 println!("Building SpacetimeDB..");
 
