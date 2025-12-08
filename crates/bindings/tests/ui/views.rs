@@ -176,6 +176,12 @@ fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
 }
 
+/// Comparing incompatible types in `where` condition: u8 != u32 implicitly
+#[view(name = view_bad_where_int_types_implicit, public)]
+fn view_bad_where_int_types_implicit(ctx: &ViewContext) -> Query<PlayerInfo> {
+    ctx.from.player_info().r#where(|a| a.age.eq(4200)).build()
+}
+
 /// Joining incompatible types
 /// -- weight is u32, identity is Identity
 #[view(name = view_bad_join, public)]
