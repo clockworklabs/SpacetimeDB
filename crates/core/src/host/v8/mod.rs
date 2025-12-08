@@ -16,10 +16,9 @@ use crate::client::ClientActorId;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, call_scheduled_reducer, init_database, CallViewParams, ClientConnectedError, Instance,
-    ViewCallResult,
+    call_identity_connected, init_database, CallViewParams, ClientConnectedError, Instance, ViewCallResult,
 };
-use crate::host::scheduler::QueueItem;
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
@@ -54,6 +53,7 @@ use v8::{
 };
 
 mod budget;
+mod builtins;
 mod de;
 mod error;
 mod from_value;
@@ -362,17 +362,6 @@ impl JsInstance {
         .await
     }
 
-    pub(crate) async fn call_scheduled_reducer(
-        self: Box<Self>,
-        item: QueueItem,
-    ) -> (Result<(ReducerCallResult, Timestamp), ReducerCallError>, Box<Self>) {
-        self.send_recv(
-            JsWorkerReply::into_call_scheduled_reducer,
-            JsWorkerRequest::CallScheduledReducer(item),
-        )
-        .await
-    }
-
     pub async fn init_database(
         self: Box<Self>,
         program: Program,
@@ -403,6 +392,20 @@ impl JsInstance {
             .await;
         (*r, s)
     }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        self: Box<Self>,
+        params: ScheduledFunctionParams,
+    ) -> (CallScheduledFunctionResult, Box<Self>) {
+        // Get a handle to the current tokio runtime, and pass it to the worker
+        // so that it can execute futures.
+        let rt = tokio::runtime::Handle::current();
+        self.send_recv(
+            JsWorkerReply::into_call_scheduled_function,
+            JsWorkerRequest::CallScheduledFunction(params, rt),
+        )
+        .await
+    }
 }
 
 /// A reply from the worker in [`spawn_instance_worker`].
@@ -416,8 +419,8 @@ enum JsWorkerReply {
     CallIdentityConnected(Result<(), ClientConnectedError>),
     CallIdentityDisconnected(Result<(), ReducerCallError>),
     DisconnectClient(Result<(), ReducerCallError>),
-    CallScheduledReducer(Result<(ReducerCallResult, Timestamp), ReducerCallError>),
     InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
+    CallScheduledFunction(CallScheduledFunctionResult),
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
@@ -450,10 +453,10 @@ enum JsWorkerRequest {
     CallIdentityDisconnected(Identity, ConnectionId, bool),
     /// See [`JsInstance::disconnect_client`].
     DisconnectClient(ClientActorId),
-    /// See [`JsInstance::call_scheduled_reducer`].
-    CallScheduledReducer(QueueItem),
     /// See [`JsInstance::init_database`].
     InitDatabase(Program),
+    /// See [`JsInstance::call_scheduled_function`].
+    CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -521,6 +524,9 @@ fn spawn_instance_worker(
         // Create the isolate and scope.
         let mut isolate = new_isolate();
         scope_with_context!(let scope, &mut isolate, Context::new(scope, Default::default()));
+
+        catch_exception(scope, |scope| Ok(builtins::evalute_builtins(scope)?))
+            .expect("our builtin code shouldn't error");
 
         // Setup the JS module, find call_reducer, and maybe build the module.
         let send_result = |res| {
@@ -638,14 +644,19 @@ fn spawn_instance_worker(
                     let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
                     reply("disconnect_client", DisconnectClient(res), trapped);
                 }
-                JsWorkerRequest::CallScheduledReducer(queue_item) => {
-                    let (res, trapped) = call_scheduled_reducer(info, queue_item, call_reducer);
-                    reply("call_scheduled_reducer", CallScheduledReducer(res), trapped);
-                }
                 JsWorkerRequest::InitDatabase(program) => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
                     reply("init_database", InitDatabase(res), trapped);
+                }
+                JsWorkerRequest::CallScheduledFunction(params, rt) => {
+                    let _guard = rt.enter();
+
+                    let (res, trapped) = instance_common
+                        .call_scheduled_function(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+                    reply("call_scheduled_function", CallScheduledFunction(res), trapped);
                 }
             }
         }
@@ -663,48 +674,16 @@ fn spawn_instance_worker(
     })
 }
 
-/// Finds the source map in `code`, if any.
-fn find_source_map(code: &str) -> Option<&str> {
-    let sm_ref = "//# sourceMappingURL=";
-    code.match_indices(sm_ref).find_map(|(i, _)| {
-        let (before, after) = code.split_at(i);
-        (before.is_empty() || before.ends_with(['\r', '\n']))
-            .then(|| &after.lines().next().unwrap_or(after)[sm_ref.len()..])
-    })
-}
-
 /// Compiles, instantiate, and evaluate `code` as a module.
 fn eval_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     resource_name: Local<'scope, Value>,
-    script_id: i32,
-    code: &str,
+    code: Local<'_, v8::String>,
     resolve_deps: impl MapFnTo<ResolveModuleCallback<'scope>>,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
-    // Get the source map, if any.
-    let source_map_url = find_source_map(code)
-        .map(|sm| sm.into_string(scope))
-        .transpose()
-        .map_err(|e| e.into_range_error().throw(scope))?
-        .map(Into::into);
-
-    // Convert the code to a string.
-    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
-
-    // Assemble the source.
-    let origin = ScriptOrigin::new(
-        scope,
-        resource_name,
-        0,
-        0,
-        false,
-        script_id,
-        source_map_url,
-        false,
-        false,
-        true,
-        None,
-    );
+    // Assemble the source. v8 figures out things like the `script_id` and
+    // `source_map_url` itself, so we don't actually have to provide them.
+    let origin = ScriptOrigin::new(scope, resource_name, 0, 0, false, 0, None, false, false, true, None);
     let source = &mut Source::new(code, Some(&origin));
 
     // Compile the module.
@@ -738,11 +717,14 @@ fn eval_module<'scope>(
 
 /// Compiles, instantiate, and evaluate the user module with `code`.
 fn eval_user_module<'scope>(
-    scope: &PinScope<'scope, '_>,
+    scope: &mut PinScope<'scope, '_>,
     code: &str,
 ) -> ExcResult<(Local<'scope, v8::Module>, Local<'scope, v8::Promise>)> {
+    // Convert the code to a string.
+    let code = code.into_string(scope).map_err(|e| e.into_range_error().throw(scope))?;
+
     let name = str_from_ident!(spacetimedb_module).string(scope).into();
-    eval_module(scope, name, 0, code, resolve_sys_module)
+    eval_module(scope, name, code, resolve_sys_module)
 }
 
 /// Compiles, instantiate, and evaluate the user module with `code`
@@ -834,7 +816,7 @@ fn common_call<'scope, R, O, F>(
     budget: FunctionBudget,
     op: O,
     call: F,
-) -> ExecutionResult<Result<R, ExecutionError>>
+) -> ExecutionResult<R, ExecutionError>
 where
     O: InstanceOp,
     F: FnOnce(&mut PinScope<'scope, '_>, O) -> Result<R, ErrorOrException<ExceptionThrown>>,

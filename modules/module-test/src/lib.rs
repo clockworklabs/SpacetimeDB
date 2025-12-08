@@ -14,6 +14,7 @@ pub type TestAlias = TestA;
 // TABLE DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[cfg(feature = "test-add-column")]
 #[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
@@ -21,6 +22,24 @@ pub struct Person {
     id: u32,
     name: String,
     age: u8,
+    #[default(false)]
+    edited: bool,
+}
+
+#[cfg(not(feature = "test-add-column"))]
+#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u32,
+    name: String,
+    age: u8,
+}
+
+#[cfg(not(feature = "test-remove-table"))]
+#[spacetimedb::table(name = table_to_remove)]
+pub struct RemoveTable {
+    pub id: u32,
 }
 
 #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
@@ -214,6 +233,14 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String, age: u8) {
+    #[cfg(feature = "test-add-column")]
+    ctx.db.person().insert(Person {
+        id: 0,
+        name,
+        age,
+        edited: false,
+    });
+    #[cfg(not(feature = "test-add-column"))]
     ctx.db.person().insert(Person { id: 0, name, age });
 }
 

@@ -981,14 +981,12 @@ impl RewriteRule for ReorderDeltaJoinRhs {
     type Info = ();
 
     fn matches(plan: &Self::Plan) -> Option<Self::Info> {
-        if let PhysicalPlan::HashJoin(HashJoin { lhs, rhs, .. }, Semi::All) = plan {
-            return (match &**lhs {
-                PhysicalPlan::Filter(lhs, _) => rhs.is_delta_scan() && !lhs.is_delta_scan(),
-                lhs => rhs.is_delta_scan() && !lhs.is_delta_scan(),
-            })
-            .then_some(());
+        match plan {
+            PhysicalPlan::HashJoin(join, Semi::All) if join.rhs.is_delta_scan() && !join.lhs.is_delta_scan() => {
+                Some(())
+            }
+            _ => None,
         }
-        None
     }
 
     // Swaps both the inputs and the fields
@@ -1011,7 +1009,7 @@ impl RewriteRule for ReorderDeltaJoinRhs {
 
 /// Pull a filter above a hash join if:
 ///
-/// 1. The lhs is a delta scan
+/// 1. The lhs is a delta scan or a selection
 /// 2. The rhs has an index for the join
 ///
 /// ```text
@@ -1045,7 +1043,9 @@ impl RewriteRule for PullFilterAboveHashJoin {
         {
             if let PhysicalPlan::Filter(input, _) = &**rhs {
                 if let PhysicalPlan::TableScan(TableScan { schema, .. }, _) = &**input {
-                    return (lhs.is_delta_scan()
+                    return ((lhs.is_delta_scan()
+                        || matches!(**lhs, PhysicalPlan::Filter(..))
+                        || matches!(**lhs, PhysicalPlan::IxScan(..)))
                         && schema.indexes.iter().any(|schema| {
                             schema
                                 .index_algorithm

@@ -403,6 +403,49 @@ ctx.procedures.makeRequest().then(
 ```
 
 </TabItem>
+<TabItem value="cpp" label="Unreal C++">
+
+An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+
+```cpp
+{
+...
+   // Call the procedure without a callback
+   Context.Procedures->MakeRequest({});
+}
+
+```
+
+A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+
+```cpp
+{
+...
+   FOnMakeRequestComplete Callback;
+   BIND_DELEGATE_SAFE(Callback, this, AGameManager, OnMakeRequestComplete);
+   Context.Procedures->MakeRequest(Callback);
+}
+
+// Make sure to mark any callback functions as UFUNCTION() or they will not be executed
+void AGameManager::OnMakeRequestComplete(const FProcedureEventContext& Context, const FString& Result, bool bSuccess)
+{
+   UE_LOG(LogTemp, Log, TEXT("Procedure `MakeRequest` returned %s"), *Result);
+}
+
+```
+
+</TabItem>
+<TabItem value="blueprint" label="Unreal Blueprint">
+
+An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+
+![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
+
+A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+
+![MakeRequest with callback](/images/unreal/intro/ue-blueprint-makerequest-with-callback.png)
+
+</TabItem>
 </Tabs>
 
 See [Procedures](/procedures) for more details about procedures.
