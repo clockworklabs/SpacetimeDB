@@ -138,7 +138,7 @@ export class DbConnection extends __DbConnectionImpl<typeof REMOTE_MODULE> {
   };
 
   /** Creates a new {@link SubscriptionBuilder} to configure a subscription to the remote SpacetimeDB instance. */
-  subscriptionBuilder = (): SubscriptionBuilder => {
+  override subscriptionBuilder = (): SubscriptionBuilder => {
     return new SubscriptionBuilder(this);
   };
 }
