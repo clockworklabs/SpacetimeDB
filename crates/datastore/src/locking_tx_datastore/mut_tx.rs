@@ -465,9 +465,6 @@ impl MutTxId {
     fn delete_col_eq(&mut self, table_id: TableId, col_pos: ColId, value: &AlgebraicValue) -> Result<()> {
         let rows = self.iter_by_col_eq(table_id, col_pos, value)?;
         let ptrs_to_delete = rows.map(|row_ref| row_ref.pointer()).collect::<Vec<_>>();
-        if ptrs_to_delete.is_empty() {
-            return Err(TableError::IdNotFound(SystemTable::st_column, col_pos.0 as _).into());
-        }
 
         for ptr in ptrs_to_delete {
             // TODO(error-handling,bikeshedding): Consider correct failure semantics here.
@@ -516,6 +513,7 @@ impl MutTxId {
 
     /// Drop the backing table of a view and update the system tables.
     pub fn drop_view(&mut self, view_id: ViewId) -> Result<()> {
+        let st_view_row = self.lookup_st_view(view_id)?;
         // Drop the view's metadata
         self.drop_st_view(view_id)?;
         self.drop_st_view_param(view_id)?;
@@ -527,7 +525,7 @@ impl MutTxId {
         if let StViewRow {
             table_id: Some(table_id),
             ..
-        } = self.lookup_st_view(view_id)?
+        } = st_view_row
         {
             return self.drop_table(table_id);
         };
