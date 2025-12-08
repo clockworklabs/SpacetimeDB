@@ -165,7 +165,7 @@ struct PlayerInfo {
 }
 
 
-/// Where with mismatched types
+/// Comparing incompatible types in `where` condition: Identity != int
 #[view(name = view_bad_where, public)]
 fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
     ctx.from
@@ -174,8 +174,7 @@ fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
         .build()
 }
 
-// Where with mismatched int types 
-// u8 with 4200u32
+/// Comparing incompatible types in `where` condition: u8 != u32
 #[view(name = view_bad_where_int_types, public)]
 fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
     ctx.from
@@ -195,8 +194,8 @@ fn view_bad_join(ctx: &ViewContext) -> Query<PlayerInfo> {
         .build()
 }
 
-// Joining non-idx columna
-// -- age is not indexed
+/// Joining non-index columns
+/// -- age is not indexed
 #[view(name = view_join_non_indexed_column, public)]
 fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
     ctx.from
@@ -205,8 +204,8 @@ fn view_join_non_indexed_column(ctx: &ViewContext) -> Query<PlayerInfo> {
         .build()
 }
 
-// Right join returns right table's type
-// -- should be PlayerInfo, not Player
+/// Right join returns right table's type
+/// -- should be PlayerInfo, not Player
 #[view(name = view_right_join_wrong_return_type, public)]
 fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
     ctx.from
