@@ -48,21 +48,33 @@ error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
 125 | fn view_def_no_return(_: &ViewContext) {}
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0412]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:195:55
+error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
+   --> tests/ui/views.rs:143:1
     |
-195 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+143 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0412]: cannot find type `ScheduledTable` in this scope
+   --> tests/ui/views.rs:143:45
+    |
+143 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
+    |                                             ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `T` in this scope
+   --> tests/ui/views.rs:202:55
+    |
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
     |                                                       ^ not found in this scope
     |
 help: you might be missing a type parameter
     |
-195 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
+202 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
     |                          +++
 
 error[E0412]: cannot find type `T` in this scope
-   --> tests/ui/views.rs:195:55
+   --> tests/ui/views.rs:202:55
     |
-195 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
     |                                                       ^ not found in this scope
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
@@ -366,9 +378,9 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
 error[E0277]: the trait bound `{integer}: RHS<Player, spacetimedb::Identity>` is not satisfied
-   --> tests/ui/views.rs:153:49
+   --> tests/ui/views.rs:160:49
     |
-153 |     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
+160 |     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
     |                                              -- ^^ the trait `RHS<Player, spacetimedb::Identity>` is not implemented for `{integer}`
     |                                              |
     |                                              required by a bound introduced by this call
@@ -390,9 +402,9 @@ note: required by a bound in `Col::<T, V>::eq`
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
 
 error[E0277]: the trait bound `u32: RHS<PlayerInfo, u8>` is not satisfied
-   --> tests/ui/views.rs:159:49
+   --> tests/ui/views.rs:166:49
     |
-159 |     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
+166 |     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
     |                                              -- ^^^^^^^ the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
     |                                              |
     |                                              required by a bound introduced by this call
@@ -407,9 +419,9 @@ note: required by a bound in `Col::<T, V>::eq`
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
 
 error[E0308]: mismatched types
-   --> tests/ui/views.rs:168:62
+   --> tests/ui/views.rs:175:62
     |
-168 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
+175 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
     |                                                           -- ^^^^^^^^^^ expected `IxCol<Player, u32>`, found `IxCol<Player, Identity>`
     |                                                           |
     |                                                           arguments to this method are incorrect
@@ -423,29 +435,29 @@ note: method defined here
     |            ^^
 
 error[E0609]: no field `age` on type `&PlayerInfoIxCols`
-   --> tests/ui/views.rs:178:72
+   --> tests/ui/views.rs:185:72
     |
-178 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
+185 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
     |                                                                        ^^^ unknown field
     |
     = note: available fields are: `identity`, `weight`
 
 error[E0308]: mismatched types
-   --> tests/ui/views.rs:186:5
+   --> tests/ui/views.rs:193:5
     |
-185 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+192 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
     |                                                              ------------- expected `Query<Player>` because of return type
-186 | /     ctx.from
-187 | |         .player()
-188 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
-189 | |         .build()
+193 | /     ctx.from
+194 | |         .player()
+195 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
+196 | |         .build()
     | |________________^ expected `Query<Player>`, found `Query<PlayerInfo>`
     |
     = note: expected struct `Query<Player>`
                found struct `Query<PlayerInfo>`
 
 error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the current scope
-   --> tests/ui/views.rs:196:14
+   --> tests/ui/views.rs:203:14
     |
-196 |     ctx.from.xyz().build()
+203 |     ctx.from.xyz().build()
     |              ^^^ method not found in `QueryBuilder`

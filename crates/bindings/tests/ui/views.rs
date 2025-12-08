@@ -138,6 +138,13 @@ fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<Not
     None
 }
 
+/// Cannot use a view as a scheduled function
+#[view(name = sched_table_view, public)]
+fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
+    vec![]
+}
+
+
 #[table(name = player_info)]
 struct PlayerInfo {
     #[unique]

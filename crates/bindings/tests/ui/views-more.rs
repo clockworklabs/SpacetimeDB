@@ -1,4 +1,4 @@
-use spacetimedb::{table, view, Identity, ViewContext, Query};
+use spacetimedb::{table, view, Identity, Query, ViewContext};
 
 #[table(name = player_info)]
 struct PlayerInfo {
@@ -8,7 +8,6 @@ struct PlayerInfo {
     weight: u32,
     age: u8,
 }
-
 /// Comparing incompatible types in `where` condition: u8 != u32 implicitly
 #[view(name = view_bad_where_int_types_implicit, public)]
 fn view_bad_where_int_types_implicit(ctx: &ViewContext) -> Query<PlayerInfo> {
@@ -16,4 +15,3 @@ fn view_bad_where_int_types_implicit(ctx: &ViewContext) -> Query<PlayerInfo> {
 }
 
 fn main() {}
-
