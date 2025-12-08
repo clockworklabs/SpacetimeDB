@@ -64,6 +64,7 @@ impl insert_pk_u_8 for super::RemoteReducers {
         InsertPkU8CallbackId(self.imp.on_reducer(
             "insert_pk_u8",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

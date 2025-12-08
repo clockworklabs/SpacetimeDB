@@ -323,6 +323,11 @@ macro_rules! procedure_tests {
             fn http_err() {
                 make_test("procedure-http-err").run()
             }
+
+            #[test]
+            fn schedule_procedure() {
+                make_test("schedule-procedure").run()
+            }
         }
     };
 }
@@ -361,5 +366,10 @@ mod view {
     #[test]
     fn subscribe_view_non_table_return() {
         make_test("view-non-table-return").run()
+    }
+
+    #[test]
+    fn subscription_updates_for_view() {
+        make_test("view-subscription-update").run()
     }
 }

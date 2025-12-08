@@ -680,40 +680,36 @@ private:
 	}
 
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static bool IsReturned(const FProcedureStatusType& InValue) { return InValue.IsReturned(); }
+	static bool IsReturned(const FSpacetimeDBProcedureStatus& InValue) { return InValue.IsReturned(); }
 
-	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static TArray<uint8> GetAsReturned(const FProcedureStatusType& InValue)
-	{
-		return InValue.GetAsReturned();
-	}
+	// We don't allow the raw value to be exported as GetAsReturned() from the ProcedureEventContext.
 
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ProcedureStatus")
-	static FProcedureStatusType OutOfEnergy(const FSpacetimeDBUnit& InValue)
+	static FSpacetimeDBProcedureStatus OutOfEnergy(const FSpacetimeDBUnit& InValue)
 	{
-		return FProcedureStatusType::OutOfEnergy(InValue);
+		return FSpacetimeDBProcedureStatus::OutOfEnergy(InValue);
 	}
 
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static bool IsOutOfEnergy(const FProcedureStatusType& InValue) { return InValue.IsOutOfEnergy(); }
+	static bool IsOutOfEnergy(const FSpacetimeDBProcedureStatus& InValue) { return InValue.IsOutOfEnergy(); }
 
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static FSpacetimeDBUnit GetAsOutOfEnergy(const FProcedureStatusType& InValue)
+	static FSpacetimeDBUnit GetAsOutOfEnergy(const FSpacetimeDBProcedureStatus& InValue)
 	{
 		return InValue.GetAsOutOfEnergy();
 	}
 
 	UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|ProcedureStatus")
-	static FProcedureStatusType InternalError(const FString& InValue)
+	static FSpacetimeDBProcedureStatus InternalError(const FString& InValue)
 	{
-		return FProcedureStatusType::InternalError(InValue);
+		return FSpacetimeDBProcedureStatus::InternalError(InValue);
 	}
 
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static bool IsInternalError(const FProcedureStatusType& InValue) { return InValue.IsInternalError(); }
+	static bool IsInternalError(const FSpacetimeDBProcedureStatus& InValue) { return InValue.IsInternalError(); }
 
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB|ProcedureStatus")
-	static FString GetAsInternalError(const FProcedureStatusType& InValue)
+	static FString GetAsInternalError(const FSpacetimeDBProcedureStatus& InValue)
 	{
 		return InValue.GetAsInternalError();
 	}

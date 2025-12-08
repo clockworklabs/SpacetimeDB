@@ -526,6 +526,9 @@ jobs:
           fi
 
   unity-testsuite:
+    # Skip if this is an external contribution.
+    # The license secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: read
       checks: write
@@ -650,9 +653,6 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-        # Skip if this is an external contribution.
-        # The license secrets will be empty, so the step would fail anyway.
-        if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
 
   csharp-testsuite:
     runs-on: spacetimedb-new-runner

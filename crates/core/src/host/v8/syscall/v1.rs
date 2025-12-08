@@ -15,7 +15,9 @@ use crate::host::v8::{
     TerminationError, Throwable,
 };
 use crate::host::wasm_common::instrumentation::span;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+};
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
 use crate::host::AbiCall;
 use anyhow::Context;
@@ -504,7 +506,7 @@ pub(super) fn call_call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     op: ViewOp<'_>,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     let fun = hooks.call_view.context("`__call_view__` was never defined")?;
 
     let ViewOp {
@@ -525,11 +527,38 @@ pub(super) fn call_call_view(
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
 
-    // Deserialize the user result.
-    let ret = cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view__`").map_err(|e| e.throw(scope))?;
+    // The original version returned a byte array with the encoded rows.
+    if ret.is_typed_array() && ret.is_uint8_array() {
+        // This is the original format, which just returns the raw bytes.
+        let ret =
+            cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+        let bytes = ret.get_contents(&mut []);
+
+        return Ok(ViewReturnData::Rows(Bytes::copy_from_slice(bytes)));
+    };
+
+    // The newer version returns an object with a `data` field containing the bytes.
+    let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+
+    let Some(data_key) = v8::String::new(scope, "data") else {
+        return Err(ErrorOrException::Err(anyhow::anyhow!("error creating a v8 string")));
+    };
+    let Some(data_val) = ret.get(scope, data_key.into()) else {
+        return Err(ErrorOrException::Err(anyhow::anyhow!(
+            "data key not found in return object"
+        )));
+    };
+
+    let ret = cast!(
+        scope,
+        data_val,
+        v8::Uint8Array,
+        "bytes in the `data` field returned from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
     let bytes = ret.get_contents(&mut []);
 
-    Ok(Bytes::copy_from_slice(bytes))
+    Ok(ViewReturnData::HeaderFirst(Bytes::copy_from_slice(bytes)))
 }
 
 /// Calls the `__call_view_anon__` function `fun`.
@@ -537,7 +566,7 @@ pub(super) fn call_call_view_anon(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     op: AnonymousViewOp<'_>,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     let fun = hooks.call_view_anon.context("`__call_view_anon__` was never defined")?;
 
     let AnonymousViewOp {
@@ -556,12 +585,43 @@ pub(super) fn call_call_view_anon(
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
 
-    // Deserialize the user result.
-    let ret =
-        cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+    if ret.is_typed_array() && ret.is_uint8_array() {
+        // This is the original format, which just returns the raw bytes.
+        let ret =
+            cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
+        let bytes = ret.get_contents(&mut []);
+
+        // We are pretending this was sent with the new format.
+        return Ok(ViewReturnData::Rows(Bytes::copy_from_slice(bytes)));
+    };
+
+    let ret = cast!(
+        scope,
+        ret,
+        v8::Object,
+        "bytes or object return from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
+
+    let Some(data_key) = v8::String::new(scope, "data") else {
+        return Err(ErrorOrException::Err(anyhow::anyhow!("error creating a v8 string")));
+    };
+    let Some(data_val) = ret.get(scope, data_key.into()) else {
+        return Err(ErrorOrException::Err(anyhow::anyhow!(
+            "data key not found in return object"
+        )));
+    };
+
+    let ret = cast!(
+        scope,
+        data_val,
+        v8::Uint8Array,
+        "bytes in the `data` field returned from `__call_view_anon__`"
+    )
+    .map_err(|e| e.throw(scope))?;
     let bytes = ret.get_contents(&mut []);
 
-    Ok(Bytes::copy_from_slice(bytes))
+    Ok(ViewReturnData::HeaderFirst(Bytes::copy_from_slice(bytes)))
 }
 
 /// Calls the `__call_procedure__` function `fun`.

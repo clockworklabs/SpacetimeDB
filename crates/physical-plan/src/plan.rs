@@ -542,22 +542,18 @@ impl PhysicalPlan {
     /// ```
     fn expand_views(self, auth: &AuthCtx) -> Self {
         match self {
-            Self::TableScan(scan, label)
-                if scan.delta.is_none() && scan.schema.is_view() && !scan.schema.is_anonymous_view() =>
-            {
-                Self::Filter(
-                    Box::new(Self::TableScan(scan, label)),
-                    PhysicalExpr::BinOp(
-                        BinOp::Eq,
-                        Box::new(PhysicalExpr::Value(auth.caller().into())),
-                        Box::new(PhysicalExpr::Field(TupleField {
-                            label,
-                            label_pos: None,
-                            field_pos: 0,
-                        })),
-                    ),
-                )
-            }
+            Self::TableScan(scan, label) if scan.schema.is_view() && !scan.schema.is_anonymous_view() => Self::Filter(
+                Box::new(Self::TableScan(scan, label)),
+                PhysicalExpr::BinOp(
+                    BinOp::Eq,
+                    Box::new(PhysicalExpr::Value(auth.caller().into())),
+                    Box::new(PhysicalExpr::Field(TupleField {
+                        label,
+                        label_pos: None,
+                        field_pos: 0,
+                    })),
+                ),
+            ),
             Self::IxJoin(
                 IxJoin {
                     lhs,
@@ -1066,10 +1062,12 @@ impl PhysicalPlan {
 
     /// Is this operator a scan, index or otherwise, of a delta table?
     pub fn is_delta_scan(&self) -> bool {
-        matches!(
-            self,
-            Self::TableScan(TableScan { delta: Some(_), .. }, _) | Self::IxScan(IxScan { delta: Some(_), .. }, _)
-        )
+        match self {
+            Self::TableScan(scan, _) => scan.delta.is_some(),
+            Self::IxScan(scan, _) => scan.delta.is_some(),
+            Self::Filter(input, _) => input.is_delta_scan(),
+            _ => false,
+        }
     }
 
     /// If this plan has any simple equality filters such as `x = 0`,

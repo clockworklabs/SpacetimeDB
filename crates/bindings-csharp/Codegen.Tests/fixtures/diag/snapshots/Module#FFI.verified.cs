@@ -1056,13 +1056,13 @@ namespace SpacetimeDB
     }
 }
 
-sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_def_no_contextViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefNoContext",
+            Name: "view_def_no_context",
             Index: 0,
             IsPublic: true,
             IsAnonymous: false,
@@ -1088,19 +1088,19 @@ sealed class ViewDefNoContextViewDispatcher : global::SpacetimeDB.Internal.IView
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoContext': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_context': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefNoPublicViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_def_no_publicViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefNoPublic",
+            Name: "view_def_no_public",
             Index: 1,
             IsPublic: false,
             IsAnonymous: false,
@@ -1126,19 +1126,19 @@ sealed class ViewDefNoPublicViewDispatcher : global::SpacetimeDB.Internal.IView
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoPublic': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_public': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefWrongContextViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_def_wrong_contextViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefWrongContext",
+            Name: "view_def_wrong_context",
             Index: 2,
             IsPublic: true,
             IsAnonymous: false,
@@ -1164,19 +1164,19 @@ sealed class ViewDefWrongContextViewDispatcher : global::SpacetimeDB.Internal.IV
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefWrongContext': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_wrong_context': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefWrongReturnViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_def_wrong_returnViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefWrongReturn",
+            Name: "view_def_wrong_return",
             Index: 3,
             IsPublic: true,
             IsAnonymous: false,
@@ -1200,19 +1200,19 @@ sealed class ViewDefWrongReturnViewDispatcher : global::SpacetimeDB.Internal.IVi
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefWrongReturn': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_wrong_return': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewNoDeleteViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_no_deleteViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewNoDelete",
+            Name: "view_no_delete",
             Index: 4,
             IsPublic: true,
             IsAnonymous: false,
@@ -1242,19 +1242,19 @@ sealed class ViewNoDeleteViewDispatcher : global::SpacetimeDB.Internal.IView
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewNoDelete': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_no_delete': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewNoInsertViewDispatcher : global::SpacetimeDB.Internal.IView
+sealed class view_no_insertViewDispatcher : global::SpacetimeDB.Internal.IView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewNoInsert",
+            Name: "view_no_insert",
             Index: 5,
             IsPublic: true,
             IsAnonymous: false,
@@ -1284,19 +1284,19 @@ sealed class ViewNoInsertViewDispatcher : global::SpacetimeDB.Internal.IView
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewNoInsert': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_no_insert': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefIndexNoMutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+sealed class view_def_index_no_mutationViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefIndexNoMutation",
+            Name: "view_def_index_no_mutation",
             Index: 0,
             IsPublic: true,
             IsAnonymous: true,
@@ -1326,19 +1326,19 @@ sealed class ViewDefIndexNoMutationViewDispatcher : global::SpacetimeDB.Internal
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefIndexNoMutation': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_index_no_mutation': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefNoAnonIdentityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+sealed class view_def_no_anon_identityViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefNoAnonIdentity",
+            Name: "view_def_no_anon_identity",
             Index: 1,
             IsPublic: true,
             IsAnonymous: true,
@@ -1368,19 +1368,19 @@ sealed class ViewDefNoAnonIdentityViewDispatcher : global::SpacetimeDB.Internal.
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoAnonIdentity': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_anon_identity': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefNoIterViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
+sealed class view_def_no_iterViewDispatcher : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefNoIter",
+            Name: "view_def_no_iter",
             Index: 2,
             IsPublic: true,
             IsAnonymous: true,
@@ -1410,20 +1410,20 @@ sealed class ViewDefNoIterViewDispatcher : global::SpacetimeDB.Internal.IAnonymo
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefNoIter': " + e);
+            global::SpacetimeDB.Log.Error("Error in view 'view_def_no_iter': " + e);
             throw;
         }
     }
 }
 
-sealed class ViewDefReturnsNotASpacetimeTypeViewDispatcher
+sealed class view_def_returns_not_a_spacetime_typeViewDispatcher
     : global::SpacetimeDB.Internal.IAnonymousView
 {
     public SpacetimeDB.Internal.RawViewDefV9 MakeAnonymousViewDef(
         SpacetimeDB.BSATN.ITypeRegistrar registrar
     ) =>
         new global::SpacetimeDB.Internal.RawViewDefV9(
-            Name: "ViewDefReturnsNotASpacetimeType",
+            Name: "view_def_returns_not_a_spacetime_type",
             Index: 3,
             IsPublic: true,
             IsAnonymous: true,
@@ -1456,7 +1456,9 @@ sealed class ViewDefReturnsNotASpacetimeTypeViewDispatcher
         }
         catch (System.Exception e)
         {
-            global::SpacetimeDB.Log.Error("Error in view 'ViewDefReturnsNotASpacetimeType': " + e);
+            global::SpacetimeDB.Log.Error(
+                "Error in view 'view_def_returns_not_a_spacetime_type': " + e
+            );
             throw;
         }
     }
@@ -1897,16 +1899,16 @@ static class ModuleRegistration
         // IMPORTANT: The order in which we register views matters.
         // It must correspond to the order in which we call `GenerateDispatcherClass`.
         // See the comment on `GenerateDispatcherClass` for more explanation.
-        SpacetimeDB.Internal.Module.RegisterView<ViewDefNoContextViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterView<ViewDefNoPublicViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongContextViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterView<ViewDefWrongReturnViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterView<ViewNoDeleteViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterView<ViewNoInsertViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefIndexNoMutationViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoAnonIdentityViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefNoIterViewDispatcher>();
-        SpacetimeDB.Internal.Module.RegisterAnonymousView<ViewDefReturnsNotASpacetimeTypeViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_def_no_contextViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_def_no_publicViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_contextViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_def_wrong_returnViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_no_deleteViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterView<view_no_insertViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_index_no_mutationViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_anon_identityViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_no_iterViewDispatcher>();
+        SpacetimeDB.Internal.Module.RegisterAnonymousView<view_def_returns_not_a_spacetime_typeViewDispatcher>();
 
         SpacetimeDB.Internal.Module.RegisterTable<
             global::Player,

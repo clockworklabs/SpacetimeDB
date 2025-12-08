@@ -24,7 +24,7 @@ SpacetimeDB runs your module inside the database host (not Node.js). There’s n
 
 ## Install SpacetimeDB
 
-If you haven’t already, start by [installing SpacetimeDB](pathname:///install). This installs the `spacetime` CLI used to build, publish, and interact with your database.
+If you haven’t already, start by [installing SpacetimeDB](https://spacetimedb.com/install). This installs the `spacetime` CLI used to build, publish, and interact with your database.
 
 <InstallCardLink />
 
