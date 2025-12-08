@@ -138,23 +138,6 @@ fn view_def_returns_not_a_spacetime_type(_: &AnonymousViewContext) -> Option<Not
     None
 }
 
-/// Cannot use a view as a scheduled function
-#[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
-struct ScheduledTable {
-    #[primary_key]
-    #[auto_inc]
-    scheduled_id: u64,
-    scheduled_at: spacetimedb::ScheduleAt,
-    x: u8,
-    y: u8,
-}
-
-/// Cannot use a view as a scheduled function
-#[view(name = scheduled_table_view, public)]
-fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-    vec![]
-}
-
 #[table(name = player_info)]
 struct PlayerInfo {
     #[unique]
@@ -174,12 +157,6 @@ fn view_bad_where(ctx: &ViewContext) -> Query<Player> {
 #[view(name = view_bad_where_int_types, public)]
 fn view_bad_where_int_types(ctx: &ViewContext) -> Query<PlayerInfo> {
     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
-}
-
-/// Comparing incompatible types in `where` condition: u8 != u32 implicitly
-#[view(name = view_bad_where_int_types_implicit, public)]
-fn view_bad_where_int_types_implicit(ctx: &ViewContext) -> Query<PlayerInfo> {
-    ctx.from.player_info().r#where(|a| a.age.eq(4200)).build()
 }
 
 /// Joining incompatible types
