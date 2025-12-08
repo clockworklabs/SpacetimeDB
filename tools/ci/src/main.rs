@@ -170,10 +170,7 @@ fn main() -> Result<()> {
 
         Some(CiCmd::Smoketests { args }) => {
             // On some systems, there is no `python`, but there is `python3`.
-            let py3_available = cmd!("bash", "-lc", "command -v python3 >/dev/null 2>&1")
-                .run()
-                .map(|s| s.status.success())
-                .unwrap_or(false);
+            let py3_available = bash!("command -v python3 >/dev/null 2>&1").is_ok();
             let python = if py3_available { "python3" } else { "python" };
             bash!(&format!("{python} -m smoketests {}", args.join(" ")))?;
         }
