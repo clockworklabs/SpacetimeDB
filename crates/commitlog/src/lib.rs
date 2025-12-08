@@ -96,6 +96,9 @@ pub struct Options {
     /// Has no effect if the `fallocate` feature is not enabled.
     #[cfg_attr(feature = "serde", serde(default = "Options::default_preallocate_segments"))]
     pub preallocate_segments: bool,
+
+    #[cfg_attr(feature = "serde", serde(default = "Options::default_flush_on_commit"))]
+    pub flush_on_commit: bool,
 }
 
 impl Default for Options {
@@ -110,6 +113,7 @@ impl Options {
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
+    pub const DEFAULT_FLUSH_ON_COMMIT: bool = true;
 
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
@@ -118,6 +122,7 @@ impl Options {
         offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
         offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
         preallocate_segments: Self::default_preallocate_segments(),
+        flush_on_commit: Self::default_flush_on_commit(),
     };
 
     pub const fn default_log_format_version() -> u8 {
@@ -142,6 +147,10 @@ impl Options {
 
     pub const fn default_preallocate_segments() -> bool {
         Self::DEFAULT_PREALLOCATE_SEGMENTS
+    }
+
+    pub const fn default_flush_on_commit() -> bool {
+        Self::DEFAULT_FLUSH_ON_COMMIT
     }
 
     /// Compute the length in bytes of an offset index based on the settings in
@@ -265,6 +274,14 @@ impl<T> Commitlog<T> {
         inner.commit()?;
 
         Ok(inner.max_committed_offset())
+    }
+
+    pub fn flush_to_disk(&self) -> io::Result<()> {
+        let mut inner = self.inner.write().unwrap();
+        inner.commit()?;
+        inner.flush()?;
+
+        Ok(())
     }
 
     /// Write all outstanding transaction records to disk and flush OS buffers.
