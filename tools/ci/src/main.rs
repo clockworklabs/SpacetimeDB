@@ -659,7 +659,6 @@ fn main() -> Result<()> {
 
                 // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk starting the tests
                 // before the server is up.
-                // TODO: The `cargo run` invocation still seems to rebuild a bunch? investigate.. maybe we infer the binary path from cargo metadata.
                 bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
                 no_build_cli = true;
             }
