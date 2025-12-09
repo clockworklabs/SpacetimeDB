@@ -21,6 +21,7 @@ jobs:
   docker_smoketests:
     name: Smoketests
     strategy:
+      fail-fast: false
       matrix:
         runner: [spacetimedb-runner, windows-latest]
         include:
