@@ -66,7 +66,7 @@ export type UntypedTableDef = {
   name: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  rowType: ProductType;
+  rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
 };
@@ -365,11 +365,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  const productType = {
-    elements: row.algebraicType.value.elements.map(elem => {
-      return { name: elem.name, algebraicType: elem.algebraicType };
-    }),
-  };
+  const productType = row.algebraicType.value as RowBuilder<
+    CoerceRow<Row>
+  >['algebraicType']['value'];
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,

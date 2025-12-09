@@ -51,6 +51,10 @@ const spacetime = schema(person, order, personWithExtra);
 const arrayRetValue = t.array(person.rowType);
 
 spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
+  type _Expand<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
+  const idk = ctx.from.person.build();
+  type Test = _Expand<typeof idk>;
+  type T2 = _Expand<(typeof idk)['__algebraicType']>;
   return ctx.from.person.build();
 });
 
@@ -59,6 +63,10 @@ spacetime.anonymousView(
   arrayRetValue,
   // @ts-expect-error returns a query of the wrong type.
   ctx => {
+    type _Expand<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
+    const idk = ctx.from.order.build();
+    type Test = _Expand<typeof idk>;
+
     return ctx.from.order.build();
   }
 );

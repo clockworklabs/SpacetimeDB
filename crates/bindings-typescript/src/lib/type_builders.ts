@@ -1275,10 +1275,10 @@ class UnitBuilder extends TypeBuilder<
 }
 
 export class RowBuilder<Row extends RowObj> extends TypeBuilder<
-  RowType<Row>,
+  RowType<CoerceRow<Row>>,
   {
     tag: 'Product';
-    value: { elements: ElementsArrayFromRowObj<Row> };
+    value: { elements: ElementsArrayFromRowObj<CoerceRow<Row>> };
   }
 > {
   readonly row: CoerceRow<Row>;

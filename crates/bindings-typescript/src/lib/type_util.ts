@@ -83,3 +83,9 @@ type PascalCaseImpl<S extends string> = S extends `${infer Head}_${infer Tail}`
  * - Normalizes the *first* character to uppercase (e.g. "user_name" -> "UserName")
  */
 export type PascalCase<S extends string> = PascalCaseImpl<S>;
+
+/**
+ * A helper for checking type equality.
+ */
+type IfEquals<T, U, Y = unknown, N = never> =
+  (<G>() => G extends T ? 1 : 2) extends <G>() => G extends U ? 1 : 2 ? Y : N;
