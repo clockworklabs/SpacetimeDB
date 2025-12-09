@@ -116,6 +116,14 @@ mod tests {
         let expected = r#"SELECT * FROM "users" WHERE (("users"."id" = 10) AND ("users"."age" > 18))"#;
         assert_eq!(norm(q.sql()), norm(expected));
     }
+
+    #[test]
+    fn test_where_gte_lte() {
+        let q = users().r#where(|c| c.age.gte(18)).r#where(|c| c.age.lte(30)).build();
+        let expected = r#"SELECT * FROM "users" WHERE (("users"."age" >= 18) AND ("users"."age" <= 30))"#;
+        assert_eq!(norm(q.sql()), norm(expected));
+    }
+
     #[test]
     fn test_column_column_comparison() {
         let q = users().r#where(|c| c.age.gt(c.id)).build();
