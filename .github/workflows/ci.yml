@@ -125,6 +125,7 @@ jobs:
       - name: Run smoketests (Linux)
         if: runner.os == 'Linux'
         run: |
+          export RUST_LOG=debug
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           cargo ci smoketests --docker .github/docker-compose.yml --parallel -- ${SMOKETEST_ARGS}
