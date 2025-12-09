@@ -284,7 +284,7 @@ impl ServerState {
                         ));
                     }
                 });
-                wait_until_http_ready(Duration::from_secs(60), &server_url)?;
+                wait_until_http_ready(Duration::from_secs(300), &server_url)?;
                 Ok(ServerState::Docker {
                     handle,
                     compose_file,
@@ -309,7 +309,7 @@ impl ServerState {
                 let handle = thread::spawn(move || {
                     let _ = bash!(&format!("cargo run -p spacetimedb-cli -- start {arg_string}"));
                 });
-                wait_until_http_ready(Duration::from_secs(60), &server_url)?;
+                wait_until_http_ready(Duration::from_secs(300), &server_url)?;
                 Ok(ServerState::Yes { handle, data_dir })
             }
         }
