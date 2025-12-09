@@ -221,6 +221,7 @@ fn find_free_port() -> Result<u16> {
 }
 
 fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
+    println!("Waiting for server to start: {server_url}..");
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
@@ -241,7 +242,7 @@ fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
         }
         thread::sleep(Duration::from_millis(500));
     }
-    anyhow::bail!("Timed out waiting for SpacetimeDB");
+    anyhow::bail!("Timed out waiting for {server_url}");
 }
 
 pub enum ServerState {
@@ -308,7 +309,6 @@ impl ServerState {
                 let handle = thread::spawn(move || {
                     let _ = bash!(&format!("cargo run -p spacetimedb-cli -- start {arg_string}"));
                 });
-                println!("Waiting for server to start..");
                 wait_until_http_ready(Duration::from_secs(60), &server_url)?;
                 Ok(ServerState::Yes { handle, data_dir })
             }
@@ -581,7 +581,8 @@ fn run_smoketests_parallel(
         let result = handle
             .join()
             .unwrap_or_else(|_| Err(anyhow::anyhow!("smoketest batch thread panicked",)));
-        if result.is_err() {
+        if let Err(e) = result {
+            println!("Smoketest batch {batch} failed: {e:?}");
             failed_batches.push(batch);
         }
     }
