@@ -115,7 +115,7 @@ jobs:
         # Note: clear_database and replication only work in private
         run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
         if: runner.os == 'Windows'
-      - name: Run smoketests
+      - name: Run smoketests (Linux)
         # Note: clear_database and replication only work in private
         run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
         if: runner.os != 'Windows'
