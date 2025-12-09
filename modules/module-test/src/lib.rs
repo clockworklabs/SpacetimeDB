@@ -14,6 +14,7 @@ pub type TestAlias = TestA;
 // TABLE DEFINITIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+#[cfg(feature = "test-add-column")]
 #[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
 pub struct Person {
     #[primary_key]
@@ -21,6 +22,24 @@ pub struct Person {
     id: u32,
     name: String,
     age: u8,
+    #[default(false)]
+    edited: bool,
+}
+
+#[cfg(not(feature = "test-add-column"))]
+#[spacetimedb::table(name = person, public, index(name = age, btree(columns = [age])))]
+pub struct Person {
+    #[primary_key]
+    #[auto_inc]
+    id: u32,
+    name: String,
+    age: u8,
+}
+
+#[cfg(not(feature = "test-remove-table"))]
+#[spacetimedb::table(name = table_to_remove)]
+pub struct RemoveTable {
+    pub id: u32,
 }
 
 #[spacetimedb::table(name = test_a, index(name = foo, btree(columns = [x])))]
@@ -214,6 +233,14 @@ pub fn repeating_test(ctx: &ReducerContext, arg: RepeatingTestArg) {
 
 #[spacetimedb::reducer]
 pub fn add(ctx: &ReducerContext, name: String, age: u8) {
+    #[cfg(feature = "test-add-column")]
+    ctx.db.person().insert(Person {
+        id: 0,
+        name,
+        age,
+        edited: false,
+    });
+    #[cfg(not(feature = "test-add-column"))]
     ctx.db.person().insert(Person { id: 0, name, age });
 }
 
@@ -464,5 +491,24 @@ fn sleep_one_second(ctx: &mut ProcedureContext) {
 fn return_value(_ctx: &mut ProcedureContext, foo: u64) -> Baz {
     Baz {
         field: format!("{foo}"),
+    }
+}
+
+#[spacetimedb::procedure]
+fn with_tx(ctx: &mut ProcedureContext) {
+    ctx.with_tx(|tx| say_hello(tx));
+}
+
+/// Hit SpacetimeDB's schema HTTP route and return its result as a string.
+///
+/// This is a silly thing to do, but an effective test of the procedure HTTP API.
+#[spacetimedb::procedure]
+fn get_my_schema_via_http(ctx: &mut ProcedureContext) -> String {
+    let module_identity = ctx.identity();
+    match ctx.http.get(format!(
+        "http://localhost:3000/v1/database/{module_identity}/schema?version=9"
+    )) {
+        Ok(result) => result.into_body().into_string_lossy(),
+        Err(e) => format!("{e}"),
     }
 }

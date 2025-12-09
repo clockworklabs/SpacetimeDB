@@ -2,11 +2,10 @@ import {
   CreatePlayer,
   DbConnection,
   Player,
-  Point,
   User,
 } from '../test-app/src/module_bindings';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { ConnectionId } from '../src';
+import { ConnectionId, type Infer } from '../src';
 import { Timestamp } from '../src';
 import { TimeDuration } from '../src';
 import * as ws from '../src/sdk/client_api';
@@ -149,11 +148,11 @@ describe('DbConnection', () => {
     const inserts: {
       reducerEvent:
         | ReducerEvent<{
-            name: 'CreatePlayer';
-            args: CreatePlayer;
+            name: 'create_player';
+            args: Infer<typeof CreatePlayer>;
           }>
         | undefined;
-      player: Player;
+      player: Infer<typeof Player>;
     }[] = [];
 
     const insert1Promise = new Deferred<void>();
@@ -176,20 +175,22 @@ describe('DbConnection', () => {
 
     const reducerCallbackLog: {
       reducerEvent: ReducerEvent<{
-        name: 'CreatePlayer';
-        args: CreatePlayer;
+        name: 'create_player';
+        args: Infer<typeof CreatePlayer>;
       }>;
       reducerArgs: any[];
     }[] = [];
-    client.reducers.onCreatePlayer((ctx, name: string, location: Point) => {
-      const reducerEvent = ctx.event;
-      reducerCallbackLog.push({
-        reducerEvent,
-        reducerArgs: [name, location],
-      });
-    });
+    client.reducers.onCreatePlayer(
+      (ctx, { name, location }: Infer<typeof CreatePlayer>) => {
+        const reducerEvent = ctx.event;
+        reducerCallbackLog.push({
+          reducerEvent,
+          reducerArgs: [name, location],
+        });
+      }
+    );
 
-    const subscriptionMessage: ws.ServerMessage =
+    const subscriptionMessage: Infer<typeof ws.ServerMessage> =
       ws.ServerMessage.InitialSubscription({
         databaseUpdate: {
           tables: [
@@ -206,7 +207,8 @@ describe('DbConnection', () => {
                   inserts: {
                     sizeHint: ws.RowSizeHint.FixedSize(0), // not used
                     rowsData: encodePlayer({
-                      ownerId: 'player-1',
+                      id: 1,
+                      userId: anIdentity,
                       name: 'drogus',
                       location: { x: 0, y: 0 },
                     }),
@@ -230,8 +232,8 @@ describe('DbConnection', () => {
     ]);
 
     expect(inserts).toHaveLength(1);
-    expect(inserts[0].player.ownerId).toBe('player-1');
-    expect(inserts[0].reducerEvent).toBe(undefined);
+    expect(inserts[0].player.id).toEqual(1);
+    expect(inserts[0].reducerEvent).toEqual(undefined);
 
     const transactionUpdate = ws.ServerMessage.TransactionUpdate({
       status: ws.UpdateStatus.Committed({
@@ -249,7 +251,8 @@ describe('DbConnection', () => {
                 inserts: {
                   sizeHint: ws.RowSizeHint.FixedSize(0), // not used
                   rowsData: encodePlayer({
-                    ownerId: 'player-2',
+                    id: 2,
+                    userId: anIdentity,
                     name: 'drogus',
                     location: { x: 2, y: 3 },
                   }),
@@ -281,9 +284,9 @@ describe('DbConnection', () => {
     ]);
 
     expect(inserts).toHaveLength(2);
-    expect(inserts[1].player.ownerId).toBe('player-2');
-    expect(inserts[1].reducerEvent?.reducer.name).toBe('create_player');
-    expect(inserts[1].reducerEvent?.status.tag).toBe('Committed');
+    expect(inserts[1].player.id).toEqual(2);
+    expect(inserts[1].reducerEvent?.reducer.name).toEqual('create_player');
+    expect(inserts[1].reducerEvent?.status.tag).toEqual('Committed');
     expect(inserts[1].reducerEvent?.callerIdentity).toEqual(anIdentity);
     expect(inserts[1].reducerEvent?.reducer.args).toEqual({
       name: 'A Player',
@@ -311,10 +314,10 @@ describe('DbConnection', () => {
 
     const updatePromise = new Deferred<void>();
 
-    expect(client.db.player.count()).toBe(0);
+    expect(client.db.player.count()).toEqual(0n);
 
     client.reducers.onCreatePlayer(() => {
-      expect(client.db.player.count()).toBe(1);
+      expect(client.db.player.count()).toEqual(1n);
       updatePromise.resolve();
     });
 
@@ -336,7 +339,8 @@ describe('DbConnection', () => {
                   sizeHint: ws.RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([
                     ...encodePlayer({
-                      ownerId: 'player-2',
+                      id: 1,
+                      userId: anIdentity,
                       name: 'foo',
                       location: { x: 0, y: 0 },
                     }),
@@ -411,7 +415,8 @@ describe('DbConnection', () => {
                   sizeHint: ws.RowSizeHint.FixedSize(0), // not used
                   rowsData: new Uint8Array([
                     ...encodePlayer({
-                      ownerId: 'player-2',
+                      id: 2,
+                      userId: anIdentity,
                       name: 'foo',
                       location: { x: 0, y: 0 },
                     }),
@@ -468,18 +473,18 @@ describe('DbConnection', () => {
       '41db74c20cdda916dd2637e5a11b9f31eb1672249aa7172f7e22b4043a6a9008'
     );
 
-    const initialUser: User = {
+    const initialUser: Infer<typeof User> = {
       identity: userIdentity,
       username: 'originalName',
     };
-    const updatedUser: User = {
+    const updatedUser: Infer<typeof User> = {
       identity: userIdentity,
       username: 'newName',
     };
 
     const updates: {
-      oldUser: User;
-      newUser: User;
+      oldUser: Infer<typeof User>;
+      newUser: Infer<typeof User>;
     }[] = [];
     client.db.user.onInsert(() => {
       initialInsertPromise.resolve();
@@ -568,11 +573,11 @@ describe('DbConnection', () => {
     await update1Promise.promise;
 
     expect(updates).toHaveLength(1);
-    expect(updates[0]['oldUser'].username).toBe(initialUser.username);
-    expect(updates[0]['newUser'].username).toBe(updatedUser.username);
+    expect(updates[0]['oldUser'].username).toEqual(initialUser.username);
+    expect(updates[0]['newUser'].username).toEqual(updatedUser.username);
 
     console.log('Users: ', [...client.db.user.iter()]);
-    expect(client.db.user.count()).toBe(1);
+    expect(client.db.user.count()).toEqual(1n);
   });
 
   test('Filtering works', async () => {
@@ -635,9 +640,9 @@ describe('DbConnection', () => {
     wsAdapter.sendToClient(transactionUpdate);
     await gotAllInserts.promise;
 
-    const filteredUser = client.db.user.identity.find(sallyIdentity);
-    expect(filteredUser).not.toBeUndefined();
-    expect(filteredUser!.username).toBe('sally');
-    expect(client.db.user.count()).toBe(2);
+    const foundUser = client.db.user.identity.find(sallyIdentity);
+    expect(foundUser).not.toBeUndefined();
+    expect(foundUser!.username).toEqual('sally');
+    expect(client.db.user.count()).toEqual(2n);
   });
 });

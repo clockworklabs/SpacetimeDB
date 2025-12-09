@@ -1,5 +1,5 @@
-import { AlgebraicType, BinaryWriter } from '../';
-import { ServerMessage } from './client_api/index.ts';
+import { AlgebraicType, BinaryWriter, type Infer } from '../';
+import ServerMessage from './client_api/server_message_type';
 
 class WebsocketTestAdapter {
   onclose: any;
@@ -28,13 +28,9 @@ class WebsocketTestAdapter {
     this.onopen();
   }
 
-  sendToClient(message: ServerMessage): void {
+  sendToClient(message: Infer<typeof ServerMessage>): void {
     const writer = new BinaryWriter(1024);
-    AlgebraicType.serializeValue(
-      writer,
-      ServerMessage.getTypeScriptAlgebraicType(),
-      message
-    );
+    AlgebraicType.serializeValue(writer, ServerMessage.algebraicType, message);
     const rawBytes = writer.getBuffer();
     // The brotli library's `compress` is somehow broken: it returns `null` for some inputs.
     // See https://github.com/foliojs/brotli.js/issues/36, which is closed but not actually fixed.

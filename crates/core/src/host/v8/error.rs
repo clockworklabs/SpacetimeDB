@@ -8,6 +8,7 @@ use crate::{
     replica_context::ReplicaContext,
 };
 use core::fmt;
+use spacetimedb_data_structures::map::IntMap;
 use spacetimedb_sats::Serialize;
 use v8::{tc_scope, Exception, HandleScope, Local, PinScope, PinnedRef, StackFrame, StackTrace, TryCatch, Value};
 
@@ -139,6 +140,29 @@ impl CodeError {
 }
 
 /// A catchable error code thrown in callbacks
+/// to indicate bad arguments to a syscall.
+#[derive(Serialize)]
+pub(super) struct CodeMessageError {
+    __code_error__: u16,
+    __error_message__: String,
+}
+
+impl CodeMessageError {
+    /// Create a code error from a code.
+    pub(super) fn from_code<'scope>(
+        scope: &PinScope<'scope, '_>,
+        __code_error__: u16,
+        __error_message__: String,
+    ) -> ExcResult<ExceptionValue<'scope>> {
+        let error = Self {
+            __code_error__,
+            __error_message__,
+        };
+        serialize_to_js(scope, &error).map(ExceptionValue)
+    }
+}
+
+/// A catchable error code thrown in callbacks
 /// to indicate that a buffer was too small and the minimum size required.
 #[derive(Serialize)]
 pub(super) struct BufferTooSmall {
@@ -243,6 +267,10 @@ impl JsStackTrace {
                 let frame = trace.get_frame(scope, index).unwrap();
                 JsStackTraceFrame::from_frame(scope, frame)
             })
+            // A call frame with this name is the dividing line between user stack frames
+            // and module-bindings frames (e.g. `__call_reducer__`). See `callUserFunction`
+            // in `src/server/runtime.ts` in the Typescript SDK.
+            .take_while(|frame| frame.fn_name() != "__spacetimedb_end_short_backtrace")
             .collect::<Box<[_]>>();
         Self { frames }
     }
@@ -315,16 +343,46 @@ pub(super) struct JsStackTraceFrame {
 impl JsStackTraceFrame {
     /// Converts a V8 [`StackFrame`] into one independent of `'scope`.
     fn from_frame<'scope>(scope: &PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
-        let script_name = frame
-            .get_script_name_or_source_url(scope)
-            .map(|s| s.to_rust_string_lossy(scope));
-
+        let script_id = frame.get_script_id();
+        let mut line = frame.get_line_number();
+        let mut column = frame.get_column();
+        let mut script_name = None;
         let fn_name = frame.get_function_name(scope).map(|s| s.to_rust_string_lossy(scope));
 
+        let sourcemap = scope
+            .get_slot()
+            .and_then(|SourceMaps(maps)| maps.get(&(script_id as i32)));
+
+        // sourcemap uses 0-based line/column numbers, while v8 uses 1-based
+        if let Some(token) = sourcemap.and_then(|sm| sm.lookup_token(line as u32 - 1, column as u32 - 1)) {
+            line = token.get_src_line() as usize + 1;
+            column = token.get_src_col() as usize + 1;
+            if let Some(file) = token.get_source() {
+                script_name = Some(file.to_owned())
+            }
+
+            // If we ever want to support de-minifying function names, uncomment this.
+            // The process of obtaining the original name of a function given a token
+            // in that function is imperfect and could return an incorrect name for an
+            // unminified identifier. So until we need it, turn it off.
+            //
+            // if let Some((sv, fn_name)) = Option::zip(token.get_source_view(), fn_name.as_mut()) {
+            //     if let Some(new_name) = sv.get_original_function_name(token, fn_name) {
+            //         new_name.clone_into(fn_name)
+            //     }
+            // }
+        }
+
+        let script_name = script_name.or_else(|| {
+            frame
+                .get_script_name_or_source_url(scope)
+                .map(|s| s.to_rust_string_lossy(scope))
+        });
+
         Self {
-            line: frame.get_line_number(),
-            column: frame.get_column(),
-            script_id: frame.get_script_id(),
+            line,
+            column,
+            script_id,
             script_name,
             fn_name,
             is_eval: frame.is_eval(),
@@ -376,6 +434,37 @@ impl fmt::Display for JsStackTraceFrame {
 
         Ok(())
     }
+}
+
+/// Mappings from a script id to its source map.
+#[derive(Default)]
+pub(super) struct SourceMaps(IntMap<i32, sourcemap::SourceMap>);
+
+pub(super) fn parse_and_insert_sourcemap(scope: &mut PinScope<'_, '_>, module: Local<'_, v8::Module>) {
+    let source_map_url = module.get_unbound_module_script(scope).get_source_mapping_url(scope);
+    let source_map_url = (!source_map_url.is_null_or_undefined()).then_some(source_map_url);
+
+    if let Some((script_id, source_map_url)) = Option::zip(module.script_id(), source_map_url) {
+        let mut source_map_url = source_map_url.to_rust_string_lossy(scope);
+        // Hacky workaround for `decode_data_url` expecting a specific string without `charset=utf-8`
+        // Can remove once <https://github.com/getsentry/rust-sourcemap/pull/137> gets into a release
+        if source_map_url.starts_with("data:application/json;charset=utf-8;base64,") {
+            let start = "data:application/json;".len();
+            let len = "charset=utf-8;".len();
+            source_map_url.replace_range(start..start + len, "");
+        }
+        if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+            let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
+            maps.insert(script_id, sourcemap);
+        }
+    }
+}
+
+fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnce() -> T) -> &mut T {
+    if isolate.get_slot::<T>().is_none() {
+        isolate.set_slot(default());
+    }
+    isolate.get_slot_mut().unwrap()
 }
 
 impl JsError {
@@ -451,6 +540,7 @@ pub(super) fn catch_exception<'scope, T>(
 
 /// Encodes whether it is safe to continue using the [`Isolate`]
 /// for further execution after [`catch_exception`] has happened.
+#[derive(Debug)]
 pub(super) enum CanContinue {
     Yes,
     YesCancelTermination,

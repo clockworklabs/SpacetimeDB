@@ -23,6 +23,17 @@ macro_rules! errnos {
             INDEX_NOT_UNIQUE(14, "The index was not unique"),
             NO_SUCH_ROW(15, "The row was not found, e.g., in an update call"),
             AUTO_INC_OVERFLOW(16, "The auto-increment sequence overflowed"),
+            WOULD_BLOCK_TRANSACTION(
+                17,
+                "Attempted async or blocking op while holding open a transaction"
+            ),
+            TRANSACTION_NOT_ANONYMOUS(18, "Not in an anonymous transaction. Called by a reducer?"),
+            TRANSACTION_IS_READ_ONLY(19, "ABI call can only be made while within a mutable transaction"),
+            TRANSACTION_IS_MUT(
+                20,
+                "ABI call can only be made while within a read-only transaction"
+            ),
+            HTTP_ERROR(21, "The HTTP request failed"),
         );
     };
 }

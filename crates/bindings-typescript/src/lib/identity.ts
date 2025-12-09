@@ -1,5 +1,5 @@
 import { AlgebraicType } from './algebraic_type';
-import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './utils';
+import { hexStringToU256, u256ToHexString, u256ToUint8Array } from './util';
 
 export type IdentityAlgebraicType = {
   tag: 'Product';
@@ -36,10 +36,17 @@ export class Identity {
   }
 
   /**
-   * Compare two identities for equality.
+   * Check if two identities are equal.
    */
   isEqual(other: Identity): boolean {
     return this.toHexString() === other.toHexString();
+  }
+
+  /**
+   * Check if two identities are equal.
+   */
+  equals(other: Identity): boolean {
+    return this.isEqual(other);
   }
 
   /**

@@ -10,7 +10,7 @@ use bytes::Bytes;
 use core::any::type_name;
 use core::hash::Hash;
 use futures_channel::mpsc;
-use spacetimedb_data_structures::map::{DefaultHashBuilder, Entry, HashCollectionExt, HashMap};
+use spacetimedb_data_structures::map::{hash_map::Entry, HashCollectionExt, HashMap};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
@@ -120,8 +120,7 @@ impl<'r, Row> TableAppliedDiff<'r, Row> {
         }
 
         // Compute the PK -> Row map for deletes.
-        let mut delete_pks =
-            <HashMap<_, _, DefaultHashBuilder> as HashCollectionExt>::with_capacity(self.deletes.len());
+        let mut delete_pks = HashMap::with_capacity(self.deletes.len());
         for (&bsatn, &row) in self.deletes.iter() {
             let pk = derive_pk(row);
             delete_pks.insert(pk, (bsatn, row));
