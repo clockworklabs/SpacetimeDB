@@ -22,13 +22,10 @@ jobs:
     name: Smoketests
     strategy:
       matrix:
-        runner: [spacetimedb-new-runner, windows-latest]
+        runner: [ubuntu-latest, windows-latest]
         include:
-          - runner: spacetimedb-new-runner
+          - runner: ubuntu-latest
             smoketest_args: --docker
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
           - runner: windows-latest
             smoketest_args: --no-build-cli
             container: null
@@ -83,9 +80,8 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
-      - name: Start Docker daemon
-        if: runner.os == 'Linux'
-        run: /usr/local/bin/start-docker.sh
+      - name: Build crates
+        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
       # the sdk-manifests on windows-latest are messed up, so we need to update them
       - name: Fix sdk-manifests
