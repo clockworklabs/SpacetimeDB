@@ -595,6 +595,8 @@ fn run_smoketests_parallel(
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let cli = Cli::parse();
 
     // Remove all Cargo-provided env vars from the subcommand
