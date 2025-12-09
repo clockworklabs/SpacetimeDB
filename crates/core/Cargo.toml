@@ -96,6 +96,7 @@ similar.workspace = true
 slab.workspace = true
 sled.workspace = true
 smallvec.workspace = true
+sourcemap.workspace = true
 sqlparser.workspace = true
 strum.workspace = true
 tabled.workspace = true

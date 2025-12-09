@@ -16,10 +16,9 @@ use crate::client::ClientActorId;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, call_scheduled_reducer, init_database, CallViewParams, ClientConnectedError, Instance,
-    ViewCallResult,
+    call_identity_connected, init_database, CallViewParams, ClientConnectedError, Instance, ViewCallResult,
 };
-use crate::host::scheduler::QueueItem;
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
 use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, DescribeError, ExecutionError, ExecutionResult, ExecutionStats, ExecutionTimings, InstanceCommon,
@@ -363,17 +362,6 @@ impl JsInstance {
         .await
     }
 
-    pub(crate) async fn call_scheduled_reducer(
-        self: Box<Self>,
-        item: QueueItem,
-    ) -> (Result<(ReducerCallResult, Timestamp), ReducerCallError>, Box<Self>) {
-        self.send_recv(
-            JsWorkerReply::into_call_scheduled_reducer,
-            JsWorkerRequest::CallScheduledReducer(item),
-        )
-        .await
-    }
-
     pub async fn init_database(
         self: Box<Self>,
         program: Program,
@@ -404,6 +392,20 @@ impl JsInstance {
             .await;
         (*r, s)
     }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        self: Box<Self>,
+        params: ScheduledFunctionParams,
+    ) -> (CallScheduledFunctionResult, Box<Self>) {
+        // Get a handle to the current tokio runtime, and pass it to the worker
+        // so that it can execute futures.
+        let rt = tokio::runtime::Handle::current();
+        self.send_recv(
+            JsWorkerReply::into_call_scheduled_function,
+            JsWorkerRequest::CallScheduledFunction(params, rt),
+        )
+        .await
+    }
 }
 
 /// A reply from the worker in [`spawn_instance_worker`].
@@ -417,8 +419,8 @@ enum JsWorkerReply {
     CallIdentityConnected(Result<(), ClientConnectedError>),
     CallIdentityDisconnected(Result<(), ReducerCallError>),
     DisconnectClient(Result<(), ReducerCallError>),
-    CallScheduledReducer(Result<(ReducerCallResult, Timestamp), ReducerCallError>),
     InitDatabase(anyhow::Result<Option<ReducerCallResult>>),
+    CallScheduledFunction(CallScheduledFunctionResult),
 }
 
 /// A request for the worker in [`spawn_instance_worker`].
@@ -451,10 +453,10 @@ enum JsWorkerRequest {
     CallIdentityDisconnected(Identity, ConnectionId, bool),
     /// See [`JsInstance::disconnect_client`].
     DisconnectClient(ClientActorId),
-    /// See [`JsInstance::call_scheduled_reducer`].
-    CallScheduledReducer(QueueItem),
     /// See [`JsInstance::init_database`].
     InitDatabase(Program),
+    /// See [`JsInstance::call_scheduled_function`].
+    CallScheduledFunction(ScheduledFunctionParams, tokio::runtime::Handle),
 }
 
 /// Performs some of the startup work of [`spawn_instance_worker`].
@@ -642,14 +644,19 @@ fn spawn_instance_worker(
                     let res = ModuleHost::disconnect_client_inner(client_id, info, call_reducer, &mut trapped);
                     reply("disconnect_client", DisconnectClient(res), trapped);
                 }
-                JsWorkerRequest::CallScheduledReducer(queue_item) => {
-                    let (res, trapped) = call_scheduled_reducer(info, queue_item, call_reducer);
-                    reply("call_scheduled_reducer", CallScheduledReducer(res), trapped);
-                }
                 JsWorkerRequest::InitDatabase(program) => {
                     let (res, trapped): (Result<Option<ReducerCallResult>, anyhow::Error>, bool) =
                         init_database(replica_ctx, &module_common.info().module_def, program, call_reducer);
                     reply("init_database", InitDatabase(res), trapped);
+                }
+                JsWorkerRequest::CallScheduledFunction(params, rt) => {
+                    let _guard = rt.enter();
+
+                    let (res, trapped) = instance_common
+                        .call_scheduled_function(params, &mut inst)
+                        .now_or_never()
+                        .expect("our call_procedure implementation is not actually async");
+                    reply("call_scheduled_function", CallScheduledFunction(res), trapped);
                 }
             }
         }
@@ -704,6 +711,8 @@ fn eval_module<'scope>(
         // the module value would never actually resolve. For now, reject this entirely.
         return Err(error::TypeError("module has top-level await and is pending").throw(scope));
     }
+
+    error::parse_and_insert_sourcemap(scope, module);
 
     Ok((module, value))
 }

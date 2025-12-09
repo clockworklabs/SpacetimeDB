@@ -282,12 +282,8 @@ impl Locking {
             tx_offset,
         );
 
-        let CommittedState {
-            ref mut tables,
-            ref blob_store,
-            ..
-        } = *committed_state;
-        let snapshot_dir = repo.create_snapshot(tables.values_mut(), blob_store, tx_offset)?;
+        let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        let snapshot_dir = repo.create_snapshot(tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, snapshot_dir)))
     }
