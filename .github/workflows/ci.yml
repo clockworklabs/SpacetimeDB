@@ -23,10 +23,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [spacetimedb-runner, windows-latest]
+        runner: [spacetimedb-new-runner, windows-latest]
         include:
-          - runner: spacetimedb-runner
+          - runner: spacetimedb-new-runner
             smoketest_args: --docker
+            container:
+              image: localhost:5000/spacetimedb-ci:latest
+              options: --privileged
           - runner: windows-latest
             smoketest_args: --no-build-cli
             container: null
@@ -81,6 +84,18 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
+      - name: Expand Docker network pool
+        run: |
+          echo '{
+            "default-address-pools": [
+              { "base": "10.10.0.0/16", "size": 24 },
+              { "base": "10.20.0.0/16", "size": 24 }
+            ]
+          }' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
