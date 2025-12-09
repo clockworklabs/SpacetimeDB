@@ -88,8 +88,10 @@ jobs:
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
       - name: Expand Docker network pool
+        if: runner.os == 'Linux'
         run: |
-          cat /etc/docker/daemon.json 
+          echo 'current contents:'
+          cat /etc/docker/daemon.json
           echo '{
             "storage-driver": "vfs",
             "default-address-pools": [
