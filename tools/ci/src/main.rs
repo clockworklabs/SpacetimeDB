@@ -346,8 +346,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
     let _server = ServerState::start(server_mode, &mut args)?;
 
     println!("Running smoketests: {}", args.join(" "));
-    let test_result = bash!(&format!("{python} -m smoketests {}", args.join(" ")));
-    test_result
+    bash!(&format!("{python} -m smoketests {}", args.join(" ")))
 }
 
 fn server_start_config(start_server: bool, docker: Option<String>) -> StartServer {
