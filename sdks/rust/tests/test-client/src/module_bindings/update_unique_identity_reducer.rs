@@ -65,6 +65,7 @@ impl update_unique_identity for super::RemoteReducers {
         UpdateUniqueIdentityCallbackId(self.imp.on_reducer(
             "update_unique_identity",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

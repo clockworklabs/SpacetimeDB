@@ -17,7 +17,7 @@ import {
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
-import { callProcedure } from './procedures';
+import { callProcedure as callProcedure } from './procedures';
 import {
   REDUCERS,
   type AuthCtx,
@@ -25,7 +25,11 @@ import {
   type JwtClaims,
   type ReducerCtx,
 } from '../lib/reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import {
+  MODULE_DEF,
+  getRegisteredSchema,
+  type UntypedSchemaDef,
+} from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
@@ -36,9 +40,11 @@ import {
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
+import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
+import ViewResultHeader from '../lib/autogen/view_result_header_type';
 
 const { freeze } = Object;
 
@@ -190,6 +196,19 @@ export const makeReducerCtx = (
   senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
 });
 
+/**
+ * Call into a user function `fn` - the backtrace from an exception thrown in
+ * `fn` or one of its descendants in the callgraph will be stripped by host
+ * code in `crates/core/src/host/v8/error.rs` such that `fn` will be shown to
+ * be the root of the call stack.
+ */
+export const callUserFunction = function __spacetimedb_end_short_backtrace<
+  Args extends any[],
+  R,
+>(fn: (...args: Args) => R, ...args: Args): R {
+  return fn(...args);
+};
+
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
@@ -218,7 +237,7 @@ export const hooks: ModuleHooks = {
       )
     );
     try {
-      return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+      return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -237,16 +256,45 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
+    // ViewResultHeader.RawSql
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
       MODULE_DEF.typespace
     );
-    const ret = fn(ctx, args);
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
   __call_view_anon__(id, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
@@ -255,16 +303,44 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
       MODULE_DEF.typespace
     );
-    const ret = fn(ctx, args);
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
 };
 
