@@ -430,7 +430,7 @@ impl Lang for TypeScript {
 
         writeln!(out);
         writeln!(out, "/** Creates a new {{@link SubscriptionBuilder}} to configure a subscription to the remote SpacetimeDB instance. */");
-        writeln!(out, "subscriptionBuilder = (): SubscriptionBuilder => {{");
+        writeln!(out, "override subscriptionBuilder = (): SubscriptionBuilder => {{");
         out.indent(1);
         writeln!(out, "return new SubscriptionBuilder(this);");
 
