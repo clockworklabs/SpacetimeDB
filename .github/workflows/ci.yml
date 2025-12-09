@@ -111,7 +111,7 @@ jobs:
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
-      - name: Run smoketests windows
+      - name: Run smoketests (windows)
         # Note: clear_database and replication only work in private
         run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
         if: runner.os == 'Windows'
