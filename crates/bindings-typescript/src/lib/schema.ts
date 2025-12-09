@@ -110,32 +110,21 @@ export function tablesToSchema<
         // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
         indexes: [
           ...schema.idxs.map(
-            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> =>
-              ({
+            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> => {
+              const columnIds =
+                idx.algorithm.tag === 'Direct'
+                  ? [idx.algorithm.value]
+                  : idx.algorithm.value;
+              const columns = columnIds.map(i => colNameList[i]);
+              return {
                 name: idx.accessorName,
-                unique: schema.tableDef.constraints
-                  .map(c => {
-                    if (idx.algorithm.tag == 'BTree') {
-                      return c.data.value.columns.every(col => {
-                        const idxColumns = idx.algorithm.value;
-                        if (Array.isArray(idxColumns)) {
-                          return idxColumns.includes(col);
-                        } else {
-                          return col === idxColumns;
-                        }
-                      });
-                    }
-                  })
-                  .includes(true),
+                unique: schema.tableDef.constraints.some(c =>
+                  c.data.value.columns.every(col => columnIds.includes(col))
+                ),
                 algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
-                columns: (() => {
-                  const cols =
-                    idx.algorithm.tag === 'Direct'
-                      ? [idx.algorithm.value]
-                      : idx.algorithm.value;
-                  return cols.map(i => colNameList[i]);
-                })(),
-              }) as IndexOpts<any>
+                columns,
+              } as IndexOpts<any>;
+            }
           ),
         ],
       } as const;
