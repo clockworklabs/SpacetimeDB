@@ -259,6 +259,8 @@ pub enum ServerState {
 
 impl ServerState {
     fn start(start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
+        // TODO: Currently the server output leaks. We should be capturing it and only printing if the test fails.
+
         match start_mode {
             StartServer::No => Ok(Self::None),
             StartServer::Docker { compose_file } => {
@@ -277,7 +279,7 @@ impl ServerState {
                     let project = project.clone();
                     move || {
                         let _ = bash!(&format!(
-                            "{env_string} docker compose -f {compose_str} --project-name {project} up"
+                            "{env_string} docker compose -f {compose_str} --project-name {project} up --abort-on-container-exit"
                         ));
                     }
                 });
