@@ -84,14 +84,12 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install psql -y --no-progress
         shell: powershell
-      - name: Start Docker daemon
-        if: runner.os == 'Linux'
-        run: /usr/local/bin/start-docker.sh
       - name: Expand Docker network pool
         if: runner.os == 'Linux'
         run: |
           echo 'current contents:'
           cat /etc/docker/daemon.json
+          echo 'New contents':
           echo '{
             "storage-driver": "vfs",
             "default-address-pools": [
@@ -100,6 +98,13 @@ jobs:
             ]
           }' | sudo tee /etc/docker/daemon.json
           sudo service docker restart
+      - name: Start Docker daemon
+        if: runner.os == 'Linux'
+        run: /usr/local/bin/start-docker.sh
+      - name: Check docker info
+        if: runner.os == 'Linux'
+        run: |
+          docker info
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
 
