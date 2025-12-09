@@ -1,0 +1,33 @@
+﻿Write a SpacetimeDB backend module in Rust that defines three tables modeling a many-to-many relationship and seeds rows.
+
+TABLES
+- users
+  - Struct: User
+  - Fields:
+    - user_id: i32 (primary key)
+    - name: String
+
+- groups
+  - Struct: Group
+  - Fields:
+    - group_id: i32 (primary key)
+    - title: String
+
+- memberships
+  - Struct: Membership
+  - Fields:
+    - id: i32 (primary key)
+    - user_id: i32
+    - group_id: i32
+  - Indexes:
+    - by_user: btree(user_id)
+    - by_group: btree(group_id)
+
+REDUCERS
+- seed: insert exactly these rows
+  - users: (user_id=1, name="Alice"), (user_id=2, name="Bob")
+  - groups: (group_id=10, title="Admin"), (group_id=20, title="Dev")
+  - memberships:
+    - (id=1, user_id=1, group_id=10)
+    - (id=2, user_id=1, group_id=20)
+    - (id=3, user_id=2, group_id=20)
