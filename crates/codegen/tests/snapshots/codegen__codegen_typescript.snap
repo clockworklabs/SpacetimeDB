@@ -195,7 +195,7 @@ import {
 
 export default __t.row({
   identity: __t.identity(),
-  connectionId: __t.connectionId(),
+  connectionId: __t.connectionId().originalName("connection_id"),
 });
 '''
 "has_special_stuff_type.ts" = '''
@@ -639,7 +639,7 @@ import {
 
 export default __t.row({
   identity: __t.identity().primaryKey(),
-  playerId: __t.u64(),
+  playerId: __t.u64().originalName("player_id"),
   name: __t.string(),
 });
 '''
@@ -658,7 +658,7 @@ import {
 
 export default __t.row({
   identity: __t.identity(),
-  playerId: __t.u64(),
+  playerId: __t.u64().originalName("player_id"),
   name: __t.string(),
 });
 '''
@@ -800,7 +800,7 @@ import {
 
 export default __t.row({
   identity: __t.identity().primaryKey(),
-  playerId: __t.u64(),
+  playerId: __t.u64().originalName("player_id"),
   name: __t.string(),
 });
 '''
@@ -947,9 +947,9 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  scheduledId: __t.u64().primaryKey(),
-  scheduledAt: __t.scheduleAt(),
-  prevTime: __t.timestamp(),
+  scheduledId: __t.u64().primaryKey().originalName("scheduled_id"),
+  scheduledAt: __t.scheduleAt().originalName("scheduled_at"),
+  prevTime: __t.timestamp().originalName("prev_time"),
 });
 '''
 "repeating_test_arg_type.ts" = '''
@@ -1152,7 +1152,7 @@ import NamespaceTestC from "./namespace_test_c_type";
 
 export default __t.row({
   get testC() {
-    return __t.option(NamespaceTestC);
+    return __t.option(NamespaceTestC).originalName("test_c");
   },
 });
 '''

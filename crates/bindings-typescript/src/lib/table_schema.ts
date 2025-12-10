@@ -45,3 +45,9 @@ export type TableSchema<
     columns: [any];
   }[];
 };
+
+export type UntypedTableSchema = TableSchema<
+  string,
+  Record<string, ColumnBuilder<any, any, any>>,
+  readonly IndexOpts<string>[]
+>;
