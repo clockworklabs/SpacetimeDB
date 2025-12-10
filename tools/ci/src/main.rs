@@ -1,15 +1,8 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
-use log::warn;
-use serde_json;
-use std::collections::{HashMap, HashSet};
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::path::Path;
 use std::{env, fs};
-use tempfile::TempDir;
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -113,11 +106,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
         log::info!("executing cargo ci {subcmd}");
         cmd!("cargo", "ci", &subcmd).run()?;
     }
-
-    Ok(())
-}
-
-    }
     Ok(())
 }
 
@@ -217,11 +205,16 @@ fn main() -> Result<()> {
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args }) => {
-            // On some systems, there is no `python`, but there is `python3`.
-            let py3_available = bash!("command -v python3 >/dev/null 2>&1").is_ok();
-            let python = if py3_available { "python3" } else { "python" };
-            bash!(&format!("{python} -m smoketests {}", args.join(" ")))?;
+        Some(CiCmd::Smoketests { args: smoketest_args }) => {
+            let python = infer_python();
+            cmd(
+                python,
+                ["-m", "smoketests"]
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .chain(smoketest_args),
+            )
+            .run()?;
         }
 
         Some(CiCmd::UpdateFlow {
