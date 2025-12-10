@@ -130,10 +130,17 @@ jobs:
           rm .dockerignore
           cargo ci smoketests --docker .github/docker-compose.yml --parallel -- ${SMOKETEST_ARGS}
       - name: Install OpenSSL via vcpkg
-        uses: microsoft/vcpkg-action@v2
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 'latest'
         if: runner.os == 'Windows'
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
+        env:
+          OPENSSL_NO_VENDOR: 1
+          VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
+          # Required so openssl-sys finds vcpkg libs
+          OPENSSL_DIR: ${{ env.VCPKG_ROOT }}/installed/x64-windows
         run: |
           export OPENSSL_NO_VENDOR=1
           cargo ci smoketests --parallel -- ${SMOKETEST_ARGS}
