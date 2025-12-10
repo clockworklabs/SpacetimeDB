@@ -1,4 +1,3 @@
-import type { AlgebraicType } from '../lib/algebraic_type';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ColumnIndex, IndexColumns, IndexOpts } from '../lib/indexes';
@@ -8,7 +7,6 @@ import type {
   ColumnBuilder,
   ColumnMetadata,
   RowBuilder,
-  RowObj,
   TypeBuilder,
 } from '../lib/type_builders';
 
