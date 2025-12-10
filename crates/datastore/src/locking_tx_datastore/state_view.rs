@@ -374,6 +374,9 @@ pub enum IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
 
     /// When the column has an index.
     Index(IndexScanRanged<'a>),
+
+    /// When the range itself is empty.
+    RangeEmpty,
 }
 
 impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeMutTx<'a, R> {
@@ -381,8 +384,9 @@ impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeMutTx<'a, R>
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            IterByColRangeMutTx::Scan(range) => range.next(),
-            IterByColRangeMutTx::Index(range) => range.next(),
+            Self::Scan(range) => range.next(),
+            Self::Index(range) => range.next(),
+            Self::RangeEmpty => None,
         }
     }
 }

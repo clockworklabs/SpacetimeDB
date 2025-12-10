@@ -15,6 +15,8 @@ pub enum BoolExpr<T> {
     Ne(Operand<T>, Operand<T>),
     Gt(Operand<T>, Operand<T>),
     Lt(Operand<T>, Operand<T>),
+    Gte(Operand<T>, Operand<T>),
+    Lte(Operand<T>, Operand<T>),
     And(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
     Or(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
 }
@@ -56,6 +58,8 @@ pub fn format_expr<T>(expr: &BoolExpr<T>) -> String {
         BoolExpr::Ne(l, r) => format!("({} <> {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::Gt(l, r) => format!("({} > {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::Lt(l, r) => format!("({} < {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Gte(l, r) => format!("({} >= {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Lte(l, r) => format!("({} <= {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::And(a, b) => format!("({} AND {})", format_expr(a), format_expr(b)),
         BoolExpr::Or(a, b) => format!("({} OR {})", format_expr(a), format_expr(b)),
     }
