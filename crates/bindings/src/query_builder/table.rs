@@ -139,6 +139,14 @@ impl<T: HasCols> Table<T> {
             expr,
         }
     }
+
+    // Filter is an alias for where
+    pub fn filter<F>(self, f: F) -> FromWhere<T>
+    where
+        F: Fn(&T::Cols) -> BoolExpr<T>,
+    {
+        self.r#where(f)
+    }
 }
 
 impl<T: HasCols> FromWhere<T> {
@@ -151,6 +159,14 @@ impl<T: HasCols> FromWhere<T> {
             table_name: self.table_name,
             expr: self.expr.and(extra),
         }
+    }
+
+    // Filter is an alias for where
+    pub fn filter<F>(self, f: F) -> Self
+    where
+        F: Fn(&T::Cols) -> BoolExpr<T>,
+    {
+        self.r#where(f)
     }
 
     pub fn build(self) -> Query<T> {

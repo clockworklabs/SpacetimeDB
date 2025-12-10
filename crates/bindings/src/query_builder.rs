@@ -138,6 +138,13 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_alias() {
+        let q = users().filter(|c| c.id.eq(5)).filter(|c| c.age.lt(30)).build();
+        let expected = r#"SELECT * FROM "users" WHERE (("users"."id" = 5) AND ("users"."age" < 30))"#;
+        assert_eq!(norm(q.sql()), norm(expected));
+    }
+
+    #[test]
     fn test_or_comparison() {
         let q = users()
             .r#where(|c| c.name.ne("Shub".to_string()).or(c.name.ne("Pop".to_string())))

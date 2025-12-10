@@ -741,9 +741,9 @@ fn online_users_age(ctx: &ViewContext) -> Query<Person> {
 fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .person()
-        .r#where(|p| p.age.eq(20))
+        .filter(|p| p.age.eq(20))
         .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
-        .r#where(|u| u.online.eq(false))
+        .filter(|u| u.online.eq(false))
         .build()
 }
 
