@@ -88,20 +88,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           docker info
-      # the sdk-manifests on windows-latest are messed up, so we need to update them
-      - name: Fix sdk-manifests
-        if: runner.os == 'Windows'
-        working-directory: modules
-        # Powershell doesn't early-exit properly from a multi-line command if one fails
-        shell: bash
-        run: |
-          dotnet workload config --update-mode manifests
-          dotnet workload update
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
-      - name: Install python deps
-        run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests (Linux)
         if: runner.os == 'Linux'
         run: |
