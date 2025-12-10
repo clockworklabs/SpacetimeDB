@@ -675,7 +675,7 @@ impl CommittedState {
         // Note that this may change in the future: some analytics and/or
         // timetravel queries may benefit from seeing all inputs, even if
         // the database state did not change.
-        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
+        tx_data.has_rows_or_connect_disconnect(ctx.reducer_context().map(|rcx| &*rcx.name))
     }
 
     pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
