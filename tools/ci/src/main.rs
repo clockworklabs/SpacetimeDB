@@ -1,6 +1,3 @@
-// This is a devtool and not part of the "real" codebase, so different constraints apply.
-#![allow(clippy::disallowed_macros)]
-
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
@@ -228,9 +225,9 @@ fn main() -> Result<()> {
             if let Some(target) = target.as_ref() {
                 common_args.push("--target");
                 common_args.push(target);
-                println!("checking update flow for target: {target}");
+                log::info!("checking update flow for target: {target}");
             } else {
-                println!("checking update flow");
+                log::info!("checking update flow");
             }
             if github_token_auth {
                 common_args.push("--features");
@@ -283,10 +280,9 @@ fn main() -> Result<()> {
                 .unchecked()
                 .run()?;
             if !status.status.success() {
-                println!("It looks like the CLI docs have changed:");
                 anyhow::bail!("CLI docs are out of date");
             } else {
-                println!("No docs changes detected");
+                log::info!("No docs changes detected");
             }
         }
 
