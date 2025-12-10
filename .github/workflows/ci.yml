@@ -129,9 +129,14 @@ jobs:
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           cargo ci smoketests --docker .github/docker-compose.yml --parallel -- ${SMOKETEST_ARGS}
+      - name: Install OpenSSL via vcpkg
+        uses: microsoft/vcpkg-action@v2
+        if: runner.os == 'Windows'
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
-        run: cargo ci smoketests --parallel -- ${SMOKETEST_ARGS}
+        run: |
+          export OPENSSL_NO_VENDOR=1
+          cargo ci smoketests --parallel -- ${SMOKETEST_ARGS}
 
   test:
     name: Test Suite
