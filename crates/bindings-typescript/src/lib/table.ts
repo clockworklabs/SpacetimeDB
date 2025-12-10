@@ -66,6 +66,7 @@ export type UntypedTableDef = {
   name: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
+  // This is really just a ProductType where all the elements have names.
   rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
