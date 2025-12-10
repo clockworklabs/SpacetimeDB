@@ -1,3 +1,4 @@
+use crate::db::durability::DurabilityWorker;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, DatabaseError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
@@ -10,10 +11,9 @@ use fs2::FileExt;
 use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
 use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
-use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
-use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
     IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
@@ -103,7 +103,7 @@ pub struct RelationalDB {
     owner_identity: Identity,
 
     inner: Locking,
-    durability: Option<Arc<Durability>>,
+    durability: Option<DurabilityWorker>,
     snapshot_worker: Option<SnapshotWorker>,
 
     row_count_fn: RowCountFn,
@@ -154,6 +154,7 @@ impl RelationalDB {
             Arc::new(EnumMap::from_fn(|ty| ExecutionCounters::new(&ty, &database_identity)));
 
         let (durability, disk_size_fn, snapshot_worker) = Persistence::unzip(persistence);
+        let durability = durability.map(DurabilityWorker::new);
 
         Self {
             inner,
@@ -766,19 +767,21 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>, DBError> {
+    #[allow(clippy::type_complexity)]
+    pub fn commit_tx(&self, tx: MutTx) -> Result<Option<(TxOffset, Arc<TxData>, TxMetrics, String)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
-        // TODO: Never returns `None` -- should it?
         let reducer_context = tx.ctx.reducer_context().cloned();
+        // TODO: Never returns `None` -- should it?
         let Some((tx_offset, tx_data, tx_metrics, reducer)) = self.inner.commit_mut_tx(tx)? else {
             return Ok(None);
         };
 
         self.maybe_do_snapshot(&tx_data);
 
+        let tx_data = Arc::new(tx_data);
         if let Some(durability) = &self.durability {
-            Self::do_durability(&**durability, reducer_context.as_ref(), &tx_data)
+            durability.request_durability(reducer_context, &tx_data);
         }
 
         Ok(Some((tx_offset, tx_data, tx_metrics, reducer)))
@@ -789,7 +792,7 @@ impl RelationalDB {
         &self,
         tx: MutTx,
         workload: Workload,
-    ) -> Result<Option<(TxData, TxMetrics, Tx)>, DBError> {
+    ) -> Result<Option<(Arc<TxData>, TxMetrics, Tx)>, DBError> {
         log::trace!("COMMIT MUT TX");
 
         let Some((tx_data, tx_metrics, tx)) = self.inner.commit_mut_tx_downgrade(tx, workload)? else {
@@ -798,80 +801,12 @@ impl RelationalDB {
 
         self.maybe_do_snapshot(&tx_data);
 
+        let tx_data = Arc::new(tx_data);
         if let Some(durability) = &self.durability {
-            Self::do_durability(&**durability, tx.ctx.reducer_context(), &tx_data)
+            durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
         }
 
         Ok(Some((tx_data, tx_metrics, tx)))
-    }
-
-    /// If `(tx_data, ctx)` should be appended to the commitlog, do so.
-    ///
-    /// Note that by this stage,
-    /// [`spacetimedb_datastore::locking_tx_datastore::committed_state::tx_consumes_offset`]
-    /// has already decided based on the reducer and operations whether the transaction should be appended;
-    /// this method is responsible only for reading its decision out of the `tx_data`
-    /// and calling `durability.append_tx`.
-    fn do_durability(durability: &Durability, reducer_context: Option<&ReducerContext>, tx_data: &TxData) {
-        use commitlog::payload::{
-            txdata::{Mutations, Ops},
-            Txdata,
-        };
-
-        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
-
-        if tx_data.tx_offset().is_some() {
-            let inserts: Box<_> = tx_data
-                .inserts()
-                // Skip ephemeral tables
-                .filter(|(table_id, _)| is_persistent_table(table_id))
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                .collect();
-
-            let truncates: IntSet<TableId> = tx_data.truncates().collect();
-
-            let deletes: Box<_> = tx_data
-                .deletes()
-                .filter(|(table_id, _)| is_persistent_table(table_id))
-                .map(|(table_id, rowdata)| Ops {
-                    table_id: *table_id,
-                    rowdata: rowdata.clone(),
-                })
-                // filter out deletes for tables that are truncated in the same transaction.
-                .filter(|ops| !truncates.contains(&ops.table_id))
-                .collect();
-
-            let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
-
-            let inputs = reducer_context.map(|rcx| rcx.into());
-
-            debug_assert!(
-                !(inserts.is_empty() && truncates.is_empty() && deletes.is_empty() && inputs.is_none()),
-                "empty transaction"
-            );
-
-            let txdata = Txdata {
-                inputs,
-                outputs: None,
-                mutations: Some(Mutations {
-                    inserts,
-                    deletes,
-                    truncates,
-                }),
-            };
-
-            // TODO: Should measure queuing time + actual write
-            durability.append_tx(txdata);
-        } else {
-            debug_assert!(
-                !tx_data.has_rows_or_connect_disconnect(reducer_context),
-                "tx_data has no rows but has connect/disconnect: `{:?}`",
-                reducer_context.map(|rcx| &rcx.name),
-            );
-        }
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an
@@ -1520,8 +1455,8 @@ impl RelationalDB {
     }
 
     /// Reports the metrics for `reducer`, using counters provided by `db`.
-    pub fn report_mut_tx_metrics(&self, reducer: String, metrics: TxMetrics, tx_data: Option<TxData>) {
-        self.report_tx_metrics(reducer, tx_data.map(Arc::new), Some(metrics), None);
+    pub fn report_mut_tx_metrics(&self, reducer: String, metrics: TxMetrics, tx_data: Option<Arc<TxData>>) {
+        self.report_tx_metrics(reducer, tx_data, Some(metrics), None);
     }
 
     /// Reports subscription metrics for `reducer`, using counters provided by `db`.

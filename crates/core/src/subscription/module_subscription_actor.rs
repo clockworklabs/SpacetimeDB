@@ -1031,7 +1031,7 @@ impl ModuleSubscriptions {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Arc::new(tx_data), tx_metrics)
+                (read_tx, tx_data, tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
                 // If the transaction failed, we need to rollback the mutable tx.
@@ -1198,7 +1198,7 @@ impl ModuleSubscriptions {
                     let _ = extra.send(tx_offset);
                 }
                 self.relational_db
-                    .report_tx_metrics(reducer, Some(Arc::new(tx_data)), Some(tx_metrics_mut), None);
+                    .report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), None);
             }
         });
         (guard, offset_rx)
