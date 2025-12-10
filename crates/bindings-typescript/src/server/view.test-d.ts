@@ -1,6 +1,7 @@
 import { schema } from '../lib/schema';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
+import type { ExtractArrayProduct } from '../lib/views';
 
 const person = table(
   {
@@ -28,6 +29,21 @@ const personWithExtra = table(
   }
 );
 
+const personWithMissing = table(
+  { name: 'personWithMissing' },
+  {
+    id: t.u32(),
+  }
+);
+
+const personReordered = table(
+  { name: 'personReordered' },
+  {
+    name: t.string(),
+    id: t.u32(),
+  }
+);
+
 const order = table(
   {
     name: 'order',
@@ -46,11 +62,15 @@ const order = table(
   }
 );
 
-const spacetime = schema(person, order, personWithExtra);
+const spacetime = schema(person, order, personWithExtra, personReordered, personWithMissing);
 
 const arrayRetValue = t.array(person.rowType);
 
 spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
+  type ExpectedReturn = _Expand<
+    ReturnType<typeof ctx.from.person.build>['__algebraicType']
+  >;
+  type ExtractedProduct = _Expand<ExtractArrayProduct<typeof arrayRetValue>>;
   type _Expand<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
   const idk = ctx.from.person.build();
   type Test = _Expand<typeof idk>;
@@ -72,9 +92,34 @@ spacetime.anonymousView(
 );
 
 // We should eventually make this fail.
-spacetime.anonymousView({ name: 'v3', public: true }, arrayRetValue, ctx => {
-  return ctx.from.personWithExtra.build();
-});
+spacetime.anonymousView(
+  { name: 'v3', public: true },
+  arrayRetValue,
+  // @ts-expect-error returns a query of the wrong type.
+  ctx => {
+    return ctx.from.personWithExtra.build();
+  }
+);
+
+// We should eventually make this fail.
+spacetime.anonymousView(
+  { name: 'reorderedPerson', public: true },
+  arrayRetValue,
+  // @ts-expect-error returns a query of the wrong type.
+  ctx => {
+    return ctx.from.personReordered.build();
+  }
+);
+
+// We should eventually make this fail.
+spacetime.anonymousView(
+  { name: 'missingField', public: true },
+  arrayRetValue,
+  // @ts-expect-error returns a query of the wrong type.
+  ctx => {
+    return ctx.from.personWithMissing.build();
+  }
+);
 
 spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
   // @ts-expect-error returns a query of the wrong type.
