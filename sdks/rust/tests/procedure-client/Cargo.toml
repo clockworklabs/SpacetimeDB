@@ -8,9 +8,11 @@ license-file = "LICENSE"
 
 [dependencies]
 spacetimedb-sdk = { path = "../.." }
+spacetimedb-lib.workspace = true
 test-counter = { path = "../test-counter" }
 anyhow.workspace = true
 env_logger.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

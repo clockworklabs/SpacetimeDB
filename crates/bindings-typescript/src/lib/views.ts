@@ -20,14 +20,17 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
+import { type QueryBuilder, type RowTypedQuery } from '../server/query';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
   db: ReadonlyDbView<S>;
+  from: QueryBuilder<S>;
 }>;
 
 export type AnonymousViewCtx<S extends UntypedSchemaDef> = Readonly<{
   db: ReadonlyDbView<S>;
+  from: QueryBuilder<S>;
 }>;
 
 export type ReadonlyDbView<SchemaDef extends UntypedSchemaDef> = {
@@ -39,17 +42,34 @@ export type ViewOpts = {
   public: true;
 };
 
+type FlattenedArray<T> = T extends readonly (infer E)[] ? E : never;
+
+// // If we allowed functions to return either.
+// type ViewReturn<Ret extends ViewReturnTypeBuilder> =
+//   | Infer<Ret>
+//   | RowTypedQuery<FlattenedArray<Infer<Ret>>>;
+
 export type ViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
+> =
+  | ((ctx: ViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
+  | ((
+      ctx: ViewCtx<S>,
+      params: InferTypeOfRow<Params>
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>>);
 
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
-> = (ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>;
+> =
+  | ((ctx: AnonymousViewCtx<S>, params: InferTypeOfRow<Params>) => Infer<Ret>)
+  | ((
+      ctx: AnonymousViewCtx<S>,
+      params: InferTypeOfRow<Params>
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>>);
 
 export type ViewReturnTypeBuilder =
   | TypeBuilder<
@@ -97,6 +117,7 @@ export function defineView<
     },
   });
 
+  // If it is an option, we wrap the function to make the return look like an array.
   if (returnType.tag == 'Sum') {
     const originalFn = fn;
     fn = ((ctx: ViewCtx<S>, args: InferTypeOfRow<Params>) => {

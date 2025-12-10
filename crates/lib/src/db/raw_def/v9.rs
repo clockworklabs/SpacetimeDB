@@ -528,6 +528,19 @@ pub struct RawViewDefV9 {
     pub return_type: AlgebraicType,
 }
 
+#[derive(Debug, Clone, SpacetimeType)]
+#[sats(crate = crate)]
+pub enum ViewResultHeader {
+    // This means the row data will follow, as a bsatn-encoded Vec<RowType>.
+    // We could make RowData contain an Vec<u8> of the bytes, but that forces us to make an extra copy when we serialize and
+    // when we deserialize.
+    RowData,
+    // This means we the view wants to return the results of the sql query.
+    RawSql(String),
+    // We can add an option for parameterized queries later,
+    // which would make it easier to cache query plans on the host side.
+}
+
 /// A reducer definition.
 #[derive(Debug, Clone, SpacetimeType)]
 #[sats(crate = crate)]

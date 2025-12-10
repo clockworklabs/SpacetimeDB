@@ -1201,6 +1201,9 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	Reducers->SetCallReducerFlags = SetReducerFlags;
 	Reducers->Conn = this;
 
+	Procedures = ObjectInitializer.CreateDefaultSubobject<URemoteProcedures>(this, TEXT("RemoteProcedures"));
+	Procedures->Conn = this;
+
 	RegisterTable<FBTreeU32Type, UBtreeU32Table, FEventContext>(TEXT("btree_u32"), Db->BtreeU32);
 	RegisterTable<FIndexedSimpleEnumType, UIndexedSimpleEnumTable, FEventContext>(TEXT("indexed_simple_enum"), Db->IndexedSimpleEnum);
 	RegisterTable<FIndexedTableType, UIndexedTableTable, FEventContext>(TEXT("indexed_table"), Db->IndexedTable);
@@ -1306,6 +1309,7 @@ FContextBase::FContextBase(UDbConnection* InConn)
 	Db = InConn->Db;
 	Reducers = InConn->Reducers;
 	SetReducerFlags = InConn->SetReducerFlags;
+	Procedures = InConn->Procedures;
 	Conn = InConn;
 }
 bool FContextBase::IsActive() const
@@ -7531,6 +7535,12 @@ void UDbConnection::PostInitProperties()
     {
         Reducers->InternalOnUnhandledReducerError.AddDynamic(this, &UDbConnection::OnUnhandledReducerErrorHandler);
     }
+
+    // Connect OnUnhandledProcedureError to Procedures.InternalOnUnhandledProcedureError
+    if (Procedures)
+    {
+        Procedures->InternalOnUnhandledProcedureError.AddDynamic(this, &UDbConnection::OnUnhandledProcedureErrorHandler);
+    }
 }
 
 UFUNCTION()
@@ -7539,6 +7549,15 @@ void UDbConnection::OnUnhandledReducerErrorHandler(const FReducerEventContext& C
     if (OnUnhandledReducerError.IsBound())
     {
         OnUnhandledReducerError.Broadcast(Context, Error);
+    }
+}
+
+UFUNCTION()
+void UDbConnection::OnUnhandledProcedureErrorHandler(const FProcedureEventContext& Context, const FString& Error)
+{
+    if (OnUnhandledProcedureError.IsBound())
+    {
+        OnUnhandledProcedureError.Broadcast(Context, Error);
     }
 }
 
@@ -9132,6 +9151,22 @@ void UDbConnection::ReducerEventFailed(const FReducerEvent& Event, const FString
     if (Reducers->InternalOnUnhandledReducerError.IsBound())
     {
         Reducers->InternalOnUnhandledReducerError.Broadcast(Context, ErrorMessage);
+    }
+}
+
+void UDbConnection::ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage)
+{
+    if (!Procedures) { return; }
+
+    FTestClientProcedureEvent ProcedureEvent;
+    ProcedureEvent.Status             = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
+    ProcedureEvent.Timestamp          = Event.Timestamp;
+
+    FProcedureEventContext Context(this, ProcedureEvent);
+
+    if (Procedures->InternalOnUnhandledProcedureError.IsBound())
+    {
+        Procedures->InternalOnUnhandledProcedureError.Broadcast(Context, ErrorMessage);
     }
 }
 

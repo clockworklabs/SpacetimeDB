@@ -11,7 +11,7 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
-use crate::host::scheduler::{handle_queued_call_reducer_params, QueueItem};
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::JsInstance;
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
@@ -41,7 +41,7 @@ use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOf
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
-use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
@@ -56,7 +56,6 @@ use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
@@ -401,13 +400,6 @@ impl Instance {
             Instance::Js(inst) => inst.trapped(),
         }
     }
-
-    async fn call_procedure(&mut self, params: CallProcedureParams) -> CallProcedureReturn {
-        match self {
-            Instance::Wasm(inst) => inst.call_procedure(params).await,
-            Instance::Js(inst) => inst.call_procedure(params).await,
-        }
-    }
 }
 
 /// Creates the table for `table_def` in `stdb`.
@@ -615,59 +607,6 @@ pub fn call_identity_connected(
     }
 }
 
-// Only for logging purposes.
-const SCHEDULED_REDUCER: &str = "scheduled_reducer";
-
-pub(crate) fn call_scheduled_reducer(
-    module: &ModuleInfo,
-    queue_item: QueueItem,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> (Result<(ReducerCallResult, Timestamp), ReducerCallError>, bool) {
-    extract_trapped(call_scheduled_reducer_inner(module, queue_item, call_reducer))
-}
-
-fn call_scheduled_reducer_inner(
-    module: &ModuleInfo,
-    item: QueueItem,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> Result<((ReducerCallResult, Timestamp), bool), ReducerCallError> {
-    let db = &module.relational_db();
-    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-
-    match handle_queued_call_reducer_params(&tx, module, db, item) {
-        Ok(Some(params)) => {
-            // Is necessary to patch the context with the actual calling reducer
-            let reducer_def = module
-                .module_def
-                .get_reducer_by_id(params.reducer_id)
-                .ok_or(ReducerCallError::ScheduleReducerNotFound)?;
-            let reducer = &*reducer_def.name;
-
-            tx.ctx = ExecutionContext::with_workload(
-                tx.ctx.database_identity(),
-                Workload::Reducer(ReducerContext {
-                    name: reducer.into(),
-                    caller_identity: params.caller_identity,
-                    caller_connection_id: params.caller_connection_id,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: params.args.get_bsatn().clone(),
-                }),
-            );
-
-            let timestamp = params.timestamp;
-            let (res, trapped) = call_reducer(Some(tx), params);
-            Ok(((res, timestamp), trapped))
-        }
-        Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-        Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
-            InvalidFunctionArguments {
-                err,
-                function_name: SCHEDULED_REDUCER.into(),
-            },
-        ))),
-    }
-}
-
 pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -678,9 +617,10 @@ pub struct CallReducerParams {
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
+
 impl CallReducerParams {
-    /// Returns a set of parameters for a call that came from within
-    /// and without a client/caller/request_id.
+    /// Returns a set of parameters for an internal call
+    /// without a client/caller/request_id.
     pub fn from_system(
         timestamp: Timestamp,
         caller_identity: Identity,
@@ -723,6 +663,26 @@ pub struct CallProcedureParams {
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
+}
+
+impl CallProcedureParams {
+    /// Returns a set of parameters for an internal call
+    /// without a client/caller/request_id.
+    pub fn from_system(
+        timestamp: Timestamp,
+        caller_identity: Identity,
+        procedure_id: ProcedureId,
+        args: ArgsTuple,
+    ) -> Self {
+        Self {
+            timestamp,
+            caller_identity,
+            caller_connection_id: ConnectionId::ZERO,
+            timer: None,
+            procedure_id,
+            args,
+        }
+    }
 }
 
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
@@ -1449,8 +1409,9 @@ impl ModuleHost {
         reducer_def: &ReducerDef,
         args: FunctionArgs,
     ) -> Result<CallReducerParams, InvalidReducerArguments> {
-        let reducer_seed = ArgsSeed(module.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let args = args
+            .into_tuple_for_def(&module.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         Ok(CallReducerParams {
             timestamp: Timestamp::now(),
@@ -1464,6 +1425,21 @@ impl ModuleHost {
         })
     }
 
+    pub async fn call_reducer_with_params(
+        &self,
+        reducer_name: &str,
+        tx: Option<MutTxId>,
+        params: CallReducerParams,
+    ) -> Result<ReducerCallResult, NoSuchModule> {
+        self.call(
+            reducer_name,
+            (tx, params),
+            |(tx, p), inst| inst.call_reducer(tx, p),
+            |(tx, p), inst| inst.call_reducer(tx, p),
+        )
+        .await
+    }
+
     async fn call_reducer_inner(
         &self,
         caller_identity: Identity,
@@ -1475,8 +1451,9 @@ impl ModuleHost {
         reducer_def: &ReducerDef,
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         let call_reducer_params = CallReducerParams {
             timestamp: Timestamp::now(),
@@ -1492,9 +1469,9 @@ impl ModuleHost {
         Ok(self
             .call(
                 &reducer_def.name,
-                call_reducer_params,
-                |p, inst| inst.call_reducer(None, p),
-                |p, inst| inst.call_reducer(None, p),
+                (None, call_reducer_params),
+                |(tx, p), inst| inst.call_reducer(tx, p),
+                |(tx, p), inst| inst.call_reducer(tx, p),
             )
             .await?)
     }
@@ -1600,41 +1577,73 @@ impl ModuleHost {
         procedure_def: &ProcedureDef,
         args: FunctionArgs,
     ) -> Result<CallProcedureReturn, ProcedureCallError> {
-        let procedure_seed = ArgsSeed(self.info.module_def.typespace().with_type(procedure_def));
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, procedure_def)
+            .map_err(InvalidProcedureArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-        let args = args.into_tuple(procedure_seed).map_err(InvalidProcedureArguments)?;
 
-        self.call_async_with_instance(&procedure_def.name, async move |mut inst| {
-            let res = inst
-                .call_procedure(CallProcedureParams {
-                    timestamp: Timestamp::now(),
-                    caller_identity,
-                    caller_connection_id,
-                    timer,
-                    procedure_id,
-                    args,
-                })
-                .await;
-            (res, inst)
-        })
-        .await
-        .map_err(Into::into)
+        let params = CallProcedureParams {
+            timestamp: Timestamp::now(),
+            caller_identity,
+            caller_connection_id,
+            timer,
+            procedure_id,
+            args,
+        };
+
+        Ok(self
+            .call_async_with_instance(&procedure_def.name, async move |inst| match inst {
+                Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+                Instance::Js(inst) => {
+                    let (r, s) = inst.call_procedure(params).await;
+                    (r, Instance::Js(s))
+                }
+            })
+            .await?)
     }
 
-    // Scheduled reducers require a different function here to call their reducer
-    // because their reducer arguments are stored in the database and need to be fetched
-    // within the same transaction as the reducer call.
-    pub(crate) async fn call_scheduled_reducer(
+    // This is not reused in `call_procedure_inner`
+    // due to concerns re. `Timestamp::now`.
+    pub async fn call_procedure_with_params(
         &self,
-        item: QueueItem,
-    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
-        self.call(
-            SCHEDULED_REDUCER,
-            item,
-            |item, inst| inst.call_scheduled_reducer(item),
-            |item, inst| inst.call_scheduled_reducer(item),
+        name: &str,
+        params: CallProcedureParams,
+    ) -> Result<CallProcedureReturn, NoSuchModule> {
+        self.call_async_with_instance(name, async move |inst| match inst {
+            Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+            Instance::Js(inst) => {
+                let (r, s) = inst.call_procedure(params).await;
+                (r, Instance::Js(s))
+            }
+        })
+        .await
+    }
+
+    pub(super) async fn call_scheduled_function(
+        &self,
+        params: ScheduledFunctionParams,
+    ) -> Result<CallScheduledFunctionResult, NoSuchModule> {
+        self.with_instance(
+            "scheduled function",
+            "reducer or procedure",
+            |l| self.start_call_timer(l),
+            async move |timer_guard, executor, inst| match inst {
+                Instance::Wasm(mut inst) => {
+                    executor
+                        .run_job(async move {
+                            drop(timer_guard);
+                            (inst.call_scheduled_function(params).await, Instance::Wasm(inst))
+                        })
+                        .await
+                }
+                Instance::Js(inst) => {
+                    drop(timer_guard);
+                    let (r, s) = inst.call_scheduled_function(params).await;
+                    (r, Instance::Js(s))
+                }
+            },
         )
-        .await?
+        .await
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -1684,12 +1693,18 @@ impl ModuleHost {
         for ViewCallInfo {
             view_id,
             table_id,
-            view_name,
+            fn_ptr,
             sender,
         } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
         {
+            let view_def = self
+                .info
+                .module_def
+                .get_view_by_id(fn_ptr, sender.is_none())
+                .ok_or(ViewCallError::NoSuchView)?;
+
             let result = self
-                .call_view(out.tx, &view_name, view_id, table_id, Nullary, caller, sender)
+                .call_view(out.tx, &view_def.name, view_id, table_id, Nullary, caller, sender)
                 .await?;
 
             // Increment execution stats
@@ -1721,9 +1736,9 @@ impl ModuleHost {
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
         let fn_ptr = view_def.fn_ptr;
         let row_type = view_def.product_type_ref;
-        let typespace = module_def.typespace().with_type(view_def);
-        let view_seed = ArgsSeed(typespace);
-        let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
+        let args = args
+            .into_tuple_for_def(module_def, view_def)
+            .map_err(InvalidViewArguments)?;
 
         match self
             .call_view_inner(tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type)

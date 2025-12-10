@@ -335,6 +335,7 @@ impl ClientConnectionSender {
             audience: vec![],
             iat: SystemTime::now(),
             exp: None,
+            extra: None,
         };
         let sender = Self {
             id,
@@ -390,6 +391,11 @@ impl ClientConnectionSender {
                     connection_id = %self.id.connection_id,
                     confirmed_reads = self.config.confirmed_reads,
                     "client channel capacity exceeded"
+                );
+                log::warn!(
+                    "Client {:?} exceeded channel capacity of {}, kicking",
+                    self.id,
+                    self.sendtx.capacity(),
                 );
                 self.abort_handle.abort();
                 self.cancelled.store(true, Ordering::Relaxed);

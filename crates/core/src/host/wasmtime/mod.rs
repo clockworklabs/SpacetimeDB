@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::time::Duration;
 
 use anyhow::Context;
-use spacetimedb_paths::server::{ServerDataDir, WasmtimeCacheDir};
+use spacetimedb_paths::server::ServerDataDir;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
 
 use crate::energy::{EnergyQuanta, FunctionBudget};
@@ -71,9 +71,18 @@ impl WasmtimeRuntime {
         #[cfg(feature = "perfmap")]
         config.profiler(wasmtime::ProfilingStrategy::PerfMap);
 
-        // ignore errors for this - if we're not able to set up caching, that's fine, it's just an optimization
         if let Some(data_dir) = data_dir {
-            let _ = Self::set_cache_config(&mut config, data_dir.wasmtime_cache());
+            let mut cache_config = wasmtime::CacheConfig::new();
+            cache_config.with_directory(data_dir.wasmtime_cache().0);
+            match wasmtime::Cache::new(cache_config) {
+                Ok(cache) => {
+                    config.cache(Some(cache));
+                }
+                Err(e) => {
+                    // caching is just an optimization, so if it fails, just log and continue
+                    tracing::warn!("failed to set up wasmtime cache: {e:#}")
+                }
+            }
         }
 
         let engine = Engine::new(&config).unwrap();
@@ -89,20 +98,6 @@ impl WasmtimeRuntime {
         WasmtimeModule::link_imports(&mut linker).unwrap();
 
         WasmtimeRuntime { engine, linker }
-    }
-
-    fn set_cache_config(config: &mut wasmtime::Config, cache_dir: WasmtimeCacheDir) -> anyhow::Result<()> {
-        use std::io::Write;
-        let cache_config = toml::toml! {
-            // see <https://docs.wasmtime.dev/cli-cache.html> for options here
-            [cache]
-            enabled = true
-            directory = (toml::Value::try_from(cache_dir.0)?)
-        };
-        let tmpfile = tempfile::NamedTempFile::new()?;
-        write!(&tmpfile, "{cache_config}")?;
-        config.cache_config_load(tmpfile.path())?;
-        Ok(())
     }
 }
 
@@ -149,10 +144,7 @@ pub enum WasmError {
 #[derive(Copy, Clone)]
 struct WasmtimeFuel(u64);
 
-impl WasmtimeFuel {
-    /// 1000 energy quanta == 1 wasmtime fuel unit
-    const QUANTA_MULTIPLIER: u64 = 1_000;
-}
+impl WasmtimeFuel {}
 
 impl From<FunctionBudget> for WasmtimeFuel {
     fn from(v: FunctionBudget) -> Self {
@@ -160,19 +152,19 @@ impl From<FunctionBudget> for WasmtimeFuel {
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
-        WasmtimeFuel(v.get() / Self::QUANTA_MULTIPLIER)
+        WasmtimeFuel(v.get())
     }
 }
 
 impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        FunctionBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0)
     }
 }
 
 impl From<WasmtimeFuel> for EnergyQuanta {
     fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0) * u128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
+        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 
@@ -244,12 +236,15 @@ impl Mem {
 
     /// Creates and returns a view into the actual memory `store`.
     /// This view allows for reads and writes.
-    pub fn view_and_store_mut<'a, T>(&self, store: impl Into<StoreContextMut<'a, T>>) -> (&'a mut MemView, &'a mut T) {
+    pub fn view_and_store_mut<'a, T: 'static>(
+        &self,
+        store: impl Into<StoreContextMut<'a, T>>,
+    ) -> (&'a mut MemView, &'a mut T) {
         let (mem, store_data) = self.memory.data_and_store_mut(store);
         (MemView::from_slice_mut(mem), store_data)
     }
 
-    fn view<'a, T: 'a>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
+    fn view<'a, T: 'static>(&self, store: impl Into<StoreContext<'a, T>>) -> &'a MemView {
         MemView::from_slice(self.memory.data(store))
     }
 }

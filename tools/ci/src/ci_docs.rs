@@ -2,6 +2,7 @@ use clap::{Command, CommandFactory};
 
 use crate::Cli;
 
+// TODO: use clap_markdown instead of this custom implementation in the future
 pub fn generate_cli_docs() -> String {
     let mut cli = Cli::command();
     let usage = generate_markdown(&mut cli, 2);

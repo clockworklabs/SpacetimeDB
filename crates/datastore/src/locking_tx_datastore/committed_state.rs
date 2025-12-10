@@ -93,6 +93,15 @@ impl CommittedState {
     pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)
     }
+
+    /// Returns the views that perform an precise index seek on given `row_ref` of `table_id`
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ref: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.read_sets.views_for_index_seek(table_id, row_ref)
+    }
 }
 
 impl MemoryUsage for CommittedState {
@@ -1006,6 +1015,17 @@ impl CommittedState {
         let blob_store = &mut self.blob_store;
         let pool = &self.page_pool;
         (table, blob_store, pool)
+    }
+
+    /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
+    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
+        (
+            self.tables
+                .iter_mut()
+                .filter(|(table_id, _)| !self.ephemeral_tables.contains(*table_id))
+                .map(|(_, table)| table),
+            &self.blob_store,
+        )
     }
 
     pub fn report_data_size(&self, database_identity: Identity) {

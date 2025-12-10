@@ -158,6 +158,12 @@ export function pushReducer(
     lifecycle, // <- lifecycle flag lands here
   });
 
+  // If the function isn't named (e.g. `function foobar() {}`), give it the same
+  // name as the reducer so that it's clear what it is in in backtraces.
+  if (!fn.name) {
+    Object.defineProperty(fn, 'name', { value: name, writable: false });
+  }
+
   REDUCERS.push(fn);
 }
 

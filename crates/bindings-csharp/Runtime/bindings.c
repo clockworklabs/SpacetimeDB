@@ -160,6 +160,16 @@ EXPORT(int16_t, __call_reducer__,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &error);
 
+EXPORT(int16_t, __call_procedure__,
+       (uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t conn_id_0, uint64_t conn_id_1,
+        uint64_t timestamp, BytesSource args, BytesSink result_sink),
+       &id,
+       &sender_0, &sender_1, &sender_2, &sender_3,
+       &conn_id_0, &conn_id_1,
+       &timestamp, &args, &result_sink);
+
 EXPORT(int16_t, __call_view__,
        (uint32_t id,
         uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,

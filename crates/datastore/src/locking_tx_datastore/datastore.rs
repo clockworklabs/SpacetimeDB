@@ -282,12 +282,8 @@ impl Locking {
             tx_offset,
         );
 
-        let CommittedState {
-            ref mut tables,
-            ref blob_store,
-            ..
-        } = *committed_state;
-        let snapshot_dir = repo.create_snapshot(tables.values_mut(), blob_store, tx_offset)?;
+        let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        let snapshot_dir = repo.create_snapshot(tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, snapshot_dir)))
     }
@@ -738,8 +734,7 @@ impl TxMetrics {
         // For each table, collect the extra stats, that we don't have in `tx_data`.
         let table_stats = tx_data
             .map(|tx_data| {
-                let mut table_stats =
-                    <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
+                let mut table_stats = HashMap::with_capacity(tx_data.num_tables_affected());
                 for (table_id, _) in tx_data.table_ids_and_names() {
                     let stats = committed_state.get_table(table_id).map(|table| TableStats {
                         row_count: table.row_count,

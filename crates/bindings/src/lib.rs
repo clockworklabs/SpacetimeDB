@@ -8,6 +8,8 @@ use std::rc::Rc;
 
 #[cfg(feature = "unstable")]
 mod client_visibility_filter;
+#[cfg(feature = "unstable")]
+pub mod http;
 pub mod log_stopwatch;
 mod logger;
 #[cfg(feature = "rand08")]
@@ -16,6 +18,9 @@ mod rng;
 pub mod rt;
 #[doc(hidden)]
 pub mod table;
+
+#[doc(hidden)]
+pub mod query_builder;
 
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
@@ -739,6 +744,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
+#[cfg(feature = "unstable")]
 pub use spacetimedb_bindings_macro::procedure;
 
 /// Marks a function as a spacetimedb view.
@@ -862,19 +868,42 @@ pub use spacetimedb_bindings_macro::procedure;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::view;
 
+pub struct QueryBuilder {}
+pub use query_builder::Query;
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
 }
 
+impl Default for AnonymousViewContext {
+    fn default() -> Self {
+        Self {
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
+}
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
     pub sender: Identity,
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
+}
+
+impl ViewContext {
+    pub fn new(sender: Identity) -> Self {
+        Self {
+            sender,
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
 }
 
 /// The context that any reducer is provided with.
@@ -994,15 +1023,12 @@ impl ReducerContext {
 
     /// Create an anonymous (no sender) read-only view context
     pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
-        AnonymousViewContext { db: LocalReadOnly {} }
+        AnonymousViewContext::default()
     }
 
     /// Create a sender-bound read-only view context using this reducer's caller.
     pub fn as_read_only(&self) -> ViewContext {
-        ViewContext {
-            sender: self.sender,
-            db: LocalReadOnly {},
-        }
+        ViewContext::new(self.sender)
     }
 }
 
@@ -1042,6 +1068,8 @@ impl Deref for TxContext {
 ///
 /// Includes information about the client calling the procedure and the time of invocation,
 /// and exposes methods for running transactions and performing side-effecting operations.
+#[non_exhaustive]
+#[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
     pub sender: Identity,
@@ -1053,11 +1081,15 @@ pub struct ProcedureContext {
     ///
     /// Will be `None` for certain scheduled procedures.
     pub connection_id: Option<ConnectionId>,
+
+    /// Methods for performing HTTP requests.
+    pub http: crate::http::HttpClient,
     // TODO: Add rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
 }
 
+#[cfg(feature = "unstable")]
 impl ProcedureContext {
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
@@ -1242,6 +1274,14 @@ pub trait DbContext {
     fn db(&self) -> &Self::DbView;
 }
 
+impl DbContext for AnonymousViewContext {
+    type DbView = LocalReadOnly;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1253,6 +1293,14 @@ impl DbContext for ReducerContext {
 #[cfg(feature = "unstable")]
 impl DbContext for TxContext {
     type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+impl DbContext for ViewContext {
+    type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
         &self.db

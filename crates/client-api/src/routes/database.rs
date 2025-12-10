@@ -22,6 +22,7 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
 use http::StatusCode;
+use log::info;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
@@ -44,21 +45,30 @@ use spacetimedb_schema::auto_migrate::{
 
 use super::subscribe::{handle_websocket, HasWebSocketOptions};
 
-fn require_spacetime_auth_for_creation() -> bool {
-    env::var("TEMP_REQUIRE_SPACETIME_AUTH").is_ok_and(|v| !v.is_empty())
+fn require_spacetime_auth_for_creation() -> Option<String> {
+    // If the string is a non-empty value, return the string to be used as the required issuer
+    // TODO(cloutiertyler): This env var replaces TEMP_REQUIRE_SPACETIME_AUTH,
+    // we should remove that one in the future. We may eventually remove
+    // the below restriction entirely as well in Maincloud.
+    match env::var("TEMP_SPACETIMEAUTH_ISSUER_REQUIRED_TO_PUBLISH") {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
 }
 
 // A hacky function to let us restrict database creation on maincloud.
 fn allow_creation(auth: &SpacetimeAuth) -> Result<(), ErrorResponse> {
-    if !require_spacetime_auth_for_creation() {
+    let Some(required_issuer) = require_spacetime_auth_for_creation() else {
         return Ok(());
-    }
-    if auth.claims.issuer.trim_end_matches('/') == "https://auth.spacetimedb.com" {
+    };
+    let issuer = auth.claims.issuer.trim_end_matches('/');
+    if issuer == required_issuer {
         Ok(())
     } else {
         log::trace!(
-            "Rejecting creation request because auth issuer is {}",
-            auth.claims.issuer
+            "Rejecting creation request because auth issuer is {} and required issuer is {}",
+            auth.claims.issuer,
+            required_issuer
         );
         Err((
             StatusCode::UNAUTHORIZED,
@@ -701,14 +711,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         let name_or_identity = name_or_identity
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
-        if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)? {
-            if ctx
+        let database_identity = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)?;
+        if let Ok(identity) = database_identity {
+            let exists = ctx
                 .get_database_by_identity(&identity)
                 .await
                 .map_err(log_and_500)?
-                .is_some()
-            {
-                return reset(
+                .is_some();
+            if exists {
+                if parent.is_some() {
+                    return Err(bad_request(
+                        "Setting the parent of an existing database is not supported".into(),
+                    ));
+                }
+
+                return self::reset(
                     State(ctx),
                     Path(ResetDatabaseParams {
                         name_or_identity: name_or_identity.clone(),
@@ -933,6 +950,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
         PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
     };
 
+    info!("planning migration for database {database_identity}");
     let migrate_plan = ctx
         .migrate_plan(
             DatabaseDef {
@@ -954,6 +972,10 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             breaks_client,
             plan,
         } => {
+            info!(
+                "planned auto-migration of database {} from {} to {}",
+                database_identity, old_module_hash, new_module_hash
+            );
             let token = MigrationToken {
                 database_identity,
                 old_module_hash,
@@ -968,6 +990,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             }))
         }
         MigratePlanResult::AutoMigrationError(e) => {
+            info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
             }))
@@ -1228,7 +1251,7 @@ where
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
             .route("/call/:reducer", self.call_reducer_post)
-            .route("/procedure/:procedure", self.call_procedure_post)
+            .route("/unstable/procedure/:procedure", self.call_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
