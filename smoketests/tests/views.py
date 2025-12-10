@@ -741,9 +741,9 @@ fn online_users_age(ctx: &ViewContext) -> Query<Person> {
 fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .person()
-        .r#where(|p| p.age.eq(20))
+        .filter(|p| p.age.eq(20))
         .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
-        .r#where(|u| u.online.eq(false))
+        .filter(|u| u.online.eq(false))
         .build()
 }
 
@@ -752,6 +752,22 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .user()
         .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
+        .build()
+}
+
+#[spacetimedb::view(name = users_who_are_above_20_and_below_30, public)]
+fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> Query<Person> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.gt(20).and(p.age.lt(30)))
+        .build()
+}
+
+#[spacetimedb::view(name = users_who_are_above_eq_20_and_below_eq_30, public)]
+fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> Query<Person> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.gte(20).and(p.age.lte(30)))
         .build()
 }
 """
@@ -794,4 +810,18 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
  2        | "BOB" | false
 """)
 
+    def test_where_expr_view(self):
+        """Tests that views with where expressions work as expected"""
+
+        self.assertSql("SELECT * FROM users_who_are_above_20_and_below_30", """\
+ identity | name | age
+----------+------+-----
+""")
+
+        self.assertSql("SELECT * FROM users_who_are_above_eq_20_and_below_eq_30", """\
+ identity | name    | age
+----------+---------+-----
+ 1        | "Alice" | 30
+ 2        | "BOB"   | 20
+""")
 
