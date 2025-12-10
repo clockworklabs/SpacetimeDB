@@ -82,16 +82,6 @@ export type ViewReturnTypeBuilder =
       OptionAlgebraicType<AlgebraicTypeVariants.Product>
     >;
 
-// export type ViewReturnTypeBuilder =
-//   | TypeBuilder<
-//       readonly object[],
-//       { tag: 'Array'; value: AlgebraicTypeVariants.Product }
-//     >
-//   | TypeBuilder<
-//       object | undefined,
-//       OptionAlgebraicType<AlgebraicTypeVariants.Product>
-//     >;
-
 export function defineView<
   S extends UntypedSchemaDef,
   const Anonymous extends boolean,
@@ -160,7 +150,7 @@ export const ANON_VIEWS: ViewInfo<AnonymousViewFn<any, any, any>>[] = [];
 
 // A helper to get the product type out of a type builder.
 // This is only non-never if the type builder is an array.
-export type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
+type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
   InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Array'; value: infer V }
     ? V extends { tag: 'Product'; value: infer P }
       ? P

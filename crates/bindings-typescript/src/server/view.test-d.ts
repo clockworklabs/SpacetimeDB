@@ -1,7 +1,6 @@
 import { schema } from '../lib/schema';
 import { table } from '../lib/table';
 import t from '../lib/type_builders';
-import type { ExtractArrayProduct } from '../lib/views';
 
 const person = table(
   {
@@ -74,14 +73,6 @@ const arrayRetValue = t.array(person.rowType);
 const optionalPerson = t.option(person.rowType);
 
 spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
-  type ExpectedReturn = _Expand<
-    ReturnType<typeof ctx.from.person.build>['__algebraicType']
-  >;
-  type ExtractedProduct = _Expand<ExtractArrayProduct<typeof arrayRetValue>>;
-  type _Expand<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
-  const idk = ctx.from.person.build();
-  type Test = _Expand<typeof idk>;
-  type T2 = _Expand<(typeof idk)['__algebraicType']>;
   return ctx.from.person.build();
 });
 

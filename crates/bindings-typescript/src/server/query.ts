@@ -40,13 +40,6 @@ export interface RowTypedQuery<Row, ST> {
   readonly __algebraicType?: ST;
 }
 
-type RowFromTableQuery<Q> =
-  Q extends TableTypedQuery<infer TD> ? RowType<TD> : never;
-
-// export type ToRowQuery<Q> = RowTypedQuery<RowFromTableQuery<Q>>;
-
-// export type Query<TableDef extends TypedTableDef> = TableTypedQuery<TableDef>;
-// export type Query<TableDef extends TypedTableDef> = TableTypedQuery<TableDef>;
 export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
   RowType<TableDef>,
   TableDef['rowType']
