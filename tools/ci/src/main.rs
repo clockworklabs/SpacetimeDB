@@ -163,15 +163,6 @@ enum CiCmd {
     },
 }
 
-macro_rules! bash {
-    ($cmdline:expr) => {
-        run_bash($cmdline, &Vec::new())
-    };
-    ($cmdline:expr, $envs:expr) => {
-        run_bash($cmdline, $envs)
-    };
-}
-
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     let subcmds = Cli::command()
         .get_subcommands()
@@ -184,25 +175,11 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
             continue;
         }
         log::info!("executing cargo ci {subcmd}");
-        bash!(&format!("cargo ci {subcmd}"))?;
+        cmd!("cargo", "ci", &subcmd).run()?;
     }
 
     Ok(())
 }
-
-fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
-    let mut env = env::vars().collect::<HashMap<_, _>>();
-    env.extend(additional_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
-    log::debug!("$ {cmdline}");
-    let status = cmd!("bash", "-lc", cmdline).full_env(env).run()?;
-    if !status.status.success() {
-        let e = anyhow::anyhow!("command failed: {cmdline}");
-        log::error!("{e}");
-        return Err(e);
-    }
-    Ok(())
-}
-
 #[derive(Debug, Clone)]
 pub enum StartServer {
     No,
@@ -269,7 +246,6 @@ impl ServerState {
                 let server_port = find_free_port()?;
                 let pg_port = find_free_port()?;
                 let tracy_port = find_free_port()?;
-                let env_string = format!("STDB_PORT={server_port} STDB_PG_PORT={pg_port} STDB_TRACY_PORT={tracy_port}");
                 let project = format!("spacetimedb-smoketests-{server_port}");
                 args.push("--remote-server".into());
                 let server_url = format!("http://localhost:{server_port}");
@@ -279,9 +255,20 @@ impl ServerState {
                 let handle = thread::spawn({
                     let project = project.clone();
                     move || {
-                        let _ = bash!(&format!(
-                            "{env_string} docker compose -f {compose_str} --project-name {project} up --abort-on-container-exit"
-                        ));
+                        let _ = cmd!(
+                            "docker",
+                            "compose",
+                            "-f",
+                            &compose_str,
+                            "--project-name",
+                            &project,
+                            "up",
+                            "--abort-on-container-exit",
+                        )
+                        .env("STDB_PORT", server_port.to_string())
+                        .env("STDB_PG_PORT", pg_port.to_string())
+                        .env("STDB_TRACY_PORT", tracy_port.to_string())
+                        .run();
                     }
                 });
                 wait_until_http_ready(Duration::from_secs(300), &server_url)?;
@@ -313,7 +300,7 @@ impl ServerState {
                         "--",
                         "start",
                         "--listen-addr",
-                        "0.0.0.0:{server_port}",
+                        &format!("0.0.0.0:{server_port}"),
                         "--pg-port",
                         pg_port.to_string(),
                         "--data-dir",
@@ -339,10 +326,17 @@ impl Drop for ServerState {
                 project,
             } => {
                 println!("Shutting down server..");
-                let compose_str = compose_file.to_string_lossy();
-                let _ = bash!(&format!(
-                    "docker compose -f {compose_str} --project-name {project} down"
-                ));
+                let compose_str = compose_file.to_string_lossy().to_string();
+                let _ = cmd!(
+                    "docker",
+                    "compose",
+                    "-f",
+                    &compose_str,
+                    "--project-name",
+                    project,
+                    "down",
+                )
+                .run();
             }
             ServerState::Yes { handle: _, data_dir } => {
                 println!("Shutting down server (temp data-dir will be dropped)..");
@@ -358,7 +352,8 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
     let _server = ServerState::start(server_mode, &mut args)?;
 
     println!("Running smoketests: {}", args.join(" "));
-    bash!(&format!("{python} -m smoketests {}", args.join(" ")))
+    cmd(python, "-m", "smoketests", args).run()?;
+    Ok(())
 }
 
 fn server_start_config(start_server: bool, docker: Option<String>) -> StartServer {
@@ -426,8 +421,7 @@ fn common_args(
 }
 
 fn infer_python() -> String {
-    // TODO: does this work on windows?
-    let py3_available = bash!("command -v python3 >/dev/null 2>&1").is_ok();
+    let py3_available = cmd!("python3", "--version").run().is_ok();
     if py3_available {
         "python3".to_string()
     } else {
@@ -525,9 +519,8 @@ fn run_smoketests_parallel(
         for test in test {
             list_args.push(test.clone());
         }
-        let list_cmdline = format!("{python} -m smoketests {}", list_args.join(" "));
 
-        let output = cmd!("bash", "-lc", list_cmdline)
+        let output = cmd(&python, "-m", "smoketests", &list_args)
             .stderr_to_stdout()
             .read()
             .expect("Failed to list smoketests");
@@ -617,40 +610,84 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            bash!("cargo test --all -- --skip unreal")?;
+            cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
             // The fallocate tests have been flakely when running in parallel
-            bash!("cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1")?;
-            bash!("bash tools/check-diff.sh")?;
-            bash!("cargo run -p spacetimedb-codegen --example regen-csharp-moduledef && bash tools/check-diff.sh crates/bindings-csharp")?;
-            bash!("(cd crates/bindings-csharp && dotnet test -warnaserror)")?;
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-durability",
+                "--features",
+                "fallocate",
+                "--",
+                "--test-threads=1",
+            )
+            .run()?;
+            cmd!("bash", "tools/check-diff.sh").run()?;
+            cmd!(
+                "cargo",
+                "run",
+                "-p",
+                "spacetimedb-codegen",
+                "--example",
+                "regen-csharp-moduledef",
+            )
+            .run()?;
+            cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
+            cmd!("dotnet", "test", "-warnaserror")
+                .dir("crates/bindings-csharp")
+                .run()?;
         }
 
         Some(CiCmd::Lint) => {
-            bash!("cargo fmt --all -- --check")?;
-            bash!("cargo clippy --all --tests --benches -- -D warnings")?;
-            bash!("(cd crates/bindings-csharp && dotnet tool restore && dotnet csharpier --check .)")?;
+            cmd!("cargo", "fmt", "--all", "--", "--check").run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--all",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
+            cmd!("dotnet", "tool", "restore").dir("crates/bindings-csharp").run()?;
+            cmd!("dotnet", "csharpier", "--check", ".")
+                .dir("crates/bindings-csharp")
+                .run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
             // since we want everything reachable through it to also work.
             // This includes `sats` and `lib`.
-            bash!(
-                "cd crates/bindings && cargo doc",
+            cmd!("cargo", "doc")
+                .dir("crates/bindings")
                 // Make `cargo doc` exit with error on warnings, most notably broken links
-                &[("RUSTDOCFLAGS", "--deny warnings")]
-            )?;
+                .env("RUSTDOCFLAGS", "--deny warnings")
+                .run()?;
         }
 
         Some(CiCmd::WasmBindings) => {
-            bash!("cargo test -p spacetimedb-codegen")?;
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
             // of dependencies than what is in the workspace lock file.
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
-            bash!("cargo update")?;
-            bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
+            cmd!("cargo", "update").run()?;
+            cmd!(
+                "cargo",
+                "run",
+                "-p",
+                "spacetimedb-cli",
+                "--",
+                "build",
+                "--project-path",
+                "modules/module-test",
+            )
+            .run()?;
         }
 
         Some(CiCmd::Smoketests {
@@ -738,20 +775,34 @@ fn main() -> Result<()> {
                 ""
             };
 
-            bash!(&format!("echo 'checking update flow for target: {target}'"))?;
-            bash!(&format!(
-                "cargo build {github_token_auth_flag}{target} -p spacetimedb-update"
-            ))?;
+            println!("checking update flow for target: {target}");
+            cmd!(
+                "cargo",
+                "build",
+                &format!("{github_token_auth_flag}{target}"),
+                "-p",
+                "spacetimedb-update",
+            )
+            .run()?;
             // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
             // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
             // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
-            bash!(&format!(
-                r#"
-ROOT_DIR="$(mktemp -d)"
-cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install --root-dir="${{ROOT_DIR}}" --yes
-"${{ROOT_DIR}}"/spacetime --root-dir="${{ROOT_DIR}}" help
-        "#
-            ))?;
+            let root_dir = tempfile::tempdir()?;
+            let root_path = root_dir.path().to_string_lossy().to_string();
+            cmd!(
+                "cargo",
+                "run",
+                &format!("{github_token_auth_flag}{target}"),
+                "-p",
+                "spacetimedb-update",
+                "--",
+                "self-install",
+                "--root-dir",
+                &root_path,
+                "--yes",
+            )
+            .run()?;
+            cmd!(format!("{}/spacetime", root_path), "--root-dir", &root_path, "help",).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
@@ -766,20 +817,21 @@ cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install
                 );
             }
 
-            bash!("pnpm install --recursive")?;
-            bash!("cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md")?;
-            bash!("pnpm format")?;
-            bash!("git status")?;
-            bash!(
-                r#"
-if git diff --exit-code HEAD; then
-  echo "No docs changes detected"
-else
-  echo "It looks like the CLI docs have changed:"
-  exit 1
-fi
-                "#
-            )?;
+            cmd!("pnpm", "install", "--recursive").run()?;
+            let cli_docs = cmd!("cargo", "run", "--features", "markdown-docs", "-p", "spacetimedb-cli",).read()?;
+            fs::write("docs/docs/cli-reference.md", cli_docs)?;
+            cmd!("pnpm", "format").run()?;
+            let status = cmd!("git", "diff", "--exit-code", "HEAD")
+                .stdout_null()
+                .stderr_null()
+                .unchecked()
+                .run()?;
+            if !status.status.success() {
+                println!("It looks like the CLI docs have changed:");
+                anyhow::bail!("CLI docs are out of date");
+            } else {
+                println!("No docs changes detected");
+            }
         }
 
         Some(CiCmd::SelfDocs { check }) => {
