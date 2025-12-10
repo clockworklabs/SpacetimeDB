@@ -91,6 +91,9 @@ impl Iterator for TableIndexPointIter<'_> {
 ///
 /// See module docs for info about specialization.
 enum TypedIndexRangeIter<'a> {
+    /// The range itself provided was empty.
+    RangeEmpty,
+
     // All the non-unique btree index iterators.
     BtreeBool(BtreeIndexRangeIter<'a, bool>),
     BtreeU8(BtreeIndexRangeIter<'a, u8>),
@@ -137,6 +140,8 @@ impl Iterator for TypedIndexRangeIter<'_> {
     type Item = RowPointer;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
+            Self::RangeEmpty => None,
+
             Self::BtreeBool(this) => this.next().copied(),
             Self::BtreeU8(this) => this.next().copied(),
             Self::BtreeI8(this) => this.next().copied(),
@@ -827,6 +832,24 @@ impl TypedIndex {
     }
 
     fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedIndexRangeIter<'_> {
+        // Copied from `RangeBounds::is_empty` as it's unstable.
+        // TODO(centril): replace once stable.
+        fn is_empty<T: PartialOrd>(bounds: &impl RangeBounds<T>) -> bool {
+            use core::ops::Bound::*;
+            !match (bounds.start_bound(), bounds.end_bound()) {
+                (Unbounded, _) | (_, Unbounded) => true,
+                (Included(start), Excluded(end))
+                | (Excluded(start), Included(end))
+                | (Excluded(start), Excluded(end)) => start < end,
+                (Included(start), Included(end)) => start <= end,
+            }
+        }
+
+        // Ensure we don't panic inside `BTreeMap::seek_range`.
+        if is_empty(range) {
+            return RangeEmpty;
+        }
+
         fn mm_iter_at_type<'a, T: Ord>(
             this: &'a BtreeIndex<T>,
             range: &impl RangeBounds<AlgebraicValue>,
@@ -1355,10 +1378,12 @@ mod test {
     use crate::page_pool::PagePool;
     use crate::{blob_store::HashMapBlobStore, table::test::table};
     use core::ops::Bound::*;
+    use decorum::Total;
     use proptest::prelude::*;
     use proptest::{collection::vec, test_runner::TestCaseResult};
     use spacetimedb_data_structures::map::HashMap;
     use spacetimedb_primitives::ColId;
+    use spacetimedb_sats::proptest::{generate_algebraic_value, generate_primitive_algebraic_type};
     use spacetimedb_sats::{
         product,
         proptest::{generate_product_value, generate_row_type},
@@ -1404,6 +1429,34 @@ mod test {
         row: &'a AlgebraicValue,
     ) -> Option<TableIndexPointIter<'a>> {
         index.is_unique().then(|| index.seek_point(row))
+    }
+
+    fn successor_of_primitive(av: &AlgebraicValue) -> Option<AlgebraicValue> {
+        use AlgebraicValue::*;
+        match av {
+            Min | Max | Sum(_) | Product(_) | Array(_) | String(_) => unimplemented!(),
+
+            Bool(false) => Some(Bool(true)),
+            Bool(true) => None,
+            I8(x) => x.checked_add(1).map(I8),
+            U8(x) => x.checked_add(1).map(U8),
+            I16(x) => x.checked_add(1).map(I16),
+            U16(x) => x.checked_add(1).map(U16),
+            I32(x) => x.checked_add(1).map(I32),
+            U32(x) => x.checked_add(1).map(U32),
+            I64(x) => x.checked_add(1).map(I64),
+            U64(x) => x.checked_add(1).map(U64),
+            I128(x) => x.0.checked_add(1).map(Packed).map(I128),
+            U128(x) => x.0.checked_add(1).map(Packed).map(U128),
+            I256(x) => x.checked_add(1.into()).map(Box::new).map(I256),
+            U256(x) => x.checked_add(1u8.into()).map(Box::new).map(U256),
+            F32(x) => Some(F32(Total::from_inner(x.into_inner().next_up()))),
+            F64(x) => Some(F64(Total::from_inner(x.into_inner().next_up()))),
+        }
+    }
+
+    fn gen_primitive_ty_and_val() -> impl Strategy<Value = (AlgebraicType, AlgebraicValue)> {
+        generate_primitive_algebraic_type().prop_flat_map(|ty| (Just(ty.clone()), generate_algebraic_value(ty)))
     }
 
     proptest! {
@@ -1559,6 +1612,39 @@ mod test {
             // Test `(x, y)` (Exclusive start, exclusive end).
             test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Excluded(V(needle))), [])?;
             test_seek(&index, &val_to_ptr, (Excluded(V(prev)), Excluded(V(next))), [needle])?;
+        }
+
+        #[test]
+        fn empty_range_scans_dont_panic(((ty, val), is_unique) in (gen_primitive_ty_and_val(), any::<bool>())) {
+            let succ = successor_of_primitive(&val);
+            prop_assume!(succ.is_some());
+            let succ = succ.unwrap();
+
+            // Construct the index.
+            let row_ty = ProductType::from([ty.clone()]);
+            let mut index = new_index(&row_ty, &[0].into(), is_unique);
+
+            // Construct the table and add `val` as a row.
+            let mut table = table(row_ty);
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+            let pv = product![val.clone()];
+            let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
+
+            // Add the row to the index.
+            unsafe { index.check_and_insert(row_ref).unwrap(); }
+
+            // Seek the empty ranges.
+            let rows = index.seek_range(&(&succ..&val)).collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = index.seek_range(&(&succ..=&val)).collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = index.seek_range(&(Excluded(&succ), Included(&val))).collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = index.seek_range(&(Excluded(&succ), Excluded(&val))).collect::<Vec<_>>();
+            assert_eq!(rows, []);
+            let rows = index.seek_range(&(Excluded(&val), Excluded(&val))).collect::<Vec<_>>();
+            assert_eq!(rows, []);
         }
     }
 }
