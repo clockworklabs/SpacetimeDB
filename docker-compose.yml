@@ -24,11 +24,11 @@ services:
       - key_files:/etc/spacetimedb
       - /stdb
     ports:
-      - "3000:3000"
+      - "${STDB_PORT:-3000}:3000"
       # Postgres
-      - "5432:5432"
+      - "${STDB_PG_PORT:-5432}:5432"
       # Tracy
-      - "8086:8086"
+      - "${STDB_TRACY_PORT:-8086}:8086"
     entrypoint: cargo watch -i flamegraphs -i log.conf --why -C crates/standalone -x 'run start --data-dir=/stdb/data --jwt-pub-key-path=/etc/spacetimedb/id_ecdsa.pub --jwt-priv-key-path=/etc/spacetimedb/id_ecdsa --pg-port 5432'
     privileged: true
     environment:
