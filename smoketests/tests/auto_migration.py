@@ -43,6 +43,13 @@ pub struct Vector2 {
 """
 
     MODULE_CODE = MODULE_CODE_INIT + """
+
+#[spacetimedb::table(name = person_info)]
+pub struct PersonInfo {
+    #[primary_key]
+    id: u64,
+}
+
 #[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
 pub enum PersonKind {
     Student,
@@ -60,6 +67,14 @@ fn kind_to_string(Student: PersonKind) -> &'static str {
     MODULE_CODE_UPDATED = (
         MODULE_CODE_INIT
         + """
+
+#[spacetimedb::table(name = person_info)]
+pub struct PersonInfo {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+}
+
 #[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
 pub enum PersonKind {
     Student,

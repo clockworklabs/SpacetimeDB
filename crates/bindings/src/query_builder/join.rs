@@ -146,6 +146,14 @@ impl<L: HasCols> LeftSemiJoin<L> {
         }
     }
 
+    // Filter is an alias for where
+    pub fn filter<F>(self, f: F) -> Self
+    where
+        F: Fn(&L::Cols) -> BoolExpr<L>,
+    {
+        self.r#where(f)
+    }
+
     pub fn build(self) -> Query<L> {
         let where_clause = self
             .where_expr
@@ -185,6 +193,14 @@ impl<R: HasCols, L: HasCols> RightSemiJoin<R, L> {
             right_where_expr: new,
             _left_marker: PhantomData,
         }
+    }
+
+    // Filter is an alias for where
+    pub fn filter<F>(self, f: F) -> Self
+    where
+        F: Fn(&R::Cols) -> BoolExpr<R>,
+    {
+        self.r#where(f)
     }
 
     pub fn build(self) -> Query<R> {

@@ -106,11 +106,25 @@ fn auto_migrate_database(
                 let sequence_def = &table_def.sequences[sequence_name];
                 let table_id = stdb.table_id_from_name_mut(tx, &table_def.name)?.unwrap();
 
-                let min: AlgebraicValue = sequence_def.min_value.unwrap_or(1).into();
-                let max: AlgebraicValue = sequence_def.max_value.unwrap_or(i128::MAX).into();
+                let ty = table_def
+                    .get_column(sequence_def.column)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} refers to unknown column")
+                    })?
+                    .ty
+                    .clone();
+
+                // Convert `SequenceDef` min/max to `AlgebraicValue`s of the correct type.
+                let min = AlgebraicValue::from_i128(&ty, sequence_def.min_value.unwrap_or(1)).ok_or_else(|| {
+                    anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid min value")
+                })?;
+
+                let max =
+                    AlgebraicValue::from_i128(&ty, sequence_def.max_value.unwrap_or(i128::MAX)).ok_or_else(|| {
+                        anyhow::anyhow!("Precheck failed: added sequence {sequence_name} has invalid max value")
+                    })?;
 
                 let range = min..max;
-
                 if stdb
                     .iter_by_col_range_mut(tx, table_id, sequence_def.column, range)?
                     .next()

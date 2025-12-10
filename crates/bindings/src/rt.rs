@@ -1034,12 +1034,7 @@ extern "C" fn __call_procedure__(
     let timestamp = Timestamp::from_micros_since_unix_epoch(timestamp as i64);
 
     // Assemble the `ProcedureContext`.
-    let ctx = ProcedureContext {
-        connection_id: conn_id,
-        sender,
-        timestamp,
-        http: crate::http::HttpClient {},
-    };
+    let ctx = ProcedureContext::new(sender, conn_id, timestamp);
 
     // Grab the list of procedures, which is populated by the preinit functions.
     let procedures = PROCEDURES.get().unwrap();
