@@ -245,16 +245,17 @@ fn main() -> Result<()> {
             // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
             // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
             let root_dir = tempfile::tempdir()?;
-            let root_path = root_dir.path().to_string_lossy().to_string();
+            let root_dir_string = root_dir.path().to_string_lossy().to_string();
+            let root_arg = format!("--root-dir={}", root_dir_string);
             cmd(
                 "cargo",
                 ["run", "-p", "spacetimedb-update"]
                     .into_iter()
                     .chain(common_args.clone())
-                    .chain(["--", "self-install", "--root-dir", &root_path, "--yes"].into_iter()),
+                    .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
             )
             .run()?;
-            cmd!(format!("{}/spacetime", root_path), "--root-dir", &root_path, "help",).run()?;
+            cmd!(format!("{}/spacetime", root_dir_string), &root_arg, "help",).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
