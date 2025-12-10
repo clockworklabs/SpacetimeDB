@@ -1,3 +1,6 @@
+// This is a devtool and not part of the "real" codebase, so different constraints apply.
+#![allow(clippy::disallowed_macros)]
+
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
