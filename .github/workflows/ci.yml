@@ -60,7 +60,7 @@ jobs:
         with:
           workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
-          cache-on-failure: false
+          cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
 
