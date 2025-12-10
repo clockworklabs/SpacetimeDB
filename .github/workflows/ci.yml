@@ -88,9 +88,6 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           docker info
-      - name: Build crates
-        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-
       # the sdk-manifests on windows-latest are messed up, so we need to update them
       - name: Fix sdk-manifests
         if: runner.os == 'Windows'
@@ -109,6 +106,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           export RUST_LOG=debug
+          # Pre-build the crates because this docker compose file uses whatever's pre-built
+          cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
           cargo ci smoketests --docker .github/docker-compose.yml --parallel -- ${SMOKETEST_ARGS}
