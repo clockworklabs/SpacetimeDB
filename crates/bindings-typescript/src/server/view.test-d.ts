@@ -62,9 +62,16 @@ const order = table(
   }
 );
 
-const spacetime = schema(person, order, personWithExtra, personReordered, personWithMissing);
+const spacetime = schema(
+  person,
+  order,
+  personWithExtra,
+  personReordered,
+  personWithMissing
+);
 
 const arrayRetValue = t.array(person.rowType);
+const optionalPerson = t.option(person.rowType);
 
 spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
   type ExpectedReturn = _Expand<
@@ -79,14 +86,35 @@ spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
 });
 
 spacetime.anonymousView(
+  { name: 'optionalPerson', public: true },
+  optionalPerson,
+  ctx => {
+    return ctx.db.person.iter().next().value;
+  }
+);
+
+spacetime.anonymousView(
+  { name: 'optionalPersonWrong', public: true },
+  optionalPerson,
+  ctx => {
+    return ctx.db.order.iter().next().value;
+  }
+);
+
+// Extra fields are only an issue for queries.
+spacetime.anonymousView(
+  { name: 'optionalPersonWithExtra', public: true },
+  optionalPerson,
+  ctx => {
+    return ctx.db.personWithExtra.iter().next().value;
+  }
+);
+
+spacetime.anonymousView(
   { name: 'v2', public: true },
   arrayRetValue,
   // @ts-expect-error returns a query of the wrong type.
   ctx => {
-    type _Expand<T> = T extends infer U ? { [K in keyof U]: U[K] } : never;
-    const idk = ctx.from.order.build();
-    type Test = _Expand<typeof idk>;
-
     return ctx.from.order.build();
   }
 );
@@ -101,11 +129,12 @@ spacetime.anonymousView(
   }
 );
 
-// We should eventually make this fail.
+// Ideally this would fail, since we depend on the field ordering for serialization.
 spacetime.anonymousView(
   { name: 'reorderedPerson', public: true },
   arrayRetValue,
-  // @ts-expect-error returns a query of the wrong type.
+  // Comment this out if we can fix the types.
+  // // @ts-expect-error returns a query of the wrong type.
   ctx => {
     return ctx.from.personReordered.build();
   }
