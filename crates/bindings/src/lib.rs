@@ -1093,7 +1093,6 @@ pub struct ProcedureContext {
 
 #[cfg(feature = "unstable")]
 impl ProcedureContext {
-    #[doc(hidden)]
     fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
         Self {
             sender,
