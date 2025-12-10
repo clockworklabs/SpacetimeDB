@@ -119,7 +119,7 @@ spacetime.anonymousView(
   }
 );
 
-// We should eventually make this fail.
+// For queries, we can't return rows with extra fields.
 spacetime.anonymousView(
   { name: 'v3', public: true },
   arrayRetValue,
@@ -140,7 +140,7 @@ spacetime.anonymousView(
   }
 );
 
-// We should eventually make this fail.
+// Fails because it is missing a field.
 spacetime.anonymousView(
   { name: 'missingField', public: true },
   arrayRetValue,

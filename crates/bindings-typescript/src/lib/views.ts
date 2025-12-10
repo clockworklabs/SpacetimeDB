@@ -22,7 +22,6 @@ import {
 } from './type_builders';
 import { bsatnBaseSize, toPascalCase } from './util';
 import { type QueryBuilder, type RowTypedQuery } from '../server/query';
-import type { IfEquals } from './type_util';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -159,6 +158,8 @@ type ViewInfo<F> = {
 export const VIEWS: ViewInfo<ViewFn<any, any, any>>[] = [];
 export const ANON_VIEWS: ViewInfo<AnonymousViewFn<any, any, any>>[] = [];
 
+// A helper to get the product type out of a type builder.
+// This is only non-never if the type builder is an array.
 export type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
   InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Array'; value: infer V }
     ? V extends { tag: 'Product'; value: infer P }
