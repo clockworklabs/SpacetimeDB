@@ -274,11 +274,7 @@ fn main() -> Result<()> {
             let cli_docs = cmd!("cargo", "run", "--features", "markdown-docs", "-p", "spacetimedb-cli",).read()?;
             fs::write("docs/docs/cli-reference.md", cli_docs)?;
             cmd!("pnpm", "format").run()?;
-            let status = cmd!("git", "diff", "--exit-code", "HEAD")
-                .stdout_null()
-                .stderr_null()
-                .unchecked()
-                .run()?;
+            let status = cmd!("git", "diff", "--exit-code", "HEAD").unchecked().run()?;
             if !status.status.success() {
                 anyhow::bail!("CLI docs are out of date");
             } else {
