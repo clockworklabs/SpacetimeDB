@@ -69,6 +69,12 @@ impl<T, V> Col<T, V> {
     pub fn lt<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
         BoolExpr::Lt(self.into(), rhs.to_expr())
     }
+    pub fn gte<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+        BoolExpr::Gte(self.into(), rhs.to_expr())
+    }
+    pub fn lte<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+        BoolExpr::Lte(self.into(), rhs.to_expr())
+    }
 }
 
 impl<T, V> From<Col<T, V>> for Operand<T> {
