@@ -164,6 +164,12 @@ fn main() -> Result<()> {
 
         Some(CiCmd::WasmBindings) => {
             bash!("cargo test -p spacetimedb-codegen")?;
+            // Make sure the `Cargo.lock` file reflects the latest available versions.
+            // This is what users would end up with on a fresh module, so we want to
+            // catch any compile errors arising from a different transitive closure
+            // of dependencies than what is in the workspace lock file.
+            //
+            // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
             bash!("cargo update")?;
             bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
         }
