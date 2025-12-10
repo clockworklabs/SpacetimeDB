@@ -282,19 +282,19 @@ impl AlgebraicValue {
     /// Returns `None` if the type is not a supported integer type.
     pub fn from_i128(ty: &AlgebraicType, value: i128) -> Option<Self> {
         let val = match ty {
-            AlgebraicType::I8 => Self::I8(value as i8),
-            AlgebraicType::I16 => Self::I16(value as i16),
-            AlgebraicType::I32 => Self::I32(value as i32),
-            AlgebraicType::I64 => Self::I64(value as i64),
-            AlgebraicType::I128 => Self::I128(Packed(value)),
-            AlgebraicType::I256 => Self::I256(Box::new(i256::from(value))),
+            AlgebraicType::I8 => (value as i8).into(),
+            AlgebraicType::I16 => (value as i16).into(),
+            AlgebraicType::I32 => (value as i32).into(),
+            AlgebraicType::I64 => (value as i64).into(),
+            AlgebraicType::I128 => value.into(),
+            AlgebraicType::I256 => i256::from(value).into(),
 
-            AlgebraicType::U8 => Self::U8(value as u8),
-            AlgebraicType::U16 => Self::U16(value as u16),
-            AlgebraicType::U32 => Self::U32(value as u32),
-            AlgebraicType::U64 => Self::U64(value as u64),
-            AlgebraicType::U128 => Self::U128(Packed(value as u128)),
-            AlgebraicType::U256 => Self::U256(Box::new(u256::from(value as u128))),
+            AlgebraicType::U8 => (value as u8).into(),
+            AlgebraicType::U16 => (value as u16).into(),
+            AlgebraicType::U32 => (value as u32).into(),
+            AlgebraicType::U64 => (value as u64).into(),
+            AlgebraicType::U128 => (value as u128).into(),
+            AlgebraicType::U256 => (u256::from(value as u128)).into(),
 
             _ => return None,
         };
