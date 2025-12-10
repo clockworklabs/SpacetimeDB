@@ -1,0 +1,12 @@
+[package]
+name = "ci"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+log.workspace = true
+anyhow.workspace = true
+chrono = { workspace = true, features=["clock"] }
+clap.workspace = true
+regex.workspace = true
+duct.workspace = true
