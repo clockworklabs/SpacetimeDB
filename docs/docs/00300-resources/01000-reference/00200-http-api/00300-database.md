@@ -19,7 +19,7 @@ The HTTP endpoints in `/v1/database` allow clients to interact with Spacetime da
 | [`PUT /v1/database/:name_or_identity/names`](#put-v1databasename_or_identitynames)                 | Set the list of names for this database.          |
 | [`GET /v1/database/:name_or_identity/identity`](#get-v1databasename_or_identityidentity)           | Get the identity of a database.                   |
 | [`GET /v1/database/:name_or_identity/subscribe`](#get-v1databasename_or_identitysubscribe)         | Begin a WebSocket connection.                     |
-| [`POST /v1/database/:name_or_identity/call/:reducer`](#post-v1databasename_or_identitycallreducer) | Invoke a reducer in a database.                   |
+| [`POST /v1/database/:name_or_identity/call/:reducer`](#post-v1databasename_or_identitycallreducer) | Invoke a reducer OR procedure in a database.      |
 | [`GET /v1/database/:name_or_identity/schema`](#get-v1databasename_or_identityschema)               | Get the schema for a database.                    |
 | [`GET /v1/database/:name_or_identity/logs`](#get-v1databasename_or_identitylogs)                   | Retrieve logs from a database.                    |
 | [`POST /v1/database/:name_or_identity/sql`](#post-v1databasename_or_identitysql)                   | Run a SQL query against a database.               |
@@ -245,9 +245,9 @@ Invoke a reducer in a database.
 
 #### Path parameters
 
-| Name       | Value                    |
-| ---------- | ------------------------ |
-| `:reducer` | The name of the reducer. |
+| Name       | Value                                 |
+| ---------- | ------------------------------------- |
+| `:reducer` | The name of the reducer OR procedure. |
 
 #### Required Headers
 
