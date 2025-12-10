@@ -221,20 +221,24 @@ fn main() -> Result<()> {
             target,
             github_token_auth,
         }) => {
-            let target = target.map(|t| format!("--target {t}")).unwrap_or_default();
-            let github_token_auth_flag = if github_token_auth {
-                "--features github-token-auth "
+            let mut common_args = vec![];
+            if let Some(target) = target.as_ref() {
+                common_args.push("--target");
+                common_args.push(target);
+                println!("checking update flow for target: {target}");
             } else {
-                ""
-            };
+                println!("checking update flow");
+            }
+            if github_token_auth {
+                common_args.push("--features");
+                common_args.push("github-token-auth");
+            }
 
-            println!("checking update flow for target: {target}");
-            cmd!(
+            cmd(
                 "cargo",
-                "build",
-                &format!("{github_token_auth_flag}{target}"),
-                "-p",
-                "spacetimedb-update",
+                ["build", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.clone()),
             )
             .run()?;
             // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
@@ -242,17 +246,12 @@ fn main() -> Result<()> {
             // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
             let root_dir = tempfile::tempdir()?;
             let root_path = root_dir.path().to_string_lossy().to_string();
-            cmd!(
+            cmd(
                 "cargo",
-                "run",
-                &format!("{github_token_auth_flag}{target}"),
-                "-p",
-                "spacetimedb-update",
-                "--",
-                "self-install",
-                "--root-dir",
-                &root_path,
-                "--yes",
+                ["run", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.clone())
+                    .chain(["--", "self-install", "--root-dir", &root_path, "--yes"].into_iter()),
             )
             .run()?;
             cmd!(format!("{}/spacetime", root_path), "--root-dir", &root_path, "help",).run()?;
