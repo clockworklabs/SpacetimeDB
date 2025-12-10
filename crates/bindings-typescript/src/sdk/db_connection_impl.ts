@@ -52,6 +52,7 @@ import type {
   ReducersView,
   SetReducerFlags,
   SubscriptionEventCallback,
+  UntypedReducerDef,
 } from './reducers.ts';
 import type { ClientDbView } from './db_view.ts';
 import type { UntypedTableDef } from '../lib/table.ts';
@@ -749,20 +750,22 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
       }
       case 'TransactionUpdate': {
         let reducerInfo = message.reducerInfo;
-        let unknownTransaction = false;
-        let reducerArgs: InferTypeOfRow<typeof reducer.params> | undefined;
-        const reducer = this.#remoteModule.reducers.find(
-          t => t.name === reducerInfo!.reducerName
-        )!;
-        if (!reducerInfo) {
-          unknownTransaction = true;
-        } else {
-          // TODO: performance
+
+        const reducer: UntypedReducerDef | undefined =
+          reducerInfo === undefined
+            ? undefined
+            : this.#remoteModule.reducers.find(
+                t => t.name === reducerInfo!.reducerName
+              );
+        let reducerArgs: UntypedReducerDef['params'] | undefined = undefined;
+
+        let unknownTransaction = reducer === undefined;
+        if (reducer) {
           try {
-            const reader = new BinaryReader(reducerInfo.args as Uint8Array);
+            const reader = new BinaryReader(reducerInfo!.args as Uint8Array);
             reducerArgs = ProductType.deserializeValue(
               reader,
-              reducer?.paramsType
+              reducer.paramsType
             );
           } catch {
             // This should only be printed in development, since it's
@@ -786,7 +789,6 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           }
           return;
         }
-
         // At this point, we know that `reducerInfo` is not null because
         // we return if `unknownTransaction` is true.
         reducerInfo = reducerInfo!;
@@ -808,7 +810,7 @@ export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
           tag: 'Reducer',
           value: reducerEvent,
         };
-        const eventContext = this.#makeEventContext(event);
+        const eventContext = this.#makeEventContext(event as any);
         const reducerEventContext = {
           ...eventContext,
           event: reducerEvent,

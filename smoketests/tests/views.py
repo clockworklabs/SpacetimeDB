@@ -426,6 +426,80 @@ pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
 """)
 
 
+class AutoMigrateDropView(Smoketest):
+    MODULE_CODE = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    MODULE_CODE_DROP_VIEW = """
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+"""
+
+    def test_auto_migration_drop_view(self):
+        """Assert that views can be dropped in an auto-migration"""
+
+        self.write_module_code(self.MODULE_CODE_DROP_VIEW)
+        self.publish_module(self.database_identity, clear=False, break_clients=False)
+
+
+class AutoMigrateAddView(Smoketest):
+    MODULE_CODE = """
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+"""
+
+    MODULE_CODE_ADD_VIEW = """
+use spacetimedb::ViewContext;
+
+#[derive(Copy, Clone)]
+#[spacetimedb::table(name = player_state)]
+pub struct PlayerState {
+    #[primary_key]
+    id: u64,
+    #[index(btree)]
+    level: u64,
+}
+
+#[spacetimedb::view(name = player, public)]
+pub fn player(ctx: &ViewContext) -> Option<PlayerState> {
+    ctx.db.player_state().id().find(1u64)
+}
+"""
+
+    def test_auto_migration_drop_view(self):
+        """Assert that views can be added in an auto-migration"""
+
+        self.write_module_code(self.MODULE_CODE_ADD_VIEW)
+        self.publish_module(self.database_identity, clear=False)
+
+
 class AutoMigrateViewsTrapped(Smoketest):
     MODULE_CODE = """
 use spacetimedb::ViewContext;
@@ -667,9 +741,9 @@ fn online_users_age(ctx: &ViewContext) -> Query<Person> {
 fn offline_user_in_twienties(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .person()
-        .r#where(|p| p.age.eq(20))
+        .filter(|p| p.age.eq(20))
         .right_semijoin(ctx.from.user(), |p, u| p.identity.eq(u.identity))
-        .r#where(|u| u.online.eq(false))
+        .filter(|u| u.online.eq(false))
         .build()
 }
 
@@ -678,6 +752,22 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
     ctx.from
         .user()
         .left_semijoin(ctx.from.person(), |p, u| p.identity.eq(u.identity))
+        .build()
+}
+
+#[spacetimedb::view(name = users_who_are_above_20_and_below_30, public)]
+fn users_who_are_above_20_and_below_30(ctx: &ViewContext) -> Query<Person> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.gt(20).and(p.age.lt(30)))
+        .build()
+}
+
+#[spacetimedb::view(name = users_who_are_above_eq_20_and_below_eq_30, public)]
+fn users_who_are_above_eq_20_and_below_eq_30(ctx: &ViewContext) -> Query<Person> {
+    ctx.from
+        .person()
+        .r#where(|p| p.age.gte(20).and(p.age.lte(30)))
         .build()
 }
 """
@@ -720,4 +810,18 @@ fn users_whos_age_is_known(ctx: &ViewContext) -> Query<User> {
  2        | "BOB" | false
 """)
 
+    def test_where_expr_view(self):
+        """Tests that views with where expressions work as expected"""
+
+        self.assertSql("SELECT * FROM users_who_are_above_20_and_below_30", """\
+ identity | name | age
+----------+------+-----
+""")
+
+        self.assertSql("SELECT * FROM users_who_are_above_eq_20_and_below_eq_30", """\
+ identity | name    | age
+----------+---------+-----
+ 1        | "Alice" | 30
+ 2        | "BOB"   | 20
+""")
 

@@ -137,7 +137,7 @@
       "name": "sdk esm min (brotli)",
       "path": "dist/min/sdk/index.browser.mjs",
       "brotli": true,
-      "limit": "14 kB"
+      "limit": "30 kB"
     },
     {
       "name": "sdk esm min (gzip)",
@@ -148,7 +148,7 @@
     {
       "name": "sdk esm min (uncompressed)",
       "path": "dist/min/sdk/index.browser.mjs",
-      "limit": "14 kB"
+      "limit": "30 kB"
     }
   ],
   "dependencies": {

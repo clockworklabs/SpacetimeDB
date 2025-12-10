@@ -49,18 +49,33 @@ error: views must return `Vec<T>` or `Option<T>` where `T` is a `SpacetimeType`
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: Views do not take parameters other than `&ViewContext` or `&AnonymousViewContext`
-   --> tests/ui/views.rs:154:1
+   --> tests/ui/views.rs:143:1
     |
-154 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
+143 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0573]: expected type, found function `scheduled_table_view`
-   --> tests/ui/views.rs:142:56
+error[E0412]: cannot find type `ScheduledTable` in this scope
+   --> tests/ui/views.rs:143:45
     |
-142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
-    |                             ---------------            ^^^^^^^^^^^^^^^^^^^^ help: a trait with a similar name exists: `scheduled_table__view`
-    |                             |
-    |                             similarly named trait `scheduled_table__view` defined here
+143 | fn sched_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<PlayerInfo> {
+    |                                             ^^^^^^^^^^^^^^ not found in this scope
+
+error[E0412]: cannot find type `T` in this scope
+   --> tests/ui/views.rs:202:55
+    |
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+    |                                                       ^ not found in this scope
+    |
+help: you might be missing a type parameter
+    |
+202 | fn view_nonexistent_table<T>(ctx: &ViewContext) -> Query<T> {
+    |                          +++
+
+error[E0412]: cannot find type `T` in this scope
+   --> tests/ui/views.rs:202:55
+    |
+202 | fn view_nonexistent_table(ctx: &ViewContext) -> Query<T> {
+    |                                                       ^ not found in this scope
 
 error[E0277]: the trait bound `ViewKind<ReducerContext>: ViewKindTrait` is not satisfied
    --> tests/ui/views.rs:106:1
@@ -362,28 +377,87 @@ error[E0277]: the trait bound `NotSpacetimeType: SpacetimeType` is not satisfied
             and $N others
     = note: required for `Option<NotSpacetimeType>` to implement `SpacetimeType`
 
-error[E0631]: type mismatch in function arguments
-   --> tests/ui/views.rs:142:56
+error[E0277]: the trait bound `{integer}: RHS<Player, spacetimedb::Identity>` is not satisfied
+   --> tests/ui/views.rs:160:49
     |
-142 | #[spacetimedb::table(name = scheduled_table, scheduled(scheduled_table_view))]
-    | -------------------------------------------------------^^^^^^^^^^^^^^^^^^^^---
-    | |                                                      |
-    | |                                                      expected due to this
-    | required by a bound introduced by this call
-...
-154 | fn scheduled_table_view(_: &ViewContext, _args: ScheduledTable) -> Vec<Player> {
-    | ------------------------------------------------------------------------------ found signature defined here
+160 |     ctx.from.player().r#where(|a| a.identity.eq(42)).build()
+    |                                              -- ^^ the trait `RHS<Player, spacetimedb::Identity>` is not implemented for `{integer}`
+    |                                              |
+    |                                              required by a bound introduced by this call
     |
-    = note: expected function signature `for<'a> fn(&'a ReducerContext, ScheduledTable) -> _`
-               found function signature `fn(&ViewContext, ScheduledTable) -> _`
-    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `Reducer<'_, (ScheduledTable,)>`
-    = note: required for `for<'a> fn(&'a ViewContext, ScheduledTable) -> Vec<Player> {scheduled_table_view}` to implement `ExportFunctionForScheduledTable<'_, ScheduledTable, {type error}>`
-note: required by a bound in `scheduled_typecheck`
-   --> src/rt.rs
+    = help: the following other types implement trait `RHS<T, V>`:
+              `f32` implements `RHS<T, f32>`
+              `f64` implements `RHS<T, f64>`
+              `i128` implements `RHS<T, i128>`
+              `i16` implements `RHS<T, i16>`
+              `i32` implements `RHS<T, i32>`
+              `i64` implements `RHS<T, i64>`
+              `i8` implements `RHS<T, i8>`
+              `u128` implements `RHS<T, u128>`
+            and $N others
+note: required by a bound in `Col::<T, V>::eq`
+   --> src/query_builder/table.rs
     |
-    | pub const fn scheduled_typecheck<'de, Row, FnKind>(_x: impl ExportFunctionForScheduledTable<'de, Row, FnKind>)
-    |                                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `scheduled_typecheck`
-help: consider wrapping the function in a closure
+    |     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+    |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
+
+error[E0277]: the trait bound `u32: RHS<PlayerInfo, u8>` is not satisfied
+   --> tests/ui/views.rs:166:49
     |
-142 | #[spacetimedb::table(name = scheduled_table, scheduled(|arg0: &ReducerContext, arg1: ScheduledTable| scheduled_table_view(/* &ViewContext */, arg1)))]
-    |                                                        +++++++++++++++++++++++++++++++++++++++++++++                     ++++++++++++++++++++++++++
+166 |     ctx.from.player_info().r#where(|a| a.age.eq(4200u32)).build()
+    |                                              -- ^^^^^^^ the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
+    |                                              |
+    |                                              required by a bound introduced by this call
+    |
+    = help: the trait `RHS<PlayerInfo, u8>` is not implemented for `u32`
+            but trait `RHS<PlayerInfo, u32>` is implemented for it
+    = help: for that trait implementation, expected `u32`, found `u8`
+note: required by a bound in `Col::<T, V>::eq`
+   --> src/query_builder/table.rs
+    |
+    |     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
+    |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
+
+error[E0308]: mismatched types
+   --> tests/ui/views.rs:175:62
+    |
+175 |         .left_semijoin(ctx.from.player(), |a, b| a.weight.eq(b.identity))
+    |                                                           -- ^^^^^^^^^^ expected `IxCol<Player, u32>`, found `IxCol<Player, Identity>`
+    |                                                           |
+    |                                                           arguments to this method are incorrect
+    |
+    = note: expected struct `IxCol<Player, u32>`
+               found struct `IxCol<Player, spacetimedb::Identity>`
+note: method defined here
+   --> src/query_builder/join.rs
+    |
+    |     pub fn eq<R: HasIxCols>(self, rhs: IxCol<R, V>) -> IxJoinEq<T, R, V> {
+    |            ^^
+
+error[E0609]: no field `age` on type `&PlayerInfoIxCols`
+   --> tests/ui/views.rs:185:72
+    |
+185 |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.age))
+    |                                                                        ^^^ unknown field
+    |
+    = note: available fields are: `identity`, `weight`
+
+error[E0308]: mismatched types
+   --> tests/ui/views.rs:193:5
+    |
+192 |   fn view_right_join_wrong_return_type(ctx: &ViewContext) -> Query<Player> {
+    |                                                              ------------- expected `Query<Player>` because of return type
+193 | /     ctx.from
+194 | |         .player()
+195 | |         .right_semijoin(ctx.from.player_info(), |a, b| a.identity.eq(b.identity))
+196 | |         .build()
+    | |________________^ expected `Query<Player>`, found `Query<PlayerInfo>`
+    |
+    = note: expected struct `Query<Player>`
+               found struct `Query<PlayerInfo>`
+
+error[E0599]: no method named `xyz` found for struct `QueryBuilder` in the current scope
+   --> tests/ui/views.rs:203:14
+    |
+203 |     ctx.from.xyz().build()
+    |              ^^^ method not found in `QueryBuilder`
