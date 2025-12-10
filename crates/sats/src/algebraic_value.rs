@@ -276,6 +276,30 @@ impl AlgebraicValue {
             _ => false,
         }
     }
+
+    /// Constructs an `AlgebraicValue` from an `i128` according to the given `AlgebraicType`.
+    ///
+    /// Returns `None` if the type is not a supported integer type.
+    pub fn from_i128(ty: &AlgebraicType, value: i128) -> Option<Self> {
+        let val = match ty {
+            AlgebraicType::I8 => Self::I8(value as i8),
+            AlgebraicType::I16 => Self::I16(value as i16),
+            AlgebraicType::I32 => Self::I32(value as i32),
+            AlgebraicType::I64 => Self::I64(value as i64),
+            AlgebraicType::I128 => Self::I128(Packed(value)),
+            AlgebraicType::I256 => Self::I256(Box::new(i256::from(value))),
+
+            AlgebraicType::U8 => Self::U8(value as u8),
+            AlgebraicType::U16 => Self::U16(value as u16),
+            AlgebraicType::U32 => Self::U32(value as u32),
+            AlgebraicType::U64 => Self::U64(value as u64),
+            AlgebraicType::U128 => Self::U128(Packed(value as u128)),
+            AlgebraicType::U256 => Self::U256(Box::new(u256::from(value as u128))),
+
+            _ => return None,
+        };
+        Some(val)
+    }
 }
 
 impl<T: Into<AlgebraicValue>> From<Option<T>> for AlgebraicValue {
