@@ -1062,10 +1062,12 @@ impl PhysicalPlan {
 
     /// Is this operator a scan, index or otherwise, of a delta table?
     pub fn is_delta_scan(&self) -> bool {
-        matches!(
-            self,
-            Self::TableScan(TableScan { delta: Some(_), .. }, _) | Self::IxScan(IxScan { delta: Some(_), .. }, _)
-        )
+        match self {
+            Self::TableScan(scan, _) => scan.delta.is_some(),
+            Self::IxScan(scan, _) => scan.delta.is_some(),
+            Self::Filter(input, _) => input.is_delta_scan(),
+            _ => false,
+        }
     }
 
     /// If this plan has any simple equality filters such as `x = 0`,

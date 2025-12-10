@@ -59,6 +59,15 @@ export type UntypedSchemaDef = {
   tables: readonly UntypedTableDef[];
 };
 
+let REGISTERED_SCHEMA: UntypedSchemaDef | null = null;
+
+export function getRegisteredSchema(): UntypedSchemaDef {
+  if (REGISTERED_SCHEMA == null) {
+    throw new Error('Schema has not been registered yet. Call schema() first.');
+  }
+  return REGISTERED_SCHEMA;
+}
+
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
@@ -101,32 +110,21 @@ export function tablesToSchema<
         // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
         indexes: [
           ...schema.idxs.map(
-            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> =>
-              ({
+            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> => {
+              const columnIds =
+                idx.algorithm.tag === 'Direct'
+                  ? [idx.algorithm.value]
+                  : idx.algorithm.value;
+              const columns = columnIds.map(i => colNameList[i]);
+              return {
                 name: idx.accessorName,
-                unique: schema.tableDef.constraints
-                  .map(c => {
-                    if (idx.algorithm.tag == 'BTree') {
-                      return c.data.value.columns.every(col => {
-                        const idxColumns = idx.algorithm.value;
-                        if (Array.isArray(idxColumns)) {
-                          return idxColumns.includes(col);
-                        } else {
-                          return col === idxColumns;
-                        }
-                      });
-                    }
-                  })
-                  .includes(true),
+                unique: schema.tableDef.constraints.some(c =>
+                  c.data.value.columns.every(col => columnIds.includes(col))
+                ),
                 algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
-                columns: (() => {
-                  const cols =
-                    idx.algorithm.tag === 'Direct'
-                      ? [idx.algorithm.value]
-                      : idx.algorithm.value;
-                  return cols.map(i => colNameList[i]);
-                })(),
-              }) as IndexOpts<any>
+                columns,
+              } as IndexOpts<any>;
+            }
           ),
         ],
       } as const;
@@ -636,6 +634,16 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
   // Modify the `MODULE_DEF` which will be read by
   // __describe_module__
   MODULE_DEF.tables.push(...tableDefs);
+  REGISTERED_SCHEMA = {
+    tables: handles.map(handle => ({
+      name: handle.tableName,
+      accessorName: handle.tableName,
+      columns: handle.rowType.row,
+      rowType: handle.rowSpacetimeType,
+      indexes: handle.idxs,
+      constraints: handle.constraints,
+    })),
+  };
   // MODULE_DEF.typespace = typespace;
   // throw new Error(
   //   MODULE_DEF.tables
