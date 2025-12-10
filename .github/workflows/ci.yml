@@ -114,7 +114,7 @@ jobs:
       - name: Install OpenSSL via vcpkg
         uses: lukka/run-vcpkg@v11
         with:
-          vcpkgGitCommitId: 'latest'
+          runVcpkgInstall: true
         if: runner.os == 'Windows'
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
