@@ -11,19 +11,24 @@ namespace SpacetimeDB.Types
 {
     [SpacetimeDB.Type]
     [DataContract]
-    public sealed partial class MyTable
+    public sealed partial class RetryLog
     {
-        [DataMember(Name = "Field")]
-        public ReturnStruct Field;
+        [DataMember(Name = "Id")]
+        public uint Id;
+        [DataMember(Name = "Attempts")]
+        public uint Attempts;
 
-        public MyTable(ReturnStruct Field)
+        public RetryLog(
+            uint Id,
+            uint Attempts
+        )
         {
-            this.Field = Field;
+            this.Id = Id;
+            this.Attempts = Attempts;
         }
 
-        public MyTable()
+        public RetryLog()
         {
-            this.Field = new();
         }
     }
 }

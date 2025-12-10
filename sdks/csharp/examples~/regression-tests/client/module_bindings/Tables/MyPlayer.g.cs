@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class MyPlayerHandle : RemoteTableHandle<EventContext, Player>
         {
-            protected override string RemoteTableName => "MyPlayer";
+            protected override string RemoteTableName => "my_player";
 
             internal MyPlayerHandle(DbConnection conn) : base(conn)
             {

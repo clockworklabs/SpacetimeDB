@@ -1742,7 +1742,7 @@ public class Module : IIncrementalGenerator
                             }
                         }
                         
-                        public sealed class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
+                        public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
                             private readonly Local _db = new();
 
                             internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time)

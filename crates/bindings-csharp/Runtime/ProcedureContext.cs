@@ -226,7 +226,7 @@ public abstract class LocalBase : Internal.Local { }
 
 public abstract class LocalReadOnlyBase : Internal.LocalReadOnly { }
 
-public sealed class ProcedureContext(
+public sealed partial class ProcedureContext(
     Identity sender,
     ConnectionId? connectionId,
     Random random,
