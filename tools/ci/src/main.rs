@@ -296,18 +296,30 @@ impl ServerState {
 
                 // Create a temporary data directory for this server instance.
                 let data_dir = TempDir::new()?;
-                let data_dir_str = data_dir.path().to_string_lossy();
 
                 let server_port = find_free_port()?;
                 let pg_port = find_free_port()?;
-                let arg_string =
-                    format!("--listen-addr 0.0.0.0:{server_port} --pg-port {pg_port} --data-dir {data_dir_str}");
                 args.push("--remote-server".into());
                 let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
                 println!("Starting server..");
+                let data_dir_str = data_dir.path().to_string_lossy().to_string();
                 let handle = thread::spawn(move || {
-                    let _ = bash!(&format!("cargo run -p spacetimedb-cli -- start {arg_string}"));
+                    let _ = cmd!(
+                        "cargo",
+                        "run",
+                        "-p",
+                        "spacetimedb-cli",
+                        "--",
+                        "start",
+                        "--listen-addr",
+                        "0.0.0.0:{server_port}",
+                        "--pg-port",
+                        pg_port.to_string(),
+                        "--data-dir",
+                        data_dir_str,
+                    )
+                    .read();
                 });
                 wait_until_http_ready(Duration::from_secs(300), &server_url)?;
                 Ok(ServerState::Yes { handle, data_dir })
@@ -663,7 +675,15 @@ fn main() -> Result<()> {
                 println!("Building SpacetimeDB..");
 
                 // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
-                bash!("cargo build -p spacetimedb-cli -p spacetimedb-standalone")?;
+                cmd!(
+                    "cargo",
+                    "build",
+                    "-p",
+                    "spacetimedb-cli",
+                    "-p",
+                    "spacetimedb-standalone"
+                )
+                .run()?;
                 no_build_cli = true;
             }
 
