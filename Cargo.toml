@@ -357,6 +357,11 @@ features = [
 	"std",
 ]
 
+[workspace.dependencies.wasmtime-internal-fiber]
+version = "39"
+default-features = false
+features = ["std"]
+
 [workspace.dependencies.tracing-tracy]
 version = "0.10.4"
 # We use the "ondemand" feature to allow connecting after the start,
