@@ -10,3 +10,5 @@ chrono = { workspace = true, features=["clock"] }
 clap.workspace = true
 regex.workspace = true
 duct.workspace = true
+tempfile.workspace = true
+env_logger.workspace = true
