@@ -121,7 +121,7 @@ impl Hash for Row<'_> {
 impl Row<'_> {
     pub fn to_product_value(&self) -> ProductValue {
         match self {
-            Self::Null => ProductValue { elements: Box::new([]) },
+            Self::Null => [].into(),
             Self::Ptr(ptr) => ptr.to_product_value(),
             Self::Ref(val) => (*val).clone(),
         }
@@ -129,6 +129,7 @@ impl Row<'_> {
 
     pub fn project_product(self, cols: &ColList) -> Result<ProductValue, InvalidFieldError> {
         match self {
+            Self::Null => Ok([].into()),
             Self::Ptr(ptr) => ptr.project_product(cols),
             Self::Ref(val) => val.project_product(cols),
         }
