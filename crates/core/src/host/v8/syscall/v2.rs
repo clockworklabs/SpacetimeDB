@@ -54,11 +54,11 @@ macro_rules! create_synthetic_module {
 }
 
 /// Registers all module -> host syscalls in the JS module `spacetimedb_sys`.
-pub(super) fn sys_v1_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    use register_hooks_v1_0 as register_hooks;
+pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
+    use register_hooks_v2_0 as register_hooks;
     create_synthetic_module!(
         scope,
-        "spacetime:sys@1.0",
+        "spacetime:sys@2.0",
         (with_nothing, (), register_hooks),
         (with_sys_result_ret, AbiCall::TableIdFromName, table_id_from_name),
         (with_sys_result_ret, AbiCall::IndexIdFromName, index_id_from_name),
@@ -78,18 +78,18 @@ pub(super) fn sys_v1_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
             datastore_index_scan_range_bsatn
         ),
         (
-            with_sys_result_ret,
+            with_sys_result_value,
             AbiCall::RowIterBsatnAdvance,
             row_iter_bsatn_advance
         ),
         (with_sys_result_noret, AbiCall::RowIterBsatnClose, row_iter_bsatn_close),
         (
-            with_sys_result_ret,
+            with_sys_result_value,
             AbiCall::DatastoreInsertBsatn,
             datastore_insert_bsatn
         ),
         (
-            with_sys_result_ret,
+            with_sys_result_value,
             AbiCall::DatastoreUpdateBsatn,
             datastore_update_bsatn
         ),
@@ -113,20 +113,6 @@ pub(super) fn sys_v1_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         (with_sys_result_noret, AbiCall::ConsoleTimerEnd, console_timer_end),
         (with_sys_result_ret, AbiCall::Identity, identity),
         (with_sys_result_ret, AbiCall::GetJwt, get_jwt_payload),
-    )
-}
-
-pub(super) fn sys_v1_1<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    use register_hooks_v1_1 as register_hooks;
-    create_synthetic_module!(scope, "spacetime:sys@1.1", (with_nothing, (), register_hooks))
-}
-
-pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    use register_hooks_v1_2 as register_hooks;
-    create_synthetic_module!(
-        scope,
-        "spacetime:sys@1.2",
-        (with_nothing, (), register_hooks),
         (
             with_sys_result_value,
             AbiCall::ProcedureHttpRequest,
@@ -147,13 +133,6 @@ pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
             AbiCall::ProcedureCommitMutTransaction,
             procedure_commit_mut_tx
         ),
-    )
-}
-
-pub(super) fn sys_v1_3<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    create_synthetic_module!(
-        scope,
-        "spacetime:sys@1.2",
         (
             with_sys_result_ret,
             AbiCall::DatastoreIndexScanPointBsatn,
@@ -386,103 +365,28 @@ fn with_span<'scope, T, E: From<ExceptionThrown>>(
 ///
 /// Throws a `TypeError` if:
 /// - `hooks` is not an object that has functions `__describe_module__` and `__call_reducer__`.
-fn register_hooks_v1_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
+fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
     // Convert `hooks` to an object.
     let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
 
     let describe_module = get_hook_function(scope, hooks, str_from_ident!(__describe_module__))?;
     let call_reducer = get_hook_function(scope, hooks, str_from_ident!(__call_reducer__))?;
-
-    // Set the hooks.
-    set_hook_slots(
-        scope,
-        AbiVersion::V1,
-        &[
-            (ModuleHookKey::DescribeModule, describe_module),
-            (ModuleHookKey::CallReducer, call_reducer),
-        ],
-    )?;
-
-    Ok(v8::undefined(scope).into())
-}
-
-/// Module ABI that registers the functions called by the host.
-///
-/// # Signature
-///
-/// ```ignore
-/// register_hooks(hooks: {
-///     __call_view__(view_id: u32, sender: u256, args: u8[]): u8[];
-///     __call_view_anon__(view_id: u32, args: u8[]): u8[];
-/// }): void
-/// ```
-///
-/// # Types
-///
-/// - `u8` is `number` in JS restricted to unsigned 8-bit integers.
-/// - `u32` is `bigint` in JS restricted to unsigned 32-bit integers.
-/// - `u256` is `bigint` in JS restricted to unsigned 256-bit integers.
-///
-/// # Returns
-///
-/// Returns nothing.
-///
-/// # Throws
-///
-/// Throws a `TypeError` if:
-/// - `hooks` is not an object that has the correct functions.
-fn register_hooks_v1_1<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
-    // Convert `hooks` to an object.
-    let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
-
     let call_view = get_hook_function(scope, hooks, str_from_ident!(__call_view__))?;
     let call_view_anon = get_hook_function(scope, hooks, str_from_ident!(__call_view_anon__))?;
-
-    // Set the hooks.
-    set_hook_slots(
-        scope,
-        AbiVersion::V1,
-        &[
-            (ModuleHookKey::CallView, call_view),
-            (ModuleHookKey::CallAnonymousView, call_view_anon),
-        ],
-    )?;
-
-    Ok(v8::undefined(scope).into())
-}
-
-/// Module ABI that registers the functions called by the host.
-///
-/// # Signature
-///
-/// ```ignore
-/// export function register_hooks(hooks: {
-///     __call_procedure__(
-///         id: u32,
-///         sender: u256,
-///         connection_id: u128,
-///         timestamp: u64,
-///         args: Uint8Array
-///     ): Uint8Array;
-/// }): void;
-/// ```
-///
-/// # Returns
-///
-/// Returns nothing.
-///
-/// # Throws
-///
-/// Throws a `TypeError` if:
-/// - `hooks` is not an object that has the correct functions.
-fn register_hooks_v1_2<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
-    // Convert `hooks` to an object.
-    let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
-
     let call_procedure = get_hook_function(scope, hooks, str_from_ident!(__call_procedure__))?;
 
     // Set the hooks.
-    set_hook_slots(scope, AbiVersion::V1, &[(ModuleHookKey::CallProcedure, call_procedure)])?;
+    set_hook_slots(
+        scope,
+        AbiVersion::V2,
+        &[
+            (ModuleHookKey::DescribeModule, describe_module),
+            (ModuleHookKey::CallReducer, call_reducer),
+            (ModuleHookKey::CallView, call_view),
+            (ModuleHookKey::CallAnonymousView, call_view_anon),
+            (ModuleHookKey::CallProcedure, call_procedure),
+        ],
+    )?;
 
     Ok(v8::undefined(scope).into())
 }
@@ -544,17 +448,7 @@ pub(super) fn call_call_view(
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
 
-    // The original version returned a byte array with the encoded rows.
-    if ret.is_typed_array() && ret.is_uint8_array() {
-        // This is the original format, which just returns the raw bytes.
-        let ret =
-            cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
-        let bytes = ret.get_contents(&mut []);
-
-        return Ok(ViewReturnData::Rows(Bytes::copy_from_slice(bytes)));
-    };
-
-    // The newer version returns an object with a `data` field containing the bytes.
+    // Returns an object with a `data` field containing the bytes.
     let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
 
     let Some(data_key) = v8::String::new(scope, "data") else {
@@ -602,23 +496,7 @@ pub(super) fn call_call_view_anon(
     // Call the function.
     let ret = call_free_fun(scope, fun, args)?;
 
-    if ret.is_typed_array() && ret.is_uint8_array() {
-        // This is the original format, which just returns the raw bytes.
-        let ret =
-            cast!(scope, ret, v8::Uint8Array, "bytes return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
-        let bytes = ret.get_contents(&mut []);
-
-        // We are pretending this was sent with the new format.
-        return Ok(ViewReturnData::Rows(Bytes::copy_from_slice(bytes)));
-    };
-
-    let ret = cast!(
-        scope,
-        ret,
-        v8::Object,
-        "bytes or object return from `__call_view_anon__`"
-    )
-    .map_err(|e| e.throw(scope))?;
+    let ret = cast!(scope, ret, v8::Object, "object return from `__call_view_anon__`").map_err(|e| e.throw(scope))?;
 
     let Some(data_key) = v8::String::new(scope, "data") else {
         return Err(ErrorOrException::Err(anyhow::anyhow!("error creating a v8 string")));
@@ -1026,10 +904,10 @@ fn no_such_iter(scope: &PinScope<'_, '_>) -> SysCallError {
 fn row_iter_bsatn_advance<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<(bool, Vec<u8>)> {
+) -> SysCallResult<Local<'scope, v8::Array>> {
     let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
     let row_iter_idx = RowIterIdx(row_iter_idx);
-    let buffer_max_len: u32 = deserialize_js(scope, args.get(1))?;
+    let array_buffer = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
 
     // Retrieve the iterator by `row_iter_idx`, or error.
     let env = get_env(scope)?;
@@ -1037,26 +915,33 @@ fn row_iter_bsatn_advance<'scope>(
         return Err(no_such_iter(scope));
     };
 
-    // Allocate a buffer with `buffer_max_len` capacity.
-    let mut buffer = vec![0; buffer_max_len as usize];
     // Fill the buffer as much as possible.
-    let written = InstanceEnv::fill_buffer_from_iter(iter, &mut buffer, &mut env.chunk_pool);
-    buffer.truncate(written);
+    let written = with_arraybuffer_mut(array_buffer, |buf| {
+        InstanceEnv::fill_buffer_from_iter(iter, buf, &mut env.chunk_pool)
+    });
 
-    match (written, iter.as_slice().first().map(|c| c.len().try_into().unwrap())) {
-        // Nothing was written and the iterator is not exhausted.
-        (0, Some(min_len)) => {
+    let next_buf_len = iter.as_slice().first().map(|v| v.len());
+
+    if written == 0 {
+        if let Some(min_len) = next_buf_len {
+            // Nothing was written and the iterator is not exhausted.
+            let min_len = min_len.try_into().unwrap();
             let exc = BufferTooSmall::from_requirement(scope, min_len)?;
-            Err(exc.throw(scope).into())
+            return Err(exc.throw(scope).into());
         }
-        // The iterator is exhausted, destroy it, and tell the caller.
-        (_, None) => {
-            env.iters.take(row_iter_idx);
-            Ok((true, buffer))
-        }
-        // Something was written, but the iterator is not exhausted.
-        (_, Some(_)) => Ok((false, buffer)),
     }
+    let done = next_buf_len.is_none();
+    if done {
+        // The iterator is exhausted, destroy it, and tell the caller.
+        env.iters.take(row_iter_idx);
+    }
+    let elements = &[
+        v8::Boolean::new(scope, done).into(),
+        v8::Uint8Array::new(scope, array_buffer, 0, written)
+            .expect("len > 8 pebibytes")
+            .into(),
+    ];
+    Ok(v8::Array::new_with_elements(scope, elements))
 }
 
 /// Module ABI that destroys the iterator registered under `iter`.
@@ -1167,15 +1052,49 @@ fn row_iter_bsatn_close<'scope>(
 /// Throws a `TypeError` if:
 /// - `table_id` is not a `u32`.
 /// - `row` is not an array of `u8`s.
-fn datastore_insert_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+fn datastore_insert_bsatn<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'_>,
+) -> SysCallResult<Local<'scope, v8::Uint8Array>> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let mut row: Vec<u8> = deserialize_js(scope, args.get(1))?;
+    let row_arr = cast!(scope, args.get(1), v8::Uint8Array, "buffer").map_err(|e| e.throw(scope))?;
 
-    // Insert the row into the DB and write back the generated column values.
-    let row_len = get_env(scope)?.instance_env.insert(table_id, &mut row)?;
-    row.truncate(row_len);
+    let row_offset = row_arr.byte_offset();
+    let row_len = with_uint8array_mut(row_arr, |buf| -> SysCallResult<_> {
+        // Insert the row into the DB and write back the generated column values.
+        Ok(get_env(scope)?.instance_env.insert(table_id, buf)?)
+    })?;
 
-    Ok(row)
+    let arraybuffer = row_arr.buffer(scope).unwrap();
+    let ret = v8::Uint8Array::new(scope, arraybuffer, row_offset, row_len).expect("len > 8 pebibytes");
+    Ok(ret)
+}
+
+fn with_uint8array_mut<R>(arr: Local<'_, v8::Uint8Array>, f: impl FnOnce(&mut [u8]) -> R) -> R {
+    // SAFETY: unclear. There aren't any other mutable references to this same buffer,
+    // but there are javascript objects that hold the same reference, though those are probably
+    // equivalent to raw pointers in the context of Rust's memory model. However, the v8 crate's
+    // API is almost certainly unsound in this regard already - `ArrayBufferView::get_contents()`
+    // returns an `&[u8]` but `BackingStore` derefs to `&[Cell<u8>]`, and you can obtain both
+    // of those simultaneously.
+    let buf: &mut [u8] = unsafe {
+        let (data, len) = arr.get_contents_raw_parts(&mut [0; v8::TYPED_ARRAY_MAX_SIZE_IN_HEAP]);
+        if data.is_null() {
+            &mut []
+        } else {
+            std::slice::from_raw_parts_mut(data, len)
+        }
+    };
+    f(buf)
+}
+
+fn with_arraybuffer_mut<R>(buf: Local<'_, v8::ArrayBuffer>, f: impl FnOnce(&mut [u8]) -> R) -> R {
+    let buf: &mut [u8] = match buf.data().map(|p| p.cast::<u8>()) {
+        // SAFETY: see comment in `with_uint8array_mut`
+        Some(data) => unsafe { std::slice::from_raw_parts_mut(data.as_ptr(), buf.byte_length()) },
+        None => &mut [],
+    };
+    f(buf)
 }
 
 /// Module ABI that updates a row into the table identified by `table_id`,
@@ -1249,16 +1168,24 @@ fn datastore_insert_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackAr
 /// Throws a `TypeError` if:
 /// - `table_id` is not a `u32`.
 /// - `row` is not an array of `u8`s.
-fn datastore_update_bsatn(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+fn datastore_update_bsatn<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'_>,
+) -> SysCallResult<Local<'scope, v8::Uint8Array>> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
     let index_id: IndexId = deserialize_js(scope, args.get(1))?;
-    let mut row: Vec<u8> = deserialize_js(scope, args.get(2))?;
+    let row_arr = cast!(scope, args.get(2), v8::Uint8Array, "buffer").map_err(|e| e.throw(scope))?;
 
     // Insert the row into the DB and write back the generated column values.
-    let row_len = get_env(scope)?.instance_env.update(table_id, index_id, &mut row)?;
-    row.truncate(row_len);
+    let row_offset = row_arr.byte_offset();
+    let row_len = with_uint8array_mut(row_arr, |buf| -> SysCallResult<_> {
+        // Insert the row into the DB and write back the generated column values.
+        Ok(get_env(scope)?.instance_env.update(table_id, index_id, buf)?)
+    })?;
 
-    Ok(row)
+    let arraybuffer = row_arr.buffer(scope).unwrap();
+    let ret = v8::Uint8Array::new(scope, arraybuffer, row_offset, row_len).expect("len > 8 pebibytes");
+    Ok(ret)
 }
 
 /// Module ABI that deletes all rows found in the index identified by `index_id`,
