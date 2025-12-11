@@ -7695,6 +7695,7 @@ dependencies = [
  "uuid",
  "v8",
  "wasmtime",
+ "wasmtime-internal-fiber",
 ]
 
 [[package]]
