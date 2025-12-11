@@ -33,6 +33,7 @@ pub enum RelValue<'a> {
 impl<'a> From<Row<'a>> for RelValue<'a> {
     fn from(value: Row<'a>) -> Self {
         match value {
+            Row::Null => Self::Projection(ProductValue { elements: Box::new([]) }),
             Row::Ptr(ptr) => Self::Row(ptr),
             Row::Ref(ptr) => Self::ProjRef(ptr),
         }
