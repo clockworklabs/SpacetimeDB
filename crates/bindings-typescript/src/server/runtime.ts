@@ -1,7 +1,6 @@
-import * as _syscalls1_0 from 'spacetime:sys@1.0';
-import * as _syscalls1_2 from 'spacetime:sys@1.2';
+import * as _syscalls2_0 from 'spacetime:sys@2.0';
 
-import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
+import type { ModuleHooks, u16, u32 } from 'spacetime:sys@2.0';
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
@@ -48,7 +47,7 @@ import ViewResultHeader from '../lib/autogen/view_result_header_type';
 
 const { freeze } = Object;
 
-export const sys = freeze(wrapSyscalls(_syscalls1_0, _syscalls1_2));
+export const sys = freeze(wrapSyscalls(_syscalls2_0));
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -245,9 +244,6 @@ export const hooks: ModuleHooks = {
       throw e;
     }
   },
-};
-
-export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
     const ctx: ViewCtx<any> = freeze({
@@ -342,9 +338,6 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       };
     }
   },
-};
-
-export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
   __call_procedure__(id, sender, connection_id, timestamp, args) {
     return callProcedure(
       id,
@@ -382,8 +375,6 @@ function makeTableView(
   if (rowType.tag !== 'Product') {
     throw 'impossible';
   }
-
-  const baseSize = bsatnBaseSize(typespace, rowType);
 
   const sequences = table.sequences.map(seq => {
     const col = rowType.value.elements[seq.column];
@@ -442,7 +433,8 @@ function makeTableView(
     iter,
     [Symbol.iterator]: () => iter(),
     insert: row => {
-      const writer = new BinaryWriter(baseSize);
+      using buf = IterBuf.take();
+      const writer = new BinaryWriter(buf.buffer);
       AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
       const ret = { ...row };
@@ -451,7 +443,8 @@ function makeTableView(
       return ret;
     },
     delete: (row: RowType<any>): boolean => {
-      const writer = new BinaryWriter(4 + baseSize);
+      using buf = IterBuf.take();
+      const writer = new BinaryWriter(buf.buffer);
       writer.writeU32(1);
       AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const count = sys.datastore_delete_all_by_eq_bsatn(
@@ -653,8 +646,9 @@ function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, void> {
   using iter = new IteratorHandle(id);
   const { typespace } = MODULE_DEF;
 
+  using iterBuf = IterBuf.take();
   let buf;
-  while ((buf = advanceIter(iter)) != null) {
+  while ((buf = advanceIter(iter, iterBuf)) != null) {
     const reader = new BinaryReader(buf);
     while (reader.remaining > 0) {
       yield AlgebraicType.deserializeValue(reader, ty, typespace);
@@ -662,17 +656,53 @@ function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, void> {
   }
 }
 
-function advanceIter(iter: IteratorHandle): Uint8Array | null {
-  let buf_max_len = 0x10000;
+function advanceIter(iter: IteratorHandle, buf: IterBuf): Uint8Array | null {
   while (true) {
     try {
-      return iter.advance(buf_max_len);
+      return iter.advance(buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-        buf_max_len = e.__buffer_too_small__ as number;
+        buf.grow(e.__buffer_too_small__ as number);
         continue;
       }
       throw e;
+    }
+  }
+}
+
+class IterBuf implements Disposable {
+  static #bufs: ArrayBuffer[] = [];
+
+  // This should guarantee in most cases that we don't have to reallocate an iterator
+  // buffer, unless there's a single row that serializes to >1 MiB.
+  static readonly #DEFAULT_BUFFER_CAPACITY = 32 * 1024 * 2;
+
+  static take() {
+    const buf =
+      IterBuf.#bufs.pop() ?? new ArrayBuffer(IterBuf.#DEFAULT_BUFFER_CAPACITY);
+    return new IterBuf(buf);
+  }
+
+  #buf: ArrayBuffer | null;
+
+  constructor(buf: ArrayBuffer) {
+    this.#buf = buf;
+  }
+
+  get buffer(): ArrayBuffer {
+    if (!this.#buf) throw new TypeError('IterBuf used after disposal');
+    return this.#buf;
+  }
+
+  grow(newSize: number) {
+    this.#buf?.resize;
+    this.#buf = new ArrayBuffer(newSize);
+  }
+
+  [Symbol.dispose]() {
+    if (this.#buf) {
+      IterBuf.#bufs.push(this.#buf);
+      this.#buf = null;
     }
   }
 }
@@ -699,14 +729,11 @@ class IteratorHandle implements Disposable {
   }
 
   /** Call `row_iter_bsatn_advance`, returning null if this iterator was already exhausted. */
-  advance(buf_max_len: u32): Uint8Array | null {
+  advance(buf: ArrayBuffer): Uint8Array | null {
     if (this.#id === -1) return null;
-    const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
-      this.#id,
-      buf_max_len
-    );
+    const [done, ret] = sys.row_iter_bsatn_advance(this.#id, buf);
     if (done) this.#detach();
-    return buf;
+    return ret;
   }
 
   [Symbol.dispose]() {

@@ -5,8 +5,9 @@ export default class BinaryWriter {
   #view: DataView;
   #offset: number = 0;
 
-  constructor(size: number) {
-    this.#buffer = new Uint8Array(size);
+  constructor(init: number | ArrayBuffer) {
+    this.#buffer =
+      typeof init === 'number' ? new Uint8Array(init) : new Uint8Array(init);
     this.#view = new DataView(this.#buffer.buffer);
   }
 
