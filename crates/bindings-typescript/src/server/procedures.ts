@@ -1,11 +1,10 @@
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
-import type Typespace from '../lib/autogen/typespace_type';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
-import { ModuleContext, type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
 import {
   type Infer,
@@ -17,6 +16,7 @@ import { Uuid } from '../lib/uuid';
 import type { HttpClient } from '../server/http_internal';
 import { httpClient } from './http_internal';
 import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
+import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
@@ -47,12 +47,13 @@ export function procedure<
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 >(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: Params,
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>
 ) {
+  ctx.defineFunction(name);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -72,7 +73,7 @@ export function procedure<
     },
   });
 
-  PROCEDURES.push({
+  ctx.procedures.push({
     fn,
     paramsType,
     returnType,
@@ -80,26 +81,27 @@ export function procedure<
   });
 }
 
-export const PROCEDURES: Array<{
+export type Procedures = Array<{
   fn: ProcedureFn<any, any, any>;
   paramsType: ProductType;
   returnType: AlgebraicType;
   returnTypeBaseSize: number;
-}> = [];
+}>;
 
 export function callProcedure(
-  typespace: Infer<typeof Typespace>,
+  moduleCtx: SchemaInner,
   id: number,
   sender: Identity,
   connectionId: ConnectionId | null,
   timestamp: Timestamp,
   argsBuf: Uint8Array
 ): Uint8Array {
-  const { fn, paramsType, returnType, returnTypeBaseSize } = PROCEDURES[id];
+  const { fn, paramsType, returnType, returnTypeBaseSize } =
+    moduleCtx.procedures[id];
   const args = ProductType.deserializeValue(
     new BinaryReader(argsBuf),
     paramsType,
-    typespace
+    moduleCtx.typespace
   );
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = {
@@ -172,6 +174,6 @@ export function callProcedure(
 
   const ret = callUserFunction(fn, ctx, args);
   const retBuf = new BinaryWriter(returnTypeBaseSize);
-  AlgebraicType.serializeValue(retBuf, returnType, ret, typespace);
+  AlgebraicType.serializeValue(retBuf, returnType, ret, moduleCtx.typespace);
   return retBuf.getBuffer();
 }

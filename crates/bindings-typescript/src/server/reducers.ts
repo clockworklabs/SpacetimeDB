@@ -6,7 +6,7 @@ import type {
   Reducer,
   ReducerCtx,
 } from '../lib/reducers';
-import { ModuleContext, type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import {
   ColumnBuilder,
   RowBuilder,
@@ -15,6 +15,7 @@ import {
   type TypeBuilder,
 } from '../lib/type_builders';
 import { toPascalCase } from '../lib/util';
+import type { SchemaInner } from './schema';
 
 /**
  * internal: pushReducer() helper used by reducer() and lifecycle wrappers
@@ -25,16 +26,13 @@ import { toPascalCase } from '../lib/util';
  * @param lifecycle - Optional lifecycle hooks for the reducer.
  */
 export function pushReducer(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: RowObj | RowBuilder<RowObj>,
   fn: Reducer<any, any>,
   lifecycle?: Infer<typeof RawReducerDefV9>['lifecycle']
 ): void {
-  if (existingReducers.has(name)) {
-    throw new TypeError(`There is already a reducer with the name '${name}'`);
-  }
-  existingReducers.add(name);
+  ctx.defineFunction(name);
 
   if (!(params instanceof RowBuilder)) {
     params = new RowBuilder(params);
@@ -59,11 +57,10 @@ export function pushReducer(
     Object.defineProperty(fn, 'name', { value: name, writable: false });
   }
 
-  REDUCERS.push(fn);
+  ctx.reducers.push(fn);
 }
 
-const existingReducers = new Set<string>();
-export const REDUCERS: Reducer<any, any>[] = [];
+export type Reducers = Reducer<any, any>[];
 
 /**
  * Defines a SpacetimeDB reducer function.
@@ -101,7 +98,7 @@ export const REDUCERS: Reducer<any, any>[] = [];
  * ```
  */
 export function reducer<S extends UntypedSchemaDef, Params extends ParamsObj>(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: Params,
   fn: Reducer<S, Params>
@@ -122,7 +119,7 @@ export function reducer<S extends UntypedSchemaDef, Params extends ParamsObj>(
  * - `ctx`: The reducer context, providing access to `sender`, `timestamp`, `connection_id`, and `db`.
  */
 export function init<S extends UntypedSchemaDef, Params extends ParamsObj>(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: Params,
   fn: Reducer<S, Params>
@@ -143,7 +140,7 @@ export function clientConnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
 >(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: Params,
   fn: Reducer<S, Params>
@@ -174,7 +171,7 @@ export function clientDisconnected<
   S extends UntypedSchemaDef,
   Params extends ParamsObj,
 >(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: Params,
   fn: Reducer<S, Params>
