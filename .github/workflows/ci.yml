@@ -550,7 +550,7 @@ jobs:
           cat Cargo.toml
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dsherret/rust-toolchain-file@v1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -674,7 +674,7 @@ jobs:
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dsherret/rust-toolchain-file@v1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
