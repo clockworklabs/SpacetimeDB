@@ -1,4 +1,4 @@
-declare module 'spacetime:sys@1.0' {
+declare module 'spacetime:sys@2.0' {
   export type u8 = number;
   export type u16 = number;
   export type u32 = number;
@@ -16,6 +16,18 @@ declare module 'spacetime:sys@1.0' {
       timestamp: bigint,
       argsBuf: Uint8Array
     ): { tag: 'ok' } | { tag: 'err'; value: string };
+
+    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
+
+    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
+
+    __call_procedure__(
+      id: u32,
+      sender: u256,
+      connection_id: u128,
+      timestamp: bigint,
+      args: Uint8Array
+    ): Uint8Array;
   };
 
   export function register_hooks(hooks: ModuleHooks);
@@ -33,7 +45,7 @@ declare module 'spacetime:sys@1.0' {
   ): u32;
   export function row_iter_bsatn_advance(
     iter: u32,
-    buffer_max_len: u32
+    buffer: ArrayBuffer
   ): [boolean, Uint8Array];
   export function row_iter_bsatn_close(iter: u32): void;
   export function datastore_insert_bsatn(
@@ -65,29 +77,6 @@ declare module 'spacetime:sys@1.0' {
   export function console_timer_end(span_id: u32): void;
   export function identity(): { __identity__: u256 };
   export function get_jwt_payload(connection_id: u128): Uint8Array;
-}
-
-declare module 'spacetime:sys@1.1' {
-  export type ModuleHooks = {
-    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
-    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
-  };
-
-  export function register_hooks(hooks: ModuleHooks);
-}
-
-declare module 'spacetime:sys@1.2' {
-  export type ModuleHooks = {
-    __call_procedure__(
-      id: u32,
-      sender: u256,
-      connection_id: u128,
-      timestamp: bigint,
-      args: Uint8Array
-    ): Uint8Array;
-  };
-
-  export function register_hooks(hooks: ModuleHooks);
 
   export function procedure_http_request(
     request: Uint8Array,
@@ -99,9 +88,7 @@ declare module 'spacetime:sys@1.2' {
   export function procedure_commit_mut_tx();
 
   export function procedure_abort_mut_tx();
-}
 
-declare module 'spacetime:sys@1.3' {
   export function datastore_index_scan_point_bsatn(
     index_id: u32,
     point: Uint8Array
