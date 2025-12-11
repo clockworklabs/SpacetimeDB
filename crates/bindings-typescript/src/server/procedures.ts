@@ -9,7 +9,7 @@ import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import type { ParamsObj, ReducerCtx } from '../lib/reducers';
-import { ModuleContext, type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
 import {
   type Infer,
@@ -21,6 +21,7 @@ import { Uuid } from '../lib/uuid';
 import type { HttpClient } from '../server/http_internal';
 import { httpClient } from './http_internal';
 import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
+import type { SchemaInner } from './schema';
 
 const { freeze } = Object;
 
@@ -51,12 +52,13 @@ export function procedure<
   Params extends ParamsObj,
   Ret extends TypeBuilder<any, any>,
 >(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   name: string,
   params: Params,
   ret: Ret,
   fn: ProcedureFn<S, Params, Ret>
 ) {
+  ctx.defineFunction(name);
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
@@ -78,7 +80,7 @@ export function procedure<
 
   const { typespace } = ctx;
 
-  PROCEDURES.push({
+  ctx.procedures.push({
     fn,
     deserializeArgs: ProductType.makeDeserializer(paramsType, typespace),
     serializeReturn: AlgebraicType.makeSerializer(returnType, typespace),
@@ -86,14 +88,15 @@ export function procedure<
   });
 }
 
-export const PROCEDURES: Array<{
+export type Procedures = Array<{
   fn: ProcedureFn<any, any, any>;
   deserializeArgs: Deserializer<any>;
   serializeReturn: Serializer<any>;
   returnTypeBaseSize: number;
-}> = [];
+}>;
 
 export function callProcedure(
+  moduleCtx: SchemaInner,
   id: number,
   sender: Identity,
   connectionId: ConnectionId | null,
@@ -101,7 +104,7 @@ export function callProcedure(
   argsBuf: Uint8Array
 ): Uint8Array {
   const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
-    PROCEDURES[id];
+    moduleCtx.procedures[id];
   const args = deserializeArgs(new BinaryReader(argsBuf));
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = {
