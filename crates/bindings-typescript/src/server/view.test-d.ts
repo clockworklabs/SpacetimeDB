@@ -28,6 +28,21 @@ const personWithExtra = table(
   }
 );
 
+const personWithMissing = table(
+  { name: 'personWithMissing' },
+  {
+    id: t.u32(),
+  }
+);
+
+const personReordered = table(
+  { name: 'personReordered' },
+  {
+    name: t.string(),
+    id: t.u32(),
+  }
+);
+
 const order = table(
   {
     name: 'order',
@@ -46,13 +61,45 @@ const order = table(
   }
 );
 
-const spacetime = schema(person, order, personWithExtra);
+const spacetime = schema(
+  person,
+  order,
+  personWithExtra,
+  personReordered,
+  personWithMissing
+);
 
 const arrayRetValue = t.array(person.rowType);
+const optionalPerson = t.option(person.rowType);
 
 spacetime.anonymousView({ name: 'v1', public: true }, arrayRetValue, ctx => {
   return ctx.from.person.build();
 });
+
+spacetime.anonymousView(
+  { name: 'optionalPerson', public: true },
+  optionalPerson,
+  ctx => {
+    return ctx.db.person.iter().next().value;
+  }
+);
+
+spacetime.anonymousView(
+  { name: 'optionalPersonWrong', public: true },
+  optionalPerson,
+  ctx => {
+    return ctx.db.order.iter().next().value;
+  }
+);
+
+// Extra fields are only an issue for queries.
+spacetime.anonymousView(
+  { name: 'optionalPersonWithExtra', public: true },
+  optionalPerson,
+  ctx => {
+    return ctx.db.personWithExtra.iter().next().value;
+  }
+);
 
 spacetime.anonymousView(
   { name: 'v2', public: true },
@@ -63,10 +110,36 @@ spacetime.anonymousView(
   }
 );
 
-// We should eventually make this fail.
-spacetime.anonymousView({ name: 'v3', public: true }, arrayRetValue, ctx => {
-  return ctx.from.personWithExtra.build();
-});
+// For queries, we can't return rows with extra fields.
+spacetime.anonymousView(
+  { name: 'v3', public: true },
+  arrayRetValue,
+  // @ts-expect-error returns a query of the wrong type.
+  ctx => {
+    return ctx.from.personWithExtra.build();
+  }
+);
+
+// Ideally this would fail, since we depend on the field ordering for serialization.
+spacetime.anonymousView(
+  { name: 'reorderedPerson', public: true },
+  arrayRetValue,
+  // Comment this out if we can fix the types.
+  // // @ts-expect-error returns a query of the wrong type.
+  ctx => {
+    return ctx.from.personReordered.build();
+  }
+);
+
+// Fails because it is missing a field.
+spacetime.anonymousView(
+  { name: 'missingField', public: true },
+  arrayRetValue,
+  // @ts-expect-error returns a query of the wrong type.
+  ctx => {
+    return ctx.from.personWithMissing.build();
+  }
+);
 
 spacetime.anonymousView({ name: 'v4', public: true }, arrayRetValue, ctx => {
   // @ts-expect-error returns a query of the wrong type.

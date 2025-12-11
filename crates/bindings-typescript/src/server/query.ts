@@ -6,6 +6,7 @@ import type { TableSchema } from '../lib/table_schema';
 import type {
   ColumnBuilder,
   ColumnMetadata,
+  RowBuilder,
   TypeBuilder,
 } from '../lib/type_builders';
 
@@ -30,24 +31,19 @@ export interface TableTypedQuery<TableDef extends TypedTableDef> {
   readonly __table?: TableDef;
 }
 
-export interface RowTypedQuery<Row> {
+export interface RowTypedQuery<Row, ST> {
   readonly [QueryBrand]: true;
   // Phantom type to track the row type.
   readonly __row?: Row;
+  readonly __algebraicType?: ST;
 }
 
-type RowFromTableQuery<Q> =
-  Q extends TableTypedQuery<infer TD> ? RowType<TD> : never;
-
-export type ToRowQuery<Q> = RowTypedQuery<RowFromTableQuery<Q>>;
-
-// export type Query<TableDef extends TypedTableDef> = TableTypedQuery<TableDef>;
-// export type Query<TableDef extends TypedTableDef> = TableTypedQuery<TableDef>;
 export type Query<TableDef extends TypedTableDef> = RowTypedQuery<
-  RowType<TableDef>
+  RowType<TableDef>,
+  TableDef['rowType']
 >;
 
-export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any> =>
+export const isRowTypedQuery = (val: unknown): val is RowTypedQuery<any, any> =>
   !!val && typeof val === 'object' && QueryBrand in (val as object);
 
 export const isTypedQuery = (val: unknown): val is TableTypedQuery<any> =>
@@ -356,10 +352,16 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
 }
 
 // TODO: Just use UntypedTableDef if they end up being the same.
-export type TypedTableDef = {
+export type TypedTableDef<
+  Columns extends Record<
+    string,
+    ColumnBuilder<any, any, ColumnMetadata<any>>
+  > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
+> = {
   name: string;
-  columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
+  columns: Columns;
   indexes: readonly IndexOpts<any>[];
+  rowType: RowBuilder<Columns>['algebraicType']['value'];
 };
 
 export type TableSchemaAsTableDef<
