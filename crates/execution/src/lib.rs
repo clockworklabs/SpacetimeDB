@@ -1,18 +1,13 @@
-use std::{
-    hash::{Hash, Hasher},
-    ops::RangeBounds,
-};
-
 use anyhow::Result;
-use spacetimedb_lib::{
-    bsatn::{EncodeError, ToBsatn},
-    query::Delta,
-    sats::impl_serialize,
-    AlgebraicValue, ProductValue,
-};
+use core::hash::{Hash, Hasher};
+use core::ops::RangeBounds;
+use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{ProjectField, TupleField};
 use spacetimedb_primitives::{ColList, IndexId, TableId};
+use spacetimedb_sats::bsatn::{BufReservedFill, EncodeError, ToBsatn};
+use spacetimedb_sats::buffer::BufWriter;
 use spacetimedb_sats::product_value::InvalidFieldError;
+use spacetimedb_sats::{impl_serialize, AlgebraicValue, ProductValue};
 use spacetimedb_table::{static_assert_size, table::RowRef};
 
 pub mod dml;
@@ -24,8 +19,13 @@ pub trait Datastore {
     where
         Self: 'a;
 
-    /// Iterator type for ranged index scans
-    type IndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    /// Iterator type for ranged index scans.
+    type RangeIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
+    /// Iterator type for point index scans.
+    type PointIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
     where
         Self: 'a;
 
@@ -35,13 +35,21 @@ pub trait Datastore {
     /// Scans and returns all of the rows in a table
     fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;
 
-    /// Scans a range of keys from an index returning a [`RowRef`] iterator
-    fn index_scan<'a>(
+    /// Scans a range of keys from an index returning a [`RowRef`] iterator.
+    fn index_scan_range<'a>(
         &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<Self::IndexIter<'a>>;
+    ) -> Result<Self::RangeIndexIter<'a>>;
+
+    /// Scans a key from an index returning a [`RowRef`] iterator.
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> Result<Self::PointIndexIter<'a>>;
 }
 
 pub trait DeltaStore {
@@ -144,7 +152,7 @@ impl ToBsatn for Row<'_> {
         }
     }
 
-    fn to_bsatn_extend(&self, buf: &mut Vec<u8>) -> std::result::Result<(), EncodeError> {
+    fn to_bsatn_extend(&self, buf: &mut (impl BufWriter + BufReservedFill)) -> std::result::Result<(), EncodeError> {
         match self {
             Self::Ptr(ptr) => ptr.to_bsatn_extend(buf),
             Self::Ref(val) => val.to_bsatn_extend(buf),

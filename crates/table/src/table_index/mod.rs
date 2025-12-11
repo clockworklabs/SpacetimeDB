@@ -1552,7 +1552,10 @@ mod test {
             }
 
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                let mut ptrs_in_index = index.seek_range(&range).collect::<Vec<_>>();
+                check_seek(index.seek_range(&range).collect(), val_to_ptr, expect)
+            }
+
+            fn check_seek(mut ptrs_in_index: Vec<RowPointer>, val_to_ptr: &HashMap<u64, RowPointer>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
                 ptrs_in_index.sort();
                 let mut expected_ptrs = expect.into_iter().map(|expected| val_to_ptr.get(&expected).unwrap()).copied().collect::<Vec<_>>();
                 expected_ptrs.sort();
@@ -1566,6 +1569,7 @@ mod test {
             // Test point ranges.
             for x in range.clone() {
                 test_seek(&index, &val_to_ptr, V(x), [x])?;
+                check_seek(index.seek_point(&V(x)).collect(), &val_to_ptr, [x])?;
             }
 
             // Test `..` (`RangeFull`).

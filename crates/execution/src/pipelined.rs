@@ -726,7 +726,7 @@ impl PipelinedIxScan {
     ) -> Result<()> {
         // A single column index scan
         let single_col_scan = || {
-            tx.index_scan(
+            tx.index_scan_range(
                 self.table_id,
                 self.index_id,
                 &(self.lower.as_ref(), self.upper.as_ref()),
@@ -739,7 +739,7 @@ impl PipelinedIxScan {
         };
         // A multi-column index scan
         let multi_col_scan = |prefix: &[AlgebraicValue]| {
-            tx.index_scan(
+            tx.index_scan_range(
                 self.table_id,
                 self.index_id,
                 &(
@@ -832,7 +832,7 @@ impl PipelinedIxJoin {
         let iter_rhs = |u: &Tuple, lhs_field: &TupleField, bytes_scanned: &mut usize| -> Result<_> {
             let key = project(u, lhs_field, bytes_scanned);
             Ok(tx
-                .index_scan(self.rhs_table, self.rhs_index, &key)?
+                .index_scan_point(self.rhs_table, self.rhs_index, &key)?
                 .map(Row::Ptr)
                 .map(Tuple::Row))
         };

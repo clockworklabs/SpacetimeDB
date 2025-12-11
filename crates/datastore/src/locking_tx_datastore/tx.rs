@@ -5,14 +5,13 @@ use super::{
     IterByColEqTx, SharedReadGuard,
 };
 use crate::execution_context::ExecutionContext;
-use crate::locking_tx_datastore::state_view::IterTx;
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
+use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter};
 use std::sync::Arc;
 use std::{future, num::NonZeroU64};
 use std::{
@@ -37,8 +36,13 @@ impl Datastore for TxId {
     where
         Self: 'a;
 
-    type IndexIter<'a>
+    type RangeIndexIter<'a>
         = IndexScanRangeIter<'a>
+    where
+        Self: 'a;
+
+    type PointIndexIter<'a>
+        = IndexScanPointIter<'a>
     where
         Self: 'a;
 
@@ -50,31 +54,31 @@ impl Datastore for TxId {
 
     fn table_scan<'a>(&'a self, table_id: TableId) -> anyhow::Result<Self::TableIter<'a>> {
         self.committed_state_shared_lock
-            .get_table(table_id)
-            .map(|table| table.scan_rows(&self.committed_state_shared_lock.blob_store))
+            .table_scan(table_id)
             .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
     }
 
-    fn index_scan<'a>(
+    fn index_scan_range<'a>(
         &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> anyhow::Result<Self::IndexIter<'a>> {
-        self.committed_state_shared_lock
-            .get_table(table_id)
-            .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
-            .and_then(|table| {
-                table
-                    .get_index_by_id_with_table(&self.committed_state_shared_lock.blob_store, index_id)
-                    .map(|i| i.seek_range(range))
-                    .ok_or_else(|| anyhow::anyhow!("IndexId `{index_id}` does not exist"))
-            })
+    ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
+        self.with_index(table_id, index_id, |i| i.seek_range(range))
+    }
+
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> anyhow::Result<Self::PointIndexIter<'a>> {
+        self.with_index(table_id, index_id, |i| i.seek_point(point))
     }
 }
 
 impl StateView for TxId {
-    type Iter<'a> = IterTx<'a>;
+    type Iter<'a> = TableScanIter<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
     type IterByColEq<'a, 'r>
         = IterByColEqTx<'a, 'r>
@@ -112,11 +116,28 @@ impl StateView for TxId {
         cols: impl Into<ColList>,
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
+        self.committed_state_shared_lock.iter_by_col_eq(table_id, cols, value)
     }
 }
 
 impl TxId {
+    fn with_index<'a, R>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        seek: impl FnOnce(TableAndIndex<'a>) -> R,
+    ) -> anyhow::Result<R> {
+        self.committed_state_shared_lock
+            .get_table(table_id)
+            .ok_or_else(|| anyhow::anyhow!("TableId `{table_id}` does not exist"))
+            .and_then(|table| {
+                table
+                    .get_index_by_id_with_table(&self.committed_state_shared_lock.blob_store, index_id)
+                    .map(seek)
+                    .ok_or_else(|| anyhow::anyhow!("IndexId `{index_id}` does not exist"))
+            })
+    }
+
     /// Release this read-only transaction,
     /// allowing new mutable transactions to start if this was the last read-only transaction.
     ///

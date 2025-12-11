@@ -346,15 +346,12 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 
     fn _delete(&self, col_val: &Col::ColType) -> (bool, IterBuf) {
         let index_id = Col::index_id();
-        let args = get_args::<Tbl, Col>(col_val);
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+        let point = IterBuf::serialize(col_val).unwrap();
+        let n_del = sys::datastore_delete_by_index_scan_point_bsatn(index_id, &point).unwrap_or_else(|e| {
+            panic!("unique: unexpected error from datastore_delete_by_index_scan_point_bsatn: {e}")
+        });
 
-        let n_del = sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| {
-                panic!("unique: unexpected error from datastore_delete_by_index_scan_range_bsatn: {e}")
-            });
-
-        (n_del > 0, args.data)
+        (n_del > 0, point)
     }
 
     /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`, and
@@ -405,31 +402,20 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
 }
 
 #[inline]
-fn get_args<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) -> IndexScanRangeArgs {
-    IndexScanRangeArgs {
-        data: IterBuf::serialize(&std::ops::Bound::Included(col_val)).unwrap(),
-        prefix_elems: 0,
-        rstart_idx: 0,
-        rend_idx: None,
-    }
-}
-
-#[inline]
 fn find<Tbl: Table, Col: Index + Column<Table = Tbl>>(col_val: &Col::ColType) -> Option<Tbl::Row> {
     // Find the row with a match.
     let index_id = Col::index_id();
-    let args = get_args::<Tbl, Col>(col_val);
-    let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+    let point = IterBuf::serialize(col_val).unwrap();
 
-    let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-        .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
-    let mut iter = TableIter::new_with_buf(iter, args.data);
+    let iter = sys::datastore_index_scan_point_bsatn(index_id, &point)
+        .unwrap_or_else(|e| panic!("unique: unexpected error from `datastore_index_scan_point_bsatn`: {e}"));
+    let mut iter = TableIter::new_with_buf(iter, point);
 
     // We will always find either 0 or 1 rows here due to the unique constraint.
     let row = iter.next();
     assert!(
         iter.is_exhausted(),
-        "`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows"
+        "`datastore_index_scan_point_bsatn` on unique field cannot return >1 rows"
     );
     row
 }
@@ -461,7 +447,20 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumnReadOnly<Tbl, Col
     }
 }
 
+/// Information about the `index_id` of an index
+/// and the number of columns the index indexes.
 pub trait Index {
+    /// The number of columns the index indexes.
+    ///
+    /// Used to determine whether a scan for e.g., `(a, b)`,
+    /// is actually a point scan or whether there's a suffix, e.g., `(c, d)`.
+    const NUM_COLS_INDEXED: usize;
+
+    /// Determine the `IndexId` of this index.
+    ///
+    /// For generated implementations,
+    /// this results in a *memoized* syscall to determine the index,
+    /// based on the hard coded name of the index.
     fn index_id() -> IndexId;
 }
 
@@ -676,11 +675,21 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
         B: IndexScanRangeBounds<IndexType, K>,
     {
         let index_id = Idx::index_id();
-        let args = b.get_args();
-        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-        sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-            .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
-            .into()
+        if const { is_point_scan::<Idx, B, _, _>() } {
+            b.with_point_arg(|point| {
+                sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+                    .unwrap_or_else(|e| {
+                        panic!("unexpected error from `datastore_delete_by_index_scan_point_bsatn`: {e}")
+                    })
+                    .into()
+            })
+        } else {
+            let args = b.get_range_args();
+            let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+            sys::datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+                .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_range_bsatn`: {e}"))
+                .into()
+        }
     }
 }
 
@@ -691,10 +700,19 @@ where
     B: IndexScanRangeBounds<IndexType, K>,
 {
     let index_id = Idx::index_id();
-    let args = b.get_args();
-    let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
-    let iter = sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
-        .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"));
+
+    let iter = if const { is_point_scan::<Idx, B, _, _>() } {
+        b.with_point_arg(|point| {
+            sys::datastore_index_scan_point_bsatn(index_id, point)
+                .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
+        })
+    } else {
+        let args = b.get_range_args();
+        let (prefix, prefix_elems, rstart, rend) = args.args_for_syscall();
+        sys::datastore_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_range_bsatn`: {e}"))
+    };
+
     TableIter::new(iter)
 }
 
@@ -723,11 +741,30 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx>
     }
 }
 
+/// Returns whether `B` is a point scan on `I`.
+const fn is_point_scan<I: Index, B: IndexScanRangeBounds<T, K>, T, K>() -> bool {
+    B::POINT && B::COLS_PROVIDED == I::NUM_COLS_INDEXED
+}
+
 /// Trait used for overloading methods on [`RangedIndex`].
 /// See [`RangedIndex`] for more information.
 pub trait IndexScanRangeBounds<T, K = ()> {
+    /// True if no range occurs in this range bounds.
     #[doc(hidden)]
-    fn get_args(&self) -> IndexScanRangeArgs;
+    const POINT: bool;
+
+    /// The number of columns mentioned in this range bounds.
+    /// For `(42, 12..24)` it's `2`.
+    #[doc(hidden)]
+    const COLS_PROVIDED: usize;
+
+    // TODO(perf, centril): once we have stable specialization,
+    // just use `to_le_bytes` internally instead.
+    #[doc(hidden)]
+    fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R;
+
+    #[doc(hidden)]
+    fn get_range_args(&self) -> IndexScanRangeArgs;
 }
 
 #[doc(hidden)]
@@ -812,8 +849,15 @@ macro_rules! impl_index_scan_range_bounds {
             Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
         > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*)> for (Term,) {
-            fn get_args(&self) -> IndexScanRangeArgs {
-                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_args(&self.0)
+            const POINT: bool = Term::POINT;
+            const COLS_PROVIDED: usize = 1;
+
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::with_point_arg(&self.0, run)
+            }
+
+            fn get_range_args(&self) -> IndexScanRangeArgs {
+                IndexScanRangeBounds::<($ColTerminator, $($ColUnused,)*), SingleBound>::get_range_args(&self.0)
             }
         }
         // Implementation for bare values: serialize the value as the terminating bounds.
@@ -823,7 +867,15 @@ macro_rules! impl_index_scan_range_bounds {
             Term: IndexScanRangeBoundsTerminator<Arg = $ArgTerminator>,
             $ArgTerminator: FilterableValue<Column = $ColTerminator>,
         > IndexScanRangeBounds<($ColTerminator, $($ColUnused,)*), SingleBound> for Term {
-            fn get_args(&self) -> IndexScanRangeArgs {
+            const POINT: bool = Term::POINT;
+            const COLS_PROVIDED: usize = 1;
+
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                // We can assume here that we have a point bound.
+                run(&IterBuf::serialize(self.point()).unwrap())
+            }
+
+            fn get_range_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
                 let rend_idx = self.bounds().serialize_into(&mut data);
                 IndexScanRangeArgs { data, prefix_elems: 0, rstart_idx: 0, rend_idx }
@@ -854,7 +906,27 @@ macro_rules! impl_index_scan_range_bounds {
              $ColTerminator,
              $($ColUnused,)*)
           > for ($($ArgPrefix,)+ Term,) {
-            fn get_args(&self) -> IndexScanRangeArgs {
+            const POINT: bool = Term::POINT;
+            const COLS_PROVIDED: usize = 1 + impl_index_scan_range_bounds!(@count $($ColPrefix)+);
+
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                // We can assume here that we have a point bound.
+                let mut data = IterBuf::take();
+
+                // Destructure the argument tuple into variables with the same names as their types.
+                #[allow(non_snake_case)]
+                let ($($ArgPrefix,)+ term,) = self;
+
+                // For each part in the tuple queried, serialize it into the `data` buffer.
+                Ok(())
+                    $(.and_then(|()| data.serialize_into($ArgPrefix)))+
+                    .and_then(|()| data.serialize_into(term.point()))
+                    .unwrap();
+
+                run(&*data)
+            }
+
+            fn get_range_args(&self) -> IndexScanRangeArgs {
                 let mut data = IterBuf::take();
 
                 // Get the number of prefix elements.
@@ -864,7 +936,7 @@ macro_rules! impl_index_scan_range_bounds {
                 #[allow(non_snake_case)]
                 let ($($ArgPrefix,)+ term,) = self;
 
-                // For each prefix queried, zerialize it into the `data` buffer.
+                // For each prefix queried, serialize it into the `data` buffer.
                 Ok(())
                     $(.and_then(|()| data.serialize_into($ArgPrefix)))+
                     .unwrap();

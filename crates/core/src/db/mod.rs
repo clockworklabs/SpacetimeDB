@@ -12,6 +12,7 @@ pub mod persistence;
 pub mod relational_db;
 pub mod snapshot;
 pub mod update;
+mod durability;
 
 /// Whether SpacetimeDB is run in memory, or persists objects and
 /// a message log to disk.

@@ -10,7 +10,7 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     pointer_map::PointerMap,
     static_assert_size,
-    table::{IndexScanRangeIter, RowRef, Table, TableAndIndex},
+    table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableAndIndex},
     table_index::TableIndex,
 };
 use std::collections::{btree_map, BTreeMap};
@@ -134,9 +134,10 @@ impl TxState {
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     ///
-    /// For a unique index this will always yield at most one `RowRef`.
+    /// For a unique index this will always yield at most one `RowRef`
+    /// when `range` is a point.
     /// When there is no index this returns `None`.
-    pub(super) fn index_seek_by_cols<'a>(
+    pub(super) fn index_seek_range_by_cols<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
@@ -146,6 +147,26 @@ impl TxState {
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
             .map(|i| i.seek_range(range))
+    }
+
+    /// When there's an index on `cols`,
+    /// returns an iterator over the `TableIndex` that yields all the [`RowRef`]s
+    /// that match the specified `range` in the indexed column.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
+    pub(super) fn index_seek_point_by_cols<'a>(
+        &'a self,
+        table_id: TableId,
+        cols: &ColList,
+        point: &AlgebraicValue,
+    ) -> Option<IndexScanPointIter<'a>> {
+        self.insert_tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek_point(point))
     }
 
     /// Returns the table for `table_id` combined with the index for `index_id`, if both exist.

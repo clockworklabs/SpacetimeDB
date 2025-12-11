@@ -466,11 +466,13 @@ impl ValidatedIndex<'_> {
         };
         let vis = superize_vis(vis);
 
+        let num_cols = cols.len();
         let mut decl = quote! {
             #typeck_direct_index
 
             #vis struct #index_ident;
             impl spacetimedb::table::Index for #index_ident {
+                const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
                     static INDEX_ID: std::sync::OnceLock<spacetimedb::table::IndexId> = std::sync::OnceLock::new();
                     *INDEX_ID.get_or_init(|| {
