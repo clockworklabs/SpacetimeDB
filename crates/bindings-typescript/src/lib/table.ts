@@ -24,9 +24,9 @@ import {
   type TypeBuilder,
 } from './type_builders';
 import type {
+  InvalidColumnMetadata,
   Prettify,
   ValidateColumnMetadata,
-  InvalidColumnMetadata,
 } from './type_util';
 import { toPascalCase } from './util';
 
