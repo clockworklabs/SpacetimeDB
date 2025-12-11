@@ -1,15 +1,13 @@
-import * as _syscalls1_0 from 'spacetime:sys@1.0';
-import * as _syscalls1_2 from 'spacetime:sys@1.2';
-import * as _syscalls1_3 from 'spacetime:sys@1.3';
+import * as _syscalls2_0 from 'spacetime:sys@2.0';
 
-import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
+import type { ModuleHooks, u16, u32 } from 'spacetime:sys@2.0';
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
 import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
+import BinaryWriter, { ResizableBuffer } from '../lib/binary_writer';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
 import {
@@ -34,7 +32,7 @@ import {
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
-import { bsatnBaseSize, toCamelCase } from '../lib/util';
+import { toCamelCase } from '../lib/util';
 import {
   ANON_VIEWS,
   VIEWS,
@@ -49,9 +47,7 @@ import ViewResultHeader from '../lib/autogen/view_result_header_type';
 
 const { freeze } = Object;
 
-export const sys = freeze(
-  wrapSyscalls(_syscalls1_0, _syscalls1_2, _syscalls1_3)
-);
+export const sys = freeze(wrapSyscalls(_syscalls2_0));
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -246,9 +242,6 @@ export const hooks: ModuleHooks = {
       throw e;
     }
   },
-};
-
-export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
     const ctx: ViewCtx<any> = freeze({
@@ -343,9 +336,6 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       };
     }
   },
-};
-
-export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
   __call_procedure__(id, sender, connection_id, timestamp, args) {
     return callProcedure(
       id,
@@ -383,8 +373,6 @@ function makeTableView(
   if (rowType.tag !== 'Product') {
     throw 'impossible';
   }
-
-  const baseSize = bsatnBaseSize(typespace, rowType);
 
   const sequences = table.sequences.map(seq => {
     const col = rowType.value.elements[seq.column];
@@ -443,7 +431,8 @@ function makeTableView(
     iter,
     [Symbol.iterator]: () => iter(),
     insert: row => {
-      const writer = new BinaryWriter(baseSize);
+      using buf = IterBuf.take();
+      const writer = new BinaryWriter(buf);
       AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
       const ret = { ...row };
@@ -452,7 +441,8 @@ function makeTableView(
       return ret;
     },
     delete: (row: RowType<any>): boolean => {
-      const writer = new BinaryWriter(4 + baseSize);
+      using buf = IterBuf.take();
+      const writer = new BinaryWriter(buf);
       writer.writeU32(1);
       AlgebraicType.serializeValue(writer, rowType, row, typespace);
       const count = sys.datastore_delete_all_by_eq_bsatn(
@@ -493,8 +483,6 @@ function makeTableView(
       elements: column_ids.map(id => rowType.value.elements[id]),
     });
 
-    const baseSize = bsatnBaseSize(typespace, indexType);
-
     const serializePrefix = (
       writer: BinaryWriter,
       prefix: any[],
@@ -507,8 +495,11 @@ function makeTableView(
       return writer;
     };
 
-    const serializePoint = (colVal: any[]): Uint8Array => {
-      const writer = new BinaryWriter(baseSize);
+    const serializePoint = (
+      buffer: ResizableBuffer,
+      colVal: any[]
+    ): Uint8Array => {
+      const writer = new BinaryWriter(buffer);
       serializePrefix(writer, colVal, numColumns);
       return writer.getBuffer();
     };
@@ -518,8 +509,8 @@ function makeTableView(
 
     const serializeSinglePoint =
       singleElement &&
-      ((colVal: any): Uint8Array => {
-        const writer = new BinaryWriter(baseSize);
+      ((buffer: ResizableBuffer, colVal: any): Uint8Array => {
+        const writer = new BinaryWriter(buffer);
         AlgebraicType.serializeValue(writer, singleElement, colVal, typespace);
         return writer.getBuffer();
       });
@@ -535,11 +526,13 @@ function makeTableView(
     if (isUnique && serializeSinglePoint) {
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
-          const point = serializeSinglePoint(colVal);
-          const iter = tableIterator(
-            sys.datastore_index_scan_point_bsatn(index_id, point),
-            rowType
-          );
+          let iter_id;
+          {
+            using buf = IterBuf.take();
+            const point = serializeSinglePoint(buf, colVal);
+            iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+          }
+          const iter = tableIterator(iter_id, rowType);
           const { value, done } = iter.next();
           if (done) return null;
           if (!iter.next().done)
@@ -549,7 +542,8 @@ function makeTableView(
           return value;
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
-          const point = serializeSinglePoint(colVal);
+          using buf = IterBuf.take();
+          const point = serializeSinglePoint(buf, colVal);
           const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
             point
@@ -557,7 +551,8 @@ function makeTableView(
           return num > 0;
         },
         update: (row: RowType<any>): RowType<any> => {
-          const writer = new BinaryWriter(baseSize);
+          using buf = IterBuf.take();
+          const writer = new BinaryWriter(buf);
           AlgebraicType.serializeValue(writer, rowType, row, typespace);
           const ret_buf = sys.datastore_update_bsatn(
             table_id,
@@ -574,11 +569,13 @@ function makeTableView(
           if (colVal.length !== numColumns)
             throw new TypeError('wrong number of elements');
 
-          const point = serializePoint(colVal);
-          const iter = tableIterator(
-            sys.datastore_index_scan_point_bsatn(index_id, point),
-            rowType
-          );
+          let iter_id;
+          {
+            using buf = IterBuf.take();
+            const point = serializePoint(buf, colVal);
+            iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+          }
+          const iter = tableIterator(iter_id, rowType);
           const { value, done } = iter.next();
           if (done) return null;
           if (!iter.next().done)
@@ -591,7 +588,8 @@ function makeTableView(
           if (colVal.length !== numColumns)
             throw new TypeError('wrong number of elements');
 
-          const point = serializePoint(colVal);
+          using buf = IterBuf.take();
+          const point = serializePoint(buf, colVal);
           const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
             point
@@ -599,7 +597,8 @@ function makeTableView(
           return num > 0;
         },
         update: (row: RowType<any>): RowType<any> => {
-          const writer = new BinaryWriter(baseSize);
+          using buf = IterBuf.take();
+          const writer = new BinaryWriter(buf);
           AlgebraicType.serializeValue(writer, rowType, row, typespace);
           const ret_buf = sys.datastore_update_bsatn(
             table_id,
@@ -613,14 +612,17 @@ function makeTableView(
     } else if (serializeSinglePoint) {
       index = {
         filter: (range: any): IteratorObject<RowType<any>> => {
-          const point = serializeSinglePoint(range);
-          return tableIterator(
-            sys.datastore_index_scan_point_bsatn(index_id, point),
-            rowType
-          );
+          let iter_id;
+          {
+            using buf = IterBuf.take();
+            const point = serializeSinglePoint(buf, range);
+            iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+          }
+          return tableIterator(iter_id, rowType);
         },
         delete: (range: any): u32 => {
-          const point = serializeSinglePoint(range);
+          using buf = IterBuf.take();
+          const point = serializeSinglePoint(buf, range);
           return sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
             point
@@ -628,10 +630,13 @@ function makeTableView(
         },
       } as RangedIndex<any, any>;
     } else {
-      const serializeRange = (range: any[]): IndexScanArgs => {
+      const serializeRange = (
+        buffer: ResizableBuffer,
+        range: any[]
+      ): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
-        const writer = new BinaryWriter(baseSize + 1);
+        const writer = new BinaryWriter(buffer);
         const prefix_elems = range.length - 1;
         serializePrefix(writer, range, prefix_elems);
         const rstartOffset = writer.offset;
@@ -661,35 +666,41 @@ function makeTableView(
           AlgebraicType.serializeValue(writer, termType, term, typespace);
           rstart = rend = writer.getBuffer().slice(rstartOffset);
         }
-        const buffer = writer.getBuffer();
-        const prefix = buffer.slice(0, rstartOffset);
+        const buf = writer.getBuffer();
+        const prefix = buf.slice(0, rstartOffset);
         return [prefix, prefix_elems, rstart, rend];
       };
       index = {
         filter: (range: any[]): IteratorObject<RowType<any>> => {
           if (range.length === numColumns) {
-            const point = serializePoint(range);
-            return tableIterator(
-              sys.datastore_index_scan_point_bsatn(index_id, point),
-              rowType
-            );
+            let iter_id;
+            {
+              using buf = IterBuf.take();
+              const point = serializePoint(buf, range);
+              iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+            }
+            return tableIterator(iter_id, rowType);
           } else {
-            const args = serializeRange(range);
-            return tableIterator(
-              sys.datastore_index_scan_range_bsatn(index_id, ...args),
-              rowType
-            );
+            let iter_id;
+            {
+              using buf = IterBuf.take();
+              const args = serializeRange(buf, range);
+              iter_id = sys.datastore_index_scan_range_bsatn(index_id, ...args);
+            }
+            return tableIterator(iter_id, rowType);
           }
         },
         delete: (range: any[]): u32 => {
           if (range.length === numColumns) {
-            const point = serializePoint(range);
+            using buf = IterBuf.take();
+            const point = serializePoint(buf, range);
             return sys.datastore_delete_by_index_scan_point_bsatn(
               index_id,
               point
             );
           } else {
-            const args = serializeRange(range);
+            using buf = IterBuf.take();
+            const args = serializeRange(buf, range);
             return sys.datastore_delete_by_index_scan_range_bsatn(
               index_id,
               ...args
@@ -720,8 +731,9 @@ function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, undefined> {
   using iter = new IteratorHandle(id);
   const { typespace } = MODULE_DEF;
 
+  using iterBuf = IterBuf.take();
   let buf;
-  while ((buf = advanceIter(iter)) != null) {
+  while ((buf = advanceIter(iter, iterBuf)) != null) {
     const reader = new BinaryReader(buf);
     while (reader.remaining > 0) {
       yield AlgebraicType.deserializeValue(reader, ty, typespace);
@@ -729,17 +741,36 @@ function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, undefined> {
   }
 }
 
-function advanceIter(iter: IteratorHandle): Uint8Array | null {
-  let buf_max_len = 0x10000;
+function advanceIter(iter: IteratorHandle, buf: IterBuf): Uint8Array | null {
   while (true) {
     try {
-      return iter.advance(buf_max_len);
+      return iter.advance(buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-        buf_max_len = e.__buffer_too_small__ as number;
+        buf.grow(e.__buffer_too_small__ as number, false);
         continue;
       }
       throw e;
+    }
+  }
+}
+
+class IterBuf extends ResizableBuffer implements Disposable {
+  static #bufs: ArrayBuffer[] = [];
+
+  // This should guarantee in most cases that we don't have to reallocate an iterator
+  // buffer, unless there's a single row that serializes to >1 MiB.
+  static readonly #DEFAULT_BUFFER_CAPACITY = 32 * 1024 * 2;
+
+  static take() {
+    const buf =
+      IterBuf.#bufs.pop() ?? new ArrayBuffer(IterBuf.#DEFAULT_BUFFER_CAPACITY);
+    return new IterBuf(buf);
+  }
+
+  [Symbol.dispose]() {
+    if (!this.buffer.detached) {
+      IterBuf.#bufs.push(this.transfer());
     }
   }
 }
@@ -766,14 +797,11 @@ class IteratorHandle implements Disposable {
   }
 
   /** Call `row_iter_bsatn_advance`, returning null if this iterator was already exhausted. */
-  advance(buf_max_len: u32): Uint8Array | null {
+  advance(buf: ArrayBuffer): Uint8Array | null {
     if (this.#id === -1) return null;
-    const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
-      this.#id,
-      buf_max_len
-    );
+    const [done, ret] = sys.row_iter_bsatn_advance(this.#id, buf);
     if (done) this.#detach();
-    return buf;
+    return ret;
   }
 
   [Symbol.dispose]() {
