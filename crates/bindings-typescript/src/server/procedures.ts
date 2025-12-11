@@ -1,21 +1,90 @@
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
+import type Typespace from '../lib/autogen/typespace_type';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
-import {
-  PROCEDURES,
-  type ProcedureCtx,
-  type TransactionCtx,
-} from '../lib/procedures';
-import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import type { ParamsObj, ReducerCtx } from '../lib/reducers';
+import { ModuleContext, type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
+import {
+  type Infer,
+  type InferTypeOfRow,
+  type TypeBuilder,
+} from '../lib/type_builders';
+import { bsatnBaseSize } from '../lib/util';
+import type { HttpClient } from '../server/http_internal';
 import { httpClient } from './http_internal';
 import { callUserFunction, makeReducerCtx, sys } from './runtime';
 
 const { freeze } = Object;
 
+export type ProcedureFn<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends TypeBuilder<any, any>,
+> = (ctx: ProcedureCtx<S>, args: InferTypeOfRow<Params>) => Infer<Ret>;
+
+export interface ProcedureCtx<S extends UntypedSchemaDef> {
+  readonly sender: Identity;
+  readonly identity: Identity;
+  readonly timestamp: Timestamp;
+  readonly connectionId: ConnectionId | null;
+  readonly http: HttpClient;
+  withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface TransactionCtx<S extends UntypedSchemaDef>
+  extends ReducerCtx<S> {}
+
+export function procedure<
+  S extends UntypedSchemaDef,
+  Params extends ParamsObj,
+  Ret extends TypeBuilder<any, any>,
+>(
+  ctx: ModuleContext,
+  name: string,
+  params: Params,
+  ret: Ret,
+  fn: ProcedureFn<S, Params, Ret>
+) {
+  const paramsType: ProductType = {
+    elements: Object.entries(params).map(([n, c]) => ({
+      name: n,
+      algebraicType: ctx.registerTypesRecursively(
+        'typeBuilder' in c ? c.typeBuilder : c
+      ).algebraicType,
+    })),
+  };
+  const returnType = ctx.registerTypesRecursively(ret).algebraicType;
+
+  ctx.moduleDef.miscExports.push({
+    tag: 'Procedure',
+    value: {
+      name,
+      params: paramsType,
+      returnType,
+    },
+  });
+
+  PROCEDURES.push({
+    fn,
+    paramsType,
+    returnType,
+    returnTypeBaseSize: bsatnBaseSize(ctx.typespace, returnType),
+  });
+}
+
+export const PROCEDURES: Array<{
+  fn: ProcedureFn<any, any, any>;
+  paramsType: ProductType;
+  returnType: AlgebraicType;
+  returnTypeBaseSize: number;
+}> = [];
+
 export function callProcedure(
+  typespace: Infer<typeof Typespace>,
   id: number,
   sender: Identity,
   connectionId: ConnectionId | null,
@@ -26,7 +95,7 @@ export function callProcedure(
   const args = ProductType.deserializeValue(
     new BinaryReader(argsBuf),
     paramsType,
-    MODULE_DEF.typespace
+    typespace
   );
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = {
@@ -73,6 +142,6 @@ export function callProcedure(
 
   const ret = callUserFunction(fn, ctx, args);
   const retBuf = new BinaryWriter(returnTypeBaseSize);
-  AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
+  AlgebraicType.serializeValue(retBuf, returnType, ret, typespace);
   return retBuf.getBuffer();
 }
