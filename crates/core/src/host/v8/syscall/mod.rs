@@ -11,6 +11,7 @@ use crate::host::wasm_common::module_host_actor::{
 
 mod hooks;
 mod v1;
+mod v2;
 
 pub(super) use self::hooks::{get_hooks, HookFunctions, ModuleHookKey};
 
@@ -21,6 +22,7 @@ pub(super) type FnRet<'scope> = ExcResult<Local<'scope, v8::Value>>;
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum AbiVersion {
     V1,
+    V2,
 }
 
 /// A dependency resolver for the user's module
@@ -58,9 +60,10 @@ fn resolve_sys_module_inner<'scope>(
             (1, 1) => Ok(v1::sys_v1_1(scope)),
             (1, 2) => Ok(v1::sys_v1_2(scope)),
             (1, 3) => Ok(v1::sys_v1_3(scope)),
+            (2, 0) => Ok(v2::sys_v2_0(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
-                It requires sys module v{major}.{minor}, but that version is not supported by the database."
+            It requires sys module v{major}.{minor}, but that version is not supported by the database."
             ))
             .throw(scope)),
         },
@@ -78,6 +81,7 @@ pub(super) fn call_call_reducer(
 ) -> ExcResult<ReducerResult> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_reducer(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_reducer(scope, hooks, op),
     }
 }
 
@@ -91,6 +95,7 @@ pub(super) fn call_call_view(
 ) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_view(scope, hooks, op),
     }
 }
 
@@ -104,6 +109,7 @@ pub(super) fn call_call_view_anon(
 ) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view_anon(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_view_anon(scope, hooks, op),
     }
 }
 
@@ -117,6 +123,7 @@ pub(super) fn call_call_procedure(
 ) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_procedure(scope, hooks, op),
+        AbiVersion::V2 => v2::call_call_procedure(scope, hooks, op),
     }
 }
 
@@ -129,5 +136,6 @@ pub(super) fn call_describe_module<'scope>(
 ) -> Result<RawModuleDef, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_describe_module(scope, hooks),
+        AbiVersion::V2 => v2::call_describe_module(scope, hooks),
     }
 }

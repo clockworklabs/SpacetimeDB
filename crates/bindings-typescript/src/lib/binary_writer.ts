@@ -1,32 +1,61 @@
 import { fromByteArray } from 'base64-js';
 
+export class ResizableBuffer {
+  #buffer: ArrayBuffer;
+
+  constructor(init: number | ArrayBuffer) {
+    this.#buffer = typeof init === 'number' ? new ArrayBuffer(init) : init;
+  }
+
+  get buffer(): ArrayBuffer {
+    return this.#buffer;
+  }
+
+  get capacity(): number {
+    return this.#buffer.byteLength;
+  }
+
+  grow(newSize: number, copy: boolean) {
+    if (newSize <= this.#buffer.byteLength) return;
+    if (copy) {
+      this.#buffer = this.#buffer.transfer(newSize);
+    } else {
+      // invalidate the previous buffer
+      this.#buffer.transfer();
+      this.#buffer = new ArrayBuffer(newSize);
+    }
+  }
+
+  transfer(): ArrayBuffer {
+    return this.#buffer.transfer();
+  }
+}
+
 export default class BinaryWriter {
-  #buffer: Uint8Array;
+  #buffer: ResizableBuffer;
   #view: DataView;
   #offset: number = 0;
 
-  constructor(size: number) {
-    this.#buffer = new Uint8Array(size);
+  constructor(init: number | ResizableBuffer) {
+    this.#buffer = typeof init === 'number' ? new ResizableBuffer(init) : init;
     this.#view = new DataView(this.#buffer.buffer);
   }
 
   #expandBuffer(additionalCapacity: number): void {
     const minCapacity = this.#offset + additionalCapacity + 1;
-    if (minCapacity <= this.#buffer.length) return;
-    let newCapacity = this.#buffer.length * 2;
+    if (minCapacity <= this.#buffer.capacity) return;
+    let newCapacity = this.#buffer.capacity * 2;
     if (newCapacity < minCapacity) newCapacity = minCapacity;
-    const newBuffer = new Uint8Array(newCapacity);
-    newBuffer.set(this.#buffer);
-    this.#buffer = newBuffer;
+    this.#buffer.grow(newCapacity, true);
     this.#view = new DataView(this.#buffer.buffer);
   }
 
   toBase64(): string {
-    return fromByteArray(this.#buffer.subarray(0, this.#offset));
+    return fromByteArray(this.getBuffer());
   }
 
   getBuffer(): Uint8Array {
-    return this.#buffer.slice(0, this.#offset);
+    return new Uint8Array(this.#buffer.buffer, 0, this.#offset);
   }
 
   get offset(): number {
@@ -39,8 +68,8 @@ export default class BinaryWriter {
     this.#expandBuffer(4 + length);
 
     this.writeU32(length);
-    this.#buffer.set(value, this.#offset);
-    this.#offset += value.length;
+    new Uint8Array(this.#buffer.buffer, this.#offset).set(value);
+    this.#offset += length;
   }
 
   writeBool(value: boolean): void {
@@ -164,9 +193,6 @@ export default class BinaryWriter {
   writeString(value: string): void {
     const encoder = new TextEncoder();
     const encodedString = encoder.encode(value);
-    this.writeU32(encodedString.length);
-    this.#expandBuffer(encodedString.length);
-    this.#buffer.set(encodedString, this.#offset);
-    this.#offset += encodedString.length;
+    this.writeUInt8Array(encodedString);
   }
 }
