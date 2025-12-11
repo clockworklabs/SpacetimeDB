@@ -272,9 +272,11 @@ fn main() -> Result<()> {
 
             cmd!("pnpm", "install", "--recursive").run()?;
             let cli_docs = cmd!("cargo", "run", "--features", "markdown-docs", "-p", "spacetimedb-cli",).read()?;
-            fs::write("docs/docs/cli-reference.md", cli_docs)?;
+            // TODO: This is actually incorrect and needs updating, but is a correct migration of the previous workflow.
+            let path = "docs/docs/cli-reference.md";
+            fs::write(path, cli_docs)?;
             cmd!("pnpm", "format").run()?;
-            let status = cmd!("git", "diff", "--exit-code", "HEAD", "--", "docs/docs/cli-reference.md")
+            let status = cmd!("git", "diff", "--exit-code", "HEAD", "--", path)
                 .unchecked()
                 .run()?;
             if !status.status.success() {
