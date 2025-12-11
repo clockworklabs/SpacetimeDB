@@ -38,8 +38,12 @@ git push -u origin a-branch-name-that-describes-my-change
 6. Go to our GitHub and open a PR that references your branch in your fork on
    your GitHub
 
-### Docusaurus Documentation
+### CLI Reference Section
+1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md`
+2. Run `pnpm install`
+3. Run `pnpm format`
 
+### Docusaurus Documentation
 For more information on how to use Docusaurus, see the
 [Docusaurus documentation](https://docusaurus.io/docs).
 
