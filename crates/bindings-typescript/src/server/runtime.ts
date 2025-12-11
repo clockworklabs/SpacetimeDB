@@ -26,18 +26,13 @@ import {
 } from '../lib/indexes';
 import { callProcedure as callProcedure } from './procedures';
 import {
-  REDUCERS,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
   type ReducerCtx,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import {
-  MODULE_DEF,
-  getRegisteredSchema,
-  type UntypedSchemaDef,
-} from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, hasOwn, toCamelCase } from '../lib/util';
@@ -46,13 +41,15 @@ import {
   VIEWS,
   type AnonymousViewCtx,
   type ViewCtx,
-} from '../lib/views';
+} from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
 import { makeRandom, type Random } from './rng';
+import { REDUCERS } from './reducers';
+import { getRegisteredSchema, GLOBAL_MODULE_CTX } from './schema';
 
 const { freeze } = Object;
 
@@ -271,13 +268,17 @@ let reducerArgsDeserializers: Deserializer<any>[];
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
-    RawModuleDef.serialize(writer, RawModuleDef.V9(MODULE_DEF));
+    RawModuleDef.serialize(
+      writer,
+      RawModuleDef.V9(GLOBAL_MODULE_CTX.moduleDef)
+    );
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
     if (reducerArgsDeserializers == null) {
-      reducerArgsDeserializers = MODULE_DEF.reducers.map(({ params }) =>
-        ProductType.makeDeserializer(params, MODULE_DEF.typespace)
+      reducerArgsDeserializers = GLOBAL_MODULE_CTX.moduleDef.reducers.map(
+        ({ params }) =>
+          ProductType.makeDeserializer(params, GLOBAL_MODULE_CTX.typespace)
       );
     }
     const deserializeArgs = reducerArgsDeserializers[reducerId];
@@ -361,7 +362,7 @@ export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
 
 let DB_VIEW: DbView<any> | null = null;
 function getDbView() {
-  DB_VIEW ??= makeDbView(MODULE_DEF);
+  DB_VIEW ??= makeDbView(GLOBAL_MODULE_CTX.moduleDef);
   return DB_VIEW;
 }
 
