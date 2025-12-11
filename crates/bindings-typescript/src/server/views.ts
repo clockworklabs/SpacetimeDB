@@ -6,7 +6,7 @@ import {
 import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
 import type { ParamsObj } from '../lib/reducers';
-import { ModuleContext, type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import type { ReadonlyTable } from '../lib/table';
 import {
   RowBuilder,
@@ -17,6 +17,7 @@ import {
 } from '../lib/type_builders';
 import { bsatnBaseSize, toPascalCase } from '../lib/util';
 import { type QueryBuilder, type RowTypedQuery } from '../server/query';
+import type { SchemaInner } from './schema';
 
 export type ViewCtx<S extends UntypedSchemaDef> = Readonly<{
   sender: Identity;
@@ -83,7 +84,7 @@ export function defineView<
   Params extends ParamsObj,
   Ret extends ViewReturnTypeBuilder,
 >(
-  ctx: ModuleContext,
+  ctx: SchemaInner,
   opts: ViewOpts,
   anon: Anonymous,
   params: Params,
@@ -105,7 +106,7 @@ export function defineView<
     tag: 'View',
     value: {
       name: opts.name,
-      index: (anon ? ANON_VIEWS : VIEWS).length,
+      index: (anon ? ctx.anonViews : ctx.views).length,
       isPublic: opts.public,
       isAnonymous: anon,
       params: paramType,
@@ -125,7 +126,7 @@ export function defineView<
     );
   }
 
-  (anon ? ANON_VIEWS : VIEWS).push({
+  (anon ? ctx.anonViews : ctx.views).push({
     fn,
     params: paramType,
     returnType,
@@ -140,8 +141,8 @@ type ViewInfo<F> = {
   returnTypeBaseSize: number;
 };
 
-export const VIEWS: ViewInfo<ViewFn<any, any, any>>[] = [];
-export const ANON_VIEWS: ViewInfo<AnonymousViewFn<any, any, any>>[] = [];
+export type Views = ViewInfo<ViewFn<any, any, any>>[];
+export type AnonViews = ViewInfo<AnonymousViewFn<any, any, any>>[];
 
 // A helper to get the product type out of a type builder.
 // This is only non-never if the type builder is an array.

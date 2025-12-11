@@ -1,4 +1,5 @@
 import {
+  ModuleContext,
   tablesToSchema,
   type TablesToSchema,
   type UntypedSchemaDef,
@@ -53,7 +54,9 @@ export function schema<const H extends readonly UntypedTableSchema[]>(
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args
   ) as H;
 
-  return new Tables(tablesToSchema(handles));
+  const ctx = new ModuleContext();
+
+  return new Tables(tablesToSchema(ctx, handles));
 }
 
 type HasAccessor = { accessorName: PropertyKey };

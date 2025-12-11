@@ -7,24 +7,57 @@ import {
 } from '../lib/schema';
 import type { UntypedTableSchema } from '../lib/table_schema';
 import { ColumnBuilder, TypeBuilder } from '../lib/type_builders';
-import { procedure, type ProcedureFn } from './procedures';
-import { clientConnected, clientDisconnected, init, reducer } from './reducers';
+import { procedure, type ProcedureFn, type Procedures } from './procedures';
+import {
+  clientConnected,
+  clientDisconnected,
+  init,
+  reducer,
+  type Reducers,
+} from './reducers';
 
 import {
   defineView,
+  type AnonViews,
   type AnonymousViewFn,
   type ViewFn,
   type ViewOpts,
   type ViewReturnTypeBuilder,
+  type Views,
 } from './views';
 
-let REGISTERED_SCHEMA: UntypedSchemaDef | null = null;
+let REGISTERED_SCHEMA: SchemaInner | null = null;
 
-export function getRegisteredSchema(): UntypedSchemaDef {
+export function getRegisteredSchema(): SchemaInner {
   if (REGISTERED_SCHEMA == null) {
     throw new Error('Schema has not been registered yet. Call schema() first.');
   }
   return REGISTERED_SCHEMA;
+}
+
+export class SchemaInner<
+  S extends UntypedSchemaDef = UntypedSchemaDef,
+> extends ModuleContext {
+  schemaType: S;
+  existingFunctions = new Set<string>();
+  reducers: Reducers = [];
+  procedures: Procedures = [];
+  views: Views = [];
+  anonViews: AnonViews = [];
+
+  constructor(getSchemaType: (ctx: ModuleContext) => S) {
+    super();
+    this.schemaType = getSchemaType(this);
+  }
+
+  defineFunction(name: string) {
+    if (this.existingFunctions.has(name)) {
+      throw new TypeError(
+        `There is already a reducer or procedure with the name '${name}'`
+      );
+    }
+    this.existingFunctions.add(name);
+  }
 }
 
 /**
@@ -62,17 +95,23 @@ export function getRegisteredSchema(): UntypedSchemaDef {
 // for the tables from the schema object, e.g. `spacetimedb.user.type` would
 // be the type of the user table.
 class Schema<S extends UntypedSchemaDef> {
-  readonly schemaType: S;
-  readonly ctx: ModuleContext;
+  #ctx: SchemaInner<S>;
 
-  constructor(schemaType: S, ctx: ModuleContext) {
+  constructor(ctx: SchemaInner<S>) {
     // TODO: TableSchema and TableDef should really be unified
-    this.schemaType = schemaType;
-    this.ctx = ctx;
+    this.#ctx = ctx;
+  }
+
+  get schemaType(): S {
+    return this.#ctx.schemaType;
+  }
+
+  get moduleDef() {
+    return this.#ctx.moduleDef;
   }
 
   get typespace() {
-    return this.ctx.typespace;
+    return this.#ctx.typespace;
   }
 
   /**
@@ -125,13 +164,13 @@ class Schema<S extends UntypedSchemaDef> {
       // This is the case where params are omitted.
       // The second argument is the reducer function.
       // We pass an empty object for the params.
-      reducer(this.ctx, name, {}, paramsOrFn);
+      reducer(this.#ctx, name, {}, paramsOrFn);
       return paramsOrFn;
     } else {
       // This is the case where params are provided.
       // The second argument is the params object, and the third is the function.
       // The `fn` parameter is guaranteed to be defined here.
-      reducer(this.ctx, name, paramsOrFn, fn!);
+      reducer(this.#ctx, name, paramsOrFn, fn!);
       return fn!;
     }
   }
@@ -158,7 +197,7 @@ class Schema<S extends UntypedSchemaDef> {
   init(nameOrFn: any, maybeFn?: Reducer<S, {}>): void {
     const [name, fn] =
       typeof nameOrFn === 'string' ? [nameOrFn, maybeFn] : ['init', nameOrFn];
-    init(this.ctx, name, {}, fn);
+    init(this.#ctx, name, {}, fn);
   }
 
   /**
@@ -184,7 +223,7 @@ class Schema<S extends UntypedSchemaDef> {
       typeof nameOrFn === 'string'
         ? [nameOrFn, maybeFn]
         : ['on_connect', nameOrFn];
-    clientConnected(this.ctx, name, {}, fn);
+    clientConnected(this.#ctx, name, {}, fn);
   }
 
   /**
@@ -211,7 +250,7 @@ class Schema<S extends UntypedSchemaDef> {
       typeof nameOrFn === 'string'
         ? [nameOrFn, maybeFn]
         : ['on_disconnect', nameOrFn];
-    clientDisconnected(this.ctx, name, {}, fn);
+    clientDisconnected(this.#ctx, name, {}, fn);
   }
 
   view<Ret extends ViewReturnTypeBuilder>(
@@ -219,7 +258,7 @@ class Schema<S extends UntypedSchemaDef> {
     ret: Ret,
     fn: ViewFn<S, {}, Ret>
   ): void {
-    defineView(this.ctx, opts, false, {}, ret, fn);
+    defineView(this.#ctx, opts, false, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -252,7 +291,7 @@ class Schema<S extends UntypedSchemaDef> {
     ret: Ret,
     fn: AnonymousViewFn<S, {}, Ret>
   ): void {
-    defineView(this.ctx, opts, true, {}, ret, fn);
+    defineView(this.#ctx, opts, true, {}, ret, fn);
   }
 
   // TODO: re-enable once parameterized views are supported in SQL
@@ -298,17 +337,17 @@ class Schema<S extends UntypedSchemaDef> {
     maybeFn?: ProcedureFn<S, Params, Ret>
   ): ProcedureFn<S, Params, Ret> {
     if (typeof retOrFn === 'function') {
-      procedure(this.ctx, name, {}, paramsOrRet as Ret, retOrFn);
+      procedure(this.#ctx, name, {}, paramsOrRet as Ret, retOrFn);
       return retOrFn;
     } else {
-      procedure(this.ctx, name, paramsOrRet as Params, retOrFn, maybeFn!);
+      procedure(this.#ctx, name, paramsOrRet as Params, retOrFn, maybeFn!);
       return maybeFn!;
     }
   }
 
   clientVisibilityFilter = {
     sql: (filter: string) => {
-      this.ctx.moduleDef.rowLevelSecurity.push({ sql: filter });
+      this.#ctx.moduleDef.rowLevelSecurity.push({ sql: filter });
     },
   };
 }
@@ -362,28 +401,15 @@ export function schema<const H extends readonly UntypedTableSchema[]>(
   const handles = (
     args.length === 1 && Array.isArray(args[0]) ? args[0] : args
   ) as H;
-  const tableDefs = handles.map(h => h.tableDef);
 
-  const ctx = GLOBAL_MODULE_CTX;
+  const ctx = new SchemaInner(ctx => {
+    const tableDefs = handles.map(h => h.tableDef(ctx));
+    ctx.moduleDef.tables.push(...tableDefs);
 
-  // Side-effect:
-  // Modify the `MODULE_DEF` which will be read by
-  // __describe_module__
-  ctx.moduleDef.tables.push(...tableDefs);
-  REGISTERED_SCHEMA = {
-    tables: handles.map(handle => ({
-      name: handle.tableName,
-      accessorName: handle.tableName,
-      columns: handle.rowType.row,
-      rowType: handle.rowSpacetimeType,
-      indexes: handle.idxs,
-      constraints: handle.constraints,
-    })),
-  };
+    return tablesToSchema(ctx, handles);
+  });
 
-  return new Schema(tablesToSchema(handles), ctx);
+  REGISTERED_SCHEMA = ctx;
+
+  return new Schema(ctx);
 }
-
-// TODO: this should not be it's own global variable, and should
-// instead just be stored in and accessed through `Schema`
-export const GLOBAL_MODULE_CTX: ModuleContext = new ModuleContext();

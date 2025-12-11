@@ -41,13 +41,15 @@ export type UntypedSchemaDef = {
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
-export type TablesToSchema<T extends readonly UntypedTableSchema[]> = {
+export interface TablesToSchema<T extends readonly UntypedTableSchema[]>
+  extends UntypedSchemaDef {
   tables: {
     readonly [i in keyof T]: TableToSchema<T[i]>;
   };
-};
+}
 
-interface TableToSchema<T extends UntypedTableSchema> extends UntypedTableDef {
+export interface TableToSchema<T extends UntypedTableSchema>
+  extends UntypedTableDef {
   name: T['tableName'];
   accessorName: CamelCase<T['tableName']>;
   columns: T['rowType']['row'];
@@ -57,16 +59,23 @@ interface TableToSchema<T extends UntypedTableSchema> extends UntypedTableDef {
 }
 
 export function tablesToSchema<const T extends readonly UntypedTableSchema[]>(
+  ctx: ModuleContext,
   tables: T
 ): TablesToSchema<T> {
-  return { tables: tables.map(tableToSchema) as TablesToSchema<T>['tables'] };
+  return {
+    tables: tables.map(schema =>
+      tableToSchema(ctx, schema)
+    ) as TablesToSchema<T>['tables'],
+  };
 }
 
 function tableToSchema<T extends UntypedTableSchema>(
+  ctx: ModuleContext,
   schema: T
 ): TableToSchema<T> {
   const getColName = (i: number) =>
     schema.rowType.algebraicType.value.elements[i].name;
+  const tableDef = schema.tableDef(ctx);
 
   type AllowedCol = keyof T['rowType']['row'] & string;
   return {
@@ -74,7 +83,7 @@ function tableToSchema<T extends UntypedTableSchema>(
     accessorName: toCamelCase(schema.tableName as T['tableName']),
     columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
     rowType: schema.rowSpacetimeType,
-    constraints: schema.tableDef.constraints.map(c => ({
+    constraints: tableDef.constraints.map(c => ({
       name: c.name,
       constraint: 'unique',
       columns: c.data.value.columns.map(getColName) as [string],
@@ -83,14 +92,14 @@ function tableToSchema<T extends UntypedTableSchema>(
     // by casting it to an `Array<IndexOpts>` as `TableToSchema` expects.
     // This is then used in `TableCacheImpl.constructor` and who knows where else.
     // We should stop lying about our types.
-    indexes: schema.tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
+    indexes: tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
       const columnIds =
         idx.algorithm.tag === 'Direct'
           ? [idx.algorithm.value]
           : idx.algorithm.value;
       return {
         name: idx.accessorName!,
-        unique: schema.tableDef.constraints.some(c =>
+        unique: tableDef.constraints.some(c =>
           c.data.value.columns.every(col => columnIds.includes(col))
         ),
         algorithm: idx.algorithm.tag.toLowerCase() as 'btree',

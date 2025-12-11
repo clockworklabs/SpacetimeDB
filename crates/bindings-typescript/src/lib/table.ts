@@ -12,7 +12,7 @@ import type {
   ReadonlyIndexes,
 } from './indexes';
 import ScheduleAt from './schedule_at';
-import { registerTypesRecursively } from './schema';
+import type { ModuleContext } from './schema';
 import type { TableSchema } from './table_schema';
 import {
   RowBuilder,
@@ -227,8 +227,6 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     row.typeName = toPascalCase(name);
   }
 
-  const rowTypeRef = registerTypesRecursively(row);
-
   row.algebraicType.value.elements.forEach((elem, i) => {
     colIds.set(elem.name, i);
     colNameList.push(elem.name);
@@ -346,9 +344,9 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // Temporarily set the type ref to 0. We will set this later
   // in the schema function.
 
-  const tableDef: Infer<typeof RawTableDefV9> = {
+  const tableDef = (ctx: ModuleContext): Infer<typeof RawTableDefV9> => ({
     name,
-    productTypeRef: rowTypeRef.ref,
+    productTypeRef: ctx.registerTypesRecursively(row).ref,
     primaryKey: pk,
     indexes,
     constraints,
@@ -363,7 +361,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
         : undefined,
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
-  };
+  });
 
   const productType = row.algebraicType.value as RowBuilder<
     CoerceRow<Row>
