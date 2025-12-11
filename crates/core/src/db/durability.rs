@@ -1,5 +1,4 @@
 use crate::db::persistence::Durability;
-use futures::{channel::mpsc, StreamExt};
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
@@ -9,11 +8,15 @@ use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::DurableOffset;
 use spacetimedb_primitives::TableId;
 use std::sync::Arc;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-/// A request to persist a transaction.
-pub struct DurabilityRequest {
-    reducer_context: Option<ReducerContext>,
-    tx_data: Arc<TxData>,
+/// A request to persist a transaction or to terminate the actor.
+pub enum DurabilityRequest {
+    Work {
+        reducer_context: Option<ReducerContext>,
+        tx_data: Arc<TxData>,
+    },
+    Close,
 }
 
 /// Represents a handle to a background task that persists transactions
@@ -23,14 +26,31 @@ pub struct DurabilityRequest {
 /// before sending over to the `Durability` layer.
 #[derive(Clone)]
 pub struct DurabilityWorker {
-    request_tx: mpsc::UnboundedSender<DurabilityRequest>,
+    request_tx: UnboundedSender<DurabilityRequest>,
     durability: Arc<Durability>,
+}
+
+/// Those who run seem to have all the fun... 🎶
+const HUNG_UP: &str = "durability actor hung up / panicked";
+
+impl Drop for DurabilityWorker {
+    fn drop(&mut self) {
+        // Try to close the actor.
+        // If the actor paniced, or a clone of `self` was `Drop`ped,
+        // This an return `Err(_)`,
+        // in which case we need only drop `self.durability`.
+        if self.request_tx.send(DurabilityRequest::Close).is_ok() {
+            // Wait until the actor's `Arc<Durability>` has been dropped.
+            // After that, we drop `self.durability` as normal.
+            futures::executor::block_on(self.request_tx.closed());
+        }
+    }
 }
 
 impl DurabilityWorker {
     /// Create a new [`DurabilityWorker`] using the given `durability` policy.
     pub fn new(durability: Arc<Durability>) -> Self {
-        let (request_tx, request_rx) = mpsc::unbounded();
+        let (request_tx, request_rx) = unbounded_channel();
 
         let actor = DurabilityWorkerActor {
             request_rx,
@@ -54,14 +74,15 @@ impl DurabilityWorker {
     /// and sends the work to an actor that collects data and calls `durability.append_tx`.
     ///
     /// Panics if the durability worker has closed the receive end of its queue(s),
-    /// which is likely due to it having panicked.
+    /// which is likely due to it having panicked
+    /// or because `DurabilityWorker` and thus `RelationalDB` was cloned.
     pub fn request_durability(&self, reducer_context: Option<ReducerContext>, tx_data: &Arc<TxData>) {
         self.request_tx
-            .unbounded_send(DurabilityRequest {
+            .send(DurabilityRequest::Work {
                 reducer_context,
                 tx_data: tx_data.clone(),
             })
-            .expect("durability worker panicked");
+            .expect(HUNG_UP);
     }
 
     /// Get the [`DurableOffset`] of this database.
@@ -71,19 +92,34 @@ impl DurabilityWorker {
 }
 
 pub struct DurabilityWorkerActor {
-    request_rx: mpsc::UnboundedReceiver<DurabilityRequest>,
+    request_rx: UnboundedReceiver<DurabilityRequest>,
     durability: Arc<Durability>,
 }
 
 impl DurabilityWorkerActor {
     /// Processes requests to do durability.
     async fn run(mut self) {
-        while let Some(DurabilityRequest {
-            reducer_context,
-            tx_data,
-        }) = self.request_rx.next().await
-        {
-            Self::do_durability(&*self.durability, reducer_context, &tx_data);
+        while let Some(req) = self.request_rx.recv().await {
+            match req {
+                DurabilityRequest::Work {
+                    reducer_context,
+                    tx_data,
+                } => Self::do_durability(&*self.durability, reducer_context, &tx_data),
+
+                // Terminate the actor
+                // and make sure we drop `self.durability`
+                // before we drop `self.request_tx`.
+                //
+                // After a `Close`,
+                // there should be no more `Work` incoming or buffered,
+                // as `Close` hangs up the receiver end of the channel,
+                // so nothing can be sent to it.
+                DurabilityRequest::Close => {
+                    drop(self.durability);
+                    drop(self.request_rx);
+                    return;
+                }
+            }
         }
     }
 
