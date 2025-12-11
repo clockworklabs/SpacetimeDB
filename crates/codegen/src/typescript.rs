@@ -408,7 +408,7 @@ impl Lang for TypeScript {
         );
         writeln!(
             out,
-            "export class DbConnectionBuilder extends __DbConnectionBuilder<DbConnection> {{}}"
+            "export class DbConnectionBuilder extends __DbConnectionBuilder<__DbConnectionImpl<typeof REMOTE_MODULE>> {{}}"
         );
 
         writeln!(out);
