@@ -12,18 +12,18 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteProcedures : RemoteBase
     {
-        public void InsertWithTxRetry(ProcedureCallback<uint> callback)
+        public void InsertWithTxRetry(ProcedureCallback<SpacetimeDB.Unit> callback)
         {
             // Convert the clean callback to the wrapper callback
             InternalInsertWithTxRetry((ctx, result) =>
             {
                 if (result.IsSuccess && result.Value != null)
                 {
-                    callback(ctx, ProcedureCallbackResult<uint>.Success(result.Value.Value));
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Success(result.Value.Value));
                 }
                 else
                 {
-                    callback(ctx, ProcedureCallbackResult<uint>.Failure(result.Error!));
+                    callback(ctx, ProcedureCallbackResult<SpacetimeDB.Unit>.Failure(result.Error!));
                 }
             });
         }
@@ -42,9 +42,9 @@ namespace SpacetimeDB.Types
         public sealed partial class InsertWithTxRetry
         {
             [DataMember(Name = "Value")]
-            public uint Value;
+            public SpacetimeDB.Unit Value;
 
-            public InsertWithTxRetry(uint Value)
+            public InsertWithTxRetry(SpacetimeDB.Unit Value)
             {
                 this.Value = Value;
             }

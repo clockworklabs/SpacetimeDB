@@ -232,7 +232,7 @@ public static partial class Module
     }
 
     [SpacetimeDB.Procedure]
-    public static uint InsertWithTxRetry(ProcedureContext ctx)
+    public static void InsertWithTxRetry(ProcedureContext ctx)
     {
         const uint key = 1;
 
@@ -263,8 +263,6 @@ public static partial class Module
             var final = tx.Db.retry_log.Id.Find(key);
             return final?.Attempts ?? 0u;
         });
-
-        return finalAttempts;
     }
     
     [SpacetimeDB.Procedure]
@@ -413,33 +411,34 @@ public static partial class Module
         return result;
     }
     
-    [SpacetimeDB.Procedure]
-    public static ReturnStruct SleepUntilTimestampUpdate(ProcedureContext ctx, uint sleepMillis)
-    {
-        var beforeTimestamp = ctx.Timestamp;
-    
-        // Since we can't actually sleep in a procedure, we'll simulate the concept
-        // by creating a target timestamp and demonstrating timestamp arithmetic
-        var targetMicros = beforeTimestamp.MicrosecondsSinceUnixEpoch + (sleepMillis * 1000);
-        var targetTime = new SpacetimeDB.Timestamp(targetMicros);
-
-        // Get the current timestamp again (this will be very close to beforeTimestamp)
-        var afterTimestamp = ctx.Timestamp;
-        var elapsedMicros = afterTimestamp.MicrosecondsSinceUnixEpoch - beforeTimestamp.MicrosecondsSinceUnixEpoch;
-
-        return ctx.WithTx(tx => {
-            tx.Db.my_table.Insert(new MyTable {
-                Field = new ReturnStruct(
-                    a: (uint)(elapsedMicros / 1000), // Convert back to milliseconds
-                    b: $"target:{targetTime.MicrosecondsSinceUnixEpoch}:actual:{afterTimestamp.MicrosecondsSinceUnixEpoch}"
-                )
-            });
-            return new ReturnStruct(
-                a: (uint)(elapsedMicros / 1000), // Convert back to milliseconds
-                b: $"simulated-sleep:{sleepMillis}ms"
-            );
-        });
-    }
+    // TODO: Not currently used in a test. Need to see if this is still a valid test.
+    // [SpacetimeDB.Procedure]
+    // public static ReturnStruct SleepUntilTimestampUpdate(ProcedureContext ctx, uint sleepMillis)
+    // {
+    //     var beforeTimestamp = ctx.Timestamp;
+    //
+    //     // Since we can't actually sleep in a procedure, we'll simulate the concept
+    //     // by creating a target timestamp and demonstrating timestamp arithmetic
+    //     var targetMicros = beforeTimestamp.MicrosecondsSinceUnixEpoch + (sleepMillis * 1000);
+    //     var targetTime = new SpacetimeDB.Timestamp(targetMicros);
+    //
+    //     // Get the current timestamp again (this will be very close to beforeTimestamp)
+    //     var afterTimestamp = ctx.Timestamp;
+    //     var elapsedMicros = afterTimestamp.MicrosecondsSinceUnixEpoch - beforeTimestamp.MicrosecondsSinceUnixEpoch;
+    //
+    //     return ctx.WithTx(tx => {
+    //         tx.Db.my_table.Insert(new MyTable {
+    //             Field = new ReturnStruct(
+    //                 a: (uint)(elapsedMicros / 1000), // Convert back to milliseconds
+    //                 b: $"target:{targetTime.MicrosecondsSinceUnixEpoch}:actual:{afterTimestamp.MicrosecondsSinceUnixEpoch}"
+    //             )
+    //         });
+    //         return new ReturnStruct(
+    //             a: (uint)(elapsedMicros / 1000), // Convert back to milliseconds
+    //             b: $"simulated-sleep:{sleepMillis}ms"
+    //         );
+    //     });
+    // }
 
     [SpacetimeDB.Procedure]
     public static ReturnStruct AuthenticationCapabilities(ProcedureContext ctx)
