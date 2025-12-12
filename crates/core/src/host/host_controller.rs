@@ -502,6 +502,8 @@ impl HostController {
                     let info = module.info();
                     info!("exiting replica {} of database {}", replica_id, info.database_identity);
                     module.exit().await;
+                    let db = &module.replica_ctx().relational_db;
+                    db.shutdown().await?;
                     let table_names = info.module_def.tables().map(|t| t.name.deref());
                     remove_database_gauges(&info.database_identity, table_names);
                     info!("replica {} of database {} exited", replica_id, info.database_identity);
