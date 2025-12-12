@@ -116,6 +116,9 @@ impl Typespace {
     /// Returns the `AlgebraicType` that `r` resolves to in the context of the `Typespace`.
     ///
     /// Panics if `r` is not known by the `Typespace`.
+    ///
+    /// Note, this is not recursive.
+    /// To resolve all nested refs, call `resolve_refs()` on the result.
     pub fn resolve(&self, r: AlgebraicTypeRef) -> WithTypespace<'_, AlgebraicType> {
         self.with_type(&self[r])
     }
