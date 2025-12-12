@@ -348,15 +348,11 @@ internal static partial class FFI
     public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
 
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_start_mut_tx")]
-    public static partial Errno procedure_start_mut_tx(out long micros);
+    public static partial Errno procedure_start_mut_tx(IntPtr procedurePtr, out long micros);
 
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_commit_mut_tx")]
-    public static partial CheckedStatus procedure_commit_mut_tx();
+    public static partial Errno procedure_commit_mut_tx();
 
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_abort_mut_tx")]
-    public static partial CheckedStatus procedure_abort_mut_tx();
-
-    [LibraryImport(StdbNamespace10_3, EntryPoint = "__take_procedure_tx_offset__")]
-    [return: MarshalAs(UnmanagedType.I1)]
-    public static partial bool take_procedure_tx_offset(out ulong offset);
+    public static partial Errno procedure_abort_mut_tx();
 }

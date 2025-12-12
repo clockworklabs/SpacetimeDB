@@ -1364,7 +1364,7 @@ record ProcedureDeclaration
                     "\n",
                     Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
                 )}}
-                SpacetimeDB.Internal.IProcedure.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
+                SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
             """
         );
@@ -1937,10 +1937,6 @@ public class Module : IIncrementalGenerator
                             result_sink
                         );
                         
-                        [UnmanagedCallersOnly(EntryPoint = "__take_procedure_tx_offset__")]
-                        public static byte __take_procedure_tx_offset__(ulong* offset) =>
-                            SpacetimeDB.Internal.Module.__take_procedure_tx_offset__(out *offset) ? (byte)1 : (byte)0;
-
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
                         public static SpacetimeDB.Internal.Errno __call_view__(
                             uint id,

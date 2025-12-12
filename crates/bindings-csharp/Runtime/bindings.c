@@ -177,9 +177,6 @@ EXPORT(int16_t, __call_procedure__,
        &conn_id_0, &conn_id_1,
        &timestamp, &args, &result_sink);
 
-EXPORT(bool, __take_procedure_tx_offset__,
-       (uint64_t* offset), offset);
-
 EXPORT(int16_t, __call_view__,
        (uint32_t id,
         uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,

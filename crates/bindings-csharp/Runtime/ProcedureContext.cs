@@ -1,6 +1,7 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
+using Internal;
 
 #pragma warning disable STDB_UNSTABLE
 public abstract class ProcedureContextBase(
@@ -10,14 +11,13 @@ public abstract class ProcedureContextBase(
     Timestamp time
 ) : Internal.IInternalProcedureContext
 {
-    public Identity Identity => Internal.IProcedureContext.GetIdentity();
+    public static Identity Identity => Internal.IProcedureContext.GetIdentity();
     public Identity Sender { get; } = sender;
     public ConnectionId? ConnectionId { get; } = connectionId;
     public Random Rng { get; } = random;
     public Timestamp Timestamp { get; private set; } = time;
     public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
-
-    private Internal.TransactionOffset? pendingTxOffset;
+    
     private Internal.TxContext? txContext;
     private ProcedureTxContextBase? cachedUserTxContext;
 
@@ -52,21 +52,6 @@ public abstract class ProcedureContextBase(
     }
 
     public void ExitTxContext() => txContext = null;
-
-    public void SetTransactionOffset(Internal.TransactionOffset offset) => pendingTxOffset = offset;
-
-    public bool TryTakeTransactionOffset(out Internal.TransactionOffset offset)
-    {
-        if (pendingTxOffset is { } value)
-        {
-            pendingTxOffset = null;
-            offset = value;
-            return true;
-        }
-
-        offset = default;
-        return false;
-    }
 
     public readonly struct TxOutcome<TResult>(bool isSuccess, TResult? value, Exception? error)
     {
@@ -139,13 +124,23 @@ public abstract class ProcedureContextBase(
             return TxOutcome<TResult>.Failure(ex);
         }
     }
-
+    
     private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
         Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
     )
         where TError : Exception
     {
-        var result = RunOnce(body);
+        using var procedure = new SpacetimeDB.Internal.ProcedureContextManager();
+        return RunWithRetry(procedure, body);
+    }
+
+    private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
+        ProcedureContextManager procedureContextManagerContextManager,
+        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+    )
+        where TError : Exception
+    {
+        var result = RunOnce(procedureContextManagerContextManager, body);
         if (!result.IsSuccess)
         {
             return result;
@@ -153,31 +148,26 @@ public abstract class ProcedureContextBase(
 
         bool Retry()
         {
-            result = RunOnce(body);
+            result = RunOnce(procedureContextManagerContextManager, body);
             return result.IsSuccess;
         }
 
-        if (!SpacetimeDB.Internal.Procedure.CommitMutTxWithRetry(Retry))
+        if (!procedureContextManagerContextManager.CommitMutTxWithRetry(Retry))
         {
             return result;
-        }
-
-        if (TryTakeTransactionOffset(out var offset))
-        {
-            SetTransactionOffset(offset);
-            SpacetimeDB.Internal.Module.RecordProcedureTxOffset(offset);
         }
 
         return result;
     }
 
     private TxResult<TResult, TError> RunOnce<TResult, TError>(
+        ProcedureContextManager procedureContextManagerContextManager,
         Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
     )
         where TError : Exception
     {
-        _ = SpacetimeDB.Internal.Procedure.StartMutTx();
-        using var guard = new AbortGuard(SpacetimeDB.Internal.Procedure.AbortMutTx);
+        _ = procedureContextManagerContextManager.StartMutTx();
+        using var guard = new AbortGuard(procedureContextManagerContextManager.AbortMutTx);
         var txCtx = RequireTxContext();
         var result = body(txCtx);
         if (result.IsSuccess)
@@ -186,7 +176,7 @@ public abstract class ProcedureContextBase(
             return result;
         }
 
-        SpacetimeDB.Internal.Procedure.AbortMutTx();
+        procedureContextManagerContextManager.AbortMutTx();
         guard.Disarm();
         return result;
     }
@@ -226,7 +216,7 @@ public abstract class LocalBase : Internal.Local { }
 
 public abstract class LocalReadOnlyBase : Internal.LocalReadOnly { }
 
-public sealed partial class ProcedureContext(
+public sealed partial class RuntimeProcedureContext(
     Identity sender,
     ConnectionId? connectionId,
     Random random,
