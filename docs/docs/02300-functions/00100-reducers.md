@@ -1,6 +1,6 @@
 ---
 title: Overview
-slug: /reducers
+slug: /functions/reducers
 ---
 
 import Tabs from '@theme/Tabs';

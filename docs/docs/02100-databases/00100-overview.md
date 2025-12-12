@@ -146,6 +146,6 @@ SpacetimeDB supports organizing databases into projects and managing team access
 ## Next Steps
 
 - Learn about [Tables](/tables) to define your database schema
-- Create [Reducers](/reducers) to modify database state
+- Create [Reducers](/functions/reducers) to modify database state
 - Understand [Subscriptions](/subscriptions) for real-time data sync
 - Review the [CLI Reference](/cli-reference) for all available commands

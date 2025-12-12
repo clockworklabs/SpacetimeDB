@@ -8,8 +8,8 @@ import TabItem from '@theme/TabItem';
 
 # Procedures - Overview
 
-A **procedure** is a function exported by a [database](/#database), similar to a [reducer](/#reducer).
-Connected [clients](/#client-side-sdks** can call procedures.
+A **procedure** is a function exported by a [database](/databases), similar to a [reducer](/functions/reducers).
+Connected [clients](/sdks) can call procedures.
 Procedures can perform additional operations not possible in reducers, including making HTTP requests to external services.
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.

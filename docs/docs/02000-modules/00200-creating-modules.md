@@ -206,5 +206,5 @@ This creates a new TypeScript project with:
 After creating your module:
 
 - Define your [Tables](/tables)
-- Create [Reducers](/reducers) to modify data
+- Learn about [Tables](/tables), [Reducers](/functions/reducers), and [Procedures](/procedures)
 - [Build and publish your module](/new-modules/building-publishing)

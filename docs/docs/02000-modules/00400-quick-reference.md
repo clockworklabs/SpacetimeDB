@@ -168,7 +168,7 @@ The `spacetime publish [DATABASE_IDENTITY]` command compiles a module and upload
   - (Or creates a fresh database and identity, if no identity was provided).
 - The host loads the new module and inspects its requested database schema. If there are changes to the schema, the host tries perform an [automatic migration](/databases/automatic-migrations). If the migration fails, publishing fails.
 - The host terminates the old module attached to the database.
-- The host installs the new module into the database. It begins running the module's [lifecycle reducers](/reducers/lifecycle) and [scheduled reducers](/tables/scheduled-tables), starting with the [`#[init]` reducer](/reducers/lifecycle).
+- The host installs the new module into the database. It begins running the module's [lifecycle reducers](/functions/lifecycle) and [scheduled reducers](/tables/scheduled-tables), starting with the [`#[init]` reducer](/functions/lifecycle).
 - The host begins allowing clients to call the module's reducers.
 
 From the perspective of clients, this process is seamless. Open connections are maintained and subscriptions continue functioning. [Automatic migrations](/databases/automatic-migrations) forbid most table changes except for adding new tables, so client code does not need to be recompiled.
@@ -190,7 +190,7 @@ The `spacetime publish [DATABASE_IDENTITY]` command compiles a module and upload
   - (Or creates a fresh database and identity, if no identity was provided).
 - The host loads the new module and inspects its requested database schema. If there are changes to the schema, the host tries perform an [automatic migration](/databases/automatic-migrations). If the migration fails, publishing fails.
 - The host terminates the old module attached to the database.
-- The host installs the new module into the database. It begins running the module's [lifecycle reducers](/reducers/lifecycle) and [scheduled reducers](/tables/scheduled-tables), starting with the `Init` reducer.
+- The host installs the new module into the database. It begins running the module's [lifecycle reducers](/functions/lifecycle) and [scheduled reducers](/tables/scheduled-tables), starting with the `Init` reducer.
 - The host begins allowing clients to call the module's reducers.
 
 From the perspective of clients, this process is seamless. Open connections are maintained and subscriptions continue functioning. [Automatic migrations](/databases/automatic-migrations) forbid most table changes except for adding new tables, so client code does not need to be recompiled.
@@ -515,7 +515,7 @@ spacetimedb.reducer('admin_only', {}, ctx => {
 </Tabs>
 
 :::note
-Follow this link to get a deeper understanding of [Reducers](/reducers).
+Follow this link to get a deeper understanding of [Reducers](/functions/reducers).
 :::
 
 ## Logging
@@ -572,5 +572,5 @@ spacetime logs <DATABASE_NAME>
 ## Next Steps
 
 - Learn about [client SDKs](/sdks) to connect to your module
-- Lean more about [Tables](/tables), [Reducers](/reducers), [Views](/), and [Procedures](/procedures).
+- Lean more about [Tables](/tables), [Reducers](/functions/reducers), [Views](/functions/views), and [Procedures](/procedures).
 - Understand [automatic migrations](/databases/automatic-migrations) when updating your module

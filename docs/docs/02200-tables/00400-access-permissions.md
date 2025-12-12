@@ -104,6 +104,91 @@ spacetimedb.reducer('example', {}, (ctx) => {
 </TabItem>
 </Tabs>
 
+## Procedures with Transactions - Read-Write Access
+
+Procedures receive a `ProcedureContext` and can access tables through transactions. Unlike reducers, procedures must explicitly open a transaction to read from or modify the database.
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::procedure]
+fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: String) {
+    // Must explicitly open a transaction
+    ctx.with_tx(|ctx| {
+        // Full read-write access within the transaction
+        if let Some(mut user) = ctx.db.user().id().find(user_id) {
+            user.name = new_name;
+            ctx.db.user().id().update(user);
+        }
+    });
+    // Transaction is committed when the closure returns
+}
+
+#[spacetimedb::procedure]
+fn fallible_update(ctx: &mut ProcedureContext, user_id: u64) -> Result<(), String> {
+    // For operations that may fail, use try_with_tx
+    ctx.try_with_tx(|ctx| {
+        let user = ctx.db.user().id().find(user_id)
+            .ok_or("User not found")?;
+        
+        if user.level < 10 {
+            return Err("User level too low".to_string());
+        }
+        
+        // Perform updates...
+        Ok(())
+    })
+}
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Support for procedures in C# modules is coming soon!
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.string() }, t.unit(), (ctx, { userId, newName }) => {
+  // Must explicitly open a transaction
+  ctx.withTx(ctx => {
+    // Full read-write access within the transaction
+    const user = ctx.db.user.id.find(userId);
+    if (user) {
+      user.name = newName;
+      ctx.db.user.id.update(user);
+    }
+  });
+  // Transaction is committed when the function returns
+  return {};
+});
+
+spacetimedb.procedure('fallibleUpdate', { userId: t.u64() }, t.unit(), (ctx, { userId }) => {
+  // For operations that may fail, throw errors within the transaction
+  ctx.withTx(ctx => {
+    const user = ctx.db.user.id.find(userId);
+    if (!user) {
+      throw new SenderError("User not found");
+    }
+    
+    if (user.level < 10) {
+      throw new SenderError("User level too low");
+    }
+    
+    // Perform updates...
+  });
+  
+  return {};
+});
+```
+
+</TabItem>
+</Tabs>
+
+See the [Procedures documentation](/procedures) for more details on using procedures, including making HTTP requests to external services.
+
 ## Views - Read-Only Access
 
 Views receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to tables. They can query and iterate tables, but cannot insert, update, or delete rows.
