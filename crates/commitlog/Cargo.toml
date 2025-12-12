@@ -46,6 +46,7 @@ pretty_assertions.workspace = true
 # Also enable 'test' feature, so integration tests can use the helpers.
 spacetimedb-commitlog = { path = ".", features = ["test", "streaming"] }
 
+criterion.workspace = true
 env_logger.workspace = true
 once_cell.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
@@ -57,3 +58,7 @@ tokio-stream = { version = "0.1.17", features = ["fs"] }
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "write"
+harness = false
