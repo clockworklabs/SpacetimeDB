@@ -276,6 +276,7 @@ impl MutTxId {
     // This is cold as we don't want it to be inlined in case it doesn't end up getting called.
     // This previously showed up in flamegraphs.
     #[cold]
+    #[inline(never)]
     pub fn record_index_scan_range_inner(
         &mut self,
         view: &ViewCallInfo,
