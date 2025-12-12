@@ -124,8 +124,7 @@ export function toString<TableDef extends UntypedTableDef>(
 ): string {
   switch (expr.type) {
     case 'eq': {
-      const key =
-        tableDef.columns[expr.key].columnMetadata.originalName ?? expr.key;
+      const key = tableDef.columns[expr.key].columnMetadata.name ?? expr.key;
       return `${escapeIdent(key)} = ${formatValue(expr.value)}`;
     }
     case 'and':

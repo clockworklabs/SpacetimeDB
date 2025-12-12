@@ -369,9 +369,12 @@ interface Nameable<
   SpacetimeType extends AlgebraicType,
   M extends ColumnMetadata<Type> = DefaultMetadata,
 > {
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ColumnBuilder<Type, SpacetimeType, SetField<M, 'originalName', Name>>;
+  /**
+   * Specify the in-database name for this column.
+   */
+  name<const Name extends string>(
+    name: Name
+  ): ColumnBuilder<Type, SpacetimeType, SetField<M, 'name', Name>>;
 }
 
 export class U8Builder
@@ -426,10 +429,10 @@ export class U8Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U8ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new U8ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): U8ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new U8ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -485,10 +488,10 @@ export class U16Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U16ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new U16ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): U16ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new U16ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -544,10 +547,10 @@ export class U32Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U32ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new U32ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): U32ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new U32ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -603,10 +606,10 @@ export class U64Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U64ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new U64ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): U64ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new U64ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -665,10 +668,10 @@ export class U128Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U128ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new U128ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): U128ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new U128ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -727,10 +730,10 @@ export class U256Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U256ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new U256ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): U256ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new U256ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -786,10 +789,10 @@ export class I8Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I8ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new I8ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): I8ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new I8ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -845,10 +848,10 @@ export class I16Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I16ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new I16ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): I16ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new I16ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -905,10 +908,10 @@ export class I32Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I32ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new I32ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): I32ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new I32ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -964,10 +967,10 @@ export class I64Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I64ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new I64ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): I64ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new I64ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1026,10 +1029,10 @@ export class I128Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I128ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new I128ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): I128ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new I128ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1088,10 +1091,10 @@ export class I256Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I256ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new I256ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): I256ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new I256ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1112,10 +1115,10 @@ export class F32Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): F32ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new F32ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): F32ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new F32ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1136,10 +1139,10 @@ export class F64Builder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): F64ColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new F64ColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): F64ColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new F64ColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1189,10 +1192,10 @@ export class BoolBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): BoolColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new BoolColumnBuilder(this, set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): BoolColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new BoolColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1242,13 +1245,10 @@ export class StringBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): StringColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new StringColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): StringColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new StringColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1278,16 +1278,10 @@ export class ArrayBuilder<Element extends TypeBuilder<any, any>>
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ArrayColumnBuilder<
-    Element,
-    SetField<DefaultMetadata, 'originalName', Name>
-  > {
-    return new ArrayColumnBuilder(
-      this.element,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): ArrayColumnBuilder<Element, SetField<DefaultMetadata, 'name', Name>> {
+    return new ArrayColumnBuilder(this.element, set(defaultMetadata, { name }));
   }
 }
 
@@ -1308,10 +1302,10 @@ export class ByteArrayBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ByteArrayColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new ByteArrayColumnBuilder(set(defaultMetadata, { originalName }));
+  name<const Name extends string>(
+    name: Name
+  ): ByteArrayColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new ByteArrayColumnBuilder(set(defaultMetadata, { name }));
   }
 }
 
@@ -1351,16 +1345,10 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): OptionColumnBuilder<
-    Value,
-    SetField<DefaultMetadata, 'originalName', Name>
-  > {
-    return new OptionColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): OptionColumnBuilder<Value, SetField<DefaultMetadata, 'name', Name>> {
+    return new OptionColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1659,13 +1647,10 @@ export class ScheduleAtBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ScheduleAtColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new ScheduleAtColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): ScheduleAtColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new ScheduleAtColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1727,13 +1712,10 @@ export class IdentityBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new IdentityColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): IdentityColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new IdentityColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1799,15 +1781,10 @@ export class ConnectionIdBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ConnectionIdColumnBuilder<
-    SetField<DefaultMetadata, 'originalName', Name>
-  > {
-    return new ConnectionIdColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): ConnectionIdColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new ConnectionIdColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1873,13 +1850,10 @@ export class TimestampBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): TimestampColumnBuilder<SetField<DefaultMetadata, 'originalName', Name>> {
-    return new TimestampColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): TimestampColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new TimestampColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1945,15 +1919,10 @@ export class TimeDurationBuilder
       set(defaultMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): TimeDurationColumnBuilder<
-    SetField<DefaultMetadata, 'originalName', Name>
-  > {
-    return new TimeDurationColumnBuilder(
-      this,
-      set(defaultMetadata, { originalName })
-    );
+  name<const Name extends string>(
+    name: Name
+  ): TimeDurationColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new TimeDurationColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1972,7 +1941,7 @@ export type ColumnMetadata<Type = any> = {
   isAutoIncrement?: true;
   indexType?: IndexTypes;
   defaultValue?: Type;
-  originalName?: string;
+  name?: string;
 };
 
 /**
@@ -2070,12 +2039,12 @@ export class U8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U8ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): U8ColumnBuilder<SetField<M, 'name', Name>> {
     return new U8ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2132,12 +2101,12 @@ export class U16ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U16ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): U16ColumnBuilder<SetField<M, 'name', Name>> {
     return new U16ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2194,12 +2163,12 @@ export class U32ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U32ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): U32ColumnBuilder<SetField<M, 'name', Name>> {
     return new U32ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2256,12 +2225,12 @@ export class U64ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U64ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): U64ColumnBuilder<SetField<M, 'name', Name>> {
     return new U64ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2318,12 +2287,12 @@ export class U128ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U128ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): U128ColumnBuilder<SetField<M, 'name', Name>> {
     return new U128ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2380,12 +2349,12 @@ export class U256ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): U256ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): U256ColumnBuilder<SetField<M, 'name', Name>> {
     return new U256ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2438,12 +2407,12 @@ export class I8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I8ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): I8ColumnBuilder<SetField<M, 'name', Name>> {
     return new I8ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2500,12 +2469,12 @@ export class I16ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I16ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): I16ColumnBuilder<SetField<M, 'name', Name>> {
     return new I16ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2562,12 +2531,12 @@ export class I32ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I32ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): I32ColumnBuilder<SetField<M, 'name', Name>> {
     return new I32ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2624,12 +2593,12 @@ export class I64ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I64ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): I64ColumnBuilder<SetField<M, 'name', Name>> {
     return new I64ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2686,12 +2655,12 @@ export class I128ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I128ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): I128ColumnBuilder<SetField<M, 'name', Name>> {
     return new I128ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2748,12 +2717,12 @@ export class I256ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): I256ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): I256ColumnBuilder<SetField<M, 'name', Name>> {
     return new I256ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2776,12 +2745,12 @@ export class F32ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): F32ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): F32ColumnBuilder<SetField<M, 'name', Name>> {
     return new F32ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2804,12 +2773,12 @@ export class F64ColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): F64ColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): F64ColumnBuilder<SetField<M, 'name', Name>> {
     return new F64ColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2859,12 +2828,12 @@ export class BoolColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): BoolColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): BoolColumnBuilder<SetField<M, 'name', Name>> {
     return new BoolColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2914,12 +2883,12 @@ export class StringColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): StringColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): StringColumnBuilder<SetField<M, 'name', Name>> {
     return new StringColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -2958,12 +2927,12 @@ export class ArrayColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ArrayColumnBuilder<Element, SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): ArrayColumnBuilder<Element, SetField<M, 'name', Name>> {
     return new ArrayColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3017,12 +2986,12 @@ export class OptionColumnBuilder<
       })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): OptionColumnBuilder<Value, SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): OptionColumnBuilder<Value, SetField<M, 'name', Name>> {
     return new OptionColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3054,15 +3023,12 @@ export class ProductColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ProductColumnBuilder<
-    Elements,
-    SetField<DefaultMetadata, 'originalName', Name>
-  > {
+  name<const Name extends string>(
+    name: Name
+  ): ProductColumnBuilder<Elements, SetField<DefaultMetadata, 'name', Name>> {
     return new ProductColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3091,15 +3057,12 @@ export class SumColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): SumColumnBuilder<
-    Variants,
-    SetField<DefaultMetadata, 'originalName', Name>
-  > {
+  name<const Name extends string>(
+    name: Name
+  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'name', Name>> {
     return new SumColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3161,12 +3124,12 @@ export class ScheduleAtColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ScheduleAtColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): ScheduleAtColumnBuilder<SetField<M, 'name', Name>> {
     return new ScheduleAtColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3214,12 +3177,12 @@ export class IdentityColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): IdentityColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): IdentityColumnBuilder<SetField<M, 'name', Name>> {
     return new IdentityColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3267,12 +3230,12 @@ export class ConnectionIdColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): ConnectionIdColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): ConnectionIdColumnBuilder<SetField<M, 'name', Name>> {
     return new ConnectionIdColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3320,12 +3283,12 @@ export class TimestampColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): TimestampColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): TimestampColumnBuilder<SetField<M, 'name', Name>> {
     return new TimestampColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }
@@ -3373,12 +3336,12 @@ export class TimeDurationColumnBuilder<
       set(this.columnMetadata, { defaultValue: value })
     );
   }
-  originalName<const Name extends string>(
-    originalName: Name
-  ): TimeDurationColumnBuilder<SetField<M, 'originalName', Name>> {
+  name<const Name extends string>(
+    name: Name
+  ): TimeDurationColumnBuilder<SetField<M, 'name', Name>> {
     return new TimeDurationColumnBuilder(
       this.typeBuilder,
-      set(this.columnMetadata, { originalName })
+      set(this.columnMetadata, { name })
     );
   }
 }

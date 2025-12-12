@@ -706,7 +706,7 @@ fn write_type_builder_field(
         write!(out, ".primaryKey()");
     }
     if let Some(original_name) = original_name {
-        write!(out, ".originalName(\"{original_name}\")");
+        write!(out, ".name(\"{original_name}\")");
     }
     if needs_getter {
         writeln!(out, ";");
