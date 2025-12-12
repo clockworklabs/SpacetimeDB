@@ -55,16 +55,16 @@ fn get_manifest_dir() -> PathBuf {
 //
 //   * `get_templates_json` - returns contents of the JSON file with the list of templates
 //   * `get_template_files` - returns a HashMap with templates contents based on the
-//                            templates list at crates/cli/templates/templates-list.json
+//                            templates list at templates/templates-list.json
 //   * `get_cursorrules` - returns contents of a cursorrules file
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
-    let manifest_path = Path::new(&manifest_dir);
-    let templates_json_path = manifest_path.join("templates/templates-list.json");
+    let repo_root = get_repo_root();
+    let templates_json_path = repo_root.join("templates/templates-list.json");
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_templates.rs");
 
-    println!("cargo:rerun-if-changed=templates/templates-list.json");
+    println!("cargo:rerun-if-changed=../../templates/templates-list.json");
 
     let templates_json =
         fs::read_to_string(&templates_json_path).expect("Failed to read templates/templates-list.json");
@@ -76,8 +76,9 @@ fn generate_template_files() {
     generated_code.push_str("use std::collections::HashMap;\n\n");
 
     generated_code.push_str("pub fn get_templates_json() -> &'static str {\n");
-    generated_code
-        .push_str("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/templates/templates-list.json\"))\n");
+    generated_code.push_str(
+        "    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/../../templates/templates-list.json\"))\n",
+    );
     generated_code.push_str("}\n\n");
 
     generated_code
@@ -92,15 +93,16 @@ fn generate_template_files() {
             let server_path = PathBuf::from(server_source);
             let client_path = PathBuf::from(client_source);
 
-            let server_full_path = Path::new(&manifest_dir).join(&server_path);
-            let client_full_path = Path::new(&manifest_dir).join(&client_path);
+            let templates_dir = repo_root.join("templates");
+            let server_full_path = templates_dir.join(&server_path);
+            let client_full_path = templates_dir.join(&client_path);
 
             if server_full_path.exists() {
-                generate_template_entry(&mut generated_code, &server_path, server_source, &manifest_dir);
+                generate_template_entry(&mut generated_code, &server_path, server_source, &templates_dir);
             }
 
             if client_full_path.exists() {
-                generate_template_entry(&mut generated_code, &client_path, client_source, &manifest_dir);
+                generate_template_entry(&mut generated_code, &client_path, client_source, &templates_dir);
             }
         }
     }
