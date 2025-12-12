@@ -35,7 +35,7 @@ Rust modules are written with the the Rust Module Library. They are built using 
 This reference assumes you are familiar with the basics of Rust. If you aren't, check out Rust's [excellent documentation](https://www.rust-lang.org/learn). For a guided introduction to Rust Modules, see the [Rust Module Quickstart](https://spacetimedb.com/docs/modules/rust/quickstart).
 </TabItem>
 <TabItem value="csharp" label="C#">
-C# modules are written with the the C# Module Library (this package). They are built using the [dotnet CLI tool](https://learn.microsoft.com/en-us/dotnet/core/tools/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). C# modules can import any [NuGet package](https://www.nuget.org/packages) that supports being compiled to WebAssembly.
+C# modules are written with the the C# Module Library. They are built using the [dotnet CLI tool](https://learn.microsoft.com/en-us/dotnet/core/tools/) and deployed using the [`spacetime` CLI tool](https://spacetimedb.com/install). C# modules can import any [NuGet package](https://www.nuget.org/packages) that supports being compiled to WebAssembly.
 
 (Note: C# can also be used to write **clients** of SpacetimeDB databases, but this requires using a different library, the SpacetimeDB C# Client SDK. See the documentation on [clients] for more information.)
 
