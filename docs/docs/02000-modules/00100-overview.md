@@ -8,9 +8,9 @@ slug: /new-modules
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C# or Rust. Modules define the structure of the [database](/databases) and the server-side logic that processes and handles client requests. 
+A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C# or Rust. Modules define the structure of the [database](/databases) and the server-side logic that processes and handles client requests.
 
-The logic is contained within hree categories of server-side functions: [reducers](/functions/reducers) (transactional state changes), [procedures](/procedures) (functions with external capabilities), and [views](/functions/views) (read-only queries). Modules are administered using the `spacetime` CLI tool.
+The logic is contained within three categories of server-side functions: [reducers](/functions/reducers) (transactional state changes), [procedures](/procedures) (functions with external capabilities), and [views](/functions/views) (read-only queries). Modules are administered using the `spacetime` CLI tool.
 
 ## Module vs Database
 
