@@ -1058,8 +1058,7 @@ impl InstanceCommon {
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
                         .resolve(row_type)
-                        .ty()
-                        .clone()
+                        .resolve_refs()?
                         .into_product()
                         .map_err(|_| anyhow!("Error resolving row type for view"))?;
 
