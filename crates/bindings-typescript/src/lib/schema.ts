@@ -36,7 +36,7 @@ import {
 } from './algebraic_type';
 import type RawScopedTypeNameV9 from './autogen/raw_scoped_type_name_v_9_type';
 import type { CamelCase } from './type_util';
-import type { TableSchema } from './table_schema';
+import type { UntypedTableSchema } from './table_schema';
 import { toCamelCase } from './util';
 import {
   defineView,
@@ -45,8 +45,7 @@ import {
   type ViewOpts,
   type ViewReturnTypeBuilder,
 } from './views';
-import RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
-import type { IndexOpts } from './indexes';
+import type { UntypedIndex } from './indexes';
 import { procedure, type ProcedureFn } from './procedures';
 
 export type TableNamesOf<S extends UntypedSchemaDef> =
@@ -71,76 +70,63 @@ export function getRegisteredSchema(): UntypedSchemaDef {
 /**
  * Helper type to convert an array of TableSchema into a schema definition
  */
-type TablesToSchema<T extends readonly TableSchema<any, any, any>[]> = {
+type TablesToSchema<T extends readonly UntypedTableSchema[]> = {
   tables: {
-    /** @type {UntypedTableDef} */
-    readonly [i in keyof T]: {
-      name: T[i]['tableName'];
-      accessorName: CamelCase<T[i]['tableName']>;
-      columns: T[i]['rowType']['row'];
-      rowType: T[i]['rowSpacetimeType'];
-      indexes: T[i]['idxs'];
-      constraints: T[i]['constraints'];
-    };
+    readonly [i in keyof T]: TableToSchema<T[i]>;
   };
 };
 
-export function tablesToSchema<
-  const T extends readonly TableSchema<any, any, readonly any[]>[],
->(tables: T): TablesToSchema<T> {
-  const result = {
-    tables: tables.map(schema => {
-      const colNameList: string[] = [];
-      schema.rowType.algebraicType.value.elements.forEach(elem => {
-        colNameList.push(elem.name);
-      });
+interface TableToSchema<T extends UntypedTableSchema> extends UntypedTableDef {
+  name: T['tableName'];
+  accessorName: CamelCase<T['tableName']>;
+  columns: T['rowType']['row'];
+  rowType: T['rowSpacetimeType'];
+  indexes: T['idxs'];
+  constraints: T['constraints'];
+}
 
+export function tablesToSchema<const T extends readonly UntypedTableSchema[]>(
+  tables: T
+): TablesToSchema<T> {
+  return { tables: tables.map(tableToSchema) as TablesToSchema<T>['tables'] };
+}
+
+function tableToSchema<T extends UntypedTableSchema>(
+  schema: T
+): TableToSchema<T> {
+  const getColName = (i: number) =>
+    schema.rowType.algebraicType.value.elements[i].name;
+
+  type AllowedCol = keyof T['rowType']['row'] & string;
+  return {
+    name: schema.tableName,
+    accessorName: toCamelCase(schema.tableName as T['tableName']),
+    columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
+    rowType: schema.rowSpacetimeType,
+    constraints: schema.tableDef.constraints.map(c => ({
+      name: c.name,
+      constraint: 'unique',
+      columns: c.data.value.columns.map(getColName) as [string],
+    })),
+    // TODO: horrible horrible horrible. we smuggle this `Array<UntypedIndex>`
+    // by casting it to an `Array<IndexOpts>` as `TableToSchema` expects.
+    // This is then used in `TableCacheImpl.constructor` and who knows where else.
+    // We should stop lying about our types.
+    indexes: schema.tableDef.indexes.map((idx): UntypedIndex<AllowedCol> => {
+      const columnIds =
+        idx.algorithm.tag === 'Direct'
+          ? [idx.algorithm.value]
+          : idx.algorithm.value;
       return {
-        name: schema.tableName,
-        accessorName: toCamelCase(schema.tableName),
-        columns: schema.rowType.row, // typed as T[i]['rowType']['row'] under TablesToSchema<T>
-        rowType: schema.rowSpacetimeType,
-        constraints: [
-          ...schema.tableDef.constraints.map(c => ({
-            name: c.name,
-            constraint: 'unique' as const,
-            columns: Array.from(c.data.value.columns.map(i => colNameList[i])),
-          })),
-        ],
-        // UntypedTableDef expects mutable array; idxs are readonly, spread to copy.
-        indexes: [
-          ...schema.idxs.map(
-            (idx: Infer<typeof RawIndexDefV9>): IndexOpts<any> => {
-              const columnIds =
-                idx.algorithm.tag === 'Direct'
-                  ? [idx.algorithm.value]
-                  : idx.algorithm.value;
-              const columns = columnIds.map(i => colNameList[i]);
-              return {
-                name: idx.accessorName,
-                unique: schema.tableDef.constraints.some(c =>
-                  c.data.value.columns.every(col => columnIds.includes(col))
-                ),
-                algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
-                columns,
-              } as IndexOpts<any>;
-            }
-          ),
-        ],
-      } as const;
-    }) as {
-      // preserve tuple indices so the return type matches `[i in keyof T]`
-      readonly [I in keyof T]: {
-        name: T[I]['tableName'];
-        accessorName: CamelCase<T[I]['tableName']>;
-        columns: T[I]['rowType']['row'];
-        rowType: T[I]['rowSpacetimeType'];
-        indexes: T[I]['idxs'];
-        constraints: T[I]['constraints'];
+        name: idx.accessorName!,
+        unique: schema.tableDef.constraints.some(c =>
+          c.data.value.columns.every(col => columnIds.includes(col))
+        ),
+        algorithm: idx.algorithm.tag.toLowerCase() as 'btree',
+        columns: columnIds.map(getColName),
       };
-    },
-  } satisfies TablesToSchema<T>;
-  return result;
+    }) as T['idxs'],
+  };
 }
 
 /**
@@ -333,7 +319,7 @@ class Schema<S extends UntypedSchemaDef> {
   constructor(
     tables: Infer<typeof RawTableDefV9>[],
     typespace: Infer<typeof Typespace>,
-    handles: readonly TableSchema<any, any, any>[]
+    handles: readonly UntypedTableSchema[]
   ) {
     this.tablesDef = { tables };
     this.typespace = typespace;
@@ -597,7 +583,7 @@ export type InferSchema<SchemaDef extends Schema<any>> =
  * );
  * ```
  */
-export function schema<const H extends readonly TableSchema<any, any, any>[]>(
+export function schema<const H extends readonly UntypedTableSchema[]>(
   ...handles: H
 ): Schema<TablesToSchema<H>>;
 
@@ -606,7 +592,7 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
  * @param handles - Array of table handles created by table() function
  * @returns ColumnBuilder representing the complete database schema
  */
-export function schema<const H extends readonly TableSchema<any, any, any>[]>(
+export function schema<const H extends readonly UntypedTableSchema[]>(
   handles: H
 ): Schema<TablesToSchema<H>>;
 
@@ -622,7 +608,7 @@ export function schema<const H extends readonly TableSchema<any, any, any>[]>(
  * );
  * ```
  */
-export function schema<const H extends readonly TableSchema<any, any, any>[]>(
+export function schema<const H extends readonly UntypedTableSchema[]>(
   ...args: [H] | H
 ): Schema<TablesToSchema<H>> {
   const handles = (
