@@ -8,9 +8,9 @@ slug: /new-modules
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-A **module** a collection of [stored procedures](https://en.wikipedia.org/wiki/Stored_procedure) and schema definitions, which can be written in TypeScript, C# or Rust.
+A **module** is a collection of functions and schema definitions, which can be written in TypeScript, C# or Rust. Modules define the structure of the [database](/databases) and the server-side logic that processes and handles client requests. 
 
-Modules define the structure of the database and the server-side logic that processes and handles client requests. These functions are called reducers and are transactional, meaning they ensure data consistency and integrity. Reducers can perform operations such as inserting, updating, and deleting data in the database. Modules are administered using the `spacetime` CLI tool.
+The logic is contained within hree categories of server-side functions: [reducers](/functions/reducers) (transactional state changes), [procedures](/procedures) (functions with external capabilities), and [views](/functions/views) (read-only queries). Modules are administered using the `spacetime` CLI tool.
 
 ## Module vs Database
 
@@ -26,9 +26,9 @@ You can deploy the same module to multiple databases (e.g. separate environments
 A module contains:
 
 - **[Tables](/tables)** - Define your data structure and storage.
-- **[Reducers](/reducers)** - Server-side functions that modify your data transactionally.
+- **[Reducers](/functions/reducers)** - Server-side functions that modify your data transactionally.
 - **[Procedures](/procedures)** - Functions that can perform external operations like HTTP requests and return results.
-- **[Views](/)** - Read-only computed queries over your data.
+- **[Views](/functions/views)** - Read-only computed queries over your data.
 
 ## Supported Languages
 
@@ -65,5 +65,3 @@ Continue reading to learn how to:
 
 - [Create a new module project](/new-modules/creating)
 - [Build and publish your module](/new-modules/building-publishing)
-
-For interactive development with hot-reloading, see [Interactive Development with `spacetime dev`](/new-modules/creating).

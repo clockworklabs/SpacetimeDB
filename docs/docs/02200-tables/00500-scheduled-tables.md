@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 
 # Scheduled Tables
 
-Tables can trigger [reducers](/reducers) or [procedures](/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
+Tables can trigger [reducers](/functions/reducers) or [procedures](/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
 ## Defining a Scheduled Table
 
@@ -94,5 +94,5 @@ spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (_ctx, { arg }) 
 
 ## Next Steps
 
-- Learn about [Reducers](/reducers) to handle scheduled actions
+- Learn about [Reducers](/functions/reducers) to handle scheduled actions
 - Explore [Procedures](/procedures) for scheduled execution patterns

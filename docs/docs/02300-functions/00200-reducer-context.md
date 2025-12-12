@@ -1,6 +1,6 @@
 ---
 title: Reducer Context
-slug: /reducers/reducer-context
+slug: /functions/reducer-context
 ---
 
 import Tabs from '@theme/Tabs';
@@ -212,7 +212,7 @@ Never use external random number generators (like `Math.random()` in TypeScript 
 
 The context provides access to the module's own identity, which is useful for distinguishing between user-initiated and system-initiated reducer calls.
 
-This is particularly important for [scheduled reducers](/reducers) that should only be invoked by the system, not by external clients.
+This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
 
 <Tabs groupId="language">
 <TabItem value="rust" label="Rust">

@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 
 # Tables
 
-Tables are the primary way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
+Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
 
 ## Defining Tables
 
@@ -83,8 +83,8 @@ The first argument defines table options, and the second defines columns.
 
 Tables can be **private** (default) or **public**:
 
-- **Private tables**: Visible only to [reducers](/docs/reducers) and the database owner. Clients cannot access them.
-- **Public tables**: Exposed for client read access through [subscriptions](/docs/subscriptions). Writes still occur only through reducers.
+- **Private tables**: Visible only to [reducers](/functions/reducers) and the database owner. Clients cannot access them.
+- **Public tables**: Exposed for client read access through [subscriptions](/subscriptions). Writes still occur only through reducers.
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="rust" label="Rust">

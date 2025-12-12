@@ -107,4 +107,4 @@ For all available publishing options and flags, see the [`spacetime publish` CLI
 After publishing:
 
 - Learn about [connecting a client](/sdks) to your database
-- Learn about [Tables](/tables), [Reducers](/reducers), and [Procedures](/procedures)
+- Learn about [Tables](/tables), [Reducers](/functions/reducers), and [Procedures](/procedures)
