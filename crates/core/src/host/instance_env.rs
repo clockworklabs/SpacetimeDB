@@ -717,7 +717,7 @@ impl InstanceEnv {
     /// Perform an HTTP request.
     /// Exposed to modules via the `ProcedureContext`.
     ///
-    /// It's very important that the error return from this function
+    /// It's very important that the error returned from this function
     /// not contain any potentially sensitive data from `request`,
     /// such as the query parameters or header values.
     /// This way, it's safe to log the errors (either for us to do so, or for module code to do so),
