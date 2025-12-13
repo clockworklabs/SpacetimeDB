@@ -98,11 +98,11 @@ fn generate_template_files() {
             let client_full_path = templates_dir.join(&client_path);
 
             if server_full_path.exists() {
-                generate_template_entry(&mut generated_code, &server_path, server_source, &templates_dir);
+                generate_template_entry(&mut generated_code, &server_path, server_source, &manifest_dir);
             }
 
             if client_full_path.exists() {
-                generate_template_entry(&mut generated_code, &client_path, client_source, &templates_dir);
+                generate_template_entry(&mut generated_code, &client_path, client_source, &manifest_dir);
             }
         }
     }
