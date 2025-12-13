@@ -12,6 +12,10 @@ pub const SCHEDULE_AT_TIME_TAG: &str = "Time";
 pub const OPTION_SOME_TAG: &str = "some";
 /// The tag used for the `none` variant of the special `option` sum type.
 pub const OPTION_NONE_TAG: &str = "none";
+/// The tag used for the `ok` variant of the special `result` sum type.
+pub const RESULT_OK_TAG: &str = "ok";
+/// The tag used for the `err` variant of the special `result` sum type.
+pub const RESULT_ERR_TAG: &str = "err";
 
 /// A structural sum type.
 ///
@@ -119,6 +123,55 @@ impl SumType {
         self.as_option().is_some()
     }
 
+    /// Check whether this sum type is a structural result type.
+    ///
+    /// A structural result type has `ok(T)` as its first variant and `err(E)` as its second.
+    /// That is, `{ ok(T), err(E) }` or `ok: T | err: E` depending on your notation.
+    /// Note that `ok` and `err` are lowercase, unlike Rust's `Result`.
+    /// Order matters, and a result type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural result type, returns the types `T` and `E`.
+    pub fn as_result(&self) -> Option<(&AlgebraicType, &AlgebraicType)> {
+        match &*self.variants {
+            [first, second] if Self::are_variants_result(first, second) => {
+                Some((&first.algebraic_type, &second.algebraic_type))
+            }
+            _ => None,
+        }
+    }
+
+    /// Check whether this sum type is a structural result type.
+    ///
+    /// A structural result type has `ok(T)` as its first variant and `err(E)` as its second.
+    /// That is, `{ ok(T), err(E) }` or `ok: T | err: E` depending on your notation.
+    /// Note that `ok` and `err` are lowercase, unlike Rust's `Result`.
+    /// Order matters, and a result type with these variants in the opposite order will not be recognized.
+    ///
+    /// If the type does look like a structural result type, returns the types `T` and `E`.
+    pub fn as_result_mut(&mut self) -> Option<(&mut AlgebraicType, &mut AlgebraicType)> {
+        match &mut *self.variants {
+            [first, second] if Self::are_variants_result(first, second) => {
+                Some((&mut first.algebraic_type, &mut second.algebraic_type))
+            }
+            _ => None,
+        }
+    }
+
+    fn are_variants_result(first: &SumTypeVariant, second: &SumTypeVariant) -> bool {
+        first.has_name(RESULT_OK_TAG) && second.has_name(RESULT_ERR_TAG)
+    }
+
+    /// Check whether this sum type is a structural result type.
+    ///
+    /// A structural result type has `ok(T)` as its first variant and `err(E)` as its second.
+    /// That is, `{ ok(T), err(E) }` or `ok: T | err: E` depending on your notation.
+    /// Note that `ok` and `err` are lowercase, unlike Rust's `Result`.
+    ///
+    /// Order matters, and a result type with these variants in the opposite order will not be recognized.
+    pub fn is_result(&self) -> bool {
+        self.as_result().is_some()
+    }
+
     /// Return whether this sum type is empty, that is, has no variants.
     pub fn is_empty(&self) -> bool {
         self.variants.is_empty()
@@ -139,9 +192,9 @@ impl SumType {
         }
     }
 
-    /// Returns whether this sum type is a special known type, currently `Option` or `ScheduleAt`.
+    /// Returns whether this sum type is a special known type, currently `Option`, `ScheduleAt`, or `Result`.
     pub fn is_special(&self) -> bool {
-        self.is_option() || self.is_schedule_at()
+        self.is_option() || self.is_schedule_at() || self.is_result()
     }
 
     /// Returns whether this sum type is like on in C without data attached to the variants.

@@ -605,3 +605,77 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
         // --- / customized ---
     }
 }
+
+public partial record Result<T, E> : TaggedEnum<(T Ok, E Err)>
+{
+    public static implicit operator Result<T, E>(T value) => new Ok(value);
+
+    public static implicit operator Result<T, E>(E error) => new Err(error);
+
+    public TResult Match<TResult>(Func<T, TResult> onOk, Func<E, TResult> onErr) =>
+        this switch
+        {
+            Ok(var v) => onOk(v),
+            Err(var e) => onErr(e),
+            _ => throw new InvalidOperationException("Unknown Result variant."),
+        };
+
+    // ----- auto-generated -----
+
+    private Result() { }
+
+    internal enum @enum : byte
+    {
+        Ok,
+        Err,
+    }
+
+    public sealed record Ok(T Value) : Result<T, E>;
+
+    public sealed record Err(E Error) : Result<T, E>;
+
+    private enum Variant : byte
+    {
+        Ok = 0,
+        Err = 1,
+    }
+
+    public readonly struct BSATN<OkRW, ErrRW> : IReadWrite<Result<T, E>>
+        where OkRW : struct, IReadWrite<T>
+        where ErrRW : struct, IReadWrite<E>
+    {
+        private static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
+        private static readonly OkRW okRW = new();
+        private static readonly ErrRW errRW = new();
+
+        public Result<T, E> Read(BinaryReader reader) =>
+            __enumTag.Read(reader) switch
+            {
+                @enum.Ok => new Ok(okRW.Read(reader)),
+                @enum.Err => new Err(errRW.Read(reader)),
+                _ => throw new InvalidOperationException(),
+            };
+
+        public void Write(BinaryWriter writer, Result<T, E> value)
+        {
+            switch (value)
+            {
+                case Ok(var v):
+                    __enumTag.Write(writer, @enum.Ok);
+                    okRW.Write(writer, v);
+                    break;
+
+                case Err(var e):
+                    __enumTag.Write(writer, @enum.Err);
+                    errRW.Write(writer, e);
+                    break;
+            }
+        }
+
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            AlgebraicType.MakeResult(
+                okRW.GetAlgebraicType(registrar),
+                errRW.GetAlgebraicType(registrar)
+            );
+    }
+}
