@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "format": "prettier . --write --ignore-path ../../../../.prettierignore",
-    "lint": "eslint . && prettier . --check --ignore-path ../../../../.prettierignore",
+    "format": "prettier . --write --ignore-path ../../.prettierignore",
+    "lint": "eslint . && prettier . --check --ignore-path ../../.prettierignore",
     "preview": "vite preview",
     "test": "vitest run",
-    "generate": "cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path ../../../../modules/quickstart-chat && prettier --write src/module_bindings",
+    "generate": "cargo run -p gen-bindings -- --out-dir src/module_bindings --project-path spacetimedb && prettier --write src/module_bindings",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb",
     "spacetime:publish:local": "spacetime publish --project-path server --server local",
     "spacetime:publish": "spacetime publish --project-path server --server maincloud"
