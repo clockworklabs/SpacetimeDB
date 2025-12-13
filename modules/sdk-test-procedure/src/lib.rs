@@ -1,6 +1,6 @@
 use spacetimedb::{
-    duration, procedure, reducer, table, DbContext, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table,
-    Timestamp, TxContext,
+    duration, procedure, reducer, table, ClockGenerator, DbContext, ProcedureContext, ReducerContext, ScheduleAt,
+    SpacetimeType, Table, Timestamp, TxContext, Uuid,
 };
 
 #[derive(SpacetimeType)]
@@ -149,4 +149,34 @@ struct ProcInsertsInto {
     procedure_ts: Timestamp,
     x: u8,
     y: u8,
+}
+
+#[table(public, name = pk_uuid)]
+struct PkUuid {
+    u: Uuid,
+    data: u8,
+}
+
+#[procedure]
+fn sorted_uuids_insert(ctx: &mut ProcedureContext) {
+    let procedure_ts = ctx.timestamp;
+    ctx.with_tx(|ctx| {
+        let mut clock = ClockGenerator::new(procedure_ts);
+
+        for _ in 0..1000 {
+            let uuid = ctx.new_uuid_v7(&mut clock).expect("new uuid");
+            ctx.db.pk_uuid().insert(PkUuid { u: uuid, data: 0 });
+        }
+
+        // Verify UUIDs are sorted
+        let mut last_uuid = None;
+        for row in ctx.db.pk_uuid().iter() {
+            if let Some(last) = last_uuid {
+                if last >= row.u {
+                    panic!("UUIDs are not sorted correctly");
+                }
+            }
+            last_uuid = Some(row.u);
+        }
+    })
 }

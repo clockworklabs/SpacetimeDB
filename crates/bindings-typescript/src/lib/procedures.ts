@@ -1,7 +1,7 @@
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
-import type { Timestamp } from '../lib/timestamp';
+import type { ClockGenerator, Timestamp } from '../lib/timestamp';
 import type { HttpClient } from '../server/http_internal';
 import type { ParamsObj, ReducerCtx } from './reducers';
 import {
@@ -21,6 +21,7 @@ import {
   toCamelCase,
   type CoerceParams,
 } from './util';
+import type { Uuid } from './uuid';
 
 export type ProcedureFn<
   S extends UntypedSchemaDef,
@@ -35,6 +36,8 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  newUuidV4(): Uuid;
+  newUuidV7(clock: ClockGenerator): Uuid;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type

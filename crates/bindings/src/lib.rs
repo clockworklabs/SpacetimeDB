@@ -27,6 +27,7 @@ pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
+use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -44,7 +45,8 @@ pub use spacetimedb_lib::FilterableValue;
 pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
-pub use spacetimedb_lib::Timestamp;
+pub use spacetimedb_lib::Uuid;
+pub use spacetimedb_lib::{ClockGenerator, Timestamp};
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
@@ -1030,6 +1032,50 @@ impl ReducerContext {
     pub fn as_read_only(&self) -> ViewContext {
         ViewContext::new(self.sender)
     }
+
+    ///  Create a new UUIDv4 using the built-in RNG.
+    //// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Uuid {
+    ///     ctx.new_uuid_v4()
+    /// }
+    /// # }
+    /// ```
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new UUIDv7 using the provided [`ClockGenerator`].
+    ///
+    /// **NOTE**: To maintain UUIDv7 monotonicity guarantees, do not use this method
+    /// from multiple threads or contexts sharing the same [`ClockGenerator`].
+    ///
+    /// Prefer to create a single [`ClockGenerator`] per context and reuse it for all UUIDv7 generation for the same `table` or operation.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, ClockGenerator, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    ///     let mut clock = ClockGenerator::new(ctx.timestamp);
+    ///     let uuid = ctx.new_uuid_v7(&mut clock)?;
+    ///     Ok(uuid)
+    /// }
+    /// # }
+    /// ```
+    pub fn new_uuid_v7(&self, clock: &mut ClockGenerator) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 10];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Uuid::from_clock_v7(clock, &bytes)
+    }
 }
 
 #[cfg(feature = "unstable")]
@@ -1265,6 +1311,52 @@ impl ProcedureContext {
         }
 
         res
+    }
+
+    ///  Create a new UUIDv4 using the built-in RNG.
+    //// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Uuid {
+    ///     ctx.new_uuid_v4()
+    /// }
+    /// # }
+    /// ```
+    #[cfg(feature = "unstable")]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new UUIDv7 using the provided [`ClockGenerator`].
+    ///
+    /// **NOTE**: To maintain UUIDv7 monotonicity guarantees, do not use this method
+    /// from multiple threads or contexts sharing the same [`ClockGenerator`].
+    ///
+    /// Prefer to create a single [`ClockGenerator`] per context and reuse it for all UUIDv7 generation for the same `table` or operation.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, ClockGenerator, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    ///     let mut clock = ClockGenerator::new(ctx.timestamp);
+    ///     let uuid = ctx.new_uuid_v7(&mut clock)?;
+    ///     Ok(uuid)
+    /// }
+    /// # }
+    /// ```
+    #[cfg(feature = "unstable")]
+    pub fn new_uuid_v7(&self, clock: &mut ClockGenerator) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 10];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Uuid::from_clock_v7(clock, &bytes)
     }
 }
 

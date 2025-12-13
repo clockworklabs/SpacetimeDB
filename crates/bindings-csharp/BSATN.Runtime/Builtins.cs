@@ -365,7 +365,17 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
         new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
-    public int CompareTo(Timestamp that)
+    public readonly long ToUnixMillis()
+    {
+        if (MicrosecondsSinceUnixEpoch < 0)
+        {
+            throw new Exception("timestamp before Unix epoch");
+        }
+
+        return MicrosecondsSinceUnixEpoch / 1000;
+    }
+
+    public readonly int CompareTo(Timestamp that)
     {
         return this.MicrosecondsSinceUnixEpoch.CompareTo(that.MicrosecondsSinceUnixEpoch);
     }
@@ -604,4 +614,31 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
             );
         // --- / customized ---
     }
+}
+
+/// <summary>
+/// A generator for monotonically increasing <see cref="Timestamp"/> s by millisecond increments.
+/// </summary>
+public sealed class ClockGenerator(Timestamp start)
+{
+    private Timestamp _t = start;
+
+    /// <summary>
+    /// Returns the next <see cref="Timestamp"/> in the sequence, guaranteed to be
+    /// greater than the previous one returned by this method.
+    ///
+    /// UUIDv7 requires monotonic millisecond timestamps, so each tick
+    /// increases the timestamp by at least 1 millisecond (1_000 microseconds).
+    ///
+    /// # Exceptions
+    ///
+    /// If the internal timestamp overflows i64 microseconds.
+    /// </summary>
+    public Timestamp Tick()
+    {
+        _t.MicrosecondsSinceUnixEpoch = checked(_t.MicrosecondsSinceUnixEpoch + 1000);
+        return _t;
+    }
+
+    public static implicit operator ClockGenerator(Timestamp t) => new(t);
 }

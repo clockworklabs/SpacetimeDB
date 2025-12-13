@@ -4,7 +4,6 @@
 /// This is done on CI in .github/workflows/test.yml.
 
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using SpacetimeDB;
 using SpacetimeDB.Types;
 
@@ -50,7 +49,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         {
             throw err;
         })
-        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer", "SELECT * FROM PlayersForLevel"]);
+        .Subscribe(["SELECT * FROM ExampleData", "SELECT * FROM MyPlayer", "SELECT * FROM PlayersForLevel", "SELECT * FROM Admins"]);
 
     conn.Reducers.OnAdd += (ReducerEventContext ctx, uint id, uint indexed) =>
     {
@@ -124,6 +123,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     var remoteRows = context.Db.ExampleData.RemoteQuery("WHERE Id = 1").Result;
     Debug.Assert(remoteRows != null && remoteRows.Length > 0);
 
+    Log.Debug("Calling Admins.RemoteQuery");
+    var remoteAdminRows = context.Db.Admins.RemoteQuery("WHERE IsAdmin = true").Result;
+    Debug.Assert(remoteAdminRows != null && remoteAdminRows.Length > 0);
+
     // Now unsubscribe and check that the unsubscribe is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
@@ -142,6 +145,8 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Debug.Assert(context.Db.PlayersForLevel != null, "context.Db.PlayersForLevel != null");
     Debug.Assert(context.Db.MyPlayer.Count > 0, $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}");
     Debug.Assert(context.Db.PlayersForLevel.Count > 0, $"context.Db.PlayersForLevel.Count = {context.Db.PlayersForLevel.Count}");
+    Debug.Assert(context.Db.Admins != null, "context.Db.Admins != null");
+    Debug.Assert(context.Db.Admins.Count > 0, $"context.Db.Admins.Count = {context.Db.Admins.Count}");
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
@@ -152,6 +157,16 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
               $"Id={expectedPlayer.Id}, Identity={expectedPlayer.Identity}, Name={expectedPlayer.Name} => " +
               $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}");
     Debug.Assert(viewIterRows.First().Equals(expectedPlayer));
+
+    Log.Debug("Calling Iter on View Admins");
+    var adminsIterRows = context.Db.Admins.Iter();
+    var expectedAdminNames = new HashSet<string> { "Alice", "Charlie" };
+    Log.Debug("Admins Iter count: " + (adminsIterRows != null ? adminsIterRows.Count().ToString() : "null"));
+    Debug.Assert(adminsIterRows != null && adminsIterRows.Any());
+    Log.Debug("Validating Admins View row data " +
+              $"Expected Names={string.Join(", ", expectedAdminNames)} => " +
+              $"Actual Names={string.Join(", ", adminsIterRows.Select(a => a.Name))}");
+    Debug.Assert(adminsIterRows.All(a => expectedAdminNames.Contains(a.Name)));
 
     Log.Debug("Calling RemoteQuery on View");
     var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");

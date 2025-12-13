@@ -10,6 +10,7 @@ import {
   DbConnectionImpl as __DbConnectionImpl,
   SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
   TypeBuilder as __TypeBuilder,
+  Uuid as __Uuid,
   convertToAccessorMap as __convertToAccessorMap,
   procedureSchema as __procedureSchema,
   procedures as __procedures,

@@ -12,7 +12,7 @@ use rand::RngCore;
 use spacetimedb_sdk::TableWithPrimaryKey;
 use spacetimedb_sdk::{
     credentials, i256, u256, unstable::CallReducerFlags, Compression, ConnectionId, DbConnectionBuilder, DbContext,
-    Event, Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp,
+    Event, Identity, ReducerEvent, Status, SubscriptionHandle, Table, TimeDuration, Timestamp, Uuid,
 };
 use test_counter::TestCounter;
 
@@ -92,6 +92,12 @@ fn main() {
         "insert-timestamp" => exec_insert_timestamp(),
         "insert-call-timestamp" => exec_insert_call_timestamp(),
 
+        "insert-uuid" => exec_insert_uuid(),
+        "insert-call-uuid-v4" => exec_insert_caller_uuid_v4(),
+        "insert-call-uuid-v7" => exec_insert_caller_uuid_v7(),
+        "delete-uuid" => exec_delete_uuid(),
+        "update-uuid" => exec_update_uuid(),
+
         "on-reducer" => exec_on_reducer(),
         "fail-reducer" => exec_fail_reducer(),
 
@@ -133,6 +139,8 @@ fn main() {
         "indexed-simple-enum" => exec_indexed_simple_enum(),
 
         "overlapping-subscriptions" => exec_overlapping_subscriptions(),
+
+        "sorted-uuids-insert" => exec_sorted_uuids_insert(),
 
         _ => panic!("Unknown test: {test}"),
     }
@@ -178,6 +186,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().one_connection_id())?;
 
     assert_table_empty(ctx.db().one_timestamp())?;
+    assert_table_empty(ctx.db().one_uuid())?;
 
     assert_table_empty(ctx.db().one_simple_enum())?;
     assert_table_empty(ctx.db().one_enum_with_payload())?;
@@ -211,6 +220,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().vec_connection_id())?;
 
     assert_table_empty(ctx.db().vec_timestamp())?;
+    assert_table_empty(ctx.db().vec_uuid())?;
 
     assert_table_empty(ctx.db().vec_simple_enum())?;
     assert_table_empty(ctx.db().vec_enum_with_payload())?;
@@ -223,6 +233,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().option_i_32())?;
     assert_table_empty(ctx.db().option_string())?;
     assert_table_empty(ctx.db().option_identity())?;
+    assert_table_empty(ctx.db().option_uuid())?;
     assert_table_empty(ctx.db().option_simple_enum())?;
     assert_table_empty(ctx.db().option_every_primitive_struct())?;
     assert_table_empty(ctx.db().option_vec_option_i_32())?;
@@ -246,6 +257,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().unique_string())?;
     assert_table_empty(ctx.db().unique_identity())?;
     assert_table_empty(ctx.db().unique_connection_id())?;
+    assert_table_empty(ctx.db().unique_uuid())?;
 
     assert_table_empty(ctx.db().pk_u_8())?;
     assert_table_empty(ctx.db().pk_u_16())?;
@@ -266,6 +278,7 @@ fn assert_all_tables_empty(ctx: &impl RemoteDbContext) -> anyhow::Result<()> {
     assert_table_empty(ctx.db().pk_string())?;
     assert_table_empty(ctx.db().pk_identity())?;
     assert_table_empty(ctx.db().pk_connection_id())?;
+    assert_table_empty(ctx.db().pk_uuid())?;
 
     assert_table_empty(ctx.db().large_table())?;
 
@@ -295,6 +308,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM one_identity;",
     "SELECT * FROM one_connection_id;",
     "SELECT * FROM one_timestamp;",
+    "SELECT * FROM one_uuid;",
     "SELECT * FROM one_simple_enum;",
     "SELECT * FROM one_enum_with_payload;",
     "SELECT * FROM one_unit_struct;",
@@ -320,6 +334,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM vec_identity;",
     "SELECT * FROM vec_connection_id;",
     "SELECT * FROM vec_timestamp;",
+    "SELECT * FROM vec_uuid;",
     "SELECT * FROM vec_simple_enum;",
     "SELECT * FROM vec_enum_with_payload;",
     "SELECT * FROM vec_unit_struct;",
@@ -329,6 +344,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM option_i32;",
     "SELECT * FROM option_string;",
     "SELECT * FROM option_identity;",
+    "SELECT * FROM option_uuid;",
     "SELECT * FROM option_simple_enum;",
     "SELECT * FROM option_every_primitive_struct;",
     "SELECT * FROM option_vec_option_i32;",
@@ -348,6 +364,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM unique_string;",
     "SELECT * FROM unique_identity;",
     "SELECT * FROM unique_connection_id;",
+    "SELECT * FROM unique_uuid;",
     "SELECT * FROM pk_u8;",
     "SELECT * FROM pk_u16;",
     "SELECT * FROM pk_u32;",
@@ -364,6 +381,7 @@ const SUBSCRIBE_ALL: &[&str] = &[
     "SELECT * FROM pk_string;",
     "SELECT * FROM pk_identity;",
     "SELECT * FROM pk_connection_id;",
+    "SELECT * FROM pk_uuid;",
     "SELECT * FROM large_table;",
     "SELECT * FROM table_holds_table;",
 ];
@@ -865,6 +883,93 @@ fn exec_insert_call_timestamp() {
     test_counter.wait_for_all();
 }
 
+/// This tests that we can serialize and deserialize `Uuid` in various contexts.
+fn exec_insert_uuid() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_one::<OneUuid>(ctx, &test_counter, Uuid::NIL);
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+}
+
+/// This tests that we can serialize and deserialize `Uuid` in various contexts.
+fn exec_insert_caller_uuid_v4() {
+    /*    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                on_insert_one::<OneUuid>(ctx, &test_counter, ctx.uuid(), |event| {
+                    matches!(event, Reducer::InsertCallerOneUuid)
+                });
+                ctx.reducers.insert_caller_one_uuid().unwrap();
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();*/
+}
+
+/// This tests that we can serialize and deserialize `Uuid` in various contexts.
+fn exec_insert_caller_uuid_v7() {}
+
+/// This test doesn't add much alongside `exec_insert_uuid` and `exec_delete_primitive`,
+/// but it's here for symmetry.
+fn exec_delete_uuid() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let connection = connect_then(&test_counter, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            subscribe_all_then(ctx, move |ctx| {
+                insert_then_delete_one::<UniqueUuid>(ctx, &test_counter, Uuid::NIL, 0xbeef);
+
+                sub_applied_nothing_result(assert_all_tables_empty(ctx));
+            });
+        }
+    });
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty(&connection).unwrap();
+}
+
+/// This tests that we can distinguish between `on_delete` and `on_update` events
+/// for tables with `Uuid` primary keys.
+fn exec_update_uuid() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("on_subscription_applied_nothing");
+
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            insert_update_delete_one::<PkUuid>(ctx, &test_counter, Uuid::NIL, 0xbeef, 0xbabe);
+
+            sub_applied_nothing_result(assert_all_tables_empty(ctx));
+        }
+    });
+
+    test_counter.wait_for_all();
+
+    assert_all_tables_empty(&connection).unwrap();
+}
+
 /// This tests that we can observe reducer callbacks for successful reducer runs.
 fn exec_on_reducer() {
     let test_counter = TestCounter::new();
@@ -1138,6 +1243,7 @@ fn every_primitive_struct() -> EveryPrimitiveStruct {
         r: ConnectionId::ZERO,
         s: Timestamp::from_micros_since_unix_epoch(9876543210),
         t: TimeDuration::from_micros(-67_419_000_000_003),
+        u: Uuid::from_u128(0x0102_0304_0506_0708_090a_0b0c_0d0e_0f10_u128),
     }
 }
 
@@ -1163,6 +1269,7 @@ fn every_vec_struct() -> EveryVecStruct {
         r: vec![ConnectionId::ZERO],
         s: vec![Timestamp::from_micros_since_unix_epoch(9876543210)],
         t: vec![TimeDuration::from_micros(-67_419_000_000_003)],
+        u: vec![Uuid::NIL],
     }
 }
 
@@ -1502,6 +1609,7 @@ fn exec_insert_primitives_as_strings() {
                 s.r.to_string(),
                 s.s.to_string(),
                 s.t.to_string(),
+                s.u.to_string(),
             ];
 
             ctx.db.vec_string().on_insert(move |ctx, row| {
@@ -1822,6 +1930,36 @@ fn exec_subscribe_all_select_star() {
         })
         .on_error(|_, _| panic!("Subscription error"))
         .subscribe_to_all_tables();
+
+    test_counter.wait_for_all();
+}
+
+fn exec_sorted_uuids_insert() {
+    let test_counter = TestCounter::new();
+    let sub_applied_nothing_result = test_counter.add_test("sorted-uuids-insert");
+
+    let connection = connect(&test_counter);
+
+    subscribe_all_then(&connection, {
+        let test_counter = test_counter.clone();
+        move |ctx| {
+            ctx.reducers.on_sorted_uuids_insert(move |ctx| {
+                let run_checks = || {
+                    if !matches!(ctx.event.reducer, Reducer::SortedUuidsInsert) {
+                        anyhow::bail!(
+                            "Unexpected Event: expected reducer SortedUuidsInsert but found {:?}",
+                            ctx.event,
+                        );
+                    }
+                    Ok(())
+                };
+                test_counter.add_test("sorted-uuids-insert-callback")(run_checks());
+            });
+            ctx.reducers.sorted_uuids_insert().unwrap();
+
+            sub_applied_nothing_result(assert_all_tables_empty(ctx))
+        }
+    });
 
     test_counter.wait_for_all();
 }
