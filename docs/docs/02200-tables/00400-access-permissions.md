@@ -118,27 +118,11 @@ fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: Str
     ctx.with_tx(|ctx| {
         // Full read-write access within the transaction
         if let Some(mut user) = ctx.db.user().id().find(user_id) {
-            user.name = new_name;
+            user.name = new_name.clone();
             ctx.db.user().id().update(user);
         }
     });
     // Transaction is committed when the closure returns
-}
-
-#[spacetimedb::procedure]
-fn fallible_update(ctx: &mut ProcedureContext, user_id: u64) -> Result<(), String> {
-    // For operations that may fail, use try_with_tx
-    ctx.try_with_tx(|ctx| {
-        let user = ctx.db.user().id().find(user_id)
-            .ok_or("User not found")?;
-        
-        if user.level < 10 {
-            return Err("User level too low".to_string());
-        }
-        
-        // Perform updates...
-        Ok(())
-    })
 }
 ```
 
@@ -165,23 +149,6 @@ spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.strin
   return {};
 });
 
-spacetimedb.procedure('fallibleUpdate', { userId: t.u64() }, t.unit(), (ctx, { userId }) => {
-  // For operations that may fail, throw errors within the transaction
-  ctx.withTx(ctx => {
-    const user = ctx.db.user.id.find(userId);
-    if (!user) {
-      throw new SenderError("User not found");
-    }
-    
-    if (user.level < 10) {
-      throw new SenderError("User level too low");
-    }
-    
-    // Perform updates...
-  });
-  
-  return {};
-});
 ```
 
 </TabItem>
@@ -197,11 +164,11 @@ Views receive a `ViewContext` or `AnonymousViewContext` which provides read-only
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::view]
+#[spacetimedb::view(name = find_users_by_name, public)]
 fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
     // Can read and filter
-    ctx.db.user().name().filter("Alice")
-    
+    ctx.db.user().name().filter("Alice").collect()
+
     // Cannot insert, update, or delete
     // ctx.db.user().insert(...) // ❌ Compile error
 }
@@ -211,11 +178,11 @@ fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.View]
+[SpacetimeDB.View(Name = "FindUsersByName", Public = true)]
 public static List<User> FindUsersByName(ViewContext ctx)
 {
     // Can read and filter
-    return ctx.Db.user.Name.Filter("Alice").ToList();
+    return ctx.Db.User.Name.Filter("Alice").ToList();
     
     // Cannot insert, update, or delete
     // ctx.Db.user.Insert(...) // ❌ Method not available
@@ -226,13 +193,16 @@ public static List<User> FindUsersByName(ViewContext ctx)
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-spacetimedb.view('findUsersByName', (ctx) => {
-  // Can read and filter
-  return Array.from(ctx.db.user.name.filter('Alice'));
-  
-  // Cannot insert, update, or delete
-  // ctx.db.user.insert(...) // ❌ Method not available
-});
+spacetimedb.view(
+  { name: 'findUsersByName', public: true },
+  t.array(user.rowType),
+  (ctx) => {
+    // Can read and filter
+    return Array.from(ctx.db.user.name.filter('Alice'));
+
+    // Cannot insert, update, or delete
+    // ctx.db.user.insert(...) // ❌ Method not available
+  });
 ```
 
 </TabItem>
