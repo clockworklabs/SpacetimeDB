@@ -120,6 +120,7 @@ urlencoding.workspace = true
 uuid.workspace = true
 v8.workspace = true
 wasmtime.workspace = true
+wasmtime-internal-fiber.workspace = true
 jwks.workspace = true
 async_cache = "0.3.1"
 faststr = "0.2.23"

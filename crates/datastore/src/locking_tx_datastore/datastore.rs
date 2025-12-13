@@ -1,15 +1,14 @@
 use super::{
-    committed_state::CommittedState,
-    mut_tx::MutTxId,
-    sequence::SequencesState,
-    state_view::{IterByColRangeTx, StateView},
-    tx::TxId,
+    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
     tx_state::TxState,
 };
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
-    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    locking_tx_datastore::{
+        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
+        IterByColEqTx, IterByColRangeTx,
+    },
     traits::{InsertFlags, UpdateFlags},
 };
 use crate::{
@@ -42,7 +41,11 @@ use spacetimedb_sats::{
 use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
-use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
+use spacetimedb_table::{
+    indexes::RowPointer,
+    page_pool::PagePool,
+    table::{RowRef, TableScanIter},
+};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -380,7 +383,7 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type IterTx<'a>
-        = IterTx<'a>
+        = TableScanIter<'a>
     where
         Self: 'a;
     type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
@@ -388,7 +391,7 @@ impl TxDatastore for Locking {
     where
         Self: 'a;
     type IterByColEqTx<'a, 'r>
-        = IterByColRangeTx<'a, &'r AlgebraicValue>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -467,7 +470,7 @@ impl MutTxDatastore for Locking {
         Self: 'a;
     type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
     type IterByColEqMutTx<'a, 'r>
-        = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+        = IterByColEqMutTx<'a, 'r>
     where
         Self: 'a;
 
@@ -2688,7 +2691,7 @@ mod tests {
         let index_id = datastore.index_id_from_name_mut_tx(&tx, "index")?.unwrap();
         let find_row_by_key = |tx: &MutTxId, key: u32| {
             let key: AlgebraicValue = key.into();
-            tx.index_scan(table_id, index_id, &key)
+            Datastore::index_scan_range(tx, table_id, index_id, &key)
                 .unwrap()
                 .map(|row| row.pointer())
                 .collect::<Vec<_>>()
