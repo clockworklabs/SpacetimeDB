@@ -1,0 +1,63 @@
+{
+  "highlights": [
+    { "name": "React", "template_id": "basic-react" }
+  ],
+  "templates": [
+    {
+      "id": "basic-typescript",
+      "description": "A basic TypeScript client and server template with only stubs for code",
+      "server_source": "basic-ts/spacetimedb",
+      "client_source": "basic-ts",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "basic-c-sharp",
+      "description": "A basic C# client and server template with only stubs for code",
+      "server_source": "basic-cs/spacetimedb",
+      "client_source": "basic-cs",
+      "server_lang": "csharp",
+      "client_lang": "csharp"
+    },
+    {
+      "id": "basic-rust",
+      "description": "A basic Rust client and server template with only stubs for code",
+      "server_source": "basic-rs/spacetimedb",
+      "client_source": "basic-rs",
+      "server_lang": "rust",
+      "client_lang": "rust"
+    },
+    {
+      "id": "basic-react",
+      "description": "React web app with TypeScript server",
+      "server_source": "basic-react/spacetimedb",
+      "client_source": "basic-react",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "quickstart-chat-rust",
+      "description": "Rust server/client implementing quickstart chat",
+      "server_source": "quickstart-chat-rs/spacetimedb",
+      "client_source": "quickstart-chat-rs",
+      "server_lang": "rust",
+      "client_lang": "rust"
+    },
+    {
+      "id": "quickstart-chat-c-sharp",
+      "description": "C# server/client implementing quickstart chat",
+      "server_source": "quickstart-chat-cs/spacetimedb",
+      "client_source": "quickstart-chat-cs",
+      "server_lang": "csharp",
+      "client_lang": "csharp"
+    },
+    {
+      "id": "quickstart-chat-typescript",
+      "description": "TypeScript server/client implementing quickstart chat",
+      "server_source": "quickstart-chat-ts/spacetimedb",
+      "client_source": "quickstart-chat-ts",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    }
+  ]
+}
