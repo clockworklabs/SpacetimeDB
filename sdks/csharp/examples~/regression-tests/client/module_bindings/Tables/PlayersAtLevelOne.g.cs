@@ -13,15 +13,15 @@ namespace SpacetimeDB.Types
 {
     public sealed partial class RemoteTables
     {
-        public sealed class PlayersForLevelHandle : RemoteTableHandle<EventContext, PlayerAndLevel>
+        public sealed class PlayersAtLevelOneHandle : RemoteTableHandle<EventContext, PlayerAndLevel>
         {
-            protected override string RemoteTableName => "PlayersForLevel";
+            protected override string RemoteTableName => "players_at_level_one";
 
-            internal PlayersForLevelHandle(DbConnection conn) : base(conn)
+            internal PlayersAtLevelOneHandle(DbConnection conn) : base(conn)
             {
             }
         }
 
-        public readonly PlayersForLevelHandle PlayersForLevel;
+        public readonly PlayersAtLevelOneHandle PlayersAtLevelOne;
     }
 }

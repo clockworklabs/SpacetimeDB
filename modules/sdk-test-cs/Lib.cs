@@ -2010,9 +2010,9 @@ public static partial class Module
     [SpacetimeDB.Reducer]
     public static void send_scheduled_message(ReducerContext ctx, ScheduledTable arg)
     {
-        ulong id = arg.scheduled_id;
+        var id = arg.scheduled_id;
         SpacetimeDB.ScheduleAt scheduleAt = arg.scheduled_at;
-        string text = arg.text;
+        var text = arg.text;
     }
 
     [SpacetimeDB.Table(Name = "indexed_table")]

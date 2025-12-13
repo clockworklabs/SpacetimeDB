@@ -45,6 +45,11 @@ public abstract record TypeUse(string Name, string BSATNName)
     public static string BsatnFieldSuffix => $"{BSATN_FIELD_SUFFIX}";
 
     /// <summary>
+    /// Indicates whether this type represents a void return.
+    /// </summary>
+    public virtual bool IsVoid => false;
+
+    /// <summary>
     /// Parse a type use for a member.
     /// </summary>
     /// <param name="member">The member name. Only used for reporting parsing failures.</param>
@@ -53,6 +58,11 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// <returns></returns>
     public static TypeUse Parse(ISymbol member, ITypeSymbol typeSymbol, DiagReporter diag)
     {
+        if (typeSymbol.SpecialType == SpecialType.System_Void)
+        {
+            return new VoidUse("void", "SpacetimeDB.BSATN.Unit");
+        }
+
         var type = SymbolToName(typeSymbol);
         string typeInfo;
 
@@ -192,6 +202,21 @@ public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInf
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar} == null ? 0 : {inVar}.GetHashCode();";
+}
+
+public sealed record VoidUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    public override bool IsVoid => true;
+
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = true;";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = 0;";
 }
 
 /// <summary>
