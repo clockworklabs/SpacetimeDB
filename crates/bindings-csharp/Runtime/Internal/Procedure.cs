@@ -2,7 +2,6 @@ namespace SpacetimeDB.Internal;
 
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
 using SpacetimeDB.BSATN;
 
@@ -68,7 +67,7 @@ public class ProcedureContextManager : IProcedureContextManager
 
     public long StartMutTx()
     {
-        var status = FFI.procedure_start_mut_tx(GCHandle.ToIntPtr(GCHandle.Alloc(this)), out var micros);
+        var status = FFI.procedure_start_mut_tx(out var micros);
         FFI.ErrnoHelpers.ThrowIfError(status);
         var ctx = RequireContext();
         ctx.EnterTxContext(micros);
@@ -151,7 +150,6 @@ public class ProcedureContextManager : IProcedureContextManager
 
     public void Dispose()
     {
-        Log.Error("[DEBUG] ProcedureContextManager.Dispose() called");
         GC.SuppressFinalize(this);
     }
 }

@@ -17,7 +17,7 @@ public abstract class ProcedureContextBase(
     public Random Rng { get; } = random;
     public Timestamp Timestamp { get; private set; } = time;
     public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
-    
+
     private Internal.TxContext? txContext;
     private ProcedureTxContextBase? cachedUserTxContext;
 
@@ -131,6 +131,9 @@ public abstract class ProcedureContextBase(
         where TError : Exception
     {
         using var procedure = new SpacetimeDB.Internal.ProcedureContextManager();
+        
+        using var contextScope = procedure.PushContext(this);
+    
         return RunWithRetry(procedure, body);
     }
 
@@ -169,7 +172,17 @@ public abstract class ProcedureContextBase(
         _ = procedureContextManagerContextManager.StartMutTx();
         using var guard = new AbortGuard(procedureContextManagerContextManager.AbortMutTx);
         var txCtx = RequireTxContext();
-        var result = body(txCtx);
+
+        TxResult<TResult, TError> result;
+        try
+        {
+            result = body(txCtx);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+
         if (result.IsSuccess)
         {
             guard.Disarm();

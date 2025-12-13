@@ -230,71 +230,37 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         waiting--;
     });
     
-    // TODO: Investigate failure. Testing against Rust, this procedure fails. Error received: System.Exception: Procedure failed: The module instance encountered a fatal error: error while executing at wasm backtrace:
-    // 0:  0x26f1f - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::__rust_abort
-    // 1:  0x24ab9 - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::__rust_start_panic
-    // 2:  0x28821 - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::rust_panic
-    // 3:  0x28811 - spacetime_module.wasm!std::panicking::rust_panic_with_hook::he3dc6abfb01fb415
-    // 4:  0x27cfc - spacetime_module.wasm!std::panicking::begin_panic_handler::{{closure}}::h8f2339f35afafb93
-    // 5:  0x27c36 - spacetime_module.wasm!std::sys::backtrace::__rust_end_short_backtrace::h4aa478b171e13037
-    // 6:  0x283ad - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::rust_begin_unwind
-    // 7:  0x302dd - spacetime_module.wasm!core::panicking::panic_fmt::h808dbde205a89691
-    // 8:   0xe434 - spacetime_module.wasm!spacetime_module::insert_with_tx_panic::{{closure}}::{{closure}}::he6a9c88a4549ae26
-    // 9:   0xc911 - spacetime_module.wasm!spacetimedb::ProcedureContext::try_with_tx::{{closure}}::hcc31d75f5ce7d619
-    // 10:   0xc845 - spacetime_module.wasm!spacetimedb::ProcedureContext::try_with_tx::h58c00026634e1dab
-    // 11:   0x86fa - spacetime_module.wasm!spacetime_module::insert_with_tx_panic::h77319f68a833858a
-    // 12:   0xa690 - spacetime_module.wasm!spacetime_module::insert_with_tx_panic::invoke::hd458162a43b744c8
-    // 13:  0x17e43 - spacetime_module.wasm!__call_procedure__
+    Log.Debug("Calling InsertWithTxPanic");
+    waiting++;
+    context.Procedures.InsertWithTxPanic((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
+    {
+        try
+        {
+            Debug.Assert(result.IsSuccess, $"InsertWithTxPanic should succeed (exception is caught). Error received: {result.Error}");
+            Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after exception abort. Count was {context.Db.MyTable.Count}");
+        }
+        finally
+        {
+            waiting--;
+        }
+    });
     
-    // TODO: Decide if this is a bug or not and if this test is valid. Disabling for now.
-    // Log.Debug("Calling InsertWithTxPanic");
-    // waiting++;
-    // context.Procedures.InsertWithTxPanic((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
-    // {
-    //     try
-    //     {
-    //         Debug.Assert(result.IsSuccess, $"InsertWithTxPanic should succeed (exception is caught). Error received: {result.Error}");
-    //         Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after exception abort. Count was {context.Db.MyTable.Count}");
-    //     }
-    //     finally
-    //     {
-    //         waiting--;
-    //     }
-    // });
-    
-    // TODO: Investigate failure. Testing against Rust, this procedure fails. Error received: System.Exception: Procedure failed: The module instance encountered a fatal error: error while executing at wasm backtrace:
-    // 0:  0x26f1f - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::__rust_abort
-    // 1:  0x24ab9 - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::__rust_start_panic
-    // 2:  0x28821 - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::rust_panic
-    // 3:  0x28811 - spacetime_module.wasm!std::panicking::rust_panic_with_hook::he3dc6abfb01fb415
-    // 4:  0x27cfc - spacetime_module.wasm!std::panicking::begin_panic_handler::{{closure}}::h8f2339f35afafb93
-    // 5:  0x27c36 - spacetime_module.wasm!std::sys::backtrace::__rust_end_short_backtrace::h4aa478b171e13037
-    // 6:  0x283ad - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::rust_begin_unwind
-    // 7:  0x302dd - spacetime_module.wasm!core::panicking::panic_fmt::h808dbde205a89691
-    // 8:   0xe2da - spacetime_module.wasm!spacetime_module::dangling_tx_warning::{{closure}}::{{closure}}::h1f226f1766fb0ef7
-    // 9:   0xc9ee - spacetime_module.wasm!spacetimedb::ProcedureContext::try_with_tx::{{closure}}::h000fb78630d38a5c
-    // 10:   0xc922 - spacetime_module.wasm!spacetimedb::ProcedureContext::try_with_tx::h84c7580d92f8a23b
-    // 11:   0x89b8 - spacetime_module.wasm!spacetime_module::dangling_tx_warning::h6113bf4568954941
-    // 12:   0xa789 - spacetime_module.wasm!spacetime_module::dangling_tx_warning::invoke::h6ac04a2298e227bb
-    // 13:  0x17e43 - spacetime_module.wasm!__call_procedure__
-    
-    // TODO: Decide if this is a bug or not and if this test is valid. Disabling for now.
-    // Log.Debug("Calling DanglingTxWarning");
-    // waiting++;
-    // context.Procedures.DanglingTxWarning((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
-    // {
-    //     try
-    //     {
-    //         Debug.Assert(result.IsSuccess, $"DanglingTxWarning should succeed. Error received: {result.Error}");
-    //         Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after dangling tx auto-abort. Count was {context.Db.MyTable.Count}");
-    //         // Note: We can't easily assert on the warning log from client-side,
-    //         // but the server-side AssertRowCount verifies the auto-abort behavior
-    //     }
-    //     finally
-    //     {
-    //         waiting--;
-    //     }
-    // });
+    Log.Debug("Calling DanglingTxWarning");
+    waiting++;
+    context.Procedures.DanglingTxWarning((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
+    {
+        try
+        {
+            Debug.Assert(result.IsSuccess, $"DanglingTxWarning should succeed. Error received: {result.Error}");
+            Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after dangling tx auto-abort. Count was {context.Db.MyTable.Count}");
+            // Note: We can't easily assert on the warning log from client-side,
+            // but the server-side AssertRowCount verifies the auto-abort behavior
+        }
+        finally
+        {
+            waiting--;
+        }
+    });
     
     Log.Debug("Calling InsertWithTxCommit");
     waiting++;
@@ -355,43 +321,27 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     });
     
-    // TODO: Investigate failure. Testing against Rust, this procedure fails. Error received: System.Exception: Procedure failed: The module instance encountered a fatal error: error while executing at wasm backtrace:
-    // 0:  0x26f1f - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::__rust_abort
-    // 1:  0x24ab9 - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::__rust_start_panic
-    // 2:  0x28821 - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::rust_panic
-    // 3:  0x28811 - spacetime_module.wasm!std::panicking::rust_panic_with_hook::he3dc6abfb01fb415
-    // 4:  0x27cca - spacetime_module.wasm!std::panicking::begin_panic_handler::{{closure}}::h8f2339f35afafb93
-    // 5:  0x27c36 - spacetime_module.wasm!std::sys::backtrace::__rust_end_short_backtrace::h4aa478b171e13037
-    // 6:  0x283ad - spacetime_module.wasm!__rustc[de2ca18b4c54d5b8]::rust_begin_unwind
-    // 7:  0x302dd - spacetime_module.wasm!core::panicking::panic_fmt::h808dbde205a89691
-    // 8:   0xc3ca - spacetime_module.wasm!spacetimedb::ProcedureContext::try_with_tx::{{closure}}::hbbdbd726b2b1fe4f
-    // 9:   0xc04e - spacetime_module.wasm!spacetimedb::ProcedureContext::try_with_tx::h1eae2f023f5a04a8
-    // 10:   0x362e - spacetime_module.wasm!spacetimedb::rt::invoke_procedure::h8a27195eeb951634
-    // 11:   0xa986 - spacetime_module.wasm!spacetime_module::timestamp_capabilities::invoke::h7f0a3d9f12faa399
-    // 12:  0x17e43 - spacetime_module.wasm!__call_procedure__
+    Log.Debug("Calling TimestampCapabilities");
+    waiting++;
+    context.Procedures.TimestampCapabilities((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
+    {
+        try
+        {
+            Debug.Assert(result.IsSuccess, $"TimestampCapabilities should succeed. Error received: {result.Error}");
+            Debug.Assert(result.Value != null && result.Value.A > 0, "Should return a valid timestamp-derived value");
+            Debug.Assert(result.Value != null && result.Value.B.Contains(":"), "Should return formatted timestamp string");
     
-    // TODO: Decide if this is a bug or not and if this test is valid. Disabling for now.
-    // Log.Debug("Calling TimestampCapabilities");
-    // waiting++;
-    // context.Procedures.TimestampCapabilities((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
-    // {
-    //     try
-    //     {
-    //         Debug.Assert(result.IsSuccess, $"TimestampCapabilities should succeed. Error received: {result.Error}");
-    //         Debug.Assert(result.Value != null && result.Value.A > 0, "Should return a valid timestamp-derived value");
-    //         Debug.Assert(result.Value != null && result.Value.B.Contains(":"), "Should return formatted timestamp string");
-    //
-    //         // Verify the inserted row has timestamp information
-    //         var rows = context.Db.MyTable.Iter().ToList();
-    //         var timestampRow = rows.FirstOrDefault(r => r.Field.B.StartsWith("timestamp:"));
-    //         Debug.Assert(timestampRow is not null, "Should have a row with timestamp data");
-    //         Debug.Assert(timestampRow.Field.B.StartsWith("timestamp:"), "Timestamp row should have correct format");
-    //     }
-    //     finally
-    //     {
-    //         waiting--;
-    //     }
-    // });
+            // Verify the inserted row has timestamp information
+            var rows = context.Db.MyTable.Iter().ToList();
+            var timestampRow = rows.FirstOrDefault(r => r.Field.B.StartsWith("timestamp:"));
+            Debug.Assert(timestampRow is not null, "Should have a row with timestamp data");
+            Debug.Assert(timestampRow.Field.B.StartsWith("timestamp:"), "Timestamp row should have correct format");
+        }
+        finally
+        {
+            waiting--;
+        }
+    });
 
     Log.Debug("Calling AuthenticationCapabilities");
     waiting++;

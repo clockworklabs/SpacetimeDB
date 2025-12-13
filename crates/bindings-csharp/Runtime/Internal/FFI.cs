@@ -348,7 +348,7 @@ internal static partial class FFI
     public static extern Errno get_jwt(ref ConnectionId connectionId, out BytesSource source);
 
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_start_mut_tx")]
-    public static partial Errno procedure_start_mut_tx(IntPtr procedurePtr, out long micros);
+    public static partial Errno procedure_start_mut_tx(out long micros);
 
     [LibraryImport(StdbNamespace10_3, EntryPoint = "procedure_commit_mut_tx")]
     public static partial Errno procedure_commit_mut_tx();
