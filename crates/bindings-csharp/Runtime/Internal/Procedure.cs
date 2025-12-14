@@ -63,7 +63,8 @@ public class ProcedureContextManager : IProcedureContextManager
     }
 
     private IInternalProcedureContext RequireContext() =>
-        current.Value ?? throw new InvalidOperationException("Transaction syscalls require a procedure context.");
+        current.Value
+        ?? throw new InvalidOperationException("Transaction syscalls require a procedure context.");
 
     public long StartMutTx()
     {
@@ -154,7 +155,6 @@ public class ProcedureContextManager : IProcedureContextManager
     }
 }
 
-
 /// <summary>
 /// Represents the context for a procedure call.
 /// </summary>
@@ -178,25 +178,25 @@ public interface IProcedureContextManager : IDisposable
 {
     /// <summary>Pushes a new procedure context onto the context stack.</summary>
     IDisposable PushContext(IProcedureContext ctx);
-    
+
     /// <summary>Starts a new mutable transaction.</summary>
     long StartMutTx();
-    
+
     /// <summary>Commits the current mutable transaction.</summary>
     void CommitMutTx();
-    
+
     /// <summary>Aborts the current mutable transaction.</summary>
     void AbortMutTx();
-    
+
     /// <summary>Commits a transaction with a retry mechanism.</summary>
     bool CommitMutTxWithRetry(Func<bool> retryBody);
-    
+
     /// <summary>Asynchronously commits a transaction with a retry mechanism.</summary>
     Task<bool> CommitMutTxWithRetryAsync(Func<Task<bool>> retryBody);
-    
+
     /// <summary>Asynchronously commits the current mutable transaction.</summary>
     Task CommitMutTxAsync();
-    
+
     /// <summary>Asynchronously aborts the current mutable transaction.</summary>
     Task AbortMutTxAsync();
 }
@@ -218,9 +218,7 @@ public static class ProcedureExtensions
     /// <summary>
     /// Schedules an immediate volatile, non-atomic procedure call.
     /// </summary>
-    public static void VolatileNonatomicScheduleImmediate(
-        string name,
-        MemoryStream args)
+    public static void VolatileNonatomicScheduleImmediate(string name, MemoryStream args)
     {
         var name_bytes = Encoding.UTF8.GetBytes(name);
         var args_bytes = args.ToArray();

@@ -365,7 +365,7 @@ public static class Module
                 throw new Exception("Unrecognised extra bytes in the procedure arguments");
             }
             resultSink.Write(bytes);
-            
+
             return Errno.OK;
         }
         catch (Exception e)

@@ -124,16 +124,16 @@ public abstract class ProcedureContextBase(
             return TxOutcome<TResult>.Failure(ex);
         }
     }
-    
+
     private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
         Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
     )
         where TError : Exception
     {
         using var procedure = new SpacetimeDB.Internal.ProcedureContextManager();
-        
+
         using var contextScope = procedure.PushContext(this);
-    
+
         return RunWithRetry(procedure, body);
     }
 

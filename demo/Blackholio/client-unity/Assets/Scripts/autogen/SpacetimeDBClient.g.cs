@@ -388,7 +388,7 @@ namespace SpacetimeDB.Types
         /// <summary>
         /// The procedure event that caused this callback to run.
         /// </summary>
-        public readonly ProcedureEvent Event;
+        public ProcedureEvent Event { get; }
 
         /// <summary>
         /// Access to tables in the client cache, which stores a read-only replica of the remote database state.
@@ -457,10 +457,10 @@ namespace SpacetimeDB.Types
             remove => Reducers.InternalOnUnhandledReducerError -= value;
         }
 
-        internal ProcedureEventContext(DbConnection conn, ProcedureEvent Event)
+        internal ProcedureEventContext(DbConnection conn, ProcedureEvent procedureEvent)
         {
             this.conn = conn;
-            this.Event = Event;
+            Event = procedureEvent;
         }
     }
 
