@@ -221,7 +221,7 @@ public static partial class Module
             return 0;
         });
     }
-    
+
     [SpacetimeDB.Table(Name = "retry_log", Public = true)]
     public partial class RetryLog
     {
@@ -272,7 +272,7 @@ public static partial class Module
 
         Debug.Assert(outcome.IsSuccess, "Retry should have succeeded");
     }
-    
+
     [SpacetimeDB.Procedure]
     public static void InsertWithTxPanic(ProcedureContext ctx)
     {
@@ -304,9 +304,9 @@ public static partial class Module
     {
         // This test demonstrates transaction cleanup when an unhandled exception occurs
         // during transaction processing, which should trigger auto-abort behavior
-        
-        bool exceptionCaught = false;
-        
+
+        var exceptionCaught = false;
+
         try
         {
             ctx.WithTx<object>(tx =>
@@ -316,7 +316,7 @@ public static partial class Module
                 {
                     Field = new ReturnStruct(a: 123, b: "dangling")
                 });
-                
+
                 // Simulate an unexpected system exception that might leave transaction in limbo
                 // This should trigger the transaction cleanup/auto-abort mechanisms
                 throw new SystemException("Simulated system failure during transaction");
@@ -326,13 +326,13 @@ public static partial class Module
         {
             exceptionCaught = true;
         }
-        
+
         // Verify the exception was caught and no rows were persisted
         if (!exceptionCaught)
         {
             throw new InvalidOperationException("Expected SystemException was not thrown");
         }
-        
+
         // Verify no rows were persisted due to transaction abort
         AssertRowCount(ctx, 0);
     }
@@ -344,32 +344,32 @@ public static partial class Module
         {
             // Test 1: Verify transaction context has database access
             var initialCount = tx.Db.my_table.Count;
-        
+
             // Test 2: Insert data and verify it's visible within the same transaction
             tx.Db.my_table.Insert(new MyTable
             {
                 Field = new ReturnStruct(a: 200, b: "tx-test")
             });
-        
+
             var countAfterInsert = tx.Db.my_table.Count;
             if (countAfterInsert != initialCount + 1)
             {
                 throw new InvalidOperationException($"Expected count {initialCount + 1}, got {countAfterInsert}");
             }
-        
+
             // Test 3: Verify transaction context properties are accessible
             var txSender = tx.Sender;
             var txTimestamp = tx.Timestamp;
-        
+
             if (txSender.Equals(ctx.Sender) == false)
             {
                 throw new InvalidOperationException("Transaction sender should match procedure sender");
             }
-        
+
             // Test 4: Return data from within transaction
             return new ReturnStruct(a: (uint)countAfterInsert, b: $"sender:{txSender}");
         });
-    
+
         // Verify the row was committed - use flexible row count check
         try
         {
@@ -389,7 +389,7 @@ public static partial class Module
             Log.Error($"TxContextCapabilities row count assertion failed: {ex.Message}");
             // Still return the valid result from the transaction
         }
-    
+
         return result;
     }
 
@@ -428,18 +428,18 @@ public static partial class Module
 
         // Test 5: Verify timestamp is still accessible after transaction
         var postTxTimestamp = ctx.Timestamp;
-        
+
         // Verify timestamp accessibility and reasonable consistency
         if (postTxTimestamp.MicrosecondsSinceUnixEpoch == 0)
         {
             throw new InvalidOperationException("Post-transaction timestamp should not be zero");
         }
-        
+
         // Allow reasonable timing differences due to C# FFI overhead
         if (postTxTimestamp.MicrosecondsSinceUnixEpoch != procedureTimestamp.MicrosecondsSinceUnixEpoch)
         {
             var postTxDifference = Math.Abs(postTxTimestamp.MicrosecondsSinceUnixEpoch - procedureTimestamp.MicrosecondsSinceUnixEpoch);
-            
+
             if (postTxDifference > 2000) // Allow up to 2ms difference
             {
                 throw new InvalidOperationException(
@@ -457,27 +457,27 @@ public static partial class Module
         var procAuth = ctx.SenderAuth;
         var procSender = ctx.Sender;
         var procConnectionId = ctx.ConnectionId;
-        
+
         var result = ctx.WithTx(tx =>
         {
             // Test 2: Verify authentication context is accessible from transaction context
             var txAuth = tx.SenderAuth;
             var txSender = tx.Sender;
             var txConnectionId = tx.ConnectionId;
-            
+
             // Test 3: Authentication contexts should be consistent
             if (txSender.Equals(procSender) == false)
             {
                 throw new InvalidOperationException(
                     $"Transaction sender {txSender} should match procedure sender {procSender}");
             }
-            
+
             if (txConnectionId.Equals(procConnectionId) == false)
             {
                 throw new InvalidOperationException(
                     $"Transaction connectionId {txConnectionId} should match procedure connectionId {procConnectionId}");
             }
-            
+
             // Test 4: Insert data with authentication information
             tx.Db.my_table.Insert(new MyTable
             {
@@ -485,7 +485,7 @@ public static partial class Module
                     a: (uint)(txSender.GetHashCode() & 0xFF),
                     b: $"auth:sender:{txSender}:conn:{txConnectionId}")
             });
-            
+
             // Test 5: Check JWT claims (if available)
             var jwtInfo = "no-jwt";
             try
@@ -501,12 +501,12 @@ public static partial class Module
                 // JWT may not be available in test environment
                 jwtInfo = "jwt:unavailable";
             }
-            
+
             return new ReturnStruct(
                 a: (uint)(txSender.GetHashCode() & 0xFF),
                 b: jwtInfo);
         });
-        
+
         return result;
     }
 
@@ -515,7 +515,7 @@ public static partial class Module
     {
         // This procedure tests that subscription events carry transaction offset information
         // We'll insert data and return information that helps verify the transaction offset
-        
+
         var result = ctx.WithTx(tx =>
         {
             // Insert a row that will trigger subscription events
@@ -525,18 +525,18 @@ public static partial class Module
                     a: 999, // Use a distinctive value to identify this test
                     b: $"offset-test:{tx.Timestamp.MicrosecondsSinceUnixEpoch}")
             };
-            
+
             tx.Db.my_table.Insert(testData);
-            
+
             // Return data that can be used to correlate with subscription events
             return new ReturnStruct(
                 a: 999,
                 b: $"committed:{tx.Timestamp.MicrosecondsSinceUnixEpoch}");
         });
-        
+
         // At this point, the transaction should be committed and subscription events
         // should be generated with the transaction offset information
-        
+
         return result;
     }
 
@@ -549,17 +549,17 @@ public static partial class Module
         {
             throw new ArgumentException("inputValue cannot be zero");
         }
-        
+
         if (string.IsNullOrEmpty(inputText))
         {
             throw new ArgumentException("inputText cannot be null or empty");
         }
-        
+
         var result = ctx.WithTx(tx =>
         {
             // Test 2: Multiple database operations in single transaction
             var count = tx.Db.my_table.Count;
-            
+
             // Test 3: Conditional logic based on database state
             if (count > 10)
             {
@@ -568,31 +568,31 @@ public static partial class Module
                     a: (uint)count,
                     b: $"skipped:too-many-rows:{count}");
             }
-            
+
             // Test 4: Complex data manipulation
             var processedValue = inputValue * 2 + (uint)inputText.Length;
-            
+
             tx.Db.my_table.Insert(new MyTable
             {
                 Field = new ReturnStruct(
                     a: processedValue,
                     b: $"doc-gap:{inputText}:processed:{processedValue}")
             });
-            
+
             // Test 5: Return computed results
             return new ReturnStruct(
                 a: processedValue,
                 b: $"success:input:{inputText}:result:{processedValue}");
         });
-        
+
         // Test 6: Post-transaction validation
         var finalCount = ctx.WithTx(tx => tx.Db.my_table.Count);
-        
+
         if (finalCount <= 0)
         {
             throw new InvalidOperationException("Expected at least one row after transaction");
         }
-        
+
         return result;
     }
 #pragma warning restore STDB_UNSTABLE

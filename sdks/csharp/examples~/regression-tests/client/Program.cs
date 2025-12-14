@@ -152,7 +152,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         context.Db.PlayersAtLevelOne.Count > 0,
         $"context.Db.PlayersAtLevelOne.Count = {context.Db.PlayersAtLevelOne.Count}"
     );
-    
+
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
     var expectedPlayer = new Player
@@ -171,13 +171,13 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             + $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}"
     );
     Debug.Assert(viewIterRows.First().Equals(expectedPlayer));
-    
+
     Log.Debug("Calling RemoteQuery on View");
     // If testing against Rust, the query will need to be changed to "WHERE id > 0"
     var viewRemoteQueryRows = context.Db.MyPlayer.RemoteQuery("WHERE Id > 0");
     Debug.Assert(viewRemoteQueryRows != null && viewRemoteQueryRows.Result.Length > 0);
     Debug.Assert(viewRemoteQueryRows.Result.First().Equals(expectedPlayer));
-    
+
     Log.Debug("Calling Iter on Anonymous View");
     var anonViewIterRows = context.Db.PlayersAtLevelOne.Iter();
     var expectedPlayerAndLevel = new PlayerAndLevel
@@ -195,10 +195,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug(
         "Validating Anonymous View row data "
             + $"Id={expectedPlayerAndLevel.Id}, Identity={expectedPlayerAndLevel.Identity}, Name={expectedPlayerAndLevel.Name}, Level={expectedPlayerAndLevel.Level} => "
-            + $"Id={anonViewIterRows.First().Id}, Identity={anonViewIterRows.First().Identity}, Name={anonViewIterRows.First().Name}, Level={anonViewIterRows.First().Level} => "    
+            + $"Id={anonViewIterRows.First().Id}, Identity={anonViewIterRows.First().Identity}, Name={anonViewIterRows.First().Name}, Level={anonViewIterRows.First().Level} => "
     );
     Debug.Assert(anonViewIterRows.First().Equals(expectedPlayerAndLevel));
-    
+
     Log.Debug("Calling RemoteQuery on Anonymous View");
     // If testing against Rust, the query will need to be changed to "WHERE level = 1"
     var anonViewRemoteQueryRows = context.Db.PlayersAtLevelOne.RemoteQuery("WHERE Level = 1");
@@ -212,7 +212,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     );
     Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
     Debug.Assert(anonViewRemoteQueryRows.Result.First().Equals(expectedPlayerAndLevel));
-    
+
     // Procedures tests
     Log.Debug("Calling InsertWithTxRollback");
     waiting++;
@@ -229,7 +229,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
         waiting--;
     });
-    
+
     Log.Debug("Calling InsertWithTxPanic");
     waiting++;
     context.Procedures.InsertWithTxPanic((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
@@ -244,7 +244,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling DanglingTxWarning");
     waiting++;
     context.Procedures.DanglingTxWarning((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
@@ -261,7 +261,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling InsertWithTxCommit");
     waiting++;
     context.Procedures.InsertWithTxCommit((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
@@ -280,7 +280,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling InsertWithTxRetry");
     waiting++;
     context.Procedures.InsertWithTxRetry((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
@@ -299,7 +299,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling TxContextCapabilities");
     waiting++;
     context.Procedures.TxContextCapabilities((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
@@ -320,7 +320,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling TimestampCapabilities");
     waiting++;
     context.Procedures.TimestampCapabilities((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
@@ -330,7 +330,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             Debug.Assert(result.IsSuccess, $"TimestampCapabilities should succeed. Error received: {result.Error}");
             Debug.Assert(result.Value != null && result.Value.A > 0, "Should return a valid timestamp-derived value");
             Debug.Assert(result.Value != null && result.Value.B.Contains(":"), "Should return formatted timestamp string");
-    
+
             // Verify the inserted row has timestamp information
             var rows = context.Db.MyTable.Iter().ToList();
             var timestampRow = rows.FirstOrDefault(r => r.Field.B.StartsWith("timestamp:"));
@@ -366,7 +366,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling SubscriptionEventOffset");
     waiting++;
     context.Procedures.SubscriptionEventOffset((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
@@ -382,7 +382,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             var offsetRow = rows.FirstOrDefault(r => r.Field.B.StartsWith("offset-test:"));
             Debug.Assert(offsetRow is not null, "Should have a row with offset-test data");
             Debug.Assert(offsetRow.Field.A == 999, "Offset test row should have A == 999");
-            
+
             // Note: Transaction offset information is not directly accessible in ProcedureEvent,
             // but this test verifies that the transaction was committed and subscription events were generated
             // The presence of the new row in the subscription confirms the transaction offset was processed
@@ -392,7 +392,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     Log.Debug("Calling DocumentationGapChecks with valid parameters");
     waiting++;
     context.Procedures.DocumentationGapChecks(42, "test-input", (IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
@@ -400,7 +400,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         try
         {
             Debug.Assert(result.IsSuccess, "DocumentationGapChecks should succeed with valid parameters");
-            
+
             // Expected: inputValue * 2 + inputText.Length = 42 * 2 + 10 = 94
             var expectedValue = 42u * 2 + (uint)"test-input".Length; // 84 + 10 = 94
             Debug.Assert(result.Value != null && result.Value.A == expectedValue, $"Expected A == {expectedValue}, got {result.Value.A}");
@@ -419,7 +419,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     // Test error handling with invalid parameters
     Log.Debug("Calling DocumentationGapChecks with invalid parameters (should fail)");
     waiting++;
@@ -436,7 +436,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             waiting--;
         }
     });
-    
+
     // Now unsubscribe and check that the unsubscribing is actually applied.
     Log.Debug("Calling Unsubscribe");
     waiting++;
