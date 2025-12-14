@@ -42,7 +42,7 @@ namespace SpacetimeDB
         }
     }
 
-    public sealed class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
+    public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
         private readonly Local _db = new();
 
@@ -2227,10 +2227,6 @@ static class ModuleRegistration
             args,
             result_sink
         );
-
-    [UnmanagedCallersOnly(EntryPoint = "__take_procedure_tx_offset__")]
-    public static byte __take_procedure_tx_offset__(ulong* offset) =>
-        SpacetimeDB.Internal.Module.__take_procedure_tx_offset__(out *offset) ? (byte)1 : (byte)0;
 
     [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
     public static SpacetimeDB.Internal.Errno __call_view__(
