@@ -6,8 +6,6 @@ cd "$(readlink -f "$(dirname "$0")")"
 # to repo root
 cd ../..
 
-set -x
-
 FILE='docs/docs/00500-cli-reference/00100-cli-reference.md'
 cat <<EOF > "$FILE"
 ---
