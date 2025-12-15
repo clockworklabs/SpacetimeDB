@@ -125,12 +125,13 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
+            // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
+
             cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
 
-            // TODO: These tests don't work on user machines, because they apparently use `sudo`.
             // The fallocate tests have been flakely when running in parallel
             cmd!(
                 "cargo",
