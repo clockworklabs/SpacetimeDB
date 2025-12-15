@@ -221,17 +221,18 @@ cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install
             }
 
             bash!("cd docs && pnpm generate-cli-docs")?;
-            bash!("git status")?;
             bash!(
                 r#"
 if [ -z "$(git status --porcelain)" ]; then
   echo "No docs changes detected"
 else
-  echo "It looks like the CLI docs have changed."
+  echo "It looks like the CLI docs have changed:"
   exit 1
 fi
                 "#
             )?;
+            bash!("git status")?;
+            bash!("git diff")?;
         }
 
         Some(CiCmd::SelfDocs { check }) => {
