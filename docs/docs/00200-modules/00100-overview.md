@@ -59,6 +59,45 @@ TypeScript is fully supported for server modules. TypeScript is ideal for develo
 </TabItem>
 </Tabs>
 
+## Learning Path
+
+### Getting Started
+
+If you're new to SpacetimeDB modules, follow this recommended learning path:
+
+1. **[Create Your First Module](/modules/creating)** - Set up a new module project with `spacetime init` or `spacetime dev`
+2. **[Build and Publish](/modules/building-publishing)** - Learn how to compile and deploy your module
+3. **[Define Tables](/tables)** - Structure your data with tables, columns, and indexes
+4. **[Write Reducers](/functions/reducers)** - Create transactional functions that modify your database
+5. **[Connect a Client](/sdks)** - Build a client application that connects to your database
+
+### Core Concepts
+
+Once you have the basics down, explore these essential topics:
+
+- **[Logging](/modules/logging)** - Debug and monitor your module with logging
+- **[Error Handling](/functions/reducers/error-handling)** - Handle errors gracefully in reducers
+- **[Lifecycle Reducers](/functions/reducers/lifecycle)** - Respond to system events like initialization and client connections
+- **[Row-Level Security](/modules/rls)** - Control what data clients can access
+- **[Automatic Migrations](/databases/automatic-migrations)** - Understand how schema changes work
+
+### Advanced Features
+
+Ready to level up? Dive into these advanced capabilities:
+
+- **[Procedures](/functions/procedures)** - Make HTTP requests and interact with external services
+- **[Views](/functions/views)** - Create computed, subscribable queries
+- **[Scheduled Tables](/tables/scheduled-tables)** - Schedule reducers to run at specific times
+- **[Incremental Migrations](/databases/incremental-migrations)** - Handle complex schema changes
+- **[SQL Queries](/databases/sql)** - Query your database with SQL
+
+### Deployment
+
+When you're ready to go live:
+
+- **[Deploy to MainCloud](/modules/deploying/maincloud)** - Host your database on SpacetimeDB's managed service
+- **[Self-Hosting](/modules/deploying/self-hosting)** - Run your own SpacetimeDB instance
+
 ## Next Steps
 
 Continue reading to learn how to:

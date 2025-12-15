@@ -1,6 +1,6 @@
 ---
 title: Error Handling
-slug: /functions/error-handling
+slug: /functions/reducers/error-handling
 ---
 
 import Tabs from '@theme/Tabs';

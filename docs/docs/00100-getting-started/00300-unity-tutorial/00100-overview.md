@@ -26,7 +26,7 @@ Please file an issue [here](https://github.com/clockworklabs/SpacetimeDB/issues)
 
 ## Blackhol.io Tutorial - Basic Multiplayer
 
-First you'll get started with the core client/server setup. For part 2, you'll be able to choose between [Rust](/old-modules/rust) or [C#](/old-modules/c-sharp) for your server module language:
+First you'll get started with the core client/server setup. For part 2, you'll be able to choose between **Rust** or **C#** for your server module language:
 
 - [Part 1 - Setup](/docs/tutorials/unity/part-1)
 - [Part 2 - Connecting to SpacetimeDB](/docs/tutorials/unity/part-2)

@@ -1,6 +1,6 @@
 ---
 title: Reducer Context
-slug: /functions/reducer-context
+slug: /functions/reducers/reducer-context
 ---
 
 import Tabs from '@theme/Tabs';

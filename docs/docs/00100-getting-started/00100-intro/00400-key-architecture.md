@@ -1,119 +1,18 @@
 ---
-title: Overview
-id: overview
-slug: /
+title: Key Architecture
+slug: /intro/key-architecture
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import { InstallCardLink } from "@site/src/components/InstallCardLink";
-import { CardLink } from "@site/src/components/CardLink";
-import { CardLinkGrid } from "@site/src/components/CardLinkGrid";
-import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
-import DocsList from "@site/src/components/DocsList";
 
-# SpacetimeDB Documentation
+# Key architectural concepts
 
-## Installation
-
-You can get started by first installing the `spacetime` CLI tool. The `spacetime` CLI tool makes it extremely easy to manage your databases and deployments.
-
-<InstallCardLink />
-
-## Quickstart Guides
-
-Choose your favorite language and follow one of our quickstart guides to get started building your first app with SpacetimeDB.
-
-<QuickstartLinks /> 
-
-## What is SpacetimeDB?
-
-SpacetimeDB is a database that is also a server.
-
-SpacetimeDB is a full-featured relational database system that lets you run your application logic **inside** the database. You no longer need to deploy a separate web or game server. [Several programming languages](#module-libraries) are supported, including C# and Rust. You can still write authorization logic, just like you would in a traditional server.
-
-This means that you can write your entire application in a single language and deploy it as a single binary. No more microservices, no more containers, no more Kubernetes, no more Docker, no more VMs, no more DevOps, no more infrastructure, no more ops, no more servers.
-
-<figure>
-  <img
-    src="/images/basic-architecture-diagram.png"
-    alt="SpacetimeDB Architecture"
-    style={{ width: '100%' }}
-  />
-  <figcaption style={{ marginTop: '10px', textAlign: 'center' }} align="center">
-    <b align="center">SpacetimeDB application architecture</b>
-    <span style={{ fontSize: '14px' }}>
-      {' '}
-      (elements in white are provided by SpacetimeDB)
-    </span>
-  </figcaption>
-</figure>
-
-This is similar to ["smart contracts"](https://en.wikipedia.org/wiki/Smart_contract), except that SpacetimeDB is a **database** and has nothing to do with blockchain. Because it isn't a blockchain, it can be dramatically faster than many "smart contract" systems.
-
-In fact, it's so fast that we've been able to write the entire backend of our MMORPG [BitCraft Online](https://bitcraftonline.com) as a single SpacetimeDB database. Everything in the game -- chat messages, items, resources, terrain, and player locations -- is stored and processed by the database. SpacetimeDB [automatically mirrors](#state-mirroring) relevant state to connected players in real-time.
-
-SpacetimeDB is optimized for maximum speed and minimum latency, rather than batch processing or analytical workloads. It is designed for real-time applications like games, chat, and collaboration tools.
-
-Speed and latency is achieved by holding all of your application state in memory, while persisting data to a commit log which is used to recover data after restarts and system crashes.
-
-## Application Workflow Preview
-
-<figure>
-  <img
-    src="/images/workflow-preview-diagram.png"
-    alt="SpacetimeDB Application Workflow Preview"
-    style={{ width: '100%' }}
-  />
-  <figcaption style={{ marginTop: '10px', textAlign: 'center' }} align="center">
-    <b align="center">SpacetimeDB Application Workflow Preview</b>
-  </figcaption>
-</figure>
-
-The above illustrates the workflow when using SpacetimeDB.
-
-- All client-side reads happen with the data view that is cached locally.
-
-- Client-side subscriptions tell the server what data client cares about and wants to be synced within its data view. Changes to data will be pushed by the server to the client cache.
-
-- RLS filters restrict the data view server-side before subscriptions are evaluated. These filters can be used for access control or client scoping.
-
-- Reducers are effectively async RPC's. The request is sent off and if the results of that reducer makes changes to data, it will be written to the database directly. As a result of that, if those changes make it through the two layers above, then the client will see the result when it queries its local cache.
-
-## State Mirroring
-
-SpacetimeDB can generate client code in a [variety of languages](#client-side-sdks). This creates a client library custom-designed to talk to your database. It provides easy-to-use interfaces for connecting to the database and submitting requests. It can also **automatically mirror state** from your database to client applications.
-
-You write SQL queries specifying what information a client is interested in -- for instance, the terrain and items near a player's avatar. SpacetimeDB will generate types in your client language for the relevant tables, and feed clients a stream of live updates whenever the database state changes. Note that this is a **read-only** mirror -- the only way to change the database is to submit requests, which are validated on the server.
-
-## Language Support
-
-### Module Libraries
-
-Every SpacetimeDB database contains a collection of [stored procedures](https://en.wikipedia.org/wiki/Stored_procedure) and schema definitions. Such a collection is called a **module**, which can be written in C# or Rust. They specify a database schema and the business logic that responds to client requests. Modules are administered using the `spacetime` CLI tool.
-
-- [Rust](/old-modules/rust) - [(Quickstart)](/quickstarts/rust)
-- [C#](/old-modules/c-sharp) - [(Quickstart)](/quickstarts/c-sharp)
-
-### Client-side SDKs
-
-**Clients** are applications that connect to SpacetimeDB databases. The `spacetime` CLI tool supports automatically generating interface code that makes it easy to interact with a particular database.
-
-- [Rust](/sdks/rust) - [(Quickstart)](/quickstarts/rust)
-- [C#](/sdks/c-sharp) - [(Quickstart)](/quickstarts/c-sharp)
-- [TypeScript](/sdks/typescript) - [(Quickstart)](/quickstarts/typescript)
-
-### Unity
-
-SpacetimeDB was designed first and foremost as the backend for multiplayer Unity games. To learn more about using SpacetimeDB with Unity, jump on over to the [SpacetimeDB Unity Tutorial](/tutorials/unity/part-1).
-
-## Key architectural concepts
-
-### Host
+## Host
 
 A SpacetimeDB **host** is a server that hosts [databases](#database). You can run your own host, or use the SpacetimeDB maincloud. Many databases can run on a single host.
 
-### Database
+## Database
 
 A SpacetimeDB **database** is an application that runs on a [host](#host).
 
@@ -121,9 +20,9 @@ A database exports [tables](#table), which store data, and [reducers](#reducer),
 
 A database's schema and business logic is specified by a piece of software called a **module**. Modules can be written in C# or Rust.
 
-(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](#module-libraries) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
+(Technically, a SpacetimeDB module is a [WebAssembly module](https://developer.mozilla.org/en-US/docs/WebAssembly) that imports a specific low-level [WebAssembly ABI](/webassembly-abi) and exports a small number of special functions. However, the SpacetimeDB [server-side libraries](/modules) hide these low-level details. As a developer, writing a module is mostly like writing any other C# or Rust application, except for the fact that a [special CLI tool](https://spacetimedb.com/install) is used to deploy the application.)
 
-### Table
+## Table
 
 A SpacetimeDB **table** is a SQL database table. Tables are declared in a module's native language. For instance, in C#, a table is declared like so:
 
@@ -164,10 +63,10 @@ public partial struct Player
 The contents of a table can be read and updated by [reducers](#reducer).
 Tables marked `public` can also be read by [clients](#client).
 
-### Reducer
+## Reducer
 
 A **reducer** is a function exported by a [database](#database).
-Connected [clients](#client-side-sdks) can call reducers to interact with the database.
+Connected [clients](/sdks) can call reducers to interact with the database.
 This is a form of [remote procedure call](https://en.wikipedia.org/wiki/Remote_procedure_call).
 
 <Tabs groupId="syntax" queryString>
@@ -283,16 +182,16 @@ public static void World(ReducerContext ctx)
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/old-modules/c-sharp#scheduled-reducers) to run at an interval,
+a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
 </Tabs>
 
-### Procedure
+## Procedure
 
 A **procedure** is a function exported by a [database](#database), similar to a [reducer](#reducer).
-Connected [clients](#client-side-sdks) can call procedures.
+Connected [clients](/#client) can call procedures.
 Procedures can perform additional operations not possible in reducers, including making HTTP requests to external services.
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
@@ -450,15 +349,15 @@ A Unreal C++ [client](#client) can also register a callback to run when a proced
 
 See [Procedures](/functions/procedures) for more details about procedures.
 
-### Client
+## Client
 
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
 
-Clients are written using the [client-side SDKs](#client-side-sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
+Clients are written using the [client-side SDKs](/sdks). The `spacetime` CLI tool allows automatically generating code that works with the client-side SDKs to talk to a particular database.
 
 Clients are regular software applications that developers can choose how to deploy (through Steam, app stores, package managers, or any other software deployment method, depending on the needs of the application.)
 
-### Identity
+## Identity
 
 A SpacetimeDB `Identity` identifies someone interacting with a database. It is a long lived, public, globally valid identifier that will always refer to the same end user, even across different connections.
 
@@ -490,13 +389,13 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
 
 You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](/spacetimeauth), or you can get one from any OpenID Connect compliant identity provider.
 
-### ConnectionId
+## ConnectionId
 
 A `ConnectionId` identifies client connections to a SpacetimeDB database.
 
 A user has a single [`Identity`](#identity), but may open multiple connections to your database. Each of these will receive a unique `ConnectionId`.
 
-### Energy
+## Energy
 
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.
 
@@ -514,7 +413,7 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
    Just install our command line tool and then upload your application to the cloud.
 
 1. How do I create a new database with SpacetimeDB?
-   Follow our [Quick Start](/getting-started) guide!
+   Follow our [Quick Start](/) guide!
 
 1. How do I create a Unity game with SpacetimeDB?
    Follow our [Unity Tutorial](/docs/tutorials/unity) guide!

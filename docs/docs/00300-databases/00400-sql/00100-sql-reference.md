@@ -1,6 +1,6 @@
 ---
 title: SQL Reference
-slug: /sql
+slug: /databases/sql
 ---
 
 import Tabs from '@theme/Tabs';
@@ -656,9 +656,3 @@ column
     | identifier '.' identifier
     ;
 ```
-
-[sdk]: /sdks/rust#subscribe-to-queries
-[http]: /http/database#post-v1databasename_or_identitysql
-[cli]: /cli-reference#spacetime-sql
-[Identity]: /#identity
-[ConnectionId]: /#connectionid

@@ -1,6 +1,6 @@
 ---
 title: Self-hosting
-slug: /deploying/spacetimedb-standalone
+slug: /modules/deploying/self-hosting
 ---
 
 # Self-hosting SpacetimeDB

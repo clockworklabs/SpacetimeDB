@@ -159,7 +159,7 @@ spacetimedb.procedure("insert_a_value", { a: t.u32(), b: t.u32() }, t.unit(), (c
 
 `ProcedureCtx.withTx` takes a function of `(ctx: TransactionCtx) => T`.
 Within that function, the `TransactionCtx` can be used to access the database
-[in all the same ways as a `ReducerCtx`](/old-modules/typescript#reducercontext)
+[in all the same ways as a `ReducerCtx`](/functions/reducers/reducer-context)
 When the function returns, the transaction will be committed,
 and its changes to the database state will become permanent and be broadcast to clients.
 If the function throws an error, the transaction will be rolled back, and its changes will be discarded.

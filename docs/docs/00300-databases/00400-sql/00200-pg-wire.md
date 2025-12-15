@@ -1,6 +1,6 @@
 ---
 title: PostgreSQL Wire Protocol (PGWire)
-slug: /sql/pg-wire
+slug: /databases/sql/pg-wire
 ---
 
 # PostgreSQL Wire Protocol (PGWire) Compatibility
@@ -26,7 +26,7 @@ implemented, or behave differently:
 
 - **Protocol Version**: Only _PGWire_ protocol _version 3.0_ is supported, and only the _Simple Query Protocol_, and
   without parameterized queries.
-- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](/sql) are
+- **SQL Features**: Only the subset of SQL features documented in the [SQL documentation](/databases/sql) are
   supported. Subscription queries do not update in real time.
 - **Authentication**: SpacetimeDB does not implement database users or roles. The connection string
   `user_name@database_name` ignores `user_name`; only `database_name` is used. Authentication is based on the _auth

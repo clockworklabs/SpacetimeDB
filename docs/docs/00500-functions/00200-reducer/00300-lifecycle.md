@@ -1,6 +1,6 @@
 ---
 title: Lifecycle Reducers
-slug: /functions/lifecycle
+slug: /functions/reducers/lifecycle
 ---
 
 import Tabs from '@theme/Tabs';
