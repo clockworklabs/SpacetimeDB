@@ -4,75 +4,15 @@
 /* eslint-disable */
 /* tslint:disable */
 import {
-  AlgebraicType as __AlgebraicTypeValue,
-  BinaryReader as __BinaryReader,
-  BinaryWriter as __BinaryWriter,
-  ClientCache as __ClientCache,
-  ConnectionId as __ConnectionId,
-  DbConnectionBuilder as __DbConnectionBuilder,
-  DbConnectionImpl as __DbConnectionImpl,
-  Identity as __Identity,
-  SubscriptionBuilderImpl as __SubscriptionBuilderImpl,
-  TableCache as __TableCache,
-  TimeDuration as __TimeDuration,
-  Timestamp as __Timestamp,
-  deepEqual as __deepEqual,
-  type AlgebraicType as __AlgebraicTypeType,
-  type AlgebraicTypeVariants as __AlgebraicTypeVariants,
-  type CallReducerFlags as __CallReducerFlags,
-  type ErrorContextInterface as __ErrorContextInterface,
-  type Event as __Event,
-  type EventContextInterface as __EventContextInterface,
-  type ReducerEventContextInterface as __ReducerEventContextInterface,
-  type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
-  type TableHandle as __TableHandle,
-} from '../../index';
-import { TableUpdate } from './table_update_type';
-// Mark import as potentially unused
-declare type __keep_TableUpdate = TableUpdate;
+  TypeBuilder as __TypeBuilder,
+  t as __t,
+  type AlgebraicTypeType as __AlgebraicTypeType,
+  type Infer as __Infer,
+} from '../../lib/type_builders';
+import TableUpdate from './table_update_type';
 
-export type DatabaseUpdate = {
-  tables: TableUpdate[];
-};
-let _cached_DatabaseUpdate_type_value: __AlgebraicTypeType | null = null;
-
-/**
- * An object for generated helper functions.
- */
-export const DatabaseUpdate = {
-  /**
-   * A function which returns this type represented as an AlgebraicType.
-   * This function is derived from the AlgebraicType used to generate this type.
-   */
-  getTypeScriptAlgebraicType(): __AlgebraicTypeType {
-    if (_cached_DatabaseUpdate_type_value)
-      return _cached_DatabaseUpdate_type_value;
-    _cached_DatabaseUpdate_type_value = __AlgebraicTypeValue.Product({
-      elements: [],
-    });
-    _cached_DatabaseUpdate_type_value.value.elements.push({
-      name: 'tables',
-      algebraicType: __AlgebraicTypeValue.Array(
-        TableUpdate.getTypeScriptAlgebraicType()
-      ),
-    });
-    return _cached_DatabaseUpdate_type_value;
+export default __t.object('DatabaseUpdate', {
+  get tables() {
+    return __t.array(TableUpdate);
   },
-
-  serialize(writer: __BinaryWriter, value: DatabaseUpdate): void {
-    __AlgebraicTypeValue.serializeValue(
-      writer,
-      DatabaseUpdate.getTypeScriptAlgebraicType(),
-      value
-    );
-  },
-
-  deserialize(reader: __BinaryReader): DatabaseUpdate {
-    return __AlgebraicTypeValue.deserializeValue(
-      reader,
-      DatabaseUpdate.getTypeScriptAlgebraicType()
-    );
-  },
-};
-
-export default DatabaseUpdate;
+});

@@ -2,24 +2,28 @@ use super::{
     datastore::Result,
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
-    state_view::{IterByColRangeTx, IterTx, ScanIterByColRangeTx, StateView},
+    state_view::StateView,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
 use crate::{
     db_metrics::DB_METRICS,
-    error::{DatastoreError, IndexError, TableError},
+    error::{DatastoreError, IndexError, TableError, ViewError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
+    locking_tx_datastore::{
+        mut_tx::ViewReadSets,
+        state_view::{iter_st_column_for_table, ApplyFilter, EqOnColumn, RangeOnColumn, ScanOrIndex},
+        IterByColRangeTx,
+    },
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
-        StTableRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
+        StTableRow, StViewRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
         ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
         ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
         ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
         ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
-    traits::TxData,
+    traits::{EphemeralTables, TxData},
 };
 use crate::{
     locking_tx_datastore::ViewCallInfo,
@@ -44,7 +48,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
-    table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -80,12 +84,27 @@ pub struct CommittedState {
     /// Any overlap will trigger a re-evaluation of the affected view,
     /// and its read set will be updated accordingly.
     read_sets: ViewReadSets,
+
+    /// Tables which do not need to be made persistent.
+    /// These include:
+    ///     - system tables: `st_view_sub`, `st_view_arg`
+    ///     - Tables which back views.
+    pub(super) ephemeral_tables: EphemeralTables,
 }
 
 impl CommittedState {
     /// Returns the views that perform a full scan of this table
     pub(super) fn views_for_table_scan(&self, table_id: &TableId) -> impl Iterator<Item = &ViewCallInfo> {
         self.read_sets.views_for_table_scan(table_id)
+    }
+
+    /// Returns the views that perform an precise index seek on given `row_ref` of `table_id`
+    pub fn views_for_index_seek<'a>(
+        &'a self,
+        table_id: &TableId,
+        row_ref: RowRef<'a>,
+    ) -> impl Iterator<Item = &'a ViewCallInfo> {
+        self.read_sets.views_for_index_seek(table_id, row_ref)
     }
 }
 
@@ -99,6 +118,7 @@ impl MemoryUsage for CommittedState {
             page_pool: _,
             table_dropped,
             read_sets,
+            ephemeral_tables,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -107,11 +127,12 @@ impl MemoryUsage for CommittedState {
             + index_id_map.heap_usage()
             + table_dropped.heap_usage()
             + read_sets.heap_usage()
+            + ephemeral_tables.heap_usage()
     }
 }
 
 impl StateView for CommittedState {
-    type Iter<'a> = IterTx<'a>;
+    type Iter<'a> = TableScanIter<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
     type IterByColEq<'a, 'r>
         = IterByColEqTx<'a, 'r>
@@ -127,11 +148,10 @@ impl StateView for CommittedState {
     }
 
     fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
-        if self.table_name(table_id).is_some() {
-            return Ok(IterTx::new(table_id, self));
-        }
-        Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
+        self.table_scan(table_id)
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the values of `cols` are contained in `range`.
@@ -141,12 +161,11 @@ impl StateView for CommittedState {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        match self.index_seek(table_id, &cols, &range) {
-            Some(iter) => Ok(IterByColRangeTx::Index(iter)),
-            None => Ok(IterByColRangeTx::Scan(ScanIterByColRangeTx::new(
+        match self.index_seek_range(table_id, &cols, &range) {
+            Some(iter) => Ok(ScanOrIndex::Index(iter)),
+            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+                RangeOnColumn { cols, range },
                 self.iter(table_id)?,
-                cols,
-                range,
             ))),
         }
     }
@@ -155,9 +174,16 @@ impl StateView for CommittedState {
         &'a self,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: &'r AlgebraicValue,
+        val: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
+        let cols = cols.into();
+        match self.index_seek_point(table_id, &cols, val) {
+            Some(iter) => Ok(ScanOrIndex::Index(iter)),
+            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+                EqOnColumn { cols, val },
+                self.iter(table_id)?,
+            ))),
+        }
     }
 }
 
@@ -171,6 +197,7 @@ impl CommittedState {
             table_dropped: <_>::default(),
             read_sets: <_>::default(),
             page_pool,
+            ephemeral_tables: <_>::default(),
         }
     }
 
@@ -518,6 +545,32 @@ impl CommittedState {
         Ok(())
     }
 
+    pub(super) fn collect_ephemeral_tables(&mut self) -> Result<()> {
+        self.ephemeral_tables = self.ephemeral_tables()?.into_iter().collect();
+        Ok(())
+    }
+
+    fn ephemeral_tables(&self) -> Result<Vec<TableId>> {
+        let mut tables = vec![ST_VIEW_SUB_ID, ST_VIEW_ARG_ID];
+
+        let Some(st_view) = self.tables.get(&ST_VIEW_ID) else {
+            return Ok(tables);
+        };
+        let backing_tables = st_view
+            .scan_rows(&self.blob_store)
+            .map(|row_ref| {
+                let view_row = StViewRow::try_from(row_ref)?;
+                view_row
+                    .table_id
+                    .ok_or_else(|| DatastoreError::View(ViewError::TableNotFound(view_row.view_id)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        tables.extend(backing_tables);
+
+        Ok(tables)
+    }
+
     /// After replaying all old transactions,
     /// inserts and deletes into the system tables
     /// might not be reflected in the schemas of the built tables.
@@ -555,15 +608,21 @@ impl CommittedState {
         Ok(())
     }
 
+    /// Returns an iterator doing a full table scan on `table_id`.
+    pub(super) fn table_scan<'a>(&'a self, table_id: TableId) -> Option<TableScanIter<'a>> {
+        Some(self.get_table(table_id)?.scan_rows(&self.blob_store))
+    }
+
     /// When there's an index on `cols`,
     /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
     /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     ///
-    /// For a unique index this will always yield at most one `RowRef`.
+    /// For a unique index this will always yield at most one `RowRef`
+    /// when `range` is a point.
     /// When there is no index this returns `None`.
-    pub(super) fn index_seek<'a>(
+    pub(super) fn index_seek_range<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
@@ -573,6 +632,26 @@ impl CommittedState {
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
             .map(|i| i.seek_range(range))
+    }
+
+    /// When there's an index on `cols`,
+    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
+    /// that equal `value` in the indexed column.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
+    pub(super) fn index_seek_point<'a>(
+        &'a self,
+        table_id: TableId,
+        cols: &ColList,
+        value: &AlgebraicValue,
+    ) -> Option<IndexScanPointIter<'a>> {
+        self.tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek_point(value))
     }
 
     /// Returns the table associated with the given `index_id`, if any.
@@ -634,8 +713,8 @@ impl CommittedState {
         tx_data.has_rows_or_connect_disconnect(ctx.reducer_context())
     }
 
-    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId) {
-        self.read_sets.remove_view(view_id)
+    pub(super) fn drop_view_from_read_sets(&mut self, view_id: ViewId, sender: Option<Identity>) {
+        self.read_sets.remove_view(view_id, sender)
     }
 
     pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
@@ -674,6 +753,8 @@ impl CommittedState {
             tx_data.set_tx_offset(self.next_tx_offset);
             self.next_tx_offset += 1;
         }
+
+        tx_data.set_ephemeral_tables(&self.ephemeral_tables);
 
         tx_data
     }
@@ -847,10 +928,16 @@ impl CommittedState {
             }
             // A table was removed. Add it back.
             TableRemoved(table_id, table) => {
+                let is_view_table = table.schema.is_view();
                 // We don't need to deal with sub-components.
                 // That is, we don't need to add back indices and such.
                 // Instead, there will be separate pending schema changes like `IndexRemoved`.
                 self.tables.insert(table_id, table);
+
+                // Incase, the table was ephemeral, add it back to that set as well.
+                if is_view_table {
+                    self.ephemeral_tables.insert(table_id);
+                }
             }
             // A table was added. Remove it.
             TableAdded(table_id) => {
@@ -858,6 +945,8 @@ impl CommittedState {
                 // That is, we don't need to remove indices and such.
                 // Instead, there will be separate pending schema changes like `IndexAdded`.
                 self.tables.remove(&table_id);
+                // Incase, the table was ephemeral, remove it from that set as well.
+                self.ephemeral_tables.remove(&table_id);
             }
             // A table's access was changed. Change back to the old one.
             TableAlterAccess(table_id, access) => {
@@ -961,6 +1050,17 @@ impl CommittedState {
         let blob_store = &mut self.blob_store;
         let pool = &self.page_pool;
         (table, blob_store, pool)
+    }
+
+    /// Returns an iterator over all persistent tables (i.e., non-ephemeral tables)
+    pub(super) fn persistent_tables_and_blob_store(&mut self) -> (impl Iterator<Item = &mut Table>, &HashMapBlobStore) {
+        (
+            self.tables
+                .iter_mut()
+                .filter(|(table_id, _)| !self.ephemeral_tables.contains(*table_id))
+                .map(|(_, table)| table),
+            &self.blob_store,
+        )
     }
 
     pub fn report_data_size(&self, database_identity: Identity) {

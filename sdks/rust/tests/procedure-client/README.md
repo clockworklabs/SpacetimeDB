@@ -1,17 +1,9 @@
-This test client is used with two modules:
+This test client is used with the module:
 
-- [`sdk-test-connect-disconnect`](/modules/sdk-test-connect-disconnect)
-- [`sdk-test-connect-disconnect-cs`](/modules/sdk-test-connect-disconnect-cs)
+- [`sdk-test-procedure`](/modules/sdk-test-procedure)
 
-Currently, the bindings are generated using only one of those two modules,
-chosen arbitrarily on each test run.
-The two tests which use this client,
-`connect_disconnect_callbacks` and `connect_disconnect_callbacks_csharp`,
-are not intended to test code generation.
-
-The goal of the two tests is to verify that module-side `connect` and `disconnect` events
-fire when an SDK connects or disconnects via WebSocket,
-and that the client can observe mutations performed by those events.
+The goal of the test is to exercise various procedure related
+aspects of the (Rust) module ABI and the rust SDK.
 
 To (re-)generate the `module_bindings`, from this directory, run:
 
@@ -19,5 +11,5 @@ To (re-)generate the `module_bindings`, from this directory, run:
 mkdir -p src/module_bindings
 spacetime generate --lang rust                                     \
     --out-dir src/module_bindings                                  \
-    --project-path ../../../../modules/sdk-test-connect-disconnect
+    --project-path ../../../../modules/sdk-test-procedure
 ```

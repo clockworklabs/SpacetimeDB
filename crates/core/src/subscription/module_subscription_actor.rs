@@ -1,4 +1,5 @@
 use super::execution_unit::QueryHash;
+use super::metrics::QueryMetrics;
 use super::module_subscription_manager::{
     from_tx_offset, spawn_send_worker, BroadcastError, BroadcastQueue, Plan, SubscriptionGaugeStats,
     SubscriptionManager, TransactionOffset,
@@ -41,6 +42,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
+use spacetimedb_table::static_assert_size;
 use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
@@ -55,10 +57,11 @@ pub struct ModuleSubscriptions {
     subscriptions: Subscriptions,
     broadcast_queue: BroadcastQueue,
     stats: Arc<SubscriptionGauges>,
+    metrics: Arc<SubscriptionMetricsForWorkloads>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionGauges {
+struct SubscriptionGauges {
     db_identity: Identity,
     num_queries: IntGauge,
     num_connections: IntGauge,
@@ -110,17 +113,36 @@ impl SubscriptionGauges {
     }
 }
 
-pub struct SubscriptionMetrics {
-    pub lock_waiters: IntGauge,
-    pub lock_wait_time: Histogram,
-    pub compilation_time: Histogram,
-    pub num_queries_subscribed: IntCounter,
-    pub num_new_queries_subscribed: IntCounter,
-    pub num_queries_evaluated: IntCounter,
+struct SubscriptionMetricsForWorkloads {
+    update: SubscriptionMetrics,
+    subscribe: SubscriptionMetrics,
+    unsubscribe: SubscriptionMetrics,
 }
 
+impl SubscriptionMetricsForWorkloads {
+    fn new(db: &Identity) -> Self {
+        Self {
+            update: SubscriptionMetrics::new(db, WorkloadType::Update),
+            subscribe: SubscriptionMetrics::new(db, WorkloadType::Subscribe),
+            unsubscribe: SubscriptionMetrics::new(db, WorkloadType::Unsubscribe),
+        }
+    }
+}
+
+struct SubscriptionMetrics {
+    lock_waiters: IntGauge,
+    lock_wait_time: Histogram,
+    compilation_time: Histogram,
+    num_queries_subscribed: IntCounter,
+    num_new_queries_subscribed: IntCounter,
+    num_queries_evaluated: IntCounter,
+}
+
+static_assert_size!(SubscriptionMetrics, 48);
+
 impl SubscriptionMetrics {
-    pub fn new(db: &Identity, workload: &WorkloadType) -> Self {
+    fn new(db: &Identity, workload: WorkloadType) -> Self {
+        let workload = &workload;
         Self {
             lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db, workload),
             lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db, workload),
@@ -132,6 +154,24 @@ impl SubscriptionMetrics {
     }
 }
 
+/// Records subscription query metrics
+fn record_query_metrics(database_identity: &Identity, query_metrics: Vec<QueryMetrics>) {
+    for qm in query_metrics {
+        WORKER_METRICS
+            .subscription_rows_examined
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .observe(qm.rows_scanned as f64);
+        WORKER_METRICS
+            .subscription_query_execution_time_micros
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .observe(qm.execution_time_micros as f64);
+        WORKER_METRICS
+            .subscription_queries_total
+            .with_label_values(database_identity, &qm.scan_type, &qm.table_name, &qm.unindexed_columns)
+            .inc();
+    }
+}
+
 /// Inner result type of [`ModuleSubscriptions::commit_and_broadcast_event`].
 pub type CommitAndBroadcastEventResult = Result<CommitAndBroadcastEventSuccess, WriteConflict>;
 
@@ -140,6 +180,20 @@ pub struct CommitAndBroadcastEventSuccess {
     pub tx_offset: TransactionOffset,
     pub event: Arc<ModuleEvent>,
     pub metrics: ExecutionMetrics,
+}
+
+/// Commits `tx`
+/// and evaluates and broadcasts subscriptions updates.
+pub(crate) fn commit_and_broadcast_event(
+    subs: &ModuleSubscriptions,
+    client: Option<Arc<ClientConnectionSender>>,
+    event: ModuleEvent,
+    tx: MutTxId,
+) -> CommitAndBroadcastEventSuccess {
+    match subs.commit_and_broadcast_event(client, event, tx).unwrap() {
+        Ok(res) => res,
+        Err(WriteConflict) => todo!("Write skew, you need to implement retries my man, T-dawg."),
+    }
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx) + Send + Sync + 'static>;
@@ -185,12 +239,14 @@ impl ModuleSubscriptions {
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
+        let metrics = Arc::new(SubscriptionMetricsForWorkloads::new(db));
 
         Self {
             relational_db,
             subscriptions,
             broadcast_queue,
             stats,
+            metrics,
         }
     }
 
@@ -331,17 +387,22 @@ impl ModuleSubscriptions {
             auth,
         )?;
 
+        let database_identity = self.relational_db.database_identity();
         let tx = DeltaTx::from(tx);
-        match sender.config.protocol {
+        let (update, metrics, query_metrics) = match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
-                Ok((FormatSwitch::Bsatn(update), metrics))
+                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                (FormatSwitch::Bsatn(update), metrics, query_metrics)
             }
             Protocol::Text => {
-                let (update, metrics) = execute_plans(auth, queries, &tx, update_type)?;
-                Ok((FormatSwitch::Json(update), metrics))
+                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                (FormatSwitch::Json(update), metrics, query_metrics)
             }
-        }
+        };
+
+        record_query_metrics(&database_identity, query_metrics);
+
+        Ok((update, metrics))
     }
 
     /// Add a subscription to a single query.
@@ -541,8 +602,7 @@ impl ModuleSubscriptions {
             )
         };
 
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
+        let subscription_metrics = &self.metrics.unsubscribe;
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
@@ -710,14 +770,9 @@ impl ModuleSubscriptions {
         &self,
         recipient: Arc<ClientConnectionSender>,
         message: ProcedureResultMessage,
+        tx_offset: Option<TransactionOffset>,
     ) -> Result<(), BroadcastError> {
-        self.broadcast_queue.send_client_message(
-            recipient,
-            // TODO(procedure-tx): We'll need some mechanism for procedures to report their last-referenced TxOffset,
-            // and to pass it here.
-            // This is currently moot, as procedures have no way to open a transaction yet.
-            None, message,
-        )
+        self.broadcast_queue.send_client_message(recipient, tx_offset, message)
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
@@ -747,12 +802,9 @@ impl ModuleSubscriptions {
             );
         };
 
-        let num_queries = request.query_strings.len();
-
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = return_on_err!(
@@ -761,7 +813,7 @@ impl ModuleSubscriptions {
                 auth,
                 &request.query_strings,
                 num_queries,
-                &subscription_metrics
+                subscription_metrics
             ),
             send_err_msg,
             None
@@ -852,11 +904,9 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
-        let num_queries = subscription.query_strings.len();
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = subscription.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
@@ -864,7 +914,7 @@ impl ModuleSubscriptions {
             auth,
             &subscription.query_strings,
             num_queries,
-            &subscription_metrics,
+            subscription_metrics,
         )?;
 
         let (tx, tx_offset) = self
@@ -887,12 +937,16 @@ impl ModuleSubscriptions {
         drop(compile_timer);
 
         let tx = DeltaTx::from(&*tx);
-        let (database_update, metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))?,
-            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe)
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))?,
+        let (database_update, metrics, query_metrics) = match sender.config.protocol {
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
+                |(table_update, metrics, query_metrics)| (FormatSwitch::Bsatn(table_update), metrics, query_metrics),
+            )?,
+            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
+                |(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics),
+            )?,
         };
+
+        record_query_metrics(&self.relational_db.database_identity(), query_metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -940,6 +994,13 @@ impl ModuleSubscriptions {
         subscriptions.remove_all_subscriptions(&(client_id.identity, client_id.connection_id));
     }
 
+    /// Rolls back `tx` and returns the offset as it was before `tx`.
+    pub(crate) fn rollback_mut_tx(stdb: &RelationalDB, tx: MutTxId) -> TxOffset {
+        let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
+        stdb.report_tx_metrics(reducer, None, Some(tx_metrics), None);
+        tx_offset
+    }
+
     /// Commit a transaction and broadcast its ModuleEvent to all interested subscribers.
     ///
     /// The returned [`ExecutionMetrics`] are reported in this method via `report_tx_metrics`.
@@ -950,8 +1011,7 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
+        let subscription_metrics = &self.metrics.update;
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
@@ -978,9 +1038,7 @@ impl ModuleSubscriptions {
                 // We don't need to do any subscription updates in this case, so we will exit early.
 
                 let event = Arc::new(event);
-                let (tx_offset, tx_metrics, reducer) = stdb.rollback_mut_tx(tx);
-                self.relational_db
-                    .report_tx_metrics(reducer, None, Some(tx_metrics), None);
+                let tx_offset = Self::rollback_mut_tx(stdb, tx);
                 if let Some(client) = caller {
                     let message = TransactionUpdateMessage {
                         event: Some(event.clone()),
@@ -1206,11 +1264,11 @@ mod tests {
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
     use crate::messages::websocket as ws;
     use crate::sql::execute::run;
+    use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
     use crate::subscription::TableUpdateType;
     use core::fmt;
-    use hashbrown::HashMap;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -1219,6 +1277,7 @@ mod tests {
         TableUpdate, Unsubscribe, UnsubscribeMulti,
     };
     use spacetimedb_commitlog::{commitlog, repo};
+    use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
     use spacetimedb_durability::{Durability, EmptyHistory, TxOffset};
     use spacetimedb_execution::dml::MutDatastore;
@@ -1677,9 +1736,7 @@ mod tests {
             db.insert(&mut tx, table_id, &bsatn::to_vec(&row)?)?;
         }
 
-        let Ok(Ok(success)) = subs.commit_and_broadcast_event(None, module_event(), tx) else {
-            panic!("Encountered an error in `commit_and_broadcast_event`");
-        };
+        let success = commit_and_broadcast_event(subs, None, module_event(), tx);
         Ok(success.metrics)
     }
 

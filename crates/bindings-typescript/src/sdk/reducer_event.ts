@@ -1,11 +1,10 @@
-import { ConnectionId } from '../';
+import { ConnectionId, type Infer } from '../';
 import { Timestamp } from '../';
-import type { UpdateStatus } from './client_api/index.ts';
 import { Identity } from '../';
+import type UpdateStatus from './client_api/update_status_type.ts';
+import type { ReducerEventInfo } from './reducers.ts';
 
-export type ReducerInfoType = { name: string; args?: any } | never;
-
-export type ReducerEvent<Reducer extends ReducerInfoType> = {
+export type ReducerEvent<Reducer extends ReducerEventInfo> = {
   /**
    * The time when the reducer started running.
    *
@@ -17,7 +16,7 @@ export type ReducerEvent<Reducer extends ReducerInfoType> = {
   /**
    * Whether the reducer committed, was aborted due to insufficient energy, or failed with an error message.
    */
-  status: UpdateStatus;
+  status: Infer<typeof UpdateStatus>;
 
   /**
    * The identity of the caller.

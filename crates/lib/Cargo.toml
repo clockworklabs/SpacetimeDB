@@ -44,6 +44,7 @@ derive_more.workspace = true
 enum-as-inner.workspace = true
 hex.workspace = true
 itertools.workspace = true
+log.workspace = true
 serde = { workspace = true, optional = true }
 thiserror.workspace = true
 blake3.workspace = true

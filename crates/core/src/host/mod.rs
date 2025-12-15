@@ -8,6 +8,7 @@ use spacetimedb_lib::bsatn;
 use spacetimedb_lib::de::{serde::SeedWrapper, DeserializeSeed};
 use spacetimedb_lib::ProductValue;
 use spacetimedb_schema::def::deserialize::{ArgsSeed, FunctionDef};
+use spacetimedb_schema::def::ModuleDef;
 
 mod disk_storage;
 mod host_controller;
@@ -24,8 +25,8 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, ExternalDurability, ExternalStorage, HostController, MigratePlanResult, ProcedureCallResult,
-    ProgramStorage, ReducerCallResult, ReducerOutcome,
+    extract_schema, CallProcedureReturn, ExternalDurability, ExternalStorage, HostController, MigratePlanResult,
+    ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
 pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
@@ -41,6 +42,14 @@ pub enum FunctionArgs {
 }
 
 impl FunctionArgs {
+    fn into_tuple_for_def<Def: FunctionDef>(
+        self,
+        module: &ModuleDef,
+        def: &Def,
+    ) -> Result<ArgsTuple, InvalidFunctionArguments> {
+        self.into_tuple(module.arg_seed_for(def))
+    }
+
     fn into_tuple<Def: FunctionDef>(self, seed: ArgsSeed<'_, Def>) -> Result<ArgsTuple, InvalidFunctionArguments> {
         self._into_tuple(seed).map_err(|err| InvalidFunctionArguments {
             err,
@@ -158,11 +167,13 @@ pub enum AbiCall {
     IndexIdFromName,
     DatastoreTableRowCount,
     DatastoreTableScanBsatn,
+    DatastoreIndexScanPointBsatn,
     DatastoreIndexScanRangeBsatn,
     RowIterBsatnAdvance,
     RowIterBsatnClose,
     DatastoreInsertBsatn,
     DatastoreUpdateBsatn,
+    DatastoreDeleteByIndexScanPointBsatn,
     DatastoreDeleteByIndexScanRangeBsatn,
     DatastoreDeleteAllByEqBsatn,
     BytesSourceRead,
@@ -178,4 +189,8 @@ pub enum AbiCall {
     VolatileNonatomicScheduleImmediate,
 
     ProcedureSleepUntil,
+    ProcedureStartMutTransaction,
+    ProcedureCommitMutTransaction,
+    ProcedureAbortMutTransaction,
+    ProcedureHttpRequest,
 }

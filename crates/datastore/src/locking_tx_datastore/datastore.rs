@@ -1,15 +1,14 @@
 use super::{
-    committed_state::CommittedState,
-    mut_tx::MutTxId,
-    sequence::SequencesState,
-    state_view::{IterByColRangeTx, StateView},
-    tx::TxId,
+    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
     tx_state::TxState,
 };
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
-    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    locking_tx_datastore::{
+        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
+        IterByColEqTx, IterByColRangeTx,
+    },
     traits::{InsertFlags, UpdateFlags},
 };
 use crate::{
@@ -42,7 +41,11 @@ use spacetimedb_sats::{
 use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
-use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
+use spacetimedb_table::{
+    indexes::RowPointer,
+    page_pool::PagePool,
+    table::{RowRef, TableScanIter},
+};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -146,6 +149,8 @@ impl Locking {
         committed_state.build_indexes()?;
         // Figure out where to pick up for each sequence.
         *self.sequence_state.lock() = committed_state.build_sequence_state()?;
+
+        committed_state.collect_ephemeral_tables()?;
         Ok(())
     }
 
@@ -280,12 +285,8 @@ impl Locking {
             tx_offset,
         );
 
-        let CommittedState {
-            ref mut tables,
-            ref blob_store,
-            ..
-        } = *committed_state;
-        let snapshot_dir = repo.create_snapshot(tables.values_mut(), blob_store, tx_offset)?;
+        let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        let snapshot_dir = repo.create_snapshot(tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, snapshot_dir)))
     }
@@ -382,7 +383,7 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type IterTx<'a>
-        = IterTx<'a>
+        = TableScanIter<'a>
     where
         Self: 'a;
     type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
@@ -390,7 +391,7 @@ impl TxDatastore for Locking {
     where
         Self: 'a;
     type IterByColEqTx<'a, 'r>
-        = IterByColRangeTx<'a, &'r AlgebraicValue>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -469,7 +470,7 @@ impl MutTxDatastore for Locking {
         Self: 'a;
     type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
     type IterByColEqMutTx<'a, 'r>
-        = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+        = IterByColEqMutTx<'a, 'r>
     where
         Self: 'a;
 
@@ -736,8 +737,7 @@ impl TxMetrics {
         // For each table, collect the extra stats, that we don't have in `tx_data`.
         let table_stats = tx_data
             .map(|tx_data| {
-                let mut table_stats =
-                    <HashMap<_, _, _> as HashCollectionExt>::with_capacity(tx_data.num_tables_affected());
+                let mut table_stats = HashMap::with_capacity(tx_data.num_tables_affected());
                 for (table_id, _) in tx_data.table_ids_and_names() {
                     let stats = committed_state.get_table(table_id).map(|table| TableStats {
                         row_count: table.row_count,
@@ -2691,7 +2691,7 @@ mod tests {
         let index_id = datastore.index_id_from_name_mut_tx(&tx, "index")?.unwrap();
         let find_row_by_key = |tx: &MutTxId, key: u32| {
             let key: AlgebraicValue = key.into();
-            tx.index_scan(table_id, index_id, &key)
+            Datastore::index_scan_range(tx, table_id, index_id, &key)
                 .unwrap()
                 .map(|row| row.pointer())
                 .collect::<Vec<_>>()

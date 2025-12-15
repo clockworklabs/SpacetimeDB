@@ -166,6 +166,8 @@ pub enum IsolationLevel {
     Serializable,
 }
 
+pub type EphemeralTables = IntSet<TableId>;
+
 /// A record of all the operations within a transaction.
 ///
 /// Some extra information is embedded here
@@ -191,6 +193,11 @@ pub struct TxData {
     /// `None` implies that `inserts` and `deletes` are both empty,
     /// but `Some` does not necessarily imply that either is non-empty.
     tx_offset: Option<u64>,
+
+    /// Set of ephemeral tables modified in this transaction (only populated when a view is executed).
+    /// These tables do not need to be persisted to disk.
+    /// Every table listed here must appear in either `inserts` or `deletes`.
+    ephemeral_tables: Option<EphemeralTables>,
 }
 
 impl TxData {
@@ -224,6 +231,25 @@ impl TxData {
 
     pub fn add_truncates(&mut self, truncated_tables: impl IntoIterator<Item = TableId>) {
         self.truncates.extend(truncated_tables);
+    }
+
+    /// Determines which ephemeral tables were modified in this transaction.
+    ///
+    /// Iterates over the tables updated in this transaction and records those that
+    /// also appear in `all_ephemeral_tables`.  
+    /// `self.ephemeral_tables` remains `None` if no ephemeral tables were modified.
+    pub fn set_ephemeral_tables(&mut self, all_ephemeral_tables: &EphemeralTables) {
+        for tid in self.tables.keys() {
+            if all_ephemeral_tables.contains(tid) {
+                self.ephemeral_tables
+                    .get_or_insert_with(EphemeralTables::default)
+                    .insert(*tid);
+            }
+        }
+    }
+
+    pub fn ephemeral_tables(&self) -> Option<&EphemeralTables> {
+        self.ephemeral_tables.as_ref()
     }
 
     /// Obtain an iterator over the inserted rows per table.

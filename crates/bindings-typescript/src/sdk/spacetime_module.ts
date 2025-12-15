@@ -1,33 +1,28 @@
-import type { AlgebraicType } from '../';
-import type { DbConnectionImpl } from './db_connection_impl';
+import type { UntypedProceduresDef } from '../lib/procedures';
+import type { UntypedSchemaDef } from '../lib/schema';
+import type { UntypedReducersDef } from './reducers';
 
-export interface TableRuntimeTypeInfo {
-  tableName: string;
-  rowType: AlgebraicType;
-  primaryKeyInfo?: PrimaryKeyInfo;
-}
-
-export interface PrimaryKeyInfo {
-  colName: string;
-  colType: AlgebraicType;
-}
-
-export interface ReducerRuntimeTypeInfo {
-  reducerName: string;
-  argsType: AlgebraicType;
-}
-
-export default interface RemoteModule {
-  tables: { [name: string]: TableRuntimeTypeInfo };
-  reducers: { [name: string]: ReducerRuntimeTypeInfo };
-  eventContextConstructor: (imp: DbConnectionImpl, event: any) => any;
-  dbViewConstructor: (connection: DbConnectionImpl) => any;
-  reducersConstructor: (
-    connection: DbConnectionImpl,
-    setReducerFlags: any
-  ) => any;
-  setReducerFlagsConstructor: () => any;
-  versionInfo?: {
-    cliVersion: string;
+export type RemoteModule<
+  SchemaDef extends UntypedSchemaDef,
+  ReducersDef extends UntypedReducersDef,
+  ProceduresDef extends UntypedProceduresDef,
+  CLI extends string = string,
+> = SchemaDef &
+  ReducersDef &
+  ProceduresDef & {
+    versionInfo: {
+      cliVersion: CLI;
+    };
   };
-}
+
+export type UntypedRemoteModule = RemoteModule<
+  UntypedSchemaDef,
+  UntypedReducersDef,
+  UntypedProceduresDef
+>;
+
+export type SchemaDef<RemoteModule extends UntypedRemoteModule> =
+  RemoteModule['tables'];
+
+export type ReducersDef<RemoteModule extends UntypedRemoteModule> =
+  RemoteModule['reducers'];

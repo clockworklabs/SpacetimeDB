@@ -1,23 +1,20 @@
+use super::module_subscription_manager::QueriedTableIndexIds;
+use itertools::Either;
+use smallvec::SmallVec;
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
+use spacetimedb_datastore::{
+    locking_tx_datastore::{state_view::StateView, TxId},
+    traits::TxData,
+};
+use spacetimedb_execution::{Datastore, DeltaStore, Row};
+use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
+use spacetimedb_primitives::{IndexId, TableId};
+use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableScanIter};
 use std::{
     collections::BTreeMap,
     ops::{Deref, RangeBounds},
     sync::Arc,
 };
-
-use hashbrown::HashMap;
-use itertools::Either;
-use smallvec::SmallVec;
-use spacetimedb_execution::{Datastore, DeltaStore, Row};
-use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
-use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
-
-use spacetimedb_datastore::{
-    locking_tx_datastore::{state_view::StateView, TxId},
-    traits::TxData,
-};
-
-use super::module_subscription_manager::QueriedTableIndexIds;
 
 /// If an index is defined on a set of columns,
 /// and if that index is used in a subscription query,
@@ -124,8 +121,13 @@ impl Datastore for DeltaTx<'_> {
     where
         Self: 'a;
 
-    type IndexIter<'a>
+    type RangeIndexIter<'a>
         = IndexScanRangeIter<'a>
+    where
+        Self: 'a;
+
+    type PointIndexIter<'a>
+        = IndexScanPointIter<'a>
     where
         Self: 'a;
 
@@ -137,13 +139,22 @@ impl Datastore for DeltaTx<'_> {
         self.tx.table_scan(table_id)
     }
 
-    fn index_scan<'a>(
+    fn index_scan_range<'a>(
         &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> anyhow::Result<Self::IndexIter<'a>> {
-        self.tx.index_scan(table_id, index_id, range)
+    ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
+        self.tx.index_scan_range(table_id, index_id, range)
+    }
+
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> anyhow::Result<Self::PointIndexIter<'a>> {
+        self.tx.index_scan_point(table_id, index_id, point)
     }
 }
 
