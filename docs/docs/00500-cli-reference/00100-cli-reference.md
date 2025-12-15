@@ -413,7 +413,7 @@ Initializes a new spacetime project. WARNING: This command is UNSTABLE and subje
 
 ###### **Options:**
 
-* `--project-path <PATH>` — Directory where the project will be created (defaults to ./[PROJECT_NAME])
+* `--project-path <PATH>` — Directory where the project will be created (defaults to ./&lt;PROJECT_NAME&gt;)
 * `--server-only` — Initialize server only from the template (no client)
 * `--lang <LANG>` — Server language: rust, csharp, typescript (it can only be used when --template is not specified)
 * `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL)

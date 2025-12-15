@@ -39,7 +39,7 @@ git push -u origin a-branch-name-that-describes-my-change
    your GitHub
 
 ### CLI Reference Section
-To regenerate the CLI reference section, run `docs/scripts/regenerate-cli-reference.sh`.
+To regenerate the CLI reference section, run `pnpm generate-cli-docs`.
 
 ### Docusaurus Documentation
 For more information on how to use Docusaurus, see the
