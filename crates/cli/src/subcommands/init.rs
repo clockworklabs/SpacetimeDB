@@ -123,7 +123,7 @@ pub fn cli() -> clap::Command {
                 .long("project-path")
                 .value_name("PATH")
                 .value_parser(clap::value_parser!(PathBuf))
-                .help("Directory where the project will be created (defaults to ./<PROJECT_NAME>)"),
+                .help("Directory where the project will be created (defaults to `./<PROJECT_NAME>`)"),
         )
         .arg(Arg::new("project-name").value_name("PROJECT_NAME").help("Project name"))
         .arg(
