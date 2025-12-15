@@ -915,19 +915,19 @@ Each reducer defined by the module has three methods on the `.Reducers`:
 ### Type `Identity`
 
 A unique public identifier for a client connected to a database.
-See the [module docs](/modules/c-sharp#struct-identity) for more details.
+See the [module docs](/old-modules/c-sharp#struct-identity) for more details.
 
 ### Type `ConnectionId`
 
 An opaque identifier for a client connection to a database, intended to differentiate between connections from the same [`Identity`](#type-identity).
-See the [module docs](/modules/c-sharp#struct-connectionid) for more details.
+See the [module docs](/old-modules/c-sharp#struct-connectionid) for more details.
 
 ### Type `Timestamp`
 
 A point in time, measured in microseconds since the Unix epoch.
-See the [module docs](/modules/c-sharp#struct-timestamp) for more details.
+See the [module docs](/old-modules/c-sharp#struct-timestamp) for more details.
 
 ### Type `TaggedEnum`
 
 A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
-See the [module docs](/modules/c-sharp#record-taggedenum) for more details.
+See the [module docs](/old-modules/c-sharp#record-taggedenum) for more details.
