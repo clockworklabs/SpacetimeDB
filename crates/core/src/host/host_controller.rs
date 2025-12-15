@@ -858,15 +858,26 @@ impl Host {
                 )
                 .await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
-                let (db, clients) = RelationalDB::open(
-                    &replica_dir,
-                    database.database_identity,
-                    database.owner_identity,
-                    history,
-                    Some(persistence),
-                    Some(tx_metrics_queue),
-                    page_pool.clone(),
-                )
+                // Loading a database from persistent storage involves heavy
+                // blocking I/O. `asyncify` to avoid blocking the async worker.
+                let (db, clients) = asyncify({
+                    let replica_dir = replica_dir.clone();
+                    let database_identity = database.database_identity;
+                    let owner_identity = database.owner_identity;
+                    let page_pool = page_pool.clone();
+                    move || {
+                        RelationalDB::open(
+                            &replica_dir,
+                            database_identity,
+                            owner_identity,
+                            history,
+                            Some(persistence),
+                            Some(tx_metrics_queue),
+                            page_pool,
+                        )
+                    }
+                })
+                .await
                 // Make sure we log the source chain of the error
                 // as a single line, with the help of `anyhow`.
                 .map_err(anyhow::Error::from)
