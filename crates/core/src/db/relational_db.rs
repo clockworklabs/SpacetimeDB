@@ -364,6 +364,17 @@ impl RelationalDB {
         Ok((db, connected_clients))
     }
 
+    /// Shut down the database, without dropping it.
+    ///
+    /// If the database is in-memory only, this does nothing.
+    /// Otherwise, it instructs the durability layer to shut down and waits
+    /// until all outstanding transactions are reported as durable.
+    ///
+    /// Returns `Ok(None)` if the database is in-memory only.
+    /// Returns the durable [TxOffset] in a `Some` otherwise.
+    ///
+    /// An error is returned if the durability layer failed to make the
+    /// outstanding transactions durable.
     pub async fn shutdown(&self) -> Result<Option<TxOffset>, DBError> {
         if let Some(durability) = &self.durability {
             let durable_offset = durability.shutdown().await?;
