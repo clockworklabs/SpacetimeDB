@@ -2,7 +2,7 @@ use super::{
     datastore::Result,
     delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
-    state_view::{IterByColRangeTx, IterTx, ScanIterByColRangeTx, StateView},
+    state_view::StateView,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
     IterByColEqTx,
 };
@@ -10,7 +10,11 @@ use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, IndexError, TableError, ViewError},
     execution_context::ExecutionContext,
-    locking_tx_datastore::{mut_tx::ViewReadSets, state_view::iter_st_column_for_table},
+    locking_tx_datastore::{
+        mut_tx::ViewReadSets,
+        state_view::{iter_st_column_for_table, ApplyFilter, EqOnColumn, RangeOnColumn, ScanOrIndex},
+        IterByColRangeTx,
+    },
     system_tables::{
         system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
         StTableRow, StViewRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
@@ -44,7 +48,7 @@ use spacetimedb_table::{
     blob_store::{BlobStore, HashMapBlobStore},
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
-    table::{IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex},
+    table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -128,7 +132,7 @@ impl MemoryUsage for CommittedState {
 }
 
 impl StateView for CommittedState {
-    type Iter<'a> = IterTx<'a>;
+    type Iter<'a> = TableScanIter<'a>;
     type IterByColRange<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeTx<'a, R>;
     type IterByColEq<'a, 'r>
         = IterByColEqTx<'a, 'r>
@@ -144,11 +148,10 @@ impl StateView for CommittedState {
     }
 
     fn iter(&self, table_id: TableId) -> Result<Self::Iter<'_>> {
-        if self.table_name(table_id).is_some() {
-            return Ok(IterTx::new(table_id, self));
-        }
-        Err(TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
+        self.table_scan(table_id)
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.0).into())
     }
+
     /// Returns an iterator,
     /// yielding every row in the table identified by `table_id`,
     /// where the values of `cols` are contained in `range`.
@@ -158,12 +161,11 @@ impl StateView for CommittedState {
         cols: ColList,
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
-        match self.index_seek(table_id, &cols, &range) {
-            Some(iter) => Ok(IterByColRangeTx::Index(iter)),
-            None => Ok(IterByColRangeTx::Scan(ScanIterByColRangeTx::new(
+        match self.index_seek_range(table_id, &cols, &range) {
+            Some(iter) => Ok(ScanOrIndex::Index(iter)),
+            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+                RangeOnColumn { cols, range },
                 self.iter(table_id)?,
-                cols,
-                range,
             ))),
         }
     }
@@ -172,9 +174,16 @@ impl StateView for CommittedState {
         &'a self,
         table_id: TableId,
         cols: impl Into<ColList>,
-        value: &'r AlgebraicValue,
+        val: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>> {
-        self.iter_by_col_range(table_id, cols.into(), value)
+        let cols = cols.into();
+        match self.index_seek_point(table_id, &cols, val) {
+            Some(iter) => Ok(ScanOrIndex::Index(iter)),
+            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+                EqOnColumn { cols, val },
+                self.iter(table_id)?,
+            ))),
+        }
     }
 }
 
@@ -599,15 +608,21 @@ impl CommittedState {
         Ok(())
     }
 
+    /// Returns an iterator doing a full table scan on `table_id`.
+    pub(super) fn table_scan<'a>(&'a self, table_id: TableId) -> Option<TableScanIter<'a>> {
+        Some(self.get_table(table_id)?.scan_rows(&self.blob_store))
+    }
+
     /// When there's an index on `cols`,
     /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
     /// that match the specified `range` in the indexed column.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
     ///
-    /// For a unique index this will always yield at most one `RowRef`.
+    /// For a unique index this will always yield at most one `RowRef`
+    /// when `range` is a point.
     /// When there is no index this returns `None`.
-    pub(super) fn index_seek<'a>(
+    pub(super) fn index_seek_range<'a>(
         &'a self,
         table_id: TableId,
         cols: &ColList,
@@ -617,6 +632,26 @@ impl CommittedState {
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)
             .map(|i| i.seek_range(range))
+    }
+
+    /// When there's an index on `cols`,
+    /// returns an iterator over the [TableIndex] that yields all the [`RowRef`]s
+    /// that equal `value` in the indexed column.
+    ///
+    /// Matching is defined by `Eq for AlgebraicValue`.
+    ///
+    /// For a unique index this will always yield at most one `RowRef`.
+    /// When there is no index this returns `None`.
+    pub(super) fn index_seek_point<'a>(
+        &'a self,
+        table_id: TableId,
+        cols: &ColList,
+        value: &AlgebraicValue,
+    ) -> Option<IndexScanPointIter<'a>> {
+        self.tables
+            .get(&table_id)?
+            .get_index_by_cols_with_table(&self.blob_store, cols)
+            .map(|i| i.seek_point(value))
     }
 
     /// Returns the table associated with the given `index_id`, if any.

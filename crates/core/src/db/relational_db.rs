@@ -16,7 +16,7 @@ use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
-    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
@@ -53,7 +53,7 @@ use spacetimedb_schema::schema::{
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::table::RowRef;
+use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::ops::parse;
 use std::borrow::Cow;
@@ -1363,7 +1363,7 @@ impl RelationalDB {
         Ok(self.inner.iter_mut_tx(tx, table_id)?)
     }
 
-    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<IterTx<'a>, DBError> {
+    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<TableScanIter<'a>, DBError> {
         Ok(self.inner.iter_tx(tx, table_id)?)
     }
 
@@ -1440,6 +1440,15 @@ impl RelationalDB {
         DBError,
     > {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
+    }
+
+    pub fn index_scan_point<'a>(
+        &'a self,
+        tx: &'a MutTx,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+        Ok(tx.index_scan_point(index_id, point)?)
     }
 
     pub fn insert<'a>(
