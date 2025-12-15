@@ -220,16 +220,14 @@ cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install
                 );
             }
 
-            bash!("pnpm install --recursive")?;
-            bash!("cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md")?;
-            bash!("pnpm format")?;
+            bash!("docs/scripts/regenerate-cli-reference.sh");
             bash!("git status")?;
             bash!(
                 r#"
-if git diff --exit-code HEAD; then
+if [ -z "$(git status --porcelain)" ]; then
   echo "No docs changes detected"
 else
-  echo "It looks like the CLI docs have changed:"
+  echo "It looks like the CLI docs have changed."
   exit 1
 fi
                 "#

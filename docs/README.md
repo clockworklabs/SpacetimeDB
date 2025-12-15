@@ -39,9 +39,7 @@ git push -u origin a-branch-name-that-describes-my-change
    your GitHub
 
 ### CLI Reference Section
-1. Run `cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md`
-2. Run `pnpm install`
-3. Run `pnpm format`
+To regenerate the CLI reference section, run `docs/scripts/regenerate-cli-reference.sh`.
 
 ### Docusaurus Documentation
 For more information on how to use Docusaurus, see the
