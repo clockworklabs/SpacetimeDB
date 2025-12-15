@@ -119,7 +119,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
         Storage::Disk
     };
     let page_pool_max_size = args
-        .get_one::<&str>("page_pool_max_size")
+        .get_one::<String>("page_pool_max_size")
         .map(|size| parse_size::Config::new().with_binary().parse_size(size))
         .transpose()
         .context("unrecognized format in `page_pool_max_size`")?

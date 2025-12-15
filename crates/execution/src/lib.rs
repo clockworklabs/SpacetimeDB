@@ -24,8 +24,13 @@ pub trait Datastore {
     where
         Self: 'a;
 
-    /// Iterator type for ranged index scans
-    type IndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    /// Iterator type for ranged index scans.
+    type RangeIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
+    where
+        Self: 'a;
+
+    /// Iterator type for point index scans.
+    type PointIndexIter<'a>: Iterator<Item = RowRef<'a>> + 'a
     where
         Self: 'a;
 
@@ -35,13 +40,21 @@ pub trait Datastore {
     /// Scans and returns all of the rows in a table
     fn table_scan<'a>(&'a self, table_id: TableId) -> Result<Self::TableIter<'a>>;
 
-    /// Scans a range of keys from an index returning a [`RowRef`] iterator
-    fn index_scan<'a>(
+    /// Scans a range of keys from an index returning a [`RowRef`] iterator.
+    fn index_scan_range<'a>(
         &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Result<Self::IndexIter<'a>>;
+    ) -> Result<Self::RangeIndexIter<'a>>;
+
+    /// Scans a key from an index returning a [`RowRef`] iterator.
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> Result<Self::PointIndexIter<'a>>;
 }
 
 pub trait DeltaStore {

@@ -9,7 +9,7 @@ use spacetimedb_datastore::{
 use spacetimedb_execution::{Datastore, DeltaStore, Row};
 use spacetimedb_lib::{query::Delta, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::{IndexId, TableId};
-use spacetimedb_table::table::{IndexScanRangeIter, TableScanIter};
+use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableScanIter};
 use std::{
     collections::BTreeMap,
     ops::{Deref, RangeBounds},
@@ -121,8 +121,13 @@ impl Datastore for DeltaTx<'_> {
     where
         Self: 'a;
 
-    type IndexIter<'a>
+    type RangeIndexIter<'a>
         = IndexScanRangeIter<'a>
+    where
+        Self: 'a;
+
+    type PointIndexIter<'a>
+        = IndexScanPointIter<'a>
     where
         Self: 'a;
 
@@ -134,13 +139,22 @@ impl Datastore for DeltaTx<'_> {
         self.tx.table_scan(table_id)
     }
 
-    fn index_scan<'a>(
+    fn index_scan_range<'a>(
         &'a self,
         table_id: TableId,
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> anyhow::Result<Self::IndexIter<'a>> {
-        self.tx.index_scan(table_id, index_id, range)
+    ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
+        self.tx.index_scan_range(table_id, index_id, range)
+    }
+
+    fn index_scan_point<'a>(
+        &'a self,
+        table_id: TableId,
+        index_id: IndexId,
+        point: &AlgebraicValue,
+    ) -> anyhow::Result<Self::PointIndexIter<'a>> {
+        self.tx.index_scan_point(table_id, index_id, point)
     }
 }
 
