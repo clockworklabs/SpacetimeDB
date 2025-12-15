@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
 };
 
+use anyhow::Context as _;
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
@@ -114,7 +115,10 @@ impl DurabilityWorker {
     /// If [Self::request_durability] is called after [Self::shutdown], the
     /// former will panic.
     pub async fn shutdown(&self) -> anyhow::Result<TxOffset> {
-        self.shutdown.send(()).await?;
+        self.shutdown
+            .send(())
+            .await
+            .context("durability worker already closed")?;
         // Wait for the channel to be closed.
         self.request_tx.closed().await;
         // Load the latest tx offset and wait for it to become durable.
