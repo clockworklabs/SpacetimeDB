@@ -220,7 +220,7 @@ cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install
                 );
             }
 
-            bash!("docs/scripts/regenerate-cli-reference.sh");
+            bash!("docs/scripts/regenerate-cli-reference.sh")?;
             bash!("git status")?;
             bash!(
                 r#"
