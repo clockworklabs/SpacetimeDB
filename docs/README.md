@@ -38,8 +38,10 @@ git push -u origin a-branch-name-that-describes-my-change
 6. Go to our GitHub and open a PR that references your branch in your fork on
    your GitHub
 
-### Docusaurus Documentation
+### CLI Reference Section
+To regenerate the CLI reference section, run `pnpm generate-cli-docs`.
 
+### Docusaurus Documentation
 For more information on how to use Docusaurus, see the
 [Docusaurus documentation](https://docusaurus.io/docs).
 
