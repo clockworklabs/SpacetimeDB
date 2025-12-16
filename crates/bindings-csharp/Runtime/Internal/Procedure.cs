@@ -114,40 +114,6 @@ public class ProcedureContextManager : IProcedureContextManager
         }
     }
 
-    public async Task<bool> CommitMutTxWithRetryAsync(Func<Task<bool>> retryBody)
-    {
-        try
-        {
-            await CommitMutTxAsync().ConfigureAwait(false);
-            return true;
-        }
-        catch (TransactionNotAnonymousException)
-        {
-            return false;
-        }
-        catch (StdbException)
-        {
-            Log.Warn("Committing anonymous transaction failed; retrying once.");
-            if (await retryBody().ConfigureAwait(false))
-            {
-                await CommitMutTxAsync().ConfigureAwait(false);
-                return true;
-            }
-            return false;
-        }
-    }
-
-    public Task CommitMutTxAsync()
-    {
-        CommitMutTx();
-        return Task.CompletedTask;
-    }
-
-    public Task AbortMutTxAsync()
-    {
-        AbortMutTx();
-        return Task.CompletedTask;
-    }
 
     public void Dispose()
     {
@@ -191,14 +157,6 @@ public interface IProcedureContextManager : IDisposable
     /// <summary>Commits a transaction with a retry mechanism.</summary>
     bool CommitMutTxWithRetry(Func<bool> retryBody);
 
-    /// <summary>Asynchronously commits a transaction with a retry mechanism.</summary>
-    Task<bool> CommitMutTxWithRetryAsync(Func<Task<bool>> retryBody);
-
-    /// <summary>Asynchronously commits the current mutable transaction.</summary>
-    Task CommitMutTxAsync();
-
-    /// <summary>Asynchronously aborts the current mutable transaction.</summary>
-    Task AbortMutTxAsync();
 }
 
 /// <summary>
