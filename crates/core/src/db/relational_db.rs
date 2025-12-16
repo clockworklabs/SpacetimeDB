@@ -818,7 +818,7 @@ impl RelationalDB {
             Txdata,
         };
 
-        let is_not_ephemeral_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
+        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
 
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
@@ -844,7 +844,7 @@ impl RelationalDB {
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
-            let truncates: Box<_> = truncates.into_iter().filter(is_not_ephemeral_table).collect();
+            let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
 
