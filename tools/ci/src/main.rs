@@ -277,7 +277,7 @@ fn main() -> Result<()> {
             }
 
             cmd!("pnpm", "install", "--recursive").run()?;
-            cmd!("pnpm", "generate-cli-docs")?;
+            cmd!("pnpm", "generate-cli-docs").run()?;
             let out = cmd!("git", "status", "--porcelain").read()?;
             if out == "" {
                 log::info!("No docs changes detected");
