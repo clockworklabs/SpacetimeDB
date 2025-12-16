@@ -16,12 +16,12 @@ use crate::{
         IterByColRangeTx,
     },
     system_tables::{
-        system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow, StTableFields,
-        StTableRow, StViewRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX, ST_COLUMN_NAME,
-        ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX, ST_INDEX_NAME,
-        ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX, ST_SCHEDULED_ID,
-        ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID, ST_TABLE_IDX, ST_VAR_ID,
-        ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
+        is_built_in_meta_row, system_tables, StColumnRow, StConstraintData, StConstraintRow, StIndexRow, StSequenceRow,
+        StTableFields, StTableRow, StViewRow, SystemTable, ST_CLIENT_ID, ST_CLIENT_IDX, ST_COLUMN_ID, ST_COLUMN_IDX,
+        ST_COLUMN_NAME, ST_CONSTRAINT_ID, ST_CONSTRAINT_IDX, ST_CONSTRAINT_NAME, ST_INDEX_ID, ST_INDEX_IDX,
+        ST_INDEX_NAME, ST_MODULE_ID, ST_MODULE_IDX, ST_ROW_LEVEL_SECURITY_ID, ST_ROW_LEVEL_SECURITY_IDX,
+        ST_SCHEDULED_ID, ST_SCHEDULED_IDX, ST_SEQUENCE_ID, ST_SEQUENCE_IDX, ST_SEQUENCE_NAME, ST_TABLE_ID,
+        ST_TABLE_IDX, ST_VAR_ID, ST_VAR_IDX, ST_VIEW_ARG_ID, ST_VIEW_ARG_IDX,
     },
     traits::{EphemeralTables, TxData},
 };
@@ -423,13 +423,24 @@ impl CommittedState {
         row: &ProductValue,
     ) -> Result<()> {
         let (table, blob_store, pool) = self.get_table_and_blob_store_or_create(table_id, schema);
-        let (_, row_ref) = table.insert(pool, blob_store, row).map_err(|e| -> DatastoreError {
-            match e {
-                InsertError::Bflatn(e) => TableError::Bflatn(e).into(),
-                InsertError::Duplicate(e) => TableError::Duplicate(e).into(),
-                InsertError::IndexError(e) => IndexError::UniqueConstraintViolation(e).into(),
+
+        let (_, row_ref) = match table.insert(pool, blob_store, row) {
+            Ok(stuff) => stuff,
+            Err(InsertError::Duplicate(e)) => {
+                if is_built_in_meta_row(table_id, row)? {
+                    // If this is a meta-descriptor for a system object,
+                    // and it already exists exactly, then we can safely ignore the insert.
+                    // Any error other than `Duplicate` means the commitlog
+                    // has system table schemas which do not match our expectations,
+                    // which is almost certainly an unrecoverable error.
+                    return Ok(());
+                } else {
+                    return Err(TableError::Duplicate(e).into());
+                }
             }
-        })?;
+            Err(InsertError::Bflatn(e)) => return Err(TableError::Bflatn(e).into()),
+            Err(InsertError::IndexError(e)) => return Err(IndexError::UniqueConstraintViolation(e).into()),
+        };
 
         if table_id == ST_COLUMN_ID {
             // We've made a modification to `st_column`.
