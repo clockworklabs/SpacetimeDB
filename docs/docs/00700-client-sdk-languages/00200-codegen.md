@@ -10,7 +10,7 @@ import TabItem from '@theme/TabItem';
 
 Before you can interact with a SpacetimeDB [database](/databases) from a client application, you must generate client bindings for your [module](/modules). These bindings create type-safe interfaces that allow your client to query [tables](/tables), invoke [reducers](/functions/reducers), call [procedures](/functions/procedures), and subscribe to [tables](/tables), and/or [views](/functions/views).
 
-## What Are Client Bindings?
+## What Are Module Bindings?
 
 Client bindings are auto-generated code that mirrors your module's schema and functions. They provide:
 
