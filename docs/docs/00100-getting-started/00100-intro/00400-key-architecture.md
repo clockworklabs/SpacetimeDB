@@ -252,7 +252,7 @@ See [Reducers](/functions/reducers) for more details about reducers.
 ## Procedure
 
 A **procedure** is a function exported by a [database](#database), similar to a [reducer](#reducer).
-Connected [clients](/#client) can call procedures.
+Connected [clients](#client) can call procedures.
 Procedures can perform additional operations not possible in reducers, including making HTTP requests to external services.
 However, procedures don't automatically run in database transactions,
 and must manually open and commit a transaction in order to read from or modify the database state.
