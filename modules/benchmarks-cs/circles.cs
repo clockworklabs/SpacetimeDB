@@ -1,5 +1,6 @@
-namespace Benchmarks;
 using SpacetimeDB;
+
+namespace Benchmarks;
 
 public static partial class circles
 {
@@ -47,9 +48,9 @@ public static partial class circles
 
     public static bool IsOverlapping(Entity entity1, Entity entity2)
     {
-        var entity1_radius = MassToRadius(entity1.mass);
-        var entity2_radius = MassToRadius(entity2.mass);
-        var distance = (float)
+        float entity1_radius = MassToRadius(entity1.mass);
+        float entity2_radius = MassToRadius(entity2.mass);
+        float distance = (float)
             Math.Sqrt(
                 Math.Pow(entity1.position.x - entity2.position.x, 2)
                     + Math.Pow(entity1.position.y - entity2.position.y, 2)
