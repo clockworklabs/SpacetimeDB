@@ -65,7 +65,6 @@ public static class Module
     private static readonly List<Action<BytesSink>> viewDefs = [];
     private static readonly List<IView> viewDispatchers = [];
     private static readonly List<IAnonymousView> anonymousViewDispatchers = [];
-    private static readonly ProcedureContextManager ProcedureContextManager = new();
 
     private static Func<
         Identity,
@@ -348,7 +347,6 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            using var scope = ProcedureContextManager.PushContext(ctx);
             var bytes = Array.Empty<byte>();
             try
             {

@@ -125,25 +125,55 @@ public abstract class ProcedureContextBase(
         }
     }
 
-    private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
-    )
-        where TError : Exception
+    // Private transaction management methods (Rust-like encapsulation)
+    private long StartMutTx()
     {
-        using var procedure = new SpacetimeDB.Internal.ProcedureContextManager();
+        var status = Internal.FFI.procedure_start_mut_tx(out var micros);
+        Internal.FFI.ErrnoHelpers.ThrowIfError(status);
+        return micros;
+    }
 
-        using var contextScope = procedure.PushContext(this);
+    private void CommitMutTx()
+    {
+        var status = Internal.FFI.procedure_commit_mut_tx();
+        Internal.FFI.ErrnoHelpers.ThrowIfError(status);
+    }
 
-        return RunWithRetry(procedure, body);
+    private void AbortMutTx()
+    {
+        var status = Internal.FFI.procedure_abort_mut_tx();
+        Internal.FFI.ErrnoHelpers.ThrowIfError(status);
+    }
+
+    private bool CommitMutTxWithRetry(Func<bool> retryBody)
+    {
+        try
+        {
+            CommitMutTx();
+            return true;
+        }
+        catch (TransactionNotAnonymousException)
+        {
+            return false;
+        }
+        catch (StdbException)
+        {
+            Log.Warn("Committing anonymous transaction failed; retrying once.");
+            if (retryBody())
+            {
+                CommitMutTx();
+                return true;
+            }
+            return false;
+        }
     }
 
     private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
-        ProcedureContextManager procedureContextManagerContextManager,
         Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
     )
         where TError : Exception
     {
-        var result = RunOnce(procedureContextManagerContextManager, body);
+        var result = RunOnce(body);
         if (!result.IsSuccess)
         {
             return result;
@@ -151,11 +181,11 @@ public abstract class ProcedureContextBase(
 
         bool Retry()
         {
-            result = RunOnce(procedureContextManagerContextManager, body);
+            result = RunOnce(body);
             return result.IsSuccess;
         }
 
-        if (!procedureContextManagerContextManager.CommitMutTxWithRetry(Retry))
+        if (!CommitMutTxWithRetry(Retry))
         {
             return result;
         }
@@ -164,13 +194,13 @@ public abstract class ProcedureContextBase(
     }
 
     private TxResult<TResult, TError> RunOnce<TResult, TError>(
-        ProcedureContextManager procedureContextManagerContextManager,
         Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
     )
         where TError : Exception
     {
-        _ = procedureContextManagerContextManager.StartMutTx();
-        using var guard = new AbortGuard(procedureContextManagerContextManager.AbortMutTx);
+        var micros = StartMutTx();
+        using var guard = new AbortGuard(AbortMutTx);
+        EnterTxContext(micros);
         var txCtx = RequireTxContext();
 
         TxResult<TResult, TError> result;
@@ -189,7 +219,7 @@ public abstract class ProcedureContextBase(
             return result;
         }
 
-        procedureContextManagerContextManager.AbortMutTx();
+        AbortMutTx();
         guard.Disarm();
         return result;
     }
