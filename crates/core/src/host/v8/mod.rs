@@ -48,8 +48,8 @@ use std::time::Instant;
 use tokio::sync::oneshot;
 use v8::script_compiler::{compile_module, Source};
 use v8::{
-    scope_with_context, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope,
-    ResolveModuleCallback, ScriptOrigin, Value,
+    scope_with_context, Context, Function, Isolate, Local, MapFnTo, OwnedIsolate, PinScope, ResolveModuleCallback,
+    ScriptOrigin, Value,
 };
 
 mod budget;
