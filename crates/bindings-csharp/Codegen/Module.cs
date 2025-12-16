@@ -1279,7 +1279,7 @@ record ProcedureDeclaration
                 .Concat(successLines)
                 .ToArray();
         }
-        else if (ReturnType.IsVoid)
+        else if (ReturnType.Name == "SpacetimeDB.Unit")
         {
             bodyLines = new[] { $"{invocation};", "return System.Array.Empty<byte>();" };
         }
@@ -1314,7 +1314,7 @@ record ProcedureDeclaration
                     : $"new {txPayload.BSATNName}().GetAlgebraicType(registrar)"
             )
             : (
-                ReturnType.IsVoid
+                ReturnType.Name == "SpacetimeDB.Unit"
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
                     : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)"
             );

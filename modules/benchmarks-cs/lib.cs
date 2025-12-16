@@ -27,4 +27,4 @@ public partial struct Load(uint initial_load)
     public uint num_players = initial_load;
     public uint big_table = initial_load * 50;
     public uint biggest_table = initial_load * 100;
-}
+} 

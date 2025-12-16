@@ -44,10 +44,6 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// </summary>
     public static string BsatnFieldSuffix => $"{BSATN_FIELD_SUFFIX}";
 
-    /// <summary>
-    /// Indicates whether this type represents a void return.
-    /// </summary>
-    public virtual bool IsVoid => false;
 
     /// <summary>
     /// Parse a type use for a member.
@@ -60,7 +56,8 @@ public abstract record TypeUse(string Name, string BSATNName)
     {
         if (typeSymbol.SpecialType == SpecialType.System_Void)
         {
-            return new VoidUse("void", "SpacetimeDB.BSATN.Unit");
+            // Treat void as equivalent to Unit type
+            return new ReferenceUse("SpacetimeDB.Unit", "SpacetimeDB.Unit.BSATN");
         }
 
         var type = SymbolToName(typeSymbol);
@@ -204,20 +201,6 @@ public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInf
         $"var {outVar} = {inVar} == null ? 0 : {inVar}.GetHashCode();";
 }
 
-public sealed record VoidUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
-{
-    public override bool IsVoid => true;
-
-    public override string EqualsStatement(
-        string inVar1,
-        string inVar2,
-        string outVar,
-        int level = 0
-    ) => $"var {outVar} = true;";
-
-    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
-        $"var {outVar} = 0;";
-}
 
 /// <summary>
 /// A use of an array type.

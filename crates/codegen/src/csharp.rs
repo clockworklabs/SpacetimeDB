@@ -355,7 +355,7 @@ const REDUCER_EVENTS: &str = r#"
         /// <summary>
         /// The procedure event that caused this callback to run.
         /// </summary>
-        public ProcedureEvent Event { get; }
+        public readonly ProcedureEvent Event;
 
         /// <summary>
         /// Access to tables in the client cache, which stores a read-only replica of the remote database state.

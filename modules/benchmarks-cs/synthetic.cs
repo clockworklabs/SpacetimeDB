@@ -550,4 +550,4 @@ public static partial class synthetic
             Log.Info("hello again!");
         }
     }
-}
+} 
