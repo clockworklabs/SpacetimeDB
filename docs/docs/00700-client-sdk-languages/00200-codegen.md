@@ -12,7 +12,7 @@ Before you can interact with a SpacetimeDB [database](/databases) from a client 
 
 ## What Are Module Bindings?
 
-Client bindings are auto-generated code that mirrors your module's schema and functions. They provide:
+Module bindings are auto-generated code that mirrors your module's schema and functions. They provide:
 
 - **Type definitions** matching your module's tables and types
 - **Callable functions** for invoking reducers and procedures
