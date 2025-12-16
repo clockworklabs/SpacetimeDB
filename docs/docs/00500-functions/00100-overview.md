@@ -5,6 +5,17 @@ slug: /functions
 
 # Functions
 
+Property / Characteristic | Reducers | Procedures | Views
+-- | -- | -- | --
+Read from tables | ✓ | ✓ | ✓
+Write to tables | ✓ | ✓ |  
+Runs in transaction by default | ✓ |   |  
+Atomic | ✓ | (manual) | ✓
+Deterministic | ✓ |   | ✓
+External I/O (HTTP, etc.) |   | ✓ |  
+Side-effecting |   | ✓ |  
+Schedulable | ✓ | ✓ |  
+
 SpacetimeDB modules can export three types of functions that clients can interact with:
 
 ## Reducers
