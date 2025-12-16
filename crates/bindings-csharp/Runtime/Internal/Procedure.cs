@@ -28,26 +28,20 @@ public interface IProcedure
 /// </summary>
 public class ProcedureContextManager : IProcedureContextManager
 {
-    private readonly AsyncLocal<IInternalProcedureContext?> current = new();
+    private static IInternalProcedureContext? _current;
 
     private readonly struct ContextScope : IDisposable
     {
-        private readonly IInternalProcedureContext? previous;
-        private readonly ProcedureContextManager? _procedure;
+        private readonly IInternalProcedureContext? _previous;
 
-        public ContextScope(ProcedureContextManager procedure, IInternalProcedureContext? next)
+        public ContextScope(IInternalProcedureContext? previous)
         {
-            _procedure = procedure;
-            previous = procedure.current.Value;
-            procedure.current.Value = next;
+            _previous = previous;
         }
 
         public void Dispose()
         {
-            if (_procedure != null && _procedure.current.Value != null)
-            {
-                _procedure.current.Value = previous;
-            }
+            _current = _previous;
         }
     }
 
@@ -56,14 +50,15 @@ public class ProcedureContextManager : IProcedureContextManager
     /// </summary>
     /// <param name="ctx">The procedure context to push.</param>
     /// <returns>An <see cref="IDisposable"/> that will restore the previous context when disposed.</returns>
-
     public IDisposable PushContext(IProcedureContext ctx)
     {
-        return new ContextScope(this, ctx as IInternalProcedureContext);
+        var previous = _current;
+        _current = ctx as IInternalProcedureContext;
+        return new ContextScope(previous);
     }
 
-    private IInternalProcedureContext RequireContext() =>
-        current.Value
+    private static IInternalProcedureContext RequireContext() =>
+        _current
         ?? throw new InvalidOperationException("Transaction syscalls require a procedure context.");
 
     public long StartMutTx()
