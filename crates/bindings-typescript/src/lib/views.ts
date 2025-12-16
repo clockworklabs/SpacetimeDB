@@ -16,6 +16,7 @@ import type { ReadonlyTable } from './table';
 import {
   RowBuilder,
   type Infer,
+  type InferSpacetimeTypeOfTypeBuilder,
   type InferTypeOfRow,
   type TypeBuilder,
 } from './type_builders';
@@ -58,7 +59,7 @@ export type ViewFn<
   | ((
       ctx: ViewCtx<S>,
       params: InferTypeOfRow<Params>
-    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>>);
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
 
 export type AnonymousViewFn<
   S extends UntypedSchemaDef,
@@ -69,7 +70,7 @@ export type AnonymousViewFn<
   | ((
       ctx: AnonymousViewCtx<S>,
       params: InferTypeOfRow<Params>
-    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>>);
+    ) => RowTypedQuery<FlattenedArray<Infer<Ret>>, ExtractArrayProduct<Ret>>);
 
 export type ViewReturnTypeBuilder =
   | TypeBuilder<
@@ -146,3 +147,12 @@ type ViewInfo<F> = {
 
 export const VIEWS: ViewInfo<ViewFn<any, any, any>>[] = [];
 export const ANON_VIEWS: ViewInfo<AnonymousViewFn<any, any, any>>[] = [];
+
+// A helper to get the product type out of a type builder.
+// This is only non-never if the type builder is an array.
+type ExtractArrayProduct<T extends TypeBuilder<any, any>> =
+  InferSpacetimeTypeOfTypeBuilder<T> extends { tag: 'Array'; value: infer V }
+    ? V extends { tag: 'Product'; value: infer P }
+      ? P
+      : never
+    : never;
