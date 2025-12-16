@@ -1084,13 +1084,25 @@ pub struct ProcedureContext {
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
-    // TODO: Add rng?
+    // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
 }
 
 #[cfg(feature = "unstable")]
 impl ProcedureContext {
+    fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            http: http::HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+        }
+    }
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.

@@ -177,7 +177,6 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
         log::info!("executing cargo ci {subcmd}");
         cmd!("cargo", "ci", &subcmd).run()?;
     }
-
     Ok(())
 }
 #[derive(Debug, Clone)]
@@ -610,7 +609,13 @@ fn main() -> Result<()> {
 
     match cli.cmd {
         Some(CiCmd::Test) => {
+            // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
+
             cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
+            // TODO: This should check for a diff at the start. If there is one, we should alert the user
+            // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
+            // if they want those checks.
+
             // The fallocate tests have been flakely when running in parallel
             cmd!(
                 "cargo",
@@ -768,41 +773,41 @@ fn main() -> Result<()> {
             target,
             github_token_auth,
         }) => {
-            let target = target.map(|t| format!("--target {t}")).unwrap_or_default();
-            let github_token_auth_flag = if github_token_auth {
-                "--features github-token-auth "
+            let mut common_args = vec![];
+            if let Some(target) = target.as_ref() {
+                common_args.push("--target");
+                common_args.push(target);
+                log::info!("checking update flow for target: {target}");
             } else {
-                ""
-            };
+                log::info!("checking update flow");
+            }
+            if github_token_auth {
+                common_args.push("--features");
+                common_args.push("github-token-auth");
+            }
 
-            println!("checking update flow for target: {target}");
-            cmd!(
+            cmd(
                 "cargo",
-                "build",
-                &format!("{github_token_auth_flag}{target}"),
-                "-p",
-                "spacetimedb-update",
+                ["build", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.clone()),
             )
             .run()?;
             // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
             // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
             // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
             let root_dir = tempfile::tempdir()?;
-            let root_path = root_dir.path().to_string_lossy().to_string();
-            cmd!(
+            let root_dir_string = root_dir.path().to_string_lossy().to_string();
+            let root_arg = format!("--root-dir={}", root_dir_string);
+            cmd(
                 "cargo",
-                "run",
-                &format!("{github_token_auth_flag}{target}"),
-                "-p",
-                "spacetimedb-update",
-                "--",
-                "self-install",
-                "--root-dir",
-                &root_path,
-                "--yes",
+                ["run", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.clone())
+                    .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
             )
             .run()?;
-            cmd!(format!("{}/spacetime", root_path), "--root-dir", &root_path, "help",).run()?;
+            cmd!(format!("{}/spacetime", root_dir_string), &root_arg, "help",).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
@@ -819,18 +824,17 @@ fn main() -> Result<()> {
 
             cmd!("pnpm", "install", "--recursive").run()?;
             let cli_docs = cmd!("cargo", "run", "--features", "markdown-docs", "-p", "spacetimedb-cli",).read()?;
-            fs::write("docs/docs/cli-reference.md", cli_docs)?;
+            // TODO: This is actually incorrect and needs updating, but is a correct migration of the previous workflow.
+            let path = "docs/docs/cli-reference.md";
+            fs::write(path, cli_docs)?;
             cmd!("pnpm", "format").run()?;
-            let status = cmd!("git", "diff", "--exit-code", "HEAD")
-                .stdout_null()
-                .stderr_null()
+            let status = cmd!("git", "diff", "--exit-code", "HEAD", "--", path)
                 .unchecked()
                 .run()?;
             if !status.status.success() {
-                println!("It looks like the CLI docs have changed:");
                 anyhow::bail!("CLI docs are out of date");
             } else {
-                println!("No docs changes detected");
+                log::info!("No docs changes detected");
             }
         }
 
