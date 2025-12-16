@@ -492,9 +492,11 @@ impl CommittedState {
             // A row was removed from `st_table`, so a table was dropped.
             // Remove that table from the in-memory structures.
             let dropped_table_id = Self::read_table_id(row);
-            self.tables
-                .remove(&dropped_table_id)
-                .ok_or_else(|| anyhow!("table {} to remove should exist", dropped_table_id))?;
+            // It's safe to ignore the case where we don't have an in-memory structure for the deleted table.
+            // This can happen if a table is initially empty at the snapshot or its creation,
+            // and never has any rows inserted into or deleted from it.
+            self.tables.remove(&dropped_table_id);
+
             // Mark the table as dropped so that when
             // processing row deletions for that table later,
             // they are simply ignored in (1).
