@@ -94,7 +94,7 @@ After completing setup, `spacetime dev`:
 - Watches your source files for changes
 - Automatically rebuilds and republishes when you save changes
 
-Your database will be available at `http://localhost:3000`.
+Your database will be available at `https://maincloud.spacetimedb.com`.
 
 ### Project Structure
 
