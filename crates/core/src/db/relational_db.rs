@@ -824,7 +824,7 @@ impl RelationalDB {
             let inserts: Box<_> = tx_data
                 .inserts()
                 // Skip ephemeral tables
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+                .filter(|(table_id, _)| is_persistent_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
