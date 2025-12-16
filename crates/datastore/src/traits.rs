@@ -236,7 +236,7 @@ impl TxData {
     /// Determines which ephemeral tables were modified in this transaction.
     ///
     /// Iterates over the tables updated in this transaction and records those that
-    /// also appear in `all_ephemeral_tables`.  
+    /// also appear in `all_ephemeral_tables`.
     /// `self.ephemeral_tables` remains `None` if no ephemeral tables were modified.
     pub fn set_ephemeral_tables(&mut self, all_ephemeral_tables: &EphemeralTables) {
         for tid in self.tables.keys() {
@@ -250,6 +250,16 @@ impl TxData {
 
     pub fn ephemeral_tables(&self) -> Option<&EphemeralTables> {
         self.ephemeral_tables.as_ref()
+    }
+
+    /// Check if `table_id` is in the set of ephemeral tables for this transaction.
+    ///
+    /// Beware that ephemeral tables are known only after [Self::set_ephemeral_tables]
+    /// has been called.
+    pub fn is_ephemeral_table(&self, table_id: &TableId) -> bool {
+        self.ephemeral_tables
+            .as_ref()
+            .is_some_and(|etables| etables.contains(table_id))
     }
 
     /// Obtain an iterator over the inserted rows per table.
@@ -304,16 +314,26 @@ impl TxData {
         self.truncates.iter().copied()
     }
 
-    /// Check if this [`TxData`] contains any `inserted | deleted` rows or `connect/disconnect` operations.
+    /// Check if this [`TxData`] contains any `inserted | deleted` rows
+    /// or `connect/disconnect` operations.
+    ///
+    /// Mutations of ephemeral tables are excluded, i.e. if the transaction
+    /// modifies only ephemeral tables (and is not a connect/disconnect operation),
+    /// the method returns `false`.
     ///
     /// This is used to determine if a transaction should be written to disk.
     pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
-        self.inserts().any(|(_, inserted_rows)| !inserted_rows.is_empty())
-            || self.deletes().any(|(.., deleted_rows)| !deleted_rows.is_empty())
-            || matches!(
-                reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
-                Some(Some("connected__" | "disconnected__"))
-            )
+        let is_non_ephemeral_mutation =
+            |(table_id, rows): (_, &Arc<[_]>)| !(self.is_ephemeral_table(table_id) || rows.is_empty());
+
+        let has_inserts = self.inserts().any(is_non_ephemeral_mutation);
+        let has_deletes = self.deletes().any(is_non_ephemeral_mutation);
+        let is_connect_disconnect = matches!(
+            reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
+            Some(Some("connected__" | "disconnected__"))
+        );
+
+        has_inserts || has_deletes || is_connect_disconnect
     }
 
     /// Returns a list of tables affected in this transaction.
