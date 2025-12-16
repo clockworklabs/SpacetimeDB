@@ -250,7 +250,7 @@ By the end of this introduction, you will have created a basic single page web a
 
 ## Project structure
 
-Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
+Make sure you're in the `quickstart-chat` directory you created earlier in this guide:
 
 ```bash
 cd quickstart-chat
@@ -298,7 +298,7 @@ Replace the entire contents of `client/src/App.tsx` with the following:
 ```tsx
 import React, { useEffect, useState } from 'react';
 import { Message, tables, reducers } from './module_bindings';
-import { useSpacetimeDB, useTable, where, eq } from 'spacetimedb/react';
+import { useSpacetimeDB, useTable, where, eq, useReducer } from 'spacetimedb/react';
 import { Identity, Timestamp } from 'spacetimedb';
 import './App.css';
 
@@ -315,10 +315,10 @@ function App() {
   const [systemMessages, setSystemMessages] = useState([] as Infer<typeof Message>[]);
   const [newMessage, setNewMessage] = useState('');
 
-  const prettyMessages: PrettyMessage[] = [];
   const onlineUsers: User[] = [];
   const offlineUsers: User[] = [];
   const users = [...onlineUsers, ...offlineUsers];
+  const prettyMessages: PrettyMessage[] = [];
 
   const name = '';
 
@@ -696,14 +696,8 @@ In your `quickstart-chat` directory, run:
 
 ```bash
 mkdir -p client/src/module_bindings
-spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path server
+spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path spacetimedb
 ```
-
-:::note
-
-This command assumes you've already created a server module in `quickstart-chat/server`. If you haven't completed one of the server module quickstart guides, you can follow either the [Rust](/docs/quickstarts/rust) or [C#](/docs/quickstarts/c-sharp) module quickstart to create one and then return here.
-
-:::
 
 Take a look inside `client/src/module_bindings`. The CLI should have generated several files:
 
@@ -833,7 +827,7 @@ const prettyMessages: PrettyMessage[] = messages
   .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
   .map(message => {
     const user = users.find(
-      u => u.identity.message.sender.toHexString()
+      u => u.identity.message?.sender?.toHexString()
     );
     return {
       senderName: user?.name || message.sender.toHexString().substring(0, 8),
