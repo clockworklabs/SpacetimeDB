@@ -277,18 +277,12 @@ fn main() -> Result<()> {
             }
 
             cmd!("pnpm", "install", "--recursive").run()?;
-            let cli_docs = cmd!("cargo", "run", "--features", "markdown-docs", "-p", "spacetimedb-cli",).read()?;
-            // TODO: This is actually incorrect and needs updating, but is a correct migration of the previous workflow.
-            let path = "docs/docs/cli-reference.md";
-            fs::write(path, cli_docs)?;
-            cmd!("pnpm", "format").run()?;
-            let status = cmd!("git", "diff", "--exit-code", "HEAD", "--", path)
-                .unchecked()
-                .run()?;
-            if !status.status.success() {
-                anyhow::bail!("CLI docs are out of date");
-            } else {
+            cmd!("pnpm", "generate-cli-docs")?;
+            let out = cmd!("git", "status", "--porcelain").read()?;
+            if out == "" {
                 log::info!("No docs changes detected");
+            } else {
+                anyhow::bail!("CLI docs are out of date");
             }
         }
 
