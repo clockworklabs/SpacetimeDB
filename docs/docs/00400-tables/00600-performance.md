@@ -12,7 +12,7 @@ Follow these guidelines to optimize table performance in your SpacetimeDB module
 
 ## Use Indexes for Lookups
 
-Always prefer indexed lookups over full table scans:
+Generally prefer indexed lookups over full table scans:
 
 ✅ **Good - Using an index:**
 
