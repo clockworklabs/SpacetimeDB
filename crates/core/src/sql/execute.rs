@@ -14,6 +14,7 @@ use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::subscription::tx::DeltaTx;
+use crate::util::asyncify;
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{check_row_limit, DbProgram, TxMode};
 use anyhow::anyhow;
@@ -197,9 +198,16 @@ pub async fn run(
 ) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
-    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
-    })?;
+    let (tx, stmt) = {
+        // Ensure lock acquisition doesn't block a worker thread.
+        let tx = asyncify({
+            let db = db.clone();
+            move || db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql)
+        })
+        .await;
+        let stmt = compile_sql_stmt(sql_text, &SchemaViewer::new(&tx, &auth), &auth);
+        db.rollback_on_err(tx, stmt)
+    }?;
 
     let mut metrics = ExecutionMetrics::default();
 
