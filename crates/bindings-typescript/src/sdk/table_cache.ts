@@ -85,8 +85,9 @@ export class TableCacheImpl<
     this.rows = new Map();
     this.emitter = new EventEmitter();
     // Build indexes
-    const indexesDef = this.tableDef.indexes || {};
+    const indexesDef = this.tableDef.indexes || [];
     for (const idx of indexesDef) {
+      // TODO: don't do this. See comment in `tableToSchema` in `schema.ts`
       const idxDef = idx as UntypedIndex<
         keyof TableDefForTableName<RemoteModule, TableName>['columns'] & string
       >;

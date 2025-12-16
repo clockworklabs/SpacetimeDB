@@ -374,7 +374,7 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableName: name,
     rowSpacetimeType: productType,
     tableDef,
-    idxs: indexes as OptsIndices<Opts>,
+    idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
   };
 }
