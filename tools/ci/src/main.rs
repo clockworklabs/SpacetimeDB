@@ -277,12 +277,12 @@ fn main() -> Result<()> {
             }
 
             cmd!("pnpm", "install", "--recursive").run()?;
-            cmd!("pnpm", "generate-cli-docs").run()?;
-            let out = cmd!("git", "status", "--porcelain").read()?;
-            if out == "" {
+            cmd!("pnpm", "generate-cli-docs").dir("docs").run()?;
+            let out = cmd!("git", "status", "--porcelain", "--", "docs").read()?;
+            if out.is_empty() {
                 log::info!("No docs changes detected");
             } else {
-                anyhow::bail!("CLI docs are out of date");
+                anyhow::bail!("CLI docs are out of date:\n{out}");
             }
         }
 
