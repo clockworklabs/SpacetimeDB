@@ -326,14 +326,12 @@ impl TxData {
         let is_non_ephemeral_mutation =
             |(table_id, rows): (_, &Arc<[_]>)| !(self.is_ephemeral_table(table_id) || rows.is_empty());
 
-        let has_inserts = self.inserts().any(is_non_ephemeral_mutation);
-        let has_deletes = self.deletes().any(is_non_ephemeral_mutation);
-        let is_connect_disconnect = matches!(
-            reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
-            Some(Some("connected__" | "disconnected__"))
-        );
-
-        has_inserts || has_deletes || is_connect_disconnect
+        self.inserts().any(is_non_ephemeral_mutation)
+            || self.deletes().any(is_non_ephemeral_mutation)
+            || matches!(
+                reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
+                Some(Some("connected__" | "disconnected__"))
+            )
     }
 
     /// Returns a list of tables affected in this transaction.
