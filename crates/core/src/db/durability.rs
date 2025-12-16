@@ -1,9 +1,12 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Duration,
 };
 
-use anyhow::Context as _;
+use log::{info, warn};
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
@@ -11,13 +14,15 @@ use spacetimedb_commitlog::payload::{
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
 use spacetimedb_durability::{DurableOffset, TxOffset};
+use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use tokio::{
     runtime,
     sync::mpsc::{channel, unbounded_channel, Receiver, Sender, UnboundedReceiver, UnboundedSender},
+    time::{timeout, Instant},
 };
 
-use crate::db::persistence::Durability;
+use crate::db::{lock_file::LockFile, persistence::Durability};
 
 /// A request to persist a transaction or to terminate the actor.
 pub struct DurabilityRequest {
@@ -93,8 +98,12 @@ impl DurabilityWorker {
                 tx_data: tx_data.clone(),
             })
             .inspect(|()| {
-                self.requested_tx_offset
-                    .fetch_max(tx_data.tx_offset().unwrap_or_default(), Ordering::SeqCst);
+                // If `tx_data` has a `None` tx offset, the actor will ignore it.
+                // Otherwise, record the offset as requested, so that
+                // [Self::shutdown] can determine when the queue is drained.
+                if let Some(tx_offset) = tx_data.tx_offset() {
+                    self.requested_tx_offset.fetch_max(tx_offset, Ordering::SeqCst);
+                }
             })
             .expect(HUNG_UP);
     }
@@ -115,11 +124,10 @@ impl DurabilityWorker {
     /// If [Self::request_durability] is called after [Self::shutdown], the
     /// former will panic.
     pub async fn shutdown(&self) -> anyhow::Result<TxOffset> {
-        self.shutdown
-            .send(())
-            .await
-            .context("durability worker already closed")?;
-        // Wait for the channel to be closed.
+        // Request the actor to shutdown.
+        // Ignore send errors -- in that case a shutdown is already in progress.
+        let _ = self.shutdown.try_send(());
+        // Wait for the request channel to be closed.
         self.request_tx.closed().await;
         // Load the latest tx offset and wait for it to become durable.
         let latest_tx_offset = self.requested_tx_offset.load(Ordering::SeqCst);
@@ -128,9 +136,53 @@ impl DurabilityWorker {
         Ok(durable_offset)
     }
 
-    /// Get a handle to the tokio runtime `self` was constructed with.
-    pub fn runtime(&self) -> &tokio::runtime::Handle {
-        &self.runtime
+    /// Consume `self` and run [Self::shutdown].
+    ///
+    /// The `lock_file` is not dropped until the shutdown is complete (either
+    /// successfully or unsuccessfully). This is to prevent the database to be
+    /// re-opened for writing while there is still an active background task
+    /// writing to the commitlog.
+    ///
+    /// The shutdown task will be scheduled onto the tokio runtime provided
+    /// to [Self::new]. This means that the task may still be running when this
+    /// method returns.
+    ///
+    /// `database_identity` is used to associate log records with the database
+    /// owning this durability worker.
+    ///
+    /// This method is used in the `Drop` impl for [crate::db::relational_db::RelationalDB].
+    pub(super) fn spawn_shutdown(self, database_identity: Identity, lock_file: LockFile) {
+        let rt = self.runtime.clone();
+        let mut shutdown = rt.spawn(async move { self.shutdown().await });
+        rt.spawn(async move {
+            let label = format!("database={database_identity}");
+            let start = Instant::now();
+            loop {
+                // Warn every 5s if the shutdown doesn't appear to make progress.
+                // The backing durability could still be writing to disk,
+                // but we can't cancel it from here,
+                // so dropping the lock file would be unsafe.
+                match timeout(Duration::from_secs(5), &mut shutdown).await {
+                    Err(_elapsed) => {
+                        let since = start.elapsed().as_secs_f32();
+                        warn!("{label} waiting for durability worker shutdown since {since}s",);
+                        continue;
+                    }
+                    Ok(res) => {
+                        let Ok(done) = res else {
+                            warn!("{label} durability worker shutdown cancelled");
+                            break;
+                        };
+                        match done {
+                            Ok(offset) => info!("{label} durability worker shut down at tx offset: {offset}"),
+                            Err(e) => warn!("{label} error shutting down durability worker: {e:#}"),
+                        }
+                        break;
+                    }
+                }
+            }
+            drop(lock_file);
+        });
     }
 }
 
@@ -145,10 +197,13 @@ impl DurabilityWorkerActor {
     async fn run(mut self) {
         loop {
             tokio::select! {
+                // Biased towards the shutdown channel,
+                // so that adding new requests is prevented promptly.
                 biased;
 
                 Some(()) = self.shutdown.recv() => {
                     self.request_rx.close();
+                    self.shutdown.close();
                 },
 
                 req = self.request_rx.recv() => {

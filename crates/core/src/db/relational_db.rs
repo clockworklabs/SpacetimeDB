@@ -147,13 +147,7 @@ impl Drop for RelationalDB {
         // the durability backend.
         if let Some(worker) = self.durability.take() {
             let lock_file = self.lock_file.clone();
-            let rt = worker.runtime().clone();
-            rt.spawn(async move {
-                if let Err(e) = worker.shutdown().await {
-                    log::warn!("error shutting down durability worker: {e:#}");
-                }
-                drop(lock_file);
-            });
+            worker.spawn_shutdown(self.database_identity, lock_file);
         }
     }
 }
