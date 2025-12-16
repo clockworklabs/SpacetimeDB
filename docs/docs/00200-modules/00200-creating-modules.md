@@ -19,7 +19,7 @@ First, [install the SpacetimeDB CLI](https://spacetimedb.com/install).
 The fastest way to get started developing a module is with `spacetime dev`. This interactive command guides you through creating a new SpacetimeDB project with hot-reloading - whenever you save changes to your module code, SpacetimeDB automatically rebuilds and republishes your module.
 
 :::caution
-`spacetime dev` is currently UNSTABLE and subject to breaking changes.
+`spacetime dev` is currently an unstable command and may change in the future.
 :::
 
 ### Getting Started
