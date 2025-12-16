@@ -8,6 +8,12 @@ slug: /sdks/c-sharp
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
+Before diving into the reference, you may want to review:
+
+- [Generating Client Bindings](/sdks/codegen) - How to generate C# bindings from your module
+- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections (important: C# requires manual connection advancement!)
+- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+
 | Name                                                              | Description                                                                                             |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | [Project setup](#project-setup)                                   | Configure a C# project to use the SpacetimeDB C# client SDK.                                            |

@@ -1,9 +1,9 @@
 ---
-title: Syntax Cheat Sheet
+title: Cheat Sheet
 slug: /modules/cheat-sheet
 ---
 
-# Syntax Cheat Sheet
+# Cheat Sheet
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -366,12 +366,20 @@ spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (ctx, { arg }) =
 // In Cargo.toml: spacetimedb = { version = "1.*", features = ["unstable"] }
 
 #[spacetimedb::procedure]
-fn fetch_data(ctx: &mut ProcedureContext, url: String) -> Result<String, String> {
-    let response = sys::http::request(HttpRequest { url, method: "GET", .. })?;
-    ctx.with_tx(|ctx| {
-        ctx.cache().insert(Cache { data: response });
-    });
-    Ok(response)
+fn fetch_data(ctx: &mut ProcedureContext, url: String) -> String {
+    match ctx.http.get(&url) {
+        Ok(response) => {
+            let body = response.body().to_string_lossy();
+            ctx.with_tx(|ctx| {
+                ctx.db.cache().insert(Cache { data: body.clone() });
+            });
+            body
+        }
+        Err(error) => {
+            log::error!("HTTP request failed: {error:?}");
+            String::new()
+        }
+    }
 }
 ```
 
@@ -390,12 +398,14 @@ spacetimedb.procedure(
   'fetch_data',
   { url: t.string() },
   t.string(),
-  async (ctx, { url }) => {
-    const response = await fetch(url);
-    const data = await response.text();
+  (ctx, { url }) => {
+    const response = ctx.http.fetch(url);
+    const data = response.text();
+    
     ctx.withTx(ctx => {
       ctx.db.cache.insert({ data });
     });
+    
     return data;
   }
 );
@@ -516,7 +526,6 @@ log::error!("Error: {}", msg);
 log::warn!("Warning: {}", msg);
 log::info!("Info: {}", msg);
 log::debug!("Debug: {}", msg);
-log::trace!("Trace: {}", msg);
 ```
 
 </TabItem>
@@ -527,7 +536,6 @@ Log.Error($"Error: {msg}");
 Log.Warn($"Warning: {msg}");
 Log.Info($"Info: {msg}");
 Log.Debug($"Debug: {msg}");
-Log.Trace($"Trace: {msg}");
 ```
 
 </TabItem>

@@ -57,6 +57,23 @@ public partial struct Player
 ```
 
 </TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { table, t } from 'spacetimedb/server';
+
+const players = table(
+  { name: 'players', public: true },
+  {
+    id: t.u64().primaryKey(),
+    name: t.string(),
+    age: t.u32(),
+    user: t.identity(),
+  }
+);
+```
+
+</TabItem>
 
 </Tabs>
 
@@ -109,6 +126,26 @@ And a C# [client](#client) can call that reducer:
 void Main() {
    // ...setup code, then...
    Connection.Reducer.SetPlayerName(57, "Marceline");
+}
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+A reducer can be written in a TypeScript module like so:
+
+```typescript
+spacetimedb.reducer('set_player_name', { id: t.u64(), name: t.string() }, (ctx, { id, name }) => {
+   // ...
+});
+```
+
+And a TypeScript [client](#client) can call that reducer:
+
+```typescript
+function main() {
+   // ...setup code, then...
+   ctx.reducers.setPlayerName(57n, "Marceline");
 }
 ```
 
@@ -186,7 +223,31 @@ a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an 
 or at a specific time.
 
 </TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+spacetimedb.reducer('hello', (ctx) => {
+   try {
+      world(ctx);
+   } catch {
+      otherChanges(ctx);
+   }
+});
+
+spacetimedb.reducer('world', (ctx) => {
+   clearAllTables(ctx);
+   // ...
+});
+```
+
+While SpacetimeDB doesn't support nested transactions,
+a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+or at a specific time.
+
+</TabItem>
 </Tabs>
+
+See [Reducers](/functions/reducers) for more details about reducers.
 
 ## Procedure
 
@@ -349,6 +410,64 @@ A Unreal C++ [client](#client) can also register a callback to run when a proced
 
 See [Procedures](/functions/procedures) for more details about procedures.
 
+## View
+
+A **view** is a read-only function exported by a [database](#database) that computes and returns results from tables. Unlike [reducers](#reducer), views do not modify database state - they only query and return data. Views are useful for computing derived data, aggregations, or joining multiple tables before sending results to clients.
+
+Views must be declared as `public` and accept only a context parameter. They can return either a single row or multiple rows. Like tables, views can be subscribed to and automatically update when their underlying data changes.
+
+<Tabs groupId="syntax" queryString>
+<TabItem value="rust" label="Rust">
+
+A view can be written in Rust like so:
+
+```rust
+#[spacetimedb::view(name = my_player, public)]
+fn my_player(ctx: &spacetimedb::ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender)
+}
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+A view can be written in C# like so:
+
+```csharp
+[SpacetimeDB.View(Name = "MyPlayer", Public = true)]
+public static Player? MyPlayer(ViewContext ctx)
+{
+    return ctx.Db.Player.Identity.Find(ctx.Sender) as Player;
+}
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+A view can be written in a TypeScript module like so:
+
+```typescript
+spacetimedb.view(
+  { name: 'my_player', public: true },
+  t.option(players.row()),
+  (ctx) => {
+    const row = ctx.db.players.identity.find(ctx.sender);
+    return row ?? null;
+  }
+);
+```
+
+</TabItem>
+</Tabs>
+
+Views can be queried and subscribed to using SQL:
+
+```sql
+SELECT * FROM my_player;
+```
+
+See [Views](/functions/views) for more details about views.
+
 ## Client
 
 A **client** is an application that connects to a [database](#database). A client logs in using an [identity](#identity) and receives an [connection id](#connectionid) to identify the connection. After that, it can call [reducers](#reducer) and query public [tables](#table).
@@ -401,19 +520,3 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
 
 <!-- TODO(1.0): Rewrite this section after finalizing energy SKUs. -->
 
-## FAQ
-
-1. What is SpacetimeDB?
-   It's a cloud platform within a database that's fast enough to run real-time games.
-
-1. How do I use SpacetimeDB?
-   Install the `spacetime` command line tool, choose your favorite language, import the SpacetimeDB library, write your module, compile it to WebAssembly, and upload it to the SpacetimeDB cloud platform. Once it's uploaded you can call functions directly on your application and subscribe to changes in application state.
-
-1. How do I get/install SpacetimeDB?
-   Just install our command line tool and then upload your application to the cloud.
-
-1. How do I create a new database with SpacetimeDB?
-   Follow our [Quick Start](/) guide!
-
-1. How do I create a Unity game with SpacetimeDB?
-   Follow our [Unity Tutorial](/docs/tutorials/unity) guide!

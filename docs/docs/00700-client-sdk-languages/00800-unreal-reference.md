@@ -7,6 +7,12 @@ slug: /sdks/unreal
 
 The SpacetimeDB client for Unreal Engine contains all the tools you need to build native clients for SpacetimeDB modules using C++ and Blueprint.
 
+Before diving into the reference, you may want to review:
+
+- [Generating Client Bindings](/sdks/codegen) - How to generate Unreal bindings from your module
+- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
+- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+
 | Name                                                        | Description                                                                                             |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | [Project setup](#project-setup)                             | Configure an Unreal project to use the SpacetimeDB Unreal client SDK.                                   |

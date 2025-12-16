@@ -8,6 +8,12 @@ slug: /sdks/rust
 
 The SpacetimeDB client SDK for Rust contains all the tools you need to build native clients for SpacetimeDB modules using Rust.
 
+Before diving into the reference, you may want to review:
+
+- [Generating Client Bindings](/sdks/codegen) - How to generate Rust bindings from your module
+- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
+- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | [Project setup](#project-setup)                                   | Configure a Rust crate to use the SpacetimeDB Rust client SDK.                                                                         |

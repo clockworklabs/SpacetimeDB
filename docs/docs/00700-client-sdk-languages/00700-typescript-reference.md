@@ -7,6 +7,12 @@ slug: /sdks/typescript
 
 The SpacetimeDB client SDK for TypeScript contains all the tools you need to build clients for SpacetimeDB modules using Typescript, either in the browser or with NodeJS.
 
+Before diving into the reference, you may want to review:
+
+- [Generating Client Bindings](/sdks/codegen) - How to generate TypeScript bindings from your module
+- [Connecting to SpacetimeDB](/sdks/connection) - Establishing and managing connections
+- [SDK API Reference](/sdks/api) - Core concepts that apply across all SDKs
+
 | Name                                                              | Description                                                                                                                            |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | [Project setup](#project-setup)                                   | Configure your TypeScript project to use the SpacetimeDB TypeScript client SDK.                                                        |

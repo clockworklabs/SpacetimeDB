@@ -1,5 +1,5 @@
 ---
-title: Launchpad
+title: Getting Started
 slug: /
 ---
 
@@ -45,17 +45,15 @@ You are now ready to start developing SpacetimeDB modules. Choose your favorite 
 
 <QuickstartLinks />
 
-### Server (Module)
+## Next Steps: Learn SpacetimeDB
 
-- [Rust](/docs/quickstarts/rust)
-- [C#](/docs/quickstarts/c-sharp)
-- [TypeScript](/docs/quickstarts/typescript)
+After completing a quickstart guide, explore these core concepts to deepen your understanding:
 
-⚡**Note:** Rust is [roughly 2x faster](https://faun.dev/c/links/faun/c-vs-rust-vs-go-a-performance-benchmarking-in-kubernetes/) than C#
+### Core Concepts
 
-### Client
-
-- [Rust](/docs/quickstarts/rust)
-- [C# (Standalone)](/docs/quickstarts/c-sharp)
-- [C# (Unity)](/docs/tutorials/unity/part-1)
-- [Typescript](/docs/quickstarts/typescript)
+- **[Modules](/modules)** - Learn how to structure your application code and define your database schema
+- **[Databases](/databases)** - Understand database lifecycle, publishing, and management
+- **[Tables](/tables)** - Define your data structure with tables, columns, and indexes
+- **[Functions](/functions)** - Write reducers, procedures, and views to implement your server logic
+- **[Subscriptions](/subscriptions)** - Enable real-time data synchronization with clients
+- **[Client SDKs](/sdks)** - Connect your client applications to SpacetimeDB
