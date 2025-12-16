@@ -9,16 +9,16 @@ function App() {
   const { isActive: connected } = conn;
 
   // Subscribe to all people in the database
-  const [ people ] = useTable(tables.person);
+  const [people] = useTable(tables.person);
 
-  const addReducer = useReducer(reducers.add)
+  const addReducer = useReducer(reducers.add);
 
   const addPerson = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !connected) return;
 
     // Call the add reducer
-    addReducer({name: name});
+    addReducer({ name: name });
     setName('');
   };
 
