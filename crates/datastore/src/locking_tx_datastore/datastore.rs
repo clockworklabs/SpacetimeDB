@@ -157,11 +157,12 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
-    pub fn replay<F: FnMut(u64)>(&self, progress: F) -> Replay<F> {
+    pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<F> {
         Replay {
             database_identity: self.database_identity,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
+            error_behavior,
         }
     }
 
@@ -971,6 +972,7 @@ pub struct Replay<F> {
     database_identity: Identity,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
+    error_behavior: ErrorBehavior,
 }
 
 impl<F> Replay<F> {
@@ -981,6 +983,7 @@ impl<F> Replay<F> {
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
             dropped_table_names: IntMap::default(),
+            error_behavior: self.error_behavior,
         };
         f(&mut visitor)
     }
@@ -1082,6 +1085,19 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
 // the indexes and constraints as they changed during replay, but that is
 // unnecessary.
 
+/// What to do when encountering an error during commitlog replay due to an invalid TX.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ErrorBehavior {
+    /// Return an error and refuse to continue.
+    ///
+    /// This is the behavior in production, as we don't want to reconstruct an incorrect state.
+    FailFast,
+    /// Log a warning and continue replay.
+    ///
+    /// This behavior is used when inspecting broken commitlogs during debugging.
+    Warn,
+}
+
 struct ReplayVisitor<'a, F> {
     database_identity: &'a Identity,
     committed_state: &'a mut CommittedState,
@@ -1090,6 +1106,7 @@ struct ReplayVisitor<'a, F> {
     // info is gone. We save the name on the first delete of that table so metrics
     // can still show a name.
     dropped_table_names: IntMap<TableId, Box<str>>,
+    error_behavior: ErrorBehavior,
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -1118,14 +1135,21 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         let schema = self.committed_state.schema_for_table(table_id)?;
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
-        self.committed_state
+        if let Err(e) = self
+            .committed_state
             .replay_insert(table_id, &schema, &row)
             .with_context(|| {
                 format!(
                     "Error inserting row {:?} during transaction {:?} playback",
                     row, self.committed_state.next_tx_offset
                 )
-            })?;
+            })
+        {
+            match self.error_behavior {
+                ErrorBehavior::FailFast => return Err(e.into()),
+                ErrorBehavior::Warn => log::warn!("{e:?}"),
+            }
+        }
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         DB_METRICS
