@@ -1109,6 +1109,22 @@ struct ReplayVisitor<'a, F> {
     error_behavior: ErrorBehavior,
 }
 
+impl<F> ReplayVisitor<'_, F> {
+    /// Process `err` according to `self.error_behavior`,
+    /// either warning about it or returning it.
+    ///
+    /// If this method returns an `Err`, the caller should bubble up that error with `?`.
+    fn process_error(&self, err: ReplayError) -> std::result::Result<(), ReplayError> {
+        match self.error_behavior {
+            ErrorBehavior::FailFast => Err(err),
+            ErrorBehavior::Warn => {
+                log::warn!("{err:?}");
+                Ok(())
+            }
+        }
+    }
+}
+
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
     type Error = ReplayError;
     // NOTE: Technically, this could be `()` if and when we can extract the
@@ -1145,10 +1161,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
                 )
             })
         {
-            match self.error_behavior {
-                ErrorBehavior::FailFast => return Err(e.into()),
-                ErrorBehavior::Warn => log::warn!("{e:?}"),
-            }
+            self.process_error(e.into())?;
         }
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
@@ -1178,14 +1191,18 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
                 .insert(st_table_row.table_id, st_table_row.table_name);
         }
 
-        self.committed_state
+        if let Err(e) = self
+            .committed_state
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
                 format!(
                     "Error deleting row {:?} from table {:?} during transaction {:?} playback",
                     row, table_name, self.committed_state.next_tx_offset
                 )
-            })?;
+            })
+        {
+            self.process_error(e.into())?;
+        }
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         DB_METRICS
@@ -1205,17 +1222,20 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
                 if let Some(name) = self.dropped_table_names.remove(&table_id) {
                     name
                 } else {
-                    return Err(anyhow!("Error looking up name for truncated table {table_id:?}").into());
+                    return self
+                        .process_error(anyhow!("Error looking up name for truncated table {table_id:?}").into());
                 }
             }
         };
 
-        self.committed_state.replay_truncate(table_id).with_context(|| {
+        if let Err(e) = self.committed_state.replay_truncate(table_id).with_context(|| {
             format!(
                 "Error truncating table {:?} during transaction {:?} playback",
                 table_id, self.committed_state.next_tx_offset
             )
-        })?;
+        }) {
+            self.process_error(e.into())?;
+        }
 
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
