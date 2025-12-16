@@ -32,6 +32,7 @@ use spacetimedb_schema::schema::{
     TableSchema,
 };
 use spacetimedb_table::table::RowRef;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -896,7 +897,7 @@ pub struct AlgebraicTypeViaBytes(pub AlgebraicType);
 impl_st!([] AlgebraicTypeViaBytes, AlgebraicType::bytes());
 impl<'de> Deserialize<'de> for AlgebraicTypeViaBytes {
     fn deserialize<D: spacetimedb_lib::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let bytes = <&[u8]>::deserialize(deserializer)?;
+        let bytes = <Cow<'_, [u8]>>::deserialize(deserializer)?;
         let ty = AlgebraicType::decode(&mut &*bytes).map_err(D::Error::custom)?;
         Ok(AlgebraicTypeViaBytes(ty))
     }
