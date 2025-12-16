@@ -148,4 +148,4 @@ public static partial class circles
         cross_join_circle_food(ctx, initial_load * load.small_table);
         cross_join_all(ctx, initial_load * initial_load * load.small_table);
     }
-} 
+}

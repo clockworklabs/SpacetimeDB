@@ -97,6 +97,7 @@ public readonly record struct I256 : IEquatable<I256>, IComparable, IComparable<
     }
 
     /// <inheritdoc cref="INumberBase{TSelf}.IsNegative(TSelf)" />
+
     public static bool IsNegative(I256 value) => (long)value._upper.Upper < 0;
 
     private BigInteger AsBigInt() =>

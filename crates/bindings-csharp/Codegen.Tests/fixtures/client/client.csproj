@@ -1,4 +1,5 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <!-- We want to ensure that BSATN.Codegen on its own produces code compatible with Unity. -->
     <!-- This means limiting project to .NET Standard 2.1 and C# 9. -->
@@ -9,4 +10,5 @@
   <ItemGroup>
     <ProjectReference Include="../../../BSATN.Runtime/BSATN.Runtime.csproj" />
   </ItemGroup>
+
 </Project>

@@ -373,4 +373,4 @@ public static partial class ia_loop
 
         game_loop_enemy_ia(ctx, load.num_players);
     }
-} 
+}

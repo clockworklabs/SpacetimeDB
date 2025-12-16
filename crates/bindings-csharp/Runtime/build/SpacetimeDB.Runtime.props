@@ -1,4 +1,5 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
   <PropertyGroup>
     <WasmSingleFileBundle>true</WasmSingleFileBundle>
     <TrimMode>full</TrimMode>
@@ -24,4 +25,5 @@
     <!-- conditional due to https://github.com/dotnet/runtime/issues/86186 which is not fixed in NAOT-LLVM -->
     <DebuggerSupport>false</DebuggerSupport>
   </PropertyGroup>
+
 </Project>

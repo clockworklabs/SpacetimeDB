@@ -1,4 +1,5 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
   <ItemGroup Condition="'$(EXPERIMENTAL_WASM_AOT)' == '1'">
     <NativeLibrary Include="$(MSBuildThisFileDirectory)..\bindings.c" />
     <UnmanagedEntryPointsAssembly Include="SpacetimeDB.Runtime" />
@@ -23,15 +24,8 @@
     <WasmImport Include="$(SpacetimeNamespace)!volatile_nonatomic_schedule_immediate" />
 
     <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
-    <PackageReference
-      Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM"
-      Version="8.0.0-*"
-    />
-    <PackageReference
-      Include="Microsoft.NET.ILLink.Tasks"
-      Version="8.0.0-*"
-      Condition="'$(ILLinkTargetsPath)' == ''"
-    />
+    <PackageReference Include="runtime.win-x64.Microsoft.DotNet.ILCompiler.LLVM" Version="8.0.0-*" />
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.0-*" Condition="'$(ILLinkTargetsPath)' == ''" />
 
     <CustomLinkerArg Include="-DEXPERIMENTAL_WASM_AOT" />
   </ItemGroup>
@@ -51,14 +45,8 @@
 
       <WasiSdkDownloadTempFile>$([System.IO.Path]::Combine($(IntermediateOutputPath), "wasi-sdk.$(WasiSdkVersion).tar.gz"))</WasiSdkDownloadTempFile>
 
-      <WasiSdkArch
-        Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == X64"
-        >x86_64</WasiSdkArch
-      >
-      <WasiSdkArch
-        Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == Arm64"
-        >arm64</WasiSdkArch
-      >
+      <WasiSdkArch Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == X64">x86_64</WasiSdkArch>
+      <WasiSdkArch Condition="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == Arm64">arm64</WasiSdkArch>
 
       <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('Windows'))">windows</WasiSdkOS>
       <WasiSdkOS Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</WasiSdkOS>
@@ -74,22 +62,15 @@
     </PropertyGroup>
 
     <DownloadFile
-      SourceUrl="$(WasiSdkUrl)"
-      DestinationFolder="$(IntermediateOutputPath)"
-      DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
-      Condition="!Exists('$(WasiClang)')"
-    />
+            SourceUrl="$(WasiSdkUrl)"
+            DestinationFolder="$(IntermediateOutputPath)"
+            DestinationFileName="$([System.IO.Path]::GetFileName('$(WasiSdkDownloadTempFile)'))"
+            Condition="!Exists('$(WasiClang)')" />
 
-    <Message
-      Importance="high"
-      Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..."
-      Condition="!Exists('$(WasiClang)')"
-    />
+    <Message Importance="high" Text="Extracting $(WasiSdkDownloadTempFile) to $(WasiSdkRoot)..." Condition="!Exists('$(WasiClang)')" />
     <MakeDir Directories="$(WasiSdkRoot)" />
     <!-- Windows 10+ has tar built in, so this should work cross-platform -->
-    <Exec
-      Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1"
-      Condition="!Exists('$(WasiClang)')"
-    />
+    <Exec Command="tar -xf &quot;$(WasiSdkDownloadTempFile)&quot; -C &quot;$(WasiSdkRoot)&quot; --strip-components=1" Condition="!Exists('$(WasiClang)')" />
   </Target>
+
 </Project>
