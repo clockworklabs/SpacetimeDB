@@ -1778,19 +1778,22 @@ public class Module : IIncrementalGenerator
                         public sealed class Local : global::SpacetimeDB.LocalBase {
                             {{string.Join("\n", tableAccessors.Select(v => v.getter))}}
                         }
-
-                        public sealed class LocalReadOnly : global::SpacetimeDB.LocalReadOnlyBase {
-                            {{string.Join("\n", readOnlyAccessors.Select(v => v.readOnlyGetter))}}
-                        }
                         
-                        public sealed record ViewContext : DbContext<LocalReadOnly>, Internal.IViewContext
+                        public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
                         {
                             public Identity Sender { get; }
-                            internal ViewContext(Identity sender, LocalReadOnly db) : base(db) => Sender = sender;
+                        
+                            internal ViewContext(Identity sender, Internal.LocalReadOnly db)
+                                : base(db)
+                            {
+                                Sender = sender;
+                            }
                         }
-
-                        public sealed record AnonymousViewContext : DbContext<LocalReadOnly>, Internal.IAnonymousViewContext {
-                            internal AnonymousViewContext(LocalReadOnly db) : base(db) { }
+                        
+                        public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext 
+                        {
+                            internal AnonymousViewContext(Internal.LocalReadOnly db)
+                                : base(db) { }
                         }
                     }
                     
@@ -1811,6 +1814,12 @@ public class Module : IIncrementalGenerator
                         {{string.Join("\n", readOnlyAccessors.Array.Select(v => v.readOnlyAccessor))}}
                     }
                     
+                    namespace SpacetimeDB.Internal {
+                        public sealed partial class LocalReadOnly {
+                            {{string.Join("\n", readOnlyAccessors.Select(v => v.readOnlyGetter))}}
+                        }
+                    }
+                    
                     static class ModuleRegistration {
                         {{string.Join("\n", addReducers.Select(r => r.Class))}}
                         
@@ -1829,8 +1838,8 @@ public class Module : IIncrementalGenerator
                     #endif
                         public static void Main() {
                           SpacetimeDB.Internal.Module.SetReducerContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ReducerContext(identity, connectionId, random, time));
-                          SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.LocalReadOnly()));
-                          SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.LocalReadOnly()));
+                          SpacetimeDB.Internal.Module.SetViewContextConstructor(identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.Internal.LocalReadOnly()));
+                          SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(() => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly()));
                           SpacetimeDB.Internal.Module.SetProcedureContextConstructor((identity, connectionId, random, time) => new SpacetimeDB.ProcedureContext(identity, connectionId, random, time));
                           var __memoryStream = new MemoryStream();
                           var __writer = new BinaryWriter(__memoryStream);

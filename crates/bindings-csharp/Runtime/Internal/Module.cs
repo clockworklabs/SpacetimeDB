@@ -435,7 +435,7 @@ public partial class Local
 /// Read-only database access for view contexts.
 /// The code generator will extend this partial class to add table accessors.
 /// </summary>
-public partial class LocalReadOnly
+public sealed partial class LocalReadOnly
 {
     // This class is intentionally empty - the code generator will add
     // read-only table accessors for each table in the module.

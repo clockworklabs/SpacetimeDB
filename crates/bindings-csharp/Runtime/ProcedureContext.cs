@@ -257,8 +257,6 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner)
 
 public abstract class LocalBase : Internal.Local { }
 
-public abstract class LocalReadOnlyBase : Internal.LocalReadOnly { }
-
 public sealed partial class RuntimeProcedureContext(
     Identity sender,
     ConnectionId? connectionId,
@@ -286,5 +284,4 @@ public sealed class ProcedureTxContext : ProcedureTxContextBase
 
 public sealed class Local : LocalBase { }
 
-public sealed class LocalReadOnly : LocalReadOnlyBase { }
 #pragma warning restore STDB_UNSTABLE
