@@ -36,6 +36,14 @@ const connectionBuilder = DbConnection.builder()
   .onDisconnect(onDisconnect)
   .onConnectError(onConnectError);
 
+function idk() {
+  return (
+    <SpacetimeDBProvider
+      connectionBuilder={connectionBuilder}
+    ></SpacetimeDBProvider>
+  );
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>

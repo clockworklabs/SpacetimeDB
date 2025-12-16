@@ -802,7 +802,7 @@ fn table_module_name(table_name: &Identifier) -> String {
 }
 
 fn reducer_args_type_name(reducer_name: &Identifier) -> String {
-    reducer_name.deref().to_case(Case::Pascal)
+    reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
 
 fn procedure_args_type_name(reducer_name: &Identifier) -> String {
