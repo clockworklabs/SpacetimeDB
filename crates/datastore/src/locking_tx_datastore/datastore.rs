@@ -950,6 +950,8 @@ impl MutTx for Locking {
         tx.rollback()
     }
 
+    /// This method only updates the in-memory `committed_state`.
+    /// For durability, see `RelationalDB::commit_tx`.
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
@@ -960,12 +962,10 @@ impl Locking {
         tx.rollback_downgrade(workload)
     }
 
-    pub fn commit_mut_tx_downgrade(
-        &self,
-        tx: MutTxId,
-        workload: Workload,
-    ) -> Result<Option<(TxData, TxMetrics, TxId)>> {
-        Ok(Some(tx.commit_downgrade(workload)))
+    /// This method only updates the in-memory `committed_state`.
+    /// For durability, see `RelationalDB::commit_tx_downgrade`.
+    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        tx.commit_downgrade(workload)
     }
 }
 
