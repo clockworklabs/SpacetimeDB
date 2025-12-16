@@ -319,7 +319,7 @@ spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg
 - `identity() -> Identity` - Get the module's identity
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
-- `sender_auth() -> &AuthCtx` - Get authorization context for the caller
+- `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
 </TabItem>
 <TabItem value="csharp" label="C#">
 
@@ -327,6 +327,7 @@ spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg
 | -------------- | --------------------- | ----------------------------------------------- |
 | `Db`           | `DbView`              | Access to the module's database tables          |
 | `Sender`       | `Identity`            | Identity of the caller                          |
+| `SenderAuth`   | `AuthCtx`             | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `ConnectionId` | `ConnectionId?`       | Connection ID of the caller, if available       |
 | `Timestamp`    | `Timestamp`           | Time when the reducer was invoked               |
 | `Rng`          | `Random`              | Random number generator                         |
@@ -338,6 +339,7 @@ spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg
 | -------------- | -------------------------- | ----------------------------------------------- |
 | `db`           | `DbView`                   | Access to the module's database tables          |
 | `sender`       | `Identity`                 | Identity of the caller                          |
+| `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
 | `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
 | `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
 

@@ -59,7 +59,7 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-const Reminder = table(
+const reminder = table(
   { name: 'reminder', scheduled: 'send_reminder' },
   {
     scheduled_id: t.u64().primaryKey().autoInc(),
@@ -68,7 +68,7 @@ const Reminder = table(
   }
 );
 
-spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (_ctx, { arg }) => {
+spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) => {
   // Invoked automatically by the scheduler
   // arg.message, arg.scheduled_at, arg.scheduled_id
 });
@@ -83,6 +83,56 @@ spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (_ctx, { arg }) 
 2. **SpacetimeDB monitors** the scheduled table
 3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
 4. **The row is typically deleted** or updated by the reducer after processing
+
+## Security Considerations
+
+:::warning Scheduled Reducers Are Callable by Clients
+Scheduled reducers are normal reducers that can also be invoked by external clients. If a scheduled reducer should only execute via the scheduler, add authentication checks.
+:::
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::reducer]
+fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String> {
+    if !ctx.sender_auth().is_internal() {
+        return Err("This reducer can only be called by the scheduler".to_string());
+    }
+    // Process the scheduled reminder
+    Ok(())
+}
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+[SpacetimeDB.Reducer()]
+public static void SendReminder(ReducerContext ctx, Reminder reminder)
+{
+    if (!ctx.SenderAuth.IsInternal)
+    {
+        throw new Exception("This reducer can only be called by the scheduler");
+    }
+    // Process the scheduled reminder
+}
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) => {
+  if (!ctx.senderAuth.isInternal) {
+    throw new SenderError('This reducer can only be called by the scheduler');
+  }
+  // Process the scheduled reminder
+});
+```
+
+</TabItem>
+</Tabs>
 
 ## Use Cases
 
