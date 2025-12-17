@@ -195,7 +195,7 @@ import {
 
 export default __t.row({
   identity: __t.identity(),
-  connectionId: __t.connectionId(),
+  connectionId: __t.connectionId().name("connection_id"),
 });
 '''
 "has_special_stuff_type.ts" = '''
@@ -252,34 +252,34 @@ import {
 } from "spacetimedb";
 
 // Import and reexport all reducer arg types
-import Add from "./add_reducer";
-export { Add };
-import AddPlayer from "./add_player_reducer";
-export { AddPlayer };
-import AddPrivate from "./add_private_reducer";
-export { AddPrivate };
-import AssertCallerIdentityIsModuleIdentity from "./assert_caller_identity_is_module_identity_reducer";
-export { AssertCallerIdentityIsModuleIdentity };
-import ClientConnected from "./client_connected_reducer";
-export { ClientConnected };
-import DeletePlayer from "./delete_player_reducer";
-export { DeletePlayer };
-import DeletePlayersByName from "./delete_players_by_name_reducer";
-export { DeletePlayersByName };
-import ListOverAge from "./list_over_age_reducer";
-export { ListOverAge };
-import LogModuleIdentity from "./log_module_identity_reducer";
-export { LogModuleIdentity };
-import QueryPrivate from "./query_private_reducer";
-export { QueryPrivate };
-import RepeatingTest from "./repeating_test_reducer";
-export { RepeatingTest };
-import SayHello from "./say_hello_reducer";
-export { SayHello };
-import Test from "./test_reducer";
-export { Test };
-import TestBtreeIndexArgs from "./test_btree_index_args_reducer";
-export { TestBtreeIndexArgs };
+import AddReducer from "./add_reducer";
+export { AddReducer };
+import AddPlayerReducer from "./add_player_reducer";
+export { AddPlayerReducer };
+import AddPrivateReducer from "./add_private_reducer";
+export { AddPrivateReducer };
+import AssertCallerIdentityIsModuleIdentityReducer from "./assert_caller_identity_is_module_identity_reducer";
+export { AssertCallerIdentityIsModuleIdentityReducer };
+import ClientConnectedReducer from "./client_connected_reducer";
+export { ClientConnectedReducer };
+import DeletePlayerReducer from "./delete_player_reducer";
+export { DeletePlayerReducer };
+import DeletePlayersByNameReducer from "./delete_players_by_name_reducer";
+export { DeletePlayersByNameReducer };
+import ListOverAgeReducer from "./list_over_age_reducer";
+export { ListOverAgeReducer };
+import LogModuleIdentityReducer from "./log_module_identity_reducer";
+export { LogModuleIdentityReducer };
+import QueryPrivateReducer from "./query_private_reducer";
+export { QueryPrivateReducer };
+import RepeatingTestReducer from "./repeating_test_reducer";
+export { RepeatingTestReducer };
+import SayHelloReducer from "./say_hello_reducer";
+export { SayHelloReducer };
+import TestReducer from "./test_reducer";
+export { TestReducer };
+import TestBtreeIndexArgsReducer from "./test_btree_index_args_reducer";
+export { TestBtreeIndexArgsReducer };
 
 // Import and reexport all procedure arg types
 import * as GetMySchemaViaHttpProcedure from "./get_my_schema_via_http_procedure";
@@ -518,19 +518,19 @@ const tablesSchema = __schema(
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
-  __reducerSchema("add", Add),
-  __reducerSchema("add_player", AddPlayer),
-  __reducerSchema("add_private", AddPrivate),
-  __reducerSchema("assert_caller_identity_is_module_identity", AssertCallerIdentityIsModuleIdentity),
-  __reducerSchema("delete_player", DeletePlayer),
-  __reducerSchema("delete_players_by_name", DeletePlayersByName),
-  __reducerSchema("list_over_age", ListOverAge),
-  __reducerSchema("log_module_identity", LogModuleIdentity),
-  __reducerSchema("query_private", QueryPrivate),
-  __reducerSchema("repeating_test", RepeatingTest),
-  __reducerSchema("say_hello", SayHello),
-  __reducerSchema("test", Test),
-  __reducerSchema("test_btree_index_args", TestBtreeIndexArgs),
+  __reducerSchema("add", AddReducer),
+  __reducerSchema("add_player", AddPlayerReducer),
+  __reducerSchema("add_private", AddPrivateReducer),
+  __reducerSchema("assert_caller_identity_is_module_identity", AssertCallerIdentityIsModuleIdentityReducer),
+  __reducerSchema("delete_player", DeletePlayerReducer),
+  __reducerSchema("delete_players_by_name", DeletePlayersByNameReducer),
+  __reducerSchema("list_over_age", ListOverAgeReducer),
+  __reducerSchema("log_module_identity", LogModuleIdentityReducer),
+  __reducerSchema("query_private", QueryPrivateReducer),
+  __reducerSchema("repeating_test", RepeatingTestReducer),
+  __reducerSchema("say_hello", SayHelloReducer),
+  __reducerSchema("test", TestReducer),
+  __reducerSchema("test_btree_index_args", TestBtreeIndexArgsReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */
@@ -639,7 +639,7 @@ import {
 
 export default __t.row({
   identity: __t.identity().primaryKey(),
-  playerId: __t.u64(),
+  playerId: __t.u64().name("player_id"),
   name: __t.string(),
 });
 '''
@@ -658,7 +658,7 @@ import {
 
 export default __t.row({
   identity: __t.identity(),
-  playerId: __t.u64(),
+  playerId: __t.u64().name("player_id"),
   name: __t.string(),
 });
 '''
@@ -800,7 +800,7 @@ import {
 
 export default __t.row({
   identity: __t.identity().primaryKey(),
-  playerId: __t.u64(),
+  playerId: __t.u64().name("player_id"),
   name: __t.string(),
 });
 '''
@@ -947,9 +947,9 @@ import {
 } from "spacetimedb";
 
 export default __t.row({
-  scheduledId: __t.u64().primaryKey(),
-  scheduledAt: __t.scheduleAt(),
-  prevTime: __t.timestamp(),
+  scheduledId: __t.u64().primaryKey().name("scheduled_id"),
+  scheduledAt: __t.scheduleAt().name("scheduled_at"),
+  prevTime: __t.timestamp().name("prev_time"),
 });
 '''
 "repeating_test_arg_type.ts" = '''
@@ -1152,7 +1152,7 @@ import NamespaceTestC from "./namespace_test_c_type";
 
 export default __t.row({
   get testC() {
-    return __t.option(NamespaceTestC);
+    return __t.option(NamespaceTestC).name("test_c");
   },
 });
 '''

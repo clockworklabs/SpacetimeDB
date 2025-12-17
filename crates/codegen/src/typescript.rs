@@ -130,7 +130,7 @@ impl Lang for TypeScript {
 
         writeln!(out, "export default __t.row({{");
         out.indent(1);
-        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true).unwrap();
+        write_object_type_builder_fields(module, out, &product_def.elements, table.primary_key, true, true).unwrap();
         out.dedent(1);
         writeln!(out, "}});");
         OutputFile {
@@ -190,7 +190,8 @@ impl Lang for TypeScript {
 
         writeln!(out, "export const params = {{");
         out.with_indent(|out| {
-            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true).unwrap()
+            write_object_type_builder_fields(module, out, &procedure.params_for_generate.elements, None, true, false)
+                .unwrap()
         });
         writeln!(out, "}};");
 
@@ -535,7 +536,7 @@ fn define_body_for_reducer(module: &ModuleDef, out: &mut Indenter, params: &[(Id
         writeln!(out, "}};");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, params, None, true, false).unwrap());
         writeln!(out, "}};");
     }
 }
@@ -559,7 +560,7 @@ fn define_body_for_product(
         writeln!(out, "}});");
     } else {
         writeln!(out);
-        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true).unwrap());
+        out.with_indent(|out| write_object_type_builder_fields(module, out, elements, None, true, false).unwrap());
         writeln!(out, "}});");
     }
     out.newline();
@@ -656,6 +657,7 @@ fn write_object_type_builder_fields(
     elements: &[(Identifier, AlgebraicTypeUse)],
     primary_key: Option<ColId>,
     convert_case: bool,
+    write_original_name: bool,
 ) -> anyhow::Result<()> {
     for (i, (ident, ty)) in elements.iter().enumerate() {
         let name = if convert_case {
@@ -668,7 +670,8 @@ fn write_object_type_builder_fields(
             Some(pk) => pk.idx() == i,
             None => false,
         };
-        write_type_builder_field(module, out, &name, ty, is_primary_key)?;
+        let original_name = (write_original_name && convert_case && *name != **ident).then_some(&**ident);
+        write_type_builder_field(module, out, &name, original_name, ty, is_primary_key)?;
     }
 
     Ok(())
@@ -678,6 +681,7 @@ fn write_type_builder_field(
     module: &ModuleDef,
     out: &mut Indenter,
     name: &str,
+    original_name: Option<&str>,
     ty: &AlgebraicTypeUse,
     is_primary_key: bool,
 ) -> fmt::Result {
@@ -694,19 +698,21 @@ fn write_type_builder_field(
         writeln!(out, "get {name}() {{");
         out.indent(1);
         write!(out, "return ");
-        write_type_builder(module, out, ty)?;
-        if is_primary_key {
-            write!(out, ".primaryKey()");
-        }
+    } else {
+        write!(out, "{name}: ");
+    }
+    write_type_builder(module, out, ty)?;
+    if is_primary_key {
+        write!(out, ".primaryKey()");
+    }
+    if let Some(original_name) = original_name {
+        write!(out, ".name(\"{original_name}\")");
+    }
+    if needs_getter {
         writeln!(out, ";");
         out.dedent(1);
         writeln!(out, "}},");
     } else {
-        write!(out, "{name}: ");
-        write_type_builder(module, out, ty)?;
-        if is_primary_key {
-            write!(out, ".primaryKey()");
-        }
         writeln!(out, ",");
     }
 
@@ -781,7 +787,7 @@ fn define_body_for_sum(
         write!(out, ": __TypeBuilder<__AlgebraicTypeType, __AlgebraicTypeType>");
     }
     write!(out, " = __t.enum(\"{name}\", {{");
-    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false).unwrap());
+    out.with_indent(|out| write_object_type_builder_fields(module, out, variants, None, false, false).unwrap());
     writeln!(out, "}});");
     out.newline();
     writeln!(out, "export default {name};");
@@ -802,7 +808,7 @@ fn table_module_name(table_name: &Identifier) -> String {
 }
 
 fn reducer_args_type_name(reducer_name: &Identifier) -> String {
-    reducer_name.deref().to_case(Case::Pascal)
+    reducer_name.deref().to_case(Case::Pascal) + "Reducer"
 }
 
 fn procedure_args_type_name(reducer_name: &Identifier) -> String {

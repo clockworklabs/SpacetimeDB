@@ -16,7 +16,7 @@ use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{ReducerContext, Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
 use spacetimedb_datastore::locking_tx_datastore::state_view::{
-    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, IterTx, StateView,
+    IterByColEqMutTx, IterByColRangeMutTx, IterMutTx, StateView,
 };
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, TxId};
 use spacetimedb_datastore::system_tables::{
@@ -53,7 +53,7 @@ use spacetimedb_schema::schema::{
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotError, SnapshotRepository};
 use spacetimedb_table::indexes::RowPointer;
 use spacetimedb_table::page_pool::PagePool;
-use spacetimedb_table::table::RowRef;
+use spacetimedb_table::table::{RowRef, TableScanIter};
 use spacetimedb_vm::errors::{ErrorType, ErrorVm};
 use spacetimedb_vm::ops::parse;
 use std::borrow::Cow;
@@ -818,18 +818,13 @@ impl RelationalDB {
             Txdata,
         };
 
-        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
-            tx_data
-                .ephemeral_tables()
-                .map(|etables| !etables.contains(table_id))
-                .unwrap_or(true)
-        };
+        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
 
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
                 // Skip ephemeral tables
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+                .filter(|(table_id, _)| is_persistent_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -840,7 +835,7 @@ impl RelationalDB {
 
             let deletes: Box<_> = tx_data
                 .deletes()
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+                .filter(|(table_id, _)| is_persistent_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -849,9 +844,14 @@ impl RelationalDB {
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
-            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
+            let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
+
+            debug_assert!(
+                !(inserts.is_empty() && truncates.is_empty() && deletes.is_empty() && inputs.is_none()),
+                "empty transaction"
+            );
 
             let txdata = Txdata {
                 inputs,
@@ -1363,7 +1363,7 @@ impl RelationalDB {
         Ok(self.inner.iter_mut_tx(tx, table_id)?)
     }
 
-    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<IterTx<'a>, DBError> {
+    pub fn iter<'a>(&'a self, tx: &'a Tx, table_id: TableId) -> Result<TableScanIter<'a>, DBError> {
         Ok(self.inner.iter_tx(tx, table_id)?)
     }
 
@@ -1440,6 +1440,15 @@ impl RelationalDB {
         DBError,
     > {
         Ok(tx.index_scan_range(index_id, prefix, prefix_elems, rstart, rend)?)
+    }
+
+    pub fn index_scan_point<'a>(
+        &'a self,
+        tx: &'a MutTx,
+        index_id: IndexId,
+        point: &[u8],
+    ) -> Result<(TableId, AlgebraicValue, impl Iterator<Item = RowRef<'a>>), DBError> {
+        Ok(tx.index_scan_point(index_id, point)?)
     }
 
     pub fn insert<'a>(
@@ -1743,7 +1752,12 @@ where
 
     let time_before = std::time::Instant::now();
 
-    let mut replay = datastore.replay(progress);
+    let mut replay = datastore.replay(
+        progress,
+        // We don't want to instantiate an incorrect state;
+        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
+        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
+    );
     let start_tx_offset = replay.next_tx_offset();
     history
         .fold_transactions_from(start_tx_offset, &mut replay)
@@ -2620,6 +2634,36 @@ mod tests {
             subs_rows.is_empty(),
             "st_view_subs should be empty after reopening the database"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_materialization_does_not_consume_tx_offset() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+
+        let (tx_offset_1, view_id, table_id) = {
+            let module_def = view_module_def();
+            let view_def = module_def.view("my_view").unwrap();
+
+            let mut tx = begin_mut_tx(&stdb);
+            let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+            let (tx_offset, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+            assert_eq!(Some(tx_offset), tx_data.tx_offset());
+
+            (tx_offset, view_id, table_id)
+        };
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
+        let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+
+        // `tx_data.tx_offset()` should return `None`,
+        // so that it is not considered for durability.
+        // The tx offset reported for confirmed reads should stay the same.
+        assert!(tx_data.tx_offset().is_none());
+        assert_eq!(tx_offset_1, tx_offset_2);
+
         Ok(())
     }
 
