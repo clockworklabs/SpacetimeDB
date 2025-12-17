@@ -26,7 +26,7 @@ namespace SpacetimeDB
 
     public interface IProcedureEventContext
     {
-        public ProcedureEvent Event { get; }
+
     }
     // The following underscores are needed to work around c#'s unified type-and-function
     // namespace.
