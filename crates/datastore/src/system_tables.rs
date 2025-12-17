@@ -147,9 +147,7 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
             let row: StConstraintRow = to_typed_row(row)?;
             table_id_is_reserved(row.table_id)
         }
-        ST_MODULE_ID => false,
-        ST_CLIENT_ID => false,
-        ST_VAR_ID => false,
+        ST_MODULE_ID | ST_CLIENT_ID | ST_VAR_ID => false,
         ST_SCHEDULED_ID => {
             // We don't have any scheduled system tables as of writing (pgoldman 2025-12-16),
             // but no harm in future-proofing.
@@ -164,12 +162,8 @@ pub fn is_built_in_meta_row(table_id: TableId, row: &ProductValue) -> Result<boo
         }
         ST_CONNECTION_CREDENTIALS_ID => false,
         // We don't define any system views, so none of the view-related tables can be system meta-descriptors.
-        ST_VIEW_ID => false,
-        ST_VIEW_PARAM_ID => false,
-        ST_VIEW_COLUMN_ID => false,
-        ST_VIEW_SUB_ID => false,
-        ST_VIEW_ARG_ID => false,
-        TableId(17..ST_RESERVED_SEQUENCE_RANGE) => {
+        ST_VIEW_ID | ST_VIEW_PARAM_ID | ST_VIEW_COLUMN_ID | ST_VIEW_SUB_ID | ST_VIEW_ARG_ID => false,
+        TableId(..ST_RESERVED_SEQUENCE_RANGE) => {
             log::warn!("Unknown system table {table_id:?}");
             false
         }
