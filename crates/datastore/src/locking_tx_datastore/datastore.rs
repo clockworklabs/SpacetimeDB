@@ -1230,9 +1230,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     }
 
     fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
-        self.committed_state.next_tx_offset += 1;
-
-        Ok(())
+        self.committed_state.replay_end_tx().map_err(Into::into)
     }
 }
 
