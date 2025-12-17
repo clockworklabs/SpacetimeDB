@@ -3,76 +3,93 @@ title: Overview
 slug: /sdks
 ---
 
-SpacetimeDB Client SDKs Overview
+# SpacetimeDB Client SDKs
 
-The SpacetimeDB Client SDKs provide a comprehensive interface to interact with the SpacetimeDB server engine from various programming languages. Currently, SDKs are available for
+The SpacetimeDB Client SDKs provide a comprehensive interface for building applications that connect to SpacetimeDB [databases](/databases). Client applications can query data, invoke server-side functions, and receive real-time updates as the database state changes.
+
+## Available SDKs
+
+SpacetimeDB provides client SDKs for multiple languages:
 
 - [Rust](/sdks/rust) - [(Quickstart)](/docs/quickstarts/rust)
 - [C#](/sdks/c-sharp) - [(Quickstart)](/docs/quickstarts/c-sharp)
 - [TypeScript](/sdks/typescript) - [(Quickstart)](/docs/quickstarts/typescript)
+- [Unreal](/sdks/unreal) - [(Tutorial)](/tutorials/unreal)
 
-## Key Features
+## Getting Started
 
-The SpacetimeDB Client SDKs offer the following key functionalities:
+To build a client application with SpacetimeDB:
+
+1. **[Generate client bindings](/sdks/codegen)** - Use `spacetime generate` to create type-safe bindings for your [module](/modules)
+2. **[Connect to your database](/sdks/connection)** - Establish a WebSocket connection to SpacetimeDB
+3. **[Use the SDK API](/sdks/api)** - Subscribe to data, invoke functions, and register callbacks
+
+## Core Capabilities
 
 ### Connection Management
 
-The SDKs handle the process of connecting and disconnecting from SpacetimeDB database servers, simplifying this process for the client applications.
+The SDKs handle establishing and maintaining WebSocket connections to SpacetimeDB servers. Connections support authentication via tokens (for example, from [SpacetimeAuth](/spacetimeauth)) and provide lifecycle callbacks for connect, disconnect, and error events.
 
-### Authentication
+See [Connecting to SpacetimeDB](/sdks/connection) for details.
 
-The SDKs support authentication using an auth token, allowing clients to securely establish a session with the SpacetimeDB server.
+### Client-Side Data Cache
 
-### Local Database View
+Each client maintains a local cache of database rows through [subscriptions](/subscriptions). Clients define which data they need using SQL queries, and SpacetimeDB automatically synchronizes changes to the subscribed data. The local cache can be queried without network round-trips, providing fast access to frequently-read data.
 
-Each client can define a local view of the database via a subscription consisting of a set of queries. This local view is maintained by the server and populated into a local cache on the client side.
+### Real-Time Updates
 
-### Reducer Calls
+Clients receive automatic updates when subscribed data changes. The SDKs provide callbacks for observing:
 
-The SDKs allow clients to call transactional functions (reducers) on the server.
+- **Subscription updates** - When subscription queries are applied or fail
+- **Row changes** - When rows are inserted, updated, or deleted in the local cache
+- **Reducer invocations** - When [reducers](/functions/reducers) run on the server
+- **Procedure results** - When [procedures](/functions/procedures) are called the results are returned via a callback
 
-### Callback Registrations
+### Invoking Server Functions
 
-The SpacetimeDB Client SDKs offer powerful callback functionality that allow clients to monitor changes in their local database view. These callbacks come in two forms:
+Clients can invoke server-side functions to modify data or perform operations:
 
-#### Connection and Subscription Callbacks
+- **[Reducers](/functions/reducers)** - Transactional functions that modify database state
+- **[Procedures](/functions/procedures)** - Functions that can perform external operations like HTTP requests (beta)
 
-Clients can also register callbacks that trigger when the connection to the database server is established or lost, or when a subscription is updated. This allows clients to react to changes in the connection status.
+### Type Safety
 
-#### Row Update Callbacks
-
-Clients can register callbacks that trigger when any row in their local cache is updated by the server. These callbacks contain information about the reducer that triggered the change. This feature enables clients to react to changes in data that they're interested in.
-
-#### Reducer Call Callbacks
-
-Clients can also register callbacks that fire when a reducer call modifies something in the client's local view. This allows the client to know when a transactional function it has executed has had an effect on the data it cares about.
-
-Additionally, when a client makes a reducer call that fails, the SDK triggers the registered reducer callback on the client that initiated the failed call with the error message that was returned from the server. This allows for appropriate error handling or user notifications.
+The [generated client bindings](/sdks/codegen) provide compile-time type safety between your client and server code. Table schemas, function signatures, and return types are all reflected in the generated code, catching errors before runtime.
 
 ## Choosing a Language
 
-When selecting a language for your client application with SpacetimeDB, a variety of factors come into play. While the functionality of the SDKs remains consistent across different languages, the choice of language will often depend on the specific needs and context of your application. Here are a few considerations:
+When selecting a language for your client application, consider these factors:
 
 ### Team Expertise
 
-The familiarity of your development team with a particular language can greatly influence your choice. You might want to choose a language that your team is most comfortable with to increase productivity and reduce development time.
+Choose a language your development team is comfortable with to maximize productivity and reduce development time.
 
 ### Application Type
 
-Different languages are often better suited to different types of applications. For instance, if you are developing a web-based application, you might opt for TypeScript due to its seamless integration with web technologies. On the other hand, if you're developing a desktop application, you might choose C#, depending on your requirements and platform.
+- **Web applications** - TypeScript integrates seamlessly with browser and Node.js environments
+- **Desktop applications** - Rust or C# depending on your platform and requirements
+- **Performance-critical applications** - Rust offers the best performance and memory efficiency
+- **Unity games** - C# is required for Unity development
+- **Unreal games** - C++ and Blueprint are both supported for Unreal clients
 
-### Performance
+### Platform and Ecosystem
 
-The performance characteristics of the different languages can also be a factor. If your application is performance-critical, you might opt for Rust, known for its speed and memory efficiency.
+Each language has its own ecosystem of libraries and tools. If your application depends on specific libraries or frameworks, that may influence your choice.
 
-### Platform Support
+The functionality of the SDKs remains consistent across languages, so transitioning between them primarily involves syntax changes rather than architectural changes. You can even use multiple languages in the same project - for example, C# for a Unity game client and TypeScript for a web administration panel.
 
-The platform you're targeting can also influence your choice. For instance, if you're developing a game or a 3D application using the Unity engine, you'll want to choose the C# SDK, as Unity uses C# as its primary scripting language.
+## Learning Path
 
-### Ecosystem and Libraries
+New to SpacetimeDB client development? Follow this progression:
 
-Each language has its own ecosystem of libraries and tools that can help in developing your application. If there's a library in a particular language that you want to use, it may influence your choice.
+1. **[Generate Client Bindings](/sdks/codegen)** - Create type-safe interfaces from your module
+2. **[Connect to SpacetimeDB](/sdks/connection)** - Establish a connection and understand the lifecycle
+3. **[Use the SDK API](/sdks/api)** - Learn about subscriptions, reducers, and callbacks
+4. **Language Reference** - Dive into language-specific details: [Rust](/sdks/rust), [C#](/sdks/c-sharp), [TypeScript](/sdks/typescript)
 
-Remember, the best language to use is the one that best fits your use case and the one you and your team are most comfortable with. It's worth noting that due to the consistent functionality across different SDKs, transitioning from one language to another should you need to in the future will primarily involve syntax changes rather than changes in the application's logic.
+## Next Steps
 
-You may want to use multiple languages in your application. For instance, you might want to use C# in Unity for your game logic and TypeScript for a web-based administration panel. This is perfectly fine, as the SpacetimeDB server is completely client-agnostic.
+- Follow a **Quickstart guide** [Rust](/docs/quickstarts/rust), [C#](/quickstarts/c-sharp), or [TypeScript](/quickstarts/typescript) to build your first client
+- Learn about [Modules](/modules) to understand what you're connecting to
+- Explore [Subscriptions](/subscriptions) for efficient data synchronization
+- Review [Reducers](/functions/reducers) to understand server-side state changes
