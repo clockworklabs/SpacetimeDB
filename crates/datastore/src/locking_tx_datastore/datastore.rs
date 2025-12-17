@@ -138,6 +138,18 @@ impl Locking {
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<()> {
         let mut committed_state = self.committed_state.write_arc();
+
+        // Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
+        // initialized newly-created system sequences to `allocation: 4097`,
+        // while `committed_state::bootstrap_system_tables` sets `allocation: 4096`.
+        // This affected the system table migration which added
+        // `st_view_view_id_seq` and `st_view_arg_id_seq`.
+        // As a result, when replaying these databases' commitlogs without a snapshot,
+        // we will end up with two rows in `st_sequence` for each of these sequences,
+        // resulting in a unique constraint violation in `CommittedState::build_indexes`.
+        // We fix this by, for each system sequence, deleting all but the row with the highest allocation.
+        committed_state.fixup_delete_duplicate_system_sequence_rows();
+
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.

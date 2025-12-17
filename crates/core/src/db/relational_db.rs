@@ -356,6 +356,12 @@ impl RelationalDB {
                     self.database_identity,
                     schema.table_name
                 );
+                // FIXME: `create_table` of tables with sequences
+                // gives a different initial allocation than is given by `CommittedState::bootstrap_system_tables`.
+                // See comment in that method.
+                // This results in requiring `CommittedState::fixup_delete_duplicate_system_sequence_rows`.
+                // Fix `migrate_system_tables` to create new system sequences
+                // with the same initial allocation as `bootstrap_system_tables`.
                 let _ = self.create_table(&mut tx, schema.clone())?;
             }
         }
