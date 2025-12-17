@@ -1752,7 +1752,12 @@ where
 
     let time_before = std::time::Instant::now();
 
-    let mut replay = datastore.replay(progress);
+    let mut replay = datastore.replay(
+        progress,
+        // We don't want to instantiate an incorrect state;
+        // if the commitlog contains an inconsistency we'd rather get a hard error than showing customers incorrect data.
+        spacetimedb_datastore::locking_tx_datastore::datastore::ErrorBehavior::FailFast,
+    );
     let start_tx_offset = replay.next_tx_offset();
     history
         .fold_transactions_from(start_tx_offset, &mut replay)
