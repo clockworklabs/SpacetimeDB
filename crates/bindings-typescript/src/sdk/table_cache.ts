@@ -201,7 +201,7 @@ export class TableCacheImpl<
       return impl as ReadonlyIndex<TableDef, I>;
     } else {
       const impl: ReadonlyRangedIndex<TableDef, I> = {
-        *filter(range: any): IteratorObject<Row, void> {
+        *filter(range: any): IteratorObject<Row, undefined> {
           for (const row of self.iter()) {
             if (matchRange(row, range)) yield row;
           }
@@ -223,7 +223,7 @@ export class TableCacheImpl<
    */
   iter(): IteratorObject<
     Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-    void
+    undefined
   > {
     function* generator(
       rows: Map<
@@ -232,7 +232,7 @@ export class TableCacheImpl<
       >
     ): IteratorObject<
       Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-      void
+      undefined
     > {
       for (const [row] of rows.values()) {
         yield row as Prettify<
@@ -249,7 +249,7 @@ export class TableCacheImpl<
    */
   [Symbol.iterator](): IteratorObject<
     Prettify<RowType<TableDefForTableName<RemoteModule, TableName>>>,
-    void
+    undefined
   > {
     return this.iter();
   }

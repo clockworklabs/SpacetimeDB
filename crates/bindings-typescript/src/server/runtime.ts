@@ -649,7 +649,7 @@ function hasOwn<K extends PropertyKey>(
   return Object.hasOwn(o, k);
 }
 
-function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, void> {
+function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, undefined> {
   using iter = new IteratorHandle(id);
   const { typespace } = MODULE_DEF;
 

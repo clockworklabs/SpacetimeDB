@@ -108,7 +108,7 @@ export interface ReadonlyRangedIndex<
 > {
   filter(
     range: IndexScanRangeBounds<TableDef, I>
-  ): IteratorObject<Prettify<RowType<TableDef>>>;
+  ): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
 }
 
 /**
