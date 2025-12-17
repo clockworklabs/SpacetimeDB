@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, AlgebraicType};
 
 use crate::de::Error;
@@ -34,8 +36,8 @@ impl<'a> TryFrom<&'a str> for StAccess {
 
 impl_serialize!([] StAccess, (self, ser) => ser.serialize_str(self.as_str()));
 impl_deserialize!([] StAccess, de => {
-    let value = de.deserialize_str_slice()?;
-    StAccess::try_from(value).map_err(|x| {
+    let value = Cow::<'_, str>::deserialize(de)?;
+    StAccess::try_from(&*value).map_err(|x| {
         Error::custom(format!(
             "DecodeError for StAccess: `{x}`. Expected `public` | 'private'"
         ))
@@ -77,8 +79,8 @@ impl<'a> TryFrom<&'a str> for StTableType {
 
 impl_serialize!([] StTableType, (self, ser) => ser.serialize_str(self.as_str()));
 impl_deserialize!([] StTableType, de => {
-    let value = de.deserialize_str_slice()?;
-    StTableType::try_from(value).map_err(|x| {
+    let value = Cow::<'_, str>::deserialize(de)?;
+    StTableType::try_from(&*value).map_err(|x| {
         Error::custom(format!(
             "DecodeError for StTableType: `{x}`. Expected 'system' | 'user'"
         ))

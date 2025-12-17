@@ -1686,7 +1686,7 @@ mod tests {
         (Identity::ZERO, ConnectionId::from_u128(connection_id))
     }
 
-    fn client(connection_id: u128, db: &RelationalDB) -> ClientConnectionSender {
+    fn client(connection_id: u128, db: &Arc<RelationalDB>) -> ClientConnectionSender {
         let (identity, connection_id) = id(connection_id);
         ClientConnectionSender::dummy(
             ClientActorId {

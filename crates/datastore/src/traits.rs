@@ -6,7 +6,7 @@ use std::{ops::RangeBounds, sync::Arc};
 use super::locking_tx_datastore::datastore::TxMetrics;
 use super::system_tables::ModuleKind;
 use super::Result;
-use crate::execution_context::{ReducerContext, Workload};
+use crate::execution_context::Workload;
 use crate::system_tables::ST_TABLE_ID;
 use spacetimedb_data_structures::map::{IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
@@ -322,14 +322,14 @@ impl TxData {
     /// the method returns `false`.
     ///
     /// This is used to determine if a transaction should be written to disk.
-    pub fn has_rows_or_connect_disconnect(&self, reducer_context: Option<&ReducerContext>) -> bool {
+    pub fn has_rows_or_connect_disconnect(&self, reducer_name: Option<&str>) -> bool {
         let is_non_ephemeral_mutation =
             |(table_id, rows): (_, &Arc<[_]>)| !(self.is_ephemeral_table(table_id) || rows.is_empty());
 
         self.inserts().any(is_non_ephemeral_mutation)
             || self.deletes().any(is_non_ephemeral_mutation)
             || matches!(
-                reducer_context.map(|rcx| rcx.name.strip_prefix("__identity_")),
+                reducer_name.map(|rn| rn.strip_prefix("__identity_")),
                 Some(Some("connected__" | "disconnected__"))
             )
     }
