@@ -109,7 +109,6 @@ public abstract class ProcedureContextBase(
             IsSuccess ? Value! : throw (Error ?? fallbackFactory());
     }
 
-
     [Experimental("STDB_UNSTABLE")]
     public TResult WithTx<TResult>(Func<ProcedureTxContextBase, TResult> body) =>
         TryWithTx(tx => Result<TResult, Exception>.Ok(body(tx))).UnwrapOrThrow();
