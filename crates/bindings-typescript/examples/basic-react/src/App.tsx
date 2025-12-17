@@ -1,22 +1,24 @@
 import { useState } from 'react';
-import { DbConnection, Person } from './module_bindings';
-import { useSpacetimeDB, useTable } from 'spacetimedb/react';
+import { tables, reducers } from './module_bindings';
+import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 
 function App() {
   const [name, setName] = useState('');
 
-  const conn = useSpacetimeDB<DbConnection>();
+  const conn = useSpacetimeDB();
   const { isActive: connected } = conn;
 
   // Subscribe to all people in the database
-  const { rows: people } = useTable<DbConnection, Person>('person');
+  const [people] = useTable(tables.person);
+
+  const addReducer = useReducer(reducers.add);
 
   const addPerson = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !connected) return;
 
     // Call the add reducer
-    conn.reducers.add(name);
+    addReducer({ name: name });
     setName('');
   };
 
