@@ -619,10 +619,8 @@ impl CommittedState {
         // `Self::ignore_previous_version_of_column` has marked the old version as ignored,
         // so filter only the non-ignored columns.
         let mut columns = iter_st_column_for_table(self, &table_id.into())?
-            .filter_map(|row_ref| {
-                (!self.replay_columns_to_ignore.contains(&row_ref.pointer()))
-                    .then(|| StColumnRow::try_from(row_ref).map(Into::into))
-            })
+            .filter(|row_ref| self.replay_columns_to_ignore.contains(&row_ref.pointer()))
+            .map(|row_ref| StColumnRow::try_from(row_ref).map(Into::into))
             .collect::<Result<Vec<_>>>()?;
 
         // Columns in `st_column` are not in general sorted by their `col_pos`,
