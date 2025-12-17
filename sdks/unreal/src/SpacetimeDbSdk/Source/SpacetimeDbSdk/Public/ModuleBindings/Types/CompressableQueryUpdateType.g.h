@@ -26,7 +26,7 @@ public:
 
     TVariant<FQueryUpdateType, TArray<uint8>> MessageData;
 
-    UPROPERTY(BlueprintReadOnly)
+    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
     ECompressableQueryUpdateTag Tag = static_cast<ECompressableQueryUpdateTag>(0);
 
     static FCompressableQueryUpdateType Uncompressed(const FQueryUpdateType& Value)
