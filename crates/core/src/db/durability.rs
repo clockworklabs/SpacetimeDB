@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use log::{info, warn};
+use log::{error, info, warn};
 use spacetimedb_commitlog::payload::{
     txdata::{Mutations, Ops},
     Txdata,
@@ -143,8 +143,8 @@ impl DurabilityWorker {
     /// re-opened for writing while there is still an active background task
     /// writing to the commitlog.
     ///
-    /// The shutdown task will be scheduled onto the tokio runtime provided
-    /// to [Self::new]. This means that the task may still be running when this
+    /// The shutdown task will be spawned onto the tokio runtime provided to
+    /// [Self::new]. This means that the task may still be running when this
     /// method returns.
     ///
     /// `database_identity` is used to associate log records with the database
@@ -155,7 +155,7 @@ impl DurabilityWorker {
         let rt = self.runtime.clone();
         let mut shutdown = rt.spawn(async move { self.shutdown().await });
         rt.spawn(async move {
-            let label = format!("database={database_identity}");
+            let label = format!("[{database_identity}]");
             let start = Instant::now();
             loop {
                 // Warn every 5s if the shutdown doesn't appear to make progress.
@@ -165,7 +165,7 @@ impl DurabilityWorker {
                 match timeout(Duration::from_secs(5), &mut shutdown).await {
                     Err(_elapsed) => {
                         let since = start.elapsed().as_secs_f32();
-                        warn!("{label} waiting for durability worker shutdown since {since}s",);
+                        error!("{label} waiting for durability worker shutdown since {since}s",);
                         continue;
                     }
                     Ok(res) => {
@@ -281,6 +281,7 @@ mod tests {
     use std::{pin::pin, task::Poll};
 
     use pretty_assertions::assert_matches;
+    use spacetimedb_sats::product;
     use tokio::sync::watch;
 
     use super::*;
@@ -327,6 +328,9 @@ mod tests {
         for i in 0..=10 {
             let mut txdata = TxData::default();
             txdata.set_tx_offset(i);
+            // Ensure the transaction is non-empty.
+            txdata.set_inserts_for_table(4000.into(), "foo", [product![42u8]].into());
+
             worker.request_durability(None, &Arc::new(txdata));
         }
         assert_eq!(
