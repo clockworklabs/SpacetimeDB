@@ -3,6 +3,40 @@ namespace SpacetimeDB;
 using System.Diagnostics.CodeAnalysis;
 using Internal;
 
+public readonly struct Result<T, E>(bool isSuccess, T? value, E? error)
+    where E : Exception
+{
+    public bool IsSuccess { get; } = isSuccess;
+    public T? Value { get; } = value;
+    public E? Error { get; } = error;
+
+    public static Result<T, E> Ok(T value) => new(true, value, null);
+
+    public static Result<T, E> Err(E error) => new(false, default, error);
+
+    public T UnwrapOrThrow()
+    {
+        if (IsSuccess)
+        {
+            return Value!;
+        }
+
+        if (Error is not null)
+        {
+            throw Error;
+        }
+
+        throw new InvalidOperationException("Result failed without an error object.");
+    }
+
+    public T UnwrapOr(T defaultValue) => IsSuccess ? Value! : defaultValue;
+
+    public T UnwrapOrElse(Func<E, T> f) => IsSuccess ? Value! : f(Error!);
+
+    public TResult Match<TResult>(Func<T, TResult> onOk, Func<E, TResult> onErr) =>
+        IsSuccess ? onOk(Value!) : onErr(Error!);
+}
+
 #pragma warning disable STDB_UNSTABLE
 public abstract class ProcedureContextBase(
     Identity sender,
@@ -75,40 +109,14 @@ public abstract class ProcedureContextBase(
             IsSuccess ? Value! : throw (Error ?? fallbackFactory());
     }
 
-    public readonly struct TxResult<TResult, TError>(bool isSuccess, TResult? value, TError? error)
-        where TError : Exception
-    {
-        public bool IsSuccess { get; } = isSuccess;
-        public TResult? Value { get; } = value;
-        public TError? Error { get; } = error;
-
-        public static TxResult<TResult, TError> Success(TResult value) => new(true, value, null);
-
-        public static TxResult<TResult, TError> Failure(TError error) => new(false, default, error);
-
-        public TResult UnwrapOrThrow()
-        {
-            if (IsSuccess)
-            {
-                return Value!;
-            }
-
-            if (Error is not null)
-            {
-                throw Error;
-            }
-
-            throw new InvalidOperationException("Transaction failed without an error object.");
-        }
-    }
 
     [Experimental("STDB_UNSTABLE")]
     public TResult WithTx<TResult>(Func<ProcedureTxContextBase, TResult> body) =>
-        TryWithTx(tx => TxResult<TResult, Exception>.Success(body(tx))).UnwrapOrThrow();
+        TryWithTx(tx => Result<TResult, Exception>.Ok(body(tx))).UnwrapOrThrow();
 
     [Experimental("STDB_UNSTABLE")]
     public TxOutcome<TResult> TryWithTx<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+        Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception
     {
@@ -168,8 +176,8 @@ public abstract class ProcedureContextBase(
         }
     }
 
-    private TxResult<TResult, TError> RunWithRetry<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+    private Result<TResult, TError> RunWithRetry<TResult, TError>(
+        Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception
     {
@@ -193,8 +201,8 @@ public abstract class ProcedureContextBase(
         return result;
     }
 
-    private TxResult<TResult, TError> RunOnce<TResult, TError>(
-        Func<ProcedureTxContextBase, TxResult<TResult, TError>> body
+    private Result<TResult, TError> RunOnce<TResult, TError>(
+        Func<ProcedureTxContextBase, Result<TResult, TError>> body
     )
         where TError : Exception
     {
@@ -203,7 +211,7 @@ public abstract class ProcedureContextBase(
         EnterTxContext(micros);
         var txCtx = RequireTxContext();
 
-        TxResult<TResult, TError> result;
+        Result<TResult, TError> result;
         try
         {
             result = body(txCtx);

@@ -242,13 +242,13 @@ public static partial class Module
             if (existing is null)
             {
                 tx.Db.retry_log.Insert(new RetryLog { Id = key, Attempts = 1 });
-                return ProcedureContext.TxResult<uint, Exception>.Failure(new Exception("conflict"));
+                return Result<uint, Exception>.Err(new Exception("conflict"));
             }
 
             // Use the unique index Update method
             var newAttempts = existing.Attempts + 1;
             tx.Db.retry_log.Id.Update(new RetryLog { Id = key, Attempts = newAttempts });
-            return ProcedureContext.TxResult<uint, Exception>.Success(newAttempts);
+            return Result<uint, Exception>.Ok(newAttempts);
         });
 
         if (!outcome.IsSuccess)
@@ -260,13 +260,13 @@ public static partial class Module
                 if (existing is null)
                 {
                     tx.Db.retry_log.Insert(new RetryLog { Id = key, Attempts = 1 });
-                    return ProcedureContext.TxResult<uint, Exception>.Failure(new Exception("conflict"));
+                    return Result<uint, Exception>.Err(new Exception("conflict"));
                 }
 
                 // Use the unique index Update method
                 var newAttempts = existing.Attempts + 1;
                 tx.Db.retry_log.Id.Update(new RetryLog { Id = key, Attempts = newAttempts });
-                return ProcedureContext.TxResult<uint, Exception>.Success(newAttempts);
+                return Result<uint, Exception>.Ok(newAttempts);
             });
         }
 
