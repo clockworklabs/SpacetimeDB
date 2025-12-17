@@ -109,44 +109,22 @@ namespace SpacetimeDB
             new();
     }
 
-    public sealed class LocalReadOnly : global::SpacetimeDB.LocalReadOnlyBase
-    {
-        public global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly Player => new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
-            new();
-    }
-
-    public sealed record ViewContext : DbContext<LocalReadOnly>, Internal.IViewContext
+    public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
     {
         public Identity Sender { get; }
 
-        internal ViewContext(Identity sender, LocalReadOnly db)
-            : base(db) => Sender = sender;
+        internal ViewContext(Identity sender, Internal.LocalReadOnly db)
+            : base(db)
+        {
+            Sender = sender;
+        }
     }
 
     public sealed record AnonymousViewContext
-        : DbContext<LocalReadOnly>,
+        : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
-        internal AnonymousViewContext(LocalReadOnly db)
+        internal AnonymousViewContext(Internal.LocalReadOnly db)
             : base(db) { }
     }
 }
@@ -1749,6 +1727,34 @@ namespace SpacetimeDB.Internal.ViewHandles
     }
 }
 
+namespace SpacetimeDB.Internal
+{
+    public sealed partial class LocalReadOnly
+    {
+        public global::SpacetimeDB.Internal.ViewHandles.PlayerReadOnly Player => new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestAutoIncNotIntegerReadOnly TestAutoIncNotInteger =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestDefaultFieldValuesReadOnly TestDefaultFieldValues =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestDuplicateTableNameReadOnly TestDuplicateTableName =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestIndexIssuesReadOnly TestIndexIssues =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithMissingScheduleAtFieldReadOnly TestScheduleWithMissingScheduleAtField =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutPrimaryKeyReadOnly TestScheduleWithoutPrimaryKey =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithoutScheduleAtReadOnly TestScheduleWithoutScheduleAt =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongPrimaryKeyTypeReadOnly TestScheduleWithWrongPrimaryKeyType =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestScheduleWithWrongScheduleAtTypeReadOnly TestScheduleWithWrongScheduleAtType =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.TestUniqueNotEquatableReadOnly TestUniqueNotEquatable =>
+            new();
+    }
+}
+
 static class ModuleRegistration
 {
     class __ReducerWithReservedPrefix : SpacetimeDB.Internal.IReducer
@@ -1878,10 +1884,13 @@ static class ModuleRegistration
                 new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetViewContextConstructor(
-            identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.LocalReadOnly())
+            identity => new SpacetimeDB.ViewContext(
+                identity,
+                new SpacetimeDB.Internal.LocalReadOnly()
+            )
         );
         SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(
-            () => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.LocalReadOnly())
+            () => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly())
         );
         SpacetimeDB.Internal.Module.SetProcedureContextConstructor(
             (identity, connectionId, random, time) =>

@@ -99,34 +99,22 @@ namespace SpacetimeDB
         public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
     }
 
-    public sealed class LocalReadOnly : global::SpacetimeDB.LocalReadOnlyBase
-    {
-        internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
-            new();
-        internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews => new();
-        public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 => new();
-        public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 => new();
-        public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable => new();
-        public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable => new();
-        internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
-            new();
-        public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
-            new();
-    }
-
-    public sealed record ViewContext : DbContext<LocalReadOnly>, Internal.IViewContext
+    public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
     {
         public Identity Sender { get; }
 
-        internal ViewContext(Identity sender, LocalReadOnly db)
-            : base(db) => Sender = sender;
+        internal ViewContext(Identity sender, Internal.LocalReadOnly db)
+            : base(db)
+        {
+            Sender = sender;
+        }
     }
 
     public sealed record AnonymousViewContext
-        : DbContext<LocalReadOnly>,
+        : DbContext<Internal.LocalReadOnly>,
             Internal.IAnonymousViewContext
     {
-        internal AnonymousViewContext(LocalReadOnly db)
+        internal AnonymousViewContext(Internal.LocalReadOnly db)
             : base(db) { }
     }
 }
@@ -1508,6 +1496,24 @@ namespace SpacetimeDB.Internal.ViewHandles
     }
 }
 
+namespace SpacetimeDB.Internal
+{
+    public sealed partial class LocalReadOnly
+    {
+        internal global::SpacetimeDB.Internal.ViewHandles.BTreeMultiColumnReadOnly BTreeMultiColumn =>
+            new();
+        internal global::SpacetimeDB.Internal.ViewHandles.BTreeViewsReadOnly BTreeViews => new();
+        public global::SpacetimeDB.Internal.ViewHandles.MultiTable1ReadOnly MultiTable1 => new();
+        public global::SpacetimeDB.Internal.ViewHandles.MultiTable2ReadOnly MultiTable2 => new();
+        public global::SpacetimeDB.Internal.ViewHandles.PrivateTableReadOnly PrivateTable => new();
+        public global::SpacetimeDB.Internal.ViewHandles.PublicTableReadOnly PublicTable => new();
+        internal global::SpacetimeDB.Internal.ViewHandles.RegressionMultipleUniqueIndexesHadSameNameReadOnly RegressionMultipleUniqueIndexesHadSameName =>
+            new();
+        public global::SpacetimeDB.Internal.ViewHandles.SendMessageTimerReadOnly SendMessageTimer =>
+            new();
+    }
+}
+
 static class ModuleRegistration
 {
     class Init : SpacetimeDB.Internal.IReducer
@@ -1622,10 +1628,13 @@ static class ModuleRegistration
                 new SpacetimeDB.ReducerContext(identity, connectionId, random, time)
         );
         SpacetimeDB.Internal.Module.SetViewContextConstructor(
-            identity => new SpacetimeDB.ViewContext(identity, new SpacetimeDB.LocalReadOnly())
+            identity => new SpacetimeDB.ViewContext(
+                identity,
+                new SpacetimeDB.Internal.LocalReadOnly()
+            )
         );
         SpacetimeDB.Internal.Module.SetAnonymousViewContextConstructor(
-            () => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.LocalReadOnly())
+            () => new SpacetimeDB.AnonymousViewContext(new SpacetimeDB.Internal.LocalReadOnly())
         );
         SpacetimeDB.Internal.Module.SetProcedureContextConstructor(
             (identity, connectionId, random, time) =>
