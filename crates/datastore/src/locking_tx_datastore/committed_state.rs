@@ -638,6 +638,16 @@ impl CommittedState {
         Ok(())
     }
 
+    pub(super) fn replay_end_tx(&mut self) -> Result<()> {
+        self.next_tx_offset += 1;
+
+        if !self.replay_columns_to_ignore.is_empty() {
+            Err(anyhow::anyhow!("`CommittedState::replay_columns_to_ignore` should be empty at the end of a commit, but found {} entries", self.replay_columns_to_ignore.len()).into())
+        } else {
+            Ok(())
+        }
+    }
+
     /// Assuming that a `TableId` is stored as the first field in `row`, read it.
     fn read_table_id(row: &ProductValue) -> TableId {
         TableId::deserialize(ValueDeserializer::from_ref(&row.elements[0]))
