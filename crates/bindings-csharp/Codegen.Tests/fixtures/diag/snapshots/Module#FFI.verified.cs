@@ -71,7 +71,7 @@ namespace SpacetimeDB
 
         [Experimental("STDB_UNSTABLE")]
         public TxOutcome<TResult> TryWithTx<TResult, TError>(
-            Func<ProcedureTxContext, TxResult<TResult, TError>> body
+            Func<ProcedureTxContext, Result<TResult, TError>> body
         )
             where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
     }
