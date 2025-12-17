@@ -1110,7 +1110,7 @@ mod test {
     /// It does not persist data to disk.
     fn relational_db() -> Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
-        Ok(Arc::new(db))
+        Ok(db)
     }
 
     /// Generate a `ProductValue` for use in [create_table_with_index]

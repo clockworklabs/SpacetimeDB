@@ -7,6 +7,9 @@ use crate::subscription::ExecutionCounters;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_datastore::{locking_tx_datastore::datastore::TxMetrics, traits::TxData};
 
+mod durability;
+mod lock_file;
+use lock_file::LockFile;
 pub mod persistence;
 pub mod relational_db;
 pub mod snapshot;

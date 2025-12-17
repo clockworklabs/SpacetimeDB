@@ -1031,7 +1031,7 @@ impl ModuleSubscriptions {
                     return Ok(Err(WriteConflict));
                 };
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Arc::new(tx_data), tx_metrics)
+                (read_tx, tx_data, tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
                 // If the transaction failed, we need to rollback the mutable tx.
@@ -1198,7 +1198,7 @@ impl ModuleSubscriptions {
                     let _ = extra.send(tx_offset);
                 }
                 self.relational_db
-                    .report_tx_metrics(reducer, Some(Arc::new(tx_data)), Some(tx_metrics_mut), None);
+                    .report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), None);
             }
         });
         (guard, offset_rx)
@@ -1305,7 +1305,7 @@ mod tests {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
-        let sender = Arc::new(ClientConnectionSender::dummy(client, config, (*db).clone()));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config, db.clone()));
         let send_worker_queue = spawn_send_worker(None);
         let module_subscriptions = ModuleSubscriptions::new(
             db.clone(),
@@ -1392,11 +1392,13 @@ mod tests {
     /// An in-memory `RelationalDB` for testing
     fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
-        Ok(Arc::new(db))
+        Ok(db)
     }
 
     /// An in-memory `RelationalDB` with `ManualDurability`.
-    fn relational_db_with_manual_durability() -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
+    fn relational_db_with_manual_durability(
+        rt: tokio::runtime::Handle,
+    ) -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
         let dir = TempReplicaDir::new()?;
         let durability = Arc::new(ManualDurability::default());
         let db = TestDB::open_db(
@@ -1406,6 +1408,7 @@ mod tests {
                 durability: durability.clone(),
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
+                runtime: rt,
             }),
             None,
             0,
@@ -1488,7 +1491,7 @@ mod tests {
 
     fn client_connection_with_config(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         config: ClientConfig,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, config, db.clone());
@@ -1498,7 +1501,7 @@ mod tests {
     /// Instantiate a client connection with compression
     fn client_connection_with_compression(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         compression: Compression,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
@@ -1516,7 +1519,7 @@ mod tests {
     /// Instantiate a client connection
     fn client_connection(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_compression(client_id, db, Compression::None)
     }
@@ -1524,7 +1527,7 @@ mod tests {
     /// Instantiate a client connection with confirmed reads turned on or off.
     fn client_connection_with_confirmed_reads(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         confirmed_reads: bool,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
@@ -3161,7 +3164,7 @@ mod tests {
         let test_db = TestDB::durable()?;
 
         let runtime = test_db.runtime().cloned().unwrap();
-        let db = Arc::new(test_db.db.clone());
+        let db = test_db.db.clone();
 
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
@@ -3197,15 +3200,13 @@ mod tests {
         runtime.block_on(write_handle)??;
         runtime.block_on(query_handle)??;
 
-        test_db.close()?;
-
         Ok(())
     }
 
     #[test]
     fn subs_cannot_access_private_tables() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
-        let db = Arc::new(test_db.db.clone());
+        let db = test_db.db.clone();
 
         // Create a public table.
         let indexes = &[0.into()];
@@ -3238,7 +3239,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_confirmed_reads() -> anyhow::Result<()> {
-        let (db, durability) = relational_db_with_manual_durability()?;
+        let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
 
         let client_id_confirmed = client_id_from_u8(1);
         let client_id_unconfirmed = client_id_from_u8(2);
