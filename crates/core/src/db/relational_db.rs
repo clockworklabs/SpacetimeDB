@@ -818,18 +818,13 @@ impl RelationalDB {
             Txdata,
         };
 
-        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
-            tx_data
-                .ephemeral_tables()
-                .map(|etables| !etables.contains(table_id))
-                .unwrap_or(true)
-        };
+        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
 
         if tx_data.tx_offset().is_some() {
             let inserts: Box<_> = tx_data
                 .inserts()
                 // Skip ephemeral tables
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+                .filter(|(table_id, _)| is_persistent_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -840,7 +835,7 @@ impl RelationalDB {
 
             let deletes: Box<_> = tx_data
                 .deletes()
-                .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+                .filter(|(table_id, _)| is_persistent_table(table_id))
                 .map(|(table_id, rowdata)| Ops {
                     table_id: *table_id,
                     rowdata: rowdata.clone(),
@@ -849,9 +844,14 @@ impl RelationalDB {
                 .filter(|ops| !truncates.contains(&ops.table_id))
                 .collect();
 
-            let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
+            let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
 
             let inputs = reducer_context.map(|rcx| rcx.into());
+
+            debug_assert!(
+                !(inserts.is_empty() && truncates.is_empty() && deletes.is_empty() && inputs.is_none()),
+                "empty transaction"
+            );
 
             let txdata = Txdata {
                 inputs,
@@ -2629,6 +2629,36 @@ mod tests {
             subs_rows.is_empty(),
             "st_view_subs should be empty after reopening the database"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_view_materialization_does_not_consume_tx_offset() -> ResultTest<()> {
+        let stdb = TestDB::durable_without_snapshot_repo()?;
+
+        let (tx_offset_1, view_id, table_id) = {
+            let module_def = view_module_def();
+            let view_def = module_def.view("my_view").unwrap();
+
+            let mut tx = begin_mut_tx(&stdb);
+            let (view_id, table_id) = stdb.create_view(&mut tx, &module_def, view_def)?;
+            let (tx_offset, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+            assert_eq!(Some(tx_offset), tx_data.tx_offset());
+
+            (tx_offset, view_id, table_id)
+        };
+
+        let mut tx = begin_mut_tx(&stdb);
+        tx.subscribe_view(view_id, ArgId::SENTINEL, Identity::ONE)?;
+        stdb.materialize_view(&mut tx, table_id, Identity::ONE, vec![product![10u8]])?;
+        let (tx_offset_2, tx_data, ..) = stdb.commit_tx(tx)?.unwrap();
+
+        // `tx_data.tx_offset()` should return `None`,
+        // so that it is not considered for durability.
+        // The tx offset reported for confirmed reads should stay the same.
+        assert!(tx_data.tx_offset().is_none());
+        assert_eq!(tx_offset_1, tx_offset_2);
+
         Ok(())
     }
 

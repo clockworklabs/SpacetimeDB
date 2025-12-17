@@ -118,14 +118,23 @@ function parenthesize(s: string): string {
   return `(${s})`;
 }
 
-export function toString<Column extends string>(expr: Expr<Column>): string {
+export function toString<TableDef extends UntypedTableDef>(
+  tableDef: TableDef,
+  expr: Expr<ColumnsFromRow<RowType<TableDef>>>
+): string {
   switch (expr.type) {
-    case 'eq':
-      return `${escapeIdent(expr.key)} = ${formatValue(expr.value)}`;
+    case 'eq': {
+      const key = tableDef.columns[expr.key].columnMetadata.name ?? expr.key;
+      return `${escapeIdent(key)} = ${formatValue(expr.value)}`;
+    }
     case 'and':
-      return parenthesize(expr.children.map(toString).join(' AND '));
+      return parenthesize(
+        expr.children.map(expr => toString(tableDef, expr)).join(' AND ')
+      );
     case 'or':
-      return parenthesize(expr.children.map(toString).join(' OR '));
+      return parenthesize(
+        expr.children.map(expr => toString(tableDef, expr)).join(' OR ')
+      );
   }
 }
 
@@ -287,14 +296,14 @@ export function useTable<TableDef extends UntypedTableDef>(
 
   const query =
     `SELECT * FROM ${tableName}` +
-    (whereClause ? ` WHERE ${toString(whereClause)}` : '');
+    (whereClause ? ` WHERE ${toString(tableDef, whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
   const lastSnapshotRef = useRef<
     [readonly Prettify<UseTableRowType>[], boolean] | null
   >(null);
 
-  const whereKey = whereClause ? toString(whereClause) : '';
+  const whereKey = whereClause ? toString(tableDef, whereClause) : '';
 
   const computeSnapshot = useCallback((): [
     readonly Prettify<UseTableRowType>[],
