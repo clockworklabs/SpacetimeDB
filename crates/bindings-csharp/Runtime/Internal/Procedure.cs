@@ -21,7 +21,6 @@ public interface IProcedure
     byte[] Invoke(BinaryReader reader, IProcedureContext ctx);
 }
 
-
 /// <summary>
 /// Represents the context for a procedure call.
 /// </summary>
@@ -37,7 +36,6 @@ public interface IProcedureContext
         return identity;
     }
 }
-
 
 /// <summary>
 /// Internal interface for procedure context with additional functionality.
@@ -77,4 +75,3 @@ public static class ProcedureExtensions
         }
     }
 }
-

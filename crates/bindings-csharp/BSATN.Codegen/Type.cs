@@ -44,7 +44,6 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// </summary>
     public static string BsatnFieldSuffix => $"{BSATN_FIELD_SUFFIX}";
 
-
     /// <summary>
     /// Parse a type use for a member.
     /// </summary>
@@ -200,7 +199,6 @@ public record ReferenceUse(string Type, string TypeInfo) : TypeUse(Type, TypeInf
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar} == null ? 0 : {inVar}.GetHashCode();";
 }
-
 
 /// <summary>
 /// A use of an array type.
