@@ -747,14 +747,17 @@ impl CommittedState {
         // so that we can pass updated set of table ids.
         self.merge_read_sets(read_sets);
 
+        // Store in `tx_data` which of the updated tables are ephemeral.
+        // NOTE: This must be called before `tx_consumes_offset`, so that
+        // all-ephemeral transactions do not consume a tx offset.
+        tx_data.set_ephemeral_tables(&self.ephemeral_tables);
+
         // If the TX will be logged, record its projected tx offset,
         // then increment the counter.
         if self.tx_consumes_offset(&tx_data, ctx) {
             tx_data.set_tx_offset(self.next_tx_offset);
             self.next_tx_offset += 1;
         }
-
-        tx_data.set_ephemeral_tables(&self.ephemeral_tables);
 
         tx_data
     }

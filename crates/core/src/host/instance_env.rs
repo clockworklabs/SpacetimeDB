@@ -761,6 +761,14 @@ impl InstanceEnv {
         self.procedure_last_tx_offset.take()
     }
 
+    /// Perform an HTTP request.
+    /// Exposed to modules via the `ProcedureContext`.
+    ///
+    /// It's very important that the error returned from this function
+    /// not contain any potentially sensitive data from `request`,
+    /// such as the query parameters or header values.
+    /// This way, it's safe to log the errors (either for us to do so, or for module code to do so),
+    /// and less dangerous to send them to the calling client of a procedure.
     pub fn http_request(
         &mut self,
         request: st_http::Request,
@@ -786,17 +794,34 @@ impl InstanceEnv {
             .with_label_values(self.database_identity())
             .inc_scope();
 
+        /// Strip the query part out of the URL in `err`, as query parameters may be sensitive
+        /// and we'd like it to be safe to directly log errors from this method.
+        fn strip_query_params_from_reqwest_error(mut err: reqwest::Error) -> reqwest::Error {
+            if let Some(url) = err.url_mut() {
+                // `set_query` of `None` clears the query part.
+                url.set_query(None);
+            }
+            err
+        }
+
         fn http_error<E: ToString>(err: E) -> NodesError {
             NodesError::HttpError(err.to_string())
         }
 
         // Then convert the request into an `http::Request`, a semi-standard "lingua franca" type in the Rust ecosystem,
         // and map its body into a type `reqwest` will like.
+        //
+        // See comments on and in `convert_http_request` for justification that there's no sensitive info in this error.
         let (request, timeout) = convert_http_request(request).map_err(http_error)?;
 
         let request = http::Request::from_parts(request, body);
 
-        let mut reqwest: reqwest::Request = request.try_into().map_err(http_error)?;
+        let mut reqwest: reqwest::Request = request
+            .try_into()
+            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
+            // Strip those out before returning the error.
+            .map_err(strip_query_params_from_reqwest_error)
+            .map_err(http_error)?;
 
         // If the user requested a timeout using our extension, slot it in to reqwest's timeout.
         // Clamp to the range `0..HTTP_DEFAULT_TIMEOUT`.
@@ -815,12 +840,17 @@ impl InstanceEnv {
         let execute_fut = reqwest::Client::new().execute(reqwest);
 
         let response_fut = async {
+            // `reqwest::Error` may contain sensitive info, namely the full URL with query params.
+            // We'll strip those with `strip_query_params_from_eqwest_error`
+            // after `await`ing `response_fut` below.
             let response = execute_fut.await?;
 
             // Download the response body, which in all likelihood will be a stream,
             // as reqwest seems to prefer that.
             let (response, body) = http::Response::from(response).into_parts();
 
+            // This error may also contain the full URL with query params.
+            // Again, we'll strip them after `await`ing `response_fut` below.
             let body = http_body_util::BodyExt::collect(body).await?.to_bytes();
 
             Ok((response, body))
@@ -845,6 +875,9 @@ impl InstanceEnv {
                             .inc();
                     }
                 })
+                // `response_fut` returns a `reqwest::Error`, which may contain the full URL including query params.
+                // Strip them out to clean the error of potentially sensitive info.
+                .map_err(strip_query_params_from_reqwest_error)
                 .map_err(http_error)?;
 
             // Transform the `http::Response` into our `spacetimedb_lib::http::Response` type,
@@ -869,6 +902,13 @@ impl InstanceEnv {
 /// Value chosen arbitrarily by pgoldman 2025-11-18, based on little more than a vague guess.
 const HTTP_DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// Unpack `request` and convert it into an [`http::request::Parts`],
+/// and a [`Duration`] from its `timeout` if supplied.
+///
+/// It's very important that the error return from this function
+/// not contain any potentially sensitive data from `request`,
+/// such as the query parameters or header values.
+/// See comment on [`InstanceEnv::http_request`].
 fn convert_http_request(request: st_http::Request) -> http::Result<(http::request::Parts, Option<Duration>)> {
     let st_http::Request {
         method,
@@ -891,6 +931,9 @@ fn convert_http_request(request: st_http::Request) -> http::Result<(http::reques
         st_http::Method::Patch => http::Method::PATCH,
         st_http::Method::Extension(method) => http::Method::from_bytes(method.as_bytes()).expect("Invalid HTTP method"),
     };
+    // The error type here, `http::uri::InvalidUri`, doesn't contain the URI itself,
+    // so it's safe to return and to log.
+    // See https://docs.rs/http/1.3.1/src/http/uri/mod.rs.html#120-141 .
     request.uri = uri.try_into()?;
     request.version = match version {
         st_http::Version::Http09 => http::Version::HTTP_09,
@@ -901,7 +944,21 @@ fn convert_http_request(request: st_http::Request) -> http::Result<(http::reques
     };
     request.headers = headers
         .into_iter()
-        .map(|(k, v)| Ok((k.into_string().try_into()?, v.into_vec().try_into()?)))
+        .map(|(k, v)| {
+            Ok((
+                // The error type here, `http::header::InvalidHeaderName`, doesn't contain the header name itself,
+                // so it's safe to return and to log.
+                // See https://docs.rs/http/1.3.1/src/http/header/name.rs.html#60-63 .
+                k.into_string().try_into()?,
+                // The error type here, `http::header::InvalidHeaderValue`, doesn't contain the header value itself,
+                // so it's safe to return and to log.
+                // See https://docs.rs/http/1.3.1/src/http/header/value.rs.html#27-31 .
+                v.into_vec().try_into()?,
+            ))
+        })
+        // Collecting into a `HeaderMap` doesn't add any new possible errors,
+        // the `?` here is just to propogate the errors from converting the individual header names and values.
+        // We know those are free from sensitive info, so this result is clean.
         .collect::<http::Result<_>>()?;
 
     let timeout = timeout.map(|d| d.to_duration_saturating());
