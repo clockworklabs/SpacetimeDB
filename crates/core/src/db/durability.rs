@@ -226,17 +226,12 @@ impl DurabilityWorkerActor {
             return;
         }
 
-        let is_not_ephemeral_table = |table_id: &TableId| -> bool {
-            tx_data
-                .ephemeral_tables()
-                .map(|etables| !etables.contains(table_id))
-                .unwrap_or(true)
-        };
+        let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
 
         let inserts: Box<_> = tx_data
             .inserts()
             // Skip ephemeral tables
-            .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+            .filter(|(table_id, _)| is_persistent_table(table_id))
             .map(|(table_id, rowdata)| Ops {
                 table_id: *table_id,
                 rowdata: rowdata.clone(),
@@ -247,7 +242,7 @@ impl DurabilityWorkerActor {
 
         let deletes: Box<_> = tx_data
             .deletes()
-            .filter(|(table_id, _)| is_not_ephemeral_table(table_id))
+            .filter(|(table_id, _)| is_persistent_table(table_id))
             .map(|(table_id, rowdata)| Ops {
                 table_id: *table_id,
                 rowdata: rowdata.clone(),
@@ -256,9 +251,14 @@ impl DurabilityWorkerActor {
             .filter(|ops| !truncates.contains(&ops.table_id))
             .collect();
 
-        let truncates = truncates.into_iter().filter(is_not_ephemeral_table).collect();
+        let truncates: Box<_> = truncates.into_iter().filter(is_persistent_table).collect();
 
         let inputs = reducer_context.map(|rcx| rcx.into());
+
+        debug_assert!(
+            !(inserts.is_empty() && truncates.is_empty() && deletes.is_empty() && inputs.is_none()),
+            "empty transaction"
+        );
 
         let txdata = Txdata {
             inputs,
