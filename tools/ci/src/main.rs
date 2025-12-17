@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
-use std::collections::HashMap;
 use std::path::Path;
 use std::{env, fs};
 
@@ -93,15 +92,6 @@ enum CiCmd {
     },
 }
 
-macro_rules! bash {
-    ($cmdline:expr) => {
-        run_bash($cmdline, &Vec::new())
-    };
-    ($cmdline:expr, $envs:expr) => {
-        run_bash($cmdline, $envs)
-    };
-}
-
 fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     let subcmds = Cli::command()
         .get_subcommands()
@@ -114,98 +104,164 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
             continue;
         }
         log::info!("executing cargo ci {subcmd}");
-        bash!(&format!("cargo ci {subcmd}"))?;
+        cmd!("cargo", "ci", &subcmd).run()?;
     }
-
     Ok(())
 }
 
-fn run_bash(cmdline: &str, additional_env: &[(&str, &str)]) -> Result<()> {
-    let mut env = env::vars().collect::<HashMap<_, _>>();
-    env.extend(additional_env.iter().map(|(k, v)| (k.to_string(), v.to_string())));
-    log::debug!("$ {cmdline}");
-    let status = cmd!("bash", "-lc", cmdline).full_env(env).run()?;
-    if !status.status.success() {
-        let e = anyhow::anyhow!("command failed: {cmdline}");
-        log::error!("{e}");
-        return Err(e);
+fn infer_python() -> String {
+    let py3_available = cmd!("python3", "--version").run().is_ok();
+    if py3_available {
+        "python3".to_string()
+    } else {
+        "python".to_string()
     }
-    Ok(())
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let cli = Cli::parse();
 
     match cli.cmd {
         Some(CiCmd::Test) => {
-            bash!("cargo test --all -- --skip unreal")?;
+            // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
+
+            cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
+            // TODO: This should check for a diff at the start. If there is one, we should alert the user
+            // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
+            // if they want those checks.
+
             // The fallocate tests have been flakely when running in parallel
-            bash!("cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1")?;
-            bash!("bash tools/check-diff.sh")?;
-            bash!("cargo run -p spacetimedb-codegen --example regen-csharp-moduledef && bash tools/check-diff.sh crates/bindings-csharp")?;
-            bash!("(cd crates/bindings-csharp && dotnet test -warnaserror)")?;
+            cmd!(
+                "cargo",
+                "test",
+                "-p",
+                "spacetimedb-durability",
+                "--features",
+                "fallocate",
+                "--",
+                "--test-threads=1",
+            )
+            .run()?;
+            cmd!("bash", "tools/check-diff.sh").run()?;
+            cmd!(
+                "cargo",
+                "run",
+                "-p",
+                "spacetimedb-codegen",
+                "--example",
+                "regen-csharp-moduledef",
+            )
+            .run()?;
+            cmd!("bash", "tools/check-diff.sh", "crates/bindings-csharp").run()?;
+            cmd!("dotnet", "test", "-warnaserror")
+                .dir("crates/bindings-csharp")
+                .run()?;
         }
 
         Some(CiCmd::Lint) => {
-            bash!("cargo fmt --all -- --check")?;
-            bash!("cargo clippy --all --tests --benches -- -D warnings")?;
-            bash!("(cd crates/bindings-csharp && dotnet tool restore && dotnet csharpier --check .)")?;
+            cmd!("cargo", "fmt", "--all", "--", "--check").run()?;
+            cmd!(
+                "cargo",
+                "clippy",
+                "--all",
+                "--tests",
+                "--benches",
+                "--",
+                "-D",
+                "warnings",
+            )
+            .run()?;
+            cmd!("dotnet", "tool", "restore").dir("crates/bindings-csharp").run()?;
+            cmd!("dotnet", "csharpier", "--check", ".")
+                .dir("crates/bindings-csharp")
+                .run()?;
             // `bindings` is the only crate we care strongly about documenting,
             // since we link to its docs.rs from our website.
             // We won't pass `--no-deps`, though,
             // since we want everything reachable through it to also work.
             // This includes `sats` and `lib`.
-            bash!(
-                "cd crates/bindings && cargo doc",
+            cmd!("cargo", "doc")
+                .dir("crates/bindings")
                 // Make `cargo doc` exit with error on warnings, most notably broken links
-                &[("RUSTDOCFLAGS", "--deny warnings")]
-            )?;
+                .env("RUSTDOCFLAGS", "--deny warnings")
+                .run()?;
         }
 
         Some(CiCmd::WasmBindings) => {
-            bash!("cargo test -p spacetimedb-codegen")?;
+            cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
             // Make sure the `Cargo.lock` file reflects the latest available versions.
             // This is what users would end up with on a fresh module, so we want to
             // catch any compile errors arising from a different transitive closure
             // of dependencies than what is in the workspace lock file.
             //
             // For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
-            bash!("cargo update")?;
-            bash!("cargo run -p spacetimedb-cli -- build --project-path modules/module-test")?;
+            cmd!("cargo", "update").run()?;
+            cmd!(
+                "cargo",
+                "run",
+                "-p",
+                "spacetimedb-cli",
+                "--",
+                "build",
+                "--project-path",
+                "modules/module-test",
+            )
+            .run()?;
         }
 
-        Some(CiCmd::Smoketests { args }) => {
-            // On some systems, there is no `python`, but there is `python3`.
-            let py3_available = bash!("command -v python3 >/dev/null 2>&1").is_ok();
-            let python = if py3_available { "python3" } else { "python" };
-            bash!(&format!("{python} -m smoketests {}", args.join(" ")))?;
+        Some(CiCmd::Smoketests { args: smoketest_args }) => {
+            let python = infer_python();
+            cmd(
+                python,
+                ["-m", "smoketests"]
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .chain(smoketest_args),
+            )
+            .run()?;
         }
 
         Some(CiCmd::UpdateFlow {
             target,
             github_token_auth,
         }) => {
-            let target = target.map(|t| format!("--target {t}")).unwrap_or_default();
-            let github_token_auth_flag = if github_token_auth {
-                "--features github-token-auth "
+            let mut common_args = vec![];
+            if let Some(target) = target.as_ref() {
+                common_args.push("--target");
+                common_args.push(target);
+                log::info!("checking update flow for target: {target}");
             } else {
-                ""
-            };
+                log::info!("checking update flow");
+            }
+            if github_token_auth {
+                common_args.push("--features");
+                common_args.push("github-token-auth");
+            }
 
-            bash!(&format!("echo 'checking update flow for target: {target}'"))?;
-            bash!(&format!(
-                "cargo build {github_token_auth_flag}{target} -p spacetimedb-update"
-            ))?;
+            cmd(
+                "cargo",
+                ["build", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.clone()),
+            )
+            .run()?;
             // NOTE(bfops): We need the `github-token-auth` feature because we otherwise tend to get ratelimited when we try to fetch `/releases/latest`.
             // My best guess is that, on the GitHub runners, the "anonymous" ratelimit is shared by *all* users of that runner (I think this because it
             // happens very frequently on the `macos-runner`, but we haven't seen it on any others).
-            bash!(&format!(
-                r#"
-ROOT_DIR="$(mktemp -d)"
-cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install --root-dir="${{ROOT_DIR}}" --yes
-"${{ROOT_DIR}}"/spacetime --root-dir="${{ROOT_DIR}}" help
-        "#
-            ))?;
+            let root_dir = tempfile::tempdir()?;
+            let root_dir_string = root_dir.path().to_string_lossy().to_string();
+            let root_arg = format!("--root-dir={}", root_dir_string);
+            cmd(
+                "cargo",
+                ["run", "-p", "spacetimedb-update"]
+                    .into_iter()
+                    .chain(common_args.clone())
+                    .chain(["--", "self-install", &root_arg, "--yes"].into_iter()),
+            )
+            .run()?;
+            cmd!(format!("{}/spacetime", root_dir_string), &root_arg, "help",).run()?;
         }
 
         Some(CiCmd::CliDocs { spacetime_path }) => {
@@ -220,19 +276,14 @@ cargo run {github_token_auth_flag}{target} -p spacetimedb-update -- self-install
                 );
             }
 
-            bash!("cd docs && pnpm generate-cli-docs")?;
-            bash!(
-                r#"
-if [ -z "$(git status --porcelain)" ]; then
-  echo "No docs changes detected"
-else
-  echo "It looks like the CLI docs have changed:"
-  exit 1
-fi
-                "#
-            )?;
-            bash!("git status")?;
-            bash!("git diff")?;
+            cmd!("pnpm", "install", "--recursive").run()?;
+            cmd!("pnpm", "generate-cli-docs").dir("docs").run()?;
+            let out = cmd!("git", "status", "--porcelain", "--", "docs").read()?;
+            if out.is_empty() {
+                log::info!("No docs changes detected");
+            } else {
+                anyhow::bail!("CLI docs are out of date:\n{out}");
+            }
         }
 
         Some(CiCmd::SelfDocs { check }) => {
