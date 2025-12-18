@@ -502,6 +502,8 @@ impl HostController {
                     let info = module.info();
                     info!("exiting replica {} of database {}", replica_id, info.database_identity);
                     module.exit().await;
+                    let db = &module.replica_ctx().relational_db;
+                    db.shutdown().await?;
                     let table_names = info.module_def.tables().map(|t| t.name.deref());
                     remove_database_gauges(&info.database_identity, table_names);
                     info!("replica {} of database {} exited", replica_id, info.database_identity);
@@ -856,15 +858,26 @@ impl Host {
                 )
                 .await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
-                let (db, clients) = RelationalDB::open(
-                    &replica_dir,
-                    database.database_identity,
-                    database.owner_identity,
-                    history,
-                    Some(persistence),
-                    Some(tx_metrics_queue),
-                    page_pool.clone(),
-                )
+                // Loading a database from persistent storage involves heavy
+                // blocking I/O. `asyncify` to avoid blocking the async worker.
+                let (db, clients) = asyncify({
+                    let replica_dir = replica_dir.clone();
+                    let database_identity = database.database_identity;
+                    let owner_identity = database.owner_identity;
+                    let page_pool = page_pool.clone();
+                    move || {
+                        RelationalDB::open(
+                            &replica_dir,
+                            database_identity,
+                            owner_identity,
+                            history,
+                            Some(persistence),
+                            Some(tx_metrics_queue),
+                            page_pool,
+                        )
+                    }
+                })
+                .await
                 // Make sure we log the source chain of the error
                 // as a single line, with the help of `anyhow`.
                 .map_err(anyhow::Error::from)

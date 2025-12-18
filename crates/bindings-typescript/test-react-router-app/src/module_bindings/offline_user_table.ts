@@ -11,6 +11,6 @@ import {
 } from '../../../src/index';
 
 export default __t.row({
-  identity: __t.identity(),
+  identity: __t.identity().primaryKey(),
   hasIncrementedCount: __t.u32(),
 });

@@ -1,4 +1,3 @@
-import { ProductType } from './algebraic_type';
 import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
@@ -66,7 +65,8 @@ export type UntypedTableDef = {
   name: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  rowType: ProductType;
+  // This is really just a ProductType where all the elements have names.
+  rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
 };
@@ -365,18 +365,16 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  const productType = {
-    elements: row.algebraicType.value.elements.map(elem => {
-      return { name: elem.name, algebraicType: elem.algebraicType };
-    }),
-  };
+  const productType = row.algebraicType.value as RowBuilder<
+    CoerceRow<Row>
+  >['algebraicType']['value'];
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
     tableDef,
-    idxs: indexes as OptsIndices<Opts>,
+    idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
   };
 }

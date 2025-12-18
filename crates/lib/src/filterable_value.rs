@@ -126,12 +126,28 @@ impl<Bound: FilterableValue> TermBound<&Bound> {
     }
 }
 pub trait IndexScanRangeBoundsTerminator {
+    /// Whether this bound terminator is a point.
+    const POINT: bool = false;
+
+    /// The key type of the bound.
     type Arg;
+
+    /// Returns the point bound, assuming `POINT == true`.
+    fn point(&self) -> &Self::Arg {
+        unimplemented!()
+    }
+
+    /// Returns the terminal bound for the range scan.
+    /// This bound can either be a point, as in most cases, or an actual bound.
     fn bounds(&self) -> TermBound<&Self::Arg>;
 }
 
 impl<Col, Arg: FilterableValue<Column = Col>> IndexScanRangeBoundsTerminator for Arg {
+    const POINT: bool = true;
     type Arg = Arg;
+    fn point(&self) -> &Arg {
+        self
+    }
     fn bounds(&self) -> TermBound<&Arg> {
         TermBound::Single(ops::Bound::Included(self))
     }

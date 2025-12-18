@@ -1,6 +1,7 @@
-use super::mut_tx::{FilterDeleted, IndexScanRanged};
+use super::mut_tx::FilterDeleted;
 use super::{committed_state::CommittedState, datastore::Result, tx_state::TxState};
 use crate::error::{DatastoreError, TableError};
+use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
     StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
@@ -14,6 +15,7 @@ use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewDefInfo};
+use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
     blob_store::HashMapBlobStore,
     table::{IndexScanRangeIter, RowRef, Table, TableScanIter},
@@ -317,128 +319,85 @@ impl<'a> Iterator for IterMutTx<'a> {
     }
 }
 
-pub struct IterTx<'a> {
-    iter: TableScanIter<'a>,
+/// A filter on a row.
+pub trait RowFilter {
+    /// Does this filter include `row`?
+    fn filter<'a>(&self, row: RowRef<'a>) -> bool;
 }
 
-impl<'a> IterTx<'a> {
-    pub(super) fn new(table_id: TableId, committed_state: &'a CommittedState) -> Self {
-        // The table_id was validated to exist in the committed state.
-        let table = committed_state
-            .tables
-            .get(&table_id)
-            .expect("table_id must exist in committed state");
-        let iter = table.scan_rows(&committed_state.blob_store);
-        Self { iter }
+/// A row filter that matches `range` for the given `cols` of rows.
+pub struct RangeOnColumn<R> {
+    pub cols: ColList,
+    pub range: R,
+}
+
+impl<R: RangeBounds<AlgebraicValue>> RowFilter for RangeOnColumn<R> {
+    fn filter<'a>(&self, row: RowRef<'a>) -> bool {
+        self.range.contains(&row.project(&self.cols).unwrap())
     }
 }
 
-impl<'a> Iterator for IterTx<'a> {
+/// A row filter that matches `val` for the given `cols` of rows.
+pub struct EqOnColumn<'r> {
+    pub cols: ColList,
+    pub val: &'r AlgebraicValue,
+}
+
+impl RowFilter for EqOnColumn<'_> {
+    fn filter<'a>(&self, row: RowRef<'a>) -> bool {
+        self.val == &row.project(&self.cols).unwrap()
+    }
+}
+
+/// Applies filter `F` to `I`, producing another iterator.
+pub struct ApplyFilter<F, I> {
+    iter: I,
+    filter: F,
+}
+
+impl<F, I> ApplyFilter<F, I> {
+    /// Returns an iterator that applies `filer` to `iter`.
+    pub(super) fn new(filter: F, iter: I) -> Self {
+        Self { iter, filter }
+    }
+}
+
+impl<'a, F: RowFilter, I: Iterator<Item = RowRef<'a>>> Iterator for ApplyFilter<F, I> {
     type Item = RowRef<'a>;
 
-    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+        self.iter.find(|row| self.filter.filter(*row))
     }
 }
 
-/// An [IterByColRangeTx] for an individual column value.
-pub type IterByColEqTx<'a, 'r> = IterByColRangeTx<'a, &'r AlgebraicValue>;
-/// An [IterByColRangeMutTx] for an individual column value.
-pub type IterByColEqMutTx<'a, 'r> = IterByColRangeMutTx<'a, &'r AlgebraicValue>;
+type ScanFilterTx<'a, F> = ApplyFilter<F, TableScanIter<'a>>;
+pub type IterByColRangeTx<'a, R> = ScanOrIndex<ScanFilterTx<'a, RangeOnColumn<R>>, IndexScanRangeIter<'a>>;
+pub type IterByColEqTx<'a, 'r> = ScanOrIndex<ScanFilterTx<'a, EqOnColumn<'r>>, IndexScanPointIter<'a>>;
 
-/// An iterator for a range of values in a column.
-pub enum IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>> {
+type ScanFilterMutTx<'a, F> = ApplyFilter<F, IterMutTx<'a>>;
+pub type IterByColRangeMutTx<'a, R> = ScanOrIndex<ScanFilterMutTx<'a, RangeOnColumn<R>>, IndexScanRanged<'a>>;
+pub type IterByColEqMutTx<'a, 'r> = ScanOrIndex<ScanFilterMutTx<'a, EqOnColumn<'r>>, IndexScanPoint<'a>>;
+
+/// An iterator that either scans or index scans.
+pub enum ScanOrIndex<S, I> {
     /// When the column in question does not have an index.
-    Scan(ScanIterByColRangeTx<'a, R>),
+    Scan(S),
 
     /// When the column has an index.
-    Index(IndexScanRangeIter<'a>),
+    Index(I),
 }
 
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeTx<'a, R> {
+impl<'a, S, I> Iterator for ScanOrIndex<S, I>
+where
+    S: Iterator<Item = RowRef<'a>>,
+    I: Iterator<Item = RowRef<'a>>,
+{
     type Item = RowRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            IterByColRangeTx::Scan(iter) => iter.next(),
-            IterByColRangeTx::Index(iter) => iter.next(),
+            Self::Scan(iter) => iter.next(),
+            Self::Index(iter) => iter.next(),
         }
-    }
-}
-
-/// An iterator for a range of values in a column.
-pub enum IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
-    /// When the column in question does not have an index.
-    Scan(ScanIterByColRangeMutTx<'a, R>),
-
-    /// When the column has an index.
-    Index(IndexScanRanged<'a>),
-}
-
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for IterByColRangeMutTx<'a, R> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            IterByColRangeMutTx::Scan(range) => range.next(),
-            IterByColRangeMutTx::Index(range) => range.next(),
-        }
-    }
-}
-
-pub struct ScanIterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>> {
-    scan_iter: IterTx<'a>,
-    cols: ColList,
-    range: R,
-}
-
-impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRangeTx<'a, R> {
-    // TODO(perf, centril): consider taking `cols` by reference.
-    pub(super) fn new(scan_iter: IterTx<'a>, cols: ColList, range: R) -> Self {
-        Self { scan_iter, cols, range }
-    }
-}
-
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRangeTx<'a, R> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for row_ref in &mut self.scan_iter {
-            let value = row_ref.project(&self.cols).unwrap();
-            if self.range.contains(&value) {
-                return Some(row_ref);
-            }
-        }
-
-        None
-    }
-}
-
-pub struct ScanIterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> {
-    scan_iter: IterMutTx<'a>,
-    cols: ColList,
-    range: R,
-}
-
-impl<'a, R: RangeBounds<AlgebraicValue>> ScanIterByColRangeMutTx<'a, R> {
-    // TODO(perf, centril): consider taking `cols` by reference.
-    pub(super) fn new(scan_iter: IterMutTx<'a>, cols: ColList, range: R) -> Self {
-        Self { scan_iter, cols, range }
-    }
-}
-
-impl<'a, R: RangeBounds<AlgebraicValue>> Iterator for ScanIterByColRangeMutTx<'a, R> {
-    type Item = RowRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for row_ref in &mut self.scan_iter {
-            let value = row_ref.project(&self.cols).unwrap();
-            if self.range.contains(&value) {
-                return Some(row_ref);
-            }
-        }
-
-        None
     }
 }
