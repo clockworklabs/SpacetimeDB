@@ -3,7 +3,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use log::warn;
 use serde_json;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -332,7 +332,7 @@ impl Drop for ServerState {
                     "-f",
                     &compose_str,
                     "--project-name",
-                    project,
+                    &project,
                     "down",
                 )
                 .run();
@@ -351,7 +351,11 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
     let _server = ServerState::start(server_mode, &mut args)?;
 
     println!("Running smoketests: {}", args.join(" "));
-    cmd(python, "-m", "smoketests", args).run()?;
+    cmd(
+        python,
+        ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(args),
+    )
+    .run()?;
     Ok(())
 }
 
@@ -519,10 +523,13 @@ fn run_smoketests_parallel(
             list_args.push(test.clone());
         }
 
-        let output = cmd(&python, "-m", "smoketests", &list_args)
-            .stderr_to_stdout()
-            .read()
-            .expect("Failed to list smoketests");
+        let output = cmd(
+            python.clone(),
+            ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(list_args),
+        )
+        .stderr_to_stdout()
+        .read()
+        .expect("Failed to list smoketests");
 
         let parsed: serde_json::Value = serde_json::from_str(&output)?;
         let tests = parsed.get("tests").and_then(|v| v.as_array()).cloned().unwrap();
@@ -561,7 +568,7 @@ fn run_smoketests_parallel(
     let mut handles = Vec::new();
     for batch in batches {
         let start_server_clone = start_server.clone();
-        let python_clone = python.clone();
+        let python = python.clone();
         let mut batch_args: Vec<String> = Vec::new();
         batch_args.push(batch.clone());
         batch_args.extend(args.iter().cloned());
@@ -571,7 +578,7 @@ fn run_smoketests_parallel(
             std::thread::spawn(move || {
                 println!("Running smoketests batch {batch}..");
                 // TODO: capture output and print it only in contiguous blocks
-                run_smoketests_batch(start_server_clone, &batch_args, &python_clone)
+                run_smoketests_batch(start_server_clone, &batch_args, &python)
             }),
         ));
     }
