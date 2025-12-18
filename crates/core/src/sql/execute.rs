@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
@@ -215,7 +214,7 @@ pub async fn run(
                 None => tx,
             };
 
-            let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
@@ -223,12 +222,7 @@ pub async fn run(
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
                 let _ = tx_offset_send.send(offset);
-                db.report_tx_metrics(
-                    reducer,
-                    Some(Arc::new(tx_data)),
-                    Some(tx_metrics_mut),
-                    Some(tx_metrics_downgrade),
-                );
+                db.report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), Some(tx_metrics_downgrade));
             });
 
             // Compute the header for the result set
@@ -363,17 +357,17 @@ pub(crate) mod tests {
     use spacetimedb_vm::eval::test_helpers::create_game_data;
 
     pub(crate) fn execute_for_testing(
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
-    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
+    pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
         runtime
             .block_on(run(
                 db,
@@ -1391,7 +1385,7 @@ pub(crate) mod tests {
             sql.push_str("(y = 0)");
             sql
         };
-        let run = |db: &RelationalDB, sep: char, sql_text: &str| {
+        let run = |db: &Arc<RelationalDB>, sep: char, sql_text: &str| {
             run_for_testing(db, sql_text).map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
         };
         let sql = build_query(1_000);

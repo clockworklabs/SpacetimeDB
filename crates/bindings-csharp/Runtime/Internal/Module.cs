@@ -347,12 +347,23 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            var bytes = procedures[(int)id].Invoke(reader, ctx);
+            var bytes = Array.Empty<byte>();
+            try
+            {
+                bytes = procedures[(int)id].Invoke(reader, ctx);
+            }
+            catch (Exception e)
+            {
+                var errorBytes = System.Text.Encoding.UTF8.GetBytes(e.ToString());
+                resultSink.Write(errorBytes);
+                return Errno.HOST_CALL_FAILURE;
+            }
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the procedure arguments");
             }
             resultSink.Write(bytes);
+
             return Errno.OK;
         }
         catch (Exception e)
@@ -409,6 +420,15 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
+}
+
+/// <summary>
+/// Read-write database access for procedure contexts.
+/// The code generator will extend this partial class with table accessors.
+/// </summary>
+public partial class Local
+{
+    // Intentionally empty – generated code adds table handles here.
 }
 
 /// <summary>

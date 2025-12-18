@@ -5,10 +5,13 @@
 // This is needed so every module build doesn't generate a full LocalReadOnly type, but just adds on to the existing.
 // We extend it here with generated table accessors, and just need to suppress the duplicate-type warning.
 #pragma warning disable CS0436
+#pragma warning disable STDB_UNSTABLE
 
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Internal = SpacetimeDB.Internal;
+using TxContext = SpacetimeDB.Internal.TxContext;
 
 namespace SpacetimeDB
 {
@@ -27,27 +30,21 @@ namespace SpacetimeDB
             Identity identity,
             ConnectionId? connectionId,
             Random random,
-            Timestamp time
+            Timestamp time,
+            AuthCtx? senderAuth = null
         )
         {
             Sender = identity;
             ConnectionId = connectionId;
             Rng = random;
             Timestamp = time;
-            SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
+            SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
         }
     }
 
-    public sealed record ProcedureContext : Internal.IProcedureContext
+    public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
-        public readonly Identity Sender;
-        public readonly ConnectionId? ConnectionId;
-        public readonly Random Rng;
-        public readonly Timestamp Timestamp;
-        public readonly AuthCtx SenderAuth;
-
-        // We need this property to be non-static for parity with client SDK.
-        public Identity Identity => Internal.IProcedureContext.GetIdentity();
+        private readonly Local _db = new();
 
         internal ProcedureContext(
             Identity identity,
@@ -55,13 +52,51 @@ namespace SpacetimeDB
             Random random,
             Timestamp time
         )
-        {
-            Sender = identity;
-            ConnectionId = connectionId;
-            Rng = random;
-            Timestamp = time;
-            SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
-        }
+            : base(identity, connectionId, random, time) { }
+
+        protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+
+        protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
+            Internal.TxContext inner
+        ) => _cached ??= new ProcedureTxContext(inner);
+
+        private ProcedureTxContext? _cached;
+
+        [Experimental("STDB_UNSTABLE")]
+        public Local Db => _db;
+
+        [Experimental("STDB_UNSTABLE")]
+        public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
+            base.WithTx(tx => body((ProcedureTxContext)tx));
+
+        [Experimental("STDB_UNSTABLE")]
+        public TxOutcome<TResult> TryWithTx<TResult, TError>(
+            Func<ProcedureTxContext, Result<TResult, TError>> body
+        )
+            where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
+    }
+
+    [Experimental("STDB_UNSTABLE")]
+    public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
+    {
+        internal ProcedureTxContext(Internal.TxContext inner)
+            : base(inner) { }
+
+        public new Local Db => (Local)base.Db;
+    }
+
+    public sealed class Local : global::SpacetimeDB.LocalBase
+    {
+        internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
+            new();
+        internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
+        public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
+        public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
+        public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
+        public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
+        internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
+            new();
+        public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
     }
 
     public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
@@ -82,1002 +117,930 @@ namespace SpacetimeDB
         internal AnonymousViewContext(Internal.LocalReadOnly db)
             : base(db) { }
     }
+}
 
-    namespace Internal.TableHandles
+namespace SpacetimeDB.Internal.TableHandles
+{
+    internal readonly struct BTreeMultiColumn
+        : global::SpacetimeDB.Internal.ITableView<BTreeMultiColumn, global::BTreeMultiColumn>
     {
-        internal readonly struct BTreeMultiColumn
-            : global::SpacetimeDB.Internal.ITableView<BTreeMultiColumn, global::BTreeMultiColumn>
+        static global::BTreeMultiColumn global::SpacetimeDB.Internal.ITableView<
+            BTreeMultiColumn,
+            global::BTreeMultiColumn
+        >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeMultiColumn row)
         {
-            static global::BTreeMultiColumn global::SpacetimeDB.Internal.ITableView<
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            BTreeMultiColumn,
+            global::BTreeMultiColumn
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(BTreeMultiColumn),
+                ProductTypeRef: (uint)
+                    new global::BTreeMultiColumn.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Location",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2])
+                    )
+                ],
+                Constraints: [],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
                 BTreeMultiColumn,
                 global::BTreeMultiColumn
-            >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeMultiColumn row)
-            {
-                return row;
-            }
+            >.DoCount();
 
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+        public IEnumerable<global::BTreeMultiColumn> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
                 BTreeMultiColumn,
                 global::BTreeMultiColumn
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(BTreeMultiColumn),
-                    ProductTypeRef: (uint)
-                        new global::BTreeMultiColumn.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Location",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0, 1, 2])
-                        )
-                    ],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    BTreeMultiColumn,
-                    global::BTreeMultiColumn
-                >.DoCount();
-
-            public IEnumerable<global::BTreeMultiColumn> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    BTreeMultiColumn,
-                    global::BTreeMultiColumn
-                >.DoIter();
-
-            public global::BTreeMultiColumn Insert(global::BTreeMultiColumn row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    BTreeMultiColumn,
-                    global::BTreeMultiColumn
-                >.DoInsert(row);
-
-            public bool Delete(global::BTreeMultiColumn row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    BTreeMultiColumn,
-                    global::BTreeMultiColumn
-                >.DoDelete(row);
-
-            internal sealed class LocationIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
-                    "BTreeMultiColumn_X_Y_Z_idx_btree"
-                )
-            {
-                public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public ulong Delete(uint X) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public IEnumerable<global::BTreeMultiColumn> Filter(Bound<uint> X) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public ulong Delete(Bound<uint> X) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y) f) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public ulong Delete((uint X, uint Y) f) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public IEnumerable<global::BTreeMultiColumn> Filter((uint X, Bound<uint> Y) f) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public ulong Delete((uint X, Bound<uint> Y) f) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y, uint Z) f) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public ulong Delete((uint X, uint Y, uint Z) f) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public IEnumerable<global::BTreeMultiColumn> Filter(
-                    (uint X, uint Y, Bound<uint> Z) f
-                ) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public ulong Delete((uint X, uint Y, Bound<uint> Z) f) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-            }
-
-            internal LocationIndex Location => new();
-        }
-
-        internal readonly struct BTreeViews
-            : global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>
-        {
-            static global::BTreeViews global::SpacetimeDB.Internal.ITableView<
-                BTreeViews,
-                global::BTreeViews
-            >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeViews row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                BTreeViews,
-                global::BTreeViews
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(BTreeViews),
-                    ProductTypeRef: (uint)
-                        new global::BTreeViews.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [0],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Id",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "Location",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "Faction",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            BTreeViews,
-                            global::BTreeViews
-                        >.MakeUniqueConstraint(0)
-                    ],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoCount();
-
-            public IEnumerable<global::BTreeViews> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoIter();
-
-            public global::BTreeViews Insert(global::BTreeViews row) =>
-                global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoInsert(
-                    row
-                );
-
-            public bool Delete(global::BTreeViews row) =>
-                global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(
-                    row
-                );
-
-            internal sealed class IdUniqueIndex
-                : UniqueIndex<
-                    BTreeViews,
-                    global::BTreeViews,
-                    SpacetimeDB.Identity,
-                    SpacetimeDB.Identity.BSATN
-                >
-            {
-                internal IdUniqueIndex()
-                    : base("BTreeViews_Id_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::BTreeViews? Find(SpacetimeDB.Identity key) =>
-                    DoFilter(key).Cast<global::BTreeViews?>().SingleOrDefault();
-
-                public global::BTreeViews Update(global::BTreeViews row) => DoUpdate(row);
-            }
-
-            internal IdUniqueIndex Id => new();
-
-            internal sealed class LocationIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
-            {
-                public IEnumerable<global::BTreeViews> Filter(uint X) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public ulong Delete(uint X) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public IEnumerable<global::BTreeViews> Filter(Bound<uint> X) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public ulong Delete(Bound<uint> X) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X)
-                    );
-
-                public IEnumerable<global::BTreeViews> Filter((uint X, uint Y) f) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public ulong Delete((uint X, uint Y) f) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public IEnumerable<global::BTreeViews> Filter((uint X, Bound<uint> Y) f) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-
-                public ulong Delete((uint X, Bound<uint> Y) f) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<
-                            uint,
-                            SpacetimeDB.BSATN.U32,
-                            uint,
-                            SpacetimeDB.BSATN.U32
-                        >(f)
-                    );
-            }
-
-            internal LocationIndex Location => new();
-
-            internal sealed class FactionIndex()
-                : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_Faction_idx_btree")
-            {
-                public IEnumerable<global::BTreeViews> Filter(string Faction) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Faction
-                        )
-                    );
-
-                public ulong Delete(string Faction) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Faction
-                        )
-                    );
-
-                public IEnumerable<global::BTreeViews> Filter(Bound<string> Faction) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Faction
-                        )
-                    );
-
-                public ulong Delete(Bound<string> Faction) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Faction
-                        )
-                    );
-            }
-
-            internal FactionIndex Faction => new();
-        }
-
-        public readonly struct MultiTable1
-            : global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>
-        {
-            static global::MultiTableRow global::SpacetimeDB.Internal.ITableView<
-                MultiTable1,
-                global::MultiTableRow
-            >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTableRow row)
-            {
-                if (row.Foo == default)
-                {
-                    row.Foo = global::MultiTableRow.BSATN.FooRW.Read(reader);
-                }
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                MultiTable1,
-                global::MultiTableRow
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(MultiTable1),
-                    ProductTypeRef: (uint)
-                        new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [1],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Foo",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "Name",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            MultiTable1,
-                            global::MultiTableRow
-                        >.MakeUniqueConstraint(1)
-                    ],
-                    Sequences:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            MultiTable1,
-                            global::MultiTableRow
-                        >.MakeSequence(1)
-                    ],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Public
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable1,
-                    global::MultiTableRow
-                >.DoCount();
-
-            public IEnumerable<global::MultiTableRow> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable1,
-                    global::MultiTableRow
-                >.DoIter();
-
-            public global::MultiTableRow Insert(global::MultiTableRow row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable1,
-                    global::MultiTableRow
-                >.DoInsert(row);
-
-            public bool Delete(global::MultiTableRow row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable1,
-                    global::MultiTableRow
-                >.DoDelete(row);
-
-            public sealed class FooUniqueIndex
-                : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
-            {
-                internal FooUniqueIndex()
-                    : base("MultiTable1_Foo_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::MultiTableRow? Find(uint key) =>
-                    DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
-
-                public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
-            }
-
-            public FooUniqueIndex Foo => new();
-
-            public sealed class NameIndex()
-                : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>(
-                    "MultiTable1_Name_idx_btree"
-                )
-            {
-                public IEnumerable<global::MultiTableRow> Filter(string Name) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Name
-                        )
-                    );
-
-                public ulong Delete(string Name) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Name
-                        )
-                    );
-
-                public IEnumerable<global::MultiTableRow> Filter(Bound<string> Name) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Name
-                        )
-                    );
-
-                public ulong Delete(Bound<string> Name) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
-                            Name
-                        )
-                    );
-            }
-
-            public NameIndex Name => new();
-        }
-
-        public readonly struct MultiTable2
-            : global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>
-        {
-            static global::MultiTableRow global::SpacetimeDB.Internal.ITableView<
-                MultiTable2,
-                global::MultiTableRow
-            >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTableRow row)
-            {
-                if (row.Foo == default)
-                {
-                    row.Foo = global::MultiTableRow.BSATN.FooRW.Read(reader);
-                }
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                MultiTable2,
-                global::MultiTableRow
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(MultiTable2),
-                    ProductTypeRef: (uint)
-                        new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Bar",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            MultiTable2,
-                            global::MultiTableRow
-                        >.MakeUniqueConstraint(2)
-                    ],
-                    Sequences:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            MultiTable2,
-                            global::MultiTableRow
-                        >.MakeSequence(1)
-                    ],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable2,
-                    global::MultiTableRow
-                >.DoCount();
-
-            public IEnumerable<global::MultiTableRow> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable2,
-                    global::MultiTableRow
-                >.DoIter();
-
-            public global::MultiTableRow Insert(global::MultiTableRow row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable2,
-                    global::MultiTableRow
-                >.DoInsert(row);
-
-            public bool Delete(global::MultiTableRow row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    MultiTable2,
-                    global::MultiTableRow
-                >.DoDelete(row);
-
-            public sealed class BarUniqueIndex
-                : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
-            {
-                internal BarUniqueIndex()
-                    : base("MultiTable2_Bar_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::MultiTableRow? Find(uint key) =>
-                    DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
-
-                public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
-            }
-
-            public BarUniqueIndex Bar => new();
-        }
-
-        public readonly struct PrivateTable
-            : global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
-        {
-            static global::PrivateTable global::SpacetimeDB.Internal.ITableView<
-                PrivateTable,
-                global::PrivateTable
-            >.ReadGenFields(System.IO.BinaryReader reader, global::PrivateTable row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                PrivateTable,
-                global::PrivateTable
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(PrivateTable),
-                    ProductTypeRef: (uint)
-                        new global::PrivateTable.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes: [],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    PrivateTable,
-                    global::PrivateTable
-                >.DoCount();
-
-            public IEnumerable<global::PrivateTable> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    PrivateTable,
-                    global::PrivateTable
-                >.DoIter();
-
-            public global::PrivateTable Insert(global::PrivateTable row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    PrivateTable,
-                    global::PrivateTable
-                >.DoInsert(row);
-
-            public bool Delete(global::PrivateTable row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    PrivateTable,
-                    global::PrivateTable
-                >.DoDelete(row);
-        }
-
-        public readonly struct PublicTable
-            : global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>
-        {
-            static global::PublicTable global::SpacetimeDB.Internal.ITableView<
-                PublicTable,
-                global::PublicTable
-            >.ReadGenFields(System.IO.BinaryReader reader, global::PublicTable row)
-            {
-                if (row.Id == default)
-                {
-                    row.Id = global::PublicTable.BSATN.IdRW.Read(reader);
-                }
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                PublicTable,
-                global::PublicTable
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(PublicTable),
-                    ProductTypeRef: (uint)
-                        new global::PublicTable.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [0],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Id",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            PublicTable,
-                            global::PublicTable
-                        >.MakeUniqueConstraint(0)
-                    ],
-                    Sequences:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            PublicTable,
-                            global::PublicTable
-                        >.MakeSequence(0)
-                    ],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Public
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoCount();
-
-            public IEnumerable<global::PublicTable> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoIter();
-
-            public global::PublicTable Insert(global::PublicTable row) =>
-                global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoInsert(
-                    row
-                );
-
-            public bool Delete(global::PublicTable row) =>
-                global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(
-                    row
-                );
-
-            public sealed class IdUniqueIndex
-                : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
-            {
-                internal IdUniqueIndex()
-                    : base("PublicTable_Id_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::PublicTable? Find(int key) =>
-                    DoFilter(key).Cast<global::PublicTable?>().SingleOrDefault();
-
-                public global::PublicTable Update(global::PublicTable row) => DoUpdate(row);
-            }
-
-            public IdUniqueIndex Id => new();
-        }
-
-        internal readonly struct RegressionMultipleUniqueIndexesHadSameName
-            : global::SpacetimeDB.Internal.ITableView<
-                RegressionMultipleUniqueIndexesHadSameName,
-                global::RegressionMultipleUniqueIndexesHadSameName
-            >
-        {
-            static global::RegressionMultipleUniqueIndexesHadSameName global::SpacetimeDB.Internal.ITableView<
-                RegressionMultipleUniqueIndexesHadSameName,
-                global::RegressionMultipleUniqueIndexesHadSameName
-            >.ReadGenFields(
-                System.IO.BinaryReader reader,
-                global::RegressionMultipleUniqueIndexesHadSameName row
+            >.DoIter();
+
+        public global::BTreeMultiColumn Insert(global::BTreeMultiColumn row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                BTreeMultiColumn,
+                global::BTreeMultiColumn
+            >.DoInsert(row);
+
+        public bool Delete(global::BTreeMultiColumn row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                BTreeMultiColumn,
+                global::BTreeMultiColumn
+            >.DoDelete(row);
+
+        internal sealed class LocationIndex()
+            : SpacetimeDB.Internal.IndexBase<global::BTreeMultiColumn>(
+                "BTreeMultiColumn_X_Y_Z_idx_btree"
             )
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                RegressionMultipleUniqueIndexesHadSameName,
-                global::RegressionMultipleUniqueIndexesHadSameName
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(RegressionMultipleUniqueIndexesHadSameName),
-                    ProductTypeRef: (uint)
-                        new global::RegressionMultipleUniqueIndexesHadSameName.BSATN()
-                            .GetAlgebraicType(registrar)
-                            .Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Unique1",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "Unique2",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            RegressionMultipleUniqueIndexesHadSameName,
-                            global::RegressionMultipleUniqueIndexesHadSameName
-                        >.MakeUniqueConstraint(0),
-                        global::SpacetimeDB.Internal.ITableView<
-                            RegressionMultipleUniqueIndexesHadSameName,
-                            global::RegressionMultipleUniqueIndexesHadSameName
-                        >.MakeUniqueConstraint(1)
-                    ],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    RegressionMultipleUniqueIndexesHadSameName,
-                    global::RegressionMultipleUniqueIndexesHadSameName
-                >.DoCount();
-
-            public IEnumerable<global::RegressionMultipleUniqueIndexesHadSameName> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    RegressionMultipleUniqueIndexesHadSameName,
-                    global::RegressionMultipleUniqueIndexesHadSameName
-                >.DoIter();
-
-            public global::RegressionMultipleUniqueIndexesHadSameName Insert(
-                global::RegressionMultipleUniqueIndexesHadSameName row
-            ) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    RegressionMultipleUniqueIndexesHadSameName,
-                    global::RegressionMultipleUniqueIndexesHadSameName
-                >.DoInsert(row);
-
-            public bool Delete(global::RegressionMultipleUniqueIndexesHadSameName row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    RegressionMultipleUniqueIndexesHadSameName,
-                    global::RegressionMultipleUniqueIndexesHadSameName
-                >.DoDelete(row);
-
-            internal sealed class Unique1UniqueIndex
-                : UniqueIndex<
-                    RegressionMultipleUniqueIndexesHadSameName,
-                    global::RegressionMultipleUniqueIndexesHadSameName,
-                    uint,
-                    SpacetimeDB.BSATN.U32
-                >
-            {
-                internal Unique1UniqueIndex()
-                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
-                    DoFilter(key)
-                        .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
-                        .SingleOrDefault();
-
-                public global::RegressionMultipleUniqueIndexesHadSameName Update(
-                    global::RegressionMultipleUniqueIndexesHadSameName row
-                ) => DoUpdate(row);
-            }
-
-            internal Unique1UniqueIndex Unique1 => new();
-
-            internal sealed class Unique2UniqueIndex
-                : UniqueIndex<
-                    RegressionMultipleUniqueIndexesHadSameName,
-                    global::RegressionMultipleUniqueIndexesHadSameName,
-                    uint,
-                    SpacetimeDB.BSATN.U32
-                >
-            {
-                internal Unique2UniqueIndex()
-                    : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
-                    DoFilter(key)
-                        .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
-                        .SingleOrDefault();
-
-                public global::RegressionMultipleUniqueIndexesHadSameName Update(
-                    global::RegressionMultipleUniqueIndexesHadSameName row
-                ) => DoUpdate(row);
-            }
-
-            internal Unique2UniqueIndex Unique2 => new();
-        }
-
-        public readonly struct SendMessageTimer
-            : global::SpacetimeDB.Internal.ITableView<
-                SendMessageTimer,
-                global::Timers.SendMessageTimer
-            >
         {
-            static global::Timers.SendMessageTimer global::SpacetimeDB.Internal.ITableView<
-                SendMessageTimer,
-                global::Timers.SendMessageTimer
-            >.ReadGenFields(System.IO.BinaryReader reader, global::Timers.SendMessageTimer row)
-            {
-                if (row.ScheduledId == default)
-                {
-                    row.ScheduledId = global::Timers.SendMessageTimer.BSATN.ScheduledIdRW.Read(
-                        reader
-                    );
-                }
-                return row;
-            }
+            public IEnumerable<global::BTreeMultiColumn> Filter(uint X) =>
+                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
 
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                SendMessageTimer,
-                global::Timers.SendMessageTimer
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(SendMessageTimer),
-                    ProductTypeRef: (uint)
-                        new global::Timers.SendMessageTimer.BSATN()
-                            .GetAlgebraicType(registrar)
-                            .Ref_,
-                    PrimaryKey: [0],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "ScheduledId",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            SendMessageTimer,
-                            global::Timers.SendMessageTimer
-                        >.MakeUniqueConstraint(0)
-                    ],
-                    Sequences:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            SendMessageTimer,
-                            global::Timers.SendMessageTimer
-                        >.MakeSequence(0)
-                    ],
-                    Schedule: global::SpacetimeDB.Internal.ITableView<
-                        SendMessageTimer,
-                        global::Timers.SendMessageTimer
-                    >.MakeSchedule("SendScheduledMessage", 1),
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            public ulong Delete(uint X) =>
+                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public IEnumerable<global::BTreeMultiColumn> Filter(Bound<uint> X) =>
+                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public ulong Delete(Bound<uint> X) =>
+                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y) f) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
                 );
 
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    SendMessageTimer,
-                    global::Timers.SendMessageTimer
-                >.DoCount();
+            public ulong Delete((uint X, uint Y) f) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
 
-            public IEnumerable<global::Timers.SendMessageTimer> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    SendMessageTimer,
-                    global::Timers.SendMessageTimer
-                >.DoIter();
+            public IEnumerable<global::BTreeMultiColumn> Filter((uint X, Bound<uint> Y) f) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
 
-            public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    SendMessageTimer,
-                    global::Timers.SendMessageTimer
-                >.DoInsert(row);
+            public ulong Delete((uint X, Bound<uint> Y) f) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
 
-            public bool Delete(global::Timers.SendMessageTimer row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    SendMessageTimer,
-                    global::Timers.SendMessageTimer
-                >.DoDelete(row);
+            public IEnumerable<global::BTreeMultiColumn> Filter((uint X, uint Y, uint Z) f) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
 
-            public sealed class ScheduledIdUniqueIndex
-                : UniqueIndex<
-                    SendMessageTimer,
-                    global::Timers.SendMessageTimer,
-                    ulong,
-                    SpacetimeDB.BSATN.U64
-                >
-            {
-                internal ScheduledIdUniqueIndex()
-                    : base("SendMessageTimer_ScheduledId_idx_btree") { }
+            public ulong Delete((uint X, uint Y, uint Z) f) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
 
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::Timers.SendMessageTimer? Find(ulong key) =>
-                    DoFilter(key).Cast<global::Timers.SendMessageTimer?>().SingleOrDefault();
+            public IEnumerable<global::BTreeMultiColumn> Filter(
+                (uint X, uint Y, Bound<uint> Z) f
+            ) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
 
-                public global::Timers.SendMessageTimer Update(
-                    global::Timers.SendMessageTimer row
-                ) => DoUpdate(row);
-            }
-
-            public ScheduledIdUniqueIndex ScheduledId => new();
+            public ulong Delete((uint X, uint Y, Bound<uint> Z) f) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
         }
+
+        internal LocationIndex Location => new();
     }
 
-    public sealed class Local
+    internal readonly struct BTreeViews
+        : global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>
     {
-        internal global::SpacetimeDB.Internal.TableHandles.BTreeMultiColumn BTreeMultiColumn =>
-            new();
-        internal global::SpacetimeDB.Internal.TableHandles.BTreeViews BTreeViews => new();
-        public global::SpacetimeDB.Internal.TableHandles.MultiTable1 MultiTable1 => new();
-        public global::SpacetimeDB.Internal.TableHandles.MultiTable2 MultiTable2 => new();
-        public global::SpacetimeDB.Internal.TableHandles.PrivateTable PrivateTable => new();
-        public global::SpacetimeDB.Internal.TableHandles.PublicTable PublicTable => new();
-        internal global::SpacetimeDB.Internal.TableHandles.RegressionMultipleUniqueIndexesHadSameName RegressionMultipleUniqueIndexesHadSameName =>
-            new();
-        public global::SpacetimeDB.Internal.TableHandles.SendMessageTimer SendMessageTimer => new();
+        static global::BTreeViews global::SpacetimeDB.Internal.ITableView<
+            BTreeViews,
+            global::BTreeViews
+        >.ReadGenFields(System.IO.BinaryReader reader, global::BTreeViews row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            BTreeViews,
+            global::BTreeViews
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(BTreeViews),
+                ProductTypeRef: (uint)
+                    new global::BTreeViews.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Id",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "Location",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1, 2])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "Faction",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([3])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        BTreeViews,
+                        global::BTreeViews
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoCount();
+
+        public IEnumerable<global::BTreeViews> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoIter();
+
+        public global::BTreeViews Insert(global::BTreeViews row) =>
+            global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoInsert(row);
+
+        public bool Delete(global::BTreeViews row) =>
+            global::SpacetimeDB.Internal.ITableView<BTreeViews, global::BTreeViews>.DoDelete(row);
+
+        internal sealed class IdUniqueIndex
+            : UniqueIndex<
+                BTreeViews,
+                global::BTreeViews,
+                SpacetimeDB.Identity,
+                SpacetimeDB.Identity.BSATN
+            >
+        {
+            internal IdUniqueIndex()
+                : base("BTreeViews_Id_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::BTreeViews? Find(SpacetimeDB.Identity key) =>
+                DoFilter(key).Cast<global::BTreeViews?>().SingleOrDefault();
+
+            public global::BTreeViews Update(global::BTreeViews row) => DoUpdate(row);
+        }
+
+        internal IdUniqueIndex Id => new();
+
+        internal sealed class LocationIndex()
+            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_X_Y_idx_btree")
+        {
+            public IEnumerable<global::BTreeViews> Filter(uint X) =>
+                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public ulong Delete(uint X) =>
+                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public IEnumerable<global::BTreeViews> Filter(Bound<uint> X) =>
+                DoFilter(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public ulong Delete(Bound<uint> X) =>
+                DoDelete(new SpacetimeDB.Internal.BTreeIndexBounds<uint, SpacetimeDB.BSATN.U32>(X));
+
+            public IEnumerable<global::BTreeViews> Filter((uint X, uint Y) f) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
+
+            public ulong Delete((uint X, uint Y) f) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
+
+            public IEnumerable<global::BTreeViews> Filter((uint X, Bound<uint> Y) f) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
+
+            public ulong Delete((uint X, Bound<uint> Y) f) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<
+                        uint,
+                        SpacetimeDB.BSATN.U32,
+                        uint,
+                        SpacetimeDB.BSATN.U32
+                    >(f)
+                );
+        }
+
+        internal LocationIndex Location => new();
+
+        internal sealed class FactionIndex()
+            : SpacetimeDB.Internal.IndexBase<global::BTreeViews>("BTreeViews_Faction_idx_btree")
+        {
+            public IEnumerable<global::BTreeViews> Filter(string Faction) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Faction
+                    )
+                );
+
+            public ulong Delete(string Faction) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Faction
+                    )
+                );
+
+            public IEnumerable<global::BTreeViews> Filter(Bound<string> Faction) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Faction
+                    )
+                );
+
+            public ulong Delete(Bound<string> Faction) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Faction
+                    )
+                );
+        }
+
+        internal FactionIndex Faction => new();
+    }
+
+    public readonly struct MultiTable1
+        : global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>
+    {
+        static global::MultiTableRow global::SpacetimeDB.Internal.ITableView<
+            MultiTable1,
+            global::MultiTableRow
+        >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTableRow row)
+        {
+            if (row.Foo == default)
+            {
+                row.Foo = global::MultiTableRow.BSATN.FooRW.Read(reader);
+            }
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            MultiTable1,
+            global::MultiTableRow
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(MultiTable1),
+                ProductTypeRef: (uint)
+                    new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [1],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Foo",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "Name",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        MultiTable1,
+                        global::MultiTableRow
+                    >.MakeUniqueConstraint(1)
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        MultiTable1,
+                        global::MultiTableRow
+                    >.MakeSequence(1)
+                ],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Public
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoCount();
+
+        public IEnumerable<global::MultiTableRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoIter();
+
+        public global::MultiTableRow Insert(global::MultiTableRow row) =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoInsert(
+                row
+            );
+
+        public bool Delete(global::MultiTableRow row) =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable1, global::MultiTableRow>.DoDelete(
+                row
+            );
+
+        public sealed class FooUniqueIndex
+            : UniqueIndex<MultiTable1, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
+        {
+            internal FooUniqueIndex()
+                : base("MultiTable1_Foo_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::MultiTableRow? Find(uint key) =>
+                DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
+
+            public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
+        }
+
+        public FooUniqueIndex Foo => new();
+
+        public sealed class NameIndex()
+            : SpacetimeDB.Internal.IndexBase<global::MultiTableRow>("MultiTable1_Name_idx_btree")
+        {
+            public IEnumerable<global::MultiTableRow> Filter(string Name) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Name
+                    )
+                );
+
+            public ulong Delete(string Name) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Name
+                    )
+                );
+
+            public IEnumerable<global::MultiTableRow> Filter(Bound<string> Name) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Name
+                    )
+                );
+
+            public ulong Delete(Bound<string> Name) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<string, SpacetimeDB.BSATN.String>(
+                        Name
+                    )
+                );
+        }
+
+        public NameIndex Name => new();
+    }
+
+    public readonly struct MultiTable2
+        : global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>
+    {
+        static global::MultiTableRow global::SpacetimeDB.Internal.ITableView<
+            MultiTable2,
+            global::MultiTableRow
+        >.ReadGenFields(System.IO.BinaryReader reader, global::MultiTableRow row)
+        {
+            if (row.Foo == default)
+            {
+                row.Foo = global::MultiTableRow.BSATN.FooRW.Read(reader);
+            }
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            MultiTable2,
+            global::MultiTableRow
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(MultiTable2),
+                ProductTypeRef: (uint)
+                    new global::MultiTableRow.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Bar",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([2])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        MultiTable2,
+                        global::MultiTableRow
+                    >.MakeUniqueConstraint(2)
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        MultiTable2,
+                        global::MultiTableRow
+                    >.MakeSequence(1)
+                ],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoCount();
+
+        public IEnumerable<global::MultiTableRow> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoIter();
+
+        public global::MultiTableRow Insert(global::MultiTableRow row) =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoInsert(
+                row
+            );
+
+        public bool Delete(global::MultiTableRow row) =>
+            global::SpacetimeDB.Internal.ITableView<MultiTable2, global::MultiTableRow>.DoDelete(
+                row
+            );
+
+        public sealed class BarUniqueIndex
+            : UniqueIndex<MultiTable2, global::MultiTableRow, uint, SpacetimeDB.BSATN.U32>
+        {
+            internal BarUniqueIndex()
+                : base("MultiTable2_Bar_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::MultiTableRow? Find(uint key) =>
+                DoFilter(key).Cast<global::MultiTableRow?>().SingleOrDefault();
+
+            public global::MultiTableRow Update(global::MultiTableRow row) => DoUpdate(row);
+        }
+
+        public BarUniqueIndex Bar => new();
+    }
+
+    public readonly struct PrivateTable
+        : global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>
+    {
+        static global::PrivateTable global::SpacetimeDB.Internal.ITableView<
+            PrivateTable,
+            global::PrivateTable
+        >.ReadGenFields(System.IO.BinaryReader reader, global::PrivateTable row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            PrivateTable,
+            global::PrivateTable
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(PrivateTable),
+                ProductTypeRef: (uint)
+                    new global::PrivateTable.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoCount();
+
+        public IEnumerable<global::PrivateTable> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoIter();
+
+        public global::PrivateTable Insert(global::PrivateTable row) =>
+            global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoInsert(
+                row
+            );
+
+        public bool Delete(global::PrivateTable row) =>
+            global::SpacetimeDB.Internal.ITableView<PrivateTable, global::PrivateTable>.DoDelete(
+                row
+            );
+    }
+
+    public readonly struct PublicTable
+        : global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>
+    {
+        static global::PublicTable global::SpacetimeDB.Internal.ITableView<
+            PublicTable,
+            global::PublicTable
+        >.ReadGenFields(System.IO.BinaryReader reader, global::PublicTable row)
+        {
+            if (row.Id == default)
+            {
+                row.Id = global::PublicTable.BSATN.IdRW.Read(reader);
+            }
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            PublicTable,
+            global::PublicTable
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(PublicTable),
+                ProductTypeRef: (uint)
+                    new global::PublicTable.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Id",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        PublicTable,
+                        global::PublicTable
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        PublicTable,
+                        global::PublicTable
+                    >.MakeSequence(0)
+                ],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Public
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoCount();
+
+        public IEnumerable<global::PublicTable> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoIter();
+
+        public global::PublicTable Insert(global::PublicTable row) =>
+            global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoInsert(row);
+
+        public bool Delete(global::PublicTable row) =>
+            global::SpacetimeDB.Internal.ITableView<PublicTable, global::PublicTable>.DoDelete(row);
+
+        public sealed class IdUniqueIndex
+            : UniqueIndex<PublicTable, global::PublicTable, int, SpacetimeDB.BSATN.I32>
+        {
+            internal IdUniqueIndex()
+                : base("PublicTable_Id_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::PublicTable? Find(int key) =>
+                DoFilter(key).Cast<global::PublicTable?>().SingleOrDefault();
+
+            public global::PublicTable Update(global::PublicTable row) => DoUpdate(row);
+        }
+
+        public IdUniqueIndex Id => new();
+    }
+
+    internal readonly struct RegressionMultipleUniqueIndexesHadSameName
+        : global::SpacetimeDB.Internal.ITableView<
+            RegressionMultipleUniqueIndexesHadSameName,
+            global::RegressionMultipleUniqueIndexesHadSameName
+        >
+    {
+        static global::RegressionMultipleUniqueIndexesHadSameName global::SpacetimeDB.Internal.ITableView<
+            RegressionMultipleUniqueIndexesHadSameName,
+            global::RegressionMultipleUniqueIndexesHadSameName
+        >.ReadGenFields(
+            System.IO.BinaryReader reader,
+            global::RegressionMultipleUniqueIndexesHadSameName row
+        )
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            RegressionMultipleUniqueIndexesHadSameName,
+            global::RegressionMultipleUniqueIndexesHadSameName
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(RegressionMultipleUniqueIndexesHadSameName),
+                ProductTypeRef: (uint)
+                    new global::RegressionMultipleUniqueIndexesHadSameName.BSATN()
+                        .GetAlgebraicType(registrar)
+                        .Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Unique1",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "Unique2",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        RegressionMultipleUniqueIndexesHadSameName,
+                        global::RegressionMultipleUniqueIndexesHadSameName
+                    >.MakeUniqueConstraint(0),
+                    global::SpacetimeDB.Internal.ITableView<
+                        RegressionMultipleUniqueIndexesHadSameName,
+                        global::RegressionMultipleUniqueIndexesHadSameName
+                    >.MakeUniqueConstraint(1)
+                ],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.DoCount();
+
+        public IEnumerable<global::RegressionMultipleUniqueIndexesHadSameName> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.DoIter();
+
+        public global::RegressionMultipleUniqueIndexesHadSameName Insert(
+            global::RegressionMultipleUniqueIndexesHadSameName row
+        ) =>
+            global::SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.DoInsert(row);
+
+        public bool Delete(global::RegressionMultipleUniqueIndexesHadSameName row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName
+            >.DoDelete(row);
+
+        internal sealed class Unique1UniqueIndex
+            : UniqueIndex<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName,
+                uint,
+                SpacetimeDB.BSATN.U32
+            >
+        {
+            internal Unique1UniqueIndex()
+                : base("RegressionMultipleUniqueIndexesHadSameName_Unique1_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
+                DoFilter(key)
+                    .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
+                    .SingleOrDefault();
+
+            public global::RegressionMultipleUniqueIndexesHadSameName Update(
+                global::RegressionMultipleUniqueIndexesHadSameName row
+            ) => DoUpdate(row);
+        }
+
+        internal Unique1UniqueIndex Unique1 => new();
+
+        internal sealed class Unique2UniqueIndex
+            : UniqueIndex<
+                RegressionMultipleUniqueIndexesHadSameName,
+                global::RegressionMultipleUniqueIndexesHadSameName,
+                uint,
+                SpacetimeDB.BSATN.U32
+            >
+        {
+            internal Unique2UniqueIndex()
+                : base("RegressionMultipleUniqueIndexesHadSameName_Unique2_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::RegressionMultipleUniqueIndexesHadSameName? Find(uint key) =>
+                DoFilter(key)
+                    .Cast<global::RegressionMultipleUniqueIndexesHadSameName?>()
+                    .SingleOrDefault();
+
+            public global::RegressionMultipleUniqueIndexesHadSameName Update(
+                global::RegressionMultipleUniqueIndexesHadSameName row
+            ) => DoUpdate(row);
+        }
+
+        internal Unique2UniqueIndex Unique2 => new();
+    }
+
+    public readonly struct SendMessageTimer
+        : global::SpacetimeDB.Internal.ITableView<SendMessageTimer, global::Timers.SendMessageTimer>
+    {
+        static global::Timers.SendMessageTimer global::SpacetimeDB.Internal.ITableView<
+            SendMessageTimer,
+            global::Timers.SendMessageTimer
+        >.ReadGenFields(System.IO.BinaryReader reader, global::Timers.SendMessageTimer row)
+        {
+            if (row.ScheduledId == default)
+            {
+                row.ScheduledId = global::Timers.SendMessageTimer.BSATN.ScheduledIdRW.Read(reader);
+            }
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            SendMessageTimer,
+            global::Timers.SendMessageTimer
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(SendMessageTimer),
+                ProductTypeRef: (uint)
+                    new global::Timers.SendMessageTimer.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "ScheduledId",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        SendMessageTimer,
+                        global::Timers.SendMessageTimer
+                    >.MakeSequence(0)
+                ],
+                Schedule: global::SpacetimeDB.Internal.ITableView<
+                    SendMessageTimer,
+                    global::Timers.SendMessageTimer
+                >.MakeSchedule("SendScheduledMessage", 1),
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.DoCount();
+
+        public IEnumerable<global::Timers.SendMessageTimer> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.DoIter();
+
+        public global::Timers.SendMessageTimer Insert(global::Timers.SendMessageTimer row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.DoInsert(row);
+
+        public bool Delete(global::Timers.SendMessageTimer row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer
+            >.DoDelete(row);
+
+        public sealed class ScheduledIdUniqueIndex
+            : UniqueIndex<
+                SendMessageTimer,
+                global::Timers.SendMessageTimer,
+                ulong,
+                SpacetimeDB.BSATN.U64
+            >
+        {
+            internal ScheduledIdUniqueIndex()
+                : base("SendMessageTimer_ScheduledId_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::Timers.SendMessageTimer? Find(ulong key) =>
+                DoFilter(key).Cast<global::Timers.SendMessageTimer?>().SingleOrDefault();
+
+            public global::Timers.SendMessageTimer Update(global::Timers.SendMessageTimer row) =>
+                DoUpdate(row);
+        }
+
+        public ScheduledIdUniqueIndex ScheduledId => new();
     }
 }
 
@@ -1817,4 +1780,5 @@ static class ModuleRegistration
 #endif
 }
 
+#pragma warning restore STDB_UNSTABLE
 #pragma warning restore CS0436

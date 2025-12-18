@@ -1902,6 +1902,11 @@ impl MutTxId {
     /// Commits this transaction in memory, applying its changes to the committed state.
     /// This doesn't handle the persistence layer at all.
     ///
+    /// IMPORTANT: This method updates the in-memory state of the database but does not make it durable.
+    /// That is, the tx will not be persisted to the commitlog.
+    /// Hence you should be careful when calling this method directly.
+    /// In most cases you'll want to use `RelationalDB::commit_tx` which makes the tx durable.
+    ///
     /// Returns:
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
@@ -1947,11 +1952,16 @@ impl MutTxId {
     /// The lock on the committed state is converted into a read lock,
     /// and returned as a new read-only transaction.
     ///
+    /// IMPORTANT: This method updates the in-memory state of the database but does not make it durable.
+    /// That is, the tx will not be persisted to the commitlog.
+    /// Hence you should be careful when calling this method directly.
+    /// In most cases you'll want to use `RelationalDB::commit_tx_downgrade` which makes the tx durable.
+    ///
     /// Returns:
     /// - [`TxData`], the set of inserts and deletes performed by this transaction.
     /// - [`TxMetrics`], various measurements of the work performed by this transaction.
     /// - [`TxId`], a read-only transaction with a shared lock on the committed state.
-    pub fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
+    pub(super) fn commit_downgrade(mut self, workload: Workload) -> (TxData, TxMetrics, TxId) {
         let tx_data = self
             .committed_state_write_lock
             .merge(self.tx_state, self.read_sets, &self.ctx);
