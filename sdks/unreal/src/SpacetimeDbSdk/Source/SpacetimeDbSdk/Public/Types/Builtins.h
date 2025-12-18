@@ -34,7 +34,7 @@ struct FSpacetimeDBConnectionId
     GENERATED_BODY()
 
     /** The 128-bit value of the identifier. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBUInt128 Value;
 
     /** Default constructor initializes to zero. */
@@ -189,7 +189,7 @@ struct FSpacetimeDBIdentity
     GENERATED_BODY()
 
     /** The 256-bit value of the identity. */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FSpacetimeDBUInt256 Value;
 
     /** Default constructor initializes to zero. */
