@@ -15,7 +15,7 @@ namespace SpacetimeDB.Types
     {
         public sealed class PlayerLevelHandle : RemoteTableHandle<EventContext, PlayerLevel>
         {
-            protected override string RemoteTableName => "PlayerLevel";
+            protected override string RemoteTableName => "player_level";
 
             public sealed class LevelIndex : BTreeIndexBase<ulong>
             {

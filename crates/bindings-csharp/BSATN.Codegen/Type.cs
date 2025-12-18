@@ -53,6 +53,12 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// <returns></returns>
     public static TypeUse Parse(ISymbol member, ITypeSymbol typeSymbol, DiagReporter diag)
     {
+        if (typeSymbol.SpecialType == SpecialType.System_Void)
+        {
+            // Treat void as equivalent to Unit type
+            return new ReferenceUse("SpacetimeDB.Unit", "SpacetimeDB.Unit.BSATN");
+        }
+
         var type = SymbolToName(typeSymbol);
         string typeInfo;
 
