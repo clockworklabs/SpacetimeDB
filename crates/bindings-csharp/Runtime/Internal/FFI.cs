@@ -69,6 +69,14 @@ internal static partial class FFI
 #endif
     ;
 
+    const string StdbNamespace10_4 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.4"
+#else
+        "bindings"
+#endif
+    ;
+
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
@@ -165,6 +173,22 @@ internal static partial class FFI
     public static partial CheckedStatus datastore_table_scan_bsatn(
         TableId table_id,
         out RowIter out_
+    );
+
+    [LibraryImport(StdbNamespace10_4)]
+    public static partial CheckedStatus datastore_index_scan_point_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> point,
+        uint point_len,
+        out RowIter out_
+    );
+
+    [LibraryImport(StdbNamespace10_4)]
+    public static partial CheckedStatus datastore_delete_by_index_scan_point_bsatn(
+        IndexId index_id,
+        ReadOnlySpan<byte> point,
+        uint point_len,
+        out uint out_
     );
 
     [LibraryImport(StdbNamespace10_0)]

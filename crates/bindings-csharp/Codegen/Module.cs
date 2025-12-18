@@ -497,7 +497,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                    public {{globalName}}? Find({{f.Type.Name}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
+                    public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
