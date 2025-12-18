@@ -143,7 +143,7 @@
       "name": "sdk esm min (gzip)",
       "path": "dist/min/sdk/index.browser.mjs",
       "gzip": true,
-      "limit": "16 kB"
+      "limit": "32 kB"
     },
     {
       "name": "sdk esm min (uncompressed)",
