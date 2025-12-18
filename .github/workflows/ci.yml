@@ -104,10 +104,6 @@ jobs:
       - name: Start Docker daemon
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
-      - name: Check docker info
-        if: runner.os == 'Linux'
-        run: |
-          docker info
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
         if: runner.os == 'Windows'
