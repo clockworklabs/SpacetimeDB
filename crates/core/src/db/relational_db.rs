@@ -827,16 +827,10 @@ impl RelationalDB {
     }
 
     #[tracing::instrument(level = "trace", skip_all)]
-    pub fn commit_tx_downgrade(
-        &self,
-        tx: MutTx,
-        workload: Workload,
-    ) -> Result<Option<(Arc<TxData>, TxMetrics, Tx)>, DBError> {
+    pub fn commit_tx_downgrade(&self, tx: MutTx, workload: Workload) -> (Arc<TxData>, TxMetrics, Tx) {
         log::trace!("COMMIT MUT TX");
 
-        let Some((tx_data, tx_metrics, tx)) = self.inner.commit_mut_tx_downgrade(tx, workload)? else {
-            return Ok(None);
-        };
+        let (tx_data, tx_metrics, tx) = self.inner.commit_mut_tx_downgrade(tx, workload);
 
         self.maybe_do_snapshot(&tx_data);
 
@@ -845,7 +839,7 @@ impl RelationalDB {
             durability.request_durability(tx.ctx.reducer_context().cloned(), &tx_data);
         }
 
-        Ok(Some((tx_data, tx_metrics, tx)))
+        (tx_data, tx_metrics, tx)
     }
 
     /// Get the [`DurableOffset`] of this database, or `None` if this is an

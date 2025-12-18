@@ -1027,9 +1027,7 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
-                    return Ok(Err(WriteConflict));
-                };
+                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update);
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
                 (read_tx, tx_data, tx_metrics)
             }
@@ -1102,7 +1100,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -1136,7 +1134,7 @@ impl ModuleSubscriptions {
                 .materialize_views(tx, view_collector, sender, Workload::Subscribe)
                 .await?
         }
-        let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -1229,10 +1227,10 @@ impl GuardTxOptions {
         }
     }
 
-    fn from_mut(tx_data: TxData, tx_metrics_mut: TxMetrics) -> Self {
+    fn from_mut(tx_data: Arc<TxData>, tx_metrics_mut: TxMetrics) -> Self {
         Self {
             extra_tx_offset_sender: None,
-            tx_data: Some(Arc::new(tx_data)),
+            tx_data: Some(tx_data),
             tx_metrics_mut: tx_metrics_mut.into(),
         }
     }

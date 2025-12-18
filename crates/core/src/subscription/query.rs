@@ -1087,7 +1087,7 @@ mod tests {
             }
         }
 
-        let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
+        let (data, _, tx) = db.commit_tx_downgrade(tx, Workload::ForTests);
         let table_id = plan.subscribed_table_id();
         // This awful construction to convert `Arc<str>` into `Box<str>`.
         let table_name = (&**plan.subscribed_table_name()).into();

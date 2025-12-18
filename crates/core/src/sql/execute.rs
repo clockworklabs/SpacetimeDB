@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
@@ -215,7 +214,7 @@ pub async fn run(
                 None => tx,
             };
 
-            let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
@@ -223,12 +222,7 @@ pub async fn run(
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
                 let _ = tx_offset_send.send(offset);
-                db.report_tx_metrics(
-                    reducer,
-                    Some(Arc::new(tx_data)),
-                    Some(tx_metrics_mut),
-                    Some(tx_metrics_downgrade),
-                );
+                db.report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), Some(tx_metrics_downgrade));
             });
 
             // Compute the header for the result set
