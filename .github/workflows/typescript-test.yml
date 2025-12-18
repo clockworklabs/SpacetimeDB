@@ -90,6 +90,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |

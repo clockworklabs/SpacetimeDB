@@ -60,9 +60,9 @@ jobs:
         with:
           workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
-          cache-on-failure: true
           cache-all-crates: true
           cache-workspace-crates: true
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -153,6 +153,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -197,6 +198,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -227,6 +229,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -490,6 +493,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Check for docs change
         run: |
@@ -554,6 +558,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -678,6 +683,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
