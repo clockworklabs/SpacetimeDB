@@ -134,7 +134,7 @@ impl DurableOffsetSupply for watch::Receiver<ModuleHost> {
     }
 }
 
-impl DurableOffsetSupply for RelationalDB {
+impl DurableOffsetSupply for Arc<RelationalDB> {
     fn durable_offset(&mut self) -> Result<Option<DurableOffset>, NoSuchModule> {
         Ok(self.durable_tx_offset())
     }

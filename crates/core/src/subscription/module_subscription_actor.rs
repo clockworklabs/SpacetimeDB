@@ -42,6 +42,7 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
+use spacetimedb_table::static_assert_size;
 use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
@@ -56,10 +57,11 @@ pub struct ModuleSubscriptions {
     subscriptions: Subscriptions,
     broadcast_queue: BroadcastQueue,
     stats: Arc<SubscriptionGauges>,
+    metrics: Arc<SubscriptionMetricsForWorkloads>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionGauges {
+struct SubscriptionGauges {
     db_identity: Identity,
     num_queries: IntGauge,
     num_connections: IntGauge,
@@ -111,17 +113,36 @@ impl SubscriptionGauges {
     }
 }
 
-pub struct SubscriptionMetrics {
-    pub lock_waiters: IntGauge,
-    pub lock_wait_time: Histogram,
-    pub compilation_time: Histogram,
-    pub num_queries_subscribed: IntCounter,
-    pub num_new_queries_subscribed: IntCounter,
-    pub num_queries_evaluated: IntCounter,
+struct SubscriptionMetricsForWorkloads {
+    update: SubscriptionMetrics,
+    subscribe: SubscriptionMetrics,
+    unsubscribe: SubscriptionMetrics,
 }
 
+impl SubscriptionMetricsForWorkloads {
+    fn new(db: &Identity) -> Self {
+        Self {
+            update: SubscriptionMetrics::new(db, WorkloadType::Update),
+            subscribe: SubscriptionMetrics::new(db, WorkloadType::Subscribe),
+            unsubscribe: SubscriptionMetrics::new(db, WorkloadType::Unsubscribe),
+        }
+    }
+}
+
+struct SubscriptionMetrics {
+    lock_waiters: IntGauge,
+    lock_wait_time: Histogram,
+    compilation_time: Histogram,
+    num_queries_subscribed: IntCounter,
+    num_new_queries_subscribed: IntCounter,
+    num_queries_evaluated: IntCounter,
+}
+
+static_assert_size!(SubscriptionMetrics, 48);
+
 impl SubscriptionMetrics {
-    pub fn new(db: &Identity, workload: &WorkloadType) -> Self {
+    fn new(db: &Identity, workload: WorkloadType) -> Self {
+        let workload = &workload;
         Self {
             lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db, workload),
             lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db, workload),
@@ -218,12 +239,14 @@ impl ModuleSubscriptions {
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
+        let metrics = Arc::new(SubscriptionMetricsForWorkloads::new(db));
 
         Self {
             relational_db,
             subscriptions,
             broadcast_queue,
             stats,
+            metrics,
         }
     }
 
@@ -579,8 +602,7 @@ impl ModuleSubscriptions {
             )
         };
 
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
+        let subscription_metrics = &self.metrics.unsubscribe;
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
@@ -780,12 +802,9 @@ impl ModuleSubscriptions {
             );
         };
 
-        let num_queries = request.query_strings.len();
-
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = return_on_err!(
@@ -794,7 +813,7 @@ impl ModuleSubscriptions {
                 auth,
                 &request.query_strings,
                 num_queries,
-                &subscription_metrics
+                subscription_metrics
             ),
             send_err_msg,
             None
@@ -885,11 +904,9 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
-        let num_queries = subscription.query_strings.len();
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = subscription.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
@@ -897,7 +914,7 @@ impl ModuleSubscriptions {
             auth,
             &subscription.query_strings,
             num_queries,
-            &subscription_metrics,
+            subscription_metrics,
         )?;
 
         let (tx, tx_offset) = self
@@ -929,7 +946,7 @@ impl ModuleSubscriptions {
             )?,
         };
 
-        record_query_metrics(&database_identity, query_metrics);
+        record_query_metrics(&self.relational_db.database_identity(), query_metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -994,8 +1011,7 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
+        let subscription_metrics = &self.metrics.update;
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
@@ -1011,11 +1027,9 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
-                    return Ok(Err(WriteConflict));
-                };
+                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update);
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Arc::new(tx_data), tx_metrics)
+                (read_tx, tx_data, tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
                 // If the transaction failed, we need to rollback the mutable tx.
@@ -1086,7 +1100,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -1120,7 +1134,7 @@ impl ModuleSubscriptions {
                 .materialize_views(tx, view_collector, sender, Workload::Subscribe)
                 .await?
         }
-        let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -1182,7 +1196,7 @@ impl ModuleSubscriptions {
                     let _ = extra.send(tx_offset);
                 }
                 self.relational_db
-                    .report_tx_metrics(reducer, Some(Arc::new(tx_data)), Some(tx_metrics_mut), None);
+                    .report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), None);
             }
         });
         (guard, offset_rx)
@@ -1213,10 +1227,10 @@ impl GuardTxOptions {
         }
     }
 
-    fn from_mut(tx_data: TxData, tx_metrics_mut: TxMetrics) -> Self {
+    fn from_mut(tx_data: Arc<TxData>, tx_metrics_mut: TxMetrics) -> Self {
         Self {
             extra_tx_offset_sender: None,
-            tx_data: Some(Arc::new(tx_data)),
+            tx_data: Some(tx_data),
             tx_metrics_mut: tx_metrics_mut.into(),
         }
     }
@@ -1289,7 +1303,7 @@ mod tests {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
-        let sender = Arc::new(ClientConnectionSender::dummy(client, config, (*db).clone()));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config, db.clone()));
         let send_worker_queue = spawn_send_worker(None);
         let module_subscriptions = ModuleSubscriptions::new(
             db.clone(),
@@ -1376,11 +1390,13 @@ mod tests {
     /// An in-memory `RelationalDB` for testing
     fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
-        Ok(Arc::new(db))
+        Ok(db)
     }
 
     /// An in-memory `RelationalDB` with `ManualDurability`.
-    fn relational_db_with_manual_durability() -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
+    fn relational_db_with_manual_durability(
+        rt: tokio::runtime::Handle,
+    ) -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
         let dir = TempReplicaDir::new()?;
         let durability = Arc::new(ManualDurability::default());
         let db = TestDB::open_db(
@@ -1390,6 +1406,7 @@ mod tests {
                 durability: durability.clone(),
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
+                runtime: rt,
             }),
             None,
             0,
@@ -1472,7 +1489,7 @@ mod tests {
 
     fn client_connection_with_config(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         config: ClientConfig,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, config, db.clone());
@@ -1482,7 +1499,7 @@ mod tests {
     /// Instantiate a client connection with compression
     fn client_connection_with_compression(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         compression: Compression,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
@@ -1500,7 +1517,7 @@ mod tests {
     /// Instantiate a client connection
     fn client_connection(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_compression(client_id, db, Compression::None)
     }
@@ -1508,7 +1525,7 @@ mod tests {
     /// Instantiate a client connection with confirmed reads turned on or off.
     fn client_connection_with_confirmed_reads(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         confirmed_reads: bool,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
@@ -3145,7 +3162,7 @@ mod tests {
         let test_db = TestDB::durable()?;
 
         let runtime = test_db.runtime().cloned().unwrap();
-        let db = Arc::new(test_db.db.clone());
+        let db = test_db.db.clone();
 
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
@@ -3181,15 +3198,13 @@ mod tests {
         runtime.block_on(write_handle)??;
         runtime.block_on(query_handle)??;
 
-        test_db.close()?;
-
         Ok(())
     }
 
     #[test]
     fn subs_cannot_access_private_tables() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
-        let db = Arc::new(test_db.db.clone());
+        let db = test_db.db.clone();
 
         // Create a public table.
         let indexes = &[0.into()];
@@ -3222,7 +3237,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_confirmed_reads() -> anyhow::Result<()> {
-        let (db, durability) = relational_db_with_manual_durability()?;
+        let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
 
         let client_id_confirmed = client_id_from_u8(1);
         let client_id_unconfirmed = client_id_from_u8(2);

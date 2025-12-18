@@ -19,6 +19,9 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
+#[doc(hidden)]
+pub mod query_builder;
+
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
@@ -728,17 +731,16 @@ pub use spacetimedb_bindings_macro::reducer;
 // TODO(procedure-http): add example with an HTTP request.
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
-// TODO(scheduled-procedures): Uncomment below docs.
-// /// # Scheduled procedures
+/// # Scheduled procedures
 // TODO(docs): after moving scheduled reducer docs into table secion, link there.
-// ///
-// /// Like [reducer]s, procedures can be made **scheduled**.
-// /// This allows calling procedures at a particular time, or in a loop.
-// /// It also allows reducers to enqueue procedure runs.
-// ///
-// /// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
-// /// when a database is under heavy load.
-// ///
+///
+/// Like [reducer]s, procedures can be made **scheduled**.
+/// This allows calling procedures at a particular time, or in a loop.
+/// It also allows reducers to enqueue procedure runs.
+///
+/// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
+/// when a database is under heavy load.
+///
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
@@ -866,19 +868,42 @@ pub use spacetimedb_bindings_macro::procedure;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::view;
 
+pub struct QueryBuilder {}
+pub use query_builder::Query;
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
 }
 
+impl Default for AnonymousViewContext {
+    fn default() -> Self {
+        Self {
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
+}
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
     pub sender: Identity,
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
+}
+
+impl ViewContext {
+    pub fn new(sender: Identity) -> Self {
+        Self {
+            sender,
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
 }
 
 /// The context that any reducer is provided with.
@@ -998,15 +1023,12 @@ impl ReducerContext {
 
     /// Create an anonymous (no sender) read-only view context
     pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
-        AnonymousViewContext { db: LocalReadOnly {} }
+        AnonymousViewContext::default()
     }
 
     /// Create a sender-bound read-only view context using this reducer's caller.
     pub fn as_read_only(&self) -> ViewContext {
-        ViewContext {
-            sender: self.sender,
-            db: LocalReadOnly {},
-        }
+        ViewContext::new(self.sender)
     }
 }
 
@@ -1062,13 +1084,25 @@ pub struct ProcedureContext {
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
-    // TODO: Add rng?
+    // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
 }
 
 #[cfg(feature = "unstable")]
 impl ProcedureContext {
+    fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            http: http::HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+        }
+    }
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.

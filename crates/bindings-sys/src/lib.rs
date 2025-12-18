@@ -588,7 +588,6 @@ pub mod raw {
         ///
         /// - `out_ptr` is NULL or `out` is not in bounds of WASM memory.
         pub fn identity(out_ptr: *mut u8);
-
     }
 
     // See comment on previous `extern "C"` block re: ABI version.
@@ -772,6 +771,86 @@ pub mod raw {
             body_ptr: *const u8,
             body_len: u32,
             out: *mut [BytesSource; 2],
+        ) -> u16;
+    }
+
+    #[link(wasm_import_module = "spacetime_10.4")]
+    extern "C" {
+        /// Finds all rows in the index identified by `index_id`,
+        /// according to `point = point_ptr[..point_len]` in WASM memory.
+        ///
+        /// The index itself has a schema/type.
+        /// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+        /// and then comparing the decoded `point` to the keys in the index
+        /// using `Ord for AlgebraicValue`.
+        /// to the keys in the index.
+        /// The `point` is BSATN-decoded to that `AlgebraicType`.
+        /// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+        /// This occurs exactly when the row's BSATN-encoding
+        /// is equal to the encoding of the `AlgebraicValue`.
+        ///
+        /// This ABI is not limited to single column indices.
+        /// Multi-column indices can be queried by providing
+        /// a BSATN-encoded `ProductValue`
+        /// that is typed at the `ProductType` of the index.
+        ///
+        /// The relevant table for the index is found implicitly via the `index_id`,
+        /// which is unique for the module.
+        ///
+        /// On success, the iterator handle is written to the `out` pointer.
+        /// This handle can be advanced by [`row_iter_bsatn_advance`].
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a range-scan compatible index.
+        /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+        ///   typed at the index's key type (`AlgebraicType`).
+        pub fn datastore_index_scan_point_bsatn(
+            index_id: IndexId,
+            point_ptr: *const u8, // AlgebraicValue
+            point_len: usize,
+            out: *mut RowIter,
+        ) -> u16;
+
+        /// Deletes all rows found in the index identified by `index_id`,
+        /// according to `point = point_ptr[..point_len]` in WASM memory.
+        ///
+        /// This syscall will delete all the rows found by
+        /// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+        /// See `datastore_index_scan_point_bsatn` for details.
+        ///
+        /// The number of rows deleted is written to the WASM pointer `out`.
+        ///
+        /// # Traps
+        ///
+        /// Traps if:
+        /// - `point_ptr` is NULL or `point` is not in bounds of WASM memory.
+        /// - `out` is NULL or `out[..size_of::<u32>()]` is not in bounds of WASM memory.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error:
+        ///
+        /// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+        /// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+        /// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+        /// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+        ///   typed at the index's key type (`AlgebraicType`).
+        pub fn datastore_delete_by_index_scan_point_bsatn(
+            index_id: IndexId,
+            point_ptr: *const u8, // AlgebraicValue
+            point_len: usize,
+            out: *mut u32,
         ) -> u16;
     }
 
@@ -1096,6 +1175,44 @@ pub fn datastore_table_scan_bsatn(table_id: TableId) -> Result<RowIter> {
 }
 
 /// Finds all rows in the index identified by `index_id`,
+/// according to the `point.
+///
+/// The index itself has a schema/type.
+/// Matching defined by first BSATN-decoding `point` to that `AlgebraicType`
+/// and then comparing the decoded `point` to the keys in the index
+/// using `Ord for AlgebraicValue`.
+/// to the keys in the index.
+/// The `point` is BSATN-decoded to that `AlgebraicType`.
+/// A match happens when `Ordering::Equal` is returned from `fn cmp`.
+/// This occurs exactly when the row's BSATN-encoding
+/// is equal to the encoding of the `AlgebraicValue`.
+///
+/// This ABI is not limited to single column indices.
+/// Multi-column indices can be queried by providing
+/// a BSATN-encoded `ProductValue`
+/// that is typed at the `ProductType` of the index.
+///
+/// The relevant table for the index is found implicitly via the `index_id`,
+/// which is unique for the module.
+///
+/// On success, the iterator handle is written to the `out` pointer.
+/// This handle can be advanced by [`RowIter::read`].
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+/// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+/// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+///   typed at the index's key type (`AlgebraicType`).
+pub fn datastore_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> Result<RowIter> {
+    let raw = unsafe { call(|out| raw::datastore_index_scan_point_bsatn(index_id, point.as_ptr(), point.len(), out))? };
+    Ok(RowIter { raw })
+}
+
+/// Finds all rows in the index identified by `index_id`,
 /// according to the `prefix`, `rstart`, and `rend`.
 ///
 /// The index itself has a schema/type.
@@ -1167,6 +1284,28 @@ pub fn datastore_index_scan_range_bsatn(
         })?
     };
     Ok(RowIter { raw })
+}
+
+/// Deletes all rows found in the index identified by `index_id`,
+/// according to the `point.
+///
+/// This syscall will delete all the rows found by
+/// [`datastore_index_scan_point_bsatn`] with the same arguments passed.
+/// See `datastore_index_scan_point_bsatn` for details.
+///
+/// The number of rows deleted is returned on success.
+///
+/// # Errors
+///
+/// Returns an error:
+///
+/// - `NOT_IN_TRANSACTION`, when called outside of a transaction.
+/// - `NO_SUCH_INDEX`, when `index_id` is not a known ID of an index.
+/// - `WRONG_INDEX_ALGO` if the index is not a range-compatible index.
+/// - `BSATN_DECODE_ERROR`, when `point` cannot be decoded to an `AlgebraicValue`
+///   typed at the index's key type (`AlgebraicType`).
+pub fn datastore_delete_by_index_scan_point_bsatn(index_id: IndexId, point: &[u8]) -> Result<u32> {
+    unsafe { call(|out| raw::datastore_delete_by_index_scan_point_bsatn(index_id, point.as_ptr(), point.len(), out)) }
 }
 
 /// Deletes all rows found in the index identified by `index_id`,

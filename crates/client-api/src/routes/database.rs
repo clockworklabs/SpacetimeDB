@@ -22,6 +22,7 @@ use axum::Extension;
 use axum_extra::TypedHeader;
 use futures::StreamExt;
 use http::StatusCode;
+use log::info;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
@@ -710,14 +711,21 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         let name_or_identity = name_or_identity
             .as_ref()
             .ok_or_else(|| bad_request("Clear database requires database name or identity".into()))?;
-        if let Ok(identity) = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)? {
-            if ctx
+        let database_identity = name_or_identity.try_resolve(&ctx).await.map_err(log_and_500)?;
+        if let Ok(identity) = database_identity {
+            let exists = ctx
                 .get_database_by_identity(&identity)
                 .await
                 .map_err(log_and_500)?
-                .is_some()
-            {
-                return reset(
+                .is_some();
+            if exists {
+                if parent.is_some() {
+                    return Err(bad_request(
+                        "Setting the parent of an existing database is not supported".into(),
+                    ));
+                }
+
+                return self::reset(
                     State(ctx),
                     Path(ResetDatabaseParams {
                         name_or_identity: name_or_identity.clone(),
@@ -942,6 +950,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
         PrettyPrintStyle::AnsiColor => AutoMigratePrettyPrintStyle::AnsiColor,
     };
 
+    info!("planning migration for database {database_identity}");
     let migrate_plan = ctx
         .migrate_plan(
             DatabaseDef {
@@ -963,6 +972,10 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             breaks_client,
             plan,
         } => {
+            info!(
+                "planned auto-migration of database {} from {} to {}",
+                database_identity, old_module_hash, new_module_hash
+            );
             let token = MigrationToken {
                 database_identity,
                 old_module_hash,
@@ -977,6 +990,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
             }))
         }
         MigratePlanResult::AutoMigrationError(e) => {
+            info!("database {database_identity} needs manual migration");
             Ok(PrePublishResult::ManualMigrate(PrePublishManualMigrateResult {
                 reason: e.to_string(),
             }))

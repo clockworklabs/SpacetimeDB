@@ -11,7 +11,7 @@ import {
 import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
 import { httpClient } from './http_internal';
-import { makeReducerCtx, sys } from './runtime';
+import { callUserFunction, makeReducerCtx, sys } from './runtime';
 
 const { freeze } = Object;
 
@@ -71,7 +71,7 @@ export function callProcedure(
   };
   freeze(ctx);
 
-  const ret = fn(ctx, args);
+  const ret = callUserFunction(fn, ctx, args);
   const retBuf = new BinaryWriter(returnTypeBaseSize);
   AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
   return retBuf.getBuffer();

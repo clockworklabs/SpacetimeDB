@@ -3,6 +3,7 @@ rustflags = ["--cfg", "tokio_unstable"]
 
 [alias]
 bump-versions = "run -p upgrade-version --"
+ci = "run -p ci --"
 
 [target.x86_64-pc-windows-msvc]
 # Use a different linker. Otherwise, the build fails with some obscure linker error that
