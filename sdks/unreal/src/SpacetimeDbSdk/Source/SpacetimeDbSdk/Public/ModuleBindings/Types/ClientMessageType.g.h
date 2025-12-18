@@ -38,7 +38,7 @@ public:
 
     TVariant<FUnsubscribeMultiType, FSubscribeMultiType, FSubscribeType, FCallReducerType, FCallProcedureType, FOneOffQueryType, FUnsubscribeType, FSubscribeSingleType> MessageData;
 
-    UPROPERTY(BlueprintReadOnly)
+    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
     EClientMessageTag Tag = static_cast<EClientMessageTag>(0);
 
     static FClientMessageType CallReducer(const FCallReducerType& Value)

@@ -5,10 +5,13 @@
 // This is needed so every module build doesn't generate a full LocalReadOnly type, but just adds on to the existing.
 // We extend it here with generated table accessors, and just need to suppress the duplicate-type warning.
 #pragma warning disable CS0436
+#pragma warning disable STDB_UNSTABLE
 
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Internal = SpacetimeDB.Internal;
+using TxContext = SpacetimeDB.Internal.TxContext;
 
 namespace SpacetimeDB
 {
@@ -27,27 +30,21 @@ namespace SpacetimeDB
             Identity identity,
             ConnectionId? connectionId,
             Random random,
-            Timestamp time
+            Timestamp time,
+            AuthCtx? senderAuth = null
         )
         {
             Sender = identity;
             ConnectionId = connectionId;
             Rng = random;
             Timestamp = time;
-            SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
+            SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
         }
     }
 
-    public sealed record ProcedureContext : Internal.IProcedureContext
+    public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase
     {
-        public readonly Identity Sender;
-        public readonly ConnectionId? ConnectionId;
-        public readonly Random Rng;
-        public readonly Timestamp Timestamp;
-        public readonly AuthCtx SenderAuth;
-
-        // We need this property to be non-static for parity with client SDK.
-        public Identity Identity => Internal.IProcedureContext.GetIdentity();
+        private readonly Local _db = new();
 
         internal ProcedureContext(
             Identity identity,
@@ -55,983 +52,40 @@ namespace SpacetimeDB
             Random random,
             Timestamp time
         )
-        {
-            Sender = identity;
-            ConnectionId = connectionId;
-            Rng = random;
-            Timestamp = time;
-            SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
-        }
+            : base(identity, connectionId, random, time) { }
+
+        protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+
+        protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(
+            Internal.TxContext inner
+        ) => _cached ??= new ProcedureTxContext(inner);
+
+        private ProcedureTxContext? _cached;
+
+        [Experimental("STDB_UNSTABLE")]
+        public Local Db => _db;
+
+        [Experimental("STDB_UNSTABLE")]
+        public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
+            base.WithTx(tx => body((ProcedureTxContext)tx));
+
+        [Experimental("STDB_UNSTABLE")]
+        public TxOutcome<TResult> TryWithTx<TResult, TError>(
+            Func<ProcedureTxContext, Result<TResult, TError>> body
+        )
+            where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
     }
 
-    public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
+    [Experimental("STDB_UNSTABLE")]
+    public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase
     {
-        public Identity Sender { get; }
+        internal ProcedureTxContext(Internal.TxContext inner)
+            : base(inner) { }
 
-        internal ViewContext(Identity sender, Internal.LocalReadOnly db)
-            : base(db)
-        {
-            Sender = sender;
-        }
+        public new Local Db => (Local)base.Db;
     }
 
-    public sealed record AnonymousViewContext
-        : DbContext<Internal.LocalReadOnly>,
-            Internal.IAnonymousViewContext
-    {
-        internal AnonymousViewContext(Internal.LocalReadOnly db)
-            : base(db) { }
-    }
-
-    namespace Internal.TableHandles
-    {
-        public readonly struct Player
-            : global::SpacetimeDB.Internal.ITableView<Player, global::Player>
-        {
-            static global::Player global::SpacetimeDB.Internal.ITableView<
-                Player,
-                global::Player
-            >.ReadGenFields(System.IO.BinaryReader reader, global::Player row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                Player,
-                global::Player
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(Player),
-                    ProductTypeRef: (uint)
-                        new global::Player.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "Identity",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            Player,
-                            global::Player
-                        >.MakeUniqueConstraint(0)
-                    ],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoCount();
-
-            public IEnumerable<global::Player> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoIter();
-
-            public global::Player Insert(global::Player row) =>
-                global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoInsert(row);
-
-            public bool Delete(global::Player row) =>
-                global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoDelete(row);
-
-            public sealed class IdentityUniqueIndex
-                : UniqueIndex<
-                    Player,
-                    global::Player,
-                    SpacetimeDB.Identity,
-                    SpacetimeDB.Identity.BSATN
-                >
-            {
-                internal IdentityUniqueIndex()
-                    : base("Player_Identity_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::Player? Find(SpacetimeDB.Identity key) =>
-                    DoFilter(key).Cast<global::Player?>().SingleOrDefault();
-
-                public global::Player Update(global::Player row) => DoUpdate(row);
-            }
-
-            public IdentityUniqueIndex Identity => new();
-        }
-
-        public readonly struct TestAutoIncNotInteger
-            : global::SpacetimeDB.Internal.ITableView<
-                TestAutoIncNotInteger,
-                global::TestAutoIncNotInteger
-            >
-        {
-            static global::TestAutoIncNotInteger global::SpacetimeDB.Internal.ITableView<
-                TestAutoIncNotInteger,
-                global::TestAutoIncNotInteger
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestAutoIncNotInteger row)
-            {
-                if (row.AutoIncField == default)
-                {
-                    row.AutoIncField = global::TestAutoIncNotInteger.BSATN.AutoIncFieldRW.Read(
-                        reader
-                    );
-                }
-                if (row.IdentityField == default)
-                {
-                    row.IdentityField = global::TestAutoIncNotInteger.BSATN.IdentityFieldRW.Read(
-                        reader
-                    );
-                }
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestAutoIncNotInteger,
-                global::TestAutoIncNotInteger
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestAutoIncNotInteger),
-                    ProductTypeRef: (uint)
-                        new global::TestAutoIncNotInteger.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "IdentityField",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestAutoIncNotInteger,
-                            global::TestAutoIncNotInteger
-                        >.MakeUniqueConstraint(1)
-                    ],
-                    Sequences:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestAutoIncNotInteger,
-                            global::TestAutoIncNotInteger
-                        >.MakeSequence(0),
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestAutoIncNotInteger,
-                            global::TestAutoIncNotInteger
-                        >.MakeSequence(1)
-                    ],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestAutoIncNotInteger,
-                    global::TestAutoIncNotInteger
-                >.DoCount();
-
-            public IEnumerable<global::TestAutoIncNotInteger> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestAutoIncNotInteger,
-                    global::TestAutoIncNotInteger
-                >.DoIter();
-
-            public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestAutoIncNotInteger,
-                    global::TestAutoIncNotInteger
-                >.DoInsert(row);
-
-            public bool Delete(global::TestAutoIncNotInteger row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestAutoIncNotInteger,
-                    global::TestAutoIncNotInteger
-                >.DoDelete(row);
-
-            public sealed class IdentityFieldUniqueIndex
-                : UniqueIndex<
-                    TestAutoIncNotInteger,
-                    global::TestAutoIncNotInteger,
-                    string,
-                    SpacetimeDB.BSATN.String
-                >
-            {
-                internal IdentityFieldUniqueIndex()
-                    : base("TestAutoIncNotInteger_IdentityField_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestAutoIncNotInteger? Find(string key) =>
-                    DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
-
-                public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
-                    DoUpdate(row);
-            }
-
-            public IdentityFieldUniqueIndex IdentityField => new();
-        }
-
-        public readonly struct TestDefaultFieldValues
-            : global::SpacetimeDB.Internal.ITableView<
-                TestDefaultFieldValues,
-                global::TestDefaultFieldValues
-            >
-        {
-            static global::TestDefaultFieldValues global::SpacetimeDB.Internal.ITableView<
-                TestDefaultFieldValues,
-                global::TestDefaultFieldValues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestDefaultFieldValues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestDefaultFieldValues,
-                global::TestDefaultFieldValues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestDefaultFieldValues),
-                    ProductTypeRef: (uint)
-                        new global::TestDefaultFieldValues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "UniqueField",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestDefaultFieldValues,
-                            global::TestDefaultFieldValues
-                        >.MakeUniqueConstraint(0)
-                    ],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDefaultFieldValues,
-                    global::TestDefaultFieldValues
-                >.DoCount();
-
-            public IEnumerable<global::TestDefaultFieldValues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDefaultFieldValues,
-                    global::TestDefaultFieldValues
-                >.DoIter();
-
-            public global::TestDefaultFieldValues Insert(global::TestDefaultFieldValues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDefaultFieldValues,
-                    global::TestDefaultFieldValues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestDefaultFieldValues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDefaultFieldValues,
-                    global::TestDefaultFieldValues
-                >.DoDelete(row);
-        }
-
-        public readonly struct TestDuplicateTableName
-            : global::SpacetimeDB.Internal.ITableView<
-                TestDuplicateTableName,
-                global::TestDuplicateTableName
-            >
-        {
-            static global::TestDuplicateTableName global::SpacetimeDB.Internal.ITableView<
-                TestDuplicateTableName,
-                global::TestDuplicateTableName
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestDuplicateTableName row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestDuplicateTableName,
-                global::TestDuplicateTableName
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestDuplicateTableName),
-                    ProductTypeRef: (uint)
-                        new global::TestDuplicateTableName.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes: [],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDuplicateTableName,
-                    global::TestDuplicateTableName
-                >.DoCount();
-
-            public IEnumerable<global::TestDuplicateTableName> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDuplicateTableName,
-                    global::TestDuplicateTableName
-                >.DoIter();
-
-            public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDuplicateTableName,
-                    global::TestDuplicateTableName
-                >.DoInsert(row);
-
-            public bool Delete(global::TestDuplicateTableName row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestDuplicateTableName,
-                    global::TestDuplicateTableName
-                >.DoDelete(row);
-        }
-
-        public readonly struct TestIndexIssues
-            : global::SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>
-        {
-            static global::TestIndexIssues global::SpacetimeDB.Internal.ITableView<
-                TestIndexIssues,
-                global::TestIndexIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestIndexIssues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestIndexIssues,
-                global::TestIndexIssues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestIndexIssues),
-                    ProductTypeRef: (uint)
-                        new global::TestIndexIssues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "TestIndexWithoutColumns",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "TestIndexWithEmptyColumns",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "TestUnknownColumns",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "TestUnexpectedColumns",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestIndexIssues,
-                    global::TestIndexIssues
-                >.DoCount();
-
-            public IEnumerable<global::TestIndexIssues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestIndexIssues,
-                    global::TestIndexIssues
-                >.DoIter();
-
-            public global::TestIndexIssues Insert(global::TestIndexIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestIndexIssues,
-                    global::TestIndexIssues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestIndexIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestIndexIssues,
-                    global::TestIndexIssues
-                >.DoDelete(row);
-
-            public sealed class TestIndexWithoutColumnsIndex()
-                : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                    "TestIndexIssues__idx_btree"
-                ) { }
-
-            public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new();
-
-            public sealed class TestIndexWithEmptyColumnsIndex()
-                : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                    "TestIndexIssues__idx_btree"
-                ) { }
-
-            public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new();
-
-            public sealed class TestUnknownColumnsIndex()
-                : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                    "TestIndexIssues__idx_btree"
-                ) { }
-
-            public TestUnknownColumnsIndex TestUnknownColumns => new();
-
-            public sealed class TestUnexpectedColumnsIndex()
-                : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
-                    "TestIndexIssues_SelfIndexingColumn_idx_btree"
-                )
-            {
-                public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                            SelfIndexingColumn
-                        )
-                    );
-
-                public ulong Delete(int SelfIndexingColumn) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                            SelfIndexingColumn
-                        )
-                    );
-
-                public IEnumerable<global::TestIndexIssues> Filter(Bound<int> SelfIndexingColumn) =>
-                    DoFilter(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                            SelfIndexingColumn
-                        )
-                    );
-
-                public ulong Delete(Bound<int> SelfIndexingColumn) =>
-                    DoDelete(
-                        new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
-                            SelfIndexingColumn
-                        )
-                    );
-            }
-
-            public TestUnexpectedColumnsIndex TestUnexpectedColumns => new();
-        }
-
-        public readonly struct TestScheduleWithMissingScheduleAtField
-            : global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithMissingScheduleAtField,
-                global::TestScheduleIssues
-            >
-        {
-            static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithMissingScheduleAtField,
-                global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithMissingScheduleAtField,
-                global::TestScheduleIssues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestScheduleWithMissingScheduleAtField),
-                    ProductTypeRef: (uint)
-                        new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes: [],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithMissingScheduleAtField,
-                    global::TestScheduleIssues
-                >.DoCount();
-
-            public IEnumerable<global::TestScheduleIssues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithMissingScheduleAtField,
-                    global::TestScheduleIssues
-                >.DoIter();
-
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithMissingScheduleAtField,
-                    global::TestScheduleIssues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithMissingScheduleAtField,
-                    global::TestScheduleIssues
-                >.DoDelete(row);
-        }
-
-        public readonly struct TestScheduleWithoutPrimaryKey
-            : global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithoutPrimaryKey,
-                global::TestScheduleIssues
-            >
-        {
-            static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithoutPrimaryKey,
-                global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithoutPrimaryKey,
-                global::TestScheduleIssues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestScheduleWithoutPrimaryKey),
-                    ProductTypeRef: (uint)
-                        new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [],
-                    Indexes: [],
-                    Constraints: [],
-                    Sequences: [],
-                    Schedule: global::SpacetimeDB.Internal.ITableView<
-                        TestScheduleWithoutPrimaryKey,
-                        global::TestScheduleIssues
-                    >.MakeSchedule("DummyScheduledReducer", 3),
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutPrimaryKey,
-                    global::TestScheduleIssues
-                >.DoCount();
-
-            public IEnumerable<global::TestScheduleIssues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutPrimaryKey,
-                    global::TestScheduleIssues
-                >.DoIter();
-
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutPrimaryKey,
-                    global::TestScheduleIssues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutPrimaryKey,
-                    global::TestScheduleIssues
-                >.DoDelete(row);
-        }
-
-        public readonly struct TestScheduleWithoutScheduleAt
-            : global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithoutScheduleAt,
-                global::TestScheduleIssues
-            >
-        {
-            static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithoutScheduleAt,
-                global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithoutScheduleAt,
-                global::TestScheduleIssues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestScheduleWithoutScheduleAt),
-                    ProductTypeRef: (uint)
-                        new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [1],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "IdCorrectType",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestScheduleWithoutScheduleAt,
-                            global::TestScheduleIssues
-                        >.MakeUniqueConstraint(1)
-                    ],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutScheduleAt,
-                    global::TestScheduleIssues
-                >.DoCount();
-
-            public IEnumerable<global::TestScheduleIssues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutScheduleAt,
-                    global::TestScheduleIssues
-                >.DoIter();
-
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutScheduleAt,
-                    global::TestScheduleIssues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithoutScheduleAt,
-                    global::TestScheduleIssues
-                >.DoDelete(row);
-
-            public sealed class IdCorrectTypeUniqueIndex
-                : UniqueIndex<
-                    TestScheduleWithoutScheduleAt,
-                    global::TestScheduleIssues,
-                    int,
-                    SpacetimeDB.BSATN.I32
-                >
-            {
-                internal IdCorrectTypeUniqueIndex()
-                    : base("TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestScheduleIssues? Find(int key) =>
-                    DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
-
-                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row);
-            }
-
-            public IdCorrectTypeUniqueIndex IdCorrectType => new();
-        }
-
-        public readonly struct TestScheduleWithWrongPrimaryKeyType
-            : global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithWrongPrimaryKeyType,
-                global::TestScheduleIssues
-            >
-        {
-            static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithWrongPrimaryKeyType,
-                global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithWrongPrimaryKeyType,
-                global::TestScheduleIssues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestScheduleWithWrongPrimaryKeyType),
-                    ProductTypeRef: (uint)
-                        new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [0],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "IdWrongType",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestScheduleWithWrongPrimaryKeyType,
-                            global::TestScheduleIssues
-                        >.MakeUniqueConstraint(0)
-                    ],
-                    Sequences: [],
-                    Schedule: global::SpacetimeDB.Internal.ITableView<
-                        TestScheduleWithWrongPrimaryKeyType,
-                        global::TestScheduleIssues
-                    >.MakeSchedule("DummyScheduledReducer", 3),
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongPrimaryKeyType,
-                    global::TestScheduleIssues
-                >.DoCount();
-
-            public IEnumerable<global::TestScheduleIssues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongPrimaryKeyType,
-                    global::TestScheduleIssues
-                >.DoIter();
-
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongPrimaryKeyType,
-                    global::TestScheduleIssues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongPrimaryKeyType,
-                    global::TestScheduleIssues
-                >.DoDelete(row);
-
-            public sealed class IdWrongTypeUniqueIndex
-                : UniqueIndex<
-                    TestScheduleWithWrongPrimaryKeyType,
-                    global::TestScheduleIssues,
-                    string,
-                    SpacetimeDB.BSATN.String
-                >
-            {
-                internal IdWrongTypeUniqueIndex()
-                    : base("TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestScheduleIssues? Find(string key) =>
-                    DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
-
-                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row);
-            }
-
-            public IdWrongTypeUniqueIndex IdWrongType => new();
-        }
-
-        public readonly struct TestScheduleWithWrongScheduleAtType
-            : global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithWrongScheduleAtType,
-                global::TestScheduleIssues
-            >
-        {
-            static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithWrongScheduleAtType,
-                global::TestScheduleIssues
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestScheduleWithWrongScheduleAtType,
-                global::TestScheduleIssues
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestScheduleWithWrongScheduleAtType),
-                    ProductTypeRef: (uint)
-                        new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [1],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "IdCorrectType",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestScheduleWithWrongScheduleAtType,
-                            global::TestScheduleIssues
-                        >.MakeUniqueConstraint(1)
-                    ],
-                    Sequences: [],
-                    Schedule: global::SpacetimeDB.Internal.ITableView<
-                        TestScheduleWithWrongScheduleAtType,
-                        global::TestScheduleIssues
-                    >.MakeSchedule("DummyScheduledReducer", 2),
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongScheduleAtType,
-                    global::TestScheduleIssues
-                >.DoCount();
-
-            public IEnumerable<global::TestScheduleIssues> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongScheduleAtType,
-                    global::TestScheduleIssues
-                >.DoIter();
-
-            public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongScheduleAtType,
-                    global::TestScheduleIssues
-                >.DoInsert(row);
-
-            public bool Delete(global::TestScheduleIssues row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestScheduleWithWrongScheduleAtType,
-                    global::TestScheduleIssues
-                >.DoDelete(row);
-
-            public sealed class IdCorrectTypeUniqueIndex
-                : UniqueIndex<
-                    TestScheduleWithWrongScheduleAtType,
-                    global::TestScheduleIssues,
-                    int,
-                    SpacetimeDB.BSATN.I32
-                >
-            {
-                internal IdCorrectTypeUniqueIndex()
-                    : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestScheduleIssues? Find(int key) =>
-                    DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
-
-                public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
-                    DoUpdate(row);
-            }
-
-            public IdCorrectTypeUniqueIndex IdCorrectType => new();
-        }
-
-        public readonly struct TestUniqueNotEquatable
-            : global::SpacetimeDB.Internal.ITableView<
-                TestUniqueNotEquatable,
-                global::TestUniqueNotEquatable
-            >
-        {
-            static global::TestUniqueNotEquatable global::SpacetimeDB.Internal.ITableView<
-                TestUniqueNotEquatable,
-                global::TestUniqueNotEquatable
-            >.ReadGenFields(System.IO.BinaryReader reader, global::TestUniqueNotEquatable row)
-            {
-                return row;
-            }
-
-            static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
-                TestUniqueNotEquatable,
-                global::TestUniqueNotEquatable
-            >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
-                new(
-                    Name: nameof(TestUniqueNotEquatable),
-                    ProductTypeRef: (uint)
-                        new global::TestUniqueNotEquatable.BSATN().GetAlgebraicType(registrar).Ref_,
-                    PrimaryKey: [1],
-                    Indexes:
-                    [
-                        new(
-                            Name: null,
-                            AccessorName: "UniqueField",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
-                        ),
-                        new(
-                            Name: null,
-                            AccessorName: "PrimaryKeyField",
-                            Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
-                        )
-                    ],
-                    Constraints:
-                    [
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestUniqueNotEquatable,
-                            global::TestUniqueNotEquatable
-                        >.MakeUniqueConstraint(0),
-                        global::SpacetimeDB.Internal.ITableView<
-                            TestUniqueNotEquatable,
-                            global::TestUniqueNotEquatable
-                        >.MakeUniqueConstraint(1)
-                    ],
-                    Sequences: [],
-                    Schedule: null,
-                    TableType: SpacetimeDB.Internal.TableType.User,
-                    TableAccess: SpacetimeDB.Internal.TableAccess.Private
-                );
-
-            public ulong Count =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable
-                >.DoCount();
-
-            public IEnumerable<global::TestUniqueNotEquatable> Iter() =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable
-                >.DoIter();
-
-            public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable
-                >.DoInsert(row);
-
-            public bool Delete(global::TestUniqueNotEquatable row) =>
-                global::SpacetimeDB.Internal.ITableView<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable
-                >.DoDelete(row);
-
-            public sealed class PrimaryKeyFieldUniqueIndex
-                : UniqueIndex<
-                    TestUniqueNotEquatable,
-                    global::TestUniqueNotEquatable,
-                    TestEnumWithExplicitValues,
-                    SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
-                >
-            {
-                internal PrimaryKeyFieldUniqueIndex()
-                    : base("TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
-
-                // Important: don't move this to the base class.
-                // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
-                // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
-                    DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
-
-                public global::TestUniqueNotEquatable Update(global::TestUniqueNotEquatable row) =>
-                    DoUpdate(row);
-            }
-
-            public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new();
-        }
-    }
-
-    public sealed class Local
+    public sealed class Local : global::SpacetimeDB.LocalBase
     {
         public global::SpacetimeDB.Internal.TableHandles.Player Player => new();
         public global::SpacetimeDB.Internal.TableHandles.TestAutoIncNotInteger TestAutoIncNotInteger =>
@@ -1053,6 +107,964 @@ namespace SpacetimeDB
             new();
         public global::SpacetimeDB.Internal.TableHandles.TestUniqueNotEquatable TestUniqueNotEquatable =>
             new();
+    }
+
+    public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext
+    {
+        public Identity Sender { get; }
+
+        internal ViewContext(Identity sender, Internal.LocalReadOnly db)
+            : base(db)
+        {
+            Sender = sender;
+        }
+    }
+
+    public sealed record AnonymousViewContext
+        : DbContext<Internal.LocalReadOnly>,
+            Internal.IAnonymousViewContext
+    {
+        internal AnonymousViewContext(Internal.LocalReadOnly db)
+            : base(db) { }
+    }
+}
+
+namespace SpacetimeDB.Internal.TableHandles
+{
+    public readonly struct Player : global::SpacetimeDB.Internal.ITableView<Player, global::Player>
+    {
+        static global::Player global::SpacetimeDB.Internal.ITableView<
+            Player,
+            global::Player
+        >.ReadGenFields(System.IO.BinaryReader reader, global::Player row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            Player,
+            global::Player
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(Player),
+                ProductTypeRef: (uint)new global::Player.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "Identity",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        Player,
+                        global::Player
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoCount();
+
+        public IEnumerable<global::Player> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoIter();
+
+        public global::Player Insert(global::Player row) =>
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoInsert(row);
+
+        public bool Delete(global::Player row) =>
+            global::SpacetimeDB.Internal.ITableView<Player, global::Player>.DoDelete(row);
+
+        public sealed class IdentityUniqueIndex
+            : UniqueIndex<Player, global::Player, SpacetimeDB.Identity, SpacetimeDB.Identity.BSATN>
+        {
+            internal IdentityUniqueIndex()
+                : base("Player_Identity_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::Player? Find(SpacetimeDB.Identity key) =>
+                DoFilter(key).Cast<global::Player?>().SingleOrDefault();
+
+            public global::Player Update(global::Player row) => DoUpdate(row);
+        }
+
+        public IdentityUniqueIndex Identity => new();
+    }
+
+    public readonly struct TestAutoIncNotInteger
+        : global::SpacetimeDB.Internal.ITableView<
+            TestAutoIncNotInteger,
+            global::TestAutoIncNotInteger
+        >
+    {
+        static global::TestAutoIncNotInteger global::SpacetimeDB.Internal.ITableView<
+            TestAutoIncNotInteger,
+            global::TestAutoIncNotInteger
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestAutoIncNotInteger row)
+        {
+            if (row.AutoIncField == default)
+            {
+                row.AutoIncField = global::TestAutoIncNotInteger.BSATN.AutoIncFieldRW.Read(reader);
+            }
+            if (row.IdentityField == default)
+            {
+                row.IdentityField = global::TestAutoIncNotInteger.BSATN.IdentityFieldRW.Read(
+                    reader
+                );
+            }
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestAutoIncNotInteger,
+            global::TestAutoIncNotInteger
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestAutoIncNotInteger),
+                ProductTypeRef: (uint)
+                    new global::TestAutoIncNotInteger.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "IdentityField",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.MakeUniqueConstraint(1)
+                ],
+                Sequences:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.MakeSequence(0),
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestAutoIncNotInteger,
+                        global::TestAutoIncNotInteger
+                    >.MakeSequence(1)
+                ],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.DoCount();
+
+        public IEnumerable<global::TestAutoIncNotInteger> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.DoIter();
+
+        public global::TestAutoIncNotInteger Insert(global::TestAutoIncNotInteger row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.DoInsert(row);
+
+        public bool Delete(global::TestAutoIncNotInteger row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger
+            >.DoDelete(row);
+
+        public sealed class IdentityFieldUniqueIndex
+            : UniqueIndex<
+                TestAutoIncNotInteger,
+                global::TestAutoIncNotInteger,
+                string,
+                SpacetimeDB.BSATN.String
+            >
+        {
+            internal IdentityFieldUniqueIndex()
+                : base("TestAutoIncNotInteger_IdentityField_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestAutoIncNotInteger? Find(string key) =>
+                DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
+
+            public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
+                DoUpdate(row);
+        }
+
+        public IdentityFieldUniqueIndex IdentityField => new();
+    }
+
+    public readonly struct TestDefaultFieldValues
+        : global::SpacetimeDB.Internal.ITableView<
+            TestDefaultFieldValues,
+            global::TestDefaultFieldValues
+        >
+    {
+        static global::TestDefaultFieldValues global::SpacetimeDB.Internal.ITableView<
+            TestDefaultFieldValues,
+            global::TestDefaultFieldValues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestDefaultFieldValues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestDefaultFieldValues,
+            global::TestDefaultFieldValues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestDefaultFieldValues),
+                ProductTypeRef: (uint)
+                    new global::TestDefaultFieldValues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "UniqueField",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestDefaultFieldValues,
+                        global::TestDefaultFieldValues
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.DoCount();
+
+        public IEnumerable<global::TestDefaultFieldValues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.DoIter();
+
+        public global::TestDefaultFieldValues Insert(global::TestDefaultFieldValues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestDefaultFieldValues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDefaultFieldValues,
+                global::TestDefaultFieldValues
+            >.DoDelete(row);
+    }
+
+    public readonly struct TestDuplicateTableName
+        : global::SpacetimeDB.Internal.ITableView<
+            TestDuplicateTableName,
+            global::TestDuplicateTableName
+        >
+    {
+        static global::TestDuplicateTableName global::SpacetimeDB.Internal.ITableView<
+            TestDuplicateTableName,
+            global::TestDuplicateTableName
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestDuplicateTableName row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestDuplicateTableName,
+            global::TestDuplicateTableName
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestDuplicateTableName),
+                ProductTypeRef: (uint)
+                    new global::TestDuplicateTableName.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.DoCount();
+
+        public IEnumerable<global::TestDuplicateTableName> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.DoIter();
+
+        public global::TestDuplicateTableName Insert(global::TestDuplicateTableName row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.DoInsert(row);
+
+        public bool Delete(global::TestDuplicateTableName row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestDuplicateTableName,
+                global::TestDuplicateTableName
+            >.DoDelete(row);
+    }
+
+    public readonly struct TestIndexIssues
+        : global::SpacetimeDB.Internal.ITableView<TestIndexIssues, global::TestIndexIssues>
+    {
+        static global::TestIndexIssues global::SpacetimeDB.Internal.ITableView<
+            TestIndexIssues,
+            global::TestIndexIssues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestIndexIssues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestIndexIssues,
+            global::TestIndexIssues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestIndexIssues),
+                ProductTypeRef: (uint)
+                    new global::TestIndexIssues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "TestIndexWithoutColumns",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "TestIndexWithEmptyColumns",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "TestUnknownColumns",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "TestUnexpectedColumns",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints: [],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestIndexIssues,
+                global::TestIndexIssues
+            >.DoCount();
+
+        public IEnumerable<global::TestIndexIssues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestIndexIssues,
+                global::TestIndexIssues
+            >.DoIter();
+
+        public global::TestIndexIssues Insert(global::TestIndexIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestIndexIssues,
+                global::TestIndexIssues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestIndexIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestIndexIssues,
+                global::TestIndexIssues
+            >.DoDelete(row);
+
+        public sealed class TestIndexWithoutColumnsIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues__idx_btree"
+            ) { }
+
+        public TestIndexWithoutColumnsIndex TestIndexWithoutColumns => new();
+
+        public sealed class TestIndexWithEmptyColumnsIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues__idx_btree"
+            ) { }
+
+        public TestIndexWithEmptyColumnsIndex TestIndexWithEmptyColumns => new();
+
+        public sealed class TestUnknownColumnsIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues__idx_btree"
+            ) { }
+
+        public TestUnknownColumnsIndex TestUnknownColumns => new();
+
+        public sealed class TestUnexpectedColumnsIndex()
+            : SpacetimeDB.Internal.IndexBase<global::TestIndexIssues>(
+                "TestIndexIssues_SelfIndexingColumn_idx_btree"
+            )
+        {
+            public IEnumerable<global::TestIndexIssues> Filter(int SelfIndexingColumn) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public ulong Delete(int SelfIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public IEnumerable<global::TestIndexIssues> Filter(Bound<int> SelfIndexingColumn) =>
+                DoFilter(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+
+            public ulong Delete(Bound<int> SelfIndexingColumn) =>
+                DoDelete(
+                    new SpacetimeDB.Internal.BTreeIndexBounds<int, SpacetimeDB.BSATN.I32>(
+                        SelfIndexingColumn
+                    )
+                );
+        }
+
+        public TestUnexpectedColumnsIndex TestUnexpectedColumns => new();
+    }
+
+    public readonly struct TestScheduleWithMissingScheduleAtField
+        : global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithMissingScheduleAtField,
+            global::TestScheduleIssues
+        >
+    {
+        static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithMissingScheduleAtField,
+            global::TestScheduleIssues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithMissingScheduleAtField,
+            global::TestScheduleIssues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestScheduleWithMissingScheduleAtField),
+                ProductTypeRef: (uint)
+                    new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithMissingScheduleAtField,
+                global::TestScheduleIssues
+            >.DoCount();
+
+        public IEnumerable<global::TestScheduleIssues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithMissingScheduleAtField,
+                global::TestScheduleIssues
+            >.DoIter();
+
+        public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithMissingScheduleAtField,
+                global::TestScheduleIssues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithMissingScheduleAtField,
+                global::TestScheduleIssues
+            >.DoDelete(row);
+    }
+
+    public readonly struct TestScheduleWithoutPrimaryKey
+        : global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithoutPrimaryKey,
+            global::TestScheduleIssues
+        >
+    {
+        static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithoutPrimaryKey,
+            global::TestScheduleIssues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithoutPrimaryKey,
+            global::TestScheduleIssues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestScheduleWithoutPrimaryKey),
+                ProductTypeRef: (uint)
+                    new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [],
+                Indexes: [],
+                Constraints: [],
+                Sequences: [],
+                Schedule: global::SpacetimeDB.Internal.ITableView<
+                    TestScheduleWithoutPrimaryKey,
+                    global::TestScheduleIssues
+                >.MakeSchedule("DummyScheduledReducer", 3),
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.DoCount();
+
+        public IEnumerable<global::TestScheduleIssues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.DoIter();
+
+        public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutPrimaryKey,
+                global::TestScheduleIssues
+            >.DoDelete(row);
+    }
+
+    public readonly struct TestScheduleWithoutScheduleAt
+        : global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithoutScheduleAt,
+            global::TestScheduleIssues
+        >
+    {
+        static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithoutScheduleAt,
+            global::TestScheduleIssues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithoutScheduleAt,
+            global::TestScheduleIssues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestScheduleWithoutScheduleAt),
+                ProductTypeRef: (uint)
+                    new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [1],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "IdCorrectType",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestScheduleWithoutScheduleAt,
+                        global::TestScheduleIssues
+                    >.MakeUniqueConstraint(1)
+                ],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues
+            >.DoCount();
+
+        public IEnumerable<global::TestScheduleIssues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues
+            >.DoIter();
+
+        public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues
+            >.DoDelete(row);
+
+        public sealed class IdCorrectTypeUniqueIndex
+            : UniqueIndex<
+                TestScheduleWithoutScheduleAt,
+                global::TestScheduleIssues,
+                int,
+                SpacetimeDB.BSATN.I32
+            >
+        {
+            internal IdCorrectTypeUniqueIndex()
+                : base("TestScheduleWithoutScheduleAt_IdCorrectType_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestScheduleIssues? Find(int key) =>
+                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+
+            public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                DoUpdate(row);
+        }
+
+        public IdCorrectTypeUniqueIndex IdCorrectType => new();
+    }
+
+    public readonly struct TestScheduleWithWrongPrimaryKeyType
+        : global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithWrongPrimaryKeyType,
+            global::TestScheduleIssues
+        >
+    {
+        static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithWrongPrimaryKeyType,
+            global::TestScheduleIssues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithWrongPrimaryKeyType,
+            global::TestScheduleIssues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestScheduleWithWrongPrimaryKeyType),
+                ProductTypeRef: (uint)
+                    new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [0],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "IdWrongType",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestScheduleWithWrongPrimaryKeyType,
+                        global::TestScheduleIssues
+                    >.MakeUniqueConstraint(0)
+                ],
+                Sequences: [],
+                Schedule: global::SpacetimeDB.Internal.ITableView<
+                    TestScheduleWithWrongPrimaryKeyType,
+                    global::TestScheduleIssues
+                >.MakeSchedule("DummyScheduledReducer", 3),
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.DoCount();
+
+        public IEnumerable<global::TestScheduleIssues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.DoIter();
+
+        public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues
+            >.DoDelete(row);
+
+        public sealed class IdWrongTypeUniqueIndex
+            : UniqueIndex<
+                TestScheduleWithWrongPrimaryKeyType,
+                global::TestScheduleIssues,
+                string,
+                SpacetimeDB.BSATN.String
+            >
+        {
+            internal IdWrongTypeUniqueIndex()
+                : base("TestScheduleWithWrongPrimaryKeyType_IdWrongType_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestScheduleIssues? Find(string key) =>
+                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+
+            public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                DoUpdate(row);
+        }
+
+        public IdWrongTypeUniqueIndex IdWrongType => new();
+    }
+
+    public readonly struct TestScheduleWithWrongScheduleAtType
+        : global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithWrongScheduleAtType,
+            global::TestScheduleIssues
+        >
+    {
+        static global::TestScheduleIssues global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithWrongScheduleAtType,
+            global::TestScheduleIssues
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestScheduleIssues row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestScheduleWithWrongScheduleAtType,
+            global::TestScheduleIssues
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestScheduleWithWrongScheduleAtType),
+                ProductTypeRef: (uint)
+                    new global::TestScheduleIssues.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [1],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "IdCorrectType",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestScheduleWithWrongScheduleAtType,
+                        global::TestScheduleIssues
+                    >.MakeUniqueConstraint(1)
+                ],
+                Sequences: [],
+                Schedule: global::SpacetimeDB.Internal.ITableView<
+                    TestScheduleWithWrongScheduleAtType,
+                    global::TestScheduleIssues
+                >.MakeSchedule("DummyScheduledReducer", 2),
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.DoCount();
+
+        public IEnumerable<global::TestScheduleIssues> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.DoIter();
+
+        public global::TestScheduleIssues Insert(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.DoInsert(row);
+
+        public bool Delete(global::TestScheduleIssues row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues
+            >.DoDelete(row);
+
+        public sealed class IdCorrectTypeUniqueIndex
+            : UniqueIndex<
+                TestScheduleWithWrongScheduleAtType,
+                global::TestScheduleIssues,
+                int,
+                SpacetimeDB.BSATN.I32
+            >
+        {
+            internal IdCorrectTypeUniqueIndex()
+                : base("TestScheduleWithWrongScheduleAtType_IdCorrectType_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestScheduleIssues? Find(int key) =>
+                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+
+            public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
+                DoUpdate(row);
+        }
+
+        public IdCorrectTypeUniqueIndex IdCorrectType => new();
+    }
+
+    public readonly struct TestUniqueNotEquatable
+        : global::SpacetimeDB.Internal.ITableView<
+            TestUniqueNotEquatable,
+            global::TestUniqueNotEquatable
+        >
+    {
+        static global::TestUniqueNotEquatable global::SpacetimeDB.Internal.ITableView<
+            TestUniqueNotEquatable,
+            global::TestUniqueNotEquatable
+        >.ReadGenFields(System.IO.BinaryReader reader, global::TestUniqueNotEquatable row)
+        {
+            return row;
+        }
+
+        static SpacetimeDB.Internal.RawTableDefV9 global::SpacetimeDB.Internal.ITableView<
+            TestUniqueNotEquatable,
+            global::TestUniqueNotEquatable
+        >.MakeTableDesc(SpacetimeDB.BSATN.ITypeRegistrar registrar) =>
+            new(
+                Name: nameof(TestUniqueNotEquatable),
+                ProductTypeRef: (uint)
+                    new global::TestUniqueNotEquatable.BSATN().GetAlgebraicType(registrar).Ref_,
+                PrimaryKey: [1],
+                Indexes:
+                [
+                    new(
+                        Name: null,
+                        AccessorName: "UniqueField",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([0])
+                    ),
+                    new(
+                        Name: null,
+                        AccessorName: "PrimaryKeyField",
+                        Algorithm: new SpacetimeDB.Internal.RawIndexAlgorithm.BTree([1])
+                    )
+                ],
+                Constraints:
+                [
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestUniqueNotEquatable,
+                        global::TestUniqueNotEquatable
+                    >.MakeUniqueConstraint(0),
+                    global::SpacetimeDB.Internal.ITableView<
+                        TestUniqueNotEquatable,
+                        global::TestUniqueNotEquatable
+                    >.MakeUniqueConstraint(1)
+                ],
+                Sequences: [],
+                Schedule: null,
+                TableType: SpacetimeDB.Internal.TableType.User,
+                TableAccess: SpacetimeDB.Internal.TableAccess.Private
+            );
+
+        public ulong Count =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.DoCount();
+
+        public IEnumerable<global::TestUniqueNotEquatable> Iter() =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.DoIter();
+
+        public global::TestUniqueNotEquatable Insert(global::TestUniqueNotEquatable row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.DoInsert(row);
+
+        public bool Delete(global::TestUniqueNotEquatable row) =>
+            global::SpacetimeDB.Internal.ITableView<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable
+            >.DoDelete(row);
+
+        public sealed class PrimaryKeyFieldUniqueIndex
+            : UniqueIndex<
+                TestUniqueNotEquatable,
+                global::TestUniqueNotEquatable,
+                TestEnumWithExplicitValues,
+                SpacetimeDB.BSATN.Enum<TestEnumWithExplicitValues>
+            >
+        {
+            internal PrimaryKeyFieldUniqueIndex()
+                : base("TestUniqueNotEquatable_PrimaryKeyField_idx_btree") { }
+
+            // Important: don't move this to the base class.
+            // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
+            // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
+            public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
+                DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+
+            public global::TestUniqueNotEquatable Update(global::TestUniqueNotEquatable row) =>
+                DoUpdate(row);
+        }
+
+        public PrimaryKeyFieldUniqueIndex PrimaryKeyField => new();
     }
 }
 
@@ -2254,4 +2266,5 @@ static class ModuleRegistration
 #endif
 }
 
+#pragma warning restore STDB_UNSTABLE
 #pragma warning restore CS0436
