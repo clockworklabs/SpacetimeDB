@@ -562,6 +562,7 @@ impl PhysicalPlan {
                     rhs_index,
                     rhs_field,
                     unique,
+                    outer,
                     lhs_field,
                     rhs_delta,
                 },
@@ -574,6 +575,7 @@ impl PhysicalPlan {
                     rhs_index,
                     rhs_field,
                     unique,
+                    outer,
                     lhs_field,
                     rhs_delta,
                 },
@@ -1226,6 +1228,7 @@ pub struct IxJoin {
     pub rhs_field: ColId,
     /// Is the index a unique constraint index?
     pub unique: bool,
+    pub outer: bool,
     /// The expression for computing probe values.
     /// Values are projected from the lhs,
     /// and used to probe the index on the rhs.

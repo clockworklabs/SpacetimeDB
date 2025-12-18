@@ -186,7 +186,7 @@ impl ViewProject {
         let mut n = 0;
         let mut bytes_scanned = 0;
         self.inner.execute(tx, metrics, &mut |row| match row {
-            Row::Null => Ok(()),
+            Row::Null => f([].into()),
             Row::Ptr(ptr) => {
                 n += 1;
                 let col_list = ColList::from_iter(self.num_private_cols..self.num_cols);
@@ -312,6 +312,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                     rhs_index,
                     rhs_field,
                     unique,
+                    outer,
                     lhs_field,
                     rhs_delta: None,
                     ..
@@ -324,6 +325,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 rhs_field,
                 lhs_field,
                 unique,
+                outer,
                 semijoin,
             }),
             PhysicalPlan::IxJoin(
@@ -333,6 +335,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                     rhs_index,
                     rhs_field,
                     unique,
+                    outer,
                     lhs_field,
                     rhs_delta: Some(rhs_delta),
                     ..
@@ -346,6 +349,7 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 rhs_delta,
                 lhs_field,
                 unique,
+                outer,
                 semijoin,
             }),
             PhysicalPlan::HashJoin(
@@ -812,6 +816,7 @@ pub struct PipelinedIxJoin {
     pub lhs_field: TupleField,
     /// Is the index unique?
     pub unique: bool,
+    pub outer: bool,
     /// Is this a semijoin?
     pub semijoin: Semi,
 }
@@ -846,9 +851,15 @@ impl PipelinedIxJoin {
 
         match self {
             Self {
+                outer: true,
+                semijoin: Semi::Lhs | Semi::Rhs,
+                ..
+            } => unreachable!("Outer semijoin is not possible"),
+            Self {
                 lhs,
                 lhs_field,
                 unique: true,
+                outer: false,
                 semijoin: Semi::Lhs,
                 ..
             } => {
@@ -867,6 +878,7 @@ impl PipelinedIxJoin {
                 lhs,
                 lhs_field,
                 unique: true,
+                outer: false,
                 semijoin: Semi::Rhs,
                 ..
             } => {
@@ -884,6 +896,7 @@ impl PipelinedIxJoin {
                 lhs,
                 lhs_field,
                 unique: true,
+                outer,
                 semijoin: Semi::All,
                 ..
             } => {
@@ -893,6 +906,8 @@ impl PipelinedIxJoin {
                     index_seeks += 1;
                     if let Some(v) = probe_rhs(&u, lhs_field, &mut bytes_scanned)? {
                         f(u.join(v))?;
+                    } else if *outer {
+                        f(u.append(Row::Null))?;
                     }
                     Ok(())
                 })?;
@@ -901,6 +916,7 @@ impl PipelinedIxJoin {
                 lhs,
                 lhs_field,
                 unique: false,
+                outer: false,
                 semijoin: Semi::Lhs,
                 ..
             } => {
@@ -919,6 +935,7 @@ impl PipelinedIxJoin {
                 lhs,
                 lhs_field,
                 unique: false,
+                outer: false,
                 semijoin: Semi::Rhs,
                 ..
             } => {
@@ -936,6 +953,7 @@ impl PipelinedIxJoin {
                 lhs,
                 lhs_field,
                 unique: false,
+                outer,
                 semijoin: Semi::All,
                 ..
             } => {
@@ -943,8 +961,13 @@ impl PipelinedIxJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let mut ok = false;
                     for v in iter_rhs(&u, lhs_field, &mut bytes_scanned)? {
-                        f(u.clone().join(v))?;
+                        f(u.clone().join(v.clone()))?;
+                        if !matches!(v, Tuple::Row(Row::Null)) { ok = true };
+                    }
+                    if !ok && *outer {
+                        f(u.clone().append(Row::Null))?;
                     }
                     Ok(())
                 })?;
@@ -978,6 +1001,7 @@ pub struct PipelinedIxDeltaJoin {
     pub lhs_field: TupleField,
     /// Is the index unique?
     pub unique: bool,
+    pub outer: bool,
     /// Is this a semijoin?
     pub semijoin: Semi,
 }
@@ -1003,9 +1027,15 @@ impl PipelinedIxDeltaJoin {
 
         match self {
             Self {
+                outer: true,
+                semijoin: Semi::Lhs | Semi::Rhs,
+                ..
+            } => unreachable!("Outer semijoin is not possible"),
+            Self {
                 lhs,
                 lhs_field,
                 unique: true,
+                outer: false,
                 semijoin: Semi::Lhs,
                 ..
             } => {
@@ -1033,6 +1063,7 @@ impl PipelinedIxDeltaJoin {
                 lhs,
                 lhs_field,
                 unique: true,
+                outer: false,
                 semijoin: Semi::Rhs,
                 ..
             } => {
@@ -1059,6 +1090,7 @@ impl PipelinedIxDeltaJoin {
                 lhs,
                 lhs_field,
                 unique: true,
+                outer,
                 semijoin: Semi::All,
                 ..
             } => {
@@ -1077,6 +1109,8 @@ impl PipelinedIxDeltaJoin {
                         .map(Tuple::Row)
                     {
                         f(u.join(v))?;
+                    } else if *outer {
+                        f(u.append(Row::Null))?;
                     }
                     Ok(())
                 })?;
@@ -1085,6 +1119,7 @@ impl PipelinedIxDeltaJoin {
                 lhs,
                 lhs_field,
                 unique: false,
+                outer: false,
                 semijoin: Semi::Lhs,
                 ..
             } => {
@@ -1111,6 +1146,7 @@ impl PipelinedIxDeltaJoin {
                 lhs,
                 lhs_field,
                 unique: false,
+                outer: false,
                 semijoin: Semi::Rhs,
                 ..
             } => {
@@ -1136,6 +1172,7 @@ impl PipelinedIxDeltaJoin {
                 lhs,
                 lhs_field,
                 unique: false,
+                outer,
                 semijoin: Semi::All,
                 ..
             } => {
@@ -1143,6 +1180,7 @@ impl PipelinedIxDeltaJoin {
                 lhs.execute(tx, metrics, &mut |u| {
                     n += 1;
                     index_seeks += 1;
+                    let mut ok = false;
                     for v in tx
                         .index_scan_point_for_delta(
                             self.rhs_table,
@@ -1153,6 +1191,10 @@ impl PipelinedIxDeltaJoin {
                         .map(Tuple::Row)
                     {
                         f(u.clone().join(v.clone()))?;
+                        if !matches!(v, Tuple::Row(Row::Null)) { ok = true };
+                    }
+                    if !ok && *outer {
+                        f(u.clone().append(Row::Null))?;
                     }
                     Ok(())
                 })?;
