@@ -38,11 +38,10 @@ use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
-use std::time::Instant;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
-use tokio::time::{sleep_until, timeout};
+use tokio::time::{sleep_until, timeout, Instant};
 use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
 use tokio_tungstenite::tungstenite::protocol::frame::Frame;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
@@ -422,7 +421,7 @@ async fn ws_client_actor_inner(
             let client = client.clone();
             move |data, timer| {
                 let client = client.clone();
-                async move { client.handle_message(data, timer).await }
+                async move { client.handle_message(data, timer.into()).await }
             }
         },
         unordered_tx.clone(),
@@ -655,7 +654,7 @@ async fn ws_main_loop<HotswapWatcher>(
 /// The `activity` should be updated whenever a new message is received.
 async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
     let mut deadline = *activity.borrow();
-    let sleep = sleep_until(deadline.into());
+    let sleep = sleep_until(deadline);
     pin_mut!(sleep);
 
     loop {
@@ -666,7 +665,7 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
                 let new_deadline = *activity.borrow_and_update();
                 if new_deadline != deadline {
                     deadline = new_deadline;
-                    sleep.as_mut().reset(deadline.into());
+                    sleep.as_mut().reset(deadline);
                 }
             },
 
@@ -1449,6 +1448,20 @@ mod tests {
 
     use super::*;
 
+    // [NOTE: start_paused]:
+    //
+    // Some of the tests below test timeouts or rely on time in some other way.
+    // Since that is prone to flakiness (depending on machine load), we use
+    // [tokio::time::pause] to run those tests with paused time.
+    //
+    // Tokio will auto-advance time when [sleep] is used, and the executor has
+    // no other work to do, so this should work as expected: the elapsed time
+    // is the sum of the sleep time in the awaited future.
+    //
+    // Crucially, all timer-backed primitives must use [tokio::time::Instant]
+    // rather than [std::time::Instant]. In case a test becomes flaky again in
+    // the future, check for use of std `Instant` first.
+
     fn dummy_client_id() -> ClientActorId {
         ClientActorId {
             identity: Identity::ZERO,
@@ -1465,7 +1478,7 @@ mod tests {
         ActorState::new(Identity::ZERO, dummy_client_id(), config)
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn idle_timer_extends_sleep() {
         let timeout = Duration::from_millis(10);
 
@@ -1783,7 +1796,7 @@ mod tests {
         .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_on_idle_timeout() {
         let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             idle_timeout: Duration::from_millis(10),
@@ -1821,7 +1834,7 @@ mod tests {
         assert!(elapsed < timeout + Duration::from_millis(10));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_keepalive_keeps_alive() {
         let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             ping_interval: Duration::from_millis(5),
@@ -1868,10 +1881,16 @@ mod tests {
         // It didn't time out.
         assert_matches!(res, Ok(Ok(())));
         // It didn't exit early. Allow it to miss a ping.
-        assert!(elapsed >= expected_timeout - state.config.ping_interval);
+        let expected_timeout = expected_timeout - state.config.ping_interval;
+        assert!(
+            elapsed >= expected_timeout,
+            "should not exit early: elapsed={} expected_timeout={}",
+            elapsed.as_millis(),
+            expected_timeout.as_millis()
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_when_module_exits() {
         let state = Arc::new(dummy_actor_state());
 
@@ -1885,7 +1904,7 @@ mod tests {
             }
         };
 
-        let start = Instant::now();
+        let start = tokio::time::Instant::now();
         tokio::spawn(async move {
             let hotswap = || async {
                 sleep(Duration::from_millis(5)).await;
@@ -1913,8 +1932,15 @@ mod tests {
         .await
         .unwrap();
         let elapsed = start.elapsed();
-        assert!(elapsed >= Duration::from_millis(5));
-        assert!(elapsed < Duration::from_millis(10));
+
+        assert!(
+            elapsed >= Duration::from_millis(5),
+            "main loop should run until module is shut down"
+        );
+        assert!(
+            elapsed < Duration::from_millis(10),
+            "main loop should shut down shortly after module is shut down"
+        );
     }
 
     #[tokio::test]
