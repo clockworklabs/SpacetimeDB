@@ -19,6 +19,7 @@ use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
 use crate::host::ModuleHost;
 use crate::messages::websocket::Subscribe;
 use crate::subscription::query::is_subscribe_to_all_tables;
+use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
@@ -56,6 +57,7 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     broadcast_queue: BroadcastQueue,
+    pub bsatn_rlb_pool: BsatnRowListBuilderPool,
     stats: Arc<SubscriptionGauges>,
     metrics: Arc<SubscriptionMetricsForWorkloads>,
 }
@@ -236,6 +238,7 @@ impl ModuleSubscriptions {
         relational_db: Arc<RelationalDB>,
         subscriptions: Subscriptions,
         broadcast_queue: BroadcastQueue,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
@@ -247,6 +250,7 @@ impl ModuleSubscriptions {
             broadcast_queue,
             stats,
             metrics,
+            bsatn_rlb_pool,
         }
     }
 
@@ -266,6 +270,7 @@ impl ModuleSubscriptions {
             db,
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
+            BsatnRowListBuilderPool::new(),
         )
     }
 
@@ -342,13 +347,27 @@ impl ModuleSubscriptions {
                     .map(PipelinedProject::from)
                     .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
                     .collect::<Vec<_>>();
-                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                collect_table_update_for_view(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &self.bsatn_rlb_pool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Binary, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
-                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &self.bsatn_rlb_pool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Text, Some(view_info)) => {
                 let plans = plans
@@ -356,13 +375,27 @@ impl ModuleSubscriptions {
                     .map(PipelinedProject::from)
                     .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
                     .collect::<Vec<_>>();
-                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+                collect_table_update_for_view(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &JsonRowListBuilderFakePool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
             }
             (Protocol::Text, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
-                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &JsonRowListBuilderFakePool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
             }
         }?)
     }
@@ -391,11 +424,13 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         let (update, metrics, query_metrics) = match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                let (update, metrics, query_metrics) =
+                    execute_plans(auth, queries, &tx, update_type, &self.bsatn_rlb_pool)?;
                 (FormatSwitch::Bsatn(update), metrics, query_metrics)
             }
             Protocol::Text => {
-                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                let (update, metrics, query_metrics) =
+                    execute_plans(auth, queries, &tx, update_type, &JsonRowListBuilderFakePool)?;
                 (FormatSwitch::Json(update), metrics, query_metrics)
             }
         };
@@ -938,12 +973,18 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics, query_metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
-                |(table_update, metrics, query_metrics)| (FormatSwitch::Bsatn(table_update), metrics, query_metrics),
-            )?,
-            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
-                |(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics),
-            )?,
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe, &self.bsatn_rlb_pool)
+                .map(|(table_update, metrics, query_metrics)| {
+                (FormatSwitch::Bsatn(table_update), metrics, query_metrics)
+            })?,
+            Protocol::Text => execute_plans(
+                &auth,
+                &queries,
+                &tx,
+                TableUpdateType::Subscribe,
+                &JsonRowListBuilderFakePool,
+            )
+            .map(|(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics))?,
         };
 
         record_query_metrics(&self.relational_db.database_identity(), query_metrics);
@@ -1066,7 +1107,12 @@ impl ModuleSubscriptions {
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
-        let update_metrics = subscriptions.eval_updates_sequential((&delta_read_tx, tx_offset), event.clone(), caller);
+        let update_metrics = subscriptions.eval_updates_sequential(
+            (&delta_read_tx, tx_offset),
+            &self.bsatn_rlb_pool,
+            event.clone(),
+            caller,
+        );
         read_tx.metrics.merge(update_metrics);
         Ok(Ok(CommitAndBroadcastEventSuccess {
             tx_offset: extra_tx_offset,
@@ -1265,6 +1311,7 @@ mod tests {
     use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
     use core::fmt;
     use itertools::Itertools;
@@ -1309,6 +1356,7 @@ mod tests {
             db.clone(),
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
+            BsatnRowListBuilderPool::new(),
         );
         let auth = AuthCtx::new(owner, sender.auth.claims.identity);
 

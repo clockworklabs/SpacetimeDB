@@ -1,4 +1,4 @@
-use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilder as _};
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilder as _, RowListBuilderSource};
 use crate::{error::DBError, worker_metrics::WORKER_METRICS};
 use anyhow::Result;
 use metrics::QueryMetrics;
@@ -16,6 +16,8 @@ use spacetimedb_execution::{pipelined::PipelinedProject, Datastore, DeltaStore};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::{metrics::ExecutionMetrics, Identity};
 use spacetimedb_primitives::TableId;
+use spacetimedb_sats::bsatn::ToBsatn;
+use spacetimedb_sats::Serialize;
 use std::sync::Arc;
 
 pub mod delta;
@@ -24,6 +26,7 @@ pub mod metrics;
 pub mod module_subscription_actor;
 pub mod module_subscription_manager;
 pub mod query;
+pub mod row_list_builder_pool;
 #[allow(clippy::module_inception)] // it's right this isn't ideal :/
 pub mod subscription;
 pub mod tx;
@@ -103,46 +106,48 @@ impl MetricsRecorder for ExecutionCounters {
 ///
 /// NOTE: This method was largely copied from [`execute_plan`].
 /// TODO: Merge with [`execute_plan`].
-pub fn execute_plan_for_view<Tx, F>(plan_fragments: &[ViewProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
-where
-    Tx: Datastore + DeltaStore,
-    F: BuildableWebsocketFormat,
-{
-    let mut count = 0;
-    let mut list = F::ListBuilder::default();
-    let mut metrics = ExecutionMetrics::default();
-
-    for fragment in plan_fragments {
-        fragment.execute(tx, &mut metrics, &mut |row| {
-            count += 1;
-            list.push(row);
-            Ok(())
-        })?;
-    }
-
-    let list = list.finish();
-    metrics.bytes_scanned += list.num_bytes();
-    metrics.bytes_sent_to_clients += list.num_bytes();
-    Ok((list, count, metrics))
+pub fn execute_plan_for_view<F: BuildableWebsocketFormat>(
+    plan_fragments: &[ViewProject],
+    tx: &(impl Datastore + DeltaStore),
+    rlb_pool: &impl RowListBuilderSource<F>,
+) -> Result<(F::List, u64, ExecutionMetrics)> {
+    build_list_with_executor(rlb_pool, |metrics, add| {
+        for fragment in plan_fragments {
+            fragment.execute(tx, metrics, add)?;
+        }
+        Ok(())
+    })
 }
 
 /// Execute a subscription query
-pub fn execute_plan<Tx, F>(plan_fragments: &[PipelinedProject], tx: &Tx) -> Result<(F::List, u64, ExecutionMetrics)>
-where
-    Tx: Datastore + DeltaStore,
-    F: BuildableWebsocketFormat,
-{
+pub fn execute_plan<F: BuildableWebsocketFormat>(
+    plan_fragments: &[PipelinedProject],
+    tx: &(impl Datastore + DeltaStore),
+    rlb_pool: &impl RowListBuilderSource<F>,
+) -> Result<(F::List, u64, ExecutionMetrics)> {
+    build_list_with_executor(rlb_pool, |metrics, add| {
+        for fragment in plan_fragments {
+            fragment.execute(tx, metrics, add)?;
+        }
+        Ok(())
+    })
+}
+
+/// Returns a list built by passing a function `add` to `driver`,
+/// which will call the former for every row it processes.
+pub fn build_list_with_executor<F: BuildableWebsocketFormat, R: ToBsatn + Serialize>(
+    rlb_pool: &impl RowListBuilderSource<F>,
+    driver: impl FnOnce(&mut ExecutionMetrics, &mut dyn FnMut(R) -> Result<()>) -> Result<()>,
+) -> Result<(F::List, u64, ExecutionMetrics)> {
     let mut count = 0;
-    let mut list = F::ListBuilder::default();
+    let mut list = rlb_pool.take_row_list_builder();
     let mut metrics = ExecutionMetrics::default();
 
-    for fragment in plan_fragments {
-        fragment.execute(tx, &mut metrics, &mut |row| {
-            count += 1;
-            list.push(row);
-            Ok(())
-        })?;
-    }
+    driver(&mut metrics, &mut |row| {
+        count += 1;
+        list.push(row);
+        Ok(())
+    })?;
 
     let list = list.finish();
     metrics.bytes_scanned += list.num_bytes();
@@ -172,12 +177,13 @@ pub fn collect_table_update_for_view<Tx, F>(
     table_name: Box<str>,
     tx: &Tx,
     update_type: TableUpdateType,
+    rlb_pool: &impl RowListBuilderSource<F>,
 ) -> Result<(TableUpdate<F>, ExecutionMetrics)>
 where
     Tx: Datastore + DeltaStore,
     F: BuildableWebsocketFormat,
 {
-    execute_plan_for_view::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
+    execute_plan_for_view::<F>(plan_fragments, tx, rlb_pool).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
             TableUpdateType::Subscribe => QueryUpdate {
@@ -201,18 +207,15 @@ where
 }
 
 /// Execute a subscription query and collect the results in a [TableUpdate]
-pub fn collect_table_update<Tx, F>(
+pub fn collect_table_update<F: BuildableWebsocketFormat>(
     plan_fragments: &[PipelinedProject],
     table_id: TableId,
     table_name: Box<str>,
-    tx: &Tx,
+    tx: &(impl Datastore + DeltaStore),
     update_type: TableUpdateType,
-) -> Result<(TableUpdate<F>, ExecutionMetrics)>
-where
-    Tx: Datastore + DeltaStore,
-    F: BuildableWebsocketFormat,
-{
-    execute_plan::<Tx, F>(plan_fragments, tx).map(|(rows, num_rows, metrics)| {
+    rlb_pool: &impl RowListBuilderSource<F>,
+) -> Result<(TableUpdate<F>, ExecutionMetrics)> {
+    execute_plan::<F>(plan_fragments, tx, rlb_pool).map(|(rows, num_rows, metrics)| {
         let empty = F::List::default();
         let qu = match update_type {
             TableUpdateType::Subscribe => QueryUpdate {
@@ -236,16 +239,13 @@ where
 }
 
 /// Execute a collection of subscription queries in parallel
-pub fn execute_plans<Tx, F>(
+pub fn execute_plans<F: BuildableWebsocketFormat>(
     auth: &AuthCtx,
     plans: &[Arc<Plan>],
-    tx: &Tx,
+    tx: &(impl Datastore + DeltaStore + Sync),
     update_type: TableUpdateType,
-) -> Result<(DatabaseUpdate<F>, ExecutionMetrics, Vec<QueryMetrics>), DBError>
-where
-    Tx: Datastore + DeltaStore + Sync,
-    F: BuildableWebsocketFormat,
-{
+    rlb_pool: &(impl Sync + RowListBuilderSource<F>),
+) -> Result<(DatabaseUpdate<F>, ExecutionMetrics, Vec<QueryMetrics>), DBError> {
     plans
         .par_iter()
         .flat_map_iter(|plan| plan.plans_fragments().map(|fragment| (plan.sql(), fragment)))
@@ -265,14 +265,35 @@ where
                     if let Some(schema) = plan.return_table() {
                         let pipelined_plan = PipelinedProject::from(plan.clone());
                         let view_plan = ViewProject::new(pipelined_plan, schema.num_cols(), schema.num_private_cols());
-                        collect_table_update_for_view(&[view_plan], table_id, (&**table_name).into(), tx, update_type)?
+                        collect_table_update_for_view(
+                            &[view_plan],
+                            table_id,
+                            (&**table_name).into(),
+                            tx,
+                            update_type,
+                            rlb_pool,
+                        )?
                     } else {
                         let pipelined_plan = PipelinedProject::from(plan.clone());
-                        collect_table_update(&[pipelined_plan], table_id, (&**table_name).into(), tx, update_type)?
+                        collect_table_update(
+                            &[pipelined_plan],
+                            table_id,
+                            (&**table_name).into(),
+                            tx,
+                            update_type,
+                            rlb_pool,
+                        )?
                     }
                 } else {
                     let pipelined_plan = PipelinedProject::from(plan.clone());
-                    collect_table_update(&[pipelined_plan], table_id, (&**table_name).into(), tx, update_type)?
+                    collect_table_update(
+                        &[pipelined_plan],
+                        table_id,
+                        (&**table_name).into(),
+                        tx,
+                        update_type,
+                        rlb_pool,
+                    )?
                 };
 
                 let elapsed = start_time.elapsed();
