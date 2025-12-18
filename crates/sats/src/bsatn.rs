@@ -109,7 +109,7 @@ codec_funcs!(val: crate::AlgebraicValue);
 codec_funcs!(val: crate::ProductValue);
 codec_funcs!(val: crate::SumValue);
 
-/// Provides a view over a buffer that an reserve an additional `len` bytes
+/// Provides a view over a buffer that can reserve an additional `len` bytes
 /// and then provide those as an uninitialized buffer to write into.
 pub trait BufReservedFill {
     /// Reserves space for `len` in `self` and then runs `fill` to fill it,

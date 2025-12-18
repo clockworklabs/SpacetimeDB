@@ -110,7 +110,7 @@ pub struct HostController {
     pub bsatn_rlb_pool: BsatnRowListBuilderPool,
 }
 
-struct HostRuntimes {
+pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
 }
@@ -476,7 +476,15 @@ impl HostController {
         };
         let host = guard.as_ref().ok_or(NoSuchModule)?;
 
-        host.migrate_plan(host_type, program, style).await
+        host.migrate_plan(
+            self.page_pool.clone(),
+            self.bsatn_rlb_pool.clone(),
+            &self.runtimes,
+            host_type,
+            program,
+            style,
+        )
+        .await
     }
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
@@ -1124,13 +1132,17 @@ impl Host {
     /// Generate a migration plan for the given `program`.
     async fn migrate_plan(
         &self,
+        page_pool: PagePool,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
+        host_runtimes: &Arc<HostRuntimes>,
         host_type: HostType,
         program: Program,
         style: PrettyPrintStyle,
     ) -> anyhow::Result<MigratePlanResult> {
         let old_module = self.module.borrow().info.clone();
 
-        let module_def = extract_schema(program.bytes, host_type).await?;
+        let module_def =
+            extract_schema_with_pools(page_pool, bsatn_rlb_pool, host_runtimes, program.bytes, host_type).await?;
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {
             Ok(plan) => MigratePlanResult::Success {
@@ -1211,7 +1223,13 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
 /// Extracts the schema from a given module.
 ///
 /// Spins up a dummy host and returns the `ModuleDef` that it extracts.
-pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> anyhow::Result<ModuleDef> {
+pub(crate) async fn extract_schema_with_pools(
+    page_pool: PagePool,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
+    runtimes: &Arc<HostRuntimes>,
+    program_bytes: Box<[u8]>,
+    host_type: HostType,
+) -> anyhow::Result<ModuleDef> {
     let owner_identity = Identity::from_u256(0xdcba_u32.into());
     let database_identity = Identity::from_u256(0xabcd_u32.into());
     let program = Program::from_bytes(program_bytes);
@@ -1224,12 +1242,9 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
         initial_program: program.hash,
     };
 
-    let runtimes = HostRuntimes::new(None);
-    let page_pool = PagePool::new(None);
     let core = SingleCoreExecutor::in_current_tokio_runtime();
-    let bsatn_rlb_pool = BsatnRowListBuilderPool::new();
     let module_info =
-        Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
+        Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
         Ok(info) => info.module_def,
@@ -1237,6 +1252,20 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     };
 
     Ok(module_def)
+}
+
+/// Extracts the schema from a given module.
+///
+/// Spins up a dummy host and returns the `ModuleDef` that it extracts.
+pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> anyhow::Result<ModuleDef> {
+    extract_schema_with_pools(
+        PagePool::new(None),
+        BsatnRowListBuilderPool::new(),
+        &HostRuntimes::new(None),
+        program_bytes,
+        host_type,
+    )
+    .await
 }
 
 // Remove all gauges associated with a database.
