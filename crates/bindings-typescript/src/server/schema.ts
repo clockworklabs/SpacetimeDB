@@ -1,4 +1,9 @@
-import { type ParamsObj, type Reducer } from '../lib/reducers';
+import {
+  type ParamsAsObject,
+  type ParamsObj,
+  type Reducer,
+  type ReducerCtx,
+} from '../lib/reducers';
 import {
   ModuleContext,
   tablesToSchema,

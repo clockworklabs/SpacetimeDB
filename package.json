@@ -1,7 +1,10 @@
 {
   "private": true,
   "packageManager": "pnpm@9.7.0",
-  "engines": { "node": ">=18.0.0", "pnpm": ">=9.0.0" },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=9.0.0"
+  },
   "type": "module",
   "scripts": {
     "format": "pnpm --filter ./crates/bindings-typescript run format && pnpm --filter ./docs run format && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run format && pnpm --filter ./crates/bindings-typescript/test-app run format",
@@ -17,6 +20,7 @@
     "@typescript-eslint/eslint-plugin": "^8.18.2",
     "@typescript-eslint/parser": "^8.18.2",
     "eslint": "^9.17.0",
+    "eslint-plugin-jsdoc": "^61.5.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.14.0",
