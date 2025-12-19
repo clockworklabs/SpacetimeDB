@@ -270,7 +270,7 @@ impl ServerState {
                         .run();
                     }
                 });
-                wait_until_http_ready(Duration::from_secs(300), &server_url)?;
+                wait_until_http_ready(Duration::from_secs(900), &server_url)?;
                 Ok(ServerState::Docker {
                     handle,
                     compose_file,

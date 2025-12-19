@@ -87,6 +87,14 @@ jobs:
         run: choco install psql -y --no-progress
         shell: powershell
 
+      - name: Build crates
+        run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+      - name: Find spacetime binary
+        run: |
+          set -x
+          which spacetime
+          find target/debug/
+
       - name: Expand Docker network pool
         if: runner.os == 'Linux'
         run: |
