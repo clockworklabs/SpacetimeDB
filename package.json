@@ -7,11 +7,12 @@
   },
   "type": "module",
   "scripts": {
-    "format": "pnpm --filter ./crates/bindings-typescript run format && pnpm --filter ./docs run format && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run format && pnpm --filter ./crates/bindings-typescript/test-app run format",
-    "lint": "pnpm --filter ./crates/bindings-typescript run lint && pnpm --filter ./docs run lint && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run lint && pnpm --filter ./crates/bindings-typescript/test-app run lint",
-    "build": "pnpm --filter ./crates/bindings-typescript run build && pnpm --filter ./docs run build && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run build && pnpm --filter ./crates/bindings-typescript/test-app run build",
-    "test": "pnpm --filter ./crates/bindings-typescript run test && pnpm --filter ./docs run test && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run test && pnpm --filter ./crates/bindings-typescript/test-app run test",
-    "generate": "pnpm --filter ./crates/bindings-typescript run generate && pnpm --filter ./docs run generate && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run generate && pnpm --filter ./crates/bindings-typescript/test-app run generate",
+    "run-all": "pnpm -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs run",
+    "format": "pnpm run-all format",
+    "lint": "pnpm run-all lint",
+    "build": "pnpm run-all build",
+    "test": "pnpm run-all test",
+    "generate": "pnpm run-all generate",
     "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage"
   },
   "devDependencies": {
