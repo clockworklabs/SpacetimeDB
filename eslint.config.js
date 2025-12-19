@@ -54,7 +54,7 @@ export default tseslint.config(
       },
     },
     linterOptions: {
-      reportUnusedDisableDirectives: "off",
+      reportUnusedDisableDirectives: 'off',
     },
     plugins: {
       '@typescript-eslint': tseslint.plugin,
@@ -64,25 +64,37 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-namespace': 'error',
-      "@typescript-eslint/no-unused-vars": [
-        "error",
+      '@typescript-eslint/no-unused-vars': [
+        'error',
         {
-          "argsIgnorePattern": "^_",
-          "varsIgnorePattern": "^_",
-          "destructuredArrayIgnorePattern": "^_",
-          "caughtErrorsIgnorePattern": "^_"
-        }
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
       ],
       'no-restricted-syntax': [
         'error',
-        { selector: 'TSEnumDeclaration', message: 'Do not use enums; stick to JS-compatible types.' },
-        { selector: 'TSEnumDeclaration[const=true]', message: 'Do not use const enum; use unions or objects.' },
+        {
+          selector: 'TSEnumDeclaration',
+          message: 'Do not use enums; stick to JS-compatible types.',
+        },
+        {
+          selector: 'TSEnumDeclaration[const=true]',
+          message: 'Do not use const enum; use unions or objects.',
+        },
         { selector: 'Decorator', message: 'Do not use decorators.' },
       ],
       ...reactHooks.configs.recommended.rules,
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
-      "eslint-comments/no-unused-disable": "off",
-      "@typescript-eslint/no-empty-object-type": ['error', { allowObjectTypes: 'always' }],
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+      'eslint-comments/no-unused-disable': 'off',
+      '@typescript-eslint/no-empty-object-type': [
+        'error',
+        { allowObjectTypes: 'always' },
+      ],
     },
   }
 );
