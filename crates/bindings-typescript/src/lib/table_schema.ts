@@ -1,3 +1,4 @@
+import type { ProductType } from './algebraic_type';
 import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
 import type { IndexOpts } from './indexes';
 import type { ModuleContext } from './schema';
