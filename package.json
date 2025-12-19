@@ -8,8 +8,8 @@
   "type": "module",
   "scripts": {
     "run-all": "pnpm -F ./crates/bindings-typescript -F ./crates/bindings-typescript/examples/quickstart-chat -F ./crates/bindings-typescript/test-app -F ./docs run",
-    "format": "pnpm run-all format",
-    "lint": "pnpm run-all lint",
+    "format": "pnpm run-all format && prettier eslint.config.js --write",
+    "lint": "pnpm run-all lint && prettier eslint.config.js --check",
     "build": "pnpm run-all build",
     "test": "pnpm run-all test",
     "generate": "pnpm run-all generate",
