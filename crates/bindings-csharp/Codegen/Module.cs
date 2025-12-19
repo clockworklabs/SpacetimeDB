@@ -485,9 +485,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
-        var uniqueIndexBase = isRowStruct
-            ? "UniqueIndex"
-            : "RefUniqueIndex";
+        var uniqueIndexBase = isRowStruct ? "UniqueIndex" : "RefUniqueIndex";
 
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {

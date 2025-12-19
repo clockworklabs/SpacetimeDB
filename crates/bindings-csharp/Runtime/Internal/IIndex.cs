@@ -113,7 +113,12 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
         using var w = new BinaryWriter(s);
         new RW().Write(w, key);
         var point = s.ToArray();
-        FFI.datastore_delete_by_index_scan_point_bsatn(indexId, point, (uint)point.Length, out var numDeleted);
+        FFI.datastore_delete_by_index_scan_point_bsatn(
+            indexId,
+            point,
+            (uint)point.Length,
+            out var numDeleted
+        );
         return numDeleted > 0;
     }
 
@@ -171,7 +176,12 @@ public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBas
         using var w = new BinaryWriter(s);
         new RW().Write(w, key);
         var point = s.ToArray();
-        FFI.datastore_delete_by_index_scan_point_bsatn(indexId, point, (uint)point.Length, out var numDeleted);
+        FFI.datastore_delete_by_index_scan_point_bsatn(
+            indexId,
+            point,
+            (uint)point.Length,
+            out var numDeleted
+        );
         return numDeleted > 0;
     }
 

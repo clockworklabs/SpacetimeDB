@@ -81,6 +81,14 @@ internal static partial class FFI
 #endif
     ;
 
+    const string StdbNamespace10_4 =
+#if EXPERIMENTAL_WASM_AOT
+        "spacetime_10.4"
+#else
+        "bindings"
+#endif
+    ;
+
     [NativeMarshalling(typeof(Marshaller))]
     public struct CheckedStatus
     {
