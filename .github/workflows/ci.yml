@@ -703,7 +703,8 @@ jobs:
           find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
           if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
             echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
-            cargo build v8
+            cargo clean -p v8 || true
+            cargo build -p v8
           fi
 
       - name: Check quickstart-chat bindings are up to date
