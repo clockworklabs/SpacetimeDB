@@ -374,7 +374,7 @@ interface Nameable<
    */
   name<const Name extends string>(
     name: Name
-  ): ColumnBuilder<Type, SpacetimeType, SetField<M, 'name', Name>>;
+  ): Nameable<Type, SpacetimeType, SetField<M, 'name', Name>>;
 }
 
 export class U8Builder
@@ -1102,7 +1102,7 @@ export class F32Builder
   extends TypeBuilder<number, AlgebraicTypeVariants.F32>
   implements
     Defaultable<number, AlgebraicTypeVariants.F32>,
-    Defaultable<number, AlgebraicTypeVariants.F32>
+    Nameable<number, AlgebraicTypeVariants.F32>
 {
   constructor() {
     super(AlgebraicType.F32);
@@ -1352,15 +1352,16 @@ export class OptionBuilder<Value extends TypeBuilder<any, any>>
   }
 }
 
+type ElementsToProductType<Elements extends ElementsObj> = {
+  tag: 'Product';
+  value: { elements: ElementsArrayFromElementsObj<Elements> };
+};
+
 export class ProductBuilder<Elements extends ElementsObj>
-  extends TypeBuilder<
-    ObjectType<Elements>,
-    {
-      tag: 'Product';
-      value: { elements: ElementsArrayFromElementsObj<Elements> };
-    }
-  >
-  implements Defaultable<ObjectType<Elements>, any>
+  extends TypeBuilder<ObjectType<Elements>, ElementsToProductType<Elements>>
+  implements
+    Defaultable<ObjectType<Elements>, ElementsToProductType<Elements>>,
+    Nameable<ObjectType<Elements>, ElementsToProductType<Elements>>
 {
   readonly typeName: string | undefined;
   readonly elements: Elements;
@@ -1394,6 +1395,11 @@ export class ProductBuilder<Elements extends ElementsObj>
       this,
       set(defaultMetadata, { defaultValue: value })
     );
+  }
+  name<const Name extends string>(
+    name: Name
+  ): ProductColumnBuilder<Elements, SetField<DefaultMetadata, 'name', Name>> {
+    return new ProductColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -1456,10 +1462,17 @@ type SumBuilderVariantConstructors<Variants extends VariantsObj> = {
 export type SumBuilder<Variants extends VariantsObj> =
   SumBuilderImpl<Variants> & SumBuilderVariantConstructors<Variants>;
 
-class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
-  EnumType<Variants>,
-  { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } }
-> {
+type VariantsToSumType<Variants extends VariantsObj> = {
+  tag: 'Sum';
+  value: { variants: VariantsArrayFromVariantsObj<Variants> };
+};
+
+class SumBuilderImpl<Variants extends VariantsObj>
+  extends TypeBuilder<EnumType<Variants>, VariantsToSumType<Variants>>
+  implements
+    Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>
+{
   readonly variants: Variants;
   readonly typeName: string | undefined;
 
@@ -1557,6 +1570,11 @@ class SumBuilderImpl<Variants extends VariantsObj> extends TypeBuilder<
       this,
       set(defaultMetadata, { defaultValue: value })
     );
+  }
+  name<const Name extends string>(
+    name: Name
+  ): SumColumnBuilder<Variants, SetField<DefaultMetadata, 'name', Name>> {
+    return new SumColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -2937,18 +2955,33 @@ export class ArrayColumnBuilder<
   }
 }
 
+type ByteArrayType = {
+  tag: 'Array';
+  value: AlgebraicTypeVariants.U8;
+};
+
 export class ByteArrayColumnBuilder<
-  M extends ColumnMetadata<Uint8Array> = DefaultMetadata,
-> extends ColumnBuilder<
-  Uint8Array,
-  {
-    tag: 'Array';
-    value: AlgebraicTypeVariants.U8;
-  },
-  M
-> {
+    M extends ColumnMetadata<Uint8Array> = DefaultMetadata,
+  >
+  extends ColumnBuilder<Uint8Array, ByteArrayType, M>
+  implements
+    Defaultable<Uint8Array, ByteArrayType, M>,
+    Nameable<Uint8Array, ByteArrayType, M>
+{
   constructor(metadata: M) {
     super(new TypeBuilder(AlgebraicType.Array(AlgebraicType.U8)), metadata);
+  }
+  default(
+    value: Uint8Array
+  ): ByteArrayColumnBuilder<SetField<M, 'defaultValue', Uint8Array>> {
+    return new ByteArrayColumnBuilder(
+      set(this.columnMetadata, { defaultValue: value })
+    );
+  }
+  name<const Name extends string>(
+    name: Name
+  ): ByteArrayColumnBuilder<SetField<M, 'name', Name>> {
+    return new ByteArrayColumnBuilder(set(this.columnMetadata, { name }));
   }
 }
 
@@ -3002,15 +3035,12 @@ export class ProductColumnBuilder<
   >
   extends ColumnBuilder<
     ObjectType<Elements>,
-    {
-      tag: 'Product';
-      value: { elements: ElementsArrayFromElementsObj<Elements> };
-    },
+    ElementsToProductType<Elements>,
     M
   >
   implements
-    Defaultable<ObjectType<Elements>, AlgebraicTypeVariants.Product>,
-    Nameable<ObjectType<Elements>, AlgebraicTypeVariants.Product>
+    Defaultable<ObjectType<Elements>, ElementsToProductType<Elements>>,
+    Nameable<ObjectType<Elements>, ElementsToProductType<Elements>>
 {
   default(
     value: ObjectType<Elements>
@@ -3037,14 +3067,10 @@ export class SumColumnBuilder<
     Variants extends VariantsObj,
     M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
   >
-  extends ColumnBuilder<
-    EnumType<Variants>,
-    { tag: 'Sum'; value: { variants: VariantsArrayFromVariantsObj<Variants> } },
-    M
-  >
+  extends ColumnBuilder<EnumType<Variants>, VariantsToSumType<Variants>, M>
   implements
-    Defaultable<EnumType<Variants>, AlgebraicTypeVariants.Sum>,
-    Nameable<EnumType<Variants>, AlgebraicTypeVariants.Sum>
+    Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
+    Nameable<EnumType<Variants>, VariantsToSumType<Variants>>
 {
   default(
     value: EnumType<Variants>
