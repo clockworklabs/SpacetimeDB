@@ -87,6 +87,7 @@ spacetime.anonymousView(
 spacetime.anonymousView(
   { name: 'optionalPersonWrong', public: true },
   optionalPerson,
+  // @ts-expect-error returns a value of the wrong type.
   ctx => {
     return ctx.db.order.iter().next().value;
   }

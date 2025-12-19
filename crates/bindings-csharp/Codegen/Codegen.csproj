@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <AssemblyName>SpacetimeDB.Codegen</AssemblyName>
     <Version>1.11.1</Version>
@@ -42,7 +41,9 @@
   <!-- Local project references (used by SpacetimeDB/modules/*-cs) don't use NuGet resolution. -->
   <!-- We need a different hack to include BSATN.Codegen as a transitive analyzer dependency. https://github.com/dotnet/roslyn/issues/47275#issuecomment-685482999 -->
   <ItemGroup>
-    <TargetPathWithTargetPlatformMoniker Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll" IncludeRuntimeDependency="false" />
+    <TargetPathWithTargetPlatformMoniker
+      Include="$(ProjectDir)/$(OutputPath)/SpacetimeDB.BSATN.Codegen.dll"
+      IncludeRuntimeDependency="false"
+    />
   </ItemGroup>
-
 </Project>

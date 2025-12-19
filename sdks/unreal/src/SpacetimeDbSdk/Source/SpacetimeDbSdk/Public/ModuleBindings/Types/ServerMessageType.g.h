@@ -44,7 +44,7 @@ public:
 
     TVariant<FInitialSubscriptionType, FOneOffQueryResponseType, FSubscribeMultiAppliedType, FUnsubscribeAppliedType, FTransactionUpdateType, FIdentityTokenType, FSubscribeAppliedType, FSubscriptionErrorType, FTransactionUpdateLightType, FUnsubscribeMultiAppliedType, FProcedureResultType> MessageData;
 
-    UPROPERTY(BlueprintReadOnly)
+    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
     EServerMessageTag Tag = static_cast<EServerMessageTag>(0);
 
     static FServerMessageType InitialSubscription(const FInitialSubscriptionType& Value)
