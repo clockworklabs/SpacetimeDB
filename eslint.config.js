@@ -3,12 +3,18 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import { jsdoc } from 'eslint-plugin-jsdoc';
 
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default tseslint.config(
+  jsdoc({
+    rules: {
+      'jsdoc/no-undefined-types': 'error',
+    },
+  }),
   {
     ignores: ['**/dist/**', '**/build/**', '**/coverage/**'],
   },
