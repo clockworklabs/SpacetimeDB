@@ -57,6 +57,7 @@ fn resolve_sys_module_inner<'scope>(
             (1, 0) => Ok(v1::sys_v1_0(scope)),
             (1, 1) => Ok(v1::sys_v1_1(scope)),
             (1, 2) => Ok(v1::sys_v1_2(scope)),
+            (1, 3) => Ok(v1::sys_v1_3(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
                 It requires sys module v{major}.{minor}, but that version is not supported by the database."
