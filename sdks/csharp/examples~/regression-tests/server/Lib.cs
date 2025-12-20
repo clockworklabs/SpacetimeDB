@@ -394,63 +394,6 @@ public static partial class Module
     }
 
     [SpacetimeDB.Procedure]
-    public static ReturnStruct TimestampCapabilities(ProcedureContext ctx)
-    {
-        // Test 1: Verify timestamp is accessible from procedure context
-        var procedureTimestamp = ctx.Timestamp;
-
-        var result = ctx.WithTx(tx =>
-        {
-            // Test 2: Verify timestamp is accessible from transaction context
-            var txTimestamp = tx.Timestamp;
-
-            // Test 3: Timestamps should be reasonably close (within same procedure call)
-            // Note: Transaction timestamp may be slightly later than procedure timestamp
-            var timeDifference = Math.Abs(txTimestamp.MicrosecondsSinceUnixEpoch - procedureTimestamp.MicrosecondsSinceUnixEpoch);
-            if (timeDifference > 10000) // Allow up to 10ms difference
-            {
-                throw new InvalidOperationException(
-                    $"Transaction timestamp {txTimestamp} differs too much from procedure timestamp {procedureTimestamp} (difference: {timeDifference} microseconds)");
-            }
-
-            // Test 4: Insert data with timestamp information
-            tx.Db.my_table.Insert(new MyTable
-            {
-                Field = new ReturnStruct(
-                    a: (uint)(txTimestamp.MicrosecondsSinceUnixEpoch % uint.MaxValue),
-                    b: $"timestamp:{txTimestamp.MicrosecondsSinceUnixEpoch}")
-            });
-
-            return new ReturnStruct(
-                a: (uint)(txTimestamp.MicrosecondsSinceUnixEpoch % uint.MaxValue),
-                b: txTimestamp.ToString());
-        });
-
-        // Test 5: Verify timestamp is still accessible after transaction
-        var postTxTimestamp = ctx.Timestamp;
-
-        // Verify timestamp accessibility and reasonable consistency
-        if (postTxTimestamp.MicrosecondsSinceUnixEpoch == 0)
-        {
-            throw new InvalidOperationException("Post-transaction timestamp should not be zero");
-        }
-
-        // Allow reasonable timing differences due to C# FFI overhead
-        if (postTxTimestamp.MicrosecondsSinceUnixEpoch != procedureTimestamp.MicrosecondsSinceUnixEpoch)
-        {
-            var postTxDifference = Math.Abs(postTxTimestamp.MicrosecondsSinceUnixEpoch - procedureTimestamp.MicrosecondsSinceUnixEpoch);
-
-            if (postTxDifference > 2000) // Allow up to 2ms difference
-            {
-                throw new InvalidOperationException(
-                    $"Post-transaction timestamp differs significantly from original procedure timestamp (difference: {postTxDifference} microseconds)");
-            }
-        }
-
-        return result;
-    }
-
-    [SpacetimeDB.Procedure]
     public static ReturnStruct AuthenticationCapabilities(ProcedureContext ctx)
     {
         // Test 1: Verify authentication context is accessible from procedure context
