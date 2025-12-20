@@ -191,8 +191,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::Player? Find(SpacetimeDB.Identity key) =>
-                DoFilter(key).Cast<global::Player?>().SingleOrDefault();
+            public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
 
             public global::Player Update(global::Player row) => DoUpdate(row);
         }
@@ -302,8 +301,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestAutoIncNotInteger? Find(string key) =>
-                DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
+            public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
 
             public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
                 DoUpdate(row);
@@ -766,8 +764,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestScheduleIssues? Find(int key) =>
-                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+            public global::TestScheduleIssues? Find(int key) => FindSingle(key);
 
             public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
                 DoUpdate(row);
@@ -861,8 +858,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestScheduleIssues? Find(string key) =>
-                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+            public global::TestScheduleIssues? Find(string key) => FindSingle(key);
 
             public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
                 DoUpdate(row);
@@ -956,8 +952,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestScheduleIssues? Find(int key) =>
-                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+            public global::TestScheduleIssues? Find(int key) => FindSingle(key);
 
             public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
                 DoUpdate(row);
@@ -1058,7 +1053,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
-                DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+                FindSingle(key);
 
             public global::TestUniqueNotEquatable Update(global::TestUniqueNotEquatable row) =>
                 DoUpdate(row);

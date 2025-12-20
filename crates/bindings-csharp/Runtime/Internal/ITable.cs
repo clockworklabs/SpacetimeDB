@@ -20,11 +20,16 @@ internal abstract class RawTableIterBase<T>
             uint buffer_len;
             while (true)
             {
-                buffer_len = (uint)buffer.Length;
+                var requested_len = (uint)buffer.Length;
+                buffer_len = requested_len;
                 var ret = FFI.row_iter_bsatn_advance(handle, buffer, ref buffer_len);
                 if (ret == Errno.EXHAUSTED)
                 {
                     handle = FFI.RowIter.INVALID;
+                    if (buffer_len == requested_len)
+                    {
+                        buffer_len = 0;
+                    }
                 }
                 // On success, the only way `buffer_len == 0` is for the iterator to be exhausted.
                 // This happens when the host iterator was empty from the start.

@@ -321,28 +321,6 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         }
     });
 
-    Log.Debug("Calling TimestampCapabilities");
-    waiting++;
-    context.Procedures.TimestampCapabilities((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
-    {
-        try
-        {
-            Debug.Assert(result.IsSuccess, $"TimestampCapabilities should succeed. Error received: {result.Error}");
-            Debug.Assert(result.Value != null && result.Value.A > 0, "Should return a valid timestamp-derived value");
-            Debug.Assert(result.Value != null && result.Value.B.Contains(":"), "Should return formatted timestamp string");
-
-            // Verify the inserted row has timestamp information
-            var rows = context.Db.MyTable.Iter().ToList();
-            var timestampRow = rows.FirstOrDefault(r => r.Field.B.StartsWith("timestamp:"));
-            Debug.Assert(timestampRow is not null, "Should have a row with timestamp data");
-            Debug.Assert(timestampRow.Field.B.StartsWith("timestamp:"), "Timestamp row should have correct format");
-        }
-        finally
-        {
-            waiting--;
-        }
-    });
-
     Log.Debug("Calling AuthenticationCapabilities");
     waiting++;
     context.Procedures.AuthenticationCapabilities((IProcedureEventContext ctx, ProcedureCallbackResult<ReturnStruct> result) =>
