@@ -101,6 +101,15 @@ IMPORT(void, volatile_nonatomic_schedule_immediate,
 IMPORT(void, identity, (void* id_ptr), (id_ptr));
 #undef SPACETIME_MODULE_VERSION
 
+#define SPACETIME_MODULE_VERSION "spacetime_10.4"
+IMPORT(Status, datastore_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, RowIter* iter),
+       (index_id, point, point_len, iter));
+IMPORT(Status, datastore_delete_by_index_scan_point_bsatn,
+       (IndexId index_id, const uint8_t* point, uint32_t point_len, uint32_t* num_deleted),
+       (index_id, point, point_len, num_deleted));
+#undef SPACETIME_MODULE_VERSION
+
 #define SPACETIME_MODULE_VERSION "spacetime_10.1"
 IMPORT(int16_t, bytes_source_remaining_length, (BytesSource source, uint32_t* out), (source, out));
 #undef SPACETIME_MODULE_VERSION
