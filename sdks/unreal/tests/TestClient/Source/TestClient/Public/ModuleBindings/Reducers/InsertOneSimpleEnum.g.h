@@ -15,7 +15,7 @@ struct TESTCLIENT_API FInsertOneSimpleEnumArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    ESimpleEnumType E;
+    ESimpleEnumType E = static_cast<ESimpleEnumType>(0);
 
     FInsertOneSimpleEnumArgs() = default;
 
