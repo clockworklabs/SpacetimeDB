@@ -439,6 +439,36 @@ export const SumType = {
       } else {
         writer.writeByte(1);
       }
+    } else if (
+      ty.variants.length == 2 &&
+      ty.variants[0].name === 'ok' &&
+      ty.variants[1].name === 'err'
+    ) {
+      let variantName: 'ok' | 'err';
+      let innerValue: any;
+      let index: number;
+      if ('ok' in value) {
+        variantName = 'ok';
+        innerValue = value.ok;
+        index = 0;
+      } else {
+        variantName = 'err';
+        innerValue = value.err;
+        index = 1;
+      }
+
+      if (index < 0) {
+        throw `Result serialization error: variant '${variantName}' not found in ${JSON.stringify(ty)}`;
+      }
+
+      writer.writeU8(index);
+
+      AlgebraicType.serializeValue(
+        writer,
+        ty.variants[index].algebraicType,
+        innerValue,
+        typespace
+      );
     } else {
       const variant = value['tag'];
       const index = ty.variants.findIndex(v => v.name === variant);
@@ -478,6 +508,28 @@ export const SumType = {
         return undefined;
       } else {
         throw `Can't deserialize an option type, couldn't find ${tag} tag`;
+      }
+    } else if (
+      ty.variants.length == 2 &&
+      ty.variants[0].name === 'ok' &&
+      ty.variants[1].name === 'err'
+    ) {
+      if (tag === 0) {
+        const value = AlgebraicType.deserializeValue(
+          reader,
+          ty.variants[0].algebraicType,
+          typespace
+        );
+        return { ok: value };
+      } else if (tag === 1) {
+        const value = AlgebraicType.deserializeValue(
+          reader,
+          ty.variants[1].algebraicType,
+          typespace
+        );
+        return { err: value };
+      } else {
+        throw `Can't deserialize a result type, couldn't find ${tag} tag`;
       }
     } else {
       const variant = ty.variants[tag];

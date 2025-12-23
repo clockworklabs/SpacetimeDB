@@ -4473,6 +4473,9 @@ fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) 
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
         AlgebraicTypeUse::Option(inner) => should_pass_by_value_in_delegate(_module, inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            should_pass_by_value_in_delegate(_module, ok_ty) && should_pass_by_value_in_delegate(_module, err_ty)
+        }
         AlgebraicTypeUse::ScheduleAt => false,
         AlgebraicTypeUse::Never => false,
     }
@@ -4520,6 +4523,9 @@ fn is_blueprintable(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
             }
         }
         AlgebraicTypeUse::Option(inner) => is_blueprintable(module, inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            is_blueprintable(module, ok_ty) && is_blueprintable(module, err_ty)
+        }
         AlgebraicTypeUse::Never => false,
     }
 }
@@ -4553,6 +4559,9 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
             }
         }
         AlgebraicTypeUse::Option(inner) => is_type_blueprintable_for_delegates(module, inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            is_type_blueprintable_for_delegates(module, ok_ty) && is_type_blueprintable_for_delegates(module, err_ty)
+        }
         AlgebraicTypeUse::Never => false,
     }
 }
@@ -4991,6 +5000,14 @@ fn cpp_ty_fmt_impl<'a>(
             }
         }
 
+        // Result use the generated result types
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            let ok_type = cpp_ty_fmt_impl(module, ok_ty, module_name).to_string();
+            let err_type = cpp_ty_fmt_impl(module, err_ty, module_name).to_string();
+
+            write!(f, "FSpacetimeDBResult<{ok_type}, {err_type}>")
+        }
+
         AlgebraicTypeUse::Never => unreachable!("never type"),
     })
 }
@@ -5028,6 +5045,8 @@ fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a 
         AlgebraicTypeUse::Ref(_r) => f.write_str(""),
         // Options use the generated optional types
         AlgebraicTypeUse::Option(_inner) => f.write_str(""),
+        // Result use the generated result types
+        AlgebraicTypeUse::Result { ok_ty: _, err_ty: _ } => f.write_str(""),
         AlgebraicTypeUse::Never => unreachable!("never type"),
     })
 }
@@ -5054,6 +5073,13 @@ fn collect_includes_for_type(
             out.insert(header);
             // Also collect includes for the inner type
             collect_includes_for_type(module, inner, out, module_name);
+        }
+        Result { ok_ty, err_ty } => {
+            // Add the result type header
+            out.insert("Types/Result.h".to_string());
+            // Also collect includes for the ok and err types
+            collect_includes_for_type(module, ok_ty, out, module_name);
+            collect_includes_for_type(module, err_ty, out, module_name);
         }
         Array(inner) => {
             collect_includes_for_type(module, inner, out, module_name);

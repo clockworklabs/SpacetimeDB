@@ -184,7 +184,7 @@ public static partial class Module
             {
                 Field = new ReturnStruct(a: 42, b: "magic"),
             });
-            return 0; // return value ignored by WithTx
+            return new Unit();
         });
 
         AssertRowCount(ctx, 1);
