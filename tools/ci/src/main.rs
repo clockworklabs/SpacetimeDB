@@ -383,6 +383,7 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
     Ok(())
 }
 
+// TODO: Fold this into `run_smoketests_batch`.
 fn run_smoketests_batch_captured(server_mode: StartServer, args: &[String], python: &str) -> (String, Result<()>) {
     let mut args: Vec<_> = args.iter().cloned().collect();
     let mut output = String::new();
