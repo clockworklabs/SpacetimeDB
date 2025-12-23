@@ -45,6 +45,7 @@ import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
+import { makeRandom } from './rng';
 
 const { freeze } = Object;
 
@@ -194,6 +195,7 @@ export const makeReducerCtx = (
   connectionId,
   db: getDbView(),
   senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
+  random: makeRandom(timestamp),
 });
 
 /**
