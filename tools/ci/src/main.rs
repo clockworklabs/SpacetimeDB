@@ -6,10 +6,18 @@ use serde_json;
 use std::collections::HashSet;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, fs};
 use tempfile::TempDir;
+
+static PRINT_LOCK: Mutex<()> = Mutex::new(());
+
+fn with_print_lock<F: FnOnce() -> R, R>(f: F) -> R {
+    let _guard = PRINT_LOCK.lock().expect("print lock poisoned");
+    f()
+}
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -236,12 +244,20 @@ pub enum ServerState {
 
 impl ServerState {
     fn start(start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
+        Self::start_with_output(start_mode, args, None)
+    }
+
+    fn start_with_output(start_mode: StartServer, args: &mut Vec<String>, output: Option<&mut String>) -> Result<Self> {
         // TODO: Currently the server output leaks. We should be capturing it and only printing if the test fails.
 
         match start_mode {
             StartServer::No => Ok(Self::None),
             StartServer::Docker { compose_file } => {
-                println!("Starting server..");
+                if let Some(buf) = output {
+                    buf.push_str("Starting server..\n");
+                } else {
+                    println!("Starting server..");
+                }
                 let server_port = find_free_port()?;
                 let pg_port = find_free_port()?;
                 let tracy_port = find_free_port()?;
@@ -288,7 +304,11 @@ impl ServerState {
                 args.push("--remote-server".into());
                 let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
-                println!("Starting server..");
+                if let Some(buf) = output {
+                    buf.push_str("Starting server..\n");
+                } else {
+                    println!("Starting server..");
+                }
                 let data_dir_str = data_dir.path().to_string_lossy().to_string();
                 let handle = thread::spawn(move || {
                     let _ = cmd!(
@@ -324,7 +344,9 @@ impl Drop for ServerState {
                 compose_file,
                 project,
             } => {
-                println!("Shutting down server..");
+                with_print_lock(|| {
+                    println!("Shutting down server..");
+                });
                 let compose_str = compose_file.to_string_lossy().to_string();
                 let _ = cmd!(
                     "docker",
@@ -338,7 +360,9 @@ impl Drop for ServerState {
                 .run();
             }
             ServerState::Yes { handle: _, data_dir } => {
-                println!("Shutting down server (temp data-dir will be dropped)..");
+                with_print_lock(|| {
+                    println!("Shutting down server (temp data-dir will be dropped)..");
+                });
                 let _ = data_dir;
             }
         }
@@ -357,6 +381,57 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
     )
     .run()?;
     Ok(())
+}
+
+fn run_smoketests_batch_captured(server_mode: StartServer, args: &[String], python: &str) -> (String, Result<()>) {
+    let mut args: Vec<_> = args.iter().cloned().collect();
+    let mut output = String::new();
+
+    let server = ServerState::start_with_output(server_mode, &mut args, Some(&mut output));
+    let _server = match server {
+        Ok(server) => server,
+        Err(e) => return (output, Err(e)),
+    };
+
+    output.push_str(&format!("Running smoketests: {}\n", args.join(" ")));
+
+    let res = cmd(
+        python,
+        ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(args),
+    )
+    .stdout_capture()
+    .stderr_capture()
+    .unchecked()
+    .run();
+
+    let res = match res {
+        Ok(res) => res,
+        Err(e) => return (output, Err(e.into())),
+    };
+
+    let stdout = String::from_utf8_lossy(&res.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&res.stderr).to_string();
+    if !stdout.is_empty() {
+        output.push_str(&stdout);
+        if !stdout.ends_with('\n') {
+            output.push('\n');
+        }
+    }
+    if !stderr.is_empty() {
+        output.push_str(&stderr);
+        if !stderr.ends_with('\n') {
+            output.push('\n');
+        }
+    }
+
+    if !res.status.success() {
+        return (
+            output,
+            Err(anyhow::anyhow!("smoketests exited with status: {}", res.status)),
+        );
+    }
+
+    (output, Ok(()))
 }
 
 fn server_start_config(start_server: bool, docker: Option<String>) -> StartServer {
@@ -576,9 +651,18 @@ fn run_smoketests_parallel(
         handles.push((
             batch.clone(),
             std::thread::spawn(move || {
-                println!("Running smoketests batch {batch}..");
-                // TODO: capture output and print it only in contiguous blocks
-                run_smoketests_batch(start_server_clone, &batch_args, &python)
+                let (captured, result) = run_smoketests_batch_captured(start_server_clone, &batch_args, &python);
+
+                with_print_lock(|| {
+                    println!("===== smoketests batch: {batch} =====");
+                    print!("{captured}");
+                    if let Err(e) = &result {
+                        println!("(batch failed) {e:?}");
+                    }
+                    println!("===== end smoketests batch: {batch} =====");
+                });
+
+                result
             }),
         ));
     }
