@@ -202,6 +202,11 @@ impl AlgebraicType {
         matches!(self, Self::Sum(p) if p.is_empty())
     }
 
+    /// Returns whether this type is a simple enum type.
+    pub fn is_simple_enum(&self) -> bool {
+        matches!(self, Self::Sum(p) if p.is_simple_enum())
+    }
+
     /// Returns whether this type is an option type.
     pub fn is_option(&self) -> bool {
         matches!(self, Self::Sum(p) if p.is_option())
