@@ -1,4 +1,4 @@
-import type { UntypedTableDef } from './table';
+import type { table, UntypedTableDef } from './table';
 import type { ColumnMetadata } from './type_builders';
 
 /**
