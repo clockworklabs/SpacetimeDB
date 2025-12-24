@@ -382,7 +382,8 @@ class Smoketest(unittest.TestCase):
 
         if cls.AUTOPUBLISH:
             logging.info(f"Compiling module for {cls.__qualname__}...")
-            cls.publish_module(cls, capture_stderr=True) # capture stderr because otherwise it clutters the top-level test logs for some reason.
+            #cls.publish_module(cls, capture_stderr=True) # capture stderr because otherwise it clutters the top-level test logs for some reason.
+            cls.publish_module(cls)
 
     def tearDown(self):
         # if this single test method published a database, clean it up now
