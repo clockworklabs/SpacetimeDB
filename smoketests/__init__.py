@@ -258,6 +258,7 @@ class Smoketest(unittest.TestCase):
     def reset_config(cls):
         if not STDB_CONFIG:
             raise Exception("config toml has not been initialized yet")
+        print('Writing to %s:\n%s' % (cls.config_path, STDB_CONFIG))
         cls.config_path.write_text(STDB_CONFIG)
 
     def fingerprint(self):

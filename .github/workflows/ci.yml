@@ -89,6 +89,9 @@ jobs:
 
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
+        # TODO: This should be helpful on any platform.. but on Windows, `cargo ci` still ends up doing
+        # a bunch of rebuilding when it runs `cargo build` internally.
+        if: runner.os == 'Linux'
       - name: Find spacetime binary
         if: runner.os == 'Linux'
         run: |

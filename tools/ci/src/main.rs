@@ -4,9 +4,11 @@ use duct::cmd;
 use log::warn;
 use serde_json;
 use std::collections::HashSet;
+use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::{env, fs};
@@ -239,12 +241,23 @@ pub enum ServerState {
         handle: thread::JoinHandle<()>,
         compose_file: PathBuf,
         project: String,
+        logs: Option<Arc<Mutex<String>>>,
     },
 }
 
 impl ServerState {
     fn start(start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
         Self::start_with_output(start_mode, args, None)
+    }
+
+    fn drain_logs(&self) -> String {
+        match self {
+            ServerState::Docker { logs: Some(logs), .. } => {
+                let mut guard = logs.lock().expect("logs lock poisoned");
+                std::mem::take(&mut *guard)
+            }
+            _ => String::new(),
+        }
     }
 
     fn start_with_output(start_mode: StartServer, args: &mut Vec<String>, output: Option<&mut String>) -> Result<Self> {
@@ -266,24 +279,102 @@ impl ServerState {
                 let server_url = format!("http://localhost:{server_port}");
                 args.push(server_url.clone());
                 let compose_str = compose_file.to_string_lossy().to_string();
+                let logs: Option<Arc<Mutex<String>>> = output.as_ref().map(|_| Arc::new(Mutex::new(String::new())));
 
                 let handle = thread::spawn({
                     let project = project.clone();
+                    let logs = logs.clone();
                     move || {
-                        let _ = cmd!(
-                            "docker",
-                            "compose",
-                            "-f",
-                            &compose_str,
-                            "--project-name",
-                            &project,
-                            "up",
-                            "--abort-on-container-exit",
-                        )
-                        .env("STDB_PORT", server_port.to_string())
-                        .env("STDB_PG_PORT", pg_port.to_string())
-                        .env("STDB_TRACY_PORT", tracy_port.to_string())
-                        .run();
+                        if let Some(logs) = logs {
+                            let mut child = match Command::new("docker")
+                                .args([
+                                    "compose",
+                                    "-f",
+                                    &compose_str,
+                                    "--project-name",
+                                    &project,
+                                    "up",
+                                    "--abort-on-container-exit",
+                                ])
+                                .env("STDB_PORT", server_port.to_string())
+                                .env("STDB_PG_PORT", pg_port.to_string())
+                                .env("STDB_TRACY_PORT", tracy_port.to_string())
+                                .stdout(Stdio::piped())
+                                .stderr(Stdio::piped())
+                                .spawn()
+                            {
+                                Ok(child) => child,
+                                Err(e) => {
+                                    let mut guard = logs.lock().expect("logs lock poisoned");
+                                    guard.push_str(&format!("failed to spawn docker compose: {e}\n"));
+                                    return;
+                                }
+                            };
+
+                            let stdout = child.stdout.take();
+                            let stderr = child.stderr.take();
+
+                            let stdout_handle = stdout.map(|stdout| {
+                                let logs = logs.clone();
+                                thread::spawn(move || {
+                                    let mut reader = BufReader::new(stdout);
+                                    let mut line = String::new();
+                                    loop {
+                                        line.clear();
+                                        match reader.read_line(&mut line) {
+                                            Ok(0) => break,
+                                            Ok(_) => {
+                                                let mut guard = logs.lock().expect("logs lock poisoned");
+                                                guard.push_str(&line);
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                })
+                            });
+
+                            let stderr_handle = stderr.map(|stderr| {
+                                let logs = logs.clone();
+                                thread::spawn(move || {
+                                    let mut reader = BufReader::new(stderr);
+                                    let mut line = String::new();
+                                    loop {
+                                        line.clear();
+                                        match reader.read_line(&mut line) {
+                                            Ok(0) => break,
+                                            Ok(_) => {
+                                                let mut guard = logs.lock().expect("logs lock poisoned");
+                                                guard.push_str(&line);
+                                            }
+                                            Err(_) => break,
+                                        }
+                                    }
+                                })
+                            });
+
+                            let _ = child.wait();
+                            if let Some(h) = stdout_handle {
+                                let _ = h.join();
+                            }
+                            if let Some(h) = stderr_handle {
+                                let _ = h.join();
+                            }
+                        } else {
+                            let _ = cmd!(
+                                "docker",
+                                "compose",
+                                "-f",
+                                &compose_str,
+                                "--project-name",
+                                &project,
+                                "up",
+                                "--abort-on-container-exit",
+                            )
+                            .env("STDB_PORT", server_port.to_string())
+                            .env("STDB_PG_PORT", pg_port.to_string())
+                            .env("STDB_TRACY_PORT", tracy_port.to_string())
+                            .run();
+                        }
                     }
                 });
                 wait_until_http_ready(Duration::from_secs(900), &server_url)?;
@@ -291,6 +382,7 @@ impl ServerState {
                     handle,
                     compose_file,
                     project,
+                    logs,
                 })
             }
             StartServer::Yes => {
@@ -426,11 +518,14 @@ fn run_smoketests_batch_captured(server_mode: StartServer, args: &[String], pyth
     }
 
     if !res.status.success() {
+        output.push_str(&_server.drain_logs());
         return (
             output,
             Err(anyhow::anyhow!("smoketests exited with status: {}", res.status)),
         );
     }
+
+    output.push_str(&_server.drain_logs());
 
     (output, Ok(()))
 }
@@ -806,6 +901,7 @@ fn main() -> Result<()> {
         }) => {
             let start_server = server_start_config(start_server, docker.clone());
             if matches!(start_server, StartServer::Yes { .. }) {
+                // TODO: This seems to rebuild a ton, even if we recently ran cargo build. Figure out why..
                 println!("Building SpacetimeDB..");
 
                 // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
