@@ -267,6 +267,7 @@ impl ServerState {
                 args.push(server_url.clone());
                 let compose_str = compose_file.to_string_lossy().to_string();
 
+                // TODO: We don't capture the output from this, which pollutes the logs.
                 let handle = thread::spawn({
                     let project = project.clone();
                     move || {
@@ -595,6 +596,9 @@ fn run_smoketests_parallel(
     let tests = {
         let mut list_args: Vec<String> = args.clone();
         list_args.push("--list=json".to_string());
+        // TODO: Are users able to list specific tests here, or just top-level test filenames?
+        // If they can list individual tests, then this won't work as expected (because we should past those restrictions later
+        // when we run each batch as well).
         for test in test {
             list_args.push(test.clone());
         }
@@ -805,20 +809,27 @@ fn main() -> Result<()> {
             python,
         }) => {
             let start_server = server_start_config(start_server, docker.clone());
-            if matches!(start_server, StartServer::Yes { .. }) {
-                println!("Building SpacetimeDB..");
+            // Do initial server build
+            match start_server {
+                StartServer::No => {}
+                StartServer::Yes { .. } => {
+                    println!("Building SpacetimeDB..");
 
-                // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
-                cmd!(
-                    "cargo",
-                    "build",
-                    "-p",
-                    "spacetimedb-cli",
-                    "-p",
-                    "spacetimedb-standalone"
-                )
-                .run()?;
-                no_build_cli = true;
+                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
+                    cmd!(
+                        "cargo",
+                        "build",
+                        "-p",
+                        "spacetimedb-cli",
+                        "-p",
+                        "spacetimedb-standalone"
+                    )
+                    .run()?;
+                    no_build_cli = true;
+                }
+                StartServer::Docker { .. } => {
+                    let _ = cmd!("docker", "compose", "-f", &compose_str, "build",).run()?;
+                }
             }
 
             let python = python.unwrap_or(infer_python());
