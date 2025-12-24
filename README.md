@@ -112,7 +112,7 @@ curl -sSf https://install.spacetimedb.com | sh
 
 #### Install on Windows
 
-Installing on Windows is as simple as pasting the above snippet into PowerShell. If you would like to use WSL instead, please follow the Linux install instructions.
+Installing on Windows is as simple as pasting the snippet below into PowerShell. If you would like to use WSL instead, please follow the Linux install instructions.
 
 ```ps1
 iwr https://windows.spacetimedb.com -useb | iex
