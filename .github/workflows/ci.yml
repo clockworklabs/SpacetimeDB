@@ -90,6 +90,7 @@ jobs:
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
       - name: Find spacetime binary
+        if: runner.os == 'Linux'
         run: |
           set -x
           which spacetime || true
