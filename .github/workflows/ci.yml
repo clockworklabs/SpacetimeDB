@@ -92,8 +92,8 @@ jobs:
       - name: Find spacetime binary
         run: |
           set -x
-          which spacetime
-          find target/debug/
+          which spacetime || true
+          find target/debug/ || true
 
       - name: Expand Docker network pool
         if: runner.os == 'Linux'
