@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
-use log::warn;
+use log::{debug, warn};
 use serde_json;
 use std::collections::HashSet;
 use std::net::TcpListener;
@@ -221,6 +221,7 @@ fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
 
         if let Ok(status) = status {
             if status.status.success() {
+                debug!("Server started: {server_url}");
                 return Ok(());
             }
         }
@@ -828,6 +829,7 @@ fn main() -> Result<()> {
                     no_build_cli = true;
                 }
                 StartServer::Docker { compose_file } => {
+                    println!("Building docker container..");
                     let compose_str = compose_file.to_string_lossy().to_string();
                     let _ = cmd!("docker", "compose", "-f", &compose_str, "build",).run()?;
                 }
