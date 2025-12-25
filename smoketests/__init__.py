@@ -241,7 +241,7 @@ class Smoketest(unittest.TestCase):
 
     def publish_module(self, domain=None, *, clear=True, capture_stderr=True, num_replicas=None, break_clients=False):
         print ('Publish module')
-        with open(cls.project_path / "src/lib.rs", "r") as f:
+        with open(self.project_path / "src/lib.rs", "r") as f:
             print('Module code in %s:\n%s' % (cls.project_path / "src/lib.rs", f.read()))
         publish_output = self.spacetime(
             "publish",
@@ -256,7 +256,7 @@ class Smoketest(unittest.TestCase):
             *["--break-clients"] if break_clients else [],
             capture_stderr=capture_stderr,
         )
-        with open(cls.project_path / "src/lib.rs", "r") as f:
+        with open(self.project_path / "src/lib.rs", "r") as f:
             print('Published module code in %s:\n%s' % (cls.project_path / "src/lib.rs", f.read()))
         self.resolved_identity = re.search(r"identity: ([0-9a-fA-F]+)", publish_output)[1]
         self.database_identity = self.resolved_identity
