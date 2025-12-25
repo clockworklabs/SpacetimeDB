@@ -810,7 +810,7 @@ fn main() -> Result<()> {
         }) => {
             let start_server = server_start_config(start_server, docker.clone());
             // Do initial server build
-            match start_server {
+            match start_server.clone() {
                 StartServer::No => {}
                 StartServer::Yes { .. } => {
                     println!("Building SpacetimeDB..");
