@@ -827,7 +827,8 @@ fn main() -> Result<()> {
                     .run()?;
                     no_build_cli = true;
                 }
-                StartServer::Docker { .. } => {
+                StartServer::Docker { compose_file } => {
+                    let compose_str = compose_file.to_string_lossy().to_string();
                     let _ = cmd!("docker", "compose", "-f", &compose_str, "build",).run()?;
                 }
             }
