@@ -1126,10 +1126,10 @@ impl InstanceCommon {
 
         // Views bypass RLS, since views should enforce their own access control procedurally.
         let auth = AuthCtx::for_current(self.info.database_identity);
-        let schema_view = SchemaViewer::new(&*tx, &auth);
+        let mut schema_view = SchemaViewer::new(&mut *tx, &auth);
 
         // Compile to subscription plans.
-        let (plans, has_params) = SubscriptionPlan::compile(the_query, &schema_view, &auth)?;
+        let (plans, has_params) = SubscriptionPlan::compile(the_query, &mut schema_view, &auth)?;
         ensure!(
             !has_params,
             "parameterized SQL is not supported for view materialization yet"

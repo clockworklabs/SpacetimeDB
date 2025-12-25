@@ -394,11 +394,11 @@ impl TypeChecker for SqlChecker {
     type Ast = SqlSelect;
     type Set = SqlSelect;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
+    fn type_ast(ast: Self::Ast, tx: &mut impl SchemaView) -> TypingResult<ProjectList> {
         Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &mut impl SchemaView) -> TypingResult<ProjectList> {
         match ast {
             SqlSelect {
                 project,
@@ -439,7 +439,7 @@ impl TypeChecker for SqlChecker {
     }
 }
 
-pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
+pub fn parse_and_type_sql(sql: &str, tx: &mut impl SchemaView, auth: &AuthCtx) -> TypingResult<Statement> {
     match parse_sql(sql)?.resolve_sender(auth.caller()) {
         SqlAst::Select(ast) => Ok(Statement::Select(SqlChecker::type_ast(ast, tx)?)),
         SqlAst::Insert(insert) => Ok(Statement::DML(DML::Insert(type_insert(insert, tx)?))),
@@ -451,7 +451,7 @@ pub fn parse_and_type_sql(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Ty
 }
 
 /// Parse and type check a *general* query into a [StatementCtx].
-pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<StatementCtx<'a>> {
+pub fn compile_sql_stmt<'a>(sql: &'a str, tx: &mut impl SchemaView, auth: &AuthCtx) -> TypingResult<StatementCtx<'a>> {
     let statement = parse_and_type_sql(sql, tx, auth)?;
     Ok(StatementCtx {
         statement,
@@ -520,13 +520,13 @@ mod tests {
     }
 
     /// A wrapper around [super::parse_and_type_sql] that takes a dummy [AuthCtx]
-    fn parse_and_type_sql(sql: &str, tx: &impl SchemaView) -> TypingResult<Statement> {
+    fn parse_and_type_sql(sql: &str, tx: &mut impl SchemaView) -> TypingResult<Statement> {
         super::parse_and_type_sql(sql, tx, &AuthCtx::for_testing())
     }
 
     #[test]
     fn valid() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         for sql in [
             "select str from t",
@@ -534,14 +534,14 @@ mod tests {
             "select t.str, arr from t",
             "select * from t limit 5",
         ] {
-            let result = parse_and_type_sql(sql, &tx);
+            let result = parse_and_type_sql(sql, &mut tx);
             assert!(result.is_ok());
         }
     }
 
     #[test]
     fn invalid() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         for sql in [
             // Unqualified columns in a join
@@ -551,7 +551,7 @@ mod tests {
             // Unqualified name in join expression
             "select t.* from t join s on t.u32 = s.u32 where bytes = 0xABCD",
         ] {
-            let result = parse_and_type_sql(sql, &tx);
+            let result = parse_and_type_sql(sql, &mut tx);
             assert!(result.is_err());
         }
     }
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn views() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         struct TestCase {
             sql: &'static str,
@@ -606,7 +606,7 @@ mod tests {
                 msg: "Function call returning view with parameters",
             },
         ] {
-            let result = parse_and_type_sql(sql, &tx).inspect_err(|e| {
+            let result = parse_and_type_sql(sql, &mut tx).inspect_err(|e| {
                 panic!("Expected OK for `{sql}` but got error: {e}");
             });
             assert!(result.is_ok(), "{msg}: {sql}");
@@ -630,14 +630,14 @@ mod tests {
                 msg: "`v` does not take parameters",
             },
         ] {
-            let result = parse_and_type_sql(sql, &tx);
+            let result = parse_and_type_sql(sql, &mut tx);
             assert!(result.is_err(), "{msg}");
         }
     }
 
     #[test]
     fn params_validation() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         struct TestCase {
             sql: &'static str,
@@ -670,7 +670,7 @@ mod tests {
                 msg: "Unexpected function type. Expected: (U32, String) != Inferred: (U32, String, Num?)",
             },
         ] {
-            let result = parse_and_type_sql(sql, &tx);
+            let result = parse_and_type_sql(sql, &mut tx);
             if msg == "Correct parameters" {
                 assert!(result.is_ok(), "{msg}: {sql}");
             } else if let Err(err) = &result {

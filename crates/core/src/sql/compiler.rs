@@ -23,7 +23,7 @@ const MAX_SQL_LENGTH: usize = 50_000;
 pub fn compile_sql<T: TableSchemaView + StateView>(
     db: &RelationalDB,
     auth: &AuthCtx,
-    tx: &T,
+    tx: &mut T,
     sql_text: &str,
 ) -> Result<Vec<CrudExpr>, DBError> {
     if sql_text.len() > MAX_SQL_LENGTH {
@@ -266,7 +266,7 @@ mod tests {
 
     fn compile_sql<T: TableSchemaView + StateView>(
         db: &RelationalDB,
-        tx: &T,
+        tx: &mut T,
         sql: &str,
     ) -> Result<Vec<CrudExpr>, DBError> {
         super::compile_sql(db, &AuthCtx::for_testing(), tx, sql)
@@ -281,10 +281,10 @@ mod tests {
         let indexes = &[];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
@@ -303,10 +303,10 @@ mod tests {
             &[1.into(), 0.into()],
         )?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should work with any qualified field.
         let sql = "select * from test where a = 1 and b <> 3";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
@@ -324,10 +324,10 @@ mod tests {
         let indexes = &[0.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         //Compile query
         let sql = "select * from test where a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
@@ -377,11 +377,11 @@ mod tests {
 
         let rows = run_for_testing(&db, sql)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         let CrudExpr::Query(QueryExpr {
             source: _,
             query: mut ops,
-        }) = compile_sql(&db, &tx, sql)?.remove(0)
+        }) = compile_sql(&db, &mut tx, sql)?.remove(0)
         else {
             panic!("Expected QueryExpr");
         };
@@ -407,11 +407,11 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Note, order does not matter.
         // The sargable predicate occurs last, but we can still generate an index scan.
         let sql = "select * from test where a = 1 and b = 2";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
@@ -429,11 +429,11 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Note, order does not matter.
         // The sargable predicate occurs first and we can generate an index scan.
         let sql = "select * from test where b = 2 and a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
@@ -455,9 +455,9 @@ mod tests {
         ];
         db.create_table_for_test_multi_column("test", schema, col_list![0, 1])?;
 
-        let tx = begin_mut_tx(&db);
+        let mut tx = begin_mut_tx(&db);
         let sql = "select * from test where b = 2 and a = 1";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
@@ -474,10 +474,10 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where a = 1 or b = 2";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
@@ -495,10 +495,10 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where b > 2";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
@@ -516,10 +516,10 @@ mod tests {
         let indexes = &[1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Compile query
         let sql = "select * from test where b > 2 and b < 5";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(1, query.len());
@@ -542,11 +542,11 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         db.create_table_for_test("test", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Note, order matters - the equality condition occurs first which
         // means an index scan will be generated rather than the range condition.
         let sql = "select * from test where a = 3 and b > 2 and b < 5";
-        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &tx, sql)?.remove(0) else {
+        let CrudExpr::Query(QueryExpr { source: _, query }) = compile_sql(&db, &mut tx, sql)?.remove(0) else {
             panic!("Expected QueryExpr");
         };
         assert_eq!(2, query.len());
@@ -569,10 +569,10 @@ mod tests {
         let indexes = &[];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should push sargable equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: source_lhs,
@@ -621,10 +621,10 @@ mod tests {
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should push equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: source_lhs,
@@ -678,10 +678,10 @@ mod tests {
         let schema = &[("b", AlgebraicType::U64), ("c", AlgebraicType::U64)];
         let rhs_id = db.create_table_for_test("rhs", schema, &[])?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should push equality condition below join
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: source_lhs,
@@ -736,11 +736,11 @@ mod tests {
         let indexes = &[1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should push the sargable equality condition into the join's left arg.
         // Should push the sargable range condition into the join's right arg.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where lhs.a = 3 and rhs.c < 4";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: source_lhs,
@@ -807,11 +807,11 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -889,11 +889,11 @@ mod tests {
         let indexes = col_list![0, 1];
         let rhs_id = db.create_table_for_test_multi_column("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c = 2 and rhs.b = 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(QueryExpr {
             source: SourceExpr::DbTable(DbTable { table_id, .. }),
@@ -953,7 +953,7 @@ mod tests {
         let db = TestDB::durable()?;
         db.create_table_for_test("A", &[("x", AlgebraicType::U64)], &[])?;
         db.create_table_for_test("B", &[("y", AlgebraicType::U64)], &[])?;
-        assert!(compile_sql(&db, &begin_tx(&db), "select B.* from B join A on B.y = A.x").is_ok());
+        assert!(compile_sql(&db, &mut begin_tx(&db), "select B.* from B join A on B.y = A.x").is_ok());
         Ok(())
     }
 
@@ -970,27 +970,27 @@ mod tests {
         // TODO: Type check other operations deferred for the new query engine.
 
         assert!(
-            compile_sql(&db, &begin_tx(&db), sql).is_err(),
+            compile_sql(&db, &mut begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` != `String(\"161853\"): String`, executing: `SELECT * FROM PlayerState WHERE entity_id = '161853'`".into())
         );
 
         // Check we can still compile the query if we remove the type mismatch and have multiple logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id = 2 AND entity_id = 3 OR entity_id = 4 OR entity_id = 5";
 
-        assert!(compile_sql(&db, &begin_tx(&db), sql).is_ok());
+        assert!(compile_sql(&db, &mut begin_tx(&db), sql).is_ok());
 
         // Now verify when we have a type mismatch in the middle of the logical operations.
         let sql = "SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id";
 
         assert!(
-            compile_sql(&db, &begin_tx(&db), sql).is_err(),
+            compile_sql(&db, &mut begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64 == U64(1): U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id = 1 AND entity_id`".into())
         );
         // Verify that all operands of `AND` must be `Bool`.
         let sql = "SELECT * FROM PlayerState WHERE entity_id AND entity_id";
 
         assert!(
-            compile_sql(&db, &begin_tx(&db), sql).is_err(),
+            compile_sql(&db, &mut begin_tx(&db), sql).is_err(),
             // Err("SqlError: Type Mismatch: `PlayerState.entity_id: U64` and `PlayerState.entity_id: U64`, both sides must be an `Bool` expression, executing: `SELECT * FROM PlayerState WHERE entity_id AND entity_id`".into())
         );
         Ok(())

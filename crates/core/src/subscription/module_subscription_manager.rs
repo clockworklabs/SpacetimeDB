@@ -1681,8 +1681,8 @@ mod tests {
     fn compile_plan(db: &RelationalDB, sql: &str) -> ResultTest<Arc<Plan>> {
         with_read_only(db, |tx| {
             let auth = AuthCtx::for_testing();
-            let tx = SchemaViewer::new(&*tx, &auth);
-            let (plans, has_param) = SubscriptionPlan::compile(sql, &tx, &auth).unwrap();
+            let mut tx = SchemaViewer::new(tx, &auth);
+            let (plans, has_param) = SubscriptionPlan::compile(sql, &mut tx, &auth).unwrap();
             let hash = QueryHash::from_string(sql, auth.caller(), has_param);
             Ok(Arc::new(Plan::new(plans, hash, sql.into())))
         })

@@ -615,7 +615,7 @@ impl AuthAccess for ExecutionSet {
 pub(crate) fn get_all<T, F, I>(
     get_all_tables: F,
     relational_db: &RelationalDB,
-    tx: &T,
+    tx: &mut T,
     auth: &AuthCtx,
 ) -> Result<Vec<Plan>, DBError>
 where
@@ -627,8 +627,8 @@ where
         .filter(|t| t.table_type == StTableType::User && auth.has_read_access(t.table_access))
         .map(|schema| {
             let sql = format!("SELECT * FROM {}", schema.table_name);
-            let tx = SchemaViewer::new(tx, auth);
-            SubscriptionPlan::compile(&sql, &tx, auth).map(|(plans, has_param)| {
+            let mut tx = SchemaViewer::new(tx, auth);
+            SubscriptionPlan::compile(&sql, &mut tx, auth).map(|(plans, has_param)| {
                 Plan::new(
                     plans,
                     QueryHash::from_string(
@@ -701,11 +701,11 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let rhs_id = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
             panic!("unexpected result from compilation: {exp:#?}");
@@ -781,11 +781,11 @@ mod tests {
         let indexes = &[0.into(), 1.into()];
         let _ = db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?.remove(0);
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &mut tx, sql)?.remove(0);
 
         let CrudExpr::Query(mut expr) = exp else {
             panic!("unexpected result from compilation: {exp:#?}");
@@ -865,12 +865,12 @@ mod tests {
             .create_table_for_test("rhs", schema, indexes)
             .expect("Failed to create_table_for_test rhs");
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
 
         // Should generate an index join since there is an index on `lhs.b`.
         // Should push the sargable range condition into the index join's probe side.
         let sql = "select lhs.* from lhs join rhs on lhs.b = rhs.b where rhs.c > 2 and rhs.c < 4 and rhs.d = 3";
-        let exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)
+        let exp = compile_sql(&db, &AuthCtx::for_testing(), &mut tx, sql)
             .expect("Failed to compile_sql")
             .remove(0);
 

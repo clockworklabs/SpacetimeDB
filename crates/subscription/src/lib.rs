@@ -508,7 +508,7 @@ impl SubscriptionPlan {
     }
 
     /// Generate a plan for incrementally maintaining a subscription
-    pub fn compile(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<(Vec<Self>, bool)> {
+    pub fn compile(sql: &str, tx: &mut impl SchemaView, auth: &AuthCtx) -> Result<(Vec<Self>, bool)> {
         let (plans, return_id, return_name, has_param) = compile_subscription(sql, tx, auth)?;
 
         /// Does this plan have any non-index joins?

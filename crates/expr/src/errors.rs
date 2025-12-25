@@ -172,6 +172,8 @@ pub enum TypingError {
     FilterReturnType(#[from] FilterReturnType),
     #[error(transparent)]
     TableFunc(#[from] TableFunc),
+    #[error("InternalError: Read-only queries cannot create parameters")]
+    ParamsReadOnly,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

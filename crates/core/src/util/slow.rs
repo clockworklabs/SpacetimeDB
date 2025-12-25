@@ -65,14 +65,14 @@ mod tests {
     use spacetimedb_vm::relation::MemTable;
 
     fn run_query(db: &Arc<RelationalDB>, sql: String) -> ResultTest<MemTable> {
-        let tx = begin_tx(db);
-        let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
+        let mut tx = begin_tx(db);
+        let q = compile_sql(db, &AuthCtx::for_testing(), &mut tx, &sql)?;
         Ok(execute_for_testing(db, &sql, q)?.pop().unwrap())
     }
 
     fn run_query_write(db: &Arc<RelationalDB>, sql: String) -> ResultTest<()> {
-        let tx = begin_tx(db);
-        let q = compile_sql(db, &AuthCtx::for_testing(), &tx, &sql)?;
+        let mut tx = begin_tx(db);
+        let q = compile_sql(db, &AuthCtx::for_testing(), &mut tx, &sql)?;
         drop(tx);
 
         execute_for_testing(db, &sql, q)?;
@@ -92,10 +92,10 @@ mod tests {
             }
             Ok(())
         })?;
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
 
         let sql = "select * from test where x > 0";
-        let q = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
+        let q = compile_sql(&db, &AuthCtx::for_testing(), &mut tx, sql)?;
 
         let slow = SlowQueryLogger::new(sql, Some(Duration::from_millis(1)), tx.ctx.workload());
 

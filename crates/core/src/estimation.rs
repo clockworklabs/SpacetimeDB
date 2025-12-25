@@ -181,8 +181,8 @@ mod tests {
     }
 
     fn num_rows_for(db: &RelationalDB, sql: &str) -> u64 {
-        let tx = begin_tx(db);
-        match &*compile_sql(db, &AuthCtx::for_testing(), &tx, sql).expect("Failed to compile sql") {
+        let mut tx = begin_tx(db);
+        match &*compile_sql(db, &AuthCtx::for_testing(), &mut tx, sql).expect("Failed to compile sql") {
             [CrudExpr::Query(expr)] => num_rows(&tx, expr),
             exprs => panic!("unexpected result from compilation: {exprs:#?}"),
         }
@@ -191,10 +191,10 @@ mod tests {
     /// Using the new query plan
     fn new_row_estimate(db: &RelationalDB, sql: &str) -> u64 {
         let auth = AuthCtx::for_testing();
-        let tx = begin_tx(db);
-        let tx = SchemaViewer::new(&tx, &auth);
+        let mut tx = begin_tx(db);
+        let mut tx = SchemaViewer::new(&mut tx, &auth);
 
-        compile_subscription(sql, &tx, &auth)
+        compile_subscription(sql, &mut tx, &auth)
             .map(|(plans, ..)| plans)
             .expect("failed to compile sql query")
             .into_iter()

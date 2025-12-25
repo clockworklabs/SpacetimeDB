@@ -20,9 +20,8 @@ use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
-use spacetimedb_expr::check::SchemaView;
+use spacetimedb_expr::check::{SchemaView, TypingResult};
 use spacetimedb_expr::errors::TypingError;
-use spacetimedb_expr::expr::CallParams;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -191,15 +190,27 @@ pub struct SqlResult {
     pub metrics: ExecutionMetrics,
 }
 
-struct DbParams<'a> {
+struct SchemaViewerMut<'a> {
     db: &'a RelationalDB,
-    tx: &'a mut MutTx,
+    schema: SchemaViewer<'a, MutTx>,
 }
 
-impl CallParams for DbParams<'_> {
-    fn create_or_get_param(&mut self, param: &ProductValue) -> Result<ArgId, TypingError> {
+impl SchemaView for SchemaViewerMut<'_> {
+    fn table_id(&self, name: &str) -> Option<TableId> {
+        self.schema.table_id(name)
+    }
+
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
+        self.schema.schema_for_table(table_id)
+    }
+
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+        self.schema.rls_rules_for_table(table_id)
+    }
+
+    fn get_or_create_params(&mut self, params: ProductValue) -> TypingResult<ArgId> {
         self.db
-            .create_or_get_params(self.tx, &param)
+            .create_or_get_params(&mut self.schema, &params)
             .map_err(|err| TypingError::Other(err.into()))
     }
 }
@@ -215,20 +226,16 @@ pub async fn run(
 ) -> Result<SqlResult, DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
-    let (tx, stmt) =
-        db.with_auto_rollback(
-            db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql),
-            |tx| match compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth) {
-                Ok(Statement::Select(mut stmt)) => {
-                    stmt.for_each_fun_call(&mut |param| {
-                        db.create_or_get_params(tx, &param)
-                            .map_err(|err| TypingError::Other(err.into()))
-                    })?;
-                    Ok(Statement::Select(stmt))
-                }
-                result => result,
+    let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
+        compile_sql_stmt(
+            sql_text,
+            &mut SchemaViewerMut {
+                db,
+                schema: SchemaViewer::new(tx, &auth),
             },
-        )?;
+            &auth,
+        )
+    })?;
 
     let mut metrics = ExecutionMetrics::default();
 
@@ -1619,6 +1626,10 @@ pub(crate) mod tests {
             true,
         )?;
         let arg_id = ST_RESERVED_SEQUENCE_RANGE as u64;
+        assert_eq!(
+            run_for_testing(&db, "select view_id, param_pos, param_name FROM st_view_param")?,
+            vec![product![arg_id as u32, 0u16, "x"]]
+        );
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, table_id, None, product![arg_id + 1, 0u8, 1i64])?;
@@ -1634,6 +1645,12 @@ pub(crate) mod tests {
         assert_eq!(
             run_for_testing(&db, "select * from my_view(2)")?,
             vec![product![0u8, 1i64]]
+        );
+
+        // We have created the internal rows for view args
+        assert_eq!(
+            run_for_testing(&db, "select id FROM st_view_arg")?,
+            vec![product![arg_id], product![arg_id + 1]]
         );
 
         Ok(())
