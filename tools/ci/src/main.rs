@@ -590,7 +590,7 @@ fn run_smoketests_parallel(
         anyhow::bail!("--remote-server is not supported in parallel mode");
     }
 
-    // TODO: Handle --local-only tests
+    // TODO: Handle --local-only tests separately, since we are passing --remote-server in all of our batches.
 
     println!("Listing smoketests for parallel execution..");
 
