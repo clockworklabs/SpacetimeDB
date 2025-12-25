@@ -238,35 +238,6 @@ impl ProjectList {
             Self::Agg(_, _, name, ty) => f(name, ty),
         }
     }
-
-    /// Iterate over the function calls in this projection list
-    pub fn for_each_fun_call(
-        &mut self,
-        f: &mut impl FnMut(ProductValue) -> Result<ArgId, TypingError>,
-    ) -> Result<(), TypingError> {
-        match self {
-            ProjectList::Name(input) => {
-                for proj in input {
-                    match proj {
-                        ProjectName::None(expr) | ProjectName::Some(expr, _) => {
-                            expr.for_each_fun_call(f)?;
-                        }
-                    }
-                }
-            }
-            ProjectList::List(input, _) => {
-                for expr in input {
-                    expr.for_each_fun_call(f)?;
-                }
-            }
-            ProjectList::Limit(input, _) => {
-                input.for_each_fun_call(f)?;
-            }
-            ProjectList::Agg(_, _, _, _) => {}
-        }
-
-        Ok(())
-    }
 }
 
 /// A logical relational expression
@@ -397,31 +368,6 @@ impl RelExpr {
             Self::Select(input, _) => input.return_name(),
             _ => None,
         }
-    }
-
-    fn for_each_fun_call(
-        &mut self,
-        f: &mut impl FnMut(ProductValue) -> Result<ArgId, TypingError>,
-    ) -> Result<(), TypingError> {
-        // For function calls, we need to filter by the argument id
-        if let RelExpr::FunCall(relvar, param) = self {
-            let new_arg_id = f(param.clone())?;
-            let arg_id_col = relvar.schema.inner().get_column_by_name("arg_id").unwrap().col_pos;
-
-            *self = RelExpr::Select(
-                Box::new(RelExpr::RelVar(relvar.clone())),
-                Expr::BinOp(
-                    BinOp::Eq,
-                    Box::new(Expr::Field(FieldProject {
-                        table: relvar.alias.clone(),
-                        field: arg_id_col.idx(),
-                        ty: AlgebraicType::U64,
-                    })),
-                    Box::new(Expr::Value(AlgebraicValue::U64(new_arg_id.0), AlgebraicType::U64)),
-                ),
-            );
-        }
-        Ok(())
     }
 }
 

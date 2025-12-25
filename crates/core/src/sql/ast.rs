@@ -5,6 +5,7 @@ use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::system_tables::{StRowLevelSecurityFields, ST_ROW_LEVEL_SECURITY_ID};
 use spacetimedb_expr::check::{SchemaView, TypingResult};
+use spacetimedb_expr::errors::TypingError;
 use spacetimedb_expr::statement::compile_sql_stmt;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_primitives::{ArgId, ColId, TableId};
@@ -22,7 +23,7 @@ use sqlparser::ast::{
 };
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 /// Simplify to detect features of the syntax we don't support yet
@@ -477,7 +478,7 @@ fn compile_where(table: &From, filter: Option<SqlExpr>) -> Result<Option<Selecti
 }
 
 pub struct SchemaViewer<'a, T> {
-    pub(crate) tx: &'a T,
+    tx: &'a mut T,
     auth: &'a AuthCtx,
 }
 
@@ -485,6 +486,12 @@ impl<T> Deref for SchemaViewer<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
+        self.tx
+    }
+}
+
+impl<T> DerefMut for SchemaViewer<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
         self.tx
     }
 }
@@ -536,10 +543,15 @@ impl<T: StateView> SchemaView for SchemaViewer<'_, T> {
             })
             .collect::<anyhow::Result<_>>()
     }
+
+    fn get_or_create_params(&mut self, _params: ProductValue) -> TypingResult<ArgId> {
+        // Caller should have used `SchemaViewerMut` on crate `core`
+        Err(TypingError::ParamsReadOnly)
+    }
 }
 
 impl<'a, T> SchemaViewer<'a, T> {
-    pub fn new(tx: &'a T, auth: &'a AuthCtx) -> Self {
+    pub fn new(tx: &'a mut T, auth: &'a AuthCtx) -> Self {
         Self { tx, auth }
     }
 }
@@ -1000,13 +1012,12 @@ fn compile_statement<T: TableSchemaView + StateView>(
 pub(crate) fn compile_to_ast<T: TableSchemaView + StateView>(
     db: &RelationalDB,
     auth: &AuthCtx,
-    tx: &T,
+    tx: &mut T,
     sql_text: &str,
 ) -> Result<Vec<SqlAst>, DBError> {
     // NOTE: The following ensures compliance with the 1.0 sql api.
     // Come 1.0, it will have replaced the current compilation stack.
-    compile_sql_stmt(sql_text, &SchemaViewer::new(tx, auth), auth)?;
-
+    compile_sql_stmt(sql_text, &mut SchemaViewer::new(tx, auth), auth)?;
     let dialect = PostgreSqlDialect {};
     let ast = Parser::parse_sql(&dialect, sql_text).map_err(|error| DBError::SqlParser {
         sql: sql_text.to_string(),

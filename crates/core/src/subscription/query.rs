@@ -42,7 +42,7 @@ pub fn is_subscribe_to_all_tables(sql: &str) -> bool {
 pub fn compile_read_only_queryset(
     relational_db: &RelationalDB,
     auth: &AuthCtx,
-    tx: &Tx,
+    tx: &mut Tx,
     input: &str,
 ) -> Result<Vec<SupportedQuery>, DBError> {
     let input = input.trim();
@@ -82,13 +82,13 @@ pub fn compile_read_only_queryset(
 
 /// Compile a string into a single read-only query.
 /// This returns an error if the string has multiple queries or mutations.
-pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<Plan, DBError> {
+pub fn compile_read_only_query(auth: &AuthCtx, tx: &mut Tx, input: &str) -> Result<Plan, DBError> {
     if is_whitespace_or_empty(input) {
         return Err(SubscriptionError::Empty.into());
     }
 
-    let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
+    let mut tx = SchemaViewer::new(tx, auth);
+    let (plans, has_param) = SubscriptionPlan::compile(input, &mut tx, auth)?;
     let hash = QueryHash::from_string(input, auth.caller(), has_param);
     Ok(Plan::new(plans, hash, input.to_owned()))
 }
@@ -97,7 +97,7 @@ pub fn compile_read_only_query(auth: &AuthCtx, tx: &Tx, input: &str) -> Result<P
 /// This returns an error if the string has multiple queries or mutations.
 pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
     auth: &AuthCtx,
-    tx: &Tx,
+    tx: &mut Tx,
     input: &str,
     hash: QueryHash,
     hash_with_param: QueryHash,
@@ -106,8 +106,8 @@ pub fn compile_query_with_hashes<Tx: Datastore + StateView>(
         return Err(SubscriptionError::Empty.into());
     }
 
-    let tx = SchemaViewer::new(tx, auth);
-    let (plans, has_param) = SubscriptionPlan::compile(input, &tx, auth)?;
+    let mut tx = SchemaViewer::new(tx, auth);
+    let (plans, has_param) = SubscriptionPlan::compile(input, &mut tx, auth)?;
 
     if auth.bypass_rls() || has_param {
         // Note that when generating hashes for queries from owners,
@@ -151,7 +151,7 @@ mod tests {
     use crate::db::relational_db::tests_utils::{
         begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };
-    use crate::db::relational_db::MutTx;
+    use crate::db::relational_db::{tests_utils, MutTx};
     use crate::host::module_host::{DatabaseTableUpdate, DatabaseUpdate, UpdatesRelValue};
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
@@ -164,6 +164,7 @@ mod tests {
     use itertools::Itertools;
     use spacetimedb_client_api_messages::websocket::{BsatnFormat, CompressableQueryUpdate, Compression};
     use spacetimedb_datastore::execution_context::Workload;
+    use spacetimedb_datastore::system_tables::ST_RESERVED_SEQUENCE_RANGE;
     use spacetimedb_lib::bsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
     use spacetimedb_lib::error::ResultTest;
@@ -421,9 +422,9 @@ mod tests {
         db.create_table_for_test("a", schema, indexes)?;
         db.create_table_for_test("b", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
         let sql = "SELECT b.* FROM b JOIN a ON b.n = a.n WHERE b.data > 200";
-        let result = compile_read_only_query(&AuthCtx::for_testing(), &tx, sql);
+        let result = compile_read_only_query(&AuthCtx::for_testing(), &mut tx, sql);
         assert!(result.is_ok());
         Ok(())
     }
@@ -454,10 +455,10 @@ mod tests {
         };
 
         db.commit_tx(tx)?;
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
 
         let sql = "select * from test where b = 3";
-        let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &tx, sql)?;
+        let mut exp = compile_sql(&db, &AuthCtx::for_testing(), &mut tx, sql)?;
 
         let Some(CrudExpr::Query(query)) = exp.pop() else {
             panic!("unexpected query {:#?}", exp[0]);
@@ -609,8 +610,8 @@ mod tests {
         AND MobileEntityState.location_z > 96000 \
         AND MobileEntityState.location_z < 192000";
 
-        let tx = begin_tx(&db);
-        let qset = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, sql_query)?;
+        let mut tx = begin_tx(&db);
+        let qset = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &mut tx, sql_query)?;
 
         for q in qset {
             let result = run_query(
@@ -684,7 +685,7 @@ mod tests {
         let indexes = &[ColId(0), ColId(1)];
         db.create_table_for_test("rhs", schema, indexes)?;
 
-        let tx = begin_tx(&db);
+        let mut tx = begin_tx(&db);
 
         // All single table queries are supported
         let scans = [
@@ -696,7 +697,7 @@ mod tests {
             "SELECT * FROM lhs WHERE id > 5",
         ];
         for scan in scans {
-            let expr = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, scan)?
+            let expr = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &mut tx, scan)?
                 .pop()
                 .unwrap();
             assert_eq!(expr.kind(), Supported::Select, "{scan}\n{expr:#?}");
@@ -705,7 +706,7 @@ mod tests {
         // Only index semijoins are supported
         let joins = ["SELECT lhs.* FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE rhs.y < 10"];
         for join in joins {
-            let expr = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, join)?
+            let expr = compile_read_only_queryset(&db, &AuthCtx::for_testing(), &mut tx, join)?
                 .pop()
                 .unwrap();
             assert_eq!(expr.kind(), Supported::Semijoin, "{join}\n{expr:#?}");
@@ -718,7 +719,7 @@ mod tests {
             "SELECT * FROM lhs JOIN rhs ON lhs.id = rhs.id WHERE lhs.x < 10",
         ];
         for join in joins {
-            match compile_read_only_queryset(&db, &AuthCtx::for_testing(), &tx, join) {
+            match compile_read_only_queryset(&db, &AuthCtx::for_testing(), &mut tx, join) {
                 Err(DBError::Subscription(SubscriptionError::Unsupported(_)) | DBError::TypeError(_)) => (),
                 x => panic!("Unexpected: {x:?}"),
             }
@@ -756,10 +757,10 @@ mod tests {
     fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
         with_read_only(db, |tx| {
             let auth = AuthCtx::for_testing();
-            let tx = SchemaViewer::new(tx, &auth);
+            let mut tx = SchemaViewer::new(tx, &auth);
             // Should be answered using an index semijion
             let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where rhs.y >= 2 and rhs.y <= 4";
-            Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+            Ok(SubscriptionPlan::compile(sql, &mut tx, &auth)
                 .map(|(mut plans, _)| {
                     assert_eq!(plans.len(), 1);
                     plans.pop().unwrap()
@@ -781,10 +782,10 @@ mod tests {
         fn compile_query(db: &RelationalDB) -> ResultTest<SubscriptionPlan> {
             with_read_only(db, |tx| {
                 let auth = AuthCtx::for_testing();
-                let tx = SchemaViewer::new(tx, &auth);
+                let mut tx = SchemaViewer::new(tx, &auth);
                 // Should be answered using an index semijion
                 let sql = "select lhs.* from lhs join rhs on lhs.id = rhs.id where lhs.x >= 5 and lhs.x <= 7";
-                Ok(SubscriptionPlan::compile(sql, &tx, &auth)
+                Ok(SubscriptionPlan::compile(sql, &mut tx, &auth)
                     .map(|(mut plans, _)| {
                         assert_eq!(plans.len(), 1);
                         plans.pop().unwrap()
@@ -1445,6 +1446,38 @@ mod tests {
         // all 8 delta queries are evaluated,
         // each one probing the join index exactly once.
         assert_eq!(metrics.index_seeks, 8);
+        Ok(())
+    }
+
+    // Verify calling views with params
+    // TODO: All testing use the old query compiler, so we can't test this yet.
+    #[test]
+    fn test_view_params() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::I64)];
+        let (_view_id, table_id) = tests_utils::create_view_for_test(
+            &db,
+            "my_view",
+            &schema,
+            ProductType::from([("x", AlgebraicType::U8)]),
+            true,
+        )?;
+        let arg_id = ST_RESERVED_SEQUENCE_RANGE as u64;
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![arg_id + 1, 0u8, 1i64])?;
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![arg_id, 1u8, 2i64])?;
+            Ok(())
+        })?;
+
+        let mut tx = begin_tx(&db);
+
+        let err =
+            compile_read_only_queryset(&db, &AuthCtx::for_testing(), &mut tx, "SELECT * FROM my_view(1)").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "InternalError: Read-only queries cannot create parameters".to_string()
+        );
         Ok(())
     }
 }

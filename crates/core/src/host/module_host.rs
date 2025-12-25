@@ -1869,7 +1869,7 @@ impl ModuleHost {
         let metrics = self
             .on_module_thread("one_off_query", move || {
                 let (tx_offset_sender, tx_offset_receiver) = oneshot::channel();
-                let tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
+                let mut tx = scopeguard::guard(db.begin_tx(Workload::Sql), |tx| {
                     let (tx_offset, tx_metrics, reducer) = db.release_tx(tx);
                     let _ = tx_offset_sender.send(tx_offset);
                     db.report_read_tx_metrics(reducer, tx_metrics);
@@ -1878,7 +1878,7 @@ impl ModuleHost {
                 // We wrap the actual query in a closure so we can use ? to handle errors without making
                 // the entire transaction abort with an error.
                 let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
-                    let tx = SchemaViewer::new(&*tx, &auth);
+                    let mut tx = SchemaViewer::new(&mut *tx, &auth);
 
                     let (
                         // A query may compile down to several plans.
@@ -1888,7 +1888,7 @@ impl ModuleHost {
                         _,
                         table_name,
                         _,
-                    ) = compile_subscription(&query, &tx, &auth)?;
+                    ) = compile_subscription(&query, &mut tx, &auth)?;
 
                     // Optimize each fragment
                     let optimized = plans

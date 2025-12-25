@@ -19,7 +19,7 @@ impl RowLevelExpr {
         auth_ctx: &AuthCtx,
         rls: &RawRowLevelSecurityDefV9,
     ) -> anyhow::Result<Self> {
-        let (sql, _) = parse_and_type_sub(&rls.sql, &SchemaViewer::new(tx, auth_ctx), auth_ctx)?;
+        let (sql, _) = parse_and_type_sub(&rls.sql, &mut SchemaViewer::new(tx, auth_ctx), auth_ctx)?;
         let table_id = sql.return_table_id().unwrap();
         let schema = tx.schema_for_table(table_id)?;
 

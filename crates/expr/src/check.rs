@@ -9,12 +9,12 @@ use super::{
     type_expr, type_proj, type_select,
 };
 use crate::errors::{TableFunc, UnexpectedFunctionType};
-use crate::expr::{Expr, LeftDeepJoin, ProjectList, ProjectName, Relvar};
+use crate::expr::{Expr, FieldProject, LeftDeepJoin, ProjectList, ProjectName, Relvar};
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::AlgebraicType;
 use spacetimedb_primitives::{ArgId, TableId};
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
-use spacetimedb_sats::ProductValue;
+use spacetimedb_sats::{AlgebraicValue, ProductValue};
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, SqlExpr, SqlLiteral};
 use spacetimedb_sql_parser::{
@@ -35,9 +35,7 @@ pub trait SchemaView {
         self.table_id(name).and_then(|table_id| self.schema_for_table(table_id))
     }
 
-    fn get_or_create_params(&self, params: &ProductValue) -> TypingResult<ArgId> {
-        Ok(ArgId::SENTINEL)
-    }
+    fn get_or_create_params(&mut self, params: ProductValue) -> TypingResult<ArgId>;
 }
 
 #[derive(Default)]
@@ -60,9 +58,9 @@ pub trait TypeChecker {
     type Ast;
     type Set;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList>;
+    fn type_ast(ast: Self::Ast, tx: &mut impl SchemaView) -> TypingResult<ProjectList>;
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList>;
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &mut impl SchemaView) -> TypingResult<ProjectList>;
 
     fn type_view_params(
         schema: &TableOrViewSchema,
@@ -152,25 +150,35 @@ pub trait TypeChecker {
     }
 
     fn type_params(
+        tx: &mut impl SchemaView,
         from: RelExpr,
         schema: Arc<TableOrViewSchema>,
         alias: Box<str>,
         params: Option<ProductValue>,
-    ) -> RelExpr {
+    ) -> TypingResult<RelExpr> {
         match params {
-            None => from,
-            Some(args) => RelExpr::FunCall(
-                Relvar {
-                    schema,
-                    alias,
-                    delta: None,
-                },
-                args,
-            ),
+            None => Ok(from),
+            Some(args) => {
+                let new_arg_id = tx.get_or_create_params(args)?;
+                let arg_id_col = schema.inner().get_column_by_name("arg_id").unwrap().col_pos;
+
+                Ok(RelExpr::Select(
+                    Box::new(from),
+                    Expr::BinOp(
+                        BinOp::Eq,
+                        Box::new(Expr::Field(FieldProject {
+                            table: alias,
+                            field: arg_id_col.idx(),
+                            ty: AlgebraicType::U64,
+                        })),
+                        Box::new(Expr::Value(AlgebraicValue::U64(new_arg_id.0), AlgebraicType::U64)),
+                    ),
+                ))
+            }
         }
     }
 
-    fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<RelExpr> {
+    fn type_from(from: SqlFrom, vars: &mut Relvars, tx: &mut impl SchemaView) -> TypingResult<RelExpr> {
         match from {
             SqlFrom::Expr(SqlIdent(name), SqlIdent(alias)) => {
                 let schema = Self::type_relvar(tx, &name)?;
@@ -202,7 +210,7 @@ pub trait TypeChecker {
                     }
                     let schema = Self::type_relvar(tx, &name)?;
                     let arg = Self::type_view_params(&schema, vars, params)?;
-                    let lhs = Box::new(Self::type_params(join, schema.clone(), alias.clone(), arg));
+                    let lhs = Box::new(Self::type_params(tx, join, schema.clone(), alias.clone(), arg)?);
 
                     let rhs = Relvar {
                         schema,
@@ -237,7 +245,7 @@ pub trait TypeChecker {
                     delta: None,
                 });
 
-                Ok(Self::type_params(from, schema, alias, arg))
+                Self::type_params(tx, from, schema, alias, arg)
             }
         }
     }
@@ -256,11 +264,11 @@ impl TypeChecker for SubChecker {
     type Ast = SqlSelect;
     type Set = SqlSelect;
 
-    fn type_ast(ast: Self::Ast, tx: &impl SchemaView) -> TypingResult<ProjectList> {
+    fn type_ast(ast: Self::Ast, tx: &mut impl SchemaView) -> TypingResult<ProjectList> {
         Self::type_set(ast, &mut Relvars::default(), tx)
     }
 
-    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &impl SchemaView) -> TypingResult<ProjectList> {
+    fn type_set(ast: Self::Set, vars: &mut Relvars, tx: &mut impl SchemaView) -> TypingResult<ProjectList> {
         match ast {
             SqlSelect {
                 project,
@@ -283,7 +291,7 @@ impl TypeChecker for SubChecker {
 }
 
 /// Parse and type check a subscription query
-pub fn parse_and_type_sub(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
+pub fn parse_and_type_sub(sql: &str, tx: &mut impl SchemaView, auth: &AuthCtx) -> TypingResult<(ProjectName, bool)> {
     let ast = parse_subscription(sql)?;
     let has_param = ast.has_parameter();
     let ast = ast.resolve_sender(auth.caller());
@@ -303,15 +311,16 @@ fn expect_table_type(expr: ProjectList) -> TypingResult<ProjectName> {
 
 pub mod test_utils {
     use spacetimedb_lib::{db::raw_def::v9::RawModuleDefV9Builder, ProductType};
-    use spacetimedb_primitives::TableId;
-    use spacetimedb_sats::AlgebraicType;
+    use spacetimedb_primitives::{ArgId, TableId};
+    use spacetimedb_sats::{AlgebraicType, ProductValue};
     use spacetimedb_schema::{
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
     };
+    use std::collections::HashMap;
     use std::sync::Arc;
 
-    use super::SchemaView;
+    use super::{SchemaView, TypingResult};
     pub struct ViewInfo<'a> {
         pub(crate) name: &'a str,
         pub(crate) columns: &'a [(&'a str, AlgebraicType)],
@@ -333,7 +342,38 @@ pub mod test_utils {
         builder.finish().try_into().expect("failed to generate module def")
     }
 
-    pub struct SchemaViewer(pub ModuleDef);
+    pub struct MockCallParams {
+        counter: u64,
+        params: HashMap<ProductValue, ArgId>,
+    }
+
+    impl Default for MockCallParams {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl MockCallParams {
+        pub fn new() -> Self {
+            Self {
+                counter: 0,
+                params: HashMap::new(),
+            }
+        }
+
+        pub fn get_or_insert(&mut self, value: ProductValue) -> ArgId {
+            if let Some(existing) = self.params.get(&value) {
+                *existing
+            } else {
+                self.counter += 1;
+                let arg_id = ArgId(self.counter - 1);
+                self.params.insert(value, arg_id);
+                arg_id
+            }
+        }
+    }
+
+    pub struct SchemaViewer(pub ModuleDef, pub MockCallParams);
 
     impl SchemaView for SchemaViewer {
         fn table_id(&self, name: &str) -> Option<TableId> {
@@ -369,6 +409,10 @@ pub mod test_utils {
 
         fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
             Ok(vec![])
+        }
+
+        fn get_or_create_params(&mut self, params: ProductValue) -> TypingResult<ArgId> {
+            Ok(self.1.get_or_insert(params))
         }
     }
 }
@@ -423,13 +467,13 @@ mod tests {
     }
 
     /// A wrapper around [super::parse_and_type_sub] that takes a dummy [AuthCtx]
-    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+    fn parse_and_type_sub(sql: &str, tx: &mut impl SchemaView) -> TypingResult<ProjectName> {
         super::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
     #[test]
     fn valid_literals() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         struct TestCase {
             sql: &'static str,
@@ -498,27 +542,27 @@ mod tests {
                 msg: "timestamp ms with timezone",
             },
         ] {
-            let result = parse_and_type_sub(sql, &tx);
+            let result = parse_and_type_sub(sql, &mut tx);
             assert!(result.is_ok(), "name: {}, error: {}", msg, result.unwrap_err());
         }
     }
 
     #[test]
     fn valid_literals_for_type() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         for ty in [
             "i8", "u8", "i16", "u16", "i32", "u32", "i64", "u64", "f32", "f64", "i128", "u128", "i256", "u256",
         ] {
             let sql = format!("select * from t where {ty} = 127");
-            let result = parse_and_type_sub(&sql, &tx);
+            let result = parse_and_type_sub(&sql, &mut tx);
             assert!(result.is_ok(), "Failed to parse {ty}: {}", result.unwrap_err());
         }
     }
 
     #[test]
     fn invalid_literals() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         struct TestCase {
             sql: &'static str,
@@ -547,14 +591,14 @@ mod tests {
                 msg: "Float as integer",
             },
         ] {
-            let result = parse_and_type_sub(sql, &tx);
+            let result = parse_and_type_sub(sql, &mut tx);
             assert!(result.is_err(), "{msg}");
         }
     }
 
     #[test]
     fn valid() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         struct TestCase {
             sql: &'static str,
@@ -611,14 +655,14 @@ mod tests {
                 msg: "Type inner join + projection",
             },
         ] {
-            let result = parse_and_type_sub(sql, &tx);
+            let result = parse_and_type_sub(sql, &mut tx);
             assert!(result.is_ok(), "{msg}");
         }
     }
 
     #[test]
     fn invalid() {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
 
         struct TestCase {
             sql: &'static str,
@@ -683,7 +727,7 @@ mod tests {
                 msg: "Columns must be qualified in join expressions",
             },
         ] {
-            let result = parse_and_type_sub(sql, &tx);
+            let result = parse_and_type_sub(sql, &mut tx);
             assert!(result.is_err(), "{msg}");
         }
     }
