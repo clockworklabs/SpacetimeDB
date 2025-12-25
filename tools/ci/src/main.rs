@@ -823,7 +823,9 @@ fn main() -> Result<()> {
                         "-p",
                         "spacetimedb-cli",
                         "-p",
-                        "spacetimedb-standalone"
+                        "spacetimedb-standalone",
+                        "-p",
+                        "spacetimedb-update",
                     )
                     .run()?;
                     no_build_cli = true;
