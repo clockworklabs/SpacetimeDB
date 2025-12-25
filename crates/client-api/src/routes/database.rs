@@ -26,7 +26,7 @@ use log::info;
 use serde::Deserialize;
 use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
-use spacetimedb::host::UpdateDatabaseResult;
+use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
 use spacetimedb::host::{ModuleHost, ReducerOutcome};
 use spacetimedb::host::{ProcedureCallError, ReducerCallError};
@@ -85,6 +85,46 @@ pub struct CallParams {
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
 
+fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
+    let status_code = match e {
+        ReducerCallError::Args(_) => {
+            log::debug!("Attempt to call reducer {reducer} with invalid arguments");
+            StatusCode::BAD_REQUEST
+        }
+        ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
+        ReducerCallError::NoSuchReducer => {
+            log::debug!("Attempt to call non-existent reducer {reducer}");
+            StatusCode::NOT_FOUND
+        }
+        ReducerCallError::LifecycleReducer(lifecycle) => {
+            log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
+            StatusCode::BAD_REQUEST
+        }
+    };
+
+    log::debug!("Error while invoking reducer {e:#}");
+    (status_code, format!("{:#}", anyhow::anyhow!(e)))
+}
+
+fn map_procedure_error(e: ProcedureCallError, procedure: &str) -> (StatusCode, String) {
+    let status_code = match e {
+        ProcedureCallError::Args(_) => {
+            log::debug!("Attempt to call procedure {procedure} with invalid arguments");
+            StatusCode::BAD_REQUEST
+        }
+        ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
+        ProcedureCallError::NoSuchProcedure => {
+            log::debug!("Attempt to call non-existent procedure OR reducer {procedure}");
+            StatusCode::NOT_FOUND
+        }
+        ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
+        ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    log::error!("Error while invoking procedure {e:#}");
+    (status_code, format!("{:#}", anyhow::anyhow!(e)))
+}
+
+/// Call a reducer or procedure on the specified database module.
 pub async fn call<S: ControlStateDelegate + NodeDelegate>(
     State(worker_ctx): State<S>,
     Extension(auth): Extension<SpacetimeAuth>,
@@ -107,53 +147,68 @@ pub async fn call<S: ControlStateDelegate + NodeDelegate>(
 
     let (module, Database { owner_identity, .. }) = find_module_and_database(&worker_ctx, name_or_identity).await?;
 
+    // Call the database's `client_connected` reducer, if any.
+    // If it fails or rejects the connection, bail.
     module
         .call_identity_connected(auth.into(), connection_id)
         .await
         .map_err(client_connected_error_to_response)?;
 
     let result = match module
-        .call_reducer(caller_identity, Some(connection_id), None, None, None, &reducer, args)
+        .call_reducer(
+            caller_identity,
+            Some(connection_id),
+            None,
+            None,
+            None,
+            &reducer,
+            args.clone(),
+        )
         .await
     {
-        Ok(rcr) => Ok(rcr),
-        Err(e) => {
-            let status_code = match e {
-                ReducerCallError::Args(_) => {
-                    log::debug!("Attempt to call reducer with invalid arguments");
-                    StatusCode::BAD_REQUEST
-                }
-                ReducerCallError::NoSuchModule(_) | ReducerCallError::ScheduleReducerNotFound => StatusCode::NOT_FOUND,
-                ReducerCallError::NoSuchReducer => {
-                    log::debug!("Attempt to call non-existent reducer {reducer}");
-                    StatusCode::NOT_FOUND
-                }
-                ReducerCallError::LifecycleReducer(lifecycle) => {
-                    log::debug!("Attempt to call {lifecycle:?} lifecycle reducer {reducer}");
-                    StatusCode::BAD_REQUEST
-                }
-            };
-
-            log::debug!("Error while invoking reducer {e:#}");
-            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
+        Ok(rcr) => Ok(CallResult::Reducer(rcr)),
+        Err(ReducerCallError::NoSuchReducer | ReducerCallError::ScheduleReducerNotFound) => {
+            // Not a reducer — try procedure instead
+            match module
+                .call_procedure(caller_identity, Some(connection_id), None, &reducer, args)
+                .await
+                .result
+            {
+                Ok(res) => Ok(CallResult::Procedure(res)),
+                Err(e) => Err(map_procedure_error(e, &reducer)),
+            }
         }
+        Err(e) => Err(map_reducer_error(e, &reducer)),
     };
 
     module
-        // We don't clear views after reducer calls
+        // We don't clear views or procedures after reducer calls
         .call_identity_disconnected(caller_identity, connection_id, false)
         .await
         .map_err(client_disconnected_error_to_response)?;
 
     match result {
-        Ok(result) => {
+        Ok(CallResult::Reducer(result)) => {
             let (status, body) = reducer_outcome_response(&owner_identity, &reducer, result.outcome);
             Ok((
                 status,
                 TypedHeader(SpacetimeEnergyUsed(result.energy_used)),
                 TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
                 body,
-            ))
+            )
+                .into_response())
+        }
+        Ok(CallResult::Procedure(result)) => {
+            // Procedures don't assign a special meaning to error returns, unlike reducers,
+            // as there's no transaction for them to automatically abort.
+            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
+            let (status, body) = procedure_outcome_response(result.return_val);
+            Ok((
+                status,
+                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
+                body,
+            )
+                .into_response())
         }
         Err(e) => Err((e.0, e.1).into()),
     }
@@ -252,88 +307,6 @@ pub enum DBCallErr {
     HandlerError(ErrorResponse),
     NoSuchDatabase,
     InstanceNotScheduled,
-}
-
-#[derive(Deserialize)]
-pub struct ProcedureParams {
-    name_or_identity: NameOrIdentity,
-    procedure: String,
-}
-
-async fn procedure<S: ControlStateDelegate + NodeDelegate>(
-    State(worker_ctx): State<S>,
-    Extension(auth): Extension<SpacetimeAuth>,
-    Path(ProcedureParams {
-        name_or_identity,
-        procedure,
-    }): Path<ProcedureParams>,
-    TypedHeader(content_type): TypedHeader<headers::ContentType>,
-    ByteStringBody(body): ByteStringBody,
-) -> axum::response::Result<impl IntoResponse> {
-    assert_content_type_json(content_type)?;
-
-    let caller_identity = auth.claims.identity;
-
-    let args = FunctionArgs::Json(body);
-
-    let (module, _) = find_module_and_database(&worker_ctx, name_or_identity).await?;
-
-    // HTTP callers always need a connection ID to provide to connect/disconnect,
-    // so generate one.
-    let connection_id = generate_random_connection_id();
-
-    // Call the database's `client_connected` reducer, if any.
-    // If it fails or rejects the connection, bail.
-    module
-        .call_identity_connected(auth.into(), connection_id)
-        .await
-        .map_err(client_connected_error_to_response)?;
-
-    let result = match module
-        .call_procedure(caller_identity, Some(connection_id), None, &procedure, args)
-        .await
-        .result
-    {
-        Ok(res) => Ok(res),
-        Err(e) => {
-            let status_code = match e {
-                ProcedureCallError::Args(_) => {
-                    log::debug!("Attempt to call reducer with invalid arguments");
-                    StatusCode::BAD_REQUEST
-                }
-                ProcedureCallError::NoSuchModule(_) => StatusCode::NOT_FOUND,
-                ProcedureCallError::NoSuchProcedure => {
-                    log::debug!("Attempt to call non-existent procedure {procedure}");
-                    StatusCode::NOT_FOUND
-                }
-                ProcedureCallError::OutOfEnergy => StatusCode::PAYMENT_REQUIRED,
-                ProcedureCallError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            log::error!("Error while invoking procedure {e:#}");
-            Err((status_code, format!("{:#}", anyhow::anyhow!(e))))
-        }
-    };
-
-    module
-        // We don't clear views after procedure calls
-        .call_identity_disconnected(caller_identity, connection_id, false)
-        .await
-        .map_err(client_disconnected_error_to_response)?;
-
-    match result {
-        Ok(result) => {
-            // Procedures don't assign a special meaning to error returns, unlike reducers,
-            // as there's no transaction for them to automatically abort.
-            // Instead, we just pass on their return value with the OK status so long as we successfully invoked the procedure.
-            let (status, body) = procedure_outcome_response(result.return_val);
-            Ok((
-                status,
-                TypedHeader(SpacetimeExecutionDurationMicros(result.execution_duration)),
-                body,
-            ))
-        }
-        Err(e) => Err((e.0, e.1).into()),
-    }
 }
 
 fn procedure_outcome_response(return_val: AlgebraicValue) -> (StatusCode, axum::response::Response) {
@@ -1191,9 +1164,7 @@ pub struct DatabaseRoutes<S> {
     /// GET: /database/:name_or_identity/subscribe
     pub subscribe_get: MethodRouter<S>,
     /// POST: /database/:name_or_identity/call/:reducer
-    pub call_reducer_post: MethodRouter<S>,
-    /// POST: /database/:name_or_identity/procedure/:reducer
-    pub call_procedure_post: MethodRouter<S>,
+    pub call_reducer_procedure_post: MethodRouter<S>,
     /// GET: /database/:name_or_identity/schema
     pub schema_get: MethodRouter<S>,
     /// GET: /database/:name_or_identity/logs
@@ -1224,8 +1195,7 @@ where
             names_put: put(set_names::<S>),
             identity_get: get(get_identity::<S>),
             subscribe_get: get(handle_websocket::<S>),
-            call_reducer_post: post(call::<S>),
-            call_procedure_post: post(procedure::<S>),
+            call_reducer_procedure_post: post(call::<S>),
             schema_get: get(schema::<S>),
             logs_get: get(logs::<S>),
             sql_post: post(sql::<S>),
@@ -1250,8 +1220,7 @@ where
             .route("/names", self.names_put)
             .route("/identity", self.identity_get)
             .route("/subscribe", self.subscribe_get)
-            .route("/call/:reducer", self.call_reducer_post)
-            .route("/unstable/procedure/:procedure", self.call_procedure_post)
+            .route("/call/:reducer", self.call_reducer_procedure_post)
             .route("/schema", self.schema_get)
             .route("/logs", self.logs_get)
             .route("/sql", self.sql_post)
