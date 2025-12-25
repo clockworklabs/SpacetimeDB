@@ -7,10 +7,12 @@ import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
+import { Timestamp } from '../lib/timestamp';
+import { Uuid } from '../lib/uuid';
+import BinaryReader from '../lib/binary_reader';
+import BinaryWriter from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
@@ -31,7 +33,6 @@ import {
   type UntypedSchemaDef,
 } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, toCamelCase } from '../lib/util';
 import {
@@ -185,16 +186,42 @@ export const makeReducerCtx = (
   sender: Identity,
   timestamp: Timestamp,
   connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => ({
-  sender,
-  get identity() {
-    return new Identity(sys.identity().__identity__);
-  },
-  timestamp,
-  connectionId,
-  db: getDbView(),
-  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-});
+): ReducerCtx<UntypedSchemaDef> => {
+  return {
+    sender,
+    get identity() {
+      return new Identity(sys.identity().__identity__);
+    },
+    timestamp,
+    connectionId,
+    db: getDbView(),
+    senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
+    counter_uuid: { value: Number(0) },
+
+    /**
+     * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
+     *
+     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+     */
+    newUuidV4(): Uuid {
+      // TODO: Use a spacetime RNG when available
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return Uuid.fromRandomBytesV4(bytes);
+    },
+
+    /**
+     * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
+     * and the timestamp.
+     *
+     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+     */
+    newUuidV7(): Uuid {
+      // TODO: Use a spacetime RNG when available
+      const bytes = crypto.getRandomValues(new Uint8Array(4));
+      return Uuid.fromCounterV7(this.counter_uuid, this.timestamp, bytes);
+    },
+  };
+};
 
 /**
  * Call into a user function `fn` - the backtrace from an exception thrown in
