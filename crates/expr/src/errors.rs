@@ -115,6 +115,13 @@ impl UnexpectedType {
 }
 
 #[derive(Debug, Error)]
+#[error("Unexpected function type. Expected: ({expected}) != Inferred: ({inferred})")]
+pub struct UnexpectedFunctionType {
+    pub expected: String,
+    pub inferred: String,
+}
+
+#[derive(Debug, Error)]
 #[error("Duplicate name `{0}`")]
 pub struct DuplicateName(pub String);
 
@@ -127,6 +134,10 @@ pub struct FilterReturnType;
 pub struct DmlOnView {
     pub view_name: Box<str>,
 }
+
+#[derive(Debug, Error)]
+#[error("Table-valued functions are not supported: `{0}`")]
+pub struct TableFunc(pub String);
 
 #[derive(Error, Debug)]
 pub enum TypingError {
@@ -152,9 +163,17 @@ pub enum TypingError {
     #[error(transparent)]
     Unexpected(#[from] UnexpectedType),
     #[error(transparent)]
+    UnexpectedFunction(#[from] UnexpectedFunctionType),
+    #[error(transparent)]
     Wildcard(#[from] InvalidWildcard),
     #[error(transparent)]
     DuplicateName(#[from] DuplicateName),
     #[error(transparent)]
     FilterReturnType(#[from] FilterReturnType),
+    #[error(transparent)]
+    TableFunc(#[from] TableFunc),
+    #[error("InternalError: Read-only queries cannot create parameters")]
+    ParamsReadOnly,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }

@@ -21,10 +21,9 @@ use spacetimedb_primitives::TableId;
 /// Any query longer than this will be rejected.
 /// This prevents a stack overflow when compiling queries with deeply-nested `AND` and `OR` conditions.
 const MAX_SQL_LENGTH: usize = 50_000;
-
 pub fn compile_subscription(
     sql: &str,
-    tx: &impl SchemaView,
+    tx: &mut impl SchemaView,
     auth: &AuthCtx,
 ) -> Result<(Vec<ProjectPlan>, TableId, Box<str>, bool)> {
     if sql.len() > MAX_SQL_LENGTH {
@@ -56,7 +55,7 @@ pub fn compile_subscription(
 }
 
 /// A utility for parsing and type checking a sql statement
-pub fn compile_sql_stmt(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> Result<Statement> {
+pub fn compile_sql_stmt(sql: &str, tx: &mut impl SchemaView, auth: &AuthCtx) -> Result<Statement> {
     if sql.len() > MAX_SQL_LENGTH {
         bail!("SQL query exceeds maximum allowed length: \"{sql:.120}...\"")
     }

@@ -327,7 +327,7 @@ impl ModuleSubscriptions {
         let view_info = plans
             .first()
             .and_then(|plan| plan.return_table())
-            .and_then(|schema| schema.view_info);
+            .and_then(|schema| schema.view_info.clone());
 
         let num_cols = plans
             .first()
@@ -472,7 +472,7 @@ impl ModuleSubscriptions {
         let hash = QueryHash::from_string(&sql, auth.caller(), false);
         let hash_with_param = QueryHash::from_string(&sql, auth.caller(), true);
 
-        let (mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
+        let (mut mut_tx, _) = self.begin_mut_tx(Workload::Subscribe);
 
         let existing_query = {
             let guard = self.subscriptions.read();
@@ -482,7 +482,7 @@ impl ModuleSubscriptions {
         let query = return_on_err_with_sql!(
             existing_query.map(Ok).unwrap_or_else(|| compile_query_with_hashes(
                 &auth,
-                &*mut_tx,
+                &mut *mut_tx,
                 &sql,
                 hash,
                 hash_with_param
@@ -736,7 +736,7 @@ impl ModuleSubscriptions {
         }
 
         // We always get the db lock before the subscription lock to avoid deadlocks.
-        let (mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
+        let (mut mut_tx, _tx_offset) = self.begin_mut_tx(Workload::Subscribe);
 
         let compile_timer = metrics.compilation_time.start_timer();
 
@@ -752,7 +752,7 @@ impl ModuleSubscriptions {
                 super::subscription::get_all(
                     |relational_db, tx| relational_db.get_all_tables_mut(tx).map(|schemas| schemas.into_iter()),
                     &self.relational_db,
-                    &*mut_tx,
+                    &mut *mut_tx,
                     &auth,
                 )?
                 .into_iter()
@@ -769,7 +769,7 @@ impl ModuleSubscriptions {
                 plans.push(unit);
             } else {
                 plans.push(Arc::new(
-                    compile_query_with_hashes(&auth, &*mut_tx, sql, hash, hash_with_param).map_err(|err| {
+                    compile_query_with_hashes(&auth, &mut *mut_tx, sql, hash, hash_with_param).map_err(|err| {
                         DBError::WithSql {
                             error: Box::new(DBError::Other(err.into())),
                             sql: sql.into(),
@@ -1807,8 +1807,8 @@ mod tests {
 
         let auth = AuthCtx::for_testing();
         let sql = "select * from t where id = 1";
-        let tx = begin_tx(&db);
-        let plan = compile_read_only_query(&auth, &tx, sql)?;
+        let mut tx = begin_tx(&db);
+        let plan = compile_read_only_query(&auth, &mut tx, sql)?;
         let plan = Arc::new(plan);
 
         let (_, metrics) = subs.evaluate_queries(sender, &[plan], &tx, &auth, TableUpdateType::Subscribe)?;

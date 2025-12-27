@@ -5,8 +5,8 @@ use crate::locking_tx_datastore::mut_tx::{IndexScanPoint, IndexScanRanged};
 use crate::system_tables::{
     ConnectionIdViaU128, StColumnFields, StColumnRow, StConnectionCredentialsFields, StConnectionCredentialsRow,
     StConstraintFields, StConstraintRow, StIndexFields, StIndexRow, StScheduledFields, StScheduledRow,
-    StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewRow,
-    SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID,
+    StSequenceFields, StSequenceRow, StTableFields, StTableRow, StViewFields, StViewParamFields, StViewParamRow,
+    StViewRow, SystemTable, ST_COLUMN_ID, ST_CONNECTION_CREDENTIALS_ID, ST_CONSTRAINT_ID, ST_INDEX_ID, ST_SCHEDULED_ID,
     ST_SEQUENCE_ID, ST_TABLE_ID, ST_VIEW_ID, ST_VIEW_PARAM_ID,
 };
 use anyhow::anyhow;
@@ -14,6 +14,8 @@ use core::ops::RangeBounds;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_primitives::{ColList, TableId};
 use spacetimedb_sats::AlgebraicValue;
+use spacetimedb_schema::def::ViewParamDefSimple;
+use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{ColumnSchema, TableSchema, ViewDefInfo};
 use spacetimedb_table::table::IndexScanPointIter;
 use spacetimedb_table::{
@@ -133,14 +135,20 @@ pub trait StateView {
             .map(|mut iter| {
                 iter.next().map(|row| -> Result<_> {
                     let row = StViewRow::try_from(row)?;
-                    let has_args = self
+                    let args: Vec<_> = self
                         .iter_by_col_eq(ST_VIEW_PARAM_ID, StViewParamFields::ViewId, &row.view_id.into())?
-                        .next()
-                        .is_some();
+                        .map(|param_row| {
+                            let param_row = StViewParamRow::try_from(param_row)?;
+                            Ok(ViewParamDefSimple {
+                                name: Identifier::new(param_row.param_name).expect("valid identifier"),
+                                ty: param_row.param_type.0,
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
 
                     Ok(ViewDefInfo {
                         view_id: row.view_id,
-                        has_args,
+                        args,
                         is_anonymous: row.is_anonymous,
                     })
                 })

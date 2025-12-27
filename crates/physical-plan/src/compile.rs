@@ -63,7 +63,7 @@ fn compile_field_project(var: &mut impl VarLabel, expr: FieldProject) -> TupleFi
 
 fn compile_rel_expr(var: &mut impl VarLabel, ast: RelExpr) -> PhysicalPlan {
     match ast {
-        RelExpr::RelVar(Relvar { schema, alias, delta }) => {
+        RelExpr::RelVar(Relvar { schema, alias, delta }) | RelExpr::FunCall(Relvar { schema, alias, delta }, ..) => {
             let label = var.label(alias.as_ref());
             let schema = schema.inner();
             PhysicalPlan::TableScan(

@@ -93,7 +93,22 @@ fn _type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&AlgebraicType>, d
         (SqlExpr::Lit(SqlLiteral::Str(_) | SqlLiteral::Num(_) | SqlLiteral::Hex(_)), None) => {
             Err(Unresolved::Literal.into())
         }
-        (SqlExpr::Lit(SqlLiteral::Str(v) | SqlLiteral::Num(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
+        (SqlExpr::Lit(SqlLiteral::Num(v)), Some(ty)) => {
+            if ty.is_integer() || ty.is_float() || ty.is_special() {
+                Ok(Expr::Value(
+                    parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
+                    ty.clone(),
+                ))
+            } else {
+                let expected = if v.contains(".") || v.contains("e") || v.contains("E") {
+                    AlgebraicType::F64
+                } else {
+                    AlgebraicType::I64
+                };
+                Err(UnexpectedType::new(&expected, ty).into())
+            }
+        }
+        (SqlExpr::Lit(SqlLiteral::Str(v) | SqlLiteral::Hex(v)), Some(ty)) => Ok(Expr::Value(
             parse(&v, ty).map_err(|_| InvalidLiteral::new(v.into_string(), ty))?,
             ty.clone(),
         )),

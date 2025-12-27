@@ -12,7 +12,7 @@ use crate::{
 /// The main driver of RLS resolution for subscription queries.
 /// Mainly a wrapper around [resolve_views_for_expr].
 pub fn resolve_views_for_sub(
-    tx: &impl SchemaView,
+    tx: &mut impl SchemaView,
     expr: ProjectName,
     auth: &AuthCtx,
     has_param: &mut bool,
@@ -54,7 +54,11 @@ pub fn resolve_views_for_sub(
 
 /// The main driver of RLS resolution for sql queries.
 /// Mainly a wrapper around [resolve_views_for_expr].
-pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &AuthCtx) -> anyhow::Result<ProjectList> {
+pub fn resolve_views_for_sql(
+    tx: &mut impl SchemaView,
+    expr: ProjectList,
+    auth: &AuthCtx,
+) -> anyhow::Result<ProjectList> {
     // RLS does not apply to the database owner
     if auth.bypass_rls() {
         return Ok(expr);
@@ -62,44 +66,41 @@ pub fn resolve_views_for_sql(tx: &impl SchemaView, expr: ProjectList, auth: &Aut
     // The subscription language is a subset of the sql language.
     // Use the subscription helper if this is a compliant expression.
     // Use the generic resolver otherwise.
-    let resolve_for_sub = |expr| resolve_views_for_sub(tx, expr, auth, &mut false);
-    let resolve_for_sql = |expr| {
-        resolve_views_for_expr(
-            // Use all default values
-            tx,
-            expr,
-            None,
-            Rc::new(ResolveList::None),
-            &mut false,
-            &mut 0,
-            auth,
-        )
-    };
     match expr {
-        ProjectList::Limit(expr, n) => Ok(ProjectList::Limit(Box::new(resolve_views_for_sql(tx, *expr, auth)?), n)),
+        ProjectList::Limit(expr, n) => {
+            let expr = resolve_views_for_sql(tx, *expr, auth)?;
+            Ok(ProjectList::Limit(Box::new(expr), n))
+        }
+
         ProjectList::Name(exprs) => Ok(ProjectList::Name(
             exprs
                 .into_iter()
-                .map(resolve_for_sub)
+                .map(|expr| resolve_views_for_sub(tx, expr, auth, &mut false))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .flatten()
                 .collect(),
         )),
+
         ProjectList::List(exprs, fields) => Ok(ProjectList::List(
             exprs
                 .into_iter()
-                .map(resolve_for_sql)
+                .map(|expr| {
+                    resolve_views_for_expr(tx, expr, None, Rc::new(ResolveList::None), &mut false, &mut 0, auth)
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .flatten()
                 .collect(),
             fields,
         )),
+
         ProjectList::Agg(exprs, AggType::Count, name, ty) => Ok(ProjectList::Agg(
             exprs
                 .into_iter()
-                .map(resolve_for_sql)
+                .map(|expr| {
+                    resolve_views_for_expr(tx, expr, None, Rc::new(ResolveList::None), &mut false, &mut 0, auth)
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .flatten()
@@ -203,7 +204,7 @@ impl ResolveList {
 /// i.e. the subtree rooted at `a` in the above example,
 /// must be pushed below the leftmost leaf node of the view expansion.
 fn resolve_views_for_expr(
-    tx: &impl SchemaView,
+    tx: &mut impl SchemaView,
     view: RelExpr,
     return_table_id: Option<TableId>,
     resolving: Rc<ResolveList>,
@@ -362,7 +363,7 @@ fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
         field.table = f(&field.table);
     }
     expr.visit_mut(&mut |expr| match expr {
-        RelExpr::RelVar(rhs) | RelExpr::LeftDeepJoin(LeftDeepJoin { rhs, .. }) => {
+        RelExpr::RelVar(rhs) | RelExpr::FunCall(rhs, ..) | RelExpr::LeftDeepJoin(LeftDeepJoin { rhs, .. }) => {
             rename(rhs, f);
         }
         RelExpr::EqJoin(LeftDeepJoin { rhs, .. }, a, b) => {
@@ -418,7 +419,7 @@ fn alpha_rename(expr: &mut RelExpr, f: &mut impl FnMut(&str) -> Box<str>) {
 /// ```
 fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
     match expr {
-        RelExpr::RelVar(rhs) => RelExpr::LeftDeepJoin(LeftDeepJoin {
+        RelExpr::RelVar(rhs) | RelExpr::FunCall(rhs, ..) => RelExpr::LeftDeepJoin(LeftDeepJoin {
             lhs: Box::new(with),
             rhs,
         }),
@@ -443,8 +444,8 @@ fn extend_lhs(expr: RelExpr, with: RelExpr) -> RelExpr {
 fn expand_leaf(expr: RelExpr, table_id: TableId, alias: &str, with: &RelExpr) -> RelExpr {
     let ok = |relvar: &Relvar| relvar.schema.table_id == table_id && relvar.alias.as_ref() == alias;
     match expr {
-        RelExpr::RelVar(relvar, ..) if ok(&relvar) => with.clone(),
-        RelExpr::RelVar(..) => expr,
+        RelExpr::RelVar(relvar, ..) | RelExpr::FunCall(relvar, ..) if ok(&relvar) => with.clone(),
+        RelExpr::RelVar(..) | RelExpr::FunCall(..) => expr,
         RelExpr::Select(input, expr) => RelExpr::Select(Box::new(expand_leaf(*input, table_id, alias, with)), expr),
         RelExpr::LeftDeepJoin(join) if ok(&join.rhs) => extend_lhs(with.clone(), *join.lhs),
         RelExpr::LeftDeepJoin(LeftDeepJoin { lhs, rhs }) => RelExpr::LeftDeepJoin(LeftDeepJoin {
@@ -473,21 +474,23 @@ mod tests {
     use pretty_assertions as pretty;
 
     use spacetimedb_lib::{identity::AuthCtx, AlgebraicType, AlgebraicValue, Identity, ProductType};
-    use spacetimedb_primitives::TableId;
+    use spacetimedb_primitives::{ArgId, TableId};
+    use spacetimedb_sats::ProductValue;
     use spacetimedb_schema::{
         def::ModuleDef,
         schema::{Schema, TableOrViewSchema, TableSchema},
     };
     use spacetimedb_sql_parser::ast::BinOp;
 
+    use super::resolve_views_for_sub;
+    use crate::check::test_utils::MockCallParams;
+    use crate::check::TypingResult;
     use crate::{
         check::{parse_and_type_sub, test_utils::build_module_def, SchemaView},
         expr::{Expr, FieldProject, LeftDeepJoin, ProjectName, RelExpr, Relvar},
     };
 
-    use super::resolve_views_for_sub;
-
-    pub struct SchemaViewer(pub ModuleDef);
+    pub struct SchemaViewer(pub ModuleDef, pub MockCallParams);
 
     impl SchemaView for SchemaViewer {
         fn table_id(&self, name: &str) -> Option<TableId> {
@@ -526,37 +529,44 @@ mod tests {
                 _ => Ok(vec![]),
             }
         }
+
+        fn get_or_create_params(&mut self, params: ProductValue) -> TypingResult<ArgId> {
+            Ok(self.1.get_or_insert(params))
+        }
     }
 
     fn module_def() -> ModuleDef {
-        build_module_def(vec![
-            (
-                "users",
-                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
-            ),
-            (
-                "admins",
-                ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
-            ),
-            (
-                "player",
-                ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
-            ),
-        ])
+        build_module_def(
+            vec![
+                (
+                    "users",
+                    ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+                ),
+                (
+                    "admins",
+                    ProductType::from([("identity", AlgebraicType::identity()), ("id", AlgebraicType::U64)]),
+                ),
+                (
+                    "player",
+                    ProductType::from([("id", AlgebraicType::U64), ("level_num", AlgebraicType::U64)]),
+                ),
+            ],
+            vec![],
+        )
     }
 
     /// Parse, type check, and resolve RLS rules
-    fn resolve(sql: &str, tx: &impl SchemaView, auth: &AuthCtx) -> anyhow::Result<Vec<ProjectName>> {
+    fn resolve(sql: &str, tx: &mut impl SchemaView, auth: &AuthCtx) -> anyhow::Result<Vec<ProjectName>> {
         let (expr, _) = parse_and_type_sub(sql, tx, auth)?;
         resolve_views_for_sub(tx, expr, auth, &mut false)
     }
 
     #[test]
     fn test_rls_for_owner() -> anyhow::Result<()> {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
         let auth = AuthCtx::new(Identity::ONE, Identity::ONE);
         let sql = "select * from users";
-        let resolved = resolve(sql, &tx, &auth)?;
+        let resolved = resolve(sql, &mut tx, &auth)?;
 
         let users_schema = tx.schema("users").unwrap();
 
@@ -574,10 +584,10 @@ mod tests {
 
     #[test]
     fn test_rls_for_non_owner() -> anyhow::Result<()> {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
         let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
         let sql = "select * from users";
-        let resolved = resolve(sql, &tx, &auth)?;
+        let resolved = resolve(sql, &mut tx, &auth)?;
 
         let users_schema = tx.schema("users").unwrap();
 
@@ -609,10 +619,10 @@ mod tests {
 
     #[test]
     fn test_multiple_rls_rules_for_table() -> anyhow::Result<()> {
-        let tx = SchemaViewer(module_def());
+        let mut tx = SchemaViewer(module_def(), Default::default());
         let auth = AuthCtx::new(Identity::ZERO, Identity::ONE);
         let sql = "select * from player where level_num = 5";
-        let resolved = resolve(sql, &tx, &auth)?;
+        let resolved = resolve(sql, &mut tx, &auth)?;
 
         let users_schema = tx.schema("users").unwrap();
         let admins_schema = tx.schema("admins").unwrap();

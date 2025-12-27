@@ -1122,6 +1122,10 @@ impl RelationalDB {
         Ok(tx.create_view(module_def, view_def)?)
     }
 
+    pub fn create_or_get_params(&self, tx: &mut MutTx, params: &ProductValue) -> Result<ArgId, DBError> {
+        Ok(tx.create_or_get_params(params)?)
+    }
+
     pub fn drop_view(&self, tx: &mut MutTx, view_id: ViewId) -> Result<(), DBError> {
         Ok(tx.drop_view(view_id)?)
     }
@@ -2217,6 +2221,7 @@ pub mod tests_utils {
         db: &RelationalDB,
         name: &str,
         schema: &[(&str, AlgebraicType)],
+        params: ProductType,
         is_anonymous: bool,
     ) -> Result<(ViewId, TableId), DBError> {
         let mut builder = RawModuleDefV9Builder::new();
@@ -2234,7 +2239,7 @@ pub mod tests_utils {
             0,
             true,
             is_anonymous,
-            ProductType::unit(),
+            params,
             AlgebraicType::array(AlgebraicType::Ref(type_ref)),
         );
 
