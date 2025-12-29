@@ -126,10 +126,10 @@ fn eval(c: &mut Criterion) {
     // A benchmark runner for the new query engine
     let bench_query = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
-            let tx = raw.db.begin_tx(Workload::Subscribe);
+            let mut tx = raw.db.begin_tx(Workload::Subscribe);
             let auth = AuthCtx::for_testing();
-            let schema_viewer = &SchemaViewer::new(&tx, &auth);
-            let (plans, table_id, table_name, _) = compile_subscription(sql, schema_viewer, &auth).unwrap();
+            let mut schema_viewer = SchemaViewer::new(&mut tx, &auth);
+            let (plans, table_id, table_name, _) = compile_subscription(sql, &mut schema_viewer, &auth).unwrap();
             let plans = plans
                 .into_iter()
                 .map(|plan| plan.optimize(&auth).unwrap())
@@ -155,8 +155,8 @@ fn eval(c: &mut Criterion) {
 
     let bench_eval = |c: &mut Criterion, name, sql| {
         c.bench_function(name, |b| {
-            let tx = raw.db.begin_tx(Workload::Update);
-            let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &tx, sql).unwrap();
+            let mut tx = raw.db.begin_tx(Workload::Update);
+            let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &mut tx, sql).unwrap();
             let query: ExecutionSet = query.into();
 
             b.iter(|| {
@@ -207,11 +207,11 @@ fn eval(c: &mut Criterion) {
         // A passthru executed independently of the database.
         let select_lhs = "select * from footprint";
         let select_rhs = "select * from location";
-        let tx = &raw.db.begin_tx(Workload::Update);
-        let query_lhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_lhs).unwrap();
-        let query_rhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, select_rhs).unwrap();
+        let mut tx = raw.db.begin_tx(Workload::Update);
+        let query_lhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &mut tx, select_lhs).unwrap();
+        let query_rhs = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &mut tx, select_rhs).unwrap();
         let query = ExecutionSet::from_iter(query_lhs.into_iter().chain(query_rhs));
-        let tx = &tx.into();
+        let tx = &(&mut tx).into();
 
         b.iter(|| drop(black_box(query.eval_incr_for_test(&raw.db, tx, &update, None))))
     });
@@ -226,10 +226,10 @@ fn eval(c: &mut Criterion) {
             from footprint join location on footprint.entity_id = location.entity_id \
             where location.chunk_index = {chunk_index}"
         );
-        let tx = &raw.db.begin_tx(Workload::Update);
-        let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), tx, &join).unwrap();
+        let mut tx = raw.db.begin_tx(Workload::Update);
+        let query = compile_read_only_queryset(&raw.db, &AuthCtx::for_testing(), &mut tx, &join).unwrap();
         let query: ExecutionSet = query.into();
-        let tx = &tx.into();
+        let tx = &(&mut tx).into();
 
         b.iter(|| drop(black_box(query.eval_incr_for_test(&raw.db, tx, &update, None))));
     });

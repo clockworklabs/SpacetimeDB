@@ -1,7 +1,9 @@
 use std::{collections::HashSet, sync::Arc};
 
+use crate::errors::TypingError;
 use spacetimedb_lib::{query::Delta, AlgebraicType, AlgebraicValue};
-use spacetimedb_primitives::{TableId, ViewId};
+use spacetimedb_primitives::{ArgId, TableId, ViewId};
+use spacetimedb_sats::ProductValue;
 use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_sql_parser::ast::{BinOp, LogOp};
 
@@ -96,6 +98,10 @@ impl ProjectName {
             }
         }
     }
+}
+
+pub trait CallParams {
+    fn create_or_get_param(&mut self, param: &ProductValue) -> Result<ArgId, TypingError>;
 }
 
 /// A projection is the root of any relational expression.
@@ -245,6 +251,8 @@ pub enum RelExpr {
     LeftDeepJoin(LeftDeepJoin),
     /// A left deep binary equi-join
     EqJoin(LeftDeepJoin, FieldProject, FieldProject),
+    /// A function call
+    FunCall(Relvar, ProductValue),
 }
 
 /// A table reference
@@ -280,7 +288,7 @@ impl RelExpr {
             | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
                 lhs.visit(f);
             }
-            Self::RelVar(..) => {}
+            Self::RelVar(..) | Self::FunCall(..) => {}
         }
     }
 
@@ -293,14 +301,14 @@ impl RelExpr {
             | Self::EqJoin(LeftDeepJoin { lhs, .. }, ..) => {
                 lhs.visit_mut(f);
             }
-            Self::RelVar(..) => {}
+            Self::RelVar(..) | Self::FunCall(..) => {}
         }
     }
 
     /// The number of fields this expression returns
     pub fn nfields(&self) -> usize {
         match self {
-            Self::RelVar(..) => 1,
+            Self::RelVar(..) | Self::FunCall(..) => 1,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => join.lhs.nfields() + 1,
             Self::Select(input, _) => input.nfields(),
         }
@@ -310,6 +318,7 @@ impl RelExpr {
     pub fn has_field(&self, field: &str) -> bool {
         match self {
             Self::RelVar(Relvar { alias, .. }) => alias.as_ref() == field,
+            Self::FunCall(Relvar { alias, .. }, ..) => alias.as_ref() == field,
             Self::LeftDeepJoin(join) | Self::EqJoin(join, ..) => {
                 join.rhs.alias.as_ref() == field || join.lhs.has_field(field)
             }

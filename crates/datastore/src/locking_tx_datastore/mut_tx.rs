@@ -8,6 +8,8 @@ use super::{
     tx_state::{IndexIdMap, PendingSchemaChange, TxState, TxTableForInsertion},
     SharedMutexGuard, SharedWriteGuard,
 };
+use crate::error::DatastoreError;
+use crate::system_tables::{StViewArgFields, StViewArgRow, ST_VIEW_ARG_ID};
 use crate::{
     error::ViewError,
     locking_tx_datastore::state_view::EqOnColumn,
@@ -48,6 +50,7 @@ use spacetimedb_lib::{
 use spacetimedb_primitives::{
     col_list, ArgId, ColId, ColList, ColSet, ConstraintId, IndexId, ScheduleId, SequenceId, TableId, ViewFnPtr, ViewId,
 };
+use spacetimedb_sats::bsatn::ToBsatn;
 use spacetimedb_sats::{
     bsatn::{self, to_writer, DecodeError, Deserializer},
     de::{DeserializeSeed, WithBound},
@@ -587,6 +590,33 @@ impl MutTxId {
         };
 
         Ok(())
+    }
+
+    pub fn get_params(&self, params: ProductValue) -> Result<Option<ArgId>> {
+        self.iter_by_col_eq(ST_VIEW_ARG_ID, StViewArgFields::Bytes, &AlgebraicValue::Product(params))?
+            .next()
+            .map(|row| Ok(ArgId(StViewArgRow::try_from(row)?.id)))
+            .transpose()
+    }
+
+    /// Create parameters for a view, storing the values in `st_view_arg`.
+    pub fn create_or_get_params(&mut self, params: &ProductValue) -> Result<ArgId> {
+        if let Some(arg_id) = self.get_params(params.clone())? {
+            return Ok(arg_id);
+        }
+        let row = StViewArgRow {
+            id: ArgId::SENTINEL.0,
+            bytes: params
+                .to_bsatn_vec()
+                .map_err(|err| DatastoreError::ReadViaBsatnError(err.into()))?
+                .into(),
+        };
+        let arg_id = self
+            .insert_via_serialize_bsatn(ST_VIEW_ARG_ID, &row)?
+            .1
+            .collapse()
+            .read_col::<u64>(StViewArgFields::Id)?;
+        Ok(ArgId(arg_id))
     }
 
     /// Create a table.

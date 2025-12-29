@@ -1,7 +1,8 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use super::ast::SchemaViewer;
-use crate::db::relational_db::{RelationalDB, Tx};
+use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
@@ -19,13 +20,17 @@ use anyhow::anyhow;
 use spacetimedb_datastore::execution_context::Workload;
 use spacetimedb_datastore::locking_tx_datastore::state_view::StateView;
 use spacetimedb_datastore::traits::IsolationLevel;
+use spacetimedb_expr::check::{SchemaView, TypingResult};
+use spacetimedb_expr::errors::TypingError;
 use spacetimedb_expr::statement::Statement;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
+use spacetimedb_primitives::{ArgId, TableId};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
 use spacetimedb_schema::relation::FieldName;
+use spacetimedb_schema::schema::TableOrViewSchema;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
 use spacetimedb_vm::relation::MemTable;
@@ -185,6 +190,31 @@ pub struct SqlResult {
     pub metrics: ExecutionMetrics,
 }
 
+struct SchemaViewerMut<'a> {
+    db: &'a RelationalDB,
+    schema: SchemaViewer<'a, MutTx>,
+}
+
+impl SchemaView for SchemaViewerMut<'_> {
+    fn table_id(&self, name: &str) -> Option<TableId> {
+        self.schema.table_id(name)
+    }
+
+    fn schema_for_table(&self, table_id: TableId) -> Option<Arc<TableOrViewSchema>> {
+        self.schema.schema_for_table(table_id)
+    }
+
+    fn rls_rules_for_table(&self, table_id: TableId) -> anyhow::Result<Vec<Box<str>>> {
+        self.schema.rls_rules_for_table(table_id)
+    }
+
+    fn get_or_create_params(&mut self, params: ProductValue) -> TypingResult<ArgId> {
+        self.db
+            .create_or_get_params(&mut self.schema, &params)
+            .map_err(|err| TypingError::Other(err.into()))
+    }
+}
+
 /// Run the `SQL` string using the `auth` credentials
 pub async fn run(
     db: &RelationalDB,
@@ -197,7 +227,14 @@ pub async fn run(
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
+        compile_sql_stmt(
+            sql_text,
+            &mut SchemaViewerMut {
+                db,
+                schema: SchemaViewer::new(tx, &auth),
+            },
+            &auth,
+        )
     })?;
 
     let mut metrics = ExecutionMetrics::default();
@@ -345,7 +382,8 @@ pub(crate) mod tests {
     use itertools::Itertools;
     use pretty_assertions::assert_eq;
     use spacetimedb_datastore::system_tables::{
-        StRowLevelSecurityRow, StTableFields, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID, ST_TABLE_NAME,
+        StRowLevelSecurityRow, StTableFields, ST_RESERVED_SEQUENCE_RANGE, ST_ROW_LEVEL_SECURITY_ID, ST_TABLE_ID,
+        ST_TABLE_NAME,
     };
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
@@ -958,7 +996,7 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, false)?;
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, ProductType::unit(), false)?;
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, table_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
@@ -979,7 +1017,7 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, true)?;
+        let (_, table_id) = tests_utils::create_view_for_test(&db, "my_view", &schema, ProductType::unit(), true)?;
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, table_id, None, product![0u8, 1u8])?;
@@ -1000,7 +1038,7 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, ProductType::unit(), false)?;
 
         let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
         let t_id = db.create_table_for_test("t", &schema, &[0.into()])?;
@@ -1060,10 +1098,10 @@ pub(crate) mod tests {
         let db = TestDB::in_memory()?;
 
         let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::U8)];
-        let (_, u_id) = tests_utils::create_view_for_test(&db, "u", &schema, false)?;
+        let (_, u_id) = tests_utils::create_view_for_test(&db, "u", &schema, ProductType::unit(), false)?;
 
         let schema = [("c", AlgebraicType::U8), ("d", AlgebraicType::U8)];
-        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, false)?;
+        let (_, v_id) = tests_utils::create_view_for_test(&db, "v", &schema, ProductType::unit(), false)?;
 
         with_auto_commit(&db, |tx| -> Result<_, DBError> {
             tests_utils::insert_into_view(&db, tx, u_id, Some(identity_from_u8(1)), product![0u8, 1u8])?;
@@ -1571,6 +1609,49 @@ pub(crate) mod tests {
             vec![product!(2u8)]
         );
         check(&db, "DELETE FROM T", internal_auth, del)?;
+
+        Ok(())
+    }
+
+    // Verify calling views with params
+    #[test]
+    fn test_view_params() -> ResultTest<()> {
+        let db = TestDB::durable()?;
+        let schema = [("a", AlgebraicType::U8), ("b", AlgebraicType::I64)];
+        let (_view_id, table_id) = tests_utils::create_view_for_test(
+            &db,
+            "my_view",
+            &schema,
+            ProductType::from([("x", AlgebraicType::U8)]),
+            true,
+        )?;
+        let arg_id = ST_RESERVED_SEQUENCE_RANGE as u64;
+        assert_eq!(
+            run_for_testing(&db, "select view_id, param_pos, param_name FROM st_view_param")?,
+            vec![product![arg_id as u32, 0u16, "x"]]
+        );
+
+        with_auto_commit(&db, |tx| -> Result<_, DBError> {
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![arg_id + 1, 0u8, 1i64])?;
+            tests_utils::insert_into_view(&db, tx, table_id, None, product![arg_id, 1u8, 2i64])?;
+            Ok(())
+        })?;
+
+        assert_eq!(
+            run_for_testing(&db, "select * from my_view(1)")?,
+            vec![product![1u8, 2i64]]
+        );
+
+        assert_eq!(
+            run_for_testing(&db, "select * from my_view(2)")?,
+            vec![product![0u8, 1i64]]
+        );
+
+        // We have created the internal rows for view args
+        assert_eq!(
+            run_for_testing(&db, "select id FROM st_view_arg")?,
+            vec![product![arg_id], product![arg_id + 1]]
+        );
 
         Ok(())
     }

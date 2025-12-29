@@ -833,6 +833,16 @@ pub struct ViewParamDef {
     pub view_name: Identifier,
 }
 
+/// A struct representing a validated view parameter
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct ViewParamDefSimple {
+    /// The name of the parameter.
+    pub name: Identifier,
+
+    /// The type of this parameter.
+    pub ty: AlgebraicType,
+}
+
 /// A constraint definition attached to a table.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ConstraintDef {

@@ -1402,6 +1402,7 @@ mod tests {
     use std::sync::Arc;
 
     use pretty_assertions::assert_eq;
+    use spacetimedb_expr::check::test_utils::MockCallParams;
     use spacetimedb_expr::{
         check::{SchemaView, TypingResult},
         expr::ProjectName,
@@ -1410,9 +1411,12 @@ mod tests {
     use spacetimedb_lib::{
         db::auth::{StAccess, StTableType},
         identity::AuthCtx,
-        AlgebraicType, AlgebraicValue,
+        AlgebraicType, AlgebraicValue, ProductValue,
     };
-    use spacetimedb_primitives::{ColId, ColList, ColSet, TableId};
+    use spacetimedb_primitives::{ArgId, ColId, ColList, ColSet, TableId, ViewId};
+    use spacetimedb_schema::def::ViewParamDefSimple;
+    use spacetimedb_schema::identifier::Identifier;
+    use spacetimedb_schema::schema::ViewDefInfo;
     use spacetimedb_schema::{
         def::{BTreeAlgorithm, ConstraintData, IndexAlgorithm, UniqueConstraintData},
         schema::{ColumnSchema, ConstraintSchema, IndexSchema, TableOrViewSchema, TableSchema},
@@ -1428,6 +1432,7 @@ mod tests {
 
     struct SchemaViewer {
         schemas: Vec<Arc<TableOrViewSchema>>,
+        params: MockCallParams,
     }
 
     impl SchemaView for SchemaViewer {
@@ -1445,20 +1450,42 @@ mod tests {
         fn rls_rules_for_table(&self, _: TableId) -> anyhow::Result<Vec<Box<str>>> {
             Ok(vec![])
         }
+
+        fn get_or_create_params(&mut self, params: ProductValue) -> TypingResult<ArgId> {
+            Ok(self.params.get_or_insert(params))
+        }
     }
 
-    fn schema(
+    fn schema_with_params(
         table_id: TableId,
         table_name: &str,
         columns: &[(&str, AlgebraicType)],
         indexes: &[&[usize]],
         unique: &[&[usize]],
         primary_key: Option<usize>,
+        params: Option<&[(&str, AlgebraicType)]>,
     ) -> TableOrViewSchema {
+        let mut columns = columns.to_vec();
+        // Need to add the hidden columns for views, see `TableSchema::from_view_def_for_datastore`
+        if params.is_some() {
+            columns.insert(0, ("arg_id", AlgebraicType::U64));
+        }
+        let view = params.map(|params| ViewDefInfo {
+            view_id: ViewId::SENTINEL,
+            args: params
+                .iter()
+                .map(|(name, ty)| ViewParamDefSimple {
+                    name: Identifier::new((*name).into()).unwrap(),
+                    ty: ty.clone(),
+                })
+                .collect(),
+            is_anonymous: true,
+        });
+
         TableOrViewSchema::from(Arc::new(TableSchema::new(
             table_id,
             table_name.to_owned().into_boxed_str(),
-            None,
+            view,
             columns
                 .iter()
                 .enumerate()
@@ -1501,8 +1528,19 @@ mod tests {
         )))
     }
 
+    fn schema(
+        table_id: TableId,
+        table_name: &str,
+        columns: &[(&str, AlgebraicType)],
+        indexes: &[&[usize]],
+        unique: &[&[usize]],
+        primary_key: Option<usize>,
+    ) -> TableOrViewSchema {
+        schema_with_params(table_id, table_name, columns, indexes, unique, primary_key, None)
+    }
+
     /// A wrapper around [spacetimedb_expr::check::parse_and_type_sub] that takes a dummy [AuthCtx]
-    fn parse_and_type_sub(sql: &str, tx: &impl SchemaView) -> TypingResult<ProjectName> {
+    fn parse_and_type_sub(sql: &str, tx: &mut impl SchemaView) -> TypingResult<ProjectName> {
         spacetimedb_expr::check::parse_and_type_sub(sql, tx, &AuthCtx::for_testing()).map(|(plan, _)| plan)
     }
 
@@ -1520,14 +1558,15 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
+        let mut db = SchemaViewer {
             schemas: vec![t.clone()],
+            params: Default::default(),
         };
 
         let sql = "select * from t";
 
         let auth = AuthCtx::for_testing();
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
@@ -1552,14 +1591,15 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
+        let mut db = SchemaViewer {
             schemas: vec![t.clone()],
+            params: Default::default(),
         };
 
         let sql = "select * from t where x = 5";
 
         let auth = AuthCtx::for_testing();
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
@@ -1646,8 +1686,9 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
+        let mut db = SchemaViewer {
             schemas: vec![u.clone(), l.clone(), b.clone()],
+            params: Default::default(),
         };
 
         let sql = "
@@ -1659,7 +1700,7 @@ mod tests {
             where u.identity = 5
         ";
         let auth = AuthCtx::for_testing();
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Plan:
@@ -1838,8 +1879,9 @@ mod tests {
             Some(0),
         ));
 
-        let db = SchemaViewer {
+        let mut db = SchemaViewer {
             schemas: vec![m.clone(), w.clone(), p.clone()],
+            params: Default::default(),
         };
 
         let sql = "
@@ -1852,7 +1894,7 @@ mod tests {
             where 5 = m.employee and 5 = v.employee
         ";
         let auth = AuthCtx::for_testing();
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Plan:
@@ -2020,13 +2062,14 @@ mod tests {
             None,
         ));
 
-        let db = SchemaViewer {
+        let mut db = SchemaViewer {
             schemas: vec![t.clone()],
+            params: Default::default(),
         };
 
         let sql = "select * from t where x = 3 and y = 4 and z = 5";
         let auth = AuthCtx::for_testing();
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Select index on (x, y, z)
@@ -2049,7 +2092,7 @@ mod tests {
 
         // Test permutations of the same query
         let sql = "select * from t where z = 5 and y = 4 and x = 3";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
@@ -2070,7 +2113,7 @@ mod tests {
         };
 
         let sql = "select * from t where x = 3 and y = 4";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Select index on x
@@ -2098,7 +2141,7 @@ mod tests {
         };
 
         let sql = "select * from t where w = 5 and x = 4";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Select index on x
@@ -2126,7 +2169,7 @@ mod tests {
         };
 
         let sql = "select * from t where y = 1";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         // Do not select index on (y, z)
@@ -2141,7 +2184,7 @@ mod tests {
 
         // Select index on [y, z]
         let sql = "select * from t where y = 1 and z = 2";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
@@ -2160,7 +2203,7 @@ mod tests {
 
         // Check permutations of the same query
         let sql = "select * from t where z = 2 and y = 1";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         match pp {
@@ -2179,7 +2222,7 @@ mod tests {
 
         // Select index on (y, z) and filter on (w)
         let sql = "select * from t where w = 1 and y = 2 and z = 3";
-        let lp = parse_and_type_sub(sql, &db).unwrap();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
         let pp = compile_select(lp).optimize(&auth).unwrap();
 
         let plan = match pp {
@@ -2219,12 +2262,13 @@ mod tests {
             None,
         ));
 
-        let db = SchemaViewer {
+        let mut db = SchemaViewer {
             schemas: vec![t.clone()],
+            params: Default::default(),
         };
 
-        let compile = |sql| {
-            let stmt = parse_and_type_sql(sql, &db, &AuthCtx::for_testing()).unwrap();
+        let mut compile = |sql| {
+            let stmt = parse_and_type_sql(sql, &mut db, &AuthCtx::for_testing()).unwrap();
             let Statement::Select(select) = stmt else {
                 unreachable!()
             };
@@ -2264,5 +2308,68 @@ mod tests {
 
         assert!(plan.plan_iter().any(|plan| plan.has_filter()));
         assert!(plan.plan_iter().any(|plan| plan.has_table_scan(None)));
+    }
+
+    // Verify the view parameters are converted to filters in the physical plan
+    #[test]
+    fn view_params() {
+        let t_id = TableId(1);
+        let v_id = TableId(2);
+
+        let t = Arc::new(schema(
+            t_id,
+            "t",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U32)],
+            &[&[0]],
+            &[&[0]],
+            Some(0),
+        ));
+        let v = Arc::new(schema_with_params(
+            v_id,
+            "v",
+            &[("id", AlgebraicType::U64), ("x", AlgebraicType::U32)],
+            &[],
+            &[],
+            None,
+            Some(&[("param_id", AlgebraicType::U64)]),
+        ));
+
+        let mut db = SchemaViewer {
+            schemas: vec![t.clone(), v.clone()],
+            params: Default::default(),
+        };
+
+        let sql = "select * from v(0)";
+
+        let auth = AuthCtx::for_testing();
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+        match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(input, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                // This is the internal parameter filter
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 0, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(0))));
+
+                match *input {
+                    PhysicalPlan::TableScan(TableScan { schema, .. }, _) => {
+                        assert_eq!(schema.table_id, v_id);
+                    }
+                    plan => panic!("unexpected plan: {plan:#?}"),
+                }
+            }
+            proj => panic!("unexpected project: {proj:#?}"),
+        };
+
+        let sql = "select * from v(0) as x JOIN t ON x.id = t.id";
+        let lp = parse_and_type_sub(sql, &mut db).unwrap();
+        let pp = compile_select(lp).optimize(&auth).unwrap();
+
+        match pp {
+            ProjectPlan::None(PhysicalPlan::Filter(_, PhysicalExpr::BinOp(BinOp::Eq, field, value))) => {
+                assert!(matches!(*field, PhysicalExpr::Field(TupleField { field_pos: 0, .. })));
+                assert!(matches!(*value, PhysicalExpr::Value(AlgebraicValue::U64(0))));
+            }
+            proj => panic!("unexpected project: {proj:#?}"),
+        };
     }
 }

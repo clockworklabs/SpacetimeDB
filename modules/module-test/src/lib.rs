@@ -209,6 +209,11 @@ fn my_player(ctx: &ViewContext) -> Option<Player> {
     ctx.db.player().identity().find(ctx.sender)
 }
 
+/*#[spacetimedb::view(name = players_in_chunk, public)]
+fn players_in_chunk(ctx: &AnonymousViewContext, chunk_index: u32) -> Query<Player> {
+    ctx.db.player().chunk_index().filter(chunk_index)
+}*/
+
 // ─────────────────────────────────────────────────────────────────────────────
 // REDUCERS
 // ─────────────────────────────────────────────────────────────────────────────

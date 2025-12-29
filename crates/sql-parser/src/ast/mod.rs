@@ -6,11 +6,12 @@ use sqlparser::ast::Ident;
 pub mod sql;
 pub mod sub;
 
-/// The FROM clause is either a relvar or a JOIN
+/// The FROM clause is either a relvar, a JOIN, or a function call
 #[derive(Debug)]
 pub enum SqlFrom {
     Expr(SqlIdent, SqlIdent),
     Join(SqlIdent, SqlIdent, Vec<SqlJoin>),
+    FuncCall(SqlFuncCall, SqlIdent),
 }
 
 impl SqlFrom {
@@ -22,11 +23,26 @@ impl SqlFrom {
     }
 }
 
+/// A source in a FROM clause, restricted to a single relvar or function call
+#[derive(Debug)]
+pub enum SqlFromSource {
+    Expr(SqlIdent, SqlIdent),
+    FuncCall(SqlFuncCall, SqlIdent),
+}
+
+impl SqlFromSource {
+    pub fn into_name_alias(self) -> (SqlIdent, SqlIdent, Option<Vec<SqlLiteral>>) {
+        match self {
+            Self::Expr(name, alias) => (name, alias, None),
+            Self::FuncCall(func, alias) => (func.name, alias, Some(func.args)),
+        }
+    }
+}
+
 /// An inner join in a FROM clause
 #[derive(Debug)]
 pub struct SqlJoin {
-    pub var: SqlIdent,
-    pub alias: SqlIdent,
+    pub from: SqlFromSource,
     pub on: Option<SqlExpr>,
 }
 
@@ -197,7 +213,7 @@ impl From<Ident> for SqlIdent {
 }
 
 /// A SQL constant expression
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SqlLiteral {
     /// A boolean constant
     Bool(bool),
@@ -246,4 +262,11 @@ impl Display for LogOp {
             Self::Or => write!(f, "OR"),
         }
     }
+}
+
+/// A SQL function call
+#[derive(Debug)]
+pub struct SqlFuncCall {
+    pub name: SqlIdent,
+    pub args: Vec<SqlLiteral>,
 }

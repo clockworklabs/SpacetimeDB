@@ -991,6 +991,13 @@ pub struct StViewParamRow {
     pub param_type: AlgebraicTypeViaBytes,
 }
 
+impl TryFrom<RowRef<'_>> for StViewParamRow {
+    type Error = DatastoreError;
+    fn try_from(row: RowRef<'_>) -> Result<Self, DatastoreError> {
+        read_via_bsatn(row)
+    }
+}
+
 /// System table [ST_VIEW_SUB_NAME]
 ///
 /// | view_id | arg_id | identity | num_subscribers | has_subscribers | last_called |
