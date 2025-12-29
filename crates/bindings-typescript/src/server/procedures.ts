@@ -35,7 +35,7 @@ export function callProcedure(
     timestamp,
     connectionId,
     http: httpClient,
-    // **Note:** must be 0..=i32::MAX
+    // **Note:** must be 0..=u32::MAX
     counter_uuid: { value: Number(0) },
     get identity() {
       return new Identity(sys.identity().__identity__);

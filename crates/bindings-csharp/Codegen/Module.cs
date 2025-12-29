@@ -1738,7 +1738,7 @@ public class Module : IIncrementalGenerator
                             public readonly Random Rng;
                             public readonly Timestamp Timestamp;
                             public readonly AuthCtx SenderAuth;
-                            // **Note:** must be 0..=i32::MAX
+                            // **Note:** must be 0..=u32::MAX
                             internal int CounterUuid;
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();

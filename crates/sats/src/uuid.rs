@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::fmt;
 
 use crate::timestamp::Timestamp;
@@ -112,7 +112,7 @@ impl Uuid {
     /// use spacetimedb_sats::timestamp::Timestamp;
     ///
     /// let now = Timestamp::from_micros_since_unix_epoch(1_686_000_000_000);
-    /// let counter = std::cell::RefCell::new(1);
+    /// let counter = std::cell::Cell::new(1);
     /// // Use the `ReducerContext::rng()` | `ProcedureContext::rng()` to generate random bytes,
     /// // or call `ReducerContext::new_uuid_v7()` / `ProcedureContext::new_uuid_v7()`
     /// let random_bytes = [0u8; 4];
@@ -123,17 +123,10 @@ impl Uuid {
     ///     uuid.to_string(),
     /// );
     /// ```
-    pub fn from_counter_v7(counter: &RefCell<i32>, now: Timestamp, random_bytes: &[u8; 4]) -> anyhow::Result<Self> {
+    pub fn from_counter_v7(counter: &Cell<u32>, now: Timestamp, random_bytes: &[u8; 4]) -> anyhow::Result<Self> {
         // Monotonic counter value (31 bits)
-        let mut current = counter.borrow_mut();
-        // The counter is constructed from Timestamp::UNIX_EPOCH by callers
-        assert!(*current >= 0, "uuid counter must be non-negative");
-
-        let counter_val = {
-            let next = *current;
-            *current = next.wrapping_add(1) & 0x7FFF_FFFF;
-            next
-        };
+        let counter_val = counter.get();
+        counter.set(counter_val.wrapping_add(1) & 0x7FFF_FFFF);
 
         let ts_ms = now
             .to_duration_since_unix_epoch()
@@ -312,7 +305,7 @@ mod test {
         let u_v4 = Uuid::from_random_bytes_v4([0u8; 16]);
         assert_eq!(u_v4.get_version(), Some(Version::V4));
 
-        let counter = RefCell::new(0);
+        let counter = Cell::new(0);
         let ts = Timestamp::from_micros_since_unix_epoch(1_686_000_000_000);
         let u_v7 = Uuid::from_counter_v7(&counter, ts, &[0u8; 4]).unwrap();
         assert_eq!(u_v7.get_version(), Some(Version::V7));
@@ -321,16 +314,16 @@ mod test {
     #[test]
     fn wrap_around() {
         // Check wraparound behavior
-        let counter = RefCell::new(i32::MAX);
+        let counter = Cell::new(u32::MAX);
         let ts = Timestamp::now();
         let _u1 = Uuid::from_counter_v7(&counter, ts, &[0u8; 4]).unwrap();
-        assert_eq!(0, counter.borrow().to_owned());
+        assert_eq!(0, counter.get());
     }
 
     #[test]
     #[should_panic(expected = "timestamp before unix epoch")]
     fn negative_timestamp_panics() {
-        let counter = RefCell::new(0);
+        let counter = Cell::new(0);
         let ts = Timestamp::from_micros_since_unix_epoch(-1);
         let _u = Uuid::from_counter_v7(&counter, ts, &[0u8; 4]).unwrap();
     }
@@ -344,13 +337,13 @@ mod test {
         assert_eq!(u1, u1);
         assert_ne!(u1, u2);
         // Check we start from zero
-        let counter = RefCell::new(0);
+        let counter = Cell::new(0);
         let ts = Timestamp::now();
         let u_start = Uuid::from_counter_v7(&counter, ts, &[0u8; 4]).unwrap();
         assert_eq!(u_start.get_counter(), 0);
         // Check ordering over many UUIDs up to the max counter value
         let total = 10_000_000;
-        let counter = RefCell::new(i32::MAX - total);
+        let counter = Cell::new(u32::MAX - total);
         let ts = Timestamp::now();
         let uuids = (0..total)
             .map(|_| {

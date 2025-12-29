@@ -119,7 +119,7 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   identity: Identity;
   timestamp: Timestamp;
   connectionId: ConnectionId | null;
-  // **Note:** must be 0..=i32::MAX
+  // **Note:** must be 0..=u32::MAX
   counter_uuid: { value: number };
   db: DbView<SchemaDef>;
   senderAuth: AuthCtx;

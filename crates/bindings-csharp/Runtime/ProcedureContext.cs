@@ -52,7 +52,7 @@ public abstract class ProcedureContextBase(
     public Timestamp Timestamp { get; private set; } = time;
     public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
 
-    // **Note:** must be 0..=i32::MAX
+    // **Note:** must be 0..=u32::MAX
     protected int CounterUuid = 0;
     private Internal.TxContext? txContext;
     private ProcedureTxContextBase? cachedUserTxContext;

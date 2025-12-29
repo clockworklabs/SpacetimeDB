@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{LazyCell, OnceCell, RefCell};
+use core::cell::{Cell, LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
 use std::rc::Rc;
@@ -978,8 +978,9 @@ pub struct ReducerContext {
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
-    /// **Note:** must be 0..=i32::MAX
-    counter_uuid: RefCell<i32>,
+    /// **Note:** must be 0..=u32::MAX
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
 }
 
 impl ReducerContext {
@@ -993,7 +994,8 @@ impl ReducerContext {
             sender_auth: AuthCtx::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            counter_uuid: RefCell::new(0),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
     }
 
@@ -1007,7 +1009,8 @@ impl ReducerContext {
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            counter_uuid: RefCell::new(0),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
     }
 
@@ -1073,6 +1076,7 @@ impl ReducerContext {
     /// }
     /// # }
     /// ```
+    #[cfg(feature = "rand")]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
@@ -1138,8 +1142,10 @@ pub struct ProcedureContext {
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
     /// A counter used for generating UUIDv7 values.
-    /// **Note:** must be 0..=i32::MAX
-    counter_uuid: RefCell<i32>,
+    /// **Note:** must be 0..=u32::MAX
+    // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
 }
 
 #[cfg(feature = "unstable")]
@@ -1152,7 +1158,8 @@ impl ProcedureContext {
             http: http::HttpClient {},
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
-            counter_uuid: RefCell::new(0),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
     }
     /// Read the current module's [`Identity`].
@@ -1355,7 +1362,7 @@ impl ProcedureContext {
     /// }
     /// # }
     /// ```
-    #[cfg(feature = "unstable")]
+    #[cfg(all(feature = "unstable", feature = "rand"))]
     pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
         let mut random_bytes = [0u8; 4];
         self.rng().try_fill_bytes(&mut random_bytes)?;
