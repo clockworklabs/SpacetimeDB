@@ -731,17 +731,16 @@ pub use spacetimedb_bindings_macro::reducer;
 // TODO(procedure-http): add example with an HTTP request.
 // TODO(procedure-transaction): document obtaining and using a transaction within a procedure.
 ///
-// TODO(scheduled-procedures): Uncomment below docs.
-// /// # Scheduled procedures
+/// # Scheduled procedures
 // TODO(docs): after moving scheduled reducer docs into table secion, link there.
-// ///
-// /// Like [reducer]s, procedures can be made **scheduled**.
-// /// This allows calling procedures at a particular time, or in a loop.
-// /// It also allows reducers to enqueue procedure runs.
-// ///
-// /// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
-// /// when a database is under heavy load.
-// ///
+///
+/// Like [reducer]s, procedures can be made **scheduled**.
+/// This allows calling procedures at a particular time, or in a loop.
+/// It also allows reducers to enqueue procedure runs.
+///
+/// Scheduled procedures are called on a best-effort basis and may be slightly delayed in their execution
+/// when a database is under heavy load.
+///
 /// [clients]: https://spacetimedb.com/docs/#client
 // TODO(procedure-async): update docs and examples with `async`-ness.
 #[doc(inline)]
@@ -870,6 +869,7 @@ pub use spacetimedb_bindings_macro::procedure;
 pub use spacetimedb_bindings_macro::view;
 
 pub struct QueryBuilder {}
+pub use query_builder::Query;
 
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
@@ -1084,13 +1084,25 @@ pub struct ProcedureContext {
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
-    // TODO: Add rng?
+    // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
 }
 
 #[cfg(feature = "unstable")]
 impl ProcedureContext {
+    fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            http: http::HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+        }
+    }
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.

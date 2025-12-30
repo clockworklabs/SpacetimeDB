@@ -39,7 +39,7 @@ pub struct ReducerContext {
     pub arg_bsatn: Bytes,
 }
 
-impl From<&ReducerContext> for txdata::Inputs {
+impl From<ReducerContext> for txdata::Inputs {
     fn from(
         ReducerContext {
             name,
@@ -47,9 +47,9 @@ impl From<&ReducerContext> for txdata::Inputs {
             caller_connection_id,
             timestamp,
             arg_bsatn,
-        }: &ReducerContext,
+        }: ReducerContext,
     ) -> Self {
-        let reducer_name = Arc::new(Varchar::from_str_truncate(name));
+        let reducer_name = Arc::new(Varchar::from_string_truncate(name));
         let cap = arg_bsatn.len()
         /* caller_identity */
         + 32
@@ -58,10 +58,10 @@ impl From<&ReducerContext> for txdata::Inputs {
         /* timestamp */
         + 8;
         let mut buf = Vec::with_capacity(cap);
-        bsatn::to_writer(&mut buf, caller_identity).unwrap();
-        bsatn::to_writer(&mut buf, caller_connection_id).unwrap();
-        bsatn::to_writer(&mut buf, timestamp).unwrap();
-        buf.extend_from_slice(arg_bsatn);
+        bsatn::to_writer(&mut buf, &caller_identity).unwrap();
+        bsatn::to_writer(&mut buf, &caller_connection_id).unwrap();
+        bsatn::to_writer(&mut buf, &timestamp).unwrap();
+        buf.extend_from_slice(&arg_bsatn);
 
         txdata::Inputs {
             reducer_name,

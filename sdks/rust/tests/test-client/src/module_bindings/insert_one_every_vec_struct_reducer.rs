@@ -63,6 +63,7 @@ impl insert_one_every_vec_struct for super::RemoteReducers {
         InsertOneEveryVecStructCallbackId(self.imp.on_reducer(
             "insert_one_every_vec_struct",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

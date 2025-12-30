@@ -5,8 +5,6 @@ use spacetimedb_lib::{
 
 use crate::query_builder::{Col, ColumnRef};
 
-use super::TableName;
-
 pub enum Operand<T> {
     Column(ColumnRef<T>),
     Literal(LiteralValue),
@@ -17,6 +15,8 @@ pub enum BoolExpr<T> {
     Ne(Operand<T>, Operand<T>),
     Gt(Operand<T>, Operand<T>),
     Lt(Operand<T>, Operand<T>),
+    Gte(Operand<T>, Operand<T>),
+    Lte(Operand<T>, Operand<T>),
     And(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
     Or(Box<BoolExpr<T>>, Box<BoolExpr<T>>),
 }
@@ -41,23 +41,25 @@ pub trait RHS<T, V> {
 
 impl<T, V> RHS<T, V> for Col<T, V> {
     fn to_expr(self) -> Operand<T> {
-        Operand::Column(ColumnRef::new(self.col.column_name()))
+        Operand::Column(self.col)
     }
 }
 
-fn format_bool_expr<T: TableName>(v: &Operand<T>) -> String {
+fn format_bool_expr<T>(v: &Operand<T>) -> String {
     match v {
         Operand::Column(col) => col.fmt(),
         Operand::Literal(lit) => lit.0.clone(),
     }
 }
 
-pub fn format_expr<T: TableName>(expr: &BoolExpr<T>) -> String {
+pub fn format_expr<T>(expr: &BoolExpr<T>) -> String {
     match expr {
         BoolExpr::Eq(l, r) => format!("({} = {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::Ne(l, r) => format!("({} <> {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::Gt(l, r) => format!("({} > {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::Lt(l, r) => format!("({} < {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Gte(l, r) => format!("({} >= {})", format_bool_expr(l), format_bool_expr(r)),
+        BoolExpr::Lte(l, r) => format!("({} <= {})", format_bool_expr(l), format_bool_expr(r)),
         BoolExpr::And(a, b) => format!("({} AND {})", format_expr(a), format_expr(b)),
         BoolExpr::Or(a, b) => format!("({} OR {})", format_expr(a), format_expr(b)),
     }

@@ -368,6 +368,80 @@ ul.theme-doc-sidebar-menu {
   padding: 0;
 }
 
+/* Show chevron/caret for second-level and third-level categories */
+.theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link,
+.theme-doc-sidebar-item-category-level-3 > .menu__list-item-collapsible > .menu__link {
+  position: relative;
+  padding-left: 20px !important;
+}
+
+/* Create a visible chevron arrow - default state (expanded/down) */
+.theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link::before,
+.theme-doc-sidebar-item-category-level-3 > .menu__list-item-collapsible > .menu__link::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--clockworklabs-color-n2);
+  transform: translateY(-50%);
+  transition: transform 0.2s ease;
+}
+
+/* Point right when collapsed */
+.theme-doc-sidebar-item-category-level-2.menu__list-item--collapsed > .menu__list-item-collapsible > .menu__link::before,
+.theme-doc-sidebar-item-category-level-3.menu__list-item--collapsed > .menu__list-item-collapsible > .menu__link::before {
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid var(--clockworklabs-color-n2);
+  border-right: none;
+  transform: translateY(-50%);
+}
+
+/* Style second-level category headers differently from top-level */
+.theme-doc-sidebar-item-category-level-2 > .menu__list-item-collapsible > .menu__link {
+  text-transform: none; /* Remove uppercase for level-2 */
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: normal;
+  color: var(--clockworklabs-color-n2) !important;
+}
+
+/* Style third-level category headers */
+.theme-doc-sidebar-item-category-level-3 > .menu__list-item-collapsible > .menu__link {
+  text-transform: none;
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: normal;
+  color: var(--clockworklabs-color-n3) !important;
+}
+
+/* Indent items inside second-level categories */
+.theme-doc-sidebar-item-category-level-2 .menu__list {
+  margin-left: 16px !important;
+  margin-top: 4px;
+}
+
+/* Indent items inside third-level categories */
+.theme-doc-sidebar-item-category-level-3 .menu__list {
+  margin-left: 16px !important;
+  margin-top: 4px;
+}
+
+/* Optional: subtle left border for nested items */
+.theme-doc-sidebar-item-category-level-2 .menu__list {
+  border-left: 1px solid rgba(182, 192, 207, 0.1);
+  padding-left: 8px;
+}
+
+.theme-doc-sidebar-item-category-level-3 .menu__list {
+  border-left: 1px solid rgba(182, 192, 207, 0.1);
+  padding-left: 8px;
+}
+
 .footer {
   background-color: var(--ifm-background-color);
 }

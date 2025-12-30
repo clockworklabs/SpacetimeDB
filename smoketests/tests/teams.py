@@ -36,6 +36,37 @@ class CreateChildDatabase(Smoketest):
         )
         return parse_sql_result(str(res))
 
+
+class ChangeDatabaseHierarchy(Smoketest):
+    AUTOPUBLISH = False
+
+    def test_change_database_hierarchy(self):
+        """
+        Test that changing the hierarchy of an existing database is not
+        supported.
+        """
+
+        parent_name = f"parent-{random_string()}"
+        sibling_name = f"sibling-{random_string()}"
+        child_name = f"child-{random_string()}"
+
+        self.publish_module(parent_name)
+        self.publish_module(sibling_name)
+
+        # Publish as a child of 'parent_name'.
+        self.publish_module(f"{parent_name}/{child_name}")
+
+        # Publishing again with a different parent is rejected...
+        with self.assertRaises(Exception):
+            self.publish_module(f"{sibling_name}/{child_name}", clear = False)
+        # ..even if `clear = True`
+        with self.assertRaises(Exception):
+            self.publish_module(f"{sibling_name}/{child_name}", clear = True)
+
+        # Publishing again with the same parent is ok.
+        self.publish_module(f"{parent_name}/{child_name}", clear = False)
+
+
 class PermissionsTest(Smoketest):
     AUTOPUBLISH = False
 

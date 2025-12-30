@@ -60,6 +60,7 @@ impl delete_pk_string for super::RemoteReducers {
         DeletePkStringCallbackId(self.imp.on_reducer(
             "delete_pk_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

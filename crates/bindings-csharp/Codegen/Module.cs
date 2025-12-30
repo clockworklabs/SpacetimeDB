@@ -410,6 +410,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly EquatableArray<TableAccessor> TableAccessors;
     public readonly EquatableArray<TableIndex> Indexes;
 
+    private readonly bool isRowStruct;
+
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
         var index = Members
@@ -427,6 +429,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         : base(context, diag)
     {
         var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
+
+        isRowStruct = ((INamedTypeSymbol)context.TargetSymbol).IsValueType;
 
         if (Kind is TypeKind.Sum)
         {
@@ -481,6 +485,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
+        var uniqueIndexBase = isRowStruct ? "UniqueIndex" : "RefUniqueIndex";
+
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
@@ -492,12 +498,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
             yield return $$"""
-                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{f.Name}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                    public {{globalName}}? Find({{f.Type.Name}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
+                    public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
@@ -570,6 +576,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
+        var uniqueIndexBase = isRowStruct
+            ? "global::SpacetimeDB.Internal.ReadOnlyUniqueIndex"
+            : "global::SpacetimeDB.Internal.ReadOnlyRefUniqueIndex";
+
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
@@ -582,7 +592,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
             yield return $$$"""
                 public sealed class {{{f.Name}}}Index
-                    : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                    : {{{uniqueIndexBase}}}<
                           global::SpacetimeDB.Internal.ViewHandles.{{{tableAccessor.Name}}}ReadOnly,
                           {{{globalName}}},
                           {{{f.Type.Name}}},
@@ -1190,12 +1200,19 @@ record ProcedureDeclaration
     public readonly Scope Scope;
     private readonly bool HasWrongSignature;
     public readonly TypeUse ReturnType;
+    private readonly IMethodSymbol _methodSymbol;
+    private readonly ITypeSymbol _returnTypeSymbol;
+    private readonly DiagReporter _diag;
 
     public ProcedureDeclaration(GeneratorAttributeSyntaxContext context, DiagReporter diag)
     {
         var methodSyntax = (MethodDeclarationSyntax)context.TargetNode;
         var method = (IMethodSymbol)context.TargetSymbol;
         var attr = context.Attributes.Single().ParseAs<ProcedureAttribute>();
+
+        _methodSymbol = method;
+        _returnTypeSymbol = method.ReturnType;
+        _diag = diag;
 
         if (
             method.Parameters.FirstOrDefault()?.Type
@@ -1232,33 +1249,105 @@ record ProcedureDeclaration
     {
         var invocationArgs =
             Args.Length == 0 ? "" : ", " + string.Join(", ", Args.Select(a => a.Name));
+        var invocation = $"{FullName}((SpacetimeDB.ProcedureContext)ctx{invocationArgs})";
 
-        var invokeBody = HasWrongSignature
-            ? "throw new System.InvalidOperationException(\"Invalid procedure signature.\");"
-            : $$"""
-                    var result = {{FullName}}((SpacetimeDB.ProcedureContext)ctx{{invocationArgs}});
-                    using var output = new MemoryStream();
-                    using var writer = new BinaryWriter(output);
-                    new {{ReturnType.BSATNName}}().Write(writer, result);
-                    return output.ToArray();
-                """;
+        var hasTxOutcome = TryGetTxOutcomeType(out var txOutcomePayload);
+        var hasTxResult = TryGetTxResultTypes(out var txResultPayload, out _);
+        var hasTxWrapper = hasTxOutcome || hasTxResult;
+        var txPayload = hasTxOutcome ? txOutcomePayload : txResultPayload;
+        var txPayloadIsUnit = hasTxWrapper && txPayload.BSATNName == "SpacetimeDB.BSATN.Unit";
 
-        return $$"""
-            class {{Name}} : SpacetimeDB.Internal.IProcedure {
-                {{MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args)}}
+        string[] bodyLines;
+
+        if (HasWrongSignature)
+        {
+            bodyLines = new[]
+            {
+                "throw new System.InvalidOperationException(\"Invalid procedure signature.\");",
+            };
+        }
+        else if (hasTxWrapper)
+        {
+            var successLines = txPayloadIsUnit
+                ? new[] { "return System.Array.Empty<byte>();" }
+                : new[]
+                {
+                    "using var output = new MemoryStream();",
+                    "using var writer = new BinaryWriter(output);",
+                    "__txReturnRW.Write(writer, outcome.Value!);",
+                    "return output.ToArray();",
+                };
+
+            bodyLines = new[]
+            {
+                $"var outcome = {invocation};",
+                "if (!outcome.IsSuccess)",
+                "{",
+                "    throw outcome.Error ?? new System.InvalidOperationException(\"Transaction failed.\");",
+                "}",
+            }
+                .Concat(successLines)
+                .ToArray();
+        }
+        else if (ReturnType.Name == "SpacetimeDB.Unit")
+        {
+            bodyLines = new[] { $"{invocation};", "return System.Array.Empty<byte>();" };
+        }
+        else
+        {
+            var serializer = $"new {ReturnType.BSATNName}()";
+            bodyLines = new[]
+            {
+                $"var result = {invocation};",
+                "using var output = new MemoryStream();",
+                "using var writer = new BinaryWriter(output);",
+                $"{serializer}.Write(writer, result);",
+                "return output.ToArray();",
+            };
+        }
+
+        var invokeBody = string.Join("\n", bodyLines.Select(line => $"                    {line}"));
+        var paramReads =
+            Args.Length == 0
+                ? string.Empty
+                : string.Join(
+                    "\n",
+                    Args.Select(a =>
+                        $"                    var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);"
+                    )
+                ) + "\n";
+
+        var returnTypeExpr = hasTxWrapper
+            ? (
+                txPayloadIsUnit
+                    ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
+                    : $"new {txPayload.BSATNName}().GetAlgebraicType(registrar)"
+            )
+            : (
+                ReturnType.Name == "SpacetimeDB.Unit"
+                    ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
+                    : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)"
+            );
+
+        var classFields = MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args);
+        if (hasTxWrapper && !txPayloadIsUnit)
+        {
+            classFields +=
+                $"\n        private {txPayload.BSATNName} __txReturnRW = new {txPayload.BSATNName}();";
+        }
+
+        return $$$"""
+            class {{{Name}}} : SpacetimeDB.Internal.IProcedure {
+                {{{classFields}}}
 
                 public SpacetimeDB.Internal.RawProcedureDefV9 MakeProcedureDef(SpacetimeDB.BSATN.ITypeRegistrar registrar) => new(
-                    nameof({{Name}}),
-                    [{{MemberDeclaration.GenerateDefs(Args)}}],
-                    new {{ReturnType.BSATNName}}().GetAlgebraicType(registrar)
+                    nameof({{{Name}}}),
+                    [{{{MemberDeclaration.GenerateDefs(Args)}}}],
+                    {{{returnTypeExpr}}}
                 );
 
                 public byte[] Invoke(BinaryReader reader, SpacetimeDB.Internal.IProcedureContext ctx) {
-                    {{string.Join(
-                "\n",
-                Args.Select(a => $"var {a.Name} = {a.Name}{TypeUse.BsatnFieldSuffix}.Read(reader);")
-            )}}
-                    {{invokeBody}}
+                    {{{paramReads}}}{{{invokeBody}}}
                 }
             }
             """;
@@ -1285,12 +1374,54 @@ record ProcedureDeclaration
                     "\n",
                     Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
                 )}}
-                SpacetimeDB.Internal.IProcedure.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
+                SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
             """
         );
 
         return extensions;
+    }
+
+    private bool TryGetTxOutcomeType(out TypeUse payloadType)
+    {
+        if (
+            _returnTypeSymbol
+                is INamedTypeSymbol
+                {
+                    Name: "TxOutcome",
+                    ContainingType: { Name: "ProcedureContext" }
+                } named
+            && named.TypeArguments.Length == 1
+        )
+        {
+            payloadType = TypeUse.Parse(_methodSymbol, named.TypeArguments[0], _diag);
+            return true;
+        }
+
+        payloadType = default!;
+        return false;
+    }
+
+    private bool TryGetTxResultTypes(out TypeUse payloadType, out TypeUse errorType)
+    {
+        if (
+            _returnTypeSymbol
+                is INamedTypeSymbol
+                {
+                    Name: "TxResult",
+                    ContainingType: { Name: "ProcedureContext" }
+                } named
+            && named.TypeArguments.Length == 2
+        )
+        {
+            payloadType = TypeUse.Parse(_methodSymbol, named.TypeArguments[0], _diag);
+            errorType = TypeUse.Parse(_methodSymbol, named.TypeArguments[1], _diag);
+            return true;
+        }
+
+        payloadType = default!;
+        errorType = default!;
+        return false;
     }
 }
 
@@ -1591,10 +1722,13 @@ public class Module : IIncrementalGenerator
                     // This is needed so every module build doesn't generate a full LocalReadOnly type, but just adds on to the existing.
                     // We extend it here with generated table accessors, and just need to suppress the duplicate-type warning.
                     #pragma warning disable CS0436
+                    #pragma warning disable STDB_UNSTABLE
 
                     using System.Diagnostics.CodeAnalysis;
                     using System.Runtime.CompilerServices;
                     using System.Runtime.InteropServices;
+                    using Internal = SpacetimeDB.Internal;
+                    using TxContext = SpacetimeDB.Internal.TxContext;
 
                     namespace SpacetimeDB {
                         public sealed record ReducerContext : DbContext<Local>, Internal.IReducerContext {
@@ -1607,32 +1741,52 @@ public class Module : IIncrementalGenerator
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
-                            internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
+                            internal ReducerContext(Identity identity, ConnectionId? connectionId, Random random,
+                                            Timestamp time, AuthCtx? senderAuth = null)
+                            {
                                 Sender = identity;
                                 ConnectionId = connectionId;
                                 Rng = random;
                                 Timestamp = time;
-                                SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
+                                SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
                             }
                         }
                         
-                        public sealed record ProcedureContext : Internal.IProcedureContext {
-                            public readonly Identity Sender;
-                            public readonly ConnectionId? ConnectionId;
-                            public readonly Random Rng;
-                            public readonly Timestamp Timestamp;
-                            public readonly AuthCtx SenderAuth;
-                        
-                            // We need this property to be non-static for parity with client SDK.
-                            public Identity Identity => Internal.IProcedureContext.GetIdentity();
-                        
-                            internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time) {
-                                Sender = identity;
-                                ConnectionId = connectionId;
-                                Rng = random;
-                                Timestamp = time;
-                                SenderAuth = AuthCtx.BuildFromSystemTables(connectionId, identity);
-                            }
+                        public sealed partial class ProcedureContext : global::SpacetimeDB.ProcedureContextBase {
+                            private readonly Local _db = new();
+
+                            internal ProcedureContext(Identity identity, ConnectionId? connectionId, Random random, Timestamp time)
+                                : base(identity, connectionId, random, time) {}
+
+                            protected override global::SpacetimeDB.LocalBase CreateLocal() => _db;
+                            protected override global::SpacetimeDB.ProcedureTxContextBase CreateTxContext(Internal.TxContext inner) =>
+                                _cached ??= new ProcedureTxContext(inner);
+
+                            private ProcedureTxContext? _cached;
+
+                            [Experimental("STDB_UNSTABLE")]
+                            public Local Db => _db;
+                            
+                            [Experimental("STDB_UNSTABLE")]
+                            public TResult WithTx<TResult>(Func<ProcedureTxContext, TResult> body) =>
+                                base.WithTx(tx => body((ProcedureTxContext)tx));
+                            
+                            [Experimental("STDB_UNSTABLE")]
+                            public TxOutcome<TResult> TryWithTx<TResult, TError>(
+                                Func<ProcedureTxContext, Result<TResult, TError>> body)
+                                where TError : Exception =>
+                                base.TryWithTx(tx => body((ProcedureTxContext)tx));
+                        }
+
+                        [Experimental("STDB_UNSTABLE")]
+                        public sealed class ProcedureTxContext : global::SpacetimeDB.ProcedureTxContextBase {
+                            internal ProcedureTxContext(Internal.TxContext inner) : base(inner) {}
+
+                            public new Local Db => (Local)base.Db;
+                        }
+
+                        public sealed class Local : global::SpacetimeDB.LocalBase {
+                            {{string.Join("\n", tableAccessors.Select(v => v.getter))}}
                         }
                         
                         public sealed record ViewContext : DbContext<Internal.LocalReadOnly>, Internal.IViewContext 
@@ -1645,23 +1799,19 @@ public class Module : IIncrementalGenerator
                                 Sender = sender;
                             }
                         }
-
+                        
                         public sealed record AnonymousViewContext : DbContext<Internal.LocalReadOnly>, Internal.IAnonymousViewContext 
                         {
                             internal AnonymousViewContext(Internal.LocalReadOnly db)
                                 : base(db) { }
                         }
-                    
-                        namespace Internal.TableHandles {
-                            {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
-                        }
-                                            
-                        public sealed class Local {
-                            {{string.Join("\n", tableAccessors.Select(v => v.getter))}}
-                        }
                     }
                     
-                    {{string.Join("\n", 
+                    namespace SpacetimeDB.Internal.TableHandles {
+                        {{string.Join("\n", tableAccessors.Select(v => v.tableAccessor))}}
+                    }
+                    
+                    {{string.Join("\n",
                         views.Array.Where(v => !v.IsAnonymous)
                             .Select((v, i) => v.GenerateDispatcherClass((uint)i))
                             .Concat(
@@ -1720,7 +1870,7 @@ public class Module : IIncrementalGenerator
                             // IMPORTANT: The order in which we register views matters.
                             // It must correspond to the order in which we call `GenerateDispatcherClass`.
                             // See the comment on `GenerateDispatcherClass` for more explanation.
-                            {{string.Join("\n", 
+                            {{string.Join("\n",
                                 views.Array.Where(v => !v.IsAnonymous)
                                     .Select(v => $"SpacetimeDB.Internal.Module.RegisterView<{v.Name}ViewDispatcher>();")
                                     .Concat(
@@ -1739,14 +1889,14 @@ public class Module : IIncrementalGenerator
                             )}}
                             {{string.Join(
                                 "\n",
-                                columnDefaultValues.Select(d => 
+                                columnDefaultValues.Select(d =>
                                     "{\n"
-                                         +$"var value = new {d.BSATNTypeName}();\n"
-                                         +"__memoryStream.Position = 0;\n"
-                                         +"__memoryStream.SetLength(0);\n"
-                                         +$"value.Write(__writer, {d.value});\n"   
-                                         +"var array = __memoryStream.ToArray();\n" 
-                                         +$"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
+                                         + $"var value = new {d.BSATNTypeName}();\n"
+                                         + "__memoryStream.Position = 0;\n"
+                                         + "__memoryStream.SetLength(0);\n"
+                                         + $"value.Write(__writer, {d.value});\n"
+                                         + "var array = __memoryStream.ToArray();\n"
+                                         + $"SpacetimeDB.Internal.Module.RegisterTableDefaultValue(\"{d.tableName}\", {d.columnId}, array);"
                                          + "\n}\n")
                             )}}
                         }
@@ -1805,7 +1955,7 @@ public class Module : IIncrementalGenerator
                             args,
                             result_sink
                         );
-
+                        
                         [UnmanagedCallersOnly(EntryPoint = "__call_view__")]
                         public static SpacetimeDB.Internal.Errno __call_view__(
                             uint id,
@@ -1838,6 +1988,7 @@ public class Module : IIncrementalGenerator
                     #endif
                     }
                     
+                    #pragma warning restore STDB_UNSTABLE
                     #pragma warning restore CS0436
                     """
                 );

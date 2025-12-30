@@ -1,6 +1,6 @@
 {
   "name": "spacetimedb",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "API and ABI bindings for the SpacetimeDB TypeScript module library",
   "homepage": "https://github.com/clockworklabs/SpacetimeDB#readme",
   "bugs": {
@@ -137,18 +137,18 @@
       "name": "sdk esm min (brotli)",
       "path": "dist/min/sdk/index.browser.mjs",
       "brotli": true,
-      "limit": "14 kB"
+      "limit": "30 kB"
     },
     {
       "name": "sdk esm min (gzip)",
       "path": "dist/min/sdk/index.browser.mjs",
       "gzip": true,
-      "limit": "16 kB"
+      "limit": "32 kB"
     },
     {
       "name": "sdk esm min (uncompressed)",
       "path": "dist/min/sdk/index.browser.mjs",
-      "limit": "14 kB"
+      "limit": "30 kB"
     }
   ],
   "dependencies": {

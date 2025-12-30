@@ -8,11 +8,11 @@ use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{InstanceEnv, TxSlot};
 use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
-    call_identity_connected, call_scheduled_reducer, init_database, CallProcedureParams, CallReducerParams,
-    CallViewParams, ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo,
-    ViewCallResult, ViewOutcome,
+    call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
+    ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
+    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
-use crate::host::scheduler::QueueItem;
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
     ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
     ReducerOutcome, Scheduler, UpdateDatabaseResult,
@@ -22,6 +22,7 @@ use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
+use crate::sql::execute::run_from_module;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
@@ -446,17 +447,6 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         res
     }
 
-    pub(crate) fn call_scheduled_reducer(
-        &mut self,
-        item: QueueItem,
-    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
-        let module = &self.common.info.clone();
-        let call_reducer = |tx, params| self.call_reducer_with_tx(tx, params);
-        let (res, trapped) = call_scheduled_reducer(module, item, call_reducer);
-        self.trapped = trapped;
-        res
-    }
-
     pub fn init_database(&mut self, program: Program) -> anyhow::Result<Option<ReducerCallResult>> {
         let module_def = &self.common.info.clone().module_def;
         let replica_ctx = &self.instance.replica_ctx().clone();
@@ -471,6 +461,15 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         self.trapped = trapped;
         res
     }
+
+    pub(in crate::host) async fn call_scheduled_function(
+        &mut self,
+        params: ScheduledFunctionParams,
+    ) -> CallScheduledFunctionResult {
+        let (res, trapped) = self.common.call_scheduled_function(params, &mut self.instance).await;
+        self.trapped = trapped;
+        res
+    }
 }
 
 impl<T: WasmInstance> WasmModuleInstance<T> {
@@ -481,14 +480,14 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
         })
     }
 
-    pub fn call_view_with_tx(&mut self, tx: MutTxId, params: CallViewParams) -> ViewCallResult {
-        let (res, trapped) = self.common.call_view_with_tx(tx, params, &mut self.instance);
+    pub fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
+        let (res, trapped) = self.common.handle_cmd(cmd, &mut self.instance);
         self.trapped = trapped;
         res
     }
 }
 
-pub(crate) struct InstanceCommon {
+pub struct InstanceCommon {
     info: Arc<ModuleInfo>,
     energy_monitor: Arc<dyn EnergyMonitor>,
     allocated_memory: usize,
@@ -977,6 +976,105 @@ impl InstanceCommon {
         result
     }
 
+    pub(crate) fn handle_cmd<I: WasmInstance>(&mut self, cmds: ViewCommand, inst: &mut I) -> (ViewCommandResult, bool) {
+        let mut inst = RefInstance {
+            instance: inst,
+            common: self,
+        };
+        match cmds {
+            ViewCommand::AddSingleSubscription {
+                info,
+                sender,
+                auth,
+                request,
+                timer,
+            } => {
+                let res = info.subscriptions.add_single_subscription_from_module(
+                    Some((&mut inst, &info.module_def)),
+                    sender,
+                    auth,
+                    request,
+                    timer,
+                    None,
+                );
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::AddLegacySubscription {
+                info,
+                sender,
+                auth,
+                subscribe,
+                timer,
+            } => {
+                let res = info.subscriptions.add_legacy_subscriber_from_module(
+                    Some((&mut inst, &info.module_def)),
+                    sender,
+                    auth,
+                    subscribe,
+                    timer,
+                    None,
+                );
+
+                match res {
+                    Ok((metrics, trapped)) => (
+                        ViewCommandResult::Subscription {
+                            result: Ok(Some(metrics)),
+                        },
+                        trapped,
+                    ),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+            ViewCommand::AddMultiSubscription {
+                info,
+                sender,
+                auth,
+                request,
+                timer,
+            } => {
+                let res = info.subscriptions.add_multi_subscription_from_module(
+                    Some((&mut inst, &info.module_def)),
+                    sender,
+                    auth,
+                    request,
+                    timer,
+                    None,
+                );
+
+                match res {
+                    Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
+                    Err(err) => (ViewCommandResult::Subscription { result: Err(err) }, false),
+                }
+            }
+
+            ViewCommand::Sql {
+                info,
+                db,
+                sql_text,
+                auth,
+                subs,
+            } => {
+                let mut head = vec![];
+                let res = run_from_module(Some((&mut inst, &info.module_def)), db, sql_text, auth, subs, &mut head);
+
+                match res {
+                    Ok((result, trapped)) => (
+                        ViewCommandResult::Sql {
+                            result: Ok(result),
+                            head,
+                        },
+                        trapped,
+                    ),
+                    Err(err) => (ViewCommandResult::Sql { result: Err(err), head }, false),
+                }
+            }
+        }
+    }
+
     /// Executes a view and materializes its result,
     /// deleting any previously materialized rows.
     ///
@@ -1060,8 +1158,7 @@ impl InstanceCommon {
                     let typespace = self.info.module_def.typespace();
                     let row_product_type = typespace
                         .resolve(row_type)
-                        .ty()
-                        .clone()
+                        .resolve_refs()?
                         .into_product()
                         .map_err(|_| anyhow!("Error resolving row type for view"))?;
 
@@ -1245,6 +1342,14 @@ impl InstanceCommon {
     /// Empty the system tables tracking clients without running any lifecycle reducers.
     pub(crate) fn clear_all_clients(&self) -> anyhow::Result<()> {
         self.info.relational_db().clear_all_clients().map_err(Into::into)
+    }
+
+    pub(crate) async fn call_scheduled_function<I: WasmInstance>(
+        &mut self,
+        params: ScheduledFunctionParams,
+        inst: &mut I,
+    ) -> (CallScheduledFunctionResult, bool) {
+        crate::host::scheduler::call_scheduled_function(&self.info.clone(), params, self, inst).await
     }
 }
 /// VM-related metrics for reducer execution.

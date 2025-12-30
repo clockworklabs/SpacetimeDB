@@ -313,7 +313,7 @@ public:
 	// Keep Data before/after Tag however your codegen/macros expect. Here we use 'Data' like your old field name.
 	TVariant<FPlayerData, FNpc> MessageData;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
 	ECharacterTypeTag Tag = static_cast<ECharacterTypeTag>(0);
 
 

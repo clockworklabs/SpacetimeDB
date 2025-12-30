@@ -3,6 +3,7 @@ use std::fmt;
 
 mod client_connection;
 mod client_connection_index;
+pub mod consume_each_list;
 mod message_handlers;
 pub mod messages;
 

@@ -421,6 +421,9 @@ macro_rules! abi_funcs {
             "spacetime_10.1"::bytes_source_remaining_length,
 
             "spacetime_10.2"::get_jwt,
+
+            "spacetime_10.4"::datastore_index_scan_point_bsatn,
+            "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
         }
 
         $link_async! {

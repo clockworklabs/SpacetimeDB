@@ -27,7 +27,7 @@ public:
 
     TVariant<FString, FSpacetimeDBUnit, FDatabaseUpdateType> MessageData;
 
-    UPROPERTY(BlueprintReadOnly)
+    UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
     EUpdateStatusTag Tag = static_cast<EUpdateStatusTag>(0);
 
     static FUpdateStatusType Committed(const FDatabaseUpdateType& Value)

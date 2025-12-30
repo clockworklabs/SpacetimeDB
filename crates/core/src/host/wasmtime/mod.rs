@@ -1,24 +1,21 @@
-use std::borrow::Cow;
-use std::time::Duration;
-
-use anyhow::Context;
-use spacetimedb_paths::server::ServerDataDir;
-use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
-
+use self::wasm_instance_env::WasmInstanceEnv;
+use super::wasm_common::module_host_actor::{InitializationError, WasmModuleHostActor, WasmModuleInstance};
+use super::wasm_common::{abi, ModuleCreationError};
 use crate::energy::{EnergyQuanta, FunctionBudget};
 use crate::error::NodesError;
 use crate::host::module_host::{Instance, ModuleRuntime};
 use crate::module_host_context::ModuleCreationContext;
+use anyhow::Context;
+use spacetimedb_paths::server::ServerDataDir;
+use std::borrow::Cow;
+use std::time::Duration;
+use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
+pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
+#[cfg(unix)]
+mod pooling_stack_creator;
 mod wasm_instance_env;
 mod wasmtime_module;
-
-use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
-
-use self::wasm_instance_env::WasmInstanceEnv;
-
-use super::wasm_common::module_host_actor::{InitializationError, WasmModuleInstance};
-use super::wasm_common::{abi, module_host_actor::WasmModuleHostActor, ModuleCreationError};
 
 pub struct WasmtimeRuntime {
     engine: Engine,
@@ -63,6 +60,11 @@ impl WasmtimeRuntime {
             // These futures are executed on a separate single-threaded executor not related to the "global" Tokio runtime,
             // which is responsible only for executing WASM. See `crate::util::jobs` for this infrastructure.
             .async_support(true);
+
+        #[cfg(unix)]
+        config
+            .async_stack_size(self::pooling_stack_creator::ASYNC_STACK_SIZE)
+            .with_host_stack(self::pooling_stack_creator::PoolingStackCreator::new());
 
         // Offer a compile-time flag for enabling perfmap generation,
         // so `perf` can display JITted symbol names.
@@ -144,10 +146,7 @@ pub enum WasmError {
 #[derive(Copy, Clone)]
 struct WasmtimeFuel(u64);
 
-impl WasmtimeFuel {
-    /// 1000 energy quanta == 1 wasmtime fuel unit
-    const QUANTA_MULTIPLIER: u64 = 1_000;
-}
+impl WasmtimeFuel {}
 
 impl From<FunctionBudget> for WasmtimeFuel {
     fn from(v: FunctionBudget) -> Self {
@@ -155,19 +154,19 @@ impl From<FunctionBudget> for WasmtimeFuel {
         // truncating this result would mean that with set_store_fuel(budget.into()), get_store_fuel()
         // would be wildly different than the original `budget`, and the energy usage for the reducer
         // would be u64::MAX even if it did nothing. ask how I know.
-        WasmtimeFuel(v.get() / Self::QUANTA_MULTIPLIER)
+        WasmtimeFuel(v.get())
     }
 }
 
 impl From<WasmtimeFuel> for FunctionBudget {
     fn from(v: WasmtimeFuel) -> Self {
-        FunctionBudget::new(v.0 * WasmtimeFuel::QUANTA_MULTIPLIER)
+        FunctionBudget::new(v.0)
     }
 }
 
 impl From<WasmtimeFuel> for EnergyQuanta {
     fn from(fuel: WasmtimeFuel) -> Self {
-        EnergyQuanta::new(u128::from(fuel.0) * u128::from(WasmtimeFuel::QUANTA_MULTIPLIER))
+        EnergyQuanta::new(u128::from(fuel.0))
     }
 }
 

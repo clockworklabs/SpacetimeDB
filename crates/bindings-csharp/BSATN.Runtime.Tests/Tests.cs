@@ -246,20 +246,12 @@ public static partial class BSATNRuntimeTests
     }
 
     [Type]
-    public partial struct BasicDataStruct
+    public partial struct BasicDataStruct((int x, string y, int? z, string? w) data)
     {
-        public int X;
-        public string Y;
-        public int? Z;
-        public string? W;
-
-        public BasicDataStruct((int x, string y, int? z, string? w) data)
-        {
-            X = data.x;
-            Y = data.y;
-            Z = data.z;
-            W = data.w;
-        }
+        public int X = data.x;
+        public string Y = data.y;
+        public int? Z = data.z;
+        public string? W = data.w;
     }
 
     [Type]
@@ -315,12 +307,12 @@ public static partial class BSATNRuntimeTests
             }
         }
 
-        public double CollisionFraction
+        public readonly double CollisionFraction
         {
             get => (double)Collisions / (double)Comparisons;
         }
 
-        public void AssertCollisionsLessThan(double fraction)
+        public readonly void AssertCollisionsLessThan(double fraction)
         {
             Assert.True(
                 CollisionFraction < fraction,
@@ -626,18 +618,13 @@ public static partial class BSATNRuntimeTests
         .Select(list => new ContainsNestedList(list));
 #pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
 
-
     static readonly Gen<(ContainsNestedList e1, ContainsNestedList e2)> GenTwoContainsNestedList =
         Gen.Select(GenContainsNestedList, GenContainsNestedList, (e1, e2) => (e1, e2));
 
-    class EnumerableEqualityComparer<T> : EqualityComparer<IEnumerable<T>>
+    class EnumerableEqualityComparer<T>(EqualityComparer<T> equalityComparer)
+        : EqualityComparer<IEnumerable<T>>
     {
-        private readonly EqualityComparer<T> EqualityComparer;
-
-        public EnumerableEqualityComparer(EqualityComparer<T> equalityComparer)
-        {
-            EqualityComparer = equalityComparer;
-        }
+        private readonly EqualityComparer<T> EqualityComparer = equalityComparer;
 
         public override bool Equals(IEnumerable<T>? x, IEnumerable<T>? y) =>
             x == null ? y == null : (y == null ? false : x.SequenceEqual(y, EqualityComparer));

@@ -212,7 +212,8 @@ const spacetimedb = schema(
 
   // Two tables with the same row type: player and logged_out_player
   table({ name: 'player', public: true }, playerLikeRow),
-  table({ name: 'logged_out_player', public: true }, playerLikeRow)
+  table({ name: 'logged_out_player', public: true }, playerLikeRow),
+  table({ name: 'table_to_remove' }, { id: t.u32() })
 );
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -91,11 +91,11 @@ impl Host {
                 let _guard = sql_span.enter();
 
                 let result = sql::execute::run(
-                    &db,
-                    &body,
+                    db.clone(),
+                    body,
                     auth,
-                    Some(&module_host.info.subscriptions),
-                    Some(&module_host),
+                    Some(module_host.info.subscriptions.clone()),
+                    Some(module_host),
                     &mut header,
                 )
                 .await
