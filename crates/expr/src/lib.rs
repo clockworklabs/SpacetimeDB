@@ -157,15 +157,19 @@ pub(crate) fn type_expr(vars: &Relvars, expr: SqlExpr, expected: Option<&Algebra
 }
 
 /// Is this type compatible with this binary operator?
-fn op_supports_type(_op: BinOp, t: &AlgebraicType) -> bool {
-    t.is_bool()
-        || t.is_integer()
-        || t.is_float()
-        || t.is_string()
-        || t.is_bytes()
-        || t.is_identity()
-        || t.is_connection_id()
-        || t.is_timestamp()
+fn op_supports_type(op: BinOp, ty: &AlgebraicType) -> bool {
+    match (ty, op) {
+        (AlgebraicType::Sum(st), BinOp::Eq | BinOp::Ne) if st.is_simple_enum() => true,
+        _ if ty.is_bool() => true,
+        _ if ty.is_integer() => true,
+        _ if ty.is_float() => true,
+        _ if ty.is_string() => true,
+        _ if ty.is_bytes() => true,
+        _ if ty.is_identity() => true,
+        _ if ty.is_connection_id() => true,
+        _ if ty.is_timestamp() => true,
+        _ => false,
+    }
 }
 
 /// Parse an integer literal into an [AlgebraicValue]
@@ -233,6 +237,14 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         ConnectionId::from_hex(value)
             .map(AlgebraicValue::from)
             .with_context(|| "Could not parse connection id")
+    };
+    let to_simple_enum = || {
+        Ok(AlgebraicValue::enum_simple(
+            match ty {
+                AlgebraicType::Sum(st) => st.get_variant_simple(value).ok_or_else(|| anyhow!("{value} is not a valid {}", fmt_algebraic_type(&ty)))?.0,
+                _ => unreachable!("ty.is_simple_enum() is true"),
+            }
+        ))
     };
     let to_i256 = |decimal: &BigDecimal| {
         i256::from_str_radix(
@@ -354,6 +366,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_bytes() => to_bytes(),
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),
+        t if t.is_simple_enum() => to_simple_enum(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }
