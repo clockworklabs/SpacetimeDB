@@ -1383,7 +1383,10 @@ export class ProductBuilder<Elements extends ElementsObj>
         // This will call obj[key].algebraicType only when someone
         // actually reads this property.
         get algebraicType() {
-          return obj[key].algebraicType;
+          const value = obj[key].algebraicType;
+          Object.defineProperty(this, 'algebraicType', { value });
+          Object.freeze(this);
+          return value;
         },
       }));
     }
@@ -1495,7 +1498,10 @@ export class RowBuilder<Row extends RowObj> extends TypeBuilder<
     const elements = Object.keys(mappedRow).map(name => ({
       name,
       get algebraicType() {
-        return mappedRow[name].typeBuilder.algebraicType;
+        const value = mappedRow[name].typeBuilder.algebraicType;
+        Object.defineProperty(this, 'algebraicType', { value });
+        Object.freeze(this);
+        return value;
       },
     }));
 
@@ -1547,7 +1553,10 @@ class SumBuilderImpl<Variants extends VariantsObj>
         // This will call obj[key].algebraicType only when someone
         // actually reads this property.
         get algebraicType() {
-          return variants[key].algebraicType;
+          const value = variants[key].algebraicType;
+          Object.defineProperty(this, 'algebraicType', { value });
+          Object.freeze(this);
+          return value;
         },
       }));
     }
