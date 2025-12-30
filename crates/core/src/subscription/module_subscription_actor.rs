@@ -1259,6 +1259,7 @@ impl ModuleSubscriptions {
 
     /// Materialize the views returned by the `view_collector`, if not already materialized,
     /// and subsequently downgrade to a read-only transaction.
+    #[allow(clippy::type_complexity)]
     fn materialize_views_and_downgrade_tx<I: WasmInstance>(
         &self,
         mut tx: MutTxId,
