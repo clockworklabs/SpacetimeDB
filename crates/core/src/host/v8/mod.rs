@@ -16,7 +16,8 @@ use crate::client::ClientActorId;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, CallViewParams, ClientConnectedError, Instance, ViewCallResult,
+    call_identity_connected, init_database, CallViewCommands, CallViewParams, ClientConnectedError, Instance,
+    RefInstance, ViewCallResult, ViewCommand, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -29,6 +30,7 @@ use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
+use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::asyncify;
 use anyhow::Context as _;
@@ -386,9 +388,9 @@ impl JsInstance {
         (*r, s)
     }
 
-    pub async fn call_view(self: Box<Self>, tx: MutTxId, params: CallViewParams) -> (ViewCallResult, Box<Self>) {
+    pub async fn call_view(self: Box<Self>, cmd: ViewCommand) -> (ViewCommandResult, Box<Self>) {
         let (r, s) = self
-            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { tx, params })
+            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { cmd })
             .await;
         (*r, s)
     }
@@ -413,7 +415,7 @@ impl JsInstance {
 enum JsWorkerReply {
     UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
     CallReducer(ReducerCallResult),
-    CallView(Box<ViewCallResult>),
+    CallView(Box<ViewCommandResult>),
     CallProcedure(Box<CallProcedureReturn>),
     ClearAllClients(anyhow::Result<()>),
     CallIdentityConnected(Result<(), ClientConnectedError>),
@@ -439,7 +441,7 @@ enum JsWorkerRequest {
         params: CallReducerParams,
     },
     /// See [`JsInstance::call_view`].
-    CallView { tx: MutTxId, params: CallViewParams },
+    CallView { cmd: CallViewCommands },
     /// See [`JsInstance::call_procedure`].
     CallProcedure {
         params: CallProcedureParams,
@@ -597,9 +599,9 @@ fn spawn_instance_worker(
                     let (res, trapped) = call_reducer(tx, params);
                     reply("call_reducer", CallReducer(res), trapped);
                 }
-                JsWorkerRequest::CallView { tx, params } => {
-                    let (res, trapped) = instance_common.call_view_with_tx(tx, params, &mut inst);
-                    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                JsWorkerRequest::CallView { cmd } => {
+                    let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
+                    //    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
                 }
                 JsWorkerRequest::CallProcedure { params, rt } => {
                     // The callee passed us a handle to their tokio runtime - enter its
