@@ -184,31 +184,47 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+class ReducerCtxImpl implements ReducerCtx<UntypedSchemaDef> {
+  #identity: Identity | null = null;
+  #senderAuth: AuthCtx | null = null;
+  sender: Identity;
+  timestamp: Timestamp;
+  connectionId: ConnectionId | null;
+  db = getDbView();
+
+  constructor(
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    this.sender = sender;
+    this.timestamp = timestamp;
+    this.connectionId = connectionId;
+  }
+
+  get identity() {
+    if (this.#identity == null)
+      this.#identity = new Identity(sys.identity().__identity__);
+    return this.#identity;
+  }
+
+  get senderAuth() {
+    if (!this.#senderAuth) {
+      this.#senderAuth = AuthCtxImpl.fromSystemTables(
+        this.connectionId,
+        this.sender
+      );
+    }
+    return this.#senderAuth;
+  }
+}
+
 export const makeReducerCtx = (
   sender: Identity,
   timestamp: Timestamp,
   connectionId: ConnectionId | null
 ): ReducerCtx<UntypedSchemaDef> => {
-  let identity: Identity | null;
-  let senderAuth: AuthCtx | null;
-  return freeze({
-    sender,
-    get identity() {
-      if (!identity) {
-        identity = new Identity(sys.identity().__identity__);
-      }
-      return identity;
-    },
-    timestamp,
-    connectionId,
-    db: getDbView(),
-    get senderAuth() {
-      if (!senderAuth) {
-        senderAuth = AuthCtxImpl.fromSystemTables(connectionId, sender);
-      }
-      return senderAuth;
-    },
-  });
+  return new ReducerCtxImpl(sender, timestamp, connectionId);
 };
 
 /**
