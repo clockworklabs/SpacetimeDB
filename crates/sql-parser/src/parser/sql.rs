@@ -129,7 +129,7 @@
 
 use sqlparser::{
     ast::{
-        Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SetExpr, Statement, TableFactor, TableWithJoins,
+        Assignment, Expr, GroupByExpr, ObjectName, Query, Select, SelectItem, SetExpr, Statement, TableFactor, TableWithJoins,
         Value, Values,
     },
     dialect::PostgreSqlDialect,
@@ -174,12 +174,13 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             after_columns,
             table: false,
             on: None,
-            returning: None,
+            returning,
             ..
         } if after_columns.is_empty() => Ok(SqlAst::Insert(SqlInsert {
             table: parse_ident(table_name)?,
             fields: columns.into_iter().map(SqlIdent::from).collect(),
             values: parse_values(*source)?,
+            returning: returning.map(parse_projection).transpose()?,
         })),
         Statement::Update {
             table:
@@ -198,19 +199,20 @@ fn parse_statement(stmt: Statement) -> SqlParseResult<SqlAst> {
             assignments,
             from: None,
             selection,
-            returning: None,
+            returning,
         } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlAst::Update(SqlUpdate {
             table: parse_ident(name)?,
             assignments: parse_assignments(assignments)?,
             filter: parse_expr_opt(selection)?,
+            returning: returning.map(parse_projection).transpose()?,
         })),
         Statement::Delete {
             tables,
             from,
             using: None,
             selection,
-            returning: None,
-        } if tables.is_empty() => Ok(SqlAst::Delete(parse_delete(from, selection)?)),
+            returning,
+        } if tables.is_empty() => Ok(SqlAst::Delete(parse_delete(from, selection, returning)?)),
         Statement::SetVariable {
             local: false,
             hivevar: false,
@@ -281,7 +283,7 @@ fn parse_assignment(Assignment { id, value }: Assignment) -> SqlParseResult<SqlS
 }
 
 /// Parse a DELETE statement
-fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlParseResult<SqlDelete> {
+fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>, returning: Option<Vec<SelectItem>>) -> SqlParseResult<SqlDelete> {
     if from.len() == 1 {
         match from.swap_remove(0) {
             TableWithJoins {
@@ -298,6 +300,7 @@ fn parse_delete(mut from: Vec<TableWithJoins>, selection: Option<Expr>) -> SqlPa
             } if joins.is_empty() && with_hints.is_empty() && partitions.is_empty() => Ok(SqlDelete {
                 table: parse_ident(name)?,
                 filter: parse_expr_opt(selection)?,
+                returning: returning.map(parse_projection).transpose()?,
             }),
             t => Err(SqlUnsupported::DeleteTable(t).into()),
         }

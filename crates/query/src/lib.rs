@@ -92,7 +92,7 @@ pub fn execute_dml_stmt<Tx: MutDatastore>(
     stmt: DML,
     tx: &mut Tx,
     metrics: &mut ExecutionMetrics,
-) -> Result<()> {
+) -> Result<Vec<ProductValue>> {
     let plan = compile_dml_plan(stmt).optimize(auth)?;
     let plan = MutExecutor::from(plan);
     plan.execute(tx, metrics)

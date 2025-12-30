@@ -9,7 +9,7 @@ use spacetimedb_lib::{identity::AuthCtx, AlgebraicValue, ProductValue};
 use spacetimedb_primitives::ColId;
 use spacetimedb_schema::schema::TableOrViewSchema;
 
-use crate::{compile::compile_select, plan::ProjectPlan};
+use crate::{compile::{compile_select, compile_select_list}, plan::{ProjectListPlan, ProjectPlan}};
 
 /// A plan for mutating a table in the database
 pub enum MutationPlan {
@@ -33,13 +33,15 @@ impl MutationPlan {
 pub struct InsertPlan {
     pub table: Arc<TableOrViewSchema>,
     pub rows: Vec<ProductValue>,
+    pub returning: Option<ProjectListPlan>,
 }
 
 impl From<TableInsert> for InsertPlan {
     fn from(insert: TableInsert) -> Self {
-        let TableInsert { table, rows } = insert;
+        let TableInsert { table, rows, returning } = insert;
         let rows = rows.into_vec();
-        Self { table, rows }
+        let returning = returning.map(compile_select_list);
+        Self { table, rows, returning }
     }
 }
 
@@ -47,19 +49,20 @@ impl From<TableInsert> for InsertPlan {
 pub struct DeletePlan {
     pub table: Arc<TableOrViewSchema>,
     pub filter: ProjectPlan,
+    pub returning: Option<ProjectListPlan>,
 }
 
 impl DeletePlan {
     /// Optimize the filter part of the delete
     fn optimize(self, auth: &AuthCtx) -> Result<Self> {
-        let Self { table, filter } = self;
+        let Self { table, filter, returning } = self;
         let filter = filter.optimize(auth)?;
-        Ok(Self { table, filter })
+        Ok(Self { table, filter, returning })
     }
 
     /// Logical to physical conversion
     pub(crate) fn compile(delete: TableDelete) -> Self {
-        let TableDelete { table, filter } = delete;
+        let TableDelete { table, filter, returning } = delete;
         let schema = table.clone();
         let alias = table.table_name.clone();
         let relvar = RelExpr::RelVar(Relvar {
@@ -72,7 +75,8 @@ impl DeletePlan {
             Some(expr) => ProjectName::None(RelExpr::Select(Box::new(relvar), expr)),
         };
         let filter = compile_select(project);
-        Self { table, filter }
+        let returning = returning.map(compile_select_list);
+        Self { table, filter, returning }
     }
 }
 
@@ -81,19 +85,20 @@ pub struct UpdatePlan {
     pub table: Arc<TableOrViewSchema>,
     pub columns: Vec<(ColId, AlgebraicValue)>,
     pub filter: ProjectPlan,
+    pub returning: Option<ProjectListPlan>,
 }
 
 impl UpdatePlan {
     /// Optimize the filter part of the update
     fn optimize(self, auth: &AuthCtx) -> Result<Self> {
-        let Self { table, columns, filter } = self;
+        let Self { table, columns, filter, returning } = self;
         let filter = filter.optimize(auth)?;
-        Ok(Self { columns, table, filter })
+        Ok(Self { columns, table, filter, returning })
     }
 
     /// Logical to physical conversion
     pub(crate) fn compile(update: TableUpdate) -> Self {
-        let TableUpdate { table, columns, filter } = update;
+        let TableUpdate { table, columns, filter, returning } = update;
         let schema = table.clone();
         let alias = table.table_name.clone();
         let relvar = RelExpr::RelVar(Relvar {
@@ -106,7 +111,8 @@ impl UpdatePlan {
             Some(expr) => ProjectName::None(RelExpr::Select(Box::new(relvar), expr)),
         };
         let filter = compile_select(project);
+        let returning = returning.map(compile_select_list);
         let columns = columns.into_vec();
-        Self { columns, table, filter }
+        Self { columns, table, filter, returning }
     }
 }
