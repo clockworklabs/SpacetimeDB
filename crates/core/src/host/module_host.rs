@@ -54,8 +54,8 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{AlgebraicType, ConnectionId};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
@@ -687,7 +687,7 @@ pub enum ViewCommandResult {
 
     Sql {
         result: Result<SqlResult, DBError>,
-        //metrics: Option<ExecutionMetrics>,
+        head: Vec<(Box<str>, AlgebraicType)>,
     },
 }
 pub struct CallViewParams {
@@ -1673,6 +1673,7 @@ impl ModuleHost {
         sql_text: String,
         auth: AuthCtx,
         subs: Option<ModuleSubscriptions>,
+        head: &mut Vec<(Box<str>, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
         let cmd = ViewCommand::Sql {
             info,
@@ -1694,7 +1695,10 @@ impl ModuleHost {
             .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
 
         match res {
-            ViewCommandResult::Sql { result } => result,
+            ViewCommandResult::Sql { result, head: new_head } => {
+                *head = new_head;
+                result
+            }
             ViewCommandResult::Subscription { .. } => {
                 unreachable!("unexpected subscription result in call_view_sql")
             }

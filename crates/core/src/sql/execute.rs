@@ -201,7 +201,7 @@ pub async fn run(
     match module {
         Some(module) => {
             let info = module.info.clone();
-            module.call_view_sql(info, db, sql_text, auth, subs).await
+            module.call_view_sql(info, db, sql_text, auth, subs, head).await
         }
         None => run_from_module::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head)
             .map(|x| x.0),

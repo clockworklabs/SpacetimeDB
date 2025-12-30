@@ -16,8 +16,7 @@ use crate::client::ClientActorId;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, CallViewCommands, CallViewParams, ClientConnectedError, Instance,
-    RefInstance, ViewCallResult, ViewCommand, ViewCommandResult,
+    call_identity_connected, init_database, ClientConnectedError, Instance, ViewCommand, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -30,7 +29,6 @@ use crate::host::wasm_common::{RowIters, TimingSpanSet};
 use crate::host::{ModuleHost, ReducerCallError, ReducerCallResult, Scheduler};
 use crate::module_host_context::{ModuleCreationContext, ModuleCreationContextLimited};
 use crate::replica_context::ReplicaContext;
-use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::asyncify;
 use anyhow::Context as _;
@@ -441,7 +439,7 @@ enum JsWorkerRequest {
         params: CallReducerParams,
     },
     /// See [`JsInstance::call_view`].
-    CallView { cmd: CallViewCommands },
+    CallView { cmd: ViewCommand },
     /// See [`JsInstance::call_procedure`].
     CallProcedure {
         params: CallProcedureParams,
@@ -601,7 +599,7 @@ fn spawn_instance_worker(
                 }
                 JsWorkerRequest::CallView { cmd } => {
                     let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
-                    //    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
+                    reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
                 }
                 JsWorkerRequest::CallProcedure { params, rt } => {
                     // The callee passed us a handle to their tokio runtime - enter its

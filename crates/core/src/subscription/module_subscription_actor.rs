@@ -454,7 +454,7 @@ impl ModuleSubscriptions {
             Some(host) => {
                 let info = host.info.clone();
                 host.call_view_add_single_subscription(info, sender, auth, request, timer)
-                    .await;
+                    .await
             }
             None => self
                 .add_single_subscription_from_module::<host::wasmtime::WasmtimeInstance>(

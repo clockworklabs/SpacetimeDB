@@ -1062,8 +1062,14 @@ impl InstanceCommon {
                 let res = run_from_module(Some((&mut inst, &info.module_def)), db, sql_text, auth, subs, &mut head);
 
                 match res {
-                    Ok((result, trapped)) => (ViewCommandResult::Sql { result: Ok(result) }, trapped),
-                    Err(err) => (ViewCommandResult::Sql { result: Err(err) }, false),
+                    Ok((result, trapped)) => (
+                        ViewCommandResult::Sql {
+                            result: Ok(result),
+                            head,
+                        },
+                        trapped,
+                    ),
+                    Err(err) => (ViewCommandResult::Sql { result: Err(err), head }, false),
                 }
             }
         }
