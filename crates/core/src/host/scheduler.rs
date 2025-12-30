@@ -273,7 +273,7 @@ enum QueueItem {
     VolatileNonatomicImmediate { function_name: String, args: FunctionArgs },
 }
 
-pub(super) struct ScheduledFunctionParams(QueueItem);
+pub(crate) struct ScheduledFunctionParams(QueueItem);
 
 #[cfg(target_pointer_width = "64")]
 spacetimedb_table::static_assert_size!(QueueItem, 64);
@@ -355,7 +355,7 @@ impl SchedulerActor {
 }
 
 #[derive(Debug)]
-pub(super) struct CallScheduledFunctionResult {
+pub(crate) struct CallScheduledFunctionResult {
     reschedule: Option<Reschedule>,
 }
 

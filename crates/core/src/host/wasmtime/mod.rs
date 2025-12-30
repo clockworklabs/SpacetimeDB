@@ -10,7 +10,7 @@ use spacetimedb_paths::server::ServerDataDir;
 use std::borrow::Cow;
 use std::time::Duration;
 use wasmtime::{self, Engine, Linker, StoreContext, StoreContextMut};
-use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
+pub use wasmtime_module::{WasmtimeInstance, WasmtimeModule};
 
 #[cfg(unix)]
 mod pooling_stack_creator;
