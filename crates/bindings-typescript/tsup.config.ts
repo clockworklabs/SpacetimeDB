@@ -131,7 +131,7 @@ export default defineConfig([
       ],
     },
     external: ['undici', /^spacetime:sys.*$/],
-    noExternal: ['base64-js', 'fast-text-encoding', 'statuses'],
+    noExternal: ['base64-js', 'fast-text-encoding', 'statuses', 'pure-rand'],
     outExtension,
     esbuildOptions: commonEsbuildTweaks(),
   },
