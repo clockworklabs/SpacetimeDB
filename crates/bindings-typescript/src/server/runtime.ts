@@ -17,34 +17,25 @@ import {
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
-import { callProcedure as callProcedure } from './procedures';
+import { callProcedure } from './procedures';
 import {
-  REDUCERS,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
   type ReducerCtx,
 } from '../lib/reducers';
-import {
-  MODULE_DEF,
-  getRegisteredSchema,
-  type UntypedSchemaDef,
-} from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
 import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, toCamelCase } from '../lib/util';
-import {
-  ANON_VIEWS,
-  VIEWS,
-  type AnonymousViewCtx,
-  type ViewCtx,
-} from '../lib/views';
+import { type AnonymousViewCtx, type ViewCtx } from './views';
 import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
 import ViewResultHeader from '../lib/autogen/view_result_header_type';
+import { getRegisteredSchema } from './schema';
 
 const { freeze } = Object;
 
@@ -215,18 +206,19 @@ export const hooks: ModuleHooks = {
     AlgebraicType.serializeValue(
       writer,
       RawModuleDef.algebraicType,
-      RawModuleDef.V9(MODULE_DEF)
+      RawModuleDef.V9(getRegisteredSchema().moduleDef)
     );
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
+    const moduleCtx = getRegisteredSchema();
     const argsType = AlgebraicType.Product(
-      MODULE_DEF.reducers[reducerId].params
+      moduleCtx.moduleDef.reducers[reducerId].params
     );
     const args = AlgebraicType.deserializeValue(
       new BinaryReader(argsBuf),
       argsType,
-      MODULE_DEF.typespace
+      moduleCtx.typespace
     );
     const senderIdentity = new Identity(sender);
     const ctx: ReducerCtx<any> = freeze(
@@ -237,7 +229,11 @@ export const hooks: ModuleHooks = {
       )
     );
     try {
-      return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
+      return (
+        callUserFunction(moduleCtx.reducers[reducerId], ctx, args) ?? {
+          tag: 'ok',
+        }
+      );
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -249,20 +245,21 @@ export const hooks: ModuleHooks = {
 
 export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
-    const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
+    const moduleCtx = getRegisteredSchema();
+    const { fn, params, returnType, returnTypeBaseSize } = moduleCtx.views[id];
     const ctx: ViewCtx<any> = freeze({
       sender: new Identity(sender),
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
-      from: makeQueryBuilder(getRegisteredSchema()),
+      from: makeQueryBuilder(moduleCtx.schemaType),
     });
     // ViewResultHeader.RawSql
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
-      MODULE_DEF.typespace
+      moduleCtx.typespace
     );
     const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
@@ -273,7 +270,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
         retBuf,
         ViewResultHeader.algebraicType,
         v,
-        MODULE_DEF.typespace
+        moduleCtx.typespace
       );
       return {
         data: retBuf.getBuffer(),
@@ -283,13 +280,13 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
         retBuf,
         ViewResultHeader.algebraicType,
         ViewResultHeader.RowData,
-        MODULE_DEF.typespace
+        moduleCtx.typespace
       );
       AlgebraicType.serializeValue(
         retBuf,
         returnType,
         ret,
-        MODULE_DEF.typespace
+        moduleCtx.typespace
       );
       return {
         data: retBuf.getBuffer(),
@@ -297,18 +294,20 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
     }
   },
   __call_view_anon__(id, argsBuf) {
-    const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
+    const moduleCtx = getRegisteredSchema();
+    const { fn, params, returnType, returnTypeBaseSize } =
+      moduleCtx.anonViews[id];
     const ctx: AnonymousViewCtx<any> = freeze({
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
-      from: makeQueryBuilder(getRegisteredSchema()),
+      from: makeQueryBuilder(moduleCtx.schemaType),
     });
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
-      MODULE_DEF.typespace
+      moduleCtx.typespace
     );
     const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
@@ -319,7 +318,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
         retBuf,
         ViewResultHeader.algebraicType,
         v,
-        MODULE_DEF.typespace
+        moduleCtx.typespace
       );
       return {
         data: retBuf.getBuffer(),
@@ -329,13 +328,13 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
         retBuf,
         ViewResultHeader.algebraicType,
         ViewResultHeader.RowData,
-        MODULE_DEF.typespace
+        moduleCtx.typespace
       );
       AlgebraicType.serializeValue(
         retBuf,
         returnType,
         ret,
-        MODULE_DEF.typespace
+        moduleCtx.typespace
       );
       return {
         data: retBuf.getBuffer(),
@@ -347,6 +346,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
 export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
   __call_procedure__(id, sender, connection_id, timestamp, args) {
     return callProcedure(
+      getRegisteredSchema(),
       id,
       new Identity(sender),
       ConnectionId.nullIfZero(new ConnectionId(connection_id)),
@@ -358,7 +358,7 @@ export const hooks_v1_2: import('spacetime:sys@1.2').ModuleHooks = {
 
 let DB_VIEW: DbView<any> | null = null;
 function getDbView() {
-  DB_VIEW ??= makeDbView(MODULE_DEF);
+  DB_VIEW ??= makeDbView(getRegisteredSchema().moduleDef);
   return DB_VIEW;
 }
 
@@ -651,7 +651,7 @@ function hasOwn<K extends PropertyKey>(
 
 function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, undefined> {
   using iter = new IteratorHandle(id);
-  const { typespace } = MODULE_DEF;
+  const { typespace } = getRegisteredSchema();
 
   let buf;
   while ((buf = advanceIter(iter)) != null) {

@@ -1,4 +1,4 @@
-import type { UntypedProceduresDef } from '../lib/procedures';
+import type { UntypedProceduresDef } from './procedures';
 import type { UntypedSchemaDef } from '../lib/schema';
 import type { UntypedReducersDef } from './reducers';
 

@@ -3658,7 +3658,7 @@ export const t = {
   enum: enumImpl,
 
   /**
-   * This is a special helper function for conveniently creating {@link Product} type columns with no fields.
+   * This is a special helper function for conveniently creating `Product` type columns with no fields.
    *
    * @returns A new {@link ProductBuilder} instance with no fields.
    */
@@ -3763,10 +3763,10 @@ export const t = {
   },
 
   /**
-   * This is a convenience method for creating a column with the {@link ByteArray} type.
+   * This is a convenience method for creating a column with the `ByteArray` type.
    * You can create a column of the same type by constructing an `array` of `u8`.
    * The TypeScript representation is {@link Uint8Array}.
-   * @returns A new {@link ByteArrayBuilder} instance with the {@link ByteArray} type.
+   * @returns A new {@link ByteArrayBuilder} instance with the `ByteArray` type.
    */
   byteArray: (): ByteArrayBuilder => {
     return new ByteArrayBuilder();
