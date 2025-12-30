@@ -14,7 +14,7 @@ struct TESTCLIENT_API FInsertOneBoolArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    bool B;
+    bool B = false;
 
     FInsertOneBoolArgs() = default;
 

@@ -4,6 +4,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
+#include "ModuleBindings/Optionals/TestClientOptionalInt32.g.h"
 #include "TestClientOptionalVecOptionalInt32.g.generated.h"
 
 USTRUCT(BlueprintType)

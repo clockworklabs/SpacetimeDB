@@ -16,7 +16,7 @@ struct TESTCLIENT_API FTestClientOptionalSimpleEnum
     bool bHasValue = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB", meta = (EditCondition = "bHasValue"))
-    ESimpleEnumType Value;
+    ESimpleEnumType Value = static_cast<ESimpleEnumType>(0);
 
     FTestClientOptionalSimpleEnum() = default;
 

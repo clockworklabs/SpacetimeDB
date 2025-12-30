@@ -14,7 +14,7 @@ struct TESTCLIENT_API FInsertOneF32Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    float F;
+    float F = 0.0f;
 
     FInsertOneF32Args() = default;
 

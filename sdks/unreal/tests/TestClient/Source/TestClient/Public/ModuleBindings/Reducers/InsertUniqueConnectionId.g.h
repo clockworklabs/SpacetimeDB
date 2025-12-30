@@ -18,7 +18,7 @@ struct TESTCLIENT_API FInsertUniqueConnectionIdArgs
     FSpacetimeDBConnectionId A;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertUniqueConnectionIdArgs() = default;
 

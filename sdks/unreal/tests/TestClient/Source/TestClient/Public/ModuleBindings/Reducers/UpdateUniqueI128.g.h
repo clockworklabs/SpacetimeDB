@@ -18,7 +18,7 @@ struct TESTCLIENT_API FUpdateUniqueI128Args
     FSpacetimeDBInt128 N;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdateUniqueI128Args() = default;
 

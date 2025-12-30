@@ -14,7 +14,7 @@ struct TESTCLIENT_API FInsertOneU16Args
     GENERATED_BODY()
 
     // NOTE: uint16 field not exposed to Blueprint due to non-blueprintable elements
-    uint16 N;
+    uint16 N = 0;
 
     FInsertOneU16Args() = default;
 

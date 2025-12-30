@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeleteUniqueU8Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    uint8 N;
+    uint8 N = 0;
 
     FDeleteUniqueU8Args() = default;
 

@@ -13,7 +13,7 @@ struct TESTCLIENT_API FPkSimpleEnumType
     GENERATED_BODY()
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    ESimpleEnumType A;
+    ESimpleEnumType A = static_cast<ESimpleEnumType>(0);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     int32 Data = 0;

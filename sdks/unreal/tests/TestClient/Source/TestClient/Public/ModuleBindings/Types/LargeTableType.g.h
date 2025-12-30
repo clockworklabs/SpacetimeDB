@@ -67,7 +67,7 @@ struct TESTCLIENT_API FLargeTableType
     FString P;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
-    ESimpleEnumType Q;
+    ESimpleEnumType Q = static_cast<ESimpleEnumType>(0);
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SpacetimeDB")
     FEnumWithPayloadType R;

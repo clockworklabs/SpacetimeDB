@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeletePkBoolArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    bool B;
+    bool B = false;
 
     FDeletePkBoolArgs() = default;
 

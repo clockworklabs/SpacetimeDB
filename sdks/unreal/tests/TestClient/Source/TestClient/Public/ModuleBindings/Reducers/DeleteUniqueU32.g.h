@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeleteUniqueU32Args
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 N;
+    uint32 N = 0;
 
     FDeleteUniqueU32Args() = default;
 
