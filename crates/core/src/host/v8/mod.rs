@@ -16,7 +16,7 @@ use crate::client::ClientActorId;
 use crate::host::host_controller::CallProcedureReturn;
 use crate::host::instance_env::{ChunkPool, InstanceEnv, TxSlot};
 use crate::host::module_host::{
-    call_identity_connected, init_database, CallViewParams, ClientConnectedError, Instance, ViewCallResult,
+    call_identity_connected, init_database, ClientConnectedError, Instance, ViewCommand, ViewCommandResult,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::wasm_common::instrumentation::CallTimes;
@@ -39,7 +39,7 @@ use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
@@ -309,14 +309,10 @@ impl JsInstance {
         .await
     }
 
-    pub async fn call_reducer(
-        self: Box<Self>,
-        tx: Option<MutTxId>,
-        params: CallReducerParams,
-    ) -> (ReducerCallResult, Box<Self>) {
+    pub async fn call_reducer(self: Box<Self>, params: CallReducerParams) -> (ReducerCallResult, Box<Self>) {
         self.send_recv(
             JsWorkerReply::into_call_reducer,
-            JsWorkerRequest::CallReducer { tx, params },
+            JsWorkerRequest::CallReducer { params },
         )
         .await
     }
@@ -386,9 +382,9 @@ impl JsInstance {
         (*r, s)
     }
 
-    pub async fn call_view(self: Box<Self>, tx: MutTxId, params: CallViewParams) -> (ViewCallResult, Box<Self>) {
+    pub async fn call_view(self: Box<Self>, cmd: ViewCommand) -> (ViewCommandResult, Box<Self>) {
         let (r, s) = self
-            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { tx, params })
+            .send_recv(JsWorkerReply::into_call_view, JsWorkerRequest::CallView { cmd })
             .await;
         (*r, s)
     }
@@ -413,7 +409,7 @@ impl JsInstance {
 enum JsWorkerReply {
     UpdateDatabase(anyhow::Result<UpdateDatabaseResult>),
     CallReducer(ReducerCallResult),
-    CallView(Box<ViewCallResult>),
+    CallView(Box<ViewCommandResult>),
     CallProcedure(Box<CallProcedureReturn>),
     ClearAllClients(anyhow::Result<()>),
     CallIdentityConnected(Result<(), ClientConnectedError>),
@@ -434,12 +430,9 @@ enum JsWorkerRequest {
         policy: MigrationPolicy,
     },
     /// See [`JsInstance::call_reducer`].
-    CallReducer {
-        tx: Option<MutTxId>,
-        params: CallReducerParams,
-    },
+    CallReducer { params: CallReducerParams },
     /// See [`JsInstance::call_view`].
-    CallView { tx: MutTxId, params: CallViewParams },
+    CallView { cmd: ViewCommand },
     /// See [`JsInstance::call_procedure`].
     CallProcedure {
         params: CallProcedureParams,
@@ -588,17 +581,17 @@ fn spawn_instance_worker(
                     let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
                     reply("update_database", UpdateDatabase(res), false);
                 }
-                JsWorkerRequest::CallReducer { tx, params } => {
+                JsWorkerRequest::CallReducer { params } => {
                     // Call the reducer.
                     // If execution trapped, we don't end the loop here,
                     // but rather let this happen by `return_instance` using `JsInstance::trapped`
                     // which will cause `JsInstance` to be dropped,
                     // which in turn results in the loop being terminated.
-                    let (res, trapped) = call_reducer(tx, params);
+                    let (res, trapped) = call_reducer(None, params);
                     reply("call_reducer", CallReducer(res), trapped);
                 }
-                JsWorkerRequest::CallView { tx, params } => {
-                    let (res, trapped) = instance_common.call_view_with_tx(tx, params, &mut inst);
+                JsWorkerRequest::CallView { cmd } => {
+                    let (res, trapped) = instance_common.handle_cmd(cmd, &mut inst);
                     reply("call_view", JsWorkerReply::CallView(res.into()), trapped);
                 }
                 JsWorkerRequest::CallProcedure { params, rt } => {
