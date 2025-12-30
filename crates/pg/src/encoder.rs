@@ -136,8 +136,15 @@ impl TypedWriter for PsqlFormatter<'_> {
         name: Option<&str>,
         value: ValueWithType<AlgebraicValue>,
     ) -> Result<(), Self::Error> {
-        // Is a simple enum?
         if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
+            if sum.is_option() {
+                if *value.value() == AlgebraicValue::unit() {
+                    self.write("")?;
+                } else {
+                    self.write(satn::PsqlWrapper { ty, value })?;
+                }
+                return Ok(());
+            }
             if sum.is_simple_enum() {
                 if let Some(variant_name) = name {
                     self.encoder.encode_field(&variant_name)?;
