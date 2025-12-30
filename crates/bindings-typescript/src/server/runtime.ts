@@ -184,16 +184,28 @@ export const makeReducerCtx = (
   sender: Identity,
   timestamp: Timestamp,
   connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => ({
-  sender,
-  get identity() {
-    return new Identity(sys.identity().__identity__);
-  },
-  timestamp,
-  connectionId,
-  db: getDbView(),
-  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-});
+): ReducerCtx<UntypedSchemaDef> => {
+  let identity: Identity | null;
+  let senderAuth: AuthCtx | null;
+  return freeze({
+    sender,
+    get identity() {
+      if (!identity) {
+        identity = new Identity(sys.identity().__identity__);
+      }
+      return identity;
+    },
+    timestamp,
+    connectionId,
+    db: getDbView(),
+    get senderAuth() {
+      if (!senderAuth) {
+        senderAuth = AuthCtxImpl.fromSystemTables(connectionId, sender);
+      }
+      return senderAuth;
+    },
+  });
+};
 
 /**
  * Call into a user function `fn` - the backtrace from an exception thrown in
@@ -226,12 +238,10 @@ export const hooks: ModuleHooks = {
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze(
-      makeReducerCtx(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      )
+    const ctx: ReducerCtx<any> = makeReducerCtx(
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
     );
     try {
       return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };

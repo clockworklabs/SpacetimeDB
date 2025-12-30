@@ -42,8 +42,10 @@ export function callProcedure(
         const timestamp = sys.procedure_start_mut_tx();
 
         try {
-          const ctx: TransactionCtx<UntypedSchemaDef> = freeze(
-            makeReducerCtx(sender, new Timestamp(timestamp), connectionId)
+          const ctx: TransactionCtx<UntypedSchemaDef> = makeReducerCtx(
+            sender,
+            new Timestamp(timestamp),
+            connectionId
           );
           return body(ctx);
         } catch (e) {
