@@ -46,7 +46,7 @@ use spacetimedb_sats::{
     Typespace,
 };
 use spacetimedb_schema::{
-    def::IndexAlgorithm,
+    def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
 };
 use std::{
@@ -1409,7 +1409,26 @@ impl Table {
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) };
         violation.unwrap_or_else(|ptr| {
-            panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would")
+            let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
+            let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
+                Some(columns)
+            } else { None };
+            let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
+            let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+            // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
+            let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
+            panic!(
+                "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
+
+Found violation at pointer {ptr:?} to row {:?}.",
+                index_schema.index_name,
+                index_schema.index_id,
+                self.schema.table_name,
+                self.schema.table_id,
+                indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
+                indexed_column,
+                row,
+            );
         });
         // SAFETY: Forward caller requirement.
         unsafe { self.add_index(index_id, index) };
