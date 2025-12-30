@@ -427,6 +427,8 @@ function makeTableView(
       }
     : null;
 
+  const serializeRow = AlgebraicType.makeSerializer(rowType, typespace);
+
   const tableMethods: TableMethods<any> = {
     count: () => sys.datastore_table_row_count(table_id),
     iter,
@@ -434,7 +436,7 @@ function makeTableView(
     insert: row => {
       using buf = IterBuf.take();
       const writer = new BinaryWriter(buf);
-      AlgebraicType.serializeValue(writer, rowType, row, typespace);
+      serializeRow(writer, row);
       const ret_buf = sys.datastore_insert_bsatn(table_id, writer.getBuffer());
       const ret = { ...row };
       integrateGeneratedColumns?.(ret, ret_buf);
@@ -445,7 +447,7 @@ function makeTableView(
       using buf = IterBuf.take();
       const writer = new BinaryWriter(buf);
       writer.writeU32(1);
-      AlgebraicType.serializeValue(writer, rowType, row, typespace);
+      serializeRow(writer, row);
       const count = sys.datastore_delete_all_by_eq_bsatn(
         table_id,
         writer.getBuffer()
@@ -484,35 +486,28 @@ function makeTableView(
       elements: column_ids.map(id => rowType.value.elements[id]),
     });
 
-    const serializePrefix = (
-      writer: BinaryWriter,
-      prefix: any[],
-      prefix_elems: number
-    ) => {
-      for (let i = 0; i < prefix_elems; i++) {
-        const elemType = indexType.value.elements[i].algebraicType;
-        AlgebraicType.serializeValue(writer, elemType, prefix[i], typespace);
-      }
-      return writer;
-    };
+    const serializers = indexType.value.elements.map(({ algebraicType }) =>
+      AlgebraicType.makeSerializer(algebraicType, typespace)
+    );
 
     const serializePoint = (
       buffer: ResizableBuffer,
       colVal: any[]
     ): Uint8Array => {
       const writer = new BinaryWriter(buffer);
-      serializePrefix(writer, colVal, numColumns);
+      for (let i = 0; i < numColumns; i++) {
+        serializers[i](writer, colVal[i]);
+      }
       return writer.getBuffer();
     };
 
-    const singleElement =
-      numColumns === 1 ? indexType.value.elements[0].algebraicType : null;
+    const serializeSingleElement = numColumns === 1 ? serializers[0] : null;
 
     const serializeSinglePoint =
-      singleElement &&
+      serializeSingleElement &&
       ((buffer: ResizableBuffer, colVal: any): Uint8Array => {
         const writer = new BinaryWriter(buffer);
-        AlgebraicType.serializeValue(writer, singleElement, colVal, typespace);
+        serializeSingleElement(writer, colVal);
         return writer.getBuffer();
       });
 
@@ -554,7 +549,7 @@ function makeTableView(
         update: (row: RowType<any>): RowType<any> => {
           using buf = IterBuf.take();
           const writer = new BinaryWriter(buf);
-          AlgebraicType.serializeValue(writer, rowType, row, typespace);
+          serializeRow(writer, row);
           const ret_buf = sys.datastore_update_bsatn(
             table_id,
             index_id,
@@ -600,7 +595,7 @@ function makeTableView(
         update: (row: RowType<any>): RowType<any> => {
           using buf = IterBuf.take();
           const writer = new BinaryWriter(buf);
-          AlgebraicType.serializeValue(writer, rowType, row, typespace);
+          serializeRow(writer, row);
           const ret_buf = sys.datastore_update_bsatn(
             table_id,
             index_id,
@@ -639,23 +634,18 @@ function makeTableView(
 
         const writer = new BinaryWriter(buffer);
         const prefix_elems = range.length - 1;
-        serializePrefix(writer, range, prefix_elems);
+        for (let i = 0; i < prefix_elems; i++) {
+          serializers[i](writer, range[i]);
+        }
         const rstartOffset = writer.offset;
         const term = range[range.length - 1];
-        const termType =
-          indexType.value.elements[range.length - 1].algebraicType;
+        const serializeTerm = serializers[range.length - 1];
         let rstart: Uint8Array, rend: Uint8Array;
         if (term instanceof Range) {
           const writeBound = (bound: Bound<any>) => {
             const tags = { included: 0, excluded: 1, unbounded: 2 };
             writer.writeU8(tags[bound.tag]);
-            if (bound.tag !== 'unbounded')
-              AlgebraicType.serializeValue(
-                writer,
-                termType,
-                bound.value,
-                typespace
-              );
+            if (bound.tag !== 'unbounded') serializeTerm(writer, bound.value);
           };
           writeBound(term.from);
           const rendOffset = writer.offset;
@@ -664,7 +654,7 @@ function makeTableView(
           rend = writer.getBuffer().slice(rendOffset);
         } else {
           writer.writeU8(0);
-          AlgebraicType.serializeValue(writer, termType, term, typespace);
+          serializeTerm(writer, term);
           rstart = rend = writer.getBuffer().slice(rstartOffset);
         }
         const buf = writer.getBuffer();
