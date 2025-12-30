@@ -178,11 +178,17 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
-    AlgebraicType.serializeValue(writer, this.algebraicType, value);
+    const serialize = (this.serialize = AlgebraicType.makeSerializer(
+      this.algebraicType
+    ));
+    serialize(writer, value);
   }
 
   deserialize(reader: BinaryReader): Type {
-    return AlgebraicType.deserializeValue(reader, this.algebraicType);
+    const deserialize = (this.deserialize = AlgebraicType.makeDeserializer(
+      this.algebraicType
+    ));
+    return deserialize(reader);
   }
 }
 
@@ -2114,14 +2120,11 @@ export class ColumnBuilder<
   }
 
   serialize(writer: BinaryWriter, value: Type): void {
-    AlgebraicType.serializeValue(writer, this.typeBuilder.algebraicType, value);
+    this.typeBuilder.serialize(writer, value);
   }
 
   deserialize(reader: BinaryReader): Type {
-    return AlgebraicType.deserializeValue(
-      reader,
-      this.typeBuilder.algebraicType
-    );
+    return this.typeBuilder.deserialize(reader);
   }
 }
 
