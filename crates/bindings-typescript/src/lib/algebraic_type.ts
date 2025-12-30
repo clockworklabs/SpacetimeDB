@@ -71,6 +71,13 @@ export type AlgebraicType = AlgebraicTypeType;
  */
 export { AlgebraicTypeVariants };
 
+export type Serializer<T> = (writer: BinaryWriter, value: T) => void;
+
+export type Deserializer<T> = (reader: BinaryReader) => T;
+
+const SERIALIZERS = new WeakMap<ProductType | SumType, Serializer<any>>();
+const DESERIALIZERS = new WeakMap<ProductType | SumType, Deserializer<any>>();
+
 // A value with helper functions to construct the type.
 export const AlgebraicType = {
   Ref: (value: number): AlgebraicTypeVariants.Ref => ({ tag: 'Ref', value }),
@@ -106,12 +113,10 @@ export const AlgebraicType = {
   U256: { tag: 'U256' } as const,
   F32: { tag: 'F32' } as const,
   F64: { tag: 'F64' } as const,
-  serializeValue(
-    writer: BinaryWriter,
+  makeSerializer(
     ty: AlgebraicTypeType,
-    value: any,
     typespace?: TypespaceType
-  ) {
+  ): Serializer<any> {
     if (ty.tag === 'Ref') {
       if (!typespace)
         throw new Error('cannot serialize refs without a typespace');
@@ -119,77 +124,67 @@ export const AlgebraicType = {
     }
     switch (ty.tag) {
       case 'Product':
-        ProductType.serializeValue(writer, ty.value, value, typespace);
-        break;
+        return ProductType.makeSerializer(ty.value, typespace);
       case 'Sum':
-        SumType.serializeValue(writer, ty.value, value, typespace);
-        break;
+        return SumType.makeSerializer(ty.value, typespace);
       case 'Array':
         if (ty.value.tag === 'U8') {
-          writer.writeUInt8Array(value);
+          return (writer, value) => writer.writeUInt8Array(value);
         } else {
-          const elemType = ty.value;
-          writer.writeU32(value.length);
-          for (const elem of value) {
-            AlgebraicType.serializeValue(writer, elemType, elem, typespace);
-          }
+          const serialize = AlgebraicType.makeSerializer(ty.value, typespace);
+          return (writer, value) => {
+            writer.writeU32(value.length);
+            for (const elem of value) {
+              serialize(writer, elem);
+            }
+          };
         }
-        break;
       case 'Bool':
-        writer.writeBool(value);
-        break;
+        return (writer, value) => writer.writeBool(value);
       case 'I8':
-        writer.writeI8(value);
-        break;
+        return (writer, value) => writer.writeI8(value);
       case 'U8':
-        writer.writeU8(value);
-        break;
+        return (writer, value) => writer.writeU8(value);
       case 'I16':
-        writer.writeI16(value);
-        break;
+        return (writer, value) => writer.writeI16(value);
       case 'U16':
-        writer.writeU16(value);
-        break;
+        return (writer, value) => writer.writeU16(value);
       case 'I32':
-        writer.writeI32(value);
-        break;
+        return (writer, value) => writer.writeI32(value);
       case 'U32':
-        writer.writeU32(value);
-        break;
+        return (writer, value) => writer.writeU32(value);
       case 'I64':
-        writer.writeI64(value);
-        break;
+        return (writer, value) => writer.writeI64(value);
       case 'U64':
-        writer.writeU64(value);
-        break;
+        return (writer, value) => writer.writeU64(value);
       case 'I128':
-        writer.writeI128(value);
-        break;
+        return (writer, value) => writer.writeI128(value);
       case 'U128':
-        writer.writeU128(value);
-        break;
+        return (writer, value) => writer.writeU128(value);
       case 'I256':
-        writer.writeI256(value);
-        break;
+        return (writer, value) => writer.writeI256(value);
       case 'U256':
-        writer.writeU256(value);
-        break;
+        return (writer, value) => writer.writeU256(value);
       case 'F32':
-        writer.writeF32(value);
-        break;
+        return (writer, value) => writer.writeF32(value);
       case 'F64':
-        writer.writeF64(value);
-        break;
+        return (writer, value) => writer.writeF64(value);
       case 'String':
-        writer.writeString(value);
-        break;
+        return (writer, value) => writer.writeString(value);
     }
   },
-  deserializeValue: function (
-    reader: BinaryReader,
+  serializeValue(
+    writer: BinaryWriter,
+    ty: AlgebraicTypeType,
+    value: any,
+    typespace?: TypespaceType
+  ) {
+    AlgebraicType.makeSerializer(ty, typespace)(writer, value);
+  },
+  makeDeserializer(
     ty: AlgebraicTypeType,
     typespace?: TypespaceType
-  ): any {
+  ): Deserializer<any> {
     if (ty.tag === 'Ref') {
       if (!typespace)
         throw new Error('cannot deserialize refs without a typespace');
@@ -197,56 +192,66 @@ export const AlgebraicType = {
     }
     switch (ty.tag) {
       case 'Product':
-        return ProductType.deserializeValue(reader, ty.value, typespace);
+        return ProductType.makeDeserializer(ty.value, typespace);
       case 'Sum':
-        return SumType.deserializeValue(reader, ty.value, typespace);
+        return SumType.makeDeserializer(ty.value, typespace);
       case 'Array':
         if (ty.value.tag === 'U8') {
-          return reader.readUInt8Array();
+          return reader => reader.readUInt8Array();
         } else {
-          const elemType = ty.value;
-          const length = reader.readU32();
-          const result: any[] = [];
-          for (let i = 0; i < length; i++) {
-            result.push(
-              AlgebraicType.deserializeValue(reader, elemType, typespace)
-            );
-          }
-          return result;
+          const deserialize = AlgebraicType.makeDeserializer(
+            ty.value,
+            typespace
+          );
+          return reader => {
+            const length = reader.readU32();
+            const result: any[] = Array(length);
+            for (let i = 0; i < length; i++) {
+              result[i] = deserialize(reader);
+            }
+            return result;
+          };
         }
       case 'Bool':
-        return reader.readBool();
+        return reader => reader.readBool();
       case 'I8':
-        return reader.readI8();
+        return reader => reader.readI8();
       case 'U8':
-        return reader.readU8();
+        return reader => reader.readU8();
       case 'I16':
-        return reader.readI16();
+        return reader => reader.readI16();
       case 'U16':
-        return reader.readU16();
+        return reader => reader.readU16();
       case 'I32':
-        return reader.readI32();
+        return reader => reader.readI32();
       case 'U32':
-        return reader.readU32();
+        return reader => reader.readU32();
       case 'I64':
-        return reader.readI64();
+        return reader => reader.readI64();
       case 'U64':
-        return reader.readU64();
+        return reader => reader.readU64();
       case 'I128':
-        return reader.readI128();
+        return reader => reader.readI128();
       case 'U128':
-        return reader.readU128();
+        return reader => reader.readU128();
       case 'I256':
-        return reader.readI256();
+        return reader => reader.readI256();
       case 'U256':
-        return reader.readU256();
+        return reader => reader.readU256();
       case 'F32':
-        return reader.readF32();
+        return reader => reader.readF32();
       case 'F64':
-        return reader.readF64();
+        return reader => reader.readF64();
       case 'String':
-        return reader.readString();
+        return reader => reader.readString();
     }
+  },
+  deserializeValue(
+    reader: BinaryReader,
+    ty: AlgebraicTypeType,
+    typespace?: TypespaceType
+  ): any {
+    return AlgebraicType.makeDeserializer(ty, typespace)(reader);
   },
   /**
    * Convert a value of the algebraic type into something that can be used as a key in a map.
@@ -317,53 +322,79 @@ export const AlgebraicType = {
 export type ProductType = ProductTypeType;
 
 export const ProductType = {
+  makeSerializer(
+    ty: ProductTypeType,
+    typespace?: TypespaceType
+  ): Serializer<any> {
+    let serializer = SERIALIZERS.get(ty);
+    if (serializer != null) return serializer;
+    serializer = (writer, value) => {
+      for (const { name, serialize } of elements) {
+        serialize(writer, value[name]);
+      }
+    };
+    SERIALIZERS.set(ty, serializer);
+    const elements = ty.elements.map(element => ({
+      name: element.name!,
+      serialize: AlgebraicType.makeSerializer(element.algebraicType, typespace),
+    }));
+    return serializer;
+  },
   serializeValue(
     writer: BinaryWriter,
     ty: ProductTypeType,
     value: any,
     typespace?: TypespaceType
   ): void {
-    for (const element of ty.elements) {
-      AlgebraicType.serializeValue(
-        writer,
-        element.algebraicType,
-        value[element.name!],
-        typespace
-      );
+    ProductType.makeSerializer(ty, typespace)(writer, value);
+  },
+  makeDeserializer(
+    ty: ProductTypeType,
+    typespace?: TypespaceType
+  ): Deserializer<any> {
+    if (ty.elements.length === 1) {
+      if (ty.elements[0].name === '__time_duration_micros__') {
+        return reader => new TimeDuration(reader.readI64());
+      }
+
+      if (ty.elements[0].name === '__timestamp_micros_since_unix_epoch__') {
+        return reader => new Timestamp(reader.readI64());
+      }
+
+      if (ty.elements[0].name === '__identity__') {
+        return reader => new Identity(reader.readU256());
+      }
+
+      if (ty.elements[0].name === '__connection_id__') {
+        return reader => new ConnectionId(reader.readU128());
+      }
     }
+
+    let deserializer = DESERIALIZERS.get(ty);
+    if (deserializer != null) return deserializer;
+    deserializer = reader => {
+      const result: { [key: string]: any } = {};
+      for (const { name, deserialize } of elements) {
+        result[name] = deserialize(reader);
+      }
+      return result;
+    };
+    DESERIALIZERS.set(ty, deserializer);
+    const elements = ty.elements.map(element => ({
+      name: element.name!,
+      deserialize: AlgebraicType.makeDeserializer(
+        element.algebraicType,
+        typespace
+      ),
+    }));
+    return deserializer;
   },
   deserializeValue(
     reader: BinaryReader,
     ty: ProductTypeType,
     typespace?: TypespaceType
   ): any {
-    const result: { [key: string]: any } = {};
-    if (ty.elements.length === 1) {
-      if (ty.elements[0].name === '__time_duration_micros__') {
-        return new TimeDuration(reader.readI64());
-      }
-
-      if (ty.elements[0].name === '__timestamp_micros_since_unix_epoch__') {
-        return new Timestamp(reader.readI64());
-      }
-
-      if (ty.elements[0].name === '__identity__') {
-        return new Identity(reader.readU256());
-      }
-
-      if (ty.elements[0].name === '__connection_id__') {
-        return new ConnectionId(reader.readU128());
-      }
-    }
-
-    for (const element of ty.elements) {
-      result[element.name!] = AlgebraicType.deserializeValue(
-        reader,
-        element.algebraicType,
-        typespace
-      );
-    }
-    return result;
+    return ProductType.makeDeserializer(ty, typespace)(reader);
   },
   intoMapKey(ty: ProductTypeType, value: any): ComparablePrimitive {
     if (ty.elements.length === 1) {
@@ -417,49 +448,64 @@ export type SumType = SumTypeType;
  * [structural]: https://en.wikipedia.org/wiki/Structural_type_system
  */
 export const SumType = {
-  serializeValue: function (
-    writer: BinaryWriter,
-    ty: SumTypeType,
-    value: any,
-    typespace?: TypespaceType
-  ): void {
+  makeSerializer(ty: SumTypeType, typespace?: TypespaceType): Serializer<any> {
     if (
       ty.variants.length == 2 &&
       ty.variants[0].name === 'some' &&
       ty.variants[1].name === 'none'
     ) {
-      if (value !== null && value !== undefined) {
-        writer.writeByte(0);
-        AlgebraicType.serializeValue(
-          writer,
-          ty.variants[0].algebraicType,
-          value,
-          typespace
-        );
-      } else {
-        writer.writeByte(1);
-      }
-    } else {
-      const variant = value['tag'];
-      const index = ty.variants.findIndex(v => v.name === variant);
-      if (index < 0) {
-        throw `Can't serialize a sum type, couldn't find ${value.tag} tag ${JSON.stringify(value)} in variants ${JSON.stringify(ty)}`;
-      }
-      writer.writeU8(index);
-      AlgebraicType.serializeValue(
-        writer,
-        ty.variants[index].algebraicType,
-        value['value'],
+      const serialize = AlgebraicType.makeSerializer(
+        ty.variants[0].algebraicType,
         typespace
       );
+      return (writer, value) => {
+        if (value !== null && value !== undefined) {
+          writer.writeByte(0);
+          serialize(writer, value);
+        } else {
+          writer.writeByte(1);
+        }
+      };
+    } else {
+      let serializer = SERIALIZERS.get(ty);
+      if (serializer != null) return serializer;
+      serializer = (writer, value) => {
+        const variant = variants.get(value.tag);
+        if (variant == null) {
+          throw `Can't serialize a sum type, couldn't find ${value.tag} tag ${JSON.stringify(value)} in variants ${JSON.stringify([...variants.keys()])}`;
+        }
+        const { index, serialize } = variant;
+        writer.writeU8(index);
+        serialize(writer, value.value);
+      };
+      SERIALIZERS.set(ty, serializer);
+      const variants = new Map(
+        ty.variants.map((element, index) => [
+          element.name!,
+          {
+            index,
+            serialize: AlgebraicType.makeSerializer(
+              element.algebraicType,
+              typespace
+            ),
+          },
+        ])
+      );
+      return serializer;
     }
   },
-  deserializeValue: function (
-    reader: BinaryReader,
+  serializeValue(
+    writer: BinaryWriter,
+    ty: SumTypeType,
+    value: any,
+    typespace?: TypespaceType
+  ): void {
+    SumType.makeSerializer(ty, typespace)(writer, value);
+  },
+  makeDeserializer(
     ty: SumTypeType,
     typespace?: TypespaceType
-  ): any {
-    const tag = reader.readU8();
+  ): Deserializer<any> {
     // In TypeScript we handle Option values as a special case
     // we don't represent the some and none variants, but instead
     // we represent the value directly.
@@ -468,26 +514,46 @@ export const SumType = {
       ty.variants[0].name === 'some' &&
       ty.variants[1].name === 'none'
     ) {
-      if (tag === 0) {
-        return AlgebraicType.deserializeValue(
-          reader,
-          ty.variants[0].algebraicType,
-          typespace
-        );
-      } else if (tag === 1) {
-        return undefined;
-      } else {
-        throw `Can't deserialize an option type, couldn't find ${tag} tag`;
-      }
-    } else {
-      const variant = ty.variants[tag];
-      const value = AlgebraicType.deserializeValue(
-        reader,
-        variant.algebraicType,
+      const deserialize = AlgebraicType.makeDeserializer(
+        ty.variants[0].algebraicType,
         typespace
       );
-      return { tag: variant.name, value };
+      return reader => {
+        const tag = reader.readU8();
+        if (tag === 0) {
+          return deserialize(reader);
+        } else if (tag === 1) {
+          return undefined;
+        } else {
+          throw `Can't deserialize an option type, couldn't find ${tag} tag`;
+        }
+      };
+    } else {
+      let deserializer = DESERIALIZERS.get(ty);
+      if (deserializer != null) return deserializer;
+      deserializer = reader => {
+        const tag = reader.readU8();
+        const { name, deserialize } = variants[tag];
+        const value = deserialize(reader);
+        return { tag: name, value };
+      };
+      DESERIALIZERS.set(ty, deserializer);
+      const variants = ty.variants.map(variant => ({
+        name: variant.name!,
+        deserialize: AlgebraicType.makeDeserializer(
+          variant.algebraicType,
+          typespace
+        ),
+      }));
+      return deserializer;
     }
+  },
+  deserializeValue(
+    reader: BinaryReader,
+    ty: SumTypeType,
+    typespace?: TypespaceType
+  ): any {
+    return SumType.makeDeserializer(ty, typespace)(reader);
   },
 };
 

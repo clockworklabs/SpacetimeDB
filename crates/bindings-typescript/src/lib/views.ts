@@ -1,7 +1,9 @@
 import {
   AlgebraicType,
+  ProductType,
   type AlgebraicTypeVariants,
-  type ProductType,
+  type Deserializer,
+  type Serializer,
 } from '../lib/algebraic_type';
 import type { Identity } from '../lib/identity';
 import type { OptionAlgebraicType } from '../lib/option';
@@ -132,16 +134,16 @@ export function defineView<
 
   (anon ? ANON_VIEWS : VIEWS).push({
     fn,
-    params: paramType,
-    returnType,
+    deserializeParams: ProductType.makeDeserializer(paramType),
+    serializeReturn: AlgebraicType.makeSerializer(returnType),
     returnTypeBaseSize: bsatnBaseSize(MODULE_DEF.typespace, returnType),
   });
 }
 
 type ViewInfo<F> = {
   fn: F;
-  params: ProductType;
-  returnType: AlgebraicType;
+  deserializeParams: Deserializer<any>;
+  serializeReturn: Serializer<any>;
   returnTypeBaseSize: number;
 };
 

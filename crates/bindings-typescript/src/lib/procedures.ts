@@ -1,4 +1,9 @@
-import { AlgebraicType, ProductType } from '../lib/algebraic_type';
+import {
+  AlgebraicType,
+  ProductType,
+  type Deserializer,
+  type Serializer,
+} from '../lib/algebraic_type';
 import type { ConnectionId } from '../lib/connection_id';
 import type { Identity } from '../lib/identity';
 import type { Timestamp } from '../lib/timestamp';
@@ -67,16 +72,16 @@ export function procedure<
 
   PROCEDURES.push({
     fn,
-    paramsType,
-    returnType,
+    deserializeArgs: ProductType.makeDeserializer(paramsType),
+    serializeReturn: AlgebraicType.makeSerializer(returnType),
     returnTypeBaseSize: bsatnBaseSize(MODULE_DEF.typespace, returnType),
   });
 }
 
 export const PROCEDURES: Array<{
   fn: ProcedureFn<any, any, any>;
-  paramsType: ProductType;
-  returnType: AlgebraicType;
+  deserializeArgs: Deserializer<any>;
+  serializeReturn: Serializer<any>;
   returnTypeBaseSize: number;
 }> = [];
 
