@@ -80,7 +80,7 @@ pub trait StateView {
             .iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id.into())?
             .next()
             .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        StTableRow::try_from(row_ref).map_err(Into::into)
+        StTableRow::try_from(row_ref)
     }
 
     /// Reads the schema information for the specified `table_id` directly from the database.

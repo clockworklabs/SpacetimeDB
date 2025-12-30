@@ -252,7 +252,7 @@ impl StateView for CommittedState {
                 .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?
         };
 
-        StTableRow::try_from(row_ref).map_err(Into::into)
+        StTableRow::try_from(row_ref)
     }
 }
 
@@ -687,8 +687,7 @@ impl CommittedState {
         let referenced_table_id = get_table_id(new_st_table_entry);
         self.iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &referenced_table_id.into())
             .expect("`st_table` should exist")
-            .find(|row_ref| row_ref.pointer() != new_st_table_entry.pointer())
-            .is_some()
+            .any(|row_ref| row_ref.pointer() != new_st_table_entry.pointer())
     }
 
     /// Update the in-memory table structure for the table described by `row`,
