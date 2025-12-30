@@ -1093,7 +1093,7 @@ impl ModuleSubscriptions {
                 self.subscriptions.write()
             };
 
-            subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
+            subscriptions.set_legacy_subscription(sender.clone(), queries);
         }
 
         #[cfg(test)]

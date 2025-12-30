@@ -1510,7 +1510,7 @@ impl ModuleHost {
                 &reducer_def.name,
                 (None, call_reducer_params),
                 |(tx, p), inst| inst.call_reducer(tx, p),
-                |(tx, p), inst| inst.call_reducer(tx, p),
+                |(_, p), inst| inst.call_reducer(p),
             )
             .await?)
     }

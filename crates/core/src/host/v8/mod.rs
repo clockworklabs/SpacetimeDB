@@ -39,7 +39,7 @@ use futures::FutureExt;
 use itertools::Either;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_datastore::locking_tx_datastore::{FuncCallType, MutTxId};
+use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_datastore::traits::Program;
 use spacetimedb_lib::{ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_schema::auto_migrate::MigrationPolicy;
@@ -309,14 +309,10 @@ impl JsInstance {
         .await
     }
 
-    pub async fn call_reducer(
-        self: Box<Self>,
-        tx: Option<MutTxId>,
-        params: CallReducerParams,
-    ) -> (ReducerCallResult, Box<Self>) {
+    pub async fn call_reducer(self: Box<Self>, params: CallReducerParams) -> (ReducerCallResult, Box<Self>) {
         self.send_recv(
             JsWorkerReply::into_call_reducer,
-            JsWorkerRequest::CallReducer { tx, params },
+            JsWorkerRequest::CallReducer { params },
         )
         .await
     }
@@ -434,10 +430,7 @@ enum JsWorkerRequest {
         policy: MigrationPolicy,
     },
     /// See [`JsInstance::call_reducer`].
-    CallReducer {
-        tx: Option<MutTxId>,
-        params: CallReducerParams,
-    },
+    CallReducer { params: CallReducerParams },
     /// See [`JsInstance::call_view`].
     CallView { cmd: ViewCommand },
     /// See [`JsInstance::call_procedure`].
@@ -588,13 +581,13 @@ fn spawn_instance_worker(
                     let res = instance_common.update_database(program, old_module_info, policy, &mut inst);
                     reply("update_database", UpdateDatabase(res), false);
                 }
-                JsWorkerRequest::CallReducer { tx, params } => {
+                JsWorkerRequest::CallReducer { params } => {
                     // Call the reducer.
                     // If execution trapped, we don't end the loop here,
                     // but rather let this happen by `return_instance` using `JsInstance::trapped`
                     // which will cause `JsInstance` to be dropped,
                     // which in turn results in the loop being terminated.
-                    let (res, trapped) = call_reducer(tx, params);
+                    let (res, trapped) = call_reducer(None, params);
                     reply("call_reducer", CallReducer(res), trapped);
                 }
                 JsWorkerRequest::CallView { cmd } => {
