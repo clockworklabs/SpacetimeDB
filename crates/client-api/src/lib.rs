@@ -94,9 +94,9 @@ impl Host {
                     db.clone(),
                     body,
                     auth,
-                    Some(&module_host.info.subscriptions.clone()),
+                    Some(module_host.info.subscriptions.clone()),
                     Some(module_host),
-                    header,
+                    &mut header,
                 )
                 .await
                 .map_err(|e| {

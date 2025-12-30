@@ -234,6 +234,23 @@ macro_rules! return_on_err_with_sql {
     };
 }
 
+/// A utility for sending an error message to a client and returning early
+macro_rules! return_on_err_with_sql_bool {
+    ($expr:expr, $sql:expr, $handler:expr) => {
+        match $expr.map_err(|err| DBError::WithSql {
+            sql: $sql.into(),
+            error: Box::new(DBError::Other(err.into())),
+        }) {
+            Ok(val) => val,
+            Err(e) => {
+                // TODO: Handle errors sending messages.
+                let _ = $handler(e.to_string().into());
+                return Ok((None, false));
+            }
+        }
+    };
+}
+
 impl ModuleSubscriptions {
     pub fn new(
         relational_db: Arc<RelationalDB>,
@@ -503,7 +520,7 @@ impl ModuleSubscriptions {
             guard.query(&hash)
         };
 
-        let query = return_on_err_with_sql!(
+        let query = return_on_err_with_sql_bool!(
             existing_query.map(Ok).unwrap_or_else(|| compile_query_with_hashes(
                 &auth,
                 &*mut_tx,
@@ -521,7 +538,7 @@ impl ModuleSubscriptions {
         let (tx, tx_offset, trapped) =
             self.materialize_views_and_downgrade_tx(mut_tx, instance, &query, auth.caller())?;
 
-        let (table_rows, metrics) = return_on_err_with_sql!(
+        let (table_rows, metrics) = return_on_err_with_sql_bool!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe),
             query.sql(),
             send_err_msg
@@ -943,7 +960,7 @@ impl ModuleSubscriptions {
             }
 
             send_err_msg("Internal error evaluating queries".into());
-            return Ok(None);
+            return Ok((None, trapped));
         };
 
         // How many queries did we actually evaluate?
@@ -992,6 +1009,7 @@ impl ModuleSubscriptions {
                 let info = host.info.clone();
                 host.call_view_add_legacy_subscription(info, sender, auth, subscription, timer)
                     .await
+                    .map(|metrics| metrics.unwrap_or_default())
             }
             None => self
                 .add_legacy_subscriber_from_module::<host::wasmtime::WasmtimeInstance>(

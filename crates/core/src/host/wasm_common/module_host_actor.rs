@@ -10,12 +10,12 @@ use crate::host::module_common::{build_common_module_from_raw, ModuleCommon};
 use crate::host::module_host::{
     call_identity_connected, init_database, CallProcedureParams, CallReducerParams, CallViewParams,
     ClientConnectedError, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ModuleInfo, RefInstance,
-    ViewCallError, ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
+    ViewCallResult, ViewCommand, ViewCommandResult, ViewOutcome,
 };
 use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::{
-    ArgsTuple, InvalidViewArguments, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError,
-    ReducerCallResult, ReducerId, ReducerOutcome, Scheduler, UpdateDatabaseResult,
+    ArgsTuple, ModuleHost, ProcedureCallError, ProcedureCallResult, ReducerCallError, ReducerCallResult, ReducerId,
+    ReducerOutcome, Scheduler, UpdateDatabaseResult,
 };
 use crate::identity::Identity;
 use crate::messages::control_db::HostType;
@@ -483,7 +483,7 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
     pub fn call_view(&mut self, cmd: ViewCommand) -> ViewCommandResult {
         let (res, trapped) = self.common.handle_cmd(cmd, &mut self.instance);
         self.trapped = trapped;
-        todo!()
+        res
     }
 }
 

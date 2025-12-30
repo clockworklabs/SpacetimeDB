@@ -66,7 +66,6 @@ use spacetimedb_vm::relation::RelValue;
 use std::collections::{HashSet, VecDeque};
 use std::fmt;
 use std::future::Future;
-use std::ops::Deref;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
