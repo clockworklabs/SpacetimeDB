@@ -587,7 +587,6 @@ impl CommittedState {
                 // they are simply ignored in (1).
                 self.replay_table_dropped.insert(dropped_table_id);
             }
-            // TODO: inspect `self.replay_table_updated` and handle appropriately.
         }
 
         if table_id == ST_COLUMN_ID {
