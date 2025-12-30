@@ -410,6 +410,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly EquatableArray<TableAccessor> TableAccessors;
     public readonly EquatableArray<TableIndex> Indexes;
 
+    private readonly bool isRowStruct;
+
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
         var index = Members
@@ -427,6 +429,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         : base(context, diag)
     {
         var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
+
+        isRowStruct = ((INamedTypeSymbol)context.TargetSymbol).IsValueType;
 
         if (Kind is TypeKind.Sum)
         {
@@ -481,6 +485,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
+        var uniqueIndexBase = isRowStruct ? "UniqueIndex" : "RefUniqueIndex";
+
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
@@ -492,12 +498,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
             yield return $$"""
-                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{f.Name}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                    public {{globalName}}? Find({{f.Type.Name}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
+                    public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
@@ -570,6 +576,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
+        var uniqueIndexBase = isRowStruct
+            ? "global::SpacetimeDB.Internal.ReadOnlyUniqueIndex"
+            : "global::SpacetimeDB.Internal.ReadOnlyRefUniqueIndex";
+
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
@@ -582,7 +592,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
             yield return $$$"""
                 public sealed class {{{f.Name}}}Index
-                    : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                    : {{{uniqueIndexBase}}}<
                           global::SpacetimeDB.Internal.ViewHandles.{{{tableAccessor.Name}}}ReadOnly,
                           {{{globalName}}},
                           {{{f.Type.Name}}},

@@ -1,4 +1,4 @@
-﻿namespace SpacetimeDB.Internal;
+namespace SpacetimeDB.Internal;
 
 using System;
 using System.Collections.Generic;
@@ -94,14 +94,118 @@ public abstract class ReadOnlyIndexBase<Row>(string name) : IndexBase<Row>(name)
 
 public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
     where Handle : ITableView<Handle, Row>
-    where Row : IStructuralReadWrite, new()
+    where Row : struct, IStructuralReadWrite
     where RW : struct, BSATN.IReadWrite<T>
 {
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+    private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
+    {
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+    }
+
     protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
 
-    public bool Delete(T key) => DoDelete(ToBounds(key)) > 0;
+    public bool Delete(T key)
+    {
+        using var s = new MemoryStream();
+        using var w = new BinaryWriter(s);
+        new RW().Write(w, key);
+        var point = s.ToArray();
+        FFI.datastore_delete_by_index_scan_point_bsatn(
+            indexId,
+            point,
+            (uint)point.Length,
+            out var numDeleted
+        );
+        return numDeleted > 0;
+    }
+
+    protected Row? FindSingle(T key)
+    {
+        using var s = new MemoryStream();
+        using var w = new BinaryWriter(s);
+        new RW().Write(w, key);
+        var point = s.ToArray();
+
+        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        if (!e.MoveNext())
+        {
+            return null;
+        }
+
+        var row = e.Current;
+        if (e.MoveNext())
+        {
+            throw new InvalidOperationException("Unique index point scan returned >1 rows");
+        }
+
+        return row;
+    }
+
+    protected Row DoUpdate(Row row)
+    {
+        // Insert the row.
+        var bytes = IStructuralReadWrite.ToBytes(row);
+        var bytes_len = (uint)bytes.Length;
+        FFI.datastore_update_bsatn(ITableView<Handle, Row>.tableId, indexId, bytes, ref bytes_len);
+
+        return ITableView<Handle, Row>.IntegrateGeneratedColumns(row, bytes, bytes_len);
+    }
+}
+
+public abstract class RefUniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<Row>(name)
+    where Handle : ITableView<Handle, Row>
+    where Row : class, IStructuralReadWrite, new()
+    where RW : struct, BSATN.IReadWrite<T>
+{
+    private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
+
+    private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
+    {
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+    }
+
+    protected IEnumerable<Row> DoFilter(T key) => DoFilter(ToBounds(key));
+
+    public bool Delete(T key)
+    {
+        using var s = new MemoryStream();
+        using var w = new BinaryWriter(s);
+        new RW().Write(w, key);
+        var point = s.ToArray();
+        FFI.datastore_delete_by_index_scan_point_bsatn(
+            indexId,
+            point,
+            (uint)point.Length,
+            out var numDeleted
+        );
+        return numDeleted > 0;
+    }
+
+    protected Row? FindSingle(T key)
+    {
+        using var s = new MemoryStream();
+        using var w = new BinaryWriter(s);
+        new RW().Write(w, key);
+        var point = s.ToArray();
+
+        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        if (!e.MoveNext())
+        {
+            return null;
+        }
+
+        var row = e.Current;
+        if (e.MoveNext())
+        {
+            throw new InvalidOperationException("Unique index point scan returned >1 rows");
+        }
+
+        return row;
+    }
 
     protected Row DoUpdate(Row row)
     {
@@ -117,14 +221,79 @@ public abstract class UniqueIndex<Handle, Row, T, RW>(string name) : IndexBase<R
 public abstract class ReadOnlyUniqueIndex<Handle, Row, T, RW>(string name)
     : ReadOnlyIndexBase<Row>(name)
     where Handle : ReadOnlyTableView<Row>
-    where Row : IStructuralReadWrite, new()
+    where Row : struct, IStructuralReadWrite
     where RW : struct, BSATN.IReadWrite<T>
 {
     private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
 
+    private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
+    {
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+    }
+
     protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
 
-    protected Row? FindSingle(T key) => Filter(key).Cast<Row?>().SingleOrDefault();
+    protected Row? FindSingle(T key)
+    {
+        using var s = new MemoryStream();
+        using var w = new BinaryWriter(s);
+        new RW().Write(w, key);
+        var point = s.ToArray();
+
+        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        if (!e.MoveNext())
+        {
+            return null;
+        }
+
+        var row = e.Current;
+        if (e.MoveNext())
+        {
+            throw new InvalidOperationException("Unique index point scan returned >1 rows");
+        }
+
+        return row;
+    }
+}
+
+public abstract class ReadOnlyRefUniqueIndex<Handle, Row, T, RW>(string name)
+    : ReadOnlyIndexBase<Row>(name)
+    where Handle : ReadOnlyTableView<Row>
+    where Row : class, IStructuralReadWrite, new()
+    where RW : struct, BSATN.IReadWrite<T>
+{
+    private static BTreeIndexBounds<T, RW> ToBounds(T key) => new(key);
+
+    private sealed class RawPointIter(FFI.IndexId indexId, byte[] point) : RawTableIterBase<Row>
+    {
+        protected override void IterStart(out FFI.RowIter handle) =>
+            FFI.datastore_index_scan_point_bsatn(indexId, point, (uint)point.Length, out handle);
+    }
+
+    protected IEnumerable<Row> Filter(T key) => Filter(ToBounds(key));
+
+    protected Row? FindSingle(T key)
+    {
+        using var s = new MemoryStream();
+        using var w = new BinaryWriter(s);
+        new RW().Write(w, key);
+        var point = s.ToArray();
+
+        using var e = new RawPointIter(indexId, point).Parse().GetEnumerator();
+        if (!e.MoveNext())
+        {
+            return null;
+        }
+
+        var row = e.Current;
+        if (e.MoveNext())
+        {
+            throw new InvalidOperationException("Unique index point scan returned >1 rows");
+        }
+
+        return row;
+    }
 }
 
 public abstract class ReadOnlyTableView<Row>
