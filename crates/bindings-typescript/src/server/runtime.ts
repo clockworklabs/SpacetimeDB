@@ -2,7 +2,11 @@ import * as _syscalls1_0 from 'spacetime:sys@1.0';
 import * as _syscalls1_2 from 'spacetime:sys@1.2';
 
 import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
-import { AlgebraicType, ProductType } from '../lib/algebraic_type';
+import {
+  AlgebraicType,
+  ProductType,
+  type Deserializer,
+} from '../lib/algebraic_type';
 import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
@@ -209,6 +213,8 @@ export const callUserFunction = function __spacetimedb_end_short_backtrace<
   return fn(...args);
 };
 
+let reducerArgsDeserializers: Deserializer<any>[];
+
 export const hooks: ModuleHooks = {
   __describe_module__() {
     const writer = new BinaryWriter(128);
@@ -220,14 +226,13 @@ export const hooks: ModuleHooks = {
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    const argsType = AlgebraicType.Product(
-      MODULE_DEF.reducers[reducerId].params
-    );
-    const args = AlgebraicType.deserializeValue(
-      new BinaryReader(argsBuf),
-      argsType,
-      MODULE_DEF.typespace
-    );
+    if (reducerArgsDeserializers == null) {
+      reducerArgsDeserializers = MODULE_DEF.reducers.map(({ params }) =>
+        ProductType.makeDeserializer(params, MODULE_DEF.typespace)
+      );
+    }
+    const deserializeArgs = reducerArgsDeserializers[reducerId];
+    const args = deserializeArgs(new BinaryReader(argsBuf));
     const senderIdentity = new Identity(sender);
     const ctx: ReducerCtx<any> = freeze(
       makeReducerCtx(
@@ -249,7 +254,8 @@ export const hooks: ModuleHooks = {
 
 export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
   __call_view__(id, sender, argsBuf) {
-    const { fn, params, returnType, returnTypeBaseSize } = VIEWS[id];
+    const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
+      VIEWS[id];
     const ctx: ViewCtx<any> = freeze({
       sender: new Identity(sender),
       // this is the non-readonly DbView, but the typing for the user will be
@@ -259,11 +265,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       from: makeQueryBuilder(getRegisteredSchema()),
     });
     // ViewResultHeader.RawSql
-    const args = ProductType.deserializeValue(
-      new BinaryReader(argsBuf),
-      params,
-      MODULE_DEF.typespace
-    );
+    const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     if (isRowTypedQuery(ret)) {
@@ -285,19 +287,15 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
         ViewResultHeader.RowData,
         MODULE_DEF.typespace
       );
-      AlgebraicType.serializeValue(
-        retBuf,
-        returnType,
-        ret,
-        MODULE_DEF.typespace
-      );
+      serializeReturn(retBuf, ret);
       return {
         data: retBuf.getBuffer(),
       };
     }
   },
   __call_view_anon__(id, argsBuf) {
-    const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
+    const { fn, deserializeParams, serializeReturn, returnTypeBaseSize } =
+      ANON_VIEWS[id];
     const ctx: AnonymousViewCtx<any> = freeze({
       // this is the non-readonly DbView, but the typing for the user will be
       // the readonly one, and if they do call mutating functions it will fail
@@ -305,11 +303,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       db: getDbView(),
       from: makeQueryBuilder(getRegisteredSchema()),
     });
-    const args = ProductType.deserializeValue(
-      new BinaryReader(argsBuf),
-      params,
-      MODULE_DEF.typespace
-    );
+    const args = deserializeParams(new BinaryReader(argsBuf));
     const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
     if (isRowTypedQuery(ret)) {
@@ -331,12 +325,7 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
         ViewResultHeader.RowData,
         MODULE_DEF.typespace
       );
-      AlgebraicType.serializeValue(
-        retBuf,
-        returnType,
-        ret,
-        MODULE_DEF.typespace
-      );
+      serializeReturn(retBuf, ret);
       return {
         data: retBuf.getBuffer(),
       };
