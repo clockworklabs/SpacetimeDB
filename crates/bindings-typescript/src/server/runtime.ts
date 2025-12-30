@@ -26,6 +26,7 @@ import {
   type JsonObject,
   type JwtClaims,
   type ReducerCtx,
+  type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
 import {
   MODULE_DEF,
@@ -182,45 +183,66 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
-export const makeReducerCtx = (
-  sender: Identity,
-  timestamp: Timestamp,
-  connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => {
-  return {
-    sender,
-    get identity() {
-      return new Identity(sys.identity().__identity__);
-    },
-    timestamp,
-    connectionId,
-    db: getDbView(),
-    senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-    counter_uuid: { value: Number(0) },
+// Using a class expression rather than declaration keeps the class out of the
+// type namespace, so that `ReducerCtx` still refers to the interface.
+export const ReducerCtxImpl = class ReducerCtx<
+  SchemaDef extends UntypedSchemaDef,
+> implements IReducerCtx<SchemaDef>
+{
+  #identity: Identity | undefined;
+  #senderAuth: AuthCtx | undefined;
+  #uuidCounter: { value: number } | undefined;
+  sender: Identity;
+  timestamp: Timestamp;
+  connectionId: ConnectionId | null;
+  db: DbView<SchemaDef>;
 
-    /**
-     * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
-     *
-     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
-     */
-    newUuidV4(): Uuid {
-      // TODO: Use a spacetime RNG when available
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      return Uuid.fromRandomBytesV4(bytes);
-    },
+  constructor(
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    Object.seal(this);
+    this.sender = sender;
+    this.timestamp = timestamp;
+    this.connectionId = connectionId;
+    this.db = getDbView();
+  }
 
-    /**
-     * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
-     * and the timestamp.
-     *
-     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
-     */
-    newUuidV7(): Uuid {
-      // TODO: Use a spacetime RNG when available
-      const bytes = crypto.getRandomValues(new Uint8Array(4));
-      return Uuid.fromCounterV7(this.counter_uuid, this.timestamp, bytes);
-    },
-  };
+  get identity() {
+    return (this.#identity ??= new Identity(sys.identity().__identity__));
+  }
+
+  get senderAuth() {
+    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+      this.connectionId,
+      this.sender
+    ));
+  }
+
+  /**
+   * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
+   *
+   * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+   */
+  newUuidV4(): Uuid {
+    // TODO: Use a spacetime RNG when available
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Uuid.fromRandomBytesV4(bytes);
+  }
+
+  /**
+   * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
+   * and the timestamp.
+   *
+   * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+   */
+  newUuidV7(): Uuid {
+    // TODO: Use a spacetime RNG when available
+    const bytes = crypto.getRandomValues(new Uint8Array(4));
+    const counter = (this.#uuidCounter ??= { value: 0 });
+    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
+  }
 };
 
 /**
@@ -256,12 +278,10 @@ export const hooks: ModuleHooks = {
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze(
-      makeReducerCtx(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      )
+    const ctx: ReducerCtx<any> = new ReducerCtxImpl(
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
     );
     try {
       return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
