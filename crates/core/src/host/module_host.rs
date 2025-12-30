@@ -1944,12 +1944,12 @@ impl ModuleHost {
             instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type,
         ) {
             err @ Err(ViewCallError::NoSuchView) => {
-                let log_message = no_such_function_log_message("view", view_name);
+                let _log_message = no_such_function_log_message("view", view_name);
                 //   self.inject_logs(LogLevel::Error, view_name, &log_message);
                 err
             }
             err @ Err(ViewCallError::Args(_)) => {
-                let log_message = args_error_log_message("view", view_name);
+                let _log_message = args_error_log_message("view", view_name);
                 // self.inject_logs(LogLevel::Error, view_name, &log_message);
                 err
             }
