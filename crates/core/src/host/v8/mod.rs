@@ -94,6 +94,9 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
+        if let Ok(flags) = std::env::var("STDB_V8_FLAGS") {
+            v8::V8::set_flags_from_string(&flags);
+        }
         // Our current configuration:
         // - will pick a number of worker threads for background jobs based on the num CPUs.
         // - does not allow idle tasks
