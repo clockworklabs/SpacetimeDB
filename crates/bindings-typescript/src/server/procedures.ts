@@ -1,4 +1,3 @@
-import { AlgebraicType, ProductType } from '../lib/algebraic_type';
 import BinaryReader from '../lib/binary_reader';
 import BinaryWriter from '../lib/binary_writer';
 import type { ConnectionId } from '../lib/connection_id';
@@ -8,7 +7,7 @@ import {
   type ProcedureCtx,
   type TransactionCtx,
 } from '../lib/procedures';
-import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import { type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
 import { Uuid } from '../lib/uuid';
 import { httpClient } from './http_internal';
@@ -23,12 +22,9 @@ export function callProcedure(
   timestamp: Timestamp,
   argsBuf: Uint8Array
 ): Uint8Array {
-  const { fn, paramsType, returnType, returnTypeBaseSize } = PROCEDURES[id];
-  const args = ProductType.deserializeValue(
-    new BinaryReader(argsBuf),
-    paramsType,
-    MODULE_DEF.typespace
-  );
+  const { fn, deserializeArgs, serializeReturn, returnTypeBaseSize } =
+    PROCEDURES[id];
+  const args = deserializeArgs(new BinaryReader(argsBuf));
 
   const ctx: ProcedureCtx<UntypedSchemaDef> = {
     sender,
@@ -100,6 +96,6 @@ export function callProcedure(
 
   const ret = callUserFunction(fn, ctx, args);
   const retBuf = new BinaryWriter(returnTypeBaseSize);
-  AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
+  serializeReturn(retBuf, ret);
   return retBuf.getBuffer();
 }
