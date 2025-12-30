@@ -103,6 +103,9 @@ impl V8RuntimeInner {
             flags.extend([" ", &env_flags]);
         }
         v8::V8::set_flags_from_string(&flags);
+        // Our current configuration:
+        // - will pick a number of worker threads for background jobs based on the num CPUs.
+        // - does not allow idle tasks
         let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
