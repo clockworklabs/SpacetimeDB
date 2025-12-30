@@ -133,6 +133,9 @@ pub struct CommittedState {
     ///
     /// We remove from this set when we reach the matching delete,
     /// and assert this set is empty at the end of each transaction.
+    ///
+    /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
+    /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
     replay_table_updated: IntMap<TableId, RowPointer>,
 }
 

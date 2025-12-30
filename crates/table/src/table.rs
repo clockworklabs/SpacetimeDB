@@ -1418,20 +1418,10 @@ impl Table {
             let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
             // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
             let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
-            let mut all_rows = String::new();
-            self.scan_rows(blob_store).map(|row_ref| row_ref.to_product_value()).for_each(|pv| {
-                use std::fmt::Write;
-                writeln!(all_rows, "{pv:?}").unwrap();
-            });
             panic!(
                 "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
 
-Found violation at pointer {ptr:?} to row {:?}.
-
-Table contains {} rows according to `num_rows` and {} according to `scan_rows`.
-
-Full table contents:
-{}",
+Found violation at pointer {ptr:?} to row {:?}.",
                 index_schema.index_name,
                 index_schema.index_id,
                 self.schema.table_name,
@@ -1439,9 +1429,6 @@ Full table contents:
                 indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
                 indexed_column,
                 row,
-                self.num_rows(),
-                self.scan_rows(blob_store).count(),
-                all_rows,
             );
         });
         // SAFETY: Forward caller requirement.
