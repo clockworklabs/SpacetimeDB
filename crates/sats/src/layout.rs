@@ -301,7 +301,7 @@ impl RowTypeLayout {
         if self.layout != new.layout {
             return Err(Box::new(IncompatibleTypeLayoutError::LayoutsNotEqual {
                 old: self.layout,
-                new: self.layout,
+                new: new.layout,
             }));
         }
         self.product().ensure_compatible_with(new.product())
