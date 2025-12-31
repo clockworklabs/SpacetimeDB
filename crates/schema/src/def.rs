@@ -284,6 +284,12 @@ impl ModuleDef {
             .map(|(_, def)| def)
     }
 
+    /// Convenience method to look up a procedure, possibly by a string.
+    pub fn procedure<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ProcedureDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.procedures.get(name)
+    }
+
     /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
     pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,

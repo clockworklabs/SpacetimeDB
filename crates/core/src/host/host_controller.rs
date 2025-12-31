@@ -185,6 +185,12 @@ pub struct ProcedureCallResult {
 }
 
 #[derive(Debug)]
+pub enum CallResult {
+    Reducer(ReducerCallResult),
+    Procedure(ProcedureCallResult),
+}
+
+#[derive(Debug)]
 pub struct CallProcedureReturn {
     pub result: Result<ProcedureCallResult, ProcedureCallError>,
     pub tx_offset: Option<TransactionOffset>,

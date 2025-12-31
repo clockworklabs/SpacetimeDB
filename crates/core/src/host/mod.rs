@@ -25,8 +25,8 @@ mod wasm_common;
 
 pub use disk_storage::DiskStorage;
 pub use host_controller::{
-    extract_schema, CallProcedureReturn, ExternalDurability, ExternalStorage, HostController, MigratePlanResult,
-    ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
+    extract_schema, CallProcedureReturn, CallResult, ExternalDurability, ExternalStorage, HostController,
+    MigratePlanResult, ProcedureCallResult, ProgramStorage, ReducerCallResult, ReducerOutcome,
 };
 pub use module_host::{ModuleHost, NoSuchModule, ProcedureCallError, ReducerCallError, UpdateDatabaseResult};
 pub use scheduler::Scheduler;
@@ -34,7 +34,7 @@ pub use scheduler::Scheduler;
 /// Encoded arguments to a database function.
 ///
 /// A database function is either a reducer or a procedure.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FunctionArgs {
     Json(ByteString),
     Bsatn(Bytes),
