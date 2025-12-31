@@ -106,9 +106,9 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
  * Full parameter deserialization support requires additional runtime work.
  */
 #undef SPACETIMEDB_REDUCER
-#define SPACETIMEDB_REDUCER(name, ...) \
+#define SPACETIMEDB_REDUCER(name, ctx_param, ...) \
     /* Forward declaration of the reducer function */ \
-    void name(__VA_ARGS__); \
+    void name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
     \
     /* Preinit registration function */ \
     /* This function is called during module initialization to register the reducer */ \
@@ -123,7 +123,7 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
     } \
     \
     /* The actual reducer function definition follows */ \
-    void name(__VA_ARGS__)
+    void name(ctx_param __VA_OPT__(,) __VA_ARGS__)
 
 // -----------------------------------------------------------------------------
 // Lifecycle Reducer Macros

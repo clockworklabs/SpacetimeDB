@@ -679,12 +679,15 @@ void V9Builder::RegisterReducerCommon(const std::string& reducer_name,
     static_assert(traits::arity > 0, 
         "Reducer must have at least one parameter (ReducerContext)");
     
-    // Validate that the first parameter is ReducerContext
-    using FirstParamType = std::remove_cv_t<std::remove_reference_t<
-        typename traits::template arg_t<0>>>;
-    
-    static_assert(std::is_same_v<FirstParamType, ReducerContext>,
-        "First parameter of reducer must be ReducerContext");
+    // Only validate the first parameter type if we have parameters
+    // This prevents template instantiation errors when arity is 0
+    if constexpr (traits::arity > 0) {
+        using FirstParamType = std::remove_cv_t<std::remove_reference_t<
+            typename traits::template arg_t<0>>>;
+        
+        static_assert(std::is_same_v<FirstParamType, ReducerContext>,
+            "First parameter of reducer must be ReducerContext");
+    }
     
     // Build vectors of parameter information
     std::vector<bsatn::AlgebraicType> param_types;
