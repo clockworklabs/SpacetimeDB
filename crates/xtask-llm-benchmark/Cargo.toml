@@ -25,6 +25,7 @@ fs2 = "0.4.3"
 heck = "0.5.0"
 thiserror = "2.0.17"
 stdb = { package = "spacetimedb", path = "../bindings" }
+spacetimedb-guard.workspace = true
 
 [lib]
 path = "src/lib.rs"

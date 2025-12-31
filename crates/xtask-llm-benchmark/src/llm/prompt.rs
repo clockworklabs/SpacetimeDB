@@ -63,14 +63,24 @@ HARD CONSTRAINTS:\n\
     }
 }
 pub fn make_prompt_from_task(spec_file: &str, task_id: &str, lang: Lang) -> Result<PromptBuilder> {
-    let task_root = Path::new(spec_file)
+    let xtask_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")); // crates/xtask-llm-benchmark
+    let workspace_root = xtask_dir
         .parent()
-        .context("spec file has no parent (task dir)")?;
+        .and_then(|p| p.parent()) // SpacetimeDB
+        .context("could not determine workspace root")?;
+
+    let spec_path = workspace_root.join(spec_file);
+    let spec_path = spec_path
+        .canonicalize()
+        .with_context(|| format!("canonicalize spec_file {}", spec_path.display()))?;
+
+    let task_root = spec_path.parent().context("spec file has no parent (task dir)")?;
 
     let tasks_file = find_tasks_file(task_root, lang)
         .with_context(|| format!("missing tasks file for {} in {}", lang.as_str(), task_root.display()))?;
 
-    let instructions = fs::read_to_string(&tasks_file).with_context(|| format!("read {}", tasks_file.display()))?;
+    let instructions =
+        std::fs::read_to_string(&tasks_file).with_context(|| format!("read {}", tasks_file.display()))?;
 
     Ok(PromptBuilder {
         lang: lang.display_name().to_string(),

@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_macros)]
+
 use std::{
     env,
     io::{BufRead, BufReader},
@@ -30,10 +32,19 @@ impl SpacetimeDbGuard {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let data_dir = temp_dir.path().display().to_string();
 
-        Self::spawn_spacetime_start(&["start", "--data-dir", &data_dir])
+        Self::spawn_spacetime_start(false, &["start", "--data-dir", &data_dir])
     }
 
-    fn spawn_spacetime_start(extra_args: &[&str]) -> Self {
+    /// Start `spacetimedb` in a temporary data directory via:
+    /// spacetime start --data-dir <temp-dir> --listen-addr <addr>
+    pub fn spawn_in_temp_data_dir_use_cli() -> Self {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let data_dir = temp_dir.path().display().to_string();
+
+        Self::spawn_spacetime_start(true, &["start", "--data-dir", &data_dir])
+    }
+
+    fn spawn_spacetime_start(use_installed_cli: bool, extra_args: &[&str]) -> Self {
         let port = find_free_port();
         let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
         let address = addr.to_string();
@@ -42,13 +53,23 @@ impl SpacetimeDbGuard {
         // Workspace root for `cargo run -p ...`
         let workspace_dir = env!("CARGO_MANIFEST_DIR");
 
-        Self::build_prereqs(workspace_dir);
-        let mut cargo_args = vec!["run", "-p", "spacetimedb-cli", "--"];
+        let mut args = vec![];
 
-        cargo_args.extend(extra_args);
-        cargo_args.extend(["--listen-addr", &address]);
+        let (child, logs) = if use_installed_cli {
+            args.extend_from_slice(extra_args);
+            args.extend_from_slice(&["--listen-addr", &address]);
 
-        let (child, logs) = Self::spawn_child(workspace_dir, &cargo_args);
+            let cmd = Command::new("spacetime");
+            Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args)
+        } else {
+            Self::build_prereqs(workspace_dir);
+            args.extend(vec!["run", "-p", "spacetimedb-cli", "--"]);
+            args.extend(extra_args);
+            args.extend(["--listen-addr", &address]);
+
+            let cmd = Command::new("cargo");
+            Self::spawn_child(cmd, workspace_dir, &args)
+        };
 
         let guard = SpacetimeDbGuard { child, host_url, logs };
         guard.wait_until_http_ready(Duration::from_secs(10));
@@ -72,8 +93,7 @@ impl SpacetimeDbGuard {
         }
     }
 
-    fn spawn_child(workspace_dir: &str, args: &[&str]) -> (Child, Arc<Mutex<String>>) {
-        let mut cmd = Command::new("cargo");
+    fn spawn_child(mut cmd: Command, workspace_dir: &str, args: &[&str]) -> (Child, Arc<Mutex<String>>) {
         let mut child = cmd
             .args(args)
             .current_dir(workspace_dir)

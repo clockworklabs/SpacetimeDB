@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand};
 use futures::{StreamExt, TryStreamExt};
+use spacetimedb_guard::SpacetimeDbGuard;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +14,6 @@ use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
-use xtask_llm_benchmark::bench::spacetime_guard::SpacetimeGuard;
 use xtask_llm_benchmark::bench::types::{BenchModeContext, BenchRunContext, RouteRun, RunAllContext, RunConfig};
 use xtask_llm_benchmark::context::constants::{
     results_path_details, results_path_run, results_path_summary, ALL_MODES,
@@ -202,6 +202,7 @@ fn cmd_run(args: RunArgs) -> Result<()> {
     let RuntimeInit {
         runtime,
         provider: llm_provider,
+        guard: _spacetime,
     } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
 
     config.selectors = apply_category_filter(&bench_root, config.categories.as_ref(), config.selectors.as_deref())?;
@@ -376,6 +377,7 @@ fn cmd_ci_quickfix() -> Result<()> {
     let RuntimeInit {
         runtime,
         provider: llm_provider,
+        guard: _spacetime,
     } = initialize_runtime_and_provider(false, false)?;
 
     // --- Rust (rustdoc_json) ---
@@ -554,6 +556,7 @@ fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
 pub struct RuntimeInit {
     pub runtime: Option<Runtime>,
     pub provider: Option<Arc<dyn LlmProvider>>,
+    pub guard: Option<SpacetimeDbGuard>,
 }
 
 fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Result<RuntimeInit> {
@@ -561,16 +564,19 @@ fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Resul
         return Ok(RuntimeInit {
             runtime: None,
             provider: None,
+            guard: None,
         });
     }
 
-    let _spacetime = SpacetimeGuard::acquire()?;
+    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir_use_cli();
+
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
     if goldens_only {
         return Ok(RuntimeInit {
             runtime: Some(runtime),
             provider: None,
+            guard: Some(spacetime),
         });
     }
 
@@ -578,6 +584,7 @@ fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Resul
     Ok(RuntimeInit {
         runtime: Some(runtime),
         provider: Some(llm_provider),
+        guard: Some(spacetime),
     })
 }
 

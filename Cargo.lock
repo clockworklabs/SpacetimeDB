@@ -7400,7 +7400,6 @@ dependencies = [
  "names",
  "notify 7.0.0",
  "percent-encoding",
- "portpicker",
  "predicates",
  "pretty_assertions",
  "quick-xml 0.31.0",
@@ -7418,6 +7417,7 @@ dependencies = [
  "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
+ "spacetimedb-guard",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.11.1",
  "spacetimedb-paths",
@@ -7811,6 +7811,15 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "zstd-framed",
+]
+
+[[package]]
+name = "spacetimedb-guard"
+version = "1.11.1"
+dependencies = [
+ "portpicker",
+ "reqwest 0.12.24",
+ "tempfile",
 ]
 
 [[package]]
@@ -10917,6 +10926,7 @@ dependencies = [
  "serde",
  "serde_json",
  "spacetimedb 1.11.1",
+ "spacetimedb-guard",
  "tempfile",
  "thiserror 2.0.17",
  "tokio",
