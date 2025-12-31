@@ -122,31 +122,31 @@ void V9Builder::AddV9Table(const std::string& table_name,
     }
     
     // Debug: Show all existing table names before adding new one
-    fprintf(stdout, "DEBUG: Adding table '%s'. Existing tables: [", table_name.c_str());
-    for (size_t i = 0; i < module.tables.size(); ++i) {
-        if (i > 0) fprintf(stdout, ", ");
-        fprintf(stdout, "'%s'", module.tables[i].name.c_str());
-    }
-    fprintf(stdout, "]\n");
+    //fprintf(stdout, "DEBUG: Adding table '%s'. Existing tables: [", table_name.c_str());
+    // for (size_t i = 0; i < module.tables.size(); ++i) {
+    //     if (i > 0) fprintf(stdout, ", ");
+    //     fprintf(stdout, "'%s'", module.tables[i].name.c_str());
+    // }
+    // fprintf(stdout, "]\n");
 
     // Add table to the global V9 module
     module.tables.push_back(table_def);
-    fprintf(stdout, "DEBUG: Added table '%s' to V9 module (type_ref=%u) with %zu indexes, %zu constraints\n", 
-               table_name.c_str(), type_ref, indexes.size(), constraints.size());
+    //fprintf(stdout, "DEBUG: Added table '%s' to V9 module (type_ref=%u) with %zu indexes, %zu constraints\n", 
+    //           table_name.c_str(), type_ref, indexes.size(), constraints.size());
     
-    // Debug: Print index names
-    for (const auto& idx : indexes) {
-        if (idx.name.has_value()) {
-            fprintf(stdout, "  Index: %s\n", idx.name.value().c_str());
-        }
-    }
+    // // Debug: Print index names
+    // for (const auto& idx : indexes) {
+    //     if (idx.name.has_value()) {
+    //         fprintf(stdout, "  Index: %s\n", idx.name.value().c_str());
+    //     }
+    // }
     
-    // Debug: Print constraint names  
-    for (const auto& constraint : constraints) {
-        if (constraint.name.has_value()) {
-            fprintf(stdout, "  Constraint: %s\n", constraint.name.value().c_str());
-        }
-    }
+    // // Debug: Print constraint names  
+    // for (const auto& constraint : constraints) {
+    //     if (constraint.name.has_value()) {
+    //         fprintf(stdout, "  Constraint: %s\n", constraint.name.value().c_str());
+    //     }
+    // }
 }
 
 void V9Builder::AddV9Reducer(const std::string& reducer_name,
@@ -180,7 +180,7 @@ void V9Builder::AddV9Reducer(const std::string& reducer_name,
     
     // Add directly to the global V9 module
     GetV9Module().reducers.push_back(reducer_def);
-    fprintf(stdout, "DEBUG: Added reducer '%s' to V9 module\n", reducer_name.c_str());
+    //fprintf(stdout, "DEBUG: Added reducer '%s' to V9 module\n", reducer_name.c_str());
 }
 
 // Helper function to get field name from Product type structure
@@ -285,8 +285,8 @@ void V9Builder::RegisterSchedule(const std::string& table_name,
     
     pending_schedules_[table_name] = schedule;
     
-    fprintf(stdout, "DEBUG: Registered schedule for table '%s', column %u, reducer '%s'\n",
-            table_name.c_str(), scheduled_at_column, reducer_name.c_str());
+    // fprintf(stdout, "DEBUG: Registered schedule for table '%s', column %u, reducer '%s'\n",
+    //         table_name.c_str(), scheduled_at_column, reducer_name.c_str());
 }
 
 void V9Builder::RegisterRowLevelSecurity(const std::string& sql_query) {
@@ -297,7 +297,7 @@ void V9Builder::RegisterRowLevelSecurity(const std::string& sql_query) {
     // Add directly to the global V9 module
     GetV9Module().row_level_security.push_back(rls_def);
     
-    fprintf(stdout, "DEBUG: Registered RLS policy: %s\n", sql_query.c_str());
+    // fprintf(stdout, "DEBUG: Registered RLS policy: %s\n", sql_query.c_str());
 }
 
 // =============================================================================

@@ -181,6 +181,20 @@ FIELD_PrimaryKey(logged_out_player, identity)
 FIELD_UniqueAutoInc(logged_out_player, player_id)
 FIELD_Unique(logged_out_player, name)
 
+// TableWithDefaults - test table with default values
+struct TableWithDefaults {
+    uint32_t id;
+    std::string name;
+    uint32_t score;
+    bool active;
+};
+SPACETIMEDB_STRUCT(TableWithDefaults, id, name, score, active)
+SPACETIMEDB_TABLE(TableWithDefaults, table_with_defaults, Public)
+FIELD_PrimaryKeyAutoInc(table_with_defaults, id)
+FIELD_Default(table_with_defaults, score, uint32_t(100))
+FIELD_Default(table_with_defaults, active, true)
+
+
 // =============================================================================
 // REDUCERS
 // =============================================================================
@@ -508,3 +522,57 @@ SPACETIMEDB_REDUCER(assert_caller_identity_is_module_identity, ReducerContext ct
     }
 }
 
+// Test default values functionality
+// SPACETIMEDB_REDUCER(test_defaults, ReducerContext ctx) {
+//     LOG_INFO("=== Testing default values ===");
+    
+//     // Insert entries to test default value registration
+//     // Note: In C++, we still need to provide values in the struct constructor,
+//     // but the defaults are registered in the module metadata for use in migrations
+//     // and when columns are added to existing tables
+    
+//     TableWithDefaults entry1{0, "Alice"};  // Using default values
+//     auto inserted1 = ctx.db[table_with_defaults].insert(entry1);
+//     LOG_INFO("Inserted: id=" + std::to_string(inserted1.id) + 
+//              " name=" + inserted1.name);
+    
+//     TableWithDefaults entry2{0, "Bob"};  // Using custom values
+//     auto inserted2 = ctx.db[table_with_defaults].insert(entry2);
+//     LOG_INFO("Inserted: id=" + std::to_string(inserted2.id) + 
+//              " name=" + inserted2.name);
+    
+//     // Count total entries
+//     size_t count = ctx.db[table_with_defaults].count();
+//     LOG_INFO("Total entries with defaults: " + std::to_string(count));
+    
+//     LOG_INFO("Default values registered in module metadata");
+// }
+
+SPACETIMEDB_REDUCER(test_defaults, ReducerContext ctx) {
+    LOG_INFO("=== Testing default values ===");
+    
+    // Insert entries to test default value registration
+    // Note: In C++, we still need to provide values in the struct constructor,
+    // but the defaults are registered in the module metadata for use in migrations
+    // and when columns are added to existing tables
+    
+    TableWithDefaults entry1{0, "Susan", 100, true};  // Using default values
+    auto inserted1 = ctx.db[table_with_defaults].insert(entry1);
+    LOG_INFO("Inserted: id=" + std::to_string(inserted1.id) + 
+             " name=" + inserted1.name + 
+             " score=" + std::to_string(inserted1.score) + 
+             " active=" + std::to_string(inserted1.active));
+    
+    TableWithDefaults entry2{0, "Charlie", 200, false};  // Using custom values
+    auto inserted2 = ctx.db[table_with_defaults].insert(entry2);
+    LOG_INFO("Inserted: id=" + std::to_string(inserted2.id) + 
+             " name=" + inserted2.name + 
+             " score=" + std::to_string(inserted2.score) + 
+             " active=" + std::to_string(inserted2.active));
+    
+    // Count total entries
+    size_t count = ctx.db[table_with_defaults].count();
+    LOG_INFO("Total entries with defaults: " + std::to_string(count));
+    
+    LOG_INFO("Default values registered in module metadata");
+}

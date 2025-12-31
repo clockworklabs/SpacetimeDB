@@ -13,20 +13,20 @@
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
 #include "ProductType.g.h"
-#include "Lifecycle.g.h"
+#include "AlgebraicType.g.h"
 
 namespace SpacetimeDb::Internal {
 
-SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawReducerDefV9) {
+SPACETIMEDB_INTERNAL_PRODUCT_TYPE(RawProcedureDefV9) {
     std::string name;
     SpacetimeDb::Internal::ProductType params;
-    std::optional<SpacetimeDb::Internal::Lifecycle> lifecycle;
+    SpacetimeDb::Internal::AlgebraicType return_type;
 
     void bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
         ::SpacetimeDb::bsatn::serialize(writer, name);
         ::SpacetimeDb::bsatn::serialize(writer, params);
-        ::SpacetimeDb::bsatn::serialize(writer, lifecycle);
+        ::SpacetimeDb::bsatn::serialize(writer, return_type);
     }
-    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, params, lifecycle)
+    SPACETIMEDB_PRODUCT_TYPE_EQUALITY(name, params, return_type)
 };
 } // namespace SpacetimeDb::Internal

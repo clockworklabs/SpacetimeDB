@@ -115,14 +115,49 @@ __wasi_errno_t __wasi_clock_res_get(int32_t, uint64_t* timestamp) {
 __wasi_errno_t __wasi_fd_write(__wasi_fd_t fd, const __wasi_ciovec_t* iovs,
                         size_t iovs_len, __wasi_size_t* retptr0) {
     *retptr0 = 0;
+    
+    // Concatenate all iovs into a single buffer to avoid multiple log lines
+    size_t total_len = 0;
     for (size_t i = 0; i < iovs_len; i++) {
-        // Map file descriptors to log levels
-        uint8_t log_level = (fd == STDERR_FILENO) ? 1 : 2; // 1=WARN, 2=INFO
-        
-        console_log(log_level, CSTR("wasi"), CSTR(__FILE__), __LINE__, 
-                   iovs[i].buf, iovs[i].buf_len);
-        *retptr0 += iovs[i].buf_len;
+        total_len += iovs[i].buf_len;
     }
+    
+    // Skip if nothing to write
+    if (total_len == 0) {
+        return __WASI_ERRNO_SUCCESS;
+    }
+    
+    // Allocate a temporary buffer (on stack if small, heap if large)
+    constexpr size_t STACK_BUFFER_SIZE = 1024;
+    uint8_t stack_buffer[STACK_BUFFER_SIZE];
+    uint8_t* buffer = stack_buffer;
+    bool heap_allocated = false;
+    
+    if (total_len > STACK_BUFFER_SIZE) {
+        buffer = new uint8_t[total_len];
+        heap_allocated = true;
+    }
+    
+    // Copy all iovs into the buffer
+    size_t offset = 0;
+    for (size_t i = 0; i < iovs_len; i++) {
+        if (iovs[i].buf_len > 0) {
+            __builtin_memcpy(buffer + offset, iovs[i].buf, iovs[i].buf_len);
+            offset += iovs[i].buf_len;
+            *retptr0 += iovs[i].buf_len;
+        }
+    }
+    
+    // Make a single console_log call with the complete message
+    uint8_t log_level = (fd == STDERR_FILENO) ? 1 : 2; // 1=WARN, 2=INFO
+    console_log(log_level, CSTR("wasi"), CSTR(__FILE__), __LINE__, 
+               buffer, offset);
+    
+    // Clean up heap allocation if needed
+    if (heap_allocated) {
+        delete[] buffer;
+    }
+    
     return __WASI_ERRNO_SUCCESS;
 }
 

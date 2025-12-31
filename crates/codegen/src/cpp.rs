@@ -5,6 +5,7 @@ use crate::Lang;
 use crate::OutputFile;
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
+use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{
     AlgebraicTypeDef, AlgebraicTypeUse, PlainEnumTypeDef, ProductTypeDef, SumTypeDef,
 };
@@ -411,7 +412,12 @@ public:
 }
 
 impl Lang for Cpp<'_> {
-    fn generate_table_file(&self, module: &ModuleDef, table: &TableDef) -> OutputFile {
+    fn generate_table_file_from_schema(
+        &self,
+        module: &ModuleDef,
+        table: &TableDef,
+        _schema: TableSchema,
+    ) -> OutputFile {
         let mut output = String::new();
         self.write_header_comment(&mut output);
         self.write_standard_includes(&mut output);
@@ -515,6 +521,34 @@ impl Lang for Cpp<'_> {
         writeln!(output, "}} // namespace {}", self.namespace).unwrap();
         OutputFile {
             filename: format!("{}.g.h", reducer.name),
+            code: output,
+        }
+    }
+
+    fn generate_procedure_file(
+        &self,
+        _module: &ModuleDef,
+        procedure: &spacetimedb_schema::def::ProcedureDef,
+    ) -> OutputFile {
+        let mut output = String::new();
+        self.write_header_comment(&mut output);
+        self.write_standard_includes(&mut output);
+
+        writeln!(output).unwrap();
+        writeln!(output, "namespace {} {{", self.namespace).unwrap();
+        writeln!(output).unwrap();
+
+        writeln!(output, "// Procedure: {}", procedure.name).unwrap();
+        writeln!(
+            output,
+            "// This file is intentionally minimal - procedure implementation"
+        )
+        .unwrap();
+        writeln!(output, "// is handled by the SpacetimeDB framework.").unwrap();
+
+        writeln!(output, "}} // namespace {}", self.namespace).unwrap();
+        OutputFile {
+            filename: format!("{}.g.h", procedure.name),
             code: output,
         }
     }
