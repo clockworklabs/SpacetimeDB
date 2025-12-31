@@ -546,16 +546,10 @@
             return v; \
         } \
         static SpacetimeDb::bsatn::AlgebraicType algebraic_type() { \
-            fprintf(stderr, "[DEBUG] bsatn_traits<" #Type ">::algebraic_type() called\n"); \
-            fflush(stderr); \
             return SpacetimeDb::Internal::LazyTypeRegistrar<Type>::getOrRegister( \
                 []() -> SpacetimeDb::bsatn::AlgebraicType { \
-                    fprintf(stderr, "[DEBUG] Building ProductType for " #Type "\n"); \
-                    fflush(stderr); \
                     SpacetimeDb::bsatn::ProductTypeBuilder builder; \
                     SPACETIMEDB_REGISTER_FIELDS(Type, builder, __VA_ARGS__) \
-                    fprintf(stderr, "[DEBUG] Finished building ProductType for " #Type "\n"); \
-                    fflush(stderr); \
                     return SpacetimeDb::bsatn::AlgebraicType::make_product(builder.build()); \
                 }, \
                 #Type \

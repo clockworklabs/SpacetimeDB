@@ -12,9 +12,11 @@
 #include <memory>
 #include "../autogen_base.h"
 #include "spacetimedb/bsatn/bsatn.h"
+#include "RawColumnDefaultValueV9.g.h"
+#include "RawProcedureDefV9.g.h"
+#include "RawViewDefV9.g.h"
 
 namespace SpacetimeDb::Internal {
 
-enum class RawMiscModuleExportV9 : uint8_t {
-};
+SPACETIMEDB_INTERNAL_TAGGED_ENUM(RawMiscModuleExportV9, SpacetimeDb::Internal::RawColumnDefaultValueV9, SpacetimeDb::Internal::RawProcedureDefV9, SpacetimeDb::Internal::RawViewDefV9)
 } // namespace SpacetimeDb::Internal

@@ -447,12 +447,12 @@ std::pair<std::vector<std::string>, std::string> V9TypeRegistration::parseNamesp
             scope.push_back(last_component);
         }
         
-        fprintf(stdout, "DEBUG: Parsed namespace '%s' -> scope=[", qualified_name.c_str());
-        for (size_t i = 0; i < scope.size(); ++i) {
-            if (i > 0) fprintf(stdout, ", ");
-            fprintf(stdout, "\"%s\"", scope[i].c_str());
-        }
-        fprintf(stdout, "], name=\"%s\"\n", name.c_str());
+        // fprintf(stdout, "DEBUG: Parsed namespace '%s' -> scope=[", qualified_name.c_str());
+        // for (size_t i = 0; i < scope.size(); ++i) {
+        //     if (i > 0) fprintf(stdout, ", ");
+        //     fprintf(stdout, "\"%s\"", scope[i].c_str());
+        // }
+        // fprintf(stdout, "], name=\"%s\"\n", name.c_str());
     } else {
         // No namespace, just use the full name
         name = qualified_name;

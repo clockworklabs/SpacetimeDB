@@ -693,4 +693,18 @@ public:
             #table_name, #index_name, {#field1, #field2}); \
     }
 
+#define FIELD_Default(table_name, field_name, default_value) \
+    extern "C" __attribute__((export_name("__preinit__21_field_default_" #table_name "_" #field_name "_line_" SPACETIMEDB_STRINGIFY(__LINE__)))) \
+    void SPACETIMEDB_PASTE(__preinit__21_field_default_, SPACETIMEDB_PASTE(table_name, SPACETIMEDB_PASTE(_, SPACETIMEDB_PASTE(field_name, SPACETIMEDB_PASTE(_line_, __LINE__)))))() { \
+        using TableType = typename std::remove_cv_t<decltype(table_name)>::type; \
+        \
+        /* Serialize the default value to BSATN bytes */ \
+        auto serialized = SpacetimeDb::bsatn::to_bytes(default_value); \
+        \
+        SpacetimeDb::Internal::getV9Builder().AddColumnDefault<TableType>( \
+            #table_name, \
+            #field_name, \
+            serialized \
+        ); \
+    }
 } // namespace SpacetimeDb

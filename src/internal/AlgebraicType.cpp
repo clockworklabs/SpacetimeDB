@@ -99,14 +99,14 @@ void AlgebraicType::set(T&& value) {
 // BSATN serialization (only serialization needed for Internal types)
 void AlgebraicType::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const {
     writer.write_u8(static_cast<uint8_t>(tag_));
-    fprintf(stdout, "DEBUG: AlgebraicType serializing tag=%d START\n", static_cast<int>(tag_));
+    //fprintf(stdout, "DEBUG: AlgebraicType serializing tag=%d START\n", static_cast<int>(tag_));
     
     // Serialize data based on tag
     switch (tag_) {
         case Tag::Ref:
             // Write the type reference
             writer.write_u32_le(std::get<0>(data_));
-            fprintf(stdout, "  Ref to type %u\n", std::get<0>(data_));
+            //fprintf(stdout, "  Ref to type %u\n", std::get<0>(data_));
             break;
             
         case Tag::Sum: {
@@ -125,11 +125,11 @@ void AlgebraicType::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const 
             // Serialize the ProductType
             const auto& product_ptr = std::get<2>(data_);
             if (product_ptr) {
-                fprintf(stdout, "  Product with %zu elements\n", product_ptr->elements.size());
+                //fprintf(stdout, "  Product with %zu elements\n", product_ptr->elements.size());
                 product_ptr->bsatn_serialize(writer);
             } else {
                 // Write empty product (0 elements)
-                fprintf(stdout, "  Empty Product (nullptr) - writing 0 elements\n");
+                //fprintf(stdout, "  Empty Product (nullptr) - writing 0 elements\n");
                 writer.write_u32_le(0);
             }
             break;
@@ -149,10 +149,10 @@ void AlgebraicType::bsatn_serialize(::SpacetimeDb::bsatn::Writer& writer) const 
         
         default:
             // Primitive types - no additional data to write
-            fprintf(stdout, "DEBUG: AlgebraicType primitive tag=%d END\n", static_cast<int>(tag_));
+            //fprintf(stdout, "DEBUG: AlgebraicType primitive tag=%d END\n", static_cast<int>(tag_));
             break;
     }
-    fprintf(stdout, "DEBUG: AlgebraicType serializing tag=%d COMPLETE\n", static_cast<int>(tag_));
+    //fprintf(stdout, "DEBUG: AlgebraicType serializing tag=%d COMPLETE\n", static_cast<int>(tag_));
 }
 
 // Equality

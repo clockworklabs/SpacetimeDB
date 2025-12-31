@@ -85,10 +85,10 @@ void __preinit__01_clear_global_state() {
 // The number 99 ensures this runs last, just before __describe_module__
 extern "C" __attribute__((export_name("__preinit__99_validate_types")))
 void __preinit__99_validate_types() {
-    fprintf(stdout, "\n[PREINIT_99] Starting validation\n");
-    fprintf(stdout, "  g_circular_ref_error = %s\n", g_circular_ref_error ? "true" : "false");
+    fprintf(stdout, "[PREINIT_99] Starting validation\n  g_circular_ref_error = %s", 
+        g_circular_ref_error ? "true" : "false");
     if (g_circular_ref_error) {
-        fprintf(stdout, "  g_circular_ref_type_name = %s\n", g_circular_ref_type_name.c_str());
+        fprintf(stdout, "\n  g_circular_ref_type_name = %s", g_circular_ref_type_name.c_str());
     }
     fflush(stdout);
     
@@ -231,15 +231,16 @@ void __preinit__99_validate_types() {
         fprintf(stderr, "Original error: %s\n\n", error.c_str());
         fflush(stderr);
     }
-    
+    #define DEBUG_TYPE_REGISTRATION
     // Type validation passed - log statistics only in debug mode
     #ifdef DEBUG_TYPE_REGISTRATION
     else {
         RawModuleDefV9& v9_module = GetV9Module();
-        fprintf(stderr, "[Type Validation] OK - %zu types, %zu tables, %zu reducers\n",
+        fprintf(stderr, "[Type Validation] OK - %zu types, %zu tables, %zu reducers %zu misc_exports\n",
                 v9_module.typespace.types.size(),
                 v9_module.tables.size(), 
-                v9_module.reducers.size());
+                v9_module.reducers.size(),
+                v9_module.misc_exports.size());
     }
     #endif
 }

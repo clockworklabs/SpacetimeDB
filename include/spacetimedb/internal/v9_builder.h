@@ -21,6 +21,8 @@
 #include "autogen/RawUniqueConstraintDataV9.g.h"
 #include "autogen/ProductType.g.h"
 #include "autogen/Lifecycle.g.h"
+#include "autogen/RawColumnDefaultValueV9.g.h"
+#include "autogen/RawMiscModuleExportV9.g.h"
 #include "../bsatn/bsatn.h"
 #include "../database.h"  // For FieldConstraintInfo
 #include "field_registration.h"  // For get_table_descriptors
@@ -39,6 +41,9 @@ std::vector<uint8_t> ConsumeBytes(BytesSource source);
 
 // Forward declare the multiple primary key error function from Module.cpp
 void SetMultiplePrimaryKeyError(const std::string& table_name);
+
+// Forward declare the global V9 module accessor (defined in v9_builder.cpp)
+RawModuleDefV9& GetV9Module();
 
 // External global flags for circular reference detection (defined in v9_type_registration.cpp)
 extern bool g_circular_ref_error;
@@ -111,6 +116,20 @@ public:
     void AddMultiColumnIndex(const std::string& table_name,
                             const std::string& index_name,
                             const std::vector<std::string>& field_names);
+    
+    /**
+     * Add a column default value to a table after it has been registered
+     * This is called by FIELD_Default macro
+     * 
+     * @tparam T The table struct type
+     * @param table_name The name of the table
+     * @param field_name The name of the field
+     * @param serialized_value The BSATN-serialized default value
+     */
+    template<typename T>
+    void AddColumnDefault(const std::string& table_name,
+                         const std::string& field_name,
+                         const std::vector<uint8_t>& serialized_value);
     
     /**
      * Register a reducer function with C++20 concepts
@@ -321,8 +340,8 @@ void V9Builder::RegisterTable(const std::string& table_name,
                 if (last_colon != std::string::npos) {
                     field_type_name = field_type_name.substr(last_colon + 2);
                 }
-                fprintf(stdout, "DEBUG: Registering enum type '%s' for field '%s'\n", 
-                        field_type_name.c_str(), field_desc.name.c_str());
+                //fprintf(stdout, "DEBUG: Registering enum type '%s' for field '%s'\n", 
+                //        field_type_name.c_str(), field_desc.name.c_str());
                 getV9TypeRegistration().registerTypeByName(field_type_name, field_type, nullptr);
             }
         }
@@ -427,24 +446,24 @@ void V9Builder::AddFieldConstraint(const std::string& table_name,
         table->constraints.push_back(createUniqueConstraint(table_name, field_name, field_idx));
         table->indexes.push_back(createBTreeIndex(table_name, field_name, field_idx));
         
-        fprintf(stdout, "DEBUG: Added PrimaryKey constraint and index for %s.%s\n", 
-                table_name.c_str(), field_name.c_str());
+        //fprintf(stdout, "DEBUG: Added PrimaryKey constraint and index for %s.%s\n", 
+        //        table_name.c_str(), field_name.c_str());
     }
     // Check for Unique (has bit 0b0100, but not PrimaryKey)
     else if ((constraint_bits & 0b0100) && !(constraint_bits & 0b1000)) {
         table->constraints.push_back(createUniqueConstraint(table_name, field_name, field_idx));
         table->indexes.push_back(createBTreeIndex(table_name, field_name, field_idx));
         
-        fprintf(stdout, "DEBUG: Added Unique constraint and index for %s.%s\n", 
-                table_name.c_str(), field_name.c_str());
+        //fprintf(stdout, "DEBUG: Added Unique constraint and index for %s.%s\n", 
+        //        table_name.c_str(), field_name.c_str());
     }
     // Check for plain Index (has bit 0b0001, but not Unique or PrimaryKey bits)
     else if ((constraint_bits & 0b0001) && !(constraint_bits & 0b1100)) {
         // Just create an index, no constraint
         table->indexes.push_back(createBTreeIndex(table_name, field_name, field_idx));
         
-        fprintf(stdout, "DEBUG: Added Index for %s.%s\n", 
-                table_name.c_str(), field_name.c_str());
+        //fprintf(stdout, "DEBUG: Added Index for %s.%s\n", 
+        //        table_name.c_str(), field_name.c_str());
     }
     
     // Check for AutoInc
@@ -458,8 +477,8 @@ void V9Builder::AddFieldConstraint(const std::string& table_name,
         seq_def.max_value = std::nullopt;
         table->sequences.push_back(std::move(seq_def));
         
-        fprintf(stdout, "DEBUG: Added AutoInc sequence for %s.%s\n", 
-                table_name.c_str(), field_name.c_str());
+        //fprintf(stdout, "DEBUG: Added AutoInc sequence for %s.%s\n", 
+        //        table_name.c_str(), field_name.c_str());
     }
 }
 
@@ -468,8 +487,8 @@ template<typename T>
 void V9Builder::AddMultiColumnIndex(const std::string& table_name,
                                     const std::string& index_name,
                                     const std::vector<std::string>& field_names) {
-    fprintf(stdout, "DEBUG: Adding multi-column index '%s' to table '%s' with %zu fields\n", 
-            index_name.c_str(), table_name.c_str(), field_names.size());
+    //fprintf(stdout, "DEBUG: Adding multi-column index '%s' to table '%s' with %zu fields\n", 
+    //        index_name.c_str(), table_name.c_str(), field_names.size());
     
     // Find the existing table
     RawTableDefV9* table = findTableByName(table_name);
@@ -500,7 +519,7 @@ void V9Builder::AddMultiColumnIndex(const std::string& table_name,
             if (field_desc.name == field_name) {
                 field_indexes.push_back(field_idx);
                 field_found = true;
-                fprintf(stdout, "DEBUG: Field '%s' -> index %u\n", field_name.c_str(), field_idx);
+                //fprintf(stdout, "DEBUG: Field '%s' -> index %u\n", field_name.c_str(), field_idx);
                 break;
             }
             field_idx++;
@@ -534,8 +553,97 @@ void V9Builder::AddMultiColumnIndex(const std::string& table_name,
     // Add to table's indexes
     table->indexes.push_back(std::move(index_def));
     
-    fprintf(stdout, "DEBUG: Successfully added multi-column index '%s' -> '%s' with %zu fields\n",
-            index_name.c_str(), generated_name.c_str(), field_indexes.size());
+    //fprintf(stdout, "DEBUG: Successfully added multi-column index '%s' -> '%s' with %zu fields\n",
+    //        index_name.c_str(), generated_name.c_str(), field_indexes.size());
+}
+
+// Template implementation for AddColumnDefault
+template<typename T>
+void V9Builder::AddColumnDefault(const std::string& table_name,
+                                 const std::string& field_name,
+                                 const std::vector<uint8_t>& serialized_value) {
+    // Find the existing table
+    RawTableDefV9* table = findTableByName(table_name);
+    if (!table) {
+        fprintf(stderr, "ERROR: Table '%s' not found for default value on field '%s'\n",
+                table_name.c_str(), field_name.c_str());
+        return;
+    }
+    
+    // Get field descriptors to find the field index
+    SpacetimeDb::field_registrar<T>::register_fields();
+    auto& descriptor_map = SpacetimeDb::get_table_descriptors();
+    auto it = descriptor_map.find(&typeid(T));
+    if (it == descriptor_map.end()) {
+        fprintf(stderr, "ERROR: No field descriptors found for table %s\n", table_name.c_str());
+        return;
+    }
+    
+    const auto& field_descs = it->second.fields;
+    uint16_t field_idx = 0;
+    bool field_found = false;
+    
+    // Find the field index
+    for (const auto& field_desc : field_descs) {
+        if (field_desc.name == field_name) {
+            field_found = true;
+            break;
+        }
+        field_idx++;
+    }
+    
+    if (!field_found) {
+        fprintf(stderr, "ERROR: Field '%s' not found in table '%s'\n",
+                field_name.c_str(), table_name.c_str());
+        return;
+    }
+    
+    // Validate: default values cannot be used with primary_key, unique, or auto_inc
+    // Check if this column is in the primary key
+    for (uint16_t pk_col : table->primary_key) {
+        if (pk_col == field_idx) {
+            std::string error_msg = "ERROR: Field " + table_name + "." + field_name + 
+                        " has primary_key constraint - cannot have default value";
+            fprintf(stderr, "%s", error_msg.c_str());
+            // fprintf(stderr, "ERROR:  has primary_key constraint - cannot have default value",
+            //          table_name.c_str(), field_name.c_str());
+            return;
+        }
+    }
+    
+    // Check if this column has a unique constraint
+    for (const auto& constraint : table->constraints) {
+        if (constraint.data.get_tag() == 0) {  // Unique constraint variant
+            const auto& unique_data = constraint.data.get<0>();
+            if (unique_data.columns.size() == 1 && unique_data.columns[0] == field_idx) {
+                fprintf(stderr, "ERROR: Field %s.%s has unique constraint - cannot have default value",
+                        table_name.c_str(), field_name.c_str());
+                return;
+            }
+        }
+    }
+    
+    // Check if this column has an auto_inc sequence
+    for (const auto& sequence : table->sequences) {
+        if (sequence.column == field_idx) {
+            fprintf(stderr, "ERROR: Field %s.%s has auto_inc constraint - cannot have default value",
+                    table_name.c_str(), field_name.c_str());
+            return;
+        }
+    }
+    
+    // Create the column default value structure
+    RawColumnDefaultValueV9 col_default;
+    col_default.table = table_name;
+    col_default.col_id = field_idx;
+    col_default.value = serialized_value;
+    
+    // Create the misc export entry with ColumnDefaultValue variant (variant 0)
+    RawMiscModuleExportV9 export_entry;
+    export_entry.set<0>(col_default);
+    
+    // Add to the module's misc_exports
+    GetV9Module().misc_exports.push_back(export_entry);
 }
 
 // Helper trait to extract function parameter types
@@ -566,6 +674,17 @@ void V9Builder::RegisterReducerCommon(const std::string& reducer_name,
     }
     
     using traits = function_traits<Func>;
+    
+    // Validate that the reducer has at least one parameter (ReducerContext)
+    static_assert(traits::arity > 0, 
+        "Reducer must have at least one parameter (ReducerContext)");
+    
+    // Validate that the first parameter is ReducerContext
+    using FirstParamType = std::remove_cv_t<std::remove_reference_t<
+        typename traits::template arg_t<0>>>;
+    
+    static_assert(std::is_same_v<FirstParamType, ReducerContext>,
+        "First parameter of reducer must be ReducerContext");
     
     // Build vectors of parameter information
     std::vector<bsatn::AlgebraicType> param_types;
