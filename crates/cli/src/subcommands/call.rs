@@ -17,7 +17,7 @@ use super::sql::parse_req;
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
         .about(format!(
-            "Invokes a reducer function OR procedure in a database. {UNSTABLE_WARNING}"
+            "Invokes a function (reducer or procedure) in a database. {UNSTABLE_WARNING}"
         ))
         .arg(
             Arg::new("database")
@@ -25,9 +25,9 @@ pub fn cli() -> clap::Command {
                 .help("The database name or identity to use to invoke the call"),
         )
         .arg(
-            Arg::new("reducer_procedure_name")
+            Arg::new("function_name")
                 .required(true)
-                .help("The name of the reducer OR procedure to call"),
+                .help("The name of the function to call"),
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -64,7 +64,7 @@ impl<'a> CallDef<'a> {
 
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
-    let reducer_procedure_name = args.get_one::<String>("reducer_procedure_name").unwrap();
+    let reducer_procedure_name = args.get_one::<String>("function_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
 
     let conn = parse_req(config, args).await?;
