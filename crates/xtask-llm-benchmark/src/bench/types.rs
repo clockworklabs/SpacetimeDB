@@ -123,7 +123,7 @@ pub struct BenchModeContext<'a> {
 }
 
 pub struct RunConfig {
-    pub mode_flag: Option<String>,
+    pub modes: Option<Vec<String>>,
     pub hash_only: bool,
     pub goldens_only: bool,
     pub lang: Lang,
