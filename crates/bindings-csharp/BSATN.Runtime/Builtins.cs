@@ -1,7 +1,6 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics;
-using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using SpacetimeDB.BSATN;
 

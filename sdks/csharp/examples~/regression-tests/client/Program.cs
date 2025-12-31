@@ -82,6 +82,12 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         ValidateBTreeIndexes(ctx);
     };
 
+    conn.Reducers.OnInsertResult += (ReducerEventContext ctx, Result<MyTable, string> msg) =>
+    {
+        Log.Info($"Got InsertResult callback: {msg}");
+        waiting--;
+    };
+
     conn.OnUnhandledReducerError += (ReducerEventContext ctx, Exception exception) =>
     {
         Log.Info($"Got OnUnhandledReducerError: {exception}");
