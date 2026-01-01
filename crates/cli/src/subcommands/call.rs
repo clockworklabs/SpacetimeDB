@@ -9,23 +9,25 @@ use convert_case::{Case, Casing};
 use itertools::Itertools;
 use spacetimedb_lib::sats::{self, AlgebraicType, Typespace};
 use spacetimedb_lib::{Identity, ProductTypeElement};
-use spacetimedb_schema::def::{ModuleDef, ReducerDef};
+use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef};
 use std::fmt::Write;
 
 use super::sql::parse_req;
 
 pub fn cli() -> clap::Command {
     clap::Command::new("call")
-        .about(format!("Invokes a reducer function in a database. {UNSTABLE_WARNING}"))
+        .about(format!(
+            "Invokes a function (reducer or procedure) in a database. {UNSTABLE_WARNING}"
+        ))
         .arg(
             Arg::new("database")
                 .required(true)
                 .help("The database name or identity to use to invoke the call"),
         )
         .arg(
-            Arg::new("reducer_name")
+            Arg::new("function_name")
                 .required(true)
-                .help("The name of the reducer to call"),
+                .help("The name of the function to call"),
         )
         .arg(Arg::new("arguments").help("arguments formatted as JSON").num_args(1..))
         .arg(common_args::server().help("The nickname, host name or URL of the server hosting the database"))
@@ -34,9 +36,35 @@ pub fn cli() -> clap::Command {
         .after_help("Run `spacetime help call` for more detailed information.\n")
 }
 
+enum CallDef<'a> {
+    Reducer(&'a ReducerDef),
+    Procedure(&'a ProcedureDef),
+}
+
+impl<'a> CallDef<'a> {
+    fn params(&self) -> &'a sats::ProductType {
+        match self {
+            CallDef::Reducer(reducer_def) => &reducer_def.params,
+            CallDef::Procedure(procedure_def) => &procedure_def.params,
+        }
+    }
+    fn name(&self) -> &str {
+        match self {
+            CallDef::Reducer(reducer_def) => &reducer_def.name,
+            CallDef::Procedure(procedure_def) => &procedure_def.name,
+        }
+    }
+    fn kind(&self) -> &str {
+        match self {
+            CallDef::Reducer(_) => "reducer",
+            CallDef::Procedure(_) => "procedure",
+        }
+    }
+}
+
 pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
     eprintln!("{UNSTABLE_WARNING}\n");
-    let reducer_name = args.get_one::<String>("reducer_name").unwrap();
+    let reducer_procedure_name = args.get_one::<String>("function_name").unwrap();
     let arguments = args.get_many::<String>("arguments");
 
     let conn = parse_req(config, args).await?;
@@ -47,14 +75,25 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
     let module_def: ModuleDef = api.module_def().await?.try_into()?;
 
-    let reducer_def = module_def
-        .reducer(&**reducer_name)
-        .ok_or_else(|| anyhow::Error::msg(no_such_reducer(&database_identity, database, reducer_name, &module_def)))?;
+    let call_def = match module_def.reducer(&**reducer_procedure_name) {
+        Some(reducer_def) => CallDef::Reducer(reducer_def),
+        None => match module_def.procedure(&**reducer_procedure_name) {
+            Some(procedure_def) => CallDef::Procedure(procedure_def),
+            None => {
+                return Err(anyhow::Error::msg(no_such_reducer_or_procedure(
+                    &database_identity,
+                    database,
+                    reducer_procedure_name,
+                    &module_def,
+                )));
+            }
+        },
+    };
 
     // String quote any arguments that should be quoted
     let arguments = arguments
         .unwrap_or_default()
-        .zip(&*reducer_def.params.elements)
+        .zip(&call_def.params().elements)
         .map(|(argument, element)| match &element.algebraic_type {
             AlgebraicType::String if !argument.starts_with('\"') || !argument.ends_with('\"') => {
                 format!("\"{argument}\"")
@@ -63,7 +102,7 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
         });
 
     let arg_json = format!("[{}]", arguments.format(", "));
-    let res = api.call(reducer_name, arg_json).await?;
+    let res = api.call(reducer_procedure_name, arg_json).await?;
 
     if let Err(e) = res.error_for_status_ref() {
         let Ok(response_text) = res.text().await else {
@@ -73,31 +112,34 @@ pub async fn exec(config: Config, args: &ArgMatches) -> Result<(), Error> {
 
         let error = Err(e).context(format!("Response text: {response_text}"));
 
-        let error_msg = if response_text.starts_with("no such reducer") {
-            no_such_reducer(&database_identity, database, reducer_name, &module_def)
-        } else if response_text.starts_with("invalid arguments") {
-            invalid_arguments(&database_identity, database, &response_text, &module_def, reducer_def)
-        } else {
-            return error;
-        };
+        let error_msg =
+            if response_text.starts_with("no such reducer") || response_text.starts_with("no such procedure") {
+                no_such_reducer_or_procedure(&database_identity, database, reducer_procedure_name, &module_def)
+            } else if response_text.starts_with("invalid arguments") {
+                invalid_arguments(&database_identity, database, &response_text, &module_def, call_def)
+            } else {
+                return error;
+            };
 
         return error.context(error_msg);
+    }
+
+    if let CallDef::Procedure(_) = call_def {
+        let body = res.text().await?;
+        println!("{body}");
     }
 
     Ok(())
 }
 
 /// Returns an error message for when `reducer` is called with wrong arguments.
-fn invalid_arguments(
-    identity: &Identity,
-    db: &str,
-    text: &str,
-    module_def: &ModuleDef,
-    reducer_def: &ReducerDef,
-) -> String {
+fn invalid_arguments(identity: &Identity, db: &str, text: &str, module_def: &ModuleDef, call_def: CallDef) -> String {
     let mut error = format!(
-        "Invalid arguments provided for reducer `{}` for database `{}` resolving to identity `{}`.",
-        reducer_def.name, db, identity
+        "Invalid arguments provided for {} `{}` for database `{}` resolving to identity `{}`.",
+        call_def.kind(),
+        call_def.name(),
+        db,
+        identity
     );
 
     if let Some((actual, expected)) = find_actual_expected(text).filter(|(a, e)| a != e) {
@@ -110,8 +152,9 @@ fn invalid_arguments(
 
     write!(
         error,
-        "\n\nThe reducer has the following signature:\n\t{}",
-        ReducerSignature(module_def.typespace().with_type(reducer_def))
+        "\n\nThe {} has the following signature:\n\t{}",
+        call_def.kind(),
+        CallSignature(module_def.typespace().with_type(&call_def))
     )
     .unwrap();
 
@@ -138,18 +181,18 @@ fn split_at_first_substring<'t>(text: &'t str, substring: &str) -> Option<(&'t s
 }
 
 /// Provided the `schema_json` for the database,
-/// returns the signature for a reducer with `reducer_name`.
-struct ReducerSignature<'a>(sats::WithTypespace<'a, ReducerDef>);
-impl std::fmt::Display for ReducerSignature<'_> {
+/// returns the signature for a reducer OR procedure with `name`.
+struct CallSignature<'a>(sats::WithTypespace<'a, CallDef<'a>>);
+impl std::fmt::Display for CallSignature<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let reducer_def = self.0.ty();
+        let call_def = self.0.ty();
         let typespace = self.0.typespace();
 
-        write!(f, "{}(", reducer_def.name)?;
+        write!(f, "{}(", call_def.name())?;
 
         // Print the arguments to `args`.
         let mut comma = false;
-        for arg in &*reducer_def.params.elements {
+        for arg in &*call_def.params().elements {
             if comma {
                 write!(f, ", ")?;
             }
@@ -164,51 +207,65 @@ impl std::fmt::Display for ReducerSignature<'_> {
     }
 }
 
-/// Returns an error message for when `reducer` does not exist in `db`.
-fn no_such_reducer(database_identity: &Identity, db: &str, reducer: &str, module_def: &ModuleDef) -> String {
-    let mut error =
-        format!("No such reducer `{reducer}` for database `{db}` resolving to identity `{database_identity}`.");
+/// Returns an error message for when `reducer` or `procedure` does not exist in `db`.
+fn no_such_reducer_or_procedure(database_identity: &Identity, db: &str, name: &str, module_def: &ModuleDef) -> String {
+    let mut error = format!(
+        "No such reducer OR procedure `{name}` for database `{db}` resolving to identity `{database_identity}`."
+    );
 
-    add_reducer_ctx_to_err(&mut error, module_def, reducer);
+    add_reducer_procedure_ctx_to_err(&mut error, module_def, name);
 
     error
 }
 
-const REDUCER_PRINT_LIMIT: usize = 10;
+const CALL_PRINT_LIMIT: usize = 10;
 
 /// Provided the schema for the database,
-/// decorate `error` with more helpful info about reducers.
-fn add_reducer_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
-    let mut reducers = module_def
+/// decorate `error` with more helpful info about reducers and procedures.
+fn add_reducer_procedure_ctx_to_err(error: &mut String, module_def: &ModuleDef, reducer_name: &str) {
+    let reducers = module_def
         .reducers()
         .filter(|reducer| reducer.lifecycle.is_none())
         .map(|reducer| &*reducer.name)
         .collect::<Vec<_>>();
 
+    let procedures = module_def
+        .procedures()
+        .map(|reducer| &*reducer.name)
+        .collect::<Vec<_>>();
+
     if let Some(best) = find_best_match_for_name(&reducers, reducer_name, None) {
         write!(error, "\n\nA reducer with a similar name exists: `{best}`").unwrap();
-    } else if reducers.is_empty() {
-        write!(error, "\n\nThe database has no reducers.").unwrap();
+    } else if let Some(best) = find_best_match_for_name(&procedures, reducer_name, None) {
+        write!(error, "\n\nA procedure with a similar name exists: `{best}`").unwrap();
     } else {
-        // Sort reducers by relevance.
-        reducers.sort_by_key(|candidate| edit_distance(reducer_name, candidate, usize::MAX));
+        let mut list_similar = |mut list: Vec<&str>, name: &str, kind: &str| {
+            if list.is_empty() {
+                write!(error, "\n\nThe database has no {kind}s.").unwrap();
+                return;
+            }
+            list.sort_by_key(|candidate| edit_distance(name, candidate, usize::MAX));
 
-        // Don't spam the user with too many entries.
-        let too_many_to_show = reducers.len() > REDUCER_PRINT_LIMIT;
-        let diff = reducers.len().abs_diff(REDUCER_PRINT_LIMIT);
-        reducers.truncate(REDUCER_PRINT_LIMIT);
+            // Don't spam the user with too many entries.
+            let too_many_to_show = list.len() > CALL_PRINT_LIMIT;
+            let diff = list.len().abs_diff(CALL_PRINT_LIMIT);
+            list.truncate(CALL_PRINT_LIMIT);
 
-        // List them.
-        write!(error, "\n\nHere are some existing reducers:").unwrap();
-        for candidate in reducers {
-            write!(error, "\n- {candidate}").unwrap();
-        }
+            // List them.
+            write!(error, "\n\nHere are some existing {kind}s:").unwrap();
+            for candidate in list {
+                write!(error, "\n- {candidate}").unwrap();
+            }
 
-        // When some where not listed, note that are more.
-        if too_many_to_show {
-            let plural = if diff == 1 { "" } else { "s" };
-            write!(error, "\n... ({diff} reducer{plural} not shown)").unwrap();
-        }
+            // When somewhere not listed, note that are more.
+            if too_many_to_show {
+                let plural = if diff == 1 { "" } else { "s" };
+                write!(error, "\n... ({diff} {kind}{plural} not shown)").unwrap();
+            }
+        };
+
+        list_similar(reducers, reducer_name, "reducer");
+        list_similar(procedures, reducer_name, "procedure");
     }
 }
 
