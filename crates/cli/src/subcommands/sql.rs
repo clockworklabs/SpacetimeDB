@@ -239,7 +239,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::sats::time_duration::TimeDuration;
     use spacetimedb_lib::sats::timestamp::Timestamp;
-    use spacetimedb_lib::sats::{product, GroundSpacetimeType, ProductType};
+    use spacetimedb_lib::sats::{product, ArrayValue, GroundSpacetimeType, ProductType};
     use spacetimedb_lib::{AlgebraicType, AlgebraicValue, ConnectionId, Identity};
 
     fn make_row(row: &[AlgebraicValue]) -> Result<Box<RawValue>, serde_json::Error> {
@@ -590,6 +590,126 @@ Roundtrip time: 1.00ms"#,
  tuple
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  {"col_0": {"bool": true, "str": "This is spacetimedb", "bytes": "0x01020304050607", "identity": "0x0000000000000000000000000000000000000000000000000000000000000000", "connection_id": "0x00000000000000000000000000000000", "timestamp": "1970-01-01T00:00:00+00:00", "duration": "P0D"}}"#,
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn output_arrays() -> ResultTest<()> {
+        let kind: ProductType = [("arr", AlgebraicType::array(AlgebraicType::I32))].into();
+        let value = product![AlgebraicValue::Array([1, 2, 3].into()).clone()];
+
+        expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ arr
+-----------
+ [1, 2, 3]"#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value.clone()],
+            r#"
+ arr
+-----------
+ {1, 2, 3}"#,
+        );
+
+        let kind: ProductType = [("arr", AlgebraicType::array(AlgebraicType::array(AlgebraicType::I32)))].into();
+
+        let arr = ArrayValue::I32([1, 2, 3].into());
+        let value = product![AlgebraicValue::Array(ArrayValue::Array([arr.clone(), arr].into()))];
+        expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ arr
+------------------------
+ [[1, 2, 3], [1, 2, 3]]"#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value.clone()],
+            r#"
+ arr
+------------------------
+ {{1, 2, 3}, {1, 2, 3}}"#,
+        );
+
+        // Check struct
+        let kind: ProductType = [(
+            "arr",
+            AlgebraicType::array(AlgebraicType::product([
+                ("a", AlgebraicType::I32),
+                ("b", AlgebraicType::String),
+            ])),
+        )]
+        .into();
+
+        let value = product![AlgebraicValue::Array(ArrayValue::Product(
+            [
+                product![AlgebraicValue::I32(1), AlgebraicValue::String("one".into())],
+                product![AlgebraicValue::I32(2), AlgebraicValue::String("two".into())],
+            ]
+            .into()
+        ))];
+
+        expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ arr
+------------------------------------------
+ [(a = 1, b = "one"), (a = 2, b = "two")]"#,
+        );
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value],
+            r#"
+ arr
+----------------------------------------------
+ {{"a": 1, "b": "one"}, {"a": 2, "b": "two"}}"#,
+        );
+
+        // Check struct with array fields
+        let kind: ProductType = [
+            ("a", AlgebraicType::array(AlgebraicType::I32)),
+            ("b", AlgebraicType::array(AlgebraicType::String)),
+        ]
+        .into();
+        let value = product![
+            AlgebraicValue::Array(ArrayValue::I32([1, 2, 3].into())),
+            AlgebraicValue::Array(ArrayValue::String(["one".into(), "two".into(), "three".into()].into()))
+        ];
+
+        expect_psql_table(
+            PsqlClient::SpacetimeDB,
+            &kind,
+            vec![value.clone()],
+            r#"
+ a         | b
+-----------+-------------------------
+ [1, 2, 3] | ["one", "two", "three"]"#,
+        );
+
+        expect_psql_table(
+            PsqlClient::Postgres,
+            &kind,
+            vec![value],
+            r#"
+ a         | b
+-----------+-------------------------
+ {1, 2, 3} | {"one", "two", "three"}"#,
         );
 
         Ok(())

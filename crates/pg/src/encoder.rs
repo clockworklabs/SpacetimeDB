@@ -2,8 +2,8 @@ use crate::pg_server::PgError;
 use pgwire::api::portal::Format;
 use pgwire::api::results::{DataRowEncoder, FieldInfo};
 use pgwire::api::Type;
-use spacetimedb_lib::sats::satn::{PsqlChars, PsqlPrintFmt, PsqlType, TypedWriter};
-use spacetimedb_lib::sats::{satn, ValueWithType};
+use spacetimedb_lib::sats::satn::{PsqlChars, PsqlClient, PsqlPrintFmt, PsqlType, TypedWriter};
+use spacetimedb_lib::sats::{satn, ArrayValue, ValueWithType};
 use spacetimedb_lib::{
     ser, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp,
 };
@@ -50,7 +50,11 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             | AlgebraicType::U128
             | AlgebraicType::I256
             | AlgebraicType::U256 => Type::NUMERIC_ARRAY,
-            _ => Type::ANYARRAY,
+            AlgebraicType::F32 => Type::FLOAT4_ARRAY,
+            AlgebraicType::F64 => Type::FLOAT8_ARRAY,
+            AlgebraicType::Ref(_) | AlgebraicType::Sum(_) | AlgebraicType::Product(_) | AlgebraicType::Array(_) => {
+                Type::JSON_ARRAY
+            }
         },
         AlgebraicType::Product(_) => match format {
             PsqlPrintFmt::Hex => Type::BYTEA_ARRAY,
@@ -72,6 +76,39 @@ impl ser::Error for PgError {
 
 pub(crate) struct PsqlFormatter<'a> {
     pub(crate) encoder: &'a mut DataRowEncoder,
+}
+
+impl<'a> PsqlFormatter<'a> {
+    fn encode_variant(tag: u8, ty: PsqlType, name: Option<&str>, value: ValueWithType<AlgebraicValue>) -> String {
+        // Is a simple enum?
+        if let AlgebraicType::Sum(sum) = &ty.field.algebraic_type {
+            if sum.is_simple_enum() {
+                if let Some(variant_name) = name {
+                    return variant_name.to_string();
+                }
+            }
+        }
+
+        if ty.field.algebraic_type.is_unit() {
+            if let Some(variant_name) = name {
+                return variant_name.to_string();
+            }
+        }
+
+        let PsqlChars {
+            start,
+            sep,
+            end,
+            quote,
+            start_array: _,
+            end_array: _,
+        } = ty.client.format_chars();
+        let name = name.map(Cow::from).unwrap_or_else(|| Cow::from(tag.to_string()));
+        format!(
+            "{start}{quote}{name}{quote}{sep} {}{end}",
+            satn::PsqlWrapper { ty, value }
+        )
+    }
 }
 
 impl TypedWriter for PsqlFormatter<'_> {
@@ -146,7 +183,14 @@ impl TypedWriter for PsqlFormatter<'_> {
             }
         }
 
-        let PsqlChars { start, sep, end, quote } = ty.client.format_chars();
+        let PsqlChars {
+            start,
+            sep,
+            end,
+            quote,
+            start_array: _,
+            end_array: _,
+        } = ty.client.format_chars();
         let name = name.map(Cow::from).unwrap_or_else(|| Cow::from(tag.to_string()));
         let json = format!(
             "{start}{quote}{name}{quote}{sep} {}{end}",
@@ -154,6 +198,129 @@ impl TypedWriter for PsqlFormatter<'_> {
         );
         self.encoder.encode_field(&json)?;
         Ok(())
+    }
+
+    fn write_array(
+        &mut self,
+        value: &ValueWithType<'_, ArrayValue>,
+        psql: &PsqlType,
+        ty: &AlgebraicType,
+    ) -> Result<bool, Self::Error> {
+        if *ty == AlgebraicType::U8 {
+            return Ok(false);
+        }
+        fn collect<I, O, F>(arr: &[I], map: F) -> Vec<O>
+        where
+            I: Clone,
+            F: Fn(usize, &I) -> O,
+        {
+            arr.iter().enumerate().map(|(pos, v)| map(pos, v)).collect()
+        }
+        let ty = &value.ty().elem_ty;
+        let type_space = &value.typespace();
+        match value.value() {
+            ArrayValue::Bool(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::I8(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U8(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::I16(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U16(arr) => self.encoder.encode_field(&collect(arr, |_, v| *v as i32))?,
+            ArrayValue::I32(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U32(arr) => self.encoder.encode_field(&collect(arr, |_, v| *v as i64))?,
+            ArrayValue::I64(arr) => self.encoder.encode_field(&arr.as_ref())?,
+            ArrayValue::U64(arr) => self.encoder.encode_field(&collect(arr, |_, v| v.to_string()))?,
+            ArrayValue::I128(arr) => self.encoder.encode_field(&collect(arr, |_, v| v.to_string()))?,
+            ArrayValue::U128(arr) => self.encoder.encode_field(&collect(arr, |_, v| v.to_string()))?,
+            ArrayValue::I256(arr) => self.encoder.encode_field(&collect(arr, |_, v| v.to_string()))?,
+            ArrayValue::U256(arr) => self.encoder.encode_field(&collect(arr, |_, v| v.to_string()))?,
+            ArrayValue::F32(arr) => self.encoder.encode_field(&collect(arr, |_, v| *v.as_ref()))?,
+            ArrayValue::F64(arr) => self.encoder.encode_field(&collect(arr, |_, v| *v.as_ref()))?,
+            ArrayValue::String(arr) => self.encoder.encode_field(&collect(arr, |_, v| v.to_string()))?,
+            ArrayValue::Array(arr) => {
+                let values = collect(arr, |_pos, val| {
+                    let mut psql = psql.clone();
+                    // Switching client because we are outputting nested arrays as JSON
+                    psql.client = PsqlClient::SpacetimeDB;
+                    satn::PsqlWrapper {
+                        ty: psql,
+                        value: val.clone(),
+                    }
+                    .to_string()
+                });
+                self.encoder.encode_field(&values)?;
+            }
+            ArrayValue::Sum(sum) => {
+                let values = collect(sum, |_pos, val| {
+                    let (tag, value) = match &**ty {
+                        AlgebraicType::Sum(sum) => {
+                            let field = sum.variants.get(val.tag as usize).expect("Invalid variant tag");
+                            (field, val.value.clone())
+                        }
+                        _ => unreachable!("Expected sum type"),
+                    };
+                    let field = ProductTypeElement::new(tag.algebraic_type.clone(), tag.name.clone());
+
+                    PsqlFormatter::encode_variant(
+                        val.tag,
+                        PsqlType {
+                            client: psql.client,
+                            field: &field.clone(),
+                            tuple: &ProductType::new([field].into()),
+                            idx: 0,
+                        },
+                        tag.name.as_deref(),
+                        ValueWithType::new(type_space.with_type(&tag.algebraic_type), &value),
+                    )
+                });
+                self.encoder.encode_field(&values)?;
+            }
+            ArrayValue::Product(value) => {
+                let PsqlChars {
+                    start,
+                    sep,
+                    end,
+                    quote,
+                    start_array: _,
+                    end_array: _,
+                } = psql.client.format_chars();
+                let values = collect(value, |pos, value| {
+                    let json = match &**ty {
+                        AlgebraicType::Product(prod) => {
+                            let mut json = String::new();
+                            for (field, value) in prod.elements.iter().zip(value.elements.iter()) {
+                                let psql_ty = PsqlType {
+                                    client: psql.client,
+                                    field,
+                                    tuple: prod,
+                                    idx: pos,
+                                };
+                                if !json.is_empty() {
+                                    json.push(',');
+                                }
+                                let name = field
+                                    .name
+                                    .as_deref()
+                                    .map(Cow::from)
+                                    .unwrap_or_else(|| Cow::from(pos.to_string()));
+                                let field_json =
+                                    format!("{quote}{name}{quote}{sep} {}", satn::PsqlWrapper { ty: psql_ty, value });
+                                json.push_str(&field_json);
+                            }
+                            json
+                        }
+                        _ => unreachable!("Expected product type"),
+                    };
+                    format!("{start}{}{end}", json)
+                });
+
+                self.encoder.encode_field(&values)?;
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn insert_sep(&mut self, _sep: &str) -> Result<(), Self::Error> {
+        Ok(()) // No-op for PSQL format
     }
 }
 
@@ -164,7 +331,9 @@ mod tests {
     use futures::StreamExt;
     use spacetimedb_client_api_messages::http::SqlStmtResult;
     use spacetimedb_lib::sats::algebraic_value::Packed;
-    use spacetimedb_lib::sats::{i256, product, u256, AlgebraicType, ProductType, SumTypeVariant};
+    use spacetimedb_lib::sats::{
+        i256, product, u256, AlgebraicType, ArrayValue, ProductType, SumTypeVariant, SumValue,
+    };
     use spacetimedb_lib::{ConnectionId, Identity};
 
     async fn run(schema: ProductType, row: ProductValue) -> String {
@@ -297,5 +466,151 @@ mod tests {
 
         let row = run(schema, value).await;
         assert_eq!(row, "\0\0\0B\\x0000000000000000000000000000000000000000000000000000000000000000\0\0\0\"\\x00000000000000000000000000000000\0\0\0\u{3}P0D\0\0\0\u{1d}1970-01-19T18:42:25.800+00:00\0\0\0\n\\x74657374");
+    }
+
+    #[tokio::test]
+    async fn test_array() {
+        // {a: [1,2,3], b: [{"a": 1}, {"b": true}], c: [0xDE, 0xAD, 0xBE, 0xEF]}
+        let product = AlgebraicType::product([
+            ProductTypeElement::new(AlgebraicType::I32, Some("a".into())),
+            ProductTypeElement::new(AlgebraicType::Bool, Some("b".into())),
+        ]);
+        let schema = ProductType::from([
+            AlgebraicType::array(AlgebraicType::I32),
+            AlgebraicType::array(product.clone()),
+            AlgebraicType::bytes(),
+        ]);
+
+        let value = product![
+            AlgebraicValue::Array(ArrayValue::I32([1, 2, 3].into())),
+            AlgebraicValue::Array(ArrayValue::Product([product![1, true]].into())),
+            AlgebraicValue::Bytes([0xDE, 0xAD, 0xBE, 0xEF].into()),
+        ];
+
+        let row = run(schema.clone(), value.clone()).await;
+        assert_eq!(
+            row,
+            "\0\0\0\u{7}{1,2,3}\0\0\0\u{1a}{\"{\\\"a\\\": 1,\\\"b\\\": true}\"}\0\0\0\n\\xdeadbeef"
+        );
+
+        // Check all the unnested arrays are encoded as native PG arrays, and nested arrays, sum & product arrays as JSON
+        let arrays = vec![
+            (
+                ArrayValue::Bool([true, false, true].into()),
+                AlgebraicType::Bool,
+                "\u{7}{t,f,t}",
+            ),
+            (ArrayValue::I8([-1, 0, 1].into()), AlgebraicType::I8, "\u{8}{-1,0,1}"),
+            (ArrayValue::U8([0, 1, 2].into()), AlgebraicType::U8, "\u{8}\\x000102"),
+            (
+                ArrayValue::I16([-256, 0, 256].into()),
+                AlgebraicType::I16,
+                "\u{c}{-256,0,256}",
+            ),
+            (
+                ArrayValue::U16([0, 256, 65535].into()),
+                AlgebraicType::U16,
+                "\r{0,256,65535}",
+            ),
+            (
+                ArrayValue::I32([-65536, 0, 65536].into()),
+                AlgebraicType::I32,
+                "\u{10}{-65536,0,65536}",
+            ),
+            (
+                ArrayValue::U32([0, 65536, 4294967295].into()),
+                AlgebraicType::U32,
+                "\u{14}{0,65536,4294967295}",
+            ),
+            (
+                ArrayValue::I64([-4294967296, 0, 4294967296].into()),
+                AlgebraicType::I64,
+                "\u{1a}{-4294967296,0,4294967296}",
+            ),
+            (
+                ArrayValue::U64([0, 4294967296, 18446744073709551615].into()),
+                AlgebraicType::U64,
+                "#{0,4294967296,18446744073709551615}",
+            ),
+            (
+                ArrayValue::I128([i128::MIN, 0, i128::MAX].into()),
+                AlgebraicType::I128,
+                "T{-170141183460469231731687303715884105728,0,170141183460469231731687303715884105727}",
+            ),
+            (
+                ArrayValue::U128([0, u128::MAX].into()),
+                AlgebraicType::U128,
+                "+{0,340282366920938463463374607431768211455}",
+            ),
+            (
+                ArrayValue::I256([i256::from(-1), i256::from(0), i256::from(1)].into()),
+                AlgebraicType::I256,
+                "\u{8}{-1,0,1}",
+            ),
+            (
+                ArrayValue::U256([u256::ZERO, u256::ONE].into()),
+                AlgebraicType::U256,
+                "\u{5}{0,1}",
+            ),
+            (
+                ArrayValue::F32([1.5.into(), 2.5.into(), 3.5.into()].into()),
+                AlgebraicType::F32,
+                "\r{1.5,2.5,3.5}",
+            ),
+            (
+                ArrayValue::F64([1.5.into(), 2.5.into(), 3.5.into()].into()),
+                AlgebraicType::F64,
+                "\r{1.5,2.5,3.5}",
+            ),
+            (
+                ArrayValue::String(["foo".into(), "bar".into(), "baz".into()].into()),
+                AlgebraicType::String,
+                "\r{foo,bar,baz}",
+            ),
+            (
+                ArrayValue::Product([product![1], product![2], product![3]].into()),
+                AlgebraicType::product([ProductTypeElement::new(AlgebraicType::I32, None)]),
+                "({\"{\\\"0\\\": 1}\",\"{\\\"1\\\": 2}\",\"{\\\"2\\\": 3}\"}",
+            ),
+            // Array of arrays
+            (
+                ArrayValue::Array([ArrayValue::I32([1, 2].into()), ArrayValue::I32([3, 4].into())].into()),
+                AlgebraicType::array(AlgebraicType::I32),
+                "\u{13}{\"[1, 2]\",\"[3, 4]\"}",
+            ),
+            // Simple enum array
+            (
+                ArrayValue::Sum(
+                    [
+                        SumValue::new_simple(0),
+                        SumValue::new_simple(1),
+                        SumValue::new_simple(2),
+                    ]
+                    .into(),
+                ),
+                AlgebraicType::simple_enum(["A", "B", "C"].into_iter()),
+                "\u{7}{A,B,C}",
+            ),
+            // Non-simple enum array
+            (
+                ArrayValue::Sum(
+                    [
+                        SumValue::new(0, AlgebraicValue::I64(1)),
+                        SumValue::new(1, AlgebraicValue::unit()),
+                    ]
+                    .into(),
+                ),
+                AlgebraicType::option(AlgebraicType::I64),
+                "\u{16}{\"{\\\"some\\\": 1}\",none}",
+            ),
+        ];
+
+        for (array_value, ty, expected_encoding) in arrays {
+            let schema = ProductType::from([AlgebraicType::array(ty.clone())]);
+            let value = product![AlgebraicValue::Array(array_value)];
+            let row = run(schema, value).await;
+            let expected_row = format!("\0\0\0{}", expected_encoding);
+            assert_eq!(row, expected_row, "Failed for array encoding for {ty:?}");
+        }
     }
 }

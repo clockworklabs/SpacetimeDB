@@ -92,6 +92,21 @@ pub struct TNested {
    ints: TInts,
 }
 
+#[spacetimedb::table(name = t_player)]
+pub struct TPlayer {
+    id: u32,
+    name: String,
+}
+
+#[spacetimedb::table(name = t_arrays)]
+pub struct TArrays {
+    pos: Vec<i32>,
+    velocity: Vec<f64>,
+    colors: Vec<Vec<u8>>,
+    colors_2: Vec<Vec<u16>>,
+    players: Vec<TPlayer>,
+}
+
 #[spacetimedb::reducer]
 pub fn test(ctx: &ReducerContext) {
     let tuple = TInts {
@@ -140,6 +155,17 @@ pub fn test(ctx: &ReducerContext) {
         en: TEnum { id: 1, color: Color::Gray(128) },
         se: TSimpleEnum { id: 2, action: Action::Active },
         ints,
+    });
+
+    ctx.db.t_arrays().insert(TArrays {
+        pos: vec![1, 2, 3],
+        velocity: vec![0.1, 0.2, 0.3],
+        colors: vec![vec![255, 0, 0], vec![0, 255, 0], vec![0, 0, 255]],
+        colors_2: vec![vec![65535, 0, 0], vec![0, 65535, 0], vec![0, 0, 65535]],
+        players: vec![
+            TPlayer { id: 1, name: "Alice".to_string() },
+            TPlayer { id: 2, name: "Bob".to_string() },
+        ],
     });
 }
 """
@@ -235,6 +261,11 @@ en                 |                 se                  |                      
 -----------------------------------+-------------------------------------+---------------------------------------------------------------------------------------------------------
  {"id": 1, "color": {"Gray": 128}} | {"id": 2, "action": {"Active": {}}} | {"i8": -25, "i16": -3224, "i32": -23443, "i64": -2344353, "i128": -234434897853, "i256": -234434897853}
 (1 row)""")
+        self.assertPsql(token, "SELECT * FROM t_arrays", r"""
+pos   |   velocity    |            colors            |                     colors_2                      |                               players
+---------+---------------+------------------------------+---------------------------------------------------+---------------------------------------------------------------------
+ {1,2,3} | {0.1,0.2,0.3} | {0xff0000,0x00ff00,0x0000ff} | {"[65535, 0, 0]","[0, 65535, 0]","[0, 0, 65535]"} | {"{\"id\": 1,\"name\": \"Alice\"}","{\"id\": 2,\"name\": \"Bob\"}"}
+(1 row)""".strip())
 
     def test_sql_conn(self):
         """This test is designed to test connecting to the database and executing queries using `psycopg2`"""
