@@ -98,6 +98,11 @@ public class TransactionIsMutableException : StdbException
         "ABI call can only be made while inside a read-only transaction";
 }
 
+public class HttpException : StdbException
+{
+    public override string Message => "HTTP request failed";
+}
+
 public class UnknownException : StdbException
 {
     private readonly Errno code;
