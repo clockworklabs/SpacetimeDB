@@ -284,6 +284,12 @@ impl ModuleDef {
             .map(|(_, def)| def)
     }
 
+    /// Convenience method to look up a procedure, possibly by a string.
+    pub fn procedure<K: ?Sized + Hash + Equivalent<Identifier>>(&self, name: &K) -> Option<&ProcedureDef> {
+        // If the string IS a valid identifier, we can just look it up.
+        self.procedures.get(name)
+    }
+
     /// Convenience method to look up a procedure, possibly by a string, returning its id as well.
     pub fn procedure_full<K: ?Sized + Hash + Equivalent<Identifier>>(
         &self,
@@ -308,14 +314,9 @@ impl ModuleDef {
         self.lifecycle_reducers[lifecycle].map(|i| (i, &self.reducers[i.idx()]))
     }
 
-    /// Get a `DeserializeSeed` that can pull data from a `Deserializer` and format it into a `ProductType`
-    /// at the parameter type of the reducer named `name`.
-    pub fn reducer_arg_deserialize_seed<K: ?Sized + Hash + Equivalent<Identifier>>(
-        &self,
-        name: &K,
-    ) -> Option<(ReducerId, ArgsSeed<'_, ReducerDef>)> {
-        let (id, reducer) = self.reducer_full(name)?;
-        Some((id, ArgsSeed(self.typespace.with_type(reducer))))
+    /// Returns a `DeserializeSeed` that can pull data from a `Deserializer` for `def`.
+    pub fn arg_seed_for<'a, T>(&'a self, def: &'a T) -> ArgsSeed<'a, T> {
+        ArgsSeed(self.typespace.with_type(def))
     }
 
     /// Look up the name corresponding to an `AlgebraicTypeRef`.

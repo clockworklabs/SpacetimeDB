@@ -43,6 +43,13 @@ pub struct Vector2 {
 """
 
     MODULE_CODE = MODULE_CODE_INIT + """
+
+#[spacetimedb::table(name = person_info)]
+pub struct PersonInfo {
+    #[primary_key]
+    id: u64,
+}
+
 #[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
 pub enum PersonKind {
     Student,
@@ -60,6 +67,14 @@ fn kind_to_string(Student: PersonKind) -> &'static str {
     MODULE_CODE_UPDATED = (
         MODULE_CODE_INIT
         + """
+
+#[spacetimedb::table(name = person_info)]
+pub struct PersonInfo {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+}
+
 #[derive(SpacetimeType, Clone, Copy, PartialEq, Eq)]
 pub enum PersonKind {
     Student,
@@ -99,13 +114,6 @@ pub fn print_books(ctx: &ReducerContext, prefix: String) {
 }
 """
     )
-
-    def assertSql(self, sql, expected):
-        self.maxDiff = None
-        sql_out = self.spacetime("sql", self.database_identity, sql)
-        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
-        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
-        self.assertMultiLineEqual(sql_out, expected)
 
     def test_add_table_auto_migration(self):
         """This tests uploading a module with a schema change that should not require clearing the database."""

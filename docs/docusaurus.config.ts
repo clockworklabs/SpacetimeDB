@@ -48,6 +48,7 @@ const config: Config = {
   favicon: 'https://spacetimedb.com/favicon-32x32.png',
 
   url: 'https://spacetimedb.com',
+  // this means the site is served at https://spacetimedb.com/docs/
   baseUrl: '/docs/',
 
   onBrokenLinks: 'throw',
@@ -139,7 +140,7 @@ const config: Config = {
     navbar: {
       logo: {
         alt: 'SpacetimeDB Logo',
-        src: 'https://spacetimedb.com/images/brand.png',
+        src: 'https://spacetimedb.com/images/brand.svg',
         href: 'https://spacetimedb.com',
         target: '_self',
       },

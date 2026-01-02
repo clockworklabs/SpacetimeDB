@@ -227,6 +227,12 @@ impl<'a> IntoIterator for &'a ProductTypeDef {
     }
 }
 
+impl ProductTypeDef {
+    pub fn element_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+        self.elements.iter().map(|(_, ty)| ty)
+    }
+}
+
 /// A sum type definition.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SumTypeDef {
@@ -247,6 +253,12 @@ impl<'a> IntoIterator for &'a SumTypeDef {
     type IntoIter = std::slice::Iter<'a, (Identifier, AlgebraicTypeUse)>;
     fn into_iter(self) -> Self::IntoIter {
         self.variants.iter()
+    }
+}
+
+impl SumTypeDef {
+    pub fn variant_types(&self) -> impl Iterator<Item = &AlgebraicTypeUse> {
+        self.variants.iter().map(|(_, ty)| ty)
     }
 }
 
@@ -283,6 +295,9 @@ pub enum AlgebraicTypeUse {
 
     /// The special `TimeDuration` type.
     TimeDuration,
+
+    /// The special `Uuid` type.
+    Uuid,
 
     /// The unit type (empty product).
     /// This is *distinct* from a use of a definition of a product type with no elements.
@@ -378,6 +393,8 @@ impl TypespaceForGenerateBuilder<'_> {
             Ok(AlgebraicTypeUse::Timestamp)
         } else if ty.is_time_duration() {
             Ok(AlgebraicTypeUse::TimeDuration)
+        } else if ty.is_uuid() {
+            Ok(AlgebraicTypeUse::Uuid)
         } else if ty.is_unit() {
             Ok(AlgebraicTypeUse::Unit)
         } else if ty.is_never() {

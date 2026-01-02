@@ -1,6 +1,6 @@
 import BinaryReader from './binary_reader';
 import BinaryWriter from './binary_writer';
-import type { CamelCase } from './type_util';
+import type { CamelCase, SnakeCase } from './type_util';
 
 /**
  * Converts a string to PascalCase (UpperCamelCase).
@@ -116,9 +116,21 @@ export function toCamelCase<T extends string>(str: T): CamelCase<T> {
     .replace(/_([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()) as CamelCase<T>;
 }
 
+/** Type safe conversion from a string like "some_Identifier-name" to "some_identifier_name".
+ * @param str The string to convert
+ * @returns The converted string
+ */
+export function toSnakeCase<T extends string>(str: T): SnakeCase<T> {
+  return str
+    .replace(/([A-Z])/g, '_$1') // insert underscores before capitals
+    .replace(/[-\s]+/g, '_') // replace spaces and dashes with underscores
+    .toLowerCase() as SnakeCase<T>;
+}
+
 import type { AlgebraicType } from './algebraic_type';
 import type Typespace from './autogen/typespace_type';
-import type { Infer } from './type_builders';
+import type { ColumnBuilder, Infer, TypeBuilder } from './type_builders';
+import type { ParamsObj } from './reducers';
 
 export function bsatnBaseSize(
   typespace: Infer<typeof Typespace>,
@@ -162,4 +174,23 @@ export function bsatnBaseSize(
     I256: 32,
     U256: 32,
   }[ty.tag];
+}
+
+export type CoerceTypeBuilder<
+  Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
+> = Col extends ColumnBuilder<any, any> ? Col['typeBuilder'] : Col;
+
+export type CoerceParams<Params extends ParamsObj> = {
+  [k in keyof Params & string]: CoerceTypeBuilder<Params[k]>;
+};
+
+export function coerceParams<Params extends ParamsObj>(
+  params: Params
+): CoerceParams<Params> {
+  return Object.fromEntries(
+    Object.entries(params).map(([n, c]) => [
+      n,
+      'typeBuilder' in c ? c.typeBuilder : c,
+    ])
+  ) as CoerceParams<Params>;
 }

@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
+import { ScheduleAt, Uuid } from 'spacetimedb';
 import {
   errors,
   schema,
@@ -25,7 +26,35 @@ const MyTable = table(
   { field: ReturnStruct }
 );
 
-const spacetimedb = schema(MyTable);
+const PkTable = table(
+  { name: 'pk_uuid', public: true },
+  {u: t.uuid().primaryKey(), data: t.i32()}
+);
+
+const ScheduledProcTable = t.row({
+  scheduled_id: t.u64().primaryKey().autoInc(),
+  scheduled_at: t.scheduleAt(),
+  reducer_ts: t.timestamp(),
+  x: t.u8(),
+  y: t.u8(),
+});
+const ScheduledProcTableTable = table(
+  { name: 'scheduled_proc_table', scheduled: 'scheduled_proc' },
+  ScheduledProcTable
+);
+
+const ProcInsertsInto = t.row({
+  reducer_ts: t.timestamp(),
+  procedure_ts: t.timestamp(),
+  x: t.u8(),
+  y: t.u8(),
+});
+const ProcInsertsIntoTable = table(
+  { name: 'proc_inserts_into', public: true },
+  ProcInsertsInto
+);
+
+const spacetimedb = schema(MyTable, PkTable, ScheduledProcTableTable, ProcInsertsIntoTable);
 
 spacetimedb.procedure(
   'return_primitive',
@@ -117,5 +146,51 @@ spacetimedb.procedure('insert_with_tx_rollback', t.unit(), ctx => {
     if (e !== error) throw e;
   }
   assertRowCount(ctx, 0);
+  return {};
+});
+
+spacetimedb.reducer('schedule_proc', {}, ctx => {
+  ctx.db.scheduledProcTable.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(1000000n),
+    reducer_ts: ctx.timestamp,
+    x: 42,
+    y: 24,
+  })
+});
+
+spacetimedb.procedure('scheduled_proc', { data: ScheduledProcTable }, t.unit(), (ctx, { data }) => {
+  const reducer_ts = data.reducer_ts;
+  const x = data.x;
+  const y = data.y;
+  const procedure_ts = ctx.timestamp;
+  ctx.withTx(ctx => {
+    ctx.db.procInsertsInto.insert({
+      reducer_ts,
+      procedure_ts,
+      x,
+      y
+    });
+  });
+  return {};
+});
+
+spacetimedb.procedure('sorted_uuids_insert', t.unit(), ctx => {
+  ctx.withTx(ctx => {
+    for (let i = 0; i < 1000; i++) {
+      const uuid = ctx.newUuidV7();
+      ctx.db.pkUuid.insert({ u: uuid, data: 0 });
+    }
+
+    // Verify UUIDs are sorted
+    let lastUuid: Uuid | null = null;
+
+    for (const row of ctx.db.pkUuid.iter()) {
+      if (lastUuid !== null && lastUuid >= row.u) {
+        throw new Error("UUIDs are not sorted correctly");
+      }
+      lastUuid = row.u;
+    }
+  });
   return {};
 });

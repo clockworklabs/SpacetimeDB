@@ -490,7 +490,8 @@ class EnableDisableReplication(EnableReplicationTest):
         name = random_string()
 
         self.publish_module(name, num_replicas = 1)
-        self.cluster.wait_for_leader_change(None)
+        # ensure database is up and commitlog ends up non-empty
+        self.run_counter(1, 100)
 
         # suspend first
         self.call_control("suspend_database", {"Name": name})
@@ -500,7 +501,7 @@ class EnableDisableReplication(EnableReplicationTest):
         self.call_control("unsuspend_database", {"Name": name})
 
         self.cluster.wait_for_leader_change(None)
-        self.run_counter(1, 100)
+        self.run_counter(2, 100)
 
         self.call_control("disable_replication", {"Name": name})
-        self.run_counter(2, 100)
+        self.run_counter(3, 100)

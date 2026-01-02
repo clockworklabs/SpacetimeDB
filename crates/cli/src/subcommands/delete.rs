@@ -73,9 +73,12 @@ async fn send_request(
 }
 
 async fn print_database_tree_info(tree: &DatabaseTree) -> io::Result<()> {
-    tokio::io::stdout()
-        .write_all(as_termtree(tree).to_string().as_bytes())
-        .await
+    let mut stdout = tokio::io::stdout();
+    stdout.write_all(as_termtree(tree).to_string().as_bytes()).await?;
+    stdout.write_u8(b'\n').await?;
+    stdout.flush().await?;
+
+    Ok(())
 }
 
 fn as_termtree(tree: &DatabaseTree) -> termtree::Tree<String> {

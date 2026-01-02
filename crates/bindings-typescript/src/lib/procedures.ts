@@ -9,8 +9,19 @@ import {
   registerTypesRecursively,
   type UntypedSchemaDef,
 } from './schema';
-import type { Infer, InferTypeOfRow, TypeBuilder } from './type_builders';
-import { bsatnBaseSize } from './util';
+import {
+  type Infer,
+  type InferTypeOfRow,
+  type TypeBuilder,
+} from './type_builders';
+import type { CamelCase } from './type_util';
+import {
+  bsatnBaseSize,
+  coerceParams,
+  toCamelCase,
+  type CoerceParams,
+} from './util';
+import type { Uuid } from './uuid';
 
 export type ProcedureFn<
   S extends UntypedSchemaDef,
@@ -24,7 +35,10 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
+  readonly counter_uuid: { value: number };
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -39,8 +53,9 @@ export function procedure<
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
-      algebraicType:
-        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
+      algebraicType: registerTypesRecursively(
+        'typeBuilder' in c ? c.typeBuilder : c
+      ).algebraicType,
     })),
   };
   const returnType = registerTypesRecursively(ret).algebraicType;
@@ -68,3 +83,59 @@ export const PROCEDURES: Array<{
   returnType: AlgebraicType;
   returnTypeBaseSize: number;
 }> = [];
+
+export type UntypedProcedureDef = {
+  name: string;
+  accessorName: string;
+  params: CoerceParams<ParamsObj>;
+  returnType: TypeBuilder<any, any>;
+};
+
+export type UntypedProceduresDef = {
+  procedures: readonly UntypedProcedureDef[];
+};
+
+export function procedures<const H extends readonly UntypedProcedureDef[]>(
+  ...handles: H
+): { procedures: H };
+
+export function procedures<const H extends readonly UntypedProcedureDef[]>(
+  handles: H
+): { procedures: H };
+
+export function procedures<const H extends readonly UntypedProcedureDef[]>(
+  ...args: [H] | H
+): { procedures: H } {
+  const procedures = (
+    args.length === 1 && Array.isArray(args[0]) ? args[0] : args
+  ) as H;
+  return { procedures };
+}
+
+type ProcedureDef<
+  Name extends string,
+  Params extends ParamsObj,
+  ReturnType extends TypeBuilder<any, any>,
+> = {
+  name: Name;
+  accessorName: CamelCase<Name>;
+  params: CoerceParams<Params>;
+  returnType: ReturnType;
+};
+
+export function procedureSchema<
+  ProcedureName extends string,
+  Params extends ParamsObj,
+  ReturnType extends TypeBuilder<any, any>,
+>(
+  name: ProcedureName,
+  params: Params,
+  returnType: ReturnType
+): ProcedureDef<ProcedureName, Params, ReturnType> {
+  return {
+    name,
+    accessorName: toCamelCase(name),
+    params: coerceParams(params),
+    returnType,
+  };
+}

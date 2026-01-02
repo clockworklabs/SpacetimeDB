@@ -63,6 +63,7 @@ impl insert_one_simple_enum for super::RemoteReducers {
         InsertOneSimpleEnumCallbackId(self.imp.on_reducer(
             "insert_one_simple_enum",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

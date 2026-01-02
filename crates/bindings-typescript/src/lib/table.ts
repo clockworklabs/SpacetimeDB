@@ -1,4 +1,3 @@
-import { ProductType } from './algebraic_type';
 import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
@@ -12,6 +11,7 @@ import type {
   IndexOpts,
   ReadonlyIndexes,
 } from './indexes';
+import ScheduleAt from './schedule_at';
 import { registerTypesRecursively } from './schema';
 import type { TableSchema } from './table_schema';
 import {
@@ -33,9 +33,8 @@ type ColList = ColId[];
 /**
  * A helper type to extract the row type from a TableDef
  */
-export type RowType<TableDef extends UntypedTableDef> = InferTypeOfRow<
-  TableDef['columns']
->;
+export type RowType<TableDef extends Pick<UntypedTableDef, 'columns'>> =
+  InferTypeOfRow<TableDef['columns']>;
 
 /**
  * Coerces a column which may be a TypeBuilder or ColumnBuilder into a ColumnBuilder
@@ -66,7 +65,8 @@ export type UntypedTableDef = {
   name: string;
   accessorName: string;
   columns: Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>;
-  rowType: ProductType;
+  // This is really just a ProductType where all the elements have names.
+  rowType: RowBuilder<RowObj>['algebraicType']['value'];
   indexes: readonly IndexOpts<any>[];
   constraints: readonly ConstraintOpts<any>[];
 };
@@ -116,6 +116,7 @@ type NormalizeIndexColumns<
  * - `name`: The name of the table.
  * - `public`: Whether the table is publicly accessible. Defaults to `false`.
  * - `indexes`: An array of index configurations for the table.
+ * - `constraints`: An array of constraint configurations for the table.
  * - `scheduled`: The name of the reducer to be executed based on the scheduled rows in this table.
  */
 export type TableOpts<Row extends RowObj> = {
@@ -165,8 +166,8 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
   count(): bigint;
 
   /** Iterate over all rows in the TX state. Rust Iterator<Item=Row> → TS IterableIterator<Row>. */
-  iter(): IterableIterator<Prettify<RowType<TableDef>>>;
-  [Symbol.iterator](): IterableIterator<Prettify<RowType<TableDef>>>;
+  iter(): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
+  [Symbol.iterator](): IteratorObject<Prettify<RowType<TableDef>>, undefined>;
 }
 
 /**
@@ -197,7 +198,7 @@ export interface TableMethods<TableDef extends UntypedTableDef>
  * const playerTable = table(
  *   { name: 'player', public: true },
  *   t.object({
- *     id: t.u32().primary_key(),
+ *     id: t.u32().primaryKey(),
  *     name: t.string().index('btree')
  *   })
  * );
@@ -288,8 +289,12 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
       });
     }
 
-    if (meta.isScheduleAt) {
-      scheduleAtCol = colIds.get(name)!;
+    // If this column is shaped like ScheduleAtAlgebraicType, mark it as the schedule‑at column
+    if (scheduled) {
+      const algebraicType = builder.typeBuilder.algebraicType;
+      if (ScheduleAt.isScheduleAt(algebraicType)) {
+        scheduleAtCol = colIds.get(name)!;
+      }
     }
   }
 
@@ -360,18 +365,16 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },
   };
 
-  const productType = {
-    elements: row.algebraicType.value.elements.map(elem => {
-      return { name: elem.name, algebraicType: elem.algebraicType };
-    }),
-  };
+  const productType = row.algebraicType.value as RowBuilder<
+    CoerceRow<Row>
+  >['algebraicType']['value'];
 
   return {
     rowType: row as RowBuilder<CoerceRow<Row>>,
     tableName: name,
     rowSpacetimeType: productType,
     tableDef,
-    idxs: indexes as OptsIndices<Opts>,
+    idxs: {} as OptsIndices<Opts>,
     constraints: constraints as OptsConstraints<Opts>,
   };
 }

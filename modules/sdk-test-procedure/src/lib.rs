@@ -1,4 +1,7 @@
-use spacetimedb::{procedure, table, ProcedureContext, SpacetimeType, Table, TxContext};
+use spacetimedb::{
+    duration, procedure, reducer, table, DbContext, ProcedureContext, ReducerContext, ScheduleAt, SpacetimeType, Table,
+    Timestamp, TxContext, Uuid,
+};
 
 #[derive(SpacetimeType)]
 struct ReturnStruct {
@@ -97,4 +100,80 @@ fn insert_with_tx_rollback(ctx: &mut ProcedureContext) {
 
     // Assert that there's not a row.
     assert_row_count(ctx, 0);
+}
+
+/// A reducer that schedules [`scheduled_proc`] via `ScheduledProcTable`.
+#[reducer]
+fn schedule_proc(ctx: &ReducerContext) {
+    // Schedule the procedure to run in 1s.
+    ctx.db().scheduled_proc_table().insert(ScheduledProcTable {
+        scheduled_id: 0,
+        scheduled_at: duration!("1000ms").into(),
+        // Store the timestamp at which this reducer was called.
+        // In tests, we'll compare this with the timestamp the procedure was called.
+        reducer_ts: ctx.timestamp,
+        x: 42,
+        y: 24,
+    });
+}
+
+#[table(name = scheduled_proc_table, scheduled(scheduled_proc))]
+struct ScheduledProcTable {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+    reducer_ts: Timestamp,
+    x: u8,
+    y: u8,
+}
+
+/// A procedure that should be called 1s after `schedule_proc`.
+#[procedure]
+fn scheduled_proc(ctx: &mut ProcedureContext, data: ScheduledProcTable) {
+    let ScheduledProcTable { reducer_ts, x, y, .. } = data;
+    let procedure_ts = ctx.timestamp;
+    ctx.with_tx(|ctx| {
+        ctx.db().proc_inserts_into().insert(ProcInsertsInto {
+            reducer_ts,
+            procedure_ts,
+            x,
+            y,
+        })
+    });
+}
+
+#[table(name = proc_inserts_into, public)]
+struct ProcInsertsInto {
+    reducer_ts: Timestamp,
+    procedure_ts: Timestamp,
+    x: u8,
+    y: u8,
+}
+
+#[table(public, name = pk_uuid)]
+struct PkUuid {
+    u: Uuid,
+    data: u8,
+}
+
+#[procedure]
+fn sorted_uuids_insert(ctx: &mut ProcedureContext) {
+    ctx.with_tx(|ctx| {
+        for _ in 0..1000 {
+            let uuid = ctx.new_uuid_v7().expect("new uuid");
+            ctx.db.pk_uuid().insert(PkUuid { u: uuid, data: 0 });
+        }
+
+        // Verify UUIDs are sorted
+        let mut last_uuid = None;
+        for row in ctx.db.pk_uuid().iter() {
+            if let Some(last) = last_uuid {
+                if last >= row.u {
+                    panic!("UUIDs are not sorted correctly");
+                }
+            }
+            last_uuid = Some(row.u);
+        }
+    })
 }

@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 // ^ if you are working on docs, go read the top comment of README.md please.
 
-use core::cell::{LazyCell, OnceCell, RefCell};
+use core::cell::{Cell, LazyCell, OnceCell, RefCell};
 use core::ops::Deref;
 use spacetimedb_lib::bsatn;
 use std::rc::Rc;
@@ -19,11 +19,16 @@ pub mod rt;
 #[doc(hidden)]
 pub mod table;
 
+#[doc(hidden)]
+pub mod query_builder;
+
 #[cfg(feature = "unstable")]
 pub use client_visibility_filter::Filter;
 pub use log;
 #[cfg(feature = "rand")]
 pub use rand08 as rand;
+#[cfg(feature = "rand")]
+use rand08::RngCore;
 #[cfg(feature = "rand08")]
 pub use rng::StdbRng;
 pub use sats::SpacetimeType;
@@ -42,6 +47,7 @@ pub use spacetimedb_lib::Identity;
 pub use spacetimedb_lib::ScheduleAt;
 pub use spacetimedb_lib::TimeDuration;
 pub use spacetimedb_lib::Timestamp;
+pub use spacetimedb_lib::Uuid;
 pub use spacetimedb_primitives::TableId;
 pub use sys::Errno;
 pub use table::{
@@ -865,19 +871,42 @@ pub use spacetimedb_bindings_macro::procedure;
 #[doc(inline)]
 pub use spacetimedb_bindings_macro::view;
 
+pub struct QueryBuilder {}
+pub use query_builder::Query;
+
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`ViewContext`].
 /// Use this type if the view does not depend on the caller's identity.
 pub struct AnonymousViewContext {
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
 }
 
+impl Default for AnonymousViewContext {
+    fn default() -> Self {
+        Self {
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
+}
 /// One of two possible types that can be passed as the first argument to a `#[view]`.
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
     pub sender: Identity,
     pub db: LocalReadOnly,
+    pub from: QueryBuilder,
+}
+
+impl ViewContext {
+    pub fn new(sender: Identity) -> Self {
+        Self {
+            sender,
+            db: LocalReadOnly {},
+            from: QueryBuilder {},
+        }
+    }
 }
 
 /// The context that any reducer is provided with.
@@ -948,6 +977,10 @@ pub struct ReducerContext {
 
     #[cfg(feature = "rand08")]
     rng: std::cell::OnceCell<StdbRng>,
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
 }
 
 impl ReducerContext {
@@ -961,6 +994,8 @@ impl ReducerContext {
             sender_auth: AuthCtx::internal(),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
     }
 
@@ -974,6 +1009,8 @@ impl ReducerContext {
             sender_auth: AuthCtx::from_connection_id_opt(connection_id),
             #[cfg(feature = "rand08")]
             rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
         }
     }
 
@@ -997,15 +1034,53 @@ impl ReducerContext {
 
     /// Create an anonymous (no sender) read-only view context
     pub fn as_anonymous_read_only(&self) -> AnonymousViewContext {
-        AnonymousViewContext { db: LocalReadOnly {} }
+        AnonymousViewContext::default()
     }
 
     /// Create a sender-bound read-only view context using this reducer's caller.
     pub fn as_read_only(&self) -> ViewContext {
-        ViewContext {
-            sender: self.sender,
-            db: LocalReadOnly {},
-        }
+        ViewContext::new(self.sender)
+    }
+
+    ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v4(ctx: &ReducerContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4();
+    ///     log::info!(uuid);
+    /// }
+    /// # }
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{reducer, ReducerContext, Uuid};
+    ///
+    /// #[reducer]
+    /// fn generate_uuid_v7(ctx: &ReducerContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    ///     let uuid = ctx.new_uuid_v7()?;
+    ///     log::info!(uuid);
+    /// }
+    /// # }
+    /// ```
+    #[cfg(feature = "rand")]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
     }
 }
 
@@ -1061,13 +1136,32 @@ pub struct ProcedureContext {
 
     /// Methods for performing HTTP requests.
     pub http: crate::http::HttpClient,
-    // TODO: Add rng?
+    // TODO: Change rng?
     // Complex and requires design because we may want procedure RNG to behave differently from reducer RNG,
     // as it could actually be seeded by OS randomness rather than a deterministic source.
+    #[cfg(feature = "rand08")]
+    rng: std::cell::OnceCell<StdbRng>,
+    /// A counter used for generating UUIDv7 values.
+    /// **Note:** must be 0..=u32::MAX
+    // Disabled when compiling without `rand`, as both v4 and v7 UUIDs have random components.
+    #[cfg(feature = "rand")]
+    counter_uuid: Cell<u32>,
 }
 
 #[cfg(feature = "unstable")]
 impl ProcedureContext {
+    fn new(sender: Identity, connection_id: Option<ConnectionId>, timestamp: Timestamp) -> Self {
+        Self {
+            sender,
+            timestamp,
+            connection_id,
+            http: http::HttpClient {},
+            #[cfg(feature = "rand08")]
+            rng: std::cell::OnceCell::new(),
+            #[cfg(feature = "rand")]
+            counter_uuid: Cell::new(0),
+        }
+    }
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
@@ -1231,6 +1325,49 @@ impl ProcedureContext {
 
         res
     }
+
+    ///  Create a new random [`Uuid`] `v4` using the built-in RNG.
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{procedure, ProcedureContext, Uuid};
+    ///
+    /// #[procedure]
+    /// fn generate_uuid_v4(ctx: &ProcedureContext) -> Uuid {
+    ///     let uuid = ctx.new_uuid_v4();
+    ///     log::info!(uuid);
+    ///     uuid
+    /// }
+    /// # }
+    /// ```
+    #[cfg(all(feature = "unstable", feature = "rand"))]
+    pub fn new_uuid_v4(&self) -> anyhow::Result<Uuid> {
+        let mut bytes = [0u8; 16];
+        self.rng().try_fill_bytes(&mut bytes)?;
+        Ok(Uuid::from_random_bytes_v4(bytes))
+    }
+
+    /// Create a new sortable [`Uuid`] `v7` using the built-in RNG, counter and timestamp.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{procedure, ProcedureContext, Uuid};
+    ///
+    /// #[procedure]
+    /// fn generate_uuid_v7(ctx: &ProcedureContext) -> Result<Uuid, Box<dyn std::error::Error>> {
+    ///     let uuid = ctx.new_uuid_v7()?;
+    ///     log::info!(uuid);
+    ///     Ok(uuid)
+    /// }
+    /// # }
+    /// ```
+    #[cfg(all(feature = "unstable", feature = "rand"))]
+    pub fn new_uuid_v7(&self) -> anyhow::Result<Uuid> {
+        let mut random_bytes = [0u8; 4];
+        self.rng().try_fill_bytes(&mut random_bytes)?;
+        Uuid::from_counter_v7(&self.counter_uuid, self.timestamp, &random_bytes)
+    }
 }
 
 /// A handle on a database with a particular table schema.
@@ -1251,6 +1388,14 @@ pub trait DbContext {
     fn db(&self) -> &Self::DbView;
 }
 
+impl DbContext for AnonymousViewContext {
+    type DbView = LocalReadOnly;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
 impl DbContext for ReducerContext {
     type DbView = Local;
 
@@ -1262,6 +1407,14 @@ impl DbContext for ReducerContext {
 #[cfg(feature = "unstable")]
 impl DbContext for TxContext {
     type DbView = Local;
+
+    fn db(&self) -> &Self::DbView {
+        &self.db
+    }
+}
+
+impl DbContext for ViewContext {
+    type DbView = LocalReadOnly;
 
     fn db(&self) -> &Self::DbView {
         &self.db

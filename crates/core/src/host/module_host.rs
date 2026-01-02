@@ -11,8 +11,9 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::hash::Hash;
 use crate::host::host_controller::CallProcedureReturn;
-use crate::host::scheduler::{handle_queued_call_reducer_params, QueueItem};
+use crate::host::scheduler::{CallScheduledFunctionResult, ScheduledFunctionParams};
 use crate::host::v8::JsInstance;
+pub use crate::host::wasm_common::module_host_actor::{InstanceCommon, WasmInstance};
 use crate::host::wasmtime::ModuleInstance;
 use crate::host::{InvalidFunctionArguments, InvalidViewArguments};
 use crate::identity::Identity;
@@ -20,10 +21,11 @@ use crate::messages::control_db::{Database, HostType};
 use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
+use crate::sql::execute::SqlResult;
 use crate::sql::parser::RowLevelExpr;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::tx::DeltaTx;
-use crate::subscription::websocket_building::BuildableWebsocketFormat;
+use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::subscription::{execute_plan, execute_plan_for_view};
 use crate::util::jobs::{SingleCoreExecutor, WeakSingleCoreExecutor};
 use crate::vm::check_row_limit;
@@ -37,11 +39,13 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_client_api_messages::websocket::{ByteListLen, Compression, OneOffTable, QueryUpdate};
+use spacetimedb_client_api_messages::websocket::{
+    ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
+};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
-use spacetimedb_datastore::execution_context::{ExecutionContext, ReducerContext, Workload, WorkloadType};
+use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::{MutTxId, ViewCallInfo};
 use spacetimedb_datastore::traits::{IsolationLevel, Program, TxData};
 use spacetimedb_durability::DurableOffset;
@@ -50,13 +54,12 @@ use spacetimedb_expr::expr::CollectViews;
 use spacetimedb_lib::db::raw_def::v9::Lifecycle;
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
-use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Timestamp;
+use spacetimedb_lib::{AlgebraicType, ConnectionId};
 use spacetimedb_primitives::{ArgId, ProcedureId, TableId, ViewFnPtr, ViewId};
 use spacetimedb_query::compile_subscription;
 use spacetimedb_sats::{AlgebraicTypeRef, ProductValue};
 use spacetimedb_schema::auto_migrate::{AutoMigrateError, MigrationPolicy};
-use spacetimedb_schema::def::deserialize::ArgsSeed;
 use spacetimedb_schema::def::{ModuleDef, ProcedureDef, ReducerDef, TableDef, ViewDef};
 use spacetimedb_schema::schema::{Schema, TableSchema};
 use spacetimedb_vm::relation::RelValue;
@@ -153,9 +156,12 @@ impl UpdatesRelValue<'_> {
         !(self.deletes.is_empty() && self.inserts.is_empty())
     }
 
-    pub fn encode<F: BuildableWebsocketFormat>(&self) -> (F::QueryUpdate, u64, usize) {
-        let (deletes, nr_del) = F::encode_list(self.deletes.iter());
-        let (inserts, nr_ins) = F::encode_list(self.inserts.iter());
+    pub fn encode<F: BuildableWebsocketFormat>(
+        &self,
+        rlb_pool: &impl RowListBuilderSource<F>,
+    ) -> (F::QueryUpdate, u64, usize) {
+        let (deletes, nr_del) = F::encode_list(rlb_pool.take_row_list_builder(), self.deletes.iter());
+        let (inserts, nr_ins) = F::encode_list(rlb_pool.take_row_list_builder(), self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
         let qu = QueryUpdate { deletes, inserts };
@@ -608,59 +614,6 @@ pub fn call_identity_connected(
     }
 }
 
-// Only for logging purposes.
-const SCHEDULED_REDUCER: &str = "scheduled_reducer";
-
-pub(crate) fn call_scheduled_reducer(
-    module: &ModuleInfo,
-    queue_item: QueueItem,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> (Result<(ReducerCallResult, Timestamp), ReducerCallError>, bool) {
-    extract_trapped(call_scheduled_reducer_inner(module, queue_item, call_reducer))
-}
-
-fn call_scheduled_reducer_inner(
-    module: &ModuleInfo,
-    item: QueueItem,
-    call_reducer: impl FnOnce(Option<MutTxId>, CallReducerParams) -> (ReducerCallResult, bool),
-) -> Result<((ReducerCallResult, Timestamp), bool), ReducerCallError> {
-    let db = &module.relational_db();
-    let mut tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-
-    match handle_queued_call_reducer_params(&tx, module, db, item) {
-        Ok(Some(params)) => {
-            // Is necessary to patch the context with the actual calling reducer
-            let reducer_def = module
-                .module_def
-                .get_reducer_by_id(params.reducer_id)
-                .ok_or(ReducerCallError::ScheduleReducerNotFound)?;
-            let reducer = &*reducer_def.name;
-
-            tx.ctx = ExecutionContext::with_workload(
-                tx.ctx.database_identity(),
-                Workload::Reducer(ReducerContext {
-                    name: reducer.into(),
-                    caller_identity: params.caller_identity,
-                    caller_connection_id: params.caller_connection_id,
-                    timestamp: Timestamp::now(),
-                    arg_bsatn: params.args.get_bsatn().clone(),
-                }),
-            );
-
-            let timestamp = params.timestamp;
-            let (res, trapped) = call_reducer(Some(tx), params);
-            Ok(((res, timestamp), trapped))
-        }
-        Ok(None) => Err(ReducerCallError::ScheduleReducerNotFound),
-        Err(err) => Err(ReducerCallError::Args(InvalidReducerArguments(
-            InvalidFunctionArguments {
-                err,
-                function_name: SCHEDULED_REDUCER.into(),
-            },
-        ))),
-    }
-}
-
 pub struct CallReducerParams {
     pub timestamp: Timestamp,
     pub caller_identity: Identity,
@@ -671,9 +624,10 @@ pub struct CallReducerParams {
     pub reducer_id: ReducerId,
     pub args: ArgsTuple,
 }
+
 impl CallReducerParams {
-    /// Returns a set of parameters for a call that came from within
-    /// and without a client/caller/request_id.
+    /// Returns a set of parameters for an internal call
+    /// without a client/caller/request_id.
     pub fn from_system(
         timestamp: Timestamp,
         caller_identity: Identity,
@@ -693,6 +647,48 @@ impl CallReducerParams {
     }
 }
 
+pub enum ViewCommand {
+    AddSingleSubscription {
+        info: Arc<ModuleInfo>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeSingle,
+        timer: Instant,
+    },
+    AddMultiSubscription {
+        info: Arc<ModuleInfo>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeMulti,
+        timer: Instant,
+    },
+    AddLegacySubscription {
+        info: Arc<ModuleInfo>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        subscribe: Subscribe,
+        timer: Instant,
+    },
+    Sql {
+        info: Arc<ModuleInfo>,
+        db: Arc<RelationalDB>,
+        sql_text: String,
+        auth: AuthCtx,
+        subs: Option<ModuleSubscriptions>,
+    },
+}
+
+#[derive(Debug)]
+pub enum ViewCommandResult {
+    Subscription {
+        result: Result<Option<ExecutionMetrics>, DBError>,
+    },
+
+    Sql {
+        result: Result<SqlResult, DBError>,
+        head: Vec<(Box<str>, AlgebraicType)>,
+    },
+}
 pub struct CallViewParams {
     pub view_name: Box<str>,
     pub view_id: ViewId,
@@ -716,6 +712,26 @@ pub struct CallProcedureParams {
     pub timer: Option<Instant>,
     pub procedure_id: ProcedureId,
     pub args: ArgsTuple,
+}
+
+impl CallProcedureParams {
+    /// Returns a set of parameters for an internal call
+    /// without a client/caller/request_id.
+    pub fn from_system(
+        timestamp: Timestamp,
+        caller_identity: Identity,
+        procedure_id: ProcedureId,
+        args: ArgsTuple,
+    ) -> Self {
+        Self {
+            timestamp,
+            caller_identity,
+            caller_connection_id: ConnectionId::ZERO,
+            timer: None,
+            procedure_id,
+            args,
+        }
+    }
 }
 
 /// Holds a [`Module`] and a set of [`Instance`]s from it,
@@ -971,6 +987,11 @@ pub enum ClientConnectedError {
     Rejected(String),
     #[error("Insufficient energy balance to run `client_connected` reducer")]
     OutOfEnergy,
+}
+
+pub struct RefInstance<'a, I: WasmInstance> {
+    pub common: &'a mut InstanceCommon,
+    pub instance: &'a mut I,
 }
 
 impl ModuleHost {
@@ -1442,8 +1463,9 @@ impl ModuleHost {
         reducer_def: &ReducerDef,
         args: FunctionArgs,
     ) -> Result<CallReducerParams, InvalidReducerArguments> {
-        let reducer_seed = ArgsSeed(module.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let args = args
+            .into_tuple_for_def(&module.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         Ok(CallReducerParams {
             timestamp: Timestamp::now(),
@@ -1468,8 +1490,9 @@ impl ModuleHost {
         reducer_def: &ReducerDef,
         args: FunctionArgs,
     ) -> Result<ReducerCallResult, ReducerCallError> {
-        let reducer_seed = ArgsSeed(self.info.module_def.typespace().with_type(reducer_def));
-        let args = args.into_tuple(reducer_seed).map_err(InvalidReducerArguments)?;
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, reducer_def)
+            .map_err(InvalidReducerArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
         let call_reducer_params = CallReducerParams {
             timestamp: Timestamp::now(),
@@ -1485,9 +1508,9 @@ impl ModuleHost {
         Ok(self
             .call(
                 &reducer_def.name,
-                call_reducer_params,
-                |p, inst| inst.call_reducer(None, p),
-                |p, inst| inst.call_reducer(None, p),
+                (None, call_reducer_params),
+                |(tx, p), inst| inst.call_reducer(tx, p),
+                |(_, p), inst| inst.call_reducer(p),
             )
             .await?)
     }
@@ -1535,6 +1558,150 @@ impl ModuleHost {
         }
 
         res
+    }
+
+    pub async fn call_view_add_single_subscription(
+        &self,
+        info: Arc<ModuleInfo>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeSingle,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::AddSingleSubscription {
+            info,
+            sender,
+            auth,
+            request,
+            timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_add_single_subscription",
+                cmd,
+                |cmd, inst| inst.call_view(cmd),
+                |cmd, inst| inst.call_view(cmd),
+            )
+            .await
+            //TODO: handle error better
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_add_single_subscription")
+            }
+        }
+    }
+
+    pub async fn call_view_add_multi_subscription(
+        &self,
+        info: Arc<ModuleInfo>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeMulti,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::AddMultiSubscription {
+            info,
+            sender,
+            auth,
+            request,
+            timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_add_multi_subscription",
+                cmd,
+                |cmd, inst| inst.call_view(cmd),
+                |cmd, inst| inst.call_view(cmd),
+            )
+            .await
+            //TODO: handle error better
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_add_single_subscription")
+            }
+        }
+    }
+
+    pub async fn call_view_add_legacy_subscription(
+        &self,
+        info: Arc<ModuleInfo>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        subscribe: spacetimedb_client_api_messages::websocket::Subscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
+        let cmd = ViewCommand::AddLegacySubscription {
+            info,
+            sender,
+            auth,
+            subscribe,
+            timer,
+        };
+
+        let res = self
+            .call(
+                "call_view_add_legacy_subscription",
+                cmd,
+                |cmd, inst| inst.call_view(cmd),
+                |cmd, inst| inst.call_view(cmd),
+            )
+            .await
+            //TODO: handle error better
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Subscription { result } => result,
+            ViewCommandResult::Sql { .. } => {
+                unreachable!("unexpected SQL result in call_view_add_single_subscription")
+            }
+        }
+    }
+
+    pub async fn call_view_sql(
+        &self,
+        info: Arc<ModuleInfo>,
+        db: Arc<RelationalDB>,
+        sql_text: String,
+        auth: AuthCtx,
+        subs: Option<ModuleSubscriptions>,
+        head: &mut Vec<(Box<str>, AlgebraicType)>,
+    ) -> Result<SqlResult, DBError> {
+        let cmd = ViewCommand::Sql {
+            info,
+            db,
+            sql_text,
+            auth,
+            subs,
+        };
+
+        let res = self
+            .call(
+                "call_view_sql",
+                cmd,
+                |cmd, inst| inst.call_view(cmd),
+                |cmd, inst| inst.call_view(cmd),
+            )
+            .await
+            //TODO: handle error better
+            .map_err(|e| DBError::Other(anyhow::anyhow!(e)))?;
+
+        match res {
+            ViewCommandResult::Sql { result, head: new_head } => {
+                *head = new_head;
+                result
+            }
+            ViewCommandResult::Subscription { .. } => {
+                unreachable!("unexpected subscription result in call_view_sql")
+            }
+        }
     }
 
     pub async fn call_procedure(
@@ -1593,9 +1760,10 @@ impl ModuleHost {
         procedure_def: &ProcedureDef,
         args: FunctionArgs,
     ) -> Result<CallProcedureReturn, ProcedureCallError> {
-        let procedure_seed = ArgsSeed(self.info.module_def.typespace().with_type(procedure_def));
+        let args = args
+            .into_tuple_for_def(&self.info.module_def, procedure_def)
+            .map_err(InvalidProcedureArguments)?;
         let caller_connection_id = caller_connection_id.unwrap_or(ConnectionId::ZERO);
-        let args = args.into_tuple(procedure_seed).map_err(InvalidProcedureArguments)?;
 
         let params = CallProcedureParams {
             timestamp: Timestamp::now(),
@@ -1605,7 +1773,26 @@ impl ModuleHost {
             procedure_id,
             args,
         };
-        self.call_async_with_instance(&procedure_def.name, async move |inst| match inst {
+
+        Ok(self
+            .call_async_with_instance(&procedure_def.name, async move |inst| match inst {
+                Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
+                Instance::Js(inst) => {
+                    let (r, s) = inst.call_procedure(params).await;
+                    (r, Instance::Js(s))
+                }
+            })
+            .await?)
+    }
+
+    // This is not reused in `call_procedure_inner`
+    // due to concerns re. `Timestamp::now`.
+    pub async fn call_procedure_with_params(
+        &self,
+        name: &str,
+        params: CallProcedureParams,
+    ) -> Result<CallProcedureReturn, NoSuchModule> {
+        self.call_async_with_instance(name, async move |inst| match inst {
             Instance::Wasm(mut inst) => (inst.call_procedure(params).await, Instance::Wasm(inst)),
             Instance::Js(inst) => {
                 let (r, s) = inst.call_procedure(params).await;
@@ -1613,23 +1800,33 @@ impl ModuleHost {
             }
         })
         .await
-        .map_err(Into::into)
     }
 
-    // Scheduled reducers require a different function here to call their reducer
-    // because their reducer arguments are stored in the database and need to be fetched
-    // within the same transaction as the reducer call.
-    pub(crate) async fn call_scheduled_reducer(
+    pub(super) async fn call_scheduled_function(
         &self,
-        item: QueueItem,
-    ) -> Result<(ReducerCallResult, Timestamp), ReducerCallError> {
-        self.call(
-            SCHEDULED_REDUCER,
-            item,
-            |item, inst| inst.call_scheduled_reducer(item),
-            |item, inst| inst.call_scheduled_reducer(item),
+        params: ScheduledFunctionParams,
+    ) -> Result<CallScheduledFunctionResult, NoSuchModule> {
+        self.with_instance(
+            "scheduled function",
+            "reducer or procedure",
+            |l| self.start_call_timer(l),
+            async move |timer_guard, executor, inst| match inst {
+                Instance::Wasm(mut inst) => {
+                    executor
+                        .run_job(async move {
+                            drop(timer_guard);
+                            (inst.call_scheduled_function(params).await, Instance::Wasm(inst))
+                        })
+                        .await
+                }
+                Instance::Js(inst) => {
+                    drop(timer_guard);
+                    let (r, s) = inst.call_scheduled_function(params).await;
+                    (r, Instance::Js(s))
+                }
+            },
         )
-        .await?
+        .await
     }
 
     /// Materializes the views return by the `view_collector`, if not already materialized,
@@ -1638,13 +1835,14 @@ impl ModuleHost {
     /// Passing [`Workload::Sql`] will update `st_view_sub.last_called`.
     /// Passing [`Workload::Subscribe`] will also increment `st_view_sub.num_subscribers`,
     /// in addition to updating `st_view_sub.last_called`.
-    pub async fn materialize_views(
-        &self,
+    pub fn materialize_views<I: WasmInstance>(
         mut tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        module_def: &ModuleDef,
         view_collector: &impl CollectViews,
         caller: Identity,
         workload: Workload,
-    ) -> Result<MutTxId, ViewCallError> {
+    ) -> Result<(MutTxId, bool), ViewCallError> {
         use FunctionArgs::*;
         let mut view_ids = HashSet::new();
         view_collector.collect_views(&mut view_ids);
@@ -1656,10 +1854,13 @@ impl ModuleHost {
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
             if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
-                tx = self
-                    .call_view(tx, &view_name, view_id, table_id, Nullary, caller, sender)
-                    .await?
-                    .tx;
+                let (res, trapped) = Self::call_view(
+                    instance, module_def, tx, &view_name, view_id, table_id, Nullary, caller, sender,
+                )?;
+                tx = res.tx;
+                if trapped {
+                    return Ok((tx, true));
+                }
             }
             // If this is a sql call, we only update this view's "last called" timestamp
             if let Workload::Sql = workload {
@@ -1670,12 +1871,18 @@ impl ModuleHost {
                 tx.subscribe_view(view_id, ArgId::SENTINEL, caller)?;
             }
         }
-        Ok(tx)
+        Ok((tx, false))
     }
 
-    pub async fn call_views_with_tx(&self, tx: MutTxId, caller: Identity) -> Result<ViewCallResult, ViewCallError> {
-        use FunctionArgs::*;
+    pub fn call_views_with_tx<I: WasmInstance>(
+        tx: MutTxId,
+        instance: &mut RefInstance<'_, I>,
+        module_def: &ModuleDef,
+        caller: Identity,
+    ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let mut out = ViewCallResult::default(tx);
+        let mut trapped = false;
+        use FunctionArgs::Nullary;
         for ViewCallInfo {
             view_id,
             table_id,
@@ -1683,15 +1890,21 @@ impl ModuleHost {
             sender,
         } in out.tx.view_for_update().cloned().collect::<Vec<_>>()
         {
-            let view_def = self
-                .info
-                .module_def
+            let view_def = module_def
                 .get_view_by_id(fn_ptr, sender.is_none())
                 .ok_or(ViewCallError::NoSuchView)?;
 
-            let result = self
-                .call_view(out.tx, &view_def.name, view_id, table_id, Nullary, caller, sender)
-                .await?;
+            let (result, trap) = Self::call_view(
+                instance,
+                module_def,
+                out.tx,
+                &view_def.name,
+                view_id,
+                table_id,
+                Nullary,
+                caller,
+                sender,
+            )?;
 
             // Increment execution stats
             out.tx = result.tx;
@@ -1699,17 +1912,19 @@ impl ModuleHost {
             out.energy_used += result.energy_used;
             out.total_duration += result.total_duration;
             out.abi_duration += result.abi_duration;
+            trapped |= trap;
 
             // Terminate early if execution failed
-            if !matches!(out.outcome, ViewOutcome::Success) {
+            if !matches!(out.outcome, ViewOutcome::Success) || trapped {
                 break;
             }
         }
-        Ok(out)
+        Ok((out, trapped))
     }
 
-    pub async fn call_view(
-        &self,
+    fn call_view<I: WasmInstance>(
+        instance: &mut RefInstance<'_, I>,
+        module_def: &ModuleDef,
         tx: MutTxId,
         view_name: &str,
         view_id: ViewId,
@@ -1717,35 +1932,33 @@ impl ModuleHost {
         args: FunctionArgs,
         caller: Identity,
         sender: Option<Identity>,
-    ) -> Result<ViewCallResult, ViewCallError> {
-        let module_def = &self.info.module_def;
+    ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
         let fn_ptr = view_def.fn_ptr;
         let row_type = view_def.product_type_ref;
-        let typespace = module_def.typespace().with_type(view_def);
-        let view_seed = ArgsSeed(typespace);
-        let args = args.into_tuple(view_seed).map_err(InvalidViewArguments)?;
+        let args = args
+            .into_tuple_for_def(module_def, view_def)
+            .map_err(InvalidViewArguments)?;
 
-        match self
-            .call_view_inner(tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type)
-            .await
-        {
+        match Self::call_view_inner(
+            instance, tx, view_name, view_id, table_id, fn_ptr, caller, sender, args, row_type,
+        ) {
             err @ Err(ViewCallError::NoSuchView) => {
-                let log_message = no_such_function_log_message("view", view_name);
-                self.inject_logs(LogLevel::Error, view_name, &log_message);
+                let _log_message = no_such_function_log_message("view", view_name);
+                //   self.inject_logs(LogLevel::Error, view_name, &log_message);
                 err
             }
             err @ Err(ViewCallError::Args(_)) => {
-                let log_message = args_error_log_message("view", view_name);
-                self.inject_logs(LogLevel::Error, view_name, &log_message);
+                let _log_message = args_error_log_message("view", view_name);
+                // self.inject_logs(LogLevel::Error, view_name, &log_message);
                 err
             }
             res => res,
         }
     }
 
-    async fn call_view_inner(
-        &self,
+    fn call_view_inner<I: WasmInstance>(
+        instance: &mut RefInstance<'_, I>,
         tx: MutTxId,
         name: &str,
         view_id: ViewId,
@@ -1755,7 +1968,7 @@ impl ModuleHost {
         sender: Option<Identity>,
         args: ArgsTuple,
         row_type: AlgebraicTypeRef,
-    ) -> Result<ViewCallResult, ViewCallError> {
+    ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let view_name = name.to_owned().into_boxed_str();
         let params = CallViewParams {
             timestamp: Timestamp::now(),
@@ -1768,14 +1981,8 @@ impl ModuleHost {
             args,
             row_type,
         };
-        Ok(self
-            .call(
-                name,
-                (tx, params),
-                move |(a, b), inst| inst.call_view_with_tx(a, b),
-                move |(a, b), inst| inst.call_view(a, b),
-            )
-            .await?)
+
+        Ok(instance.common.call_view_with_tx(tx, params, instance.instance))
     }
 
     pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
@@ -1841,6 +2048,7 @@ impl ModuleHost {
         client: Arc<ClientConnectionSender>,
         message_id: Vec<u8>,
         timer: Instant,
+        rlb_pool: impl 'static + Send + RowListBuilderSource<F>,
         // We take this because we only have a way to convert with the concrete types (Bsatn and Json)
         into_message: impl FnOnce(OneOffQueryResponseMessage<F>) -> SerializableMessage + Send + 'static,
     ) -> Result<(), anyhow::Error> {
@@ -1907,13 +2115,13 @@ impl ModuleHost {
                             .map(|plan| ViewProject::new(plan, num_cols, num_private_cols))
                             .collect::<Vec<_>>();
                         // Execute the union and return the results
-                        return execute_plan_for_view::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                        return execute_plan_for_view::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
                             .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                             .context("One-off queries are not allowed to modify the database");
                     }
 
                     // Execute the union and return the results
-                    execute_plan::<_, F>(&optimized, &DeltaTx::from(&*tx))
+                    execute_plan::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
                         .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
                         .context("One-off queries are not allowed to modify the database")
                 })();

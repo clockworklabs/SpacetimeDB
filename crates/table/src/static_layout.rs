@@ -29,6 +29,7 @@ use core::mem::MaybeUninit;
 use core::ptr;
 use smallvec::SmallVec;
 use spacetimedb_data_structures::slim_slice::SlimSmallSliceBox;
+use spacetimedb_sats::bsatn::BufReservedFill;
 use spacetimedb_sats::layout::{
     AlgebraicTypeLayout, HasLayout, PrimitiveType, ProductTypeElementLayout, ProductTypeLayoutView, RowTypeLayout,
     SumTypeLayout, SumTypeVariantLayout,
@@ -86,22 +87,11 @@ impl StaticLayout {
     ///   As a consequence of this, for every `field` in `self.fields`,
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
     pub(crate) unsafe fn serialize_row_into_vec(&self, row: &Bytes) -> Vec<u8> {
-        // Create an uninitialized buffer `buf` of the correct length.
-        let bsatn_len = self.bsatn_length as usize;
-        let mut buf = Vec::with_capacity(bsatn_len);
-        let sink = buf.spare_capacity_mut();
+        let mut buf = Vec::new();
 
-        // (1) Write the row into the slice using a series of `memcpy`s.
-        // SAFETY:
-        // - Caller promised that `row` is valid for `self`.
-        // - `sink` was constructed with exactly the correct length above.
-        unsafe {
-            self.serialize_row_into(sink, row);
-        }
+        // SAFETY: Forward caller requirements.
+        unsafe { self.serialize_row_extend(&mut buf, row) };
 
-        // SAFETY: In (1), we initialized `0..len`
-        // as `row` was valid for `self` per caller requirements.
-        unsafe { buf.set_len(bsatn_len) }
         buf
     }
 
@@ -113,26 +103,18 @@ impl StaticLayout {
     ///   for which `self` was computed.
     ///   As a consequence of this, for every `field` in `self.fields`,
     ///   `row[field.bflatn_offset .. field.bflatn_offset + length]` will be initialized.
-    pub(crate) unsafe fn serialize_row_extend(&self, buf: &mut Vec<u8>, row: &Bytes) {
-        // Get an uninitialized slice within `buf` of the correct length.
-        let start = buf.len();
+    pub(crate) unsafe fn serialize_row_extend(&self, buf: &mut impl BufReservedFill, row: &Bytes) {
         let len = self.bsatn_length as usize;
-        buf.reserve(len);
-        let sink = &mut buf.spare_capacity_mut()[..len];
-
-        // (1) Write the row into the slice using a series of `memcpy`s.
+        // Writes the row into the slice using a series of `memcpy`s.
         // SAFETY:
         // - Caller promised that `row` is valid for `self`.
         // - `sink` was constructed with exactly the correct length above.
-        unsafe {
+        let filler = |sink: &mut _| unsafe {
             self.serialize_row_into(sink, row);
-        }
-
-        // SAFETY: In (1), we initialized `start .. start + len`
-        // as `row` was valid for `self` per caller requirements
-        // and we had initialized up to `start` before,
-        // so now we have initialized up to `start + len`.
-        unsafe { buf.set_len(start + len) }
+        };
+        // SAFETY:
+        // The closure `filler` will write exactly `len` bytes.
+        unsafe { buf.reserve_and_fill(len, filler) };
     }
 
     #[allow(unused)]

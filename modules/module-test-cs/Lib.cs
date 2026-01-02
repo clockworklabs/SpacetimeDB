@@ -178,6 +178,12 @@ public partial struct Player
     public string name;
 }
 
+[Table(Name = "table_to_remove")]
+public partial struct TableToRemove
+{
+    public uint id;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPPORT TYPES
 // ─────────────────────────────────────────────────────────────────────────────

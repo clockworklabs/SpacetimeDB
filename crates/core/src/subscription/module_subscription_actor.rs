@@ -15,10 +15,11 @@ use crate::client::{ClientActorId, ClientConnectionSender, Protocol};
 use crate::db::relational_db::{MutTx, RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
-use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent};
-use crate::host::ModuleHost;
+use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, RefInstance, WasmInstance};
+use crate::host::{self, ModuleHost};
 use crate::messages::websocket::Subscribe;
 use crate::subscription::query::is_subscribe_to_all_tables;
+use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::{collect_table_update_for_view, execute_plans};
 use crate::util::prometheus_handle::IntGaugeExt;
 use crate::vm::check_row_limit;
@@ -42,6 +43,8 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
+use spacetimedb_schema::def::ModuleDef;
+use spacetimedb_table::static_assert_size;
 use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
 use tokio::sync::oneshot;
@@ -55,11 +58,13 @@ pub struct ModuleSubscriptions {
     /// You will deadlock otherwise.
     subscriptions: Subscriptions,
     broadcast_queue: BroadcastQueue,
+    pub bsatn_rlb_pool: BsatnRowListBuilderPool,
     stats: Arc<SubscriptionGauges>,
+    metrics: Arc<SubscriptionMetricsForWorkloads>,
 }
 
 #[derive(Debug, Clone)]
-pub struct SubscriptionGauges {
+struct SubscriptionGauges {
     db_identity: Identity,
     num_queries: IntGauge,
     num_connections: IntGauge,
@@ -111,17 +116,36 @@ impl SubscriptionGauges {
     }
 }
 
-pub struct SubscriptionMetrics {
-    pub lock_waiters: IntGauge,
-    pub lock_wait_time: Histogram,
-    pub compilation_time: Histogram,
-    pub num_queries_subscribed: IntCounter,
-    pub num_new_queries_subscribed: IntCounter,
-    pub num_queries_evaluated: IntCounter,
+struct SubscriptionMetricsForWorkloads {
+    update: SubscriptionMetrics,
+    subscribe: SubscriptionMetrics,
+    unsubscribe: SubscriptionMetrics,
 }
 
+impl SubscriptionMetricsForWorkloads {
+    fn new(db: &Identity) -> Self {
+        Self {
+            update: SubscriptionMetrics::new(db, WorkloadType::Update),
+            subscribe: SubscriptionMetrics::new(db, WorkloadType::Subscribe),
+            unsubscribe: SubscriptionMetrics::new(db, WorkloadType::Unsubscribe),
+        }
+    }
+}
+
+struct SubscriptionMetrics {
+    lock_waiters: IntGauge,
+    lock_wait_time: Histogram,
+    compilation_time: Histogram,
+    num_queries_subscribed: IntCounter,
+    num_new_queries_subscribed: IntCounter,
+    num_queries_evaluated: IntCounter,
+}
+
+static_assert_size!(SubscriptionMetrics, 48);
+
 impl SubscriptionMetrics {
-    pub fn new(db: &Identity, workload: &WorkloadType) -> Self {
+    fn new(db: &Identity, workload: WorkloadType) -> Self {
+        let workload = &workload;
         Self {
             lock_waiters: DB_METRICS.subscription_lock_waiters.with_label_values(db, workload),
             lock_wait_time: DB_METRICS.subscription_lock_wait_time.with_label_values(db, workload),
@@ -210,20 +234,41 @@ macro_rules! return_on_err_with_sql {
     };
 }
 
+/// A utility for sending an error message to a client and returning early
+macro_rules! return_on_err_with_sql_bool {
+    ($expr:expr, $sql:expr, $handler:expr) => {
+        match $expr.map_err(|err| DBError::WithSql {
+            sql: $sql.into(),
+            error: Box::new(DBError::Other(err.into())),
+        }) {
+            Ok(val) => val,
+            Err(e) => {
+                // TODO: Handle errors sending messages.
+                let _ = $handler(e.to_string().into());
+                return Ok((None, false));
+            }
+        }
+    };
+}
+
 impl ModuleSubscriptions {
     pub fn new(
         relational_db: Arc<RelationalDB>,
         subscriptions: Subscriptions,
         broadcast_queue: BroadcastQueue,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
     ) -> Self {
         let db = &relational_db.database_identity();
         let stats = Arc::new(SubscriptionGauges::new(db));
+        let metrics = Arc::new(SubscriptionMetricsForWorkloads::new(db));
 
         Self {
             relational_db,
             subscriptions,
             broadcast_queue,
             stats,
+            metrics,
+            bsatn_rlb_pool,
         }
     }
 
@@ -243,6 +288,7 @@ impl ModuleSubscriptions {
             db,
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
+            BsatnRowListBuilderPool::new(),
         )
     }
 
@@ -319,13 +365,27 @@ impl ModuleSubscriptions {
                     .map(PipelinedProject::from)
                     .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
                     .collect::<Vec<_>>();
-                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                collect_table_update_for_view(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &self.bsatn_rlb_pool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Binary, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
-                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &self.bsatn_rlb_pool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Text, Some(view_info)) => {
                 let plans = plans
@@ -333,13 +393,27 @@ impl ModuleSubscriptions {
                     .map(PipelinedProject::from)
                     .map(|plan| ViewProject::new(plan, num_cols, view_info.num_private_cols()))
                     .collect::<Vec<_>>();
-                collect_table_update_for_view(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+                collect_table_update_for_view(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &JsonRowListBuilderFakePool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
             }
             (Protocol::Text, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
-                collect_table_update(&plans, table_id, table_name.into(), &tx, update_type)
-                    .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+                collect_table_update(
+                    &plans,
+                    table_id,
+                    table_name.into(),
+                    &tx,
+                    update_type,
+                    &JsonRowListBuilderFakePool,
+                )
+                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
             }
         }?)
     }
@@ -368,11 +442,13 @@ impl ModuleSubscriptions {
         let tx = DeltaTx::from(tx);
         let (update, metrics, query_metrics) = match sender.config.protocol {
             Protocol::Binary => {
-                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                let (update, metrics, query_metrics) =
+                    execute_plans(auth, queries, &tx, update_type, &self.bsatn_rlb_pool)?;
                 (FormatSwitch::Bsatn(update), metrics, query_metrics)
             }
             Protocol::Text => {
-                let (update, metrics, query_metrics) = execute_plans(auth, queries, &tx, update_type)?;
+                let (update, metrics, query_metrics) =
+                    execute_plans(auth, queries, &tx, update_type, &JsonRowListBuilderFakePool)?;
                 (FormatSwitch::Json(update), metrics, query_metrics)
             }
         };
@@ -382,8 +458,6 @@ impl ModuleSubscriptions {
         Ok((update, metrics))
     }
 
-    /// Add a subscription to a single query.
-    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn add_single_subscription(
         &self,
         host: Option<&ModuleHost>,
@@ -393,6 +467,31 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
+        match host {
+            Some(host) => {
+                let info = host.info.clone();
+                host.call_view_add_single_subscription(info, sender, auth, request, timer)
+                    .await
+            }
+            None => self
+                .add_single_subscription_from_module::<host::wasmtime::WasmtimeInstance>(
+                    None, sender, auth, request, timer, _assert,
+                )
+                .map(|(metrics, _)| metrics),
+        }
+    }
+
+    /// Add a subscription to a single query.
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn add_single_subscription_from_module<I: WasmInstance>(
+        &self,
+        instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeSingle,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
             self.broadcast_queue.send_client_message(
@@ -421,7 +520,7 @@ impl ModuleSubscriptions {
             guard.query(&hash)
         };
 
-        let query = return_on_err_with_sql!(
+        let query = return_on_err_with_sql_bool!(
             existing_query.map(Ok).unwrap_or_else(|| compile_query_with_hashes(
                 &auth,
                 &*mut_tx,
@@ -435,11 +534,11 @@ impl ModuleSubscriptions {
         );
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-        let (tx, tx_offset) = self
-            .materialize_views_and_downgrade_tx(host, mut_tx, &query, auth.caller())
-            .await?;
 
-        let (table_rows, metrics) = return_on_err_with_sql!(
+        let (tx, tx_offset, trapped) =
+            self.materialize_views_and_downgrade_tx(mut_tx, instance, &query, auth.caller())?;
+
+        let (table_rows, metrics) = return_on_err_with_sql_bool!(
             self.evaluate_initial_subscription(sender.clone(), query.clone(), &tx, &auth, TableUpdateType::Subscribe),
             query.sql(),
             send_err_msg
@@ -477,7 +576,7 @@ impl ModuleSubscriptions {
                 }),
             },
         );
-        Ok(Some(metrics))
+        Ok((Some(metrics), trapped))
     }
 
     /// Remove a subscription for a single query.
@@ -579,8 +678,7 @@ impl ModuleSubscriptions {
             )
         };
 
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Unsubscribe);
+        let subscription_metrics = &self.metrics.unsubscribe;
 
         // Always lock the db before the subscription lock to avoid deadlocks.
         let (mut_tx, _) = self.begin_mut_tx(Workload::Unsubscribe);
@@ -763,6 +861,30 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
+        match host {
+            Some(host) => {
+                let info = host.info.clone();
+                host.call_view_add_multi_subscription(info, sender, auth, request, timer)
+                    .await
+            }
+            None => self
+                .add_multi_subscription_from_module::<host::wasmtime::WasmtimeInstance>(
+                    None, sender, auth, request, timer, _assert,
+                )
+                .map(|(metrics, _)| metrics),
+        }
+    }
+
+    #[tracing::instrument(level = "trace", skip_all)]
+    pub fn add_multi_subscription_from_module<I: WasmInstance>(
+        &self,
+        instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeMulti,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
         // Send an error message to the client
         let send_err_msg = |message| {
             let _ = self.broadcast_queue.send_client_message(
@@ -780,12 +902,9 @@ impl ModuleSubscriptions {
             );
         };
 
-        let num_queries = request.query_strings.len();
-
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = request.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = return_on_err!(
@@ -794,10 +913,10 @@ impl ModuleSubscriptions {
                 auth,
                 &request.query_strings,
                 num_queries,
-                &subscription_metrics
+                subscription_metrics
             ),
             send_err_msg,
-            None
+            (None, false)
         );
         let (mut_tx, _) = self.guard_mut_tx(mut_tx, <_>::default());
 
@@ -820,9 +939,9 @@ impl ModuleSubscriptions {
         drop(compile_timer);
 
         let mut_tx = ScopeGuard::<MutTxId, _>::into_inner(mut_tx);
-        let (tx, tx_offset) = self
-            .materialize_views_and_downgrade_tx(host, mut_tx, &queries, auth.caller())
-            .await?;
+
+        let (tx, tx_offset, trapped) =
+            self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
 
         let Ok((update, metrics)) =
             self.evaluate_queries(sender.clone(), &queries, &tx, &auth, TableUpdateType::Subscribe)
@@ -840,7 +959,7 @@ impl ModuleSubscriptions {
             }
 
             send_err_msg("Internal error evaluating queries".into());
-            return Ok(None);
+            return Ok((None, trapped));
         };
 
         // How many queries did we actually evaluate?
@@ -858,7 +977,6 @@ impl ModuleSubscriptions {
         // grab a read lock on the subscriptions.
 
         // Holding a write lock on `self.subscriptions` would also be sufficient.
-
         let _ = self.broadcast_queue.send_client_message(
             sender.clone(),
             Some(tx_offset),
@@ -870,10 +988,10 @@ impl ModuleSubscriptions {
             },
         );
 
-        Ok(Some(metrics))
+        Ok((Some(metrics), trapped))
     }
 
-    /// Add a subscriber to the module. NOTE: this function is blocking.
+    // Add a subscriber to the module. NOTE: this function is blocking.
     /// This is used for the legacy subscription API which uses a set of queries.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn add_legacy_subscriber(
@@ -885,11 +1003,37 @@ impl ModuleSubscriptions {
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
-        let num_queries = subscription.query_strings.len();
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Subscribe);
-
+        match host {
+            Some(host) => {
+                let info = host.info.clone();
+                host.call_view_add_legacy_subscription(info, sender, auth, subscription, timer)
+                    .await
+                    .map(|metrics| metrics.unwrap_or_default())
+            }
+            None => self
+                .add_legacy_subscriber_from_module::<host::wasmtime::WasmtimeInstance>(
+                    None,
+                    sender,
+                    auth,
+                    subscription,
+                    timer,
+                    _assert,
+                )
+                .map(|(metrics, _)| metrics),
+        }
+    }
+    pub fn add_legacy_subscriber_from_module<I: WasmInstance>(
+        &self,
+        instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        subscription: Subscribe,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(ExecutionMetrics, bool), DBError> {
         // How many queries make up this subscription?
+        let subscription_metrics = &self.metrics.subscribe;
+        let num_queries = subscription.query_strings.len();
         subscription_metrics.num_queries_subscribed.inc_by(num_queries as _);
 
         let (queries, auth, mut_tx, compile_timer) = self.compile_queries(
@@ -897,12 +1041,11 @@ impl ModuleSubscriptions {
             auth,
             &subscription.query_strings,
             num_queries,
-            &subscription_metrics,
+            subscription_metrics,
         )?;
 
-        let (tx, tx_offset) = self
-            .materialize_views_and_downgrade_tx(host, mut_tx, &queries, auth.caller())
-            .await?;
+        let (tx, tx_offset, trapped) =
+            self.materialize_views_and_downgrade_tx(mut_tx, instance, &queries, auth.caller())?;
 
         check_row_limit(
             &queries,
@@ -921,15 +1064,21 @@ impl ModuleSubscriptions {
 
         let tx = DeltaTx::from(&*tx);
         let (database_update, metrics, query_metrics) = match sender.config.protocol {
-            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
-                |(table_update, metrics, query_metrics)| (FormatSwitch::Bsatn(table_update), metrics, query_metrics),
-            )?,
-            Protocol::Text => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe).map(
-                |(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics),
-            )?,
+            Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe, &self.bsatn_rlb_pool)
+                .map(|(table_update, metrics, query_metrics)| {
+                (FormatSwitch::Bsatn(table_update), metrics, query_metrics)
+            })?,
+            Protocol::Text => execute_plans(
+                &auth,
+                &queries,
+                &tx,
+                TableUpdateType::Subscribe,
+                &JsonRowListBuilderFakePool,
+            )
+            .map(|(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics))?,
         };
 
-        record_query_metrics(&database_identity, query_metrics);
+        record_query_metrics(&self.relational_db.database_identity(), query_metrics);
 
         // It acquires the subscription lock after `eval`, allowing `add_subscription` to run concurrently.
         // This also makes it possible for `broadcast_event` to get scheduled before the subsequent part here
@@ -944,7 +1093,7 @@ impl ModuleSubscriptions {
                 self.subscriptions.write()
             };
 
-            subscriptions.set_legacy_subscription(sender.clone(), queries.into_iter());
+            subscriptions.set_legacy_subscription(sender.clone(), queries);
         }
 
         #[cfg(test)]
@@ -969,7 +1118,7 @@ impl ModuleSubscriptions {
             },
         );
 
-        Ok(metrics)
+        Ok((metrics, trapped))
     }
 
     pub fn remove_subscriber(&self, client_id: ClientActorId) {
@@ -994,8 +1143,7 @@ impl ModuleSubscriptions {
         mut event: ModuleEvent,
         tx: MutTx,
     ) -> Result<CommitAndBroadcastEventResult, DBError> {
-        let database_identity = self.relational_db.database_identity();
-        let subscription_metrics = SubscriptionMetrics::new(&database_identity, &WorkloadType::Update);
+        let subscription_metrics = &self.metrics.update;
 
         // Take a read lock on `subscriptions` before committing tx
         // else it can result in subscriber receiving duplicate updates.
@@ -1011,11 +1159,9 @@ impl ModuleSubscriptions {
         // We'll later ensure tx is released/cleaned up once out of scope.
         let (read_tx, tx_data, tx_metrics_mut) = match &mut event.status {
             EventStatus::Committed(db_update) => {
-                let Some((tx_data, tx_metrics, read_tx)) = stdb.commit_tx_downgrade(tx, Workload::Update)? else {
-                    return Ok(Err(WriteConflict));
-                };
+                let (tx_data, tx_metrics, read_tx) = stdb.commit_tx_downgrade(tx, Workload::Update);
                 *db_update = DatabaseUpdate::from_writes(&tx_data);
-                (read_tx, Arc::new(tx_data), tx_metrics)
+                (read_tx, tx_data, tx_metrics)
             }
             EventStatus::Failed(_) | EventStatus::OutOfEnergy => {
                 // If the transaction failed, we need to rollback the mutable tx.
@@ -1052,7 +1198,12 @@ impl ModuleSubscriptions {
         );
         // Create the delta transaction we'll use to eval updates against.
         let delta_read_tx = DeltaTx::new(&read_tx, tx_data.as_ref(), subscriptions.index_ids_for_subscriptions());
-        let update_metrics = subscriptions.eval_updates_sequential((&delta_read_tx, tx_offset), event.clone(), caller);
+        let update_metrics = subscriptions.eval_updates_sequential(
+            (&delta_read_tx, tx_offset),
+            &self.bsatn_rlb_pool,
+            event.clone(),
+            caller,
+        );
         read_tx.metrics.merge(update_metrics);
         Ok(Ok(CommitAndBroadcastEventSuccess {
             tx_offset: extra_tx_offset,
@@ -1086,7 +1237,7 @@ impl ModuleSubscriptions {
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
         Self::_unsubscribe_views(&mut tx, view_collector, sender)?;
-        let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Subscribe);
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
         Ok(self.guard_tx(tx, opts))
     }
@@ -1108,21 +1259,26 @@ impl ModuleSubscriptions {
 
     /// Materialize the views returned by the `view_collector`, if not already materialized,
     /// and subsequently downgrade to a read-only transaction.
-    async fn materialize_views_and_downgrade_tx(
+    #[allow(clippy::type_complexity)]
+    fn materialize_views_and_downgrade_tx<I: WasmInstance>(
         &self,
-        host: Option<&ModuleHost>,
         mut tx: MutTxId,
+        instance: Option<(&mut RefInstance<'_, I>, &ModuleDef)>,
         view_collector: &impl CollectViews,
         sender: Identity,
-    ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset), DBError> {
-        if let Some(host) = host {
-            tx = host
-                .materialize_views(tx, view_collector, sender, Workload::Subscribe)
-                .await?
-        }
-        let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Subscribe);
+    ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset, bool), DBError> {
+        let mut trapped = false;
+        if let Some(instance) = instance {
+            let (instance, module_def) = instance;
+            (tx, trapped) =
+                ModuleHost::materialize_views(tx, instance, module_def, view_collector, sender, Workload::Subscribe)?;
+        };
+
+        let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
+
         let opts = GuardTxOptions::from_mut(tx_data, tx_metrics_mut);
-        Ok(self.guard_tx(tx, opts))
+        let (a, b) = self.guard_tx(tx, opts);
+        Ok((a, b, trapped))
     }
 
     /// Helper that starts a new mutable transaction, and guards it using
@@ -1182,7 +1338,7 @@ impl ModuleSubscriptions {
                     let _ = extra.send(tx_offset);
                 }
                 self.relational_db
-                    .report_tx_metrics(reducer, Some(Arc::new(tx_data)), Some(tx_metrics_mut), None);
+                    .report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), None);
             }
         });
         (guard, offset_rx)
@@ -1213,10 +1369,10 @@ impl GuardTxOptions {
         }
     }
 
-    fn from_mut(tx_data: TxData, tx_metrics_mut: TxMetrics) -> Self {
+    fn from_mut(tx_data: Arc<TxData>, tx_metrics_mut: TxMetrics) -> Self {
         Self {
             extra_tx_offset_sender: None,
-            tx_data: Some(Arc::new(tx_data)),
+            tx_data: Some(tx_data),
             tx_metrics_mut: tx_metrics_mut.into(),
         }
     }
@@ -1251,6 +1407,7 @@ mod tests {
     use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
     use crate::subscription::query::compile_read_only_query;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
     use core::fmt;
     use itertools::Itertools;
@@ -1289,12 +1446,13 @@ mod tests {
         let owner = Identity::from_byte_array([1; 32]);
         let client = ClientActorId::for_test(Identity::ZERO);
         let config = ClientConfig::for_test();
-        let sender = Arc::new(ClientConnectionSender::dummy(client, config, (*db).clone()));
+        let sender = Arc::new(ClientConnectionSender::dummy(client, config, db.clone()));
         let send_worker_queue = spawn_send_worker(None);
         let module_subscriptions = ModuleSubscriptions::new(
             db.clone(),
             SubscriptionManager::for_test_without_metrics_arc_rwlock(),
             send_worker_queue,
+            BsatnRowListBuilderPool::new(),
         );
         let auth = AuthCtx::new(owner, sender.auth.claims.identity);
 
@@ -1376,11 +1534,13 @@ mod tests {
     /// An in-memory `RelationalDB` for testing
     fn relational_db() -> anyhow::Result<Arc<RelationalDB>> {
         let TestDB { db, .. } = TestDB::in_memory()?;
-        Ok(Arc::new(db))
+        Ok(db)
     }
 
     /// An in-memory `RelationalDB` with `ManualDurability`.
-    fn relational_db_with_manual_durability() -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
+    fn relational_db_with_manual_durability(
+        rt: tokio::runtime::Handle,
+    ) -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
         let dir = TempReplicaDir::new()?;
         let durability = Arc::new(ManualDurability::default());
         let db = TestDB::open_db(
@@ -1390,6 +1550,7 @@ mod tests {
                 durability: durability.clone(),
                 disk_size: Arc::new(|| Ok(<_>::default())),
                 snapshots: None,
+                runtime: rt,
             }),
             None,
             0,
@@ -1472,7 +1633,7 @@ mod tests {
 
     fn client_connection_with_config(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         config: ClientConfig,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         let (sender, receiver) = ClientConnectionSender::dummy_with_channel(client_id, config, db.clone());
@@ -1482,7 +1643,7 @@ mod tests {
     /// Instantiate a client connection with compression
     fn client_connection_with_compression(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         compression: Compression,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
@@ -1500,7 +1661,7 @@ mod tests {
     /// Instantiate a client connection
     fn client_connection(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_compression(client_id, db, Compression::None)
     }
@@ -1508,7 +1669,7 @@ mod tests {
     /// Instantiate a client connection with confirmed reads turned on or off.
     fn client_connection_with_confirmed_reads(
         client_id: ClientActorId,
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         confirmed_reads: bool,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
@@ -2354,10 +2515,10 @@ mod tests {
         let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
 
         run(
-            &db,
-            "INSERT INTO t (x, y) VALUES (0, 1)",
+            db.clone(),
+            "INSERT INTO t (x, y) VALUES (0, 1)".to_string(),
             auth.clone(),
-            Some(&subs),
+            Some(subs.clone()),
             None,
             &mut vec![],
         )
@@ -2367,10 +2528,10 @@ mod tests {
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 1_u8]], []).await;
 
         run(
-            &db,
-            "UPDATE t SET y=2 WHERE x=0",
+            db.clone(),
+            "UPDATE t SET y=2 WHERE x=0".to_string(),
             auth.clone(),
-            Some(&subs),
+            Some(subs.clone()),
             None,
             &mut vec![],
         )
@@ -2379,7 +2540,15 @@ mod tests {
         // Client should receive update
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [product![0_u8, 2_u8]], [product![0_u8, 1_u8]]).await;
 
-        run(&db, "DELETE FROM t WHERE x=0", auth, Some(&subs), None, &mut vec![]).await?;
+        run(
+            db,
+            "DELETE FROM t WHERE x=0".to_string(),
+            auth,
+            Some(subs),
+            None,
+            &mut vec![],
+        )
+        .await?;
 
         // Client should receive delete
         assert_tx_update_for_table(rx.recv(), t_id, &schema, [], [product![0_u8, 2_u8]]).await;
@@ -3145,7 +3314,7 @@ mod tests {
         let test_db = TestDB::durable()?;
 
         let runtime = test_db.runtime().cloned().unwrap();
-        let db = Arc::new(test_db.db.clone());
+        let db = test_db.db.clone();
 
         // Create table with one row
         let table_id = db.create_table_for_test("T", &[("a", AlgebraicType::U8)], &[])?;
@@ -3181,15 +3350,13 @@ mod tests {
         runtime.block_on(write_handle)??;
         runtime.block_on(query_handle)??;
 
-        test_db.close()?;
-
         Ok(())
     }
 
     #[test]
     fn subs_cannot_access_private_tables() -> ResultTest<()> {
         let test_db = TestDB::durable()?;
-        let db = Arc::new(test_db.db.clone());
+        let db = test_db.db.clone();
 
         // Create a public table.
         let indexes = &[0.into()];
@@ -3222,7 +3389,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_confirmed_reads() -> anyhow::Result<()> {
-        let (db, durability) = relational_db_with_manual_durability()?;
+        let (db, durability) = relational_db_with_manual_durability(tokio::runtime::Handle::current())?;
 
         let client_id_confirmed = client_id_from_u8(1);
         let client_id_unconfirmed = client_id_from_u8(2);
@@ -3278,10 +3445,10 @@ mod tests {
         // Insert another row, using SQL.
         let auth = AuthCtx::new(identity_from_u8(0), identity_from_u8(0));
         run(
-            &db,
-            "INSERT INTO t (x) VALUES (2)",
+            db.clone(),
+            "INSERT INTO t (x) VALUES (2)".to_string(),
             auth,
-            Some(&subs),
+            Some(subs),
             None,
             &mut vec![],
         )
