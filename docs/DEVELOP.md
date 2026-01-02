@@ -1,6 +1,6 @@
 ﻿# DEVELOP.md
 
-This document explains how to configure the environment, run the benchmark tool, and work with the benchmark suite.
+This document explains how to configure the environment, run the LLM benchmark tool, and work with the benchmark suite.
 
 ---
 

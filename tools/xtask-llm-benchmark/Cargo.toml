@@ -9,6 +9,9 @@ default-run = "llm_benchmark"
 workspace = true
 
 [dependencies]
+spacetimedb.workspace = true
+spacetimedb-guard.workspace = true
+
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -24,8 +27,6 @@ tempfile = "3.23.0"
 fs2 = "0.4.3"
 heck = "0.5.0"
 thiserror = "2.0.17"
-stdb = { package = "spacetimedb", path = "../bindings" }
-spacetimedb-guard.workspace = true
 
 [lib]
 path = "src/lib.rs"
