@@ -208,6 +208,7 @@ SPACETIMEDB_INIT(init) {
         ctx.timestamp
     };
     //ctx.db[repeating_test_arg].insert(arg);
+    return Ok();
 }
 
 // Repeating test reducer for scheduled operations
@@ -216,6 +217,7 @@ SPACETIMEDB_REDUCER(repeating_test, ReducerContext ctx, RepeatingTestArg arg) {
     // In C++ we don't have log::trace equivalent yet
     auto delta_time = ctx.timestamp.duration_since(arg.prev_time);
     LOG_TRACE("Timestamp: " + ctx.timestamp.to_string() + " Delta time: " + delta_time.to_string());
+    return Ok();
 }
 
 // Add a person to the Person table
@@ -223,6 +225,7 @@ SPACETIMEDB_REDUCER(add, ReducerContext ctx, std::string name, uint8_t age) {
     Person p{0, name, age}; // id will be auto-incremented
     Person inserted = ctx.db[person].insert(p);
     //LOG_INFO("Inserted person with auto-generated ID: " + std::to_string(inserted.id));
+    return Ok();
 }
 
 // Say hello to all persons
@@ -232,6 +235,7 @@ SPACETIMEDB_REDUCER(say_hello, ReducerContext ctx) {
         LOG_INFO("Hello, " + p.name + "!");
     }
     LOG_INFO("Hello, World!");
+    return Ok();
 }
 
 // List persons over a certain age - showcases range query functionality
@@ -246,11 +250,13 @@ SPACETIMEDB_REDUCER(list_over_age, ReducerContext ctx, uint8_t age) {
     for (const auto& person : filtered_persons) {
         LOG_INFO(person.name + " has age " + std::to_string(person.age) + " >= " + std::to_string(age));
     }
+    return Ok();
 }
 
 // Log module identity
 SPACETIMEDB_REDUCER(log_module_identity, ReducerContext ctx) {
     LOG_INFO("Module identity: " + ctx.identity().to_string());
+    return Ok();
 }
 
 // Complex test reducer with multiple parameters
@@ -317,13 +323,9 @@ SPACETIMEDB_REDUCER(test, ReducerContext ctx, TestAlias arg, TestB arg2, TestC a
     }
     
     // Test TestE insertion - using regular insert since try_insert isn't available in TableAccessor
-    try {
-        TestE test_e_instance{0, "Tyler"};
-        TestE inserted = ctx.db[test_e].insert(test_e_instance);
-        LOG_INFO("Inserted: id=" + std::to_string(inserted.id) + " name=" + inserted.name);
-    } catch (const std::exception& e) {
-        LOG_INFO("Error: " + std::string(e.what()));
-    }
+    TestE test_e_instance{0, "Tyler"};
+    TestE inserted = ctx.db[test_e].insert(test_e_instance);
+    LOG_INFO("Inserted: id=" + std::to_string(inserted.id) + " name=" + inserted.name);
     
     LOG_INFO("Row count after delete: " + std::to_string(row_count_after_delete));
     
@@ -350,6 +352,7 @@ SPACETIMEDB_REDUCER(test, ReducerContext ctx, TestAlias arg, TestB arg2, TestC a
     LOG_INFO("Row count filtered by multi-column condition: " + std::to_string(multi_row_count));
     
     LOG_INFO("END");
+    return Ok();
 }
 
 // Add a player (TestE entry)
@@ -363,6 +366,7 @@ SPACETIMEDB_REDUCER(add_player, ReducerContext ctx, std::string name) {
 
     ctx.db[test_e_id].try_insert_or_update(inserted);
     LOG_INFO("Updated player after insert-or-update");
+    return Ok();
 }
 
 // Delete a player by ID
@@ -374,6 +378,7 @@ SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx, uint64_t id) {
     } else {
         LOG_ERROR("No player found with ID: " + std::to_string(id));
     }
+    return Ok();
 }
 
 // Delete players by name
@@ -383,11 +388,13 @@ SPACETIMEDB_REDUCER(delete_players_by_name, ReducerContext ctx, std::string name
     //auto to_delete = ctx.db[test_e_name].filter(name);
     auto deleted = ctx.db[test_e_name].delete_by_value(name);
     LOG_INFO("Deleted " + std::to_string(deleted) + " players with name: " + name);
+    return Ok();
 }
 
 // Client connected lifecycle reducer
 SPACETIMEDB_CLIENT_CONNECTED(client_connected) {
     // Called when a client connects
+    return Ok();
 }
 
 // Add entry to private table
@@ -395,6 +402,7 @@ SPACETIMEDB_REDUCER(add_private, ReducerContext ctx, std::string name) {
     PrivateTable entry{name};
     auto secret_entry = ctx.db[private_table].insert(entry);
     LOG_INFO("Inserted private table entry: " + secret_entry.name);
+    return Ok();
 }
 
 // Query private table
@@ -405,6 +413,7 @@ SPACETIMEDB_REDUCER(query_private, ReducerContext ctx) {
         LOG_INFO("Private, " + entry.name + "!");
     }
     LOG_INFO("Private, World!");
+    return Ok();
 }
 
 // Test btree index arguments - comprehensive range query testing
@@ -510,6 +519,7 @@ SPACETIMEDB_REDUCER(test_btree_index_args, ReducerContext ctx) {
     LOG_INFO("Range-based matches: " + std::to_string(range_matches));
     LOG_INFO("Manual matches: " + std::to_string(manual_matches));
     LOG_INFO("Results match: " + std::to_string(range_matches == manual_matches ? 1 : 0));
+    return Ok();
 }
 
 // Test reducer for assertions
@@ -520,6 +530,7 @@ SPACETIMEDB_REDUCER(assert_caller_identity_is_module_identity, ReducerContext ct
     } else {
         LOG_INFO("Assertion passed: caller identity matches module identity");
     }
+    return Ok();
 }
 
 // Test default values functionality
@@ -575,4 +586,11 @@ SPACETIMEDB_REDUCER(test_defaults, ReducerContext ctx) {
     LOG_INFO("Total entries with defaults: " + std::to_string(count));
     
     LOG_INFO("Default values registered in module metadata");
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(throw_error, ReducerContext ctx) {
+    LOG_INFO("This reducer will throw an error.");
+    return Err("Intentional error from throw_error reducer.");
+    //return Ok();
 }

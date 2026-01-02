@@ -29,6 +29,10 @@
 #include "v9_type_registration.h"  // For getV9TypeRegistration
 
 namespace SpacetimeDb {
+
+// Forward declare fail_reducer from reducer_error.h for use in templates
+void fail_reducer(std::string message);
+
 namespace Internal {
 
 // Forward declare the handler registration function from Module.cpp
@@ -716,7 +720,12 @@ void V9Builder::RegisterReducerCommon(const std::string& reducer_name,
     if constexpr (traits::arity == 1) {
         // Only ReducerContext parameter
         handler = [func](ReducerContext& ctx, BytesSource) {
-            func(ctx);
+            // Call the reducer and check the result
+            auto result = func(ctx);
+            if (result.is_err()) {
+                // Reducer returned an error - store it for the caller
+                fail_reducer(result.error());
+            }
         };
     } else {
         // Has additional parameters
@@ -734,7 +743,12 @@ void V9Builder::RegisterReducerCommon(const std::string& reducer_name,
                     );
                     
                     std::apply([&ctx_inner, fn](auto&&... args) {
-                        fn(ctx_inner, std::forward<decltype(args)>(args)...);
+                        // Call the reducer and check the result
+                        auto result = fn(ctx_inner, std::forward<decltype(args)>(args)...);
+                        if (result.is_err()) {
+                            // Reducer returned an error - store it for the caller
+                            fail_reducer(result.error());
+                        }
                     }, args);
                 }
             }(std::make_index_sequence<traits::arity - 1>{}, func, ctx, args_bytes);

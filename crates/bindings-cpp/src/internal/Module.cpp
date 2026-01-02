@@ -356,11 +356,13 @@ Status Module::__call_reducer__(
     
     // Call the reducer handler
     handler_info.handler(ctx, args_source);
+    
+    // Check if the reducer failed gracefully
     if (SpacetimeDb::Internal::has_reducer_error()) {
         std::string error_msg = SpacetimeDb::Internal::get_reducer_error();
         WriteBytes(error_sink, std::vector<uint8_t>(error_msg.begin(), error_msg.end()));
         return StatusCode::HOST_CALL_FAILURE;
-    }    
+    }
 
     return StatusCode::OK;
 }
