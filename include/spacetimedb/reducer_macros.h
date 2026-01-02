@@ -78,37 +78,46 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
  * This macro provides a clean, consistent syntax for defining reducers with
  * automatic registration in the SpacetimeDB module system.
  * 
+ * Reducers now return SpacetimeDb::ReducerResult to support Result-based
+ * error handling matching Rust's Result<(), E> pattern.
+ * 
  * @usage
  * ```cpp
  * // Reducer with no extra parameters
  * SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx) {
+ *     if (some_error) {
+ *         return Err("Error message");
+ *     }
  *     ctx.db.table<MyTable>("my_table").insert(MyTable{});
+ *     return Ok();
  * }
  * 
  * // Reducer with parameters
  * SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx, uint32_t id, std::string name) {
+ *     if (id == 0) {
+ *         return Err("ID must be non-zero");
+ *     }
  *     ctx.db.table<MyTable>("my_table").insert(MyTable{id, name});
+ *     return Ok();
  * }
  * ```
  * 
  * @param name The name of the reducer function
- * @param ... The full parameter list including ReducerContext as the first parameter
+ * @param ctx_param Must be ReducerContext ctx
+ * @param ... Additional parameters (optional)
  * 
  * @details
  * The macro generates:
- * 1. A function declaration and definition with the provided signature
+ * 1. A function declaration and definition with ReducerResult return type
  * 2. A preinit registration function that registers the reducer with SpacetimeDB
  * 
  * The first parameter must always be `ReducerContext ctx`. Additional parameters
  * can be any types that support BSATN serialization.
- * 
- * @note This is a simplified implementation for the v2-cpp-library branch.
- * Full parameter deserialization support requires additional runtime work.
  */
 #undef SPACETIMEDB_REDUCER
 #define SPACETIMEDB_REDUCER(name, ctx_param, ...) \
-    /* Forward declaration of the reducer function */ \
-    void name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
+    /* Forward declaration - returns ReducerResult */ \
+    SpacetimeDb::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__); \
     \
     /* Preinit registration function */ \
     /* This function is called during module initialization to register the reducer */ \
@@ -122,8 +131,8 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
         SpacetimeDb::Internal::getV9Builder().RegisterReducer(#name, name, param_names); \
     } \
     \
-    /* The actual reducer function definition follows */ \
-    void name(ctx_param __VA_OPT__(,) __VA_ARGS__)
+    /* The actual reducer function definition - returns ReducerResult */ \
+    SpacetimeDb::ReducerResult name(ctx_param __VA_OPT__(,) __VA_ARGS__)
 
 // -----------------------------------------------------------------------------
 // Lifecycle Reducer Macros
@@ -135,12 +144,13 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
  * @brief Macro for defining an init reducer
  * 
  * Init reducers are called when the module is first initialized.
- * They take only a ReducerContext parameter.
+ * They take only a ReducerContext parameter and return ReducerResult.
  * 
  * @usage
  * ```cpp
  * SPACETIMEDB_INIT(my_init) {
  *     ctx.db.table<MyTable>().insert({...});
+ *     return Ok();
  * }
  * ```
  */
@@ -148,23 +158,23 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
 #undef SPACETIMEDB_INIT
 #endif
 #define SPACETIMEDB_INIT(function_name) \
-    void function_name(SpacetimeDb::ReducerContext ctx); \
+    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx); \
     __attribute__((export_name("__preinit__20_reducer_init"))) \
     extern "C" void CONCAT(_preinit_register_init_reducer_, function_name)() { \
         ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::Init); \
     } \
-    void function_name(SpacetimeDb::ReducerContext ctx)
+    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx)
 
 /**
  * @brief Macro for defining a client_connected reducer
  * 
- * Client connected reducers are called when a client connects to the module.
- * They receive the connecting client's Identity as a parameter.
+ * Client connected ReducerContext and return ReducerResult.
  * 
  * @usage
  * ```cpp
  * SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
- *     LOG_INFO("Client connected: " + sender.to_hex());
+ *     LOG_INFO("Client connected: " + ctx.sender.to_hex());
+ *     return Ok();
  * }
  * ```
  */
@@ -172,23 +182,23 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
 #undef SPACETIMEDB_CLIENT_CONNECTED
 #endif
 #define SPACETIMEDB_CLIENT_CONNECTED(function_name) \
-    void function_name(SpacetimeDb::ReducerContext ctx); \
+    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx); \
     __attribute__((export_name("__preinit__20_reducer_client_connected"))) \
     extern "C" void CONCAT(_preinit_register_client_connected_, function_name)() { \
         ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::OnConnect); \
     } \
-    void function_name(SpacetimeDb::ReducerContext ctx)
+    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx)
 
 /**
  * @brief Macro for defining a client_disconnected reducer
  * 
- * Client disconnected reducers are called when a client disconnects from the module.
- * They receive the disconnecting client's Identity as a parameter.
+ * Client disconnectReducerContext and return ReducerResult.
  * 
  * @usage
  * ```cpp
  * SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect) {
- *     LOG_INFO("Client disconnected: " + sender.to_hex());
+ *     LOG_INFO("Client disconnected: " + ctx.sender.to_hex());
+ *     return Ok();
  * }
  * ```
  */
@@ -196,9 +206,9 @@ inline std::vector<std::string> parseReducerParameterNames(const std::string& pa
 #undef SPACETIMEDB_CLIENT_DISCONNECTED
 #endif
 #define SPACETIMEDB_CLIENT_DISCONNECTED(function_name) \
-    void function_name(SpacetimeDb::ReducerContext ctx); \
+    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx); \
     __attribute__((export_name("__preinit__20_reducer_client_disconnected"))) \
     extern "C" void CONCAT(_preinit_register_client_disconnected_, function_name)() { \
         ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::OnDisconnect); \
     } \
-    void function_name(SpacetimeDb::ReducerContext ctx)
+    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx)
