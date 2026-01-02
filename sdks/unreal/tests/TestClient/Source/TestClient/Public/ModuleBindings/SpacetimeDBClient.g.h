@@ -217,7 +217,6 @@
 class UDbConnection;
 class URemoteTables;
 class URemoteReducers;
-class URemoteProcedures;
 class USubscriptionBuilder;
 class USubscriptionHandle;
 
@@ -344,7 +343,7 @@ struct TESTCLIENT_API FContextBase
 {
 	GENERATED_BODY()
 
-	FContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Procedures(nullptr), Conn(nullptr) {};
+	FContextBase() : Db(nullptr), Reducers(nullptr), SetReducerFlags(nullptr), Conn(nullptr) {};
 	FContextBase(UDbConnection* InConn);
 
 	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
@@ -355,9 +354,6 @@ struct TESTCLIENT_API FContextBase
 
 	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
 	USetReducerFlags* SetReducerFlags;
-
-	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
-	URemoteProcedures* Procedures;
 
 	bool IsActive() const;
 	void Disconnect();
@@ -385,8 +381,6 @@ private:
 
 	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
 	static USetReducerFlags* GetSetReducerFlags(const FContextBase& Ctx) { return Ctx.SetReducerFlags; }
-
-	static URemoteProcedures* GetProcedures(const FContextBase& Ctx) { return Ctx.Procedures; }
 
 	UFUNCTION(BlueprintPure, Category="SpacetimeDB")
 	static bool IsActive(const FContextBase& Ctx) { return Ctx.IsActive(); }
@@ -6236,44 +6230,6 @@ struct TESTCLIENT_API FTestClientReducerEvent
 	}
 };
 
-// No procedures defined in this module.
-/** Metadata describing a procedure run. */
-USTRUCT(BlueprintType)
-struct TESTCLIENT_API FTestClientProcedureEvent
-{
-	GENERATED_BODY()
-
-	/** Timestamp for when the procedure executed */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
-	FSpacetimeDBTimestamp Timestamp;
-
-	/** Result status of the procedure */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
-	FSpacetimeDBProcedureStatus Status;
-
-	/** Identity that initiated the call */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="SpacetimeDB")
-	FSpacetimeDBTimeDuration TotalHostExecutionDuration;
-
-	FTestClientProcedureEvent() {
-	}
-	FTestClientProcedureEvent(FProcedureEvent Event) {
-		Timestamp = Event.Timestamp;
-		Status = FSpacetimeDBProcedureStatus::FromStatus(Event.Status);
-		TotalHostExecutionDuration = Event.TotalHostExecutionDuration;
-	}
-	FORCEINLINE bool operator==(const FTestClientProcedureEvent& Other) const
-	{
-		return Status == Other.Status && Timestamp == Other.Timestamp &&
-			TotalHostExecutionDuration == Other.TotalHostExecutionDuration;
-	}
-
-	FORCEINLINE bool operator!=(const FTestClientProcedureEvent& Other) const
-	{
-		return !(*this == Other);
-	}
-};
-
 /** Represents event with variant message data. */
 USTRUCT(BlueprintType)
 struct TESTCLIENT_API FTestClientEvent
@@ -6520,18 +6476,6 @@ struct TESTCLIENT_API FReducerEventContext : public FContextBase
 	
 	UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB") 
 	FTestClientReducerEvent Event;
-};
-
-USTRUCT(BlueprintType)
-struct TESTCLIENT_API FProcedureEventContext : public FContextBase
-{
-	GENERATED_BODY()
-
-	FProcedureEventContext() = default;
-	FProcedureEventContext(UDbConnection* InConn, FTestClientProcedureEvent InEvent) : FContextBase(InConn), Event(InEvent) {}
-	
-	UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB") 
-	FTestClientProcedureEvent Event;
 };
 
 USTRUCT(BlueprintType)
@@ -9671,26 +9615,6 @@ private:
     USetReducerFlags* SetCallReducerFlags;
 };
 
-// RemoteProcedures class
-UCLASS(BlueprintType)
-class TESTCLIENT_API URemoteProcedures : public UObject
-{
-    GENERATED_BODY()
-
-public:
-
-    // Internal error handling
-    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FInternalOnUnhandledProcedureError, const FProcedureEventContext&, Context, const FString&, Error);
-    FInternalOnUnhandledProcedureError InternalOnUnhandledProcedureError;
-
-private:
-
-    friend UDbConnection;
-
-    UPROPERTY()
-    class UDbConnection* Conn;
-};
-
 // SubscriptionBuilder class
 UCLASS(BlueprintType)
 class TESTCLIENT_API USubscriptionBuilder : public USubscriptionBuilderBase
@@ -9806,9 +9730,6 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     USetReducerFlags* SetReducerFlags;
 
-    UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    URemoteProcedures* Procedures;
-
     // Delegates that allow users to bind with the concrete connection type.
     FOnConnectDelegate OnConnectDelegate;
     FOnDisconnectDelegate OnDisconnectDelegate;
@@ -9825,15 +9746,10 @@ public:
     UPROPERTY(BlueprintAssignable, Category="SpacetimeDB")
     FOnUnhandledReducerError OnUnhandledReducerError;
 
-    // Error handling
-    DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnUnhandledProcedureError, const FProcedureEventContext&, Context, const FString&, Error);
-    UPROPERTY(BlueprintAssignable, Category="SpacetimeDB")
-    FOnUnhandledProcedureError OnUnhandledProcedureError;
-
 
 protected:
 
-    // Hook up error handling to reducers and procedures
+    // Hook up error handling to reducers
     virtual void PostInitProperties() override;
 
     UFUNCTION()
@@ -9844,9 +9760,6 @@ protected:
     UFUNCTION()
     void OnUnhandledReducerErrorHandler(const FReducerEventContext& Context, const FString& Error);
 
-    UFUNCTION()
-    void OnUnhandledProcedureErrorHandler(const FProcedureEventContext& Context, const FString& Error);
-
     // Override the DbConnectionBase methods to handle updates and events
     virtual void DbUpdate(const FDatabaseUpdateType& Update, const FSpacetimeDBEvent& Event) override;
     
@@ -9855,7 +9768,5 @@ protected:
     
     // Override the reducer event failed handler
     virtual void ReducerEventFailed(const FReducerEvent& Event, const FString ErrorMessage) override;
-    // Override the procedure event failed handler
-    virtual void ProcedureEventFailed(const FProcedureEvent& Event, const FString ErrorMessage) override;
 };
 
