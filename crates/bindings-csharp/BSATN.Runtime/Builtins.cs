@@ -365,7 +365,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
         new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
-    public readonly int CompareTo(Timestamp that)
+    public int CompareTo(Timestamp that)
     {
         return this.MicrosecondsSinceUnixEpoch.CompareTo(that.MicrosecondsSinceUnixEpoch);
     }
