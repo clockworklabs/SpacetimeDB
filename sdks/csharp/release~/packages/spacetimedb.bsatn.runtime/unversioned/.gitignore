@@ -1,3 +1,6 @@
+# These files end up in the output directory from `dotnet pack`. We need to gitignore them 
+# otherwise we'll commit them to the Unity repository with no .meta files which causes 
+# warnings and sometimes build errors.
 .nupkg.metadata
 .signature.p7s
 LICENSE
