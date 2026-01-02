@@ -55,6 +55,8 @@ public abstract class ProcedureContextBase(
     // (WOULD_BLOCK_TRANSACTION). Avoid calling `Http.*` inside WithTx.
     public HttpClient Http { get; } = new();
 
+    // **Note:** must be 0..=u32::MAX
+    protected int CounterUuid = 0;
     private Internal.TxContext? txContext;
     private ProcedureTxContextBase? cachedUserTxContext;
 
