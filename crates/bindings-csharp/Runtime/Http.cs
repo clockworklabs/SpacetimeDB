@@ -334,23 +334,23 @@ public sealed class HttpClient
             switch (status)
             {
                 case Errno.OK:
-                    {
-                        var responseWireBytes = out_.A.Consume();
-                        var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
+                {
+                    var responseWireBytes = out_.A.Consume();
+                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
 
-                        var body = new HttpBody(out_.B.Consume());
-                        var (statusCode, version, headers) = FromWireResponse(responseWire);
+                    var body = new HttpBody(out_.B.Consume());
+                    var (statusCode, version, headers) = FromWireResponse(responseWire);
 
-                        return Result<HttpResponse, HttpError>.Ok(
-                            new HttpResponse(statusCode, version, headers, body)
-                        );
-                    }
+                    return Result<HttpResponse, HttpError>.Ok(
+                        new HttpResponse(statusCode, version, headers, body)
+                    );
+                }
                 case Errno.HTTP_ERROR:
-                    {
-                        var errorWireBytes = out_.A.Consume();
-                        var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
-                        return Result<HttpResponse, HttpError>.Err(new HttpError(err));
-                    }
+                {
+                    var errorWireBytes = out_.A.Consume();
+                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
+                    return Result<HttpResponse, HttpError>.Err(new HttpError(err));
+                }
                 case Errno.WOULD_BLOCK_TRANSACTION:
                     return Result<HttpResponse, HttpError>.Err(
                         new HttpError(
