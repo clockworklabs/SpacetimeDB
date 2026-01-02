@@ -17,6 +17,12 @@ public enum HttpVersion : byte
     Http3,
 }
 
+/// <summary>
+/// Represents an HTTP method (e.g. GET, POST).
+/// </summary>
+/// <remarks>
+/// Unknown methods are supported by providing an arbitrary string value.
+/// </remarks>
 public readonly record struct HttpMethod(string Value)
 {
     public static readonly HttpMethod Get = new("GET");
@@ -30,15 +36,25 @@ public readonly record struct HttpMethod(string Value)
     public static readonly HttpMethod Patch = new("PATCH");
 }
 
-// `IsSensitive` is a local-only hint. The current stable HTTP wire format does not carry
-// header sensitivity metadata (Rust wire type uses only (name: string, value: bytes)),
-// so this flag is not transmitted to the host.
+/// <summary>
+/// Represents an HTTP header name/value pair.
+/// </summary>
+/// <remarks>
+/// Multiple headers with the same name are permitted.
+/// The <c>IsSensitive</c> flag is a local-only hint and is not transmitted to the host.
+/// </remarks>
 public readonly record struct HttpHeader(string Name, byte[] Value, bool IsSensitive = false)
 {
     public HttpHeader(string name, string value)
         : this(name, Encoding.ASCII.GetBytes(value), false) { }
 }
 
+/// <summary>
+/// Represents the body of an HTTP request or response.
+/// </summary>
+/// <remarks>
+/// Bodies are treated as raw bytes. Use <see cref="ToStringUtf8Lossy"/> when interpreting a body as UTF-8 text.
+/// </remarks>
 public readonly record struct HttpBody(byte[] Bytes)
 {
     public static HttpBody Empty => new(Array.Empty<byte>());
@@ -50,16 +66,46 @@ public readonly record struct HttpBody(byte[] Bytes)
     public static HttpBody FromString(string s) => new(Encoding.UTF8.GetBytes(s));
 }
 
+/// <summary>
+/// Represents an HTTP request to be executed by the SpacetimeDB host from within a procedure.
+/// </summary>
+/// <remarks>
+/// The request body is stored separately from the request metadata in the host ABI.
+/// </remarks>
 public sealed class HttpRequest
 {
+    /// <summary>Request URI.</summary>
+    /// <remarks>Must not be null or empty.</remarks>
     public required string Uri { get; init; }
+
+    /// <summary>HTTP method to use (e.g. GET, POST).</summary>
     public HttpMethod Method { get; init; } = HttpMethod.Get;
+
+    /// <summary>HTTP headers to include with the request.</summary>
     public List<HttpHeader> Headers { get; init; } = new();
+
+    /// <summary>Request body bytes.</summary>
     public HttpBody Body { get; init; } = HttpBody.Empty;
+
+    /// <summary>HTTP version to report in the request metadata.</summary>
     public HttpVersion Version { get; init; } = HttpVersion.Http11;
+
+    /// <summary>
+    /// Optional timeout for the request.
+    /// </summary>
+    /// <remarks>
+    /// The SpacetimeDB host clamps all timeouts to a maximum of 500ms.
+    /// </remarks>
     public TimeSpan? Timeout { get; init; }
 }
 
+/// <summary>
+/// Represents an HTTP response returned by the SpacetimeDB host.
+/// </summary>
+/// <remarks>
+/// A non-2xx status code is still returned as a successful response; callers should inspect
+/// <see cref="StatusCode"/> to handle application-level errors from the remote server.
+/// </remarks>
 public readonly record struct HttpResponse(
     ushort StatusCode,
     HttpVersion Version,
@@ -67,6 +113,13 @@ public readonly record struct HttpResponse(
     HttpBody Body
 );
 
+/// <summary>
+/// Error returned when the SpacetimeDB host could not execute an HTTP request.
+/// </summary>
+/// <remarks>
+/// This indicates a failure to perform the request (e.g. DNS failure, connection error, timeout),
+/// not an application-level HTTP error response (which is represented by <see cref="HttpResponse.StatusCode"/>).
+/// </remarks>
 public sealed class HttpError(string message) : Exception(message)
 {
     private readonly string message = message;
@@ -74,10 +127,61 @@ public sealed class HttpError(string message) : Exception(message)
     public override string Message => message;
 }
 
+/// <summary>
+/// Allows a procedure to perform outbound HTTP requests via the host.
+/// </summary>
+/// <remarks>
+/// This API is available from <c>ProcedureContext.Http</c>.
+///
+/// The request metadata (method/headers/timeout/uri/version) is encoded using a stable wire format
+/// and executed by the SpacetimeDB host. The request body is sent separately as raw bytes.
+///
+/// <para>
+/// <b>Transaction limitation:</b> HTTP requests cannot be performed while a mutable transaction is open.
+/// If called inside <c>WithTx</c>, the host will reject the call (<c>WOULD_BLOCK_TRANSACTION</c>).
+/// </para>
+///
+/// <para>
+/// <b>Timeouts:</b> The host clamps all HTTP timeouts to a maximum of 500ms.
+/// </para>
+///
+/// <para>
+/// The returned response may have any HTTP status code (including non-2xx). This is still considered a
+/// successful HTTP exchange; <see cref="Send"/> only returns an error when the request could not be
+/// initiated or completed (e.g. DNS failure, connection failure, timeout).
+/// </para>
+/// </remarks>
 public sealed class HttpClient
 {
     private static readonly TimeSpan MaxTimeout = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>
+    /// Send a simple <c>GET</c> request to <paramref name="uri"/> with no headers.
+    /// </summary>
+    /// <param name="uri">The request URI.</param>
+    /// <param name="timeout">
+    /// Optional timeout for the request. The host clamps timeouts to a maximum of 500ms.
+    /// </param>
+    /// <returns>
+    /// <c>Ok(HttpResponse)</c> when a response was received (regardless of HTTP status code),
+    /// or <c>Err(HttpError)</c> if the request failed to execute.
+    /// </returns>
+    /// <example>
+    /// <code>
+    /// [SpacetimeDB.Procedure]
+    /// public static string FetchSchema(ProcedureContext ctx)
+    /// {
+    ///     var result = ctx.Http.Get("http://localhost:3000/v1/database/schema");
+    ///     if (!result.IsSuccess)
+    ///     {
+    ///         return $"ERR {result.Error}";
+    ///     }
+    ///
+    ///     var response = result.Value!;
+    ///     return response.Body.ToStringUtf8Lossy();
+    /// }
+    /// </code>
+    /// </example>
     public Result<HttpResponse, HttpError> Get(string uri, TimeSpan? timeout = null) =>
         Send(
             new HttpRequest
@@ -89,6 +193,84 @@ public sealed class HttpClient
             }
         );
 
+    /// <summary>
+    /// Send an HTTP request described by <paramref name="request"/> and wait for its response.
+    /// </summary>
+    /// <param name="request">
+    /// Request metadata (method, headers, uri, version, optional timeout) plus a request body.
+    /// </param>
+    /// <returns>
+    /// <c>Ok(HttpResponse)</c> when a response was received (including non-2xx status codes),
+    /// or <c>Err(HttpError)</c> when the host could not perform the request.
+    /// </returns>
+    /// <remarks>
+    /// This method does not throw for expected failures; errors are returned as <c>Result.Err</c>.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// [SpacetimeDB.Procedure]
+    /// public static string PostSomething(ProcedureContext ctx)
+    /// {
+    ///     var request = new HttpRequest
+    ///     {
+    ///         Uri = "https://some-remote-host.invalid/upload",
+    ///         Method = new HttpMethod("POST"),
+    ///         Headers = new()
+    ///         {
+    ///             new HttpHeader("Content-Type", "text/plain"),
+    ///         },
+    ///         Body = HttpBody.FromString("This is the body of the HTTP request"),
+    ///         Timeout = TimeSpan.FromMilliseconds(100),
+    ///     };
+    ///
+    ///     var result = ctx.Http.Send(request);
+    ///     if (!result.IsSuccess)
+    ///     {
+    ///         return $"ERR {result.Error}";
+    ///     }
+    ///
+    ///     var response = result.Value!;
+    ///     return $"OK status={response.StatusCode} body={response.Body.ToStringUtf8Lossy()}";
+    /// }
+    /// </code>
+    /// </example>
+    /// <example>
+    /// <code>
+    /// [SpacetimeDB.Procedure]
+    /// public static string FetchMay404(ProcedureContext ctx)
+    /// {
+    ///     var result = ctx.Http.Get("https://example.invalid/missing");
+    ///     if (!result.IsSuccess)
+    ///     {
+    ///         // DNS failure, connection drop, timeout, etc.
+    ///         return $"ERR transport: {result.Error}";
+    ///     }
+    ///
+    ///     var response = result.Value!;
+    ///     if (response.StatusCode != 200)
+    ///     {
+    ///         // Application-level HTTP error response.
+    ///         return $"ERR http status={response.StatusCode}";
+    ///     }
+    ///
+    ///     return $"OK {response.Body.ToStringUtf8Lossy()}";
+    /// }
+    /// </code>
+    /// </example>
+    /// <example>
+    /// <code>
+    /// [SpacetimeDB.Procedure]
+    /// public static void DontDoThis(ProcedureContext ctx)
+    /// {
+    ///     ctx.WithTx(tx =>
+    ///     {
+    ///         // The host rejects this with WOULD_BLOCK_TRANSACTION.
+    ///         var _ = ctx.Http.Get("https://example.invalid/");
+    ///         return 0;
+    ///     });
+    /// }
+    /// </code>
+    /// </example>
     public Result<HttpResponse, HttpError> Send(HttpRequest request)
     {
         // The host syscall expects BSATN-encoded spacetimedb_lib::http::Request bytes.
@@ -152,23 +334,23 @@ public sealed class HttpClient
             switch (status)
             {
                 case Errno.OK:
-                {
-                    var responseWireBytes = out_.A.Consume();
-                    var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
+                    {
+                        var responseWireBytes = out_.A.Consume();
+                        var responseWire = FromBytes(new HttpResponseWire.BSATN(), responseWireBytes);
 
-                    var body = new HttpBody(out_.B.Consume());
-                    var (statusCode, version, headers) = FromWireResponse(responseWire);
+                        var body = new HttpBody(out_.B.Consume());
+                        var (statusCode, version, headers) = FromWireResponse(responseWire);
 
-                    return Result<HttpResponse, HttpError>.Ok(
-                        new HttpResponse(statusCode, version, headers, body)
-                    );
-                }
+                        return Result<HttpResponse, HttpError>.Ok(
+                            new HttpResponse(statusCode, version, headers, body)
+                        );
+                    }
                 case Errno.HTTP_ERROR:
-                {
-                    var errorWireBytes = out_.A.Consume();
-                    var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
-                    return Result<HttpResponse, HttpError>.Err(new HttpError(err));
-                }
+                    {
+                        var errorWireBytes = out_.A.Consume();
+                        var err = FromBytes(new SpacetimeDB.BSATN.String(), errorWireBytes);
+                        return Result<HttpResponse, HttpError>.Err(new HttpError(err));
+                    }
                 case Errno.WOULD_BLOCK_TRANSACTION:
                     return Result<HttpResponse, HttpError>.Err(
                         new HttpError(
