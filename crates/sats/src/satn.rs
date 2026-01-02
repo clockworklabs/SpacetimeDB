@@ -1,5 +1,6 @@
 use crate::time_duration::TimeDuration;
 use crate::timestamp::Timestamp;
+use crate::uuid::Uuid;
 use crate::{i256, u256, AlgebraicType, AlgebraicValue, ProductValue, Serialize, SumValue, ValueWithType};
 use crate::{ser, ProductType, ProductTypeElement};
 use core::fmt;
@@ -485,6 +486,8 @@ pub enum PsqlPrintFmt {
     Timestamp,
     /// Print as [`TimeDuration`] format
     Duration,
+    /// Print as `UUID` format
+    Uuid,
     /// Print as `Satn` format
     Satn,
 }
@@ -519,6 +522,10 @@ impl PsqlPrintFmt {
             || name.map(ProductType::is_time_duration_tag).unwrap_or_default()
         {
             return PsqlPrintFmt::Duration;
+        };
+
+        if tuple.is_uuid() || field.algebraic_type.is_uuid() || name.map(ProductType::is_uuid_tag).unwrap_or_default() {
+            return PsqlPrintFmt::Uuid;
         };
 
         PsqlPrintFmt::Satn
@@ -571,6 +578,7 @@ pub trait TypedWriter {
     fn write_hex(&mut self, value: &[u8]) -> Result<(), Self::Error>;
     fn write_timestamp(&mut self, value: Timestamp) -> Result<(), Self::Error>;
     fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error>;
+    fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error>;
     /// Writes a value as an alternative record format, e.g., for use `JSON` inside `SQL`.
     fn write_alt_record(
         &mut self,
@@ -692,6 +700,7 @@ impl<'a, 'f, F: TypedWriter> ser::Serializer for TypedSerializer<'a, 'f, F> {
     fn serialize_u128(self, v: u128) -> Result<Self::Ok, Self::Error> {
         match self.ty.use_fmt() {
             PsqlPrintFmt::Hex => self.f.write_hex(&v.to_be_bytes()),
+            PsqlPrintFmt::Uuid => self.f.write_uuid(Uuid::from_u128(v)),
             _ => self.f.write(v),
         }
     }
@@ -873,6 +882,10 @@ impl TypedWriter for SqlFormatter<'_, '_> {
             PsqlClient::SpacetimeDB => write!(self.fmt, "{value}"),
             PsqlClient::Postgres => write!(self.fmt, "\"{}\"", value.to_iso8601()),
         }
+    }
+
+    fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error> {
+        write!(self.fmt, "\"{value}\"")
     }
 
     fn write_record(

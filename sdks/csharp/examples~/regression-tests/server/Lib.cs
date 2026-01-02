@@ -78,6 +78,18 @@ public static partial class Module
         public ulong Level;
     }
 
+    [SpacetimeDB.Table(Name = "User", Public = true)]
+    public partial struct User
+    {
+        [SpacetimeDB.PrimaryKey]
+        public Uuid Id;
+
+        public string Name;
+
+        [SpacetimeDB.Index.BTree]
+        public bool IsAdmin;
+    }
+
     // At-most-one row: return T?
     [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
@@ -103,6 +115,17 @@ public static partial class Module
                 };
                 rows.Add(row);
             }
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "Admins", Public = true)]
+    public static List<User> Admins(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.User.IsAdmin.Filter(true))
+        {
+            rows.Add(user);
         }
         return rows;
     }
@@ -142,6 +165,16 @@ public static partial class Module
             var playerId = (ctx.Db.player.Identity.Find(ctx.Sender)!).Value.Id;
             ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
         }
+
+        foreach (var (Name, IsAdmin) in new List<(string Name, bool IsAdmin)>
+            {
+                ("Alice", true),
+                ("Bob", false),
+                ("Charlie", true)
+            })
+        {
+            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin });
+        }
     }
 
     [SpacetimeDB.Procedure]
@@ -166,6 +199,12 @@ public static partial class Module
     public static ReturnEnum ReturnEnumB(ProcedureContext ctx, string b)
     {
         return new ReturnEnum.B(b);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static Uuid ReturnUuid(ProcedureContext ctx, Uuid u)
+    {
+        return u;
     }
 
     [SpacetimeDB.Procedure]
