@@ -78,8 +78,7 @@ for (const user of ctx.db.user.name.filter('Alice')) {
 <TabItem value="rust" label="Rust">
 
 ```rust
-#[spacetimedb::table(name = score, public)]
-#[spacetimedb::index(name = by_player_and_level, btree(columns = [player_id, level]))]
+#[spacetimedb::table(name = score, public, index(name = by_player_and_level, btree(columns = [player_id, level])))]
 pub struct Score {
     player_id: u32,
     level: u32,
