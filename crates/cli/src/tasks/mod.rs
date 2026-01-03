@@ -27,7 +27,7 @@ pub fn build(
 
     if lang == ModuleLanguage::Javascript {
         Ok((output_path, "Js"))
-    } else if !build_debug {
+    } else if build_debug {
         Ok((output_path, "Wasm"))
     } else {
         // for release builds, optimize wasm modules with wasm-opt
