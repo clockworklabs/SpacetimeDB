@@ -100,3 +100,15 @@ declare module 'spacetime:sys@1.2' {
 
   export function procedure_abort_mut_tx();
 }
+
+declare module 'spacetime:sys@1.3' {
+  export function datastore_index_scan_point_bsatn(
+    index_id: u32,
+    point: Uint8Array
+  ): u32;
+
+  export function datastore_delete_by_index_scan_point_bsatn(
+    index_id: u32,
+    point: Uint8Array
+  ): u32;
+}
