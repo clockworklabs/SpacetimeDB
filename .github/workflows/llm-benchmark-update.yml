@@ -20,11 +20,17 @@ concurrency:
 
 jobs:
   run-llm-benchmark:
+    # Runnable either with a comment that starts with /run-llm-benchmark
+    # or by manually dispatching
     if: |
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-llm-benchmark')) ||
       (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
+        # Here we install the spacetime CLI for faster execution of the tests
+        # SpacetimeDB itself is not under test here, rather it's the docs.
+        # If we want to change that it is possible to have the benchmark compile
+        # SpacetimeDB from source.
       - name: Install spacetime CLI
         run: curl -sSf https://install.spacetimedb.com | sh -s -- -y
 
@@ -61,6 +67,11 @@ jobs:
             core.setOutput('head_owner_type', pr.head.repo.owner.type); // "User"|"Organization"
             core.setOutput('maintainer_can_modify', String(pr.maintainer_can_modify));
 
+      # If this was kicked off by a comment, ensure that the commenter is
+      # a collaborator on the repo. We don't want unprivileged users to run benchmarks.
+      # Note that the workflow that will be run will be the one that is on the `master`
+      # branch, NOT the one from the PR. This is important so that the PR author can't
+      # sneak in an exfiltration exploit.
       - name: Check commenter permission
         if: github.event_name == 'issue_comment'
         uses: actions/github-script@v7
@@ -78,6 +89,10 @@ jobs:
               core.setFailed(`User ${user} has permission '${data.permission}', not allowed to run benchmarks.`);
             }
 
+      # If the PR is from a fork, we need to be able to have GitHub actions commit back
+      # to the forked repo, so that we can update the benchmark results.
+      # In order to do this we need to ensure that the PR is configured to allow the maintainers
+      # of the SpacetimeDB repo to commit back ot the fork.
       - name: Check fork pushability (and comment if not)
         if: steps.pr.outputs.head_repo_full_name != github.repository
         uses: actions/github-script@v7
@@ -123,6 +138,11 @@ jobs:
               core.setFailed("maintainer_can_modify is false; author must enable 'Allow edits from maintainers'.");
             }
 
+      # Run the benchmark that is already checked into master to prevent
+      # an exfiltration attack whereby the PR author tries to sneak in an exploit
+      # and get a maintainer to run the modified benchmark without looking at the
+      # PR first. This ensure that we only ever execute code that is checked into
+      # master.
       - name: Checkout master (build/install tool from trusted code)
         uses: actions/checkout@v4
         with:
@@ -138,6 +158,8 @@ jobs:
           cargo install --path tools/xtask-llm-benchmark --locked
           command -v llm_benchmark
 
+      # Check out the repo on the branch, but ONLY use this code as data!
+      # Never execute code that is on the PR branch.
       - name: Checkout PR head (branch)
         uses: actions/checkout@v4
         with:
@@ -146,6 +168,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Run the benchmark against the PR using the installed tool from the
+      # master branch.
       - name: Run benchmark (with provider keys)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -153,6 +177,8 @@ jobs:
           llm_benchmark ci-quickfix
           llm_benchmark ci-check
 
+      # The benchmarks only modify the docs/llms directory.
+      # Commit the changes.
       - name: Commit changes
         run: |
           git config user.name "spacetimedb-bot"
@@ -164,6 +190,9 @@ jobs:
           git diff --cached --quiet && exit 0
           git commit -m "Update LLM benchmark results"
 
+      # Here we use the https://github.com/clockwork-labs-bot user's
+      # personal access token to commit back to the PR branch. This is necessary
+      # if we want to be able to push back to external contributor forks.
       - name: Push back to PR branch (same repo or fork)
         env:
           GH_TOKEN: ${{ secrets.CLOCKWORK_LABS_BOT_PAT }}
