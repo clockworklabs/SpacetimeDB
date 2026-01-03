@@ -2,6 +2,8 @@ name: Update LLM benchmarks
 
 on:
   workflow_dispatch:
+  push:
+    branches: [bradley/llm-benchmark]
   issue_comment:
     types: [created] # only run when the comment is first created
 
@@ -16,9 +18,10 @@ concurrency:
 
 jobs:
   run-llm-benchmark:
-    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-llm-benchmark')
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-llm-benchmark'))
     runs-on: ubuntu-latest
-
     steps:
       - name: Load PR info
         id: pr
