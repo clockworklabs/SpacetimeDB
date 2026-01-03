@@ -6,8 +6,6 @@ on:
       pr_number:
         description: 'Pull Request Number'
         required: true
-  push:
-    branches: [bradley/llm-benchmark]
   issue_comment:
     types: [created] # only run when the comment is first created
 
