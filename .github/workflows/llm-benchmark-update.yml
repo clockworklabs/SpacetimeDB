@@ -19,6 +19,7 @@ concurrency:
 jobs:
   run-llm-benchmark:
     if: |
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-llm-benchmark'))
     runs-on: ubuntu-latest
