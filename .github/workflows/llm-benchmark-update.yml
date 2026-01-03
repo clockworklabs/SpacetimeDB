@@ -25,6 +25,9 @@ jobs:
       (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
+      - name: Install spacetime CLI
+        run: curl -fsSL https://install.spacetimedb.com | sh
+
       - name: Load PR info
         id: pr
         uses: actions/github-script@v7
