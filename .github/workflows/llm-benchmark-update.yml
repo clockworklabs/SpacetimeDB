@@ -34,6 +34,7 @@ jobs:
 
             core.setOutput('number', String(pr.number));
             core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_sha', pr.head.sha);
             core.setOutput('head_repo_full_name', pr.head.repo.full_name);
             core.setOutput('head_owner_type', pr.head.repo.owner.type); // "User"|"Organization"
             core.setOutput('maintainer_can_modify', String(pr.maintainer_can_modify));
@@ -118,7 +119,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.pr.outputs.head_repo_full_name }}
-          ref: ${{ steps.pr.outputs.head_ref }}
+          ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
           persist-credentials: false
 
