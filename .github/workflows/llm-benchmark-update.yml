@@ -45,7 +45,7 @@ jobs:
               pull_number: prNumber,
             });
 
-            core.setOutput('number', String(3486));
+            core.setOutput('number', String(prNumber));
             core.setOutput('head_ref', pr.head.ref);
             core.setOutput('head_sha', pr.head.sha);
             core.setOutput('head_repo_full_name', pr.head.repo.full_name);
