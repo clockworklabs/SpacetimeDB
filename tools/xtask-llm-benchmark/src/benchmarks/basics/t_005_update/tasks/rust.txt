@@ -1,0 +1,14 @@
+﻿Write a SpacetimeDB backend module in Rust that defines one table and a reducer that updates a row.
+
+TABLE
+- users
+  - Struct: User
+  - Fields:
+    - id: i32 (primary key)
+    - name: String
+    - age: i32
+    - active: bool
+
+REDUCERS
+- update_user: given id:i32, name:String, age:i32, active:bool, update the row in users with id=id to exactly these values
+  - (id=id, name=name, age=age, active=active)
