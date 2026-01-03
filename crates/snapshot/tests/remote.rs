@@ -6,10 +6,7 @@ use pretty_assertions::assert_matches;
 use rand::seq::IndexedRandom as _;
 use spacetimedb::{
     db::{
-        relational_db::{
-            tests_utils::{TempReplicaDir, TestDB},
-            Persistence, SNAPSHOT_FREQUENCY,
-        },
+        relational_db::{tests_utils::TestDB, Persistence, SNAPSHOT_FREQUENCY},
         snapshot::{self, SnapshotWorker},
     },
     error::DBError,
@@ -234,15 +231,13 @@ async fn create_snapshot(repo: Arc<SnapshotRepository>) -> anyhow::Result<TxOffs
     // NOTE: `_db` needs to stay alive until the snapshot is taken,
     // because the snapshot worker holds only a weak reference.
     let (mut watch, _db) = spawn_blocking(|| {
-        let tmp = TempReplicaDir::new()?;
-
         let persistence = Persistence {
             durability: Arc::new(NoDurability::default()),
             disk_size: Arc::new(|| Ok(<_>::default())),
             snapshots: Some(SnapshotWorker::new(repo, snapshot::Compression::Disabled)),
             runtime: rt,
         };
-        let db = TestDB::open_db(&tmp, EmptyHistory::new(), Some(persistence), None, 0)?;
+        let db = TestDB::open_db(EmptyHistory::new(), Some(persistence), None, 0)?;
         let watch = db.subscribe_to_snapshots().unwrap();
 
         let table_id = db.with_auto_commit(Workload::Internal, |tx| {

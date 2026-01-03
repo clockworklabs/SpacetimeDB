@@ -1397,7 +1397,7 @@ mod tests {
         ClientActorId, ClientConfig, ClientConnectionReceiver, ClientConnectionSender, ClientName, Protocol,
     };
     use crate::db::relational_db::tests_utils::{
-        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TempReplicaDir, TestDB,
+        begin_mut_tx, begin_tx, insert, with_auto_commit, with_read_only, TestDB,
     };
     use crate::db::relational_db::{Persistence, RelationalDB, Txdata};
     use crate::error::DBError;
@@ -1410,6 +1410,7 @@ mod tests {
     use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::TableUpdateType;
     use core::fmt;
+    use futures::FutureExt;
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
@@ -1517,6 +1518,24 @@ mod tests {
         fn durable_tx_offset(&self) -> spacetimedb_durability::DurableOffset {
             self.durable_offset.subscribe().into()
         }
+
+        fn close(&self) -> spacetimedb_durability::Close {
+            let mut durable = self.durable_offset.subscribe();
+            let commitlog = self.commitlog.clone();
+            async move {
+                let durable_offset = durable
+                    .wait_for(
+                        |offset| match offset.zip(commitlog.read().unwrap().max_committed_offset()) {
+                            Some((durable_offset, committed_offset)) => durable_offset >= committed_offset,
+                            None => false,
+                        },
+                    )
+                    .await
+                    .unwrap();
+                *durable_offset
+            }
+            .boxed()
+        }
     }
 
     impl Default for ManualDurability {
@@ -1541,10 +1560,8 @@ mod tests {
     fn relational_db_with_manual_durability(
         rt: tokio::runtime::Handle,
     ) -> anyhow::Result<(Arc<RelationalDB>, Arc<ManualDurability>)> {
-        let dir = TempReplicaDir::new()?;
         let durability = Arc::new(ManualDurability::default());
         let db = TestDB::open_db(
-            &dir,
             EmptyHistory::new(),
             Some(Persistence {
                 durability: durability.clone(),
