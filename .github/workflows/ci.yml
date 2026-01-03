@@ -501,7 +501,7 @@ jobs:
           cargo ci cli-docs
 
   llm_ci_check:
-    name: Verify docs/rustdoc_json hashes
+    name: Verify LLM benchmark is up to date
     permissions:
       contents: read
     if: ${{ github.event_name == 'pull_request' }}
