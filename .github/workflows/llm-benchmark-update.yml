@@ -59,6 +59,7 @@ jobs:
             core.setOutput('maintainer_can_modify', String(pr.maintainer_can_modify));
 
       - name: Check commenter permission
+        if: github.event_name == 'issue_comment'
         uses: actions/github-script@v7
         with:
           script: |
