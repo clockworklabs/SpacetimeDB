@@ -57,6 +57,7 @@ pub enum ServerLanguage {
     Rust,
     Csharp,
     TypeScript,
+    Cpp,
 }
 
 impl ServerLanguage {
@@ -65,6 +66,7 @@ impl ServerLanguage {
             ServerLanguage::Rust => "rust",
             ServerLanguage::Csharp => "csharp",
             ServerLanguage::TypeScript => "typescript",
+            ServerLanguage::Cpp => "cpp",
         }
     }
 
@@ -73,6 +75,7 @@ impl ServerLanguage {
             "rust" => Ok(Some(ServerLanguage::Rust)),
             "csharp" | "c#" => Ok(Some(ServerLanguage::Csharp)),
             "typescript" => Ok(Some(ServerLanguage::TypeScript)),
+            "cpp" | "c++" => Ok(Some(ServerLanguage::Cpp)),
             _ => Err(anyhow!("Unknown server language: {}", s)),
         }
     }
@@ -132,11 +135,9 @@ pub fn cli() -> clap::Command {
                 .help("Initialize server only from the template (no client)")
                 .action(clap::ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("lang").long("lang").value_name("LANG").help(
-                "Server language: rust, csharp, typescript (it can only be used when --template is not specified)",
-            ),
-        )
+        .arg(Arg::new("lang").long("lang").value_name("LANG").help(
+            "Server language: rust, csharp, typescript, cpp (it can only be used when --template is not specified)",
+        ))
         .arg(
             Arg::new("template")
                 .short('t')
@@ -1213,6 +1214,9 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
         Some(ServerLanguage::Csharp) => {
             update_csproj_server_to_nuget(&server_dir)?;
         }
+        Some(ServerLanguage::Cpp) => {
+            // No name update needed for C++ at the moment
+        }
         None => {}
     }
 
@@ -1265,6 +1269,11 @@ fn init_empty(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()
             let server_dir = project_path.join("spacetimedb");
             init_empty_typescript_server(&server_dir, &config.project_name)?;
         }
+        Some(ServerLanguage::Cpp) => {
+            println!("Setting up C++ server...");
+            let server_dir = project_path.join("spacetimedb");
+            init_empty_cpp_server(&server_dir, &config.project_name)?;
+        }
         None => {}
     }
 
@@ -1285,6 +1294,10 @@ fn init_empty_typescript_server(server_dir: &Path, project_name: &str) -> anyhow
     init_typescript_project(server_dir)?;
     update_package_json(server_dir, project_name)?;
     Ok(())
+}
+
+fn init_empty_cpp_server(server_dir: &Path, _project_name: &str) -> anyhow::Result<()> {
+    init_cpp_project(server_dir)
 }
 
 fn print_next_steps(config: &TemplateConfig, _project_path: &Path) -> anyhow::Result<()> {
@@ -1570,6 +1583,83 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
+    let export_files = vec![
+        (
+            include_str!("../../templates/basic-cpp/server/CMakeLists._txt"),
+            "CMakeLists.txt",
+        ),
+        (include_str!("../../templates/basic-cpp/server/lib._cpp"), "src/lib.cpp"),
+        (
+            include_str!("../../templates/basic-cpp/server/_gitignore"),
+            ".gitignore",
+        ),
+    ];
+
+    for data_file in export_files {
+        let path = project_path.join(data_file.1);
+        create_directory(path.parent().unwrap())?;
+        std::fs::write(path, data_file.0)?;
+    }
+
+    // Copy the SpacetimeDB C++ SDK
+    let sdk_dest = project_path.join("spacetimedb-cpp-sdk");
+    create_directory(&sdk_dest)?;
+
+    // Try to find and copy the SDK from the development environment
+    let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+    let mut found_sdk = false;
+
+    // Look for bindings-cpp in current directory and parent directories
+    let mut search_dir = current_dir.clone();
+    for _ in 0..10 {
+        let bindings_cpp_path = search_dir.join("crates").join("bindings-cpp");
+        if bindings_cpp_path.exists() {
+            // Copy include directory
+            let src_include = bindings_cpp_path.join("include");
+            let dest_include = sdk_dest.join("include");
+            if src_include.exists() {
+                copy_dir_recursive(&src_include, &dest_include).context("Failed to copy SDK include directory")?;
+                println!("✓ Copied SpacetimeDB C++ SDK include files");
+            }
+
+            // Copy src directory
+            let src_src = bindings_cpp_path.join("src");
+            let dest_src = sdk_dest.join("src");
+            if src_src.exists() {
+                copy_dir_recursive(&src_src, &dest_src).context("Failed to copy SDK src directory")?;
+                println!("✓ Copied SpacetimeDB C++ SDK source files");
+            }
+            found_sdk = true;
+            break;
+        }
+
+        if let Some(parent) = search_dir.parent() {
+            search_dir = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+
+    if !found_sdk {
+        println!("{}", "Note: Could not automatically find SpacetimeDB C++ SDK.".yellow());
+        println!("To complete setup, copy the SDK files manually:");
+        println!(
+            "  cp -r <spacetimedb-repo>/crates/bindings-cpp/include {}/spacetimedb-cpp-sdk/",
+            project_path.display()
+        );
+        println!(
+            "  cp -r <spacetimedb-repo>/crates/bindings-cpp/src {}/spacetimedb-cpp-sdk/",
+            project_path.display()
+        );
+    }
+
+    check_for_emscripten();
+    check_for_git();
+
+    Ok(())
+}
+
 pub async fn exec_init_rust(args: &ArgMatches) -> anyhow::Result<()> {
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     init_rust_project(project_path)?;
@@ -1671,4 +1761,37 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
     }
 
     *item = value(version.to_string());
+}
+
+fn check_for_emscripten() -> bool {
+    if find_executable("emcc").is_some() && find_executable("cmake").is_some() {
+        return true;
+    }
+    println!(
+        "{}",
+        "Warning: You have created a C++ project, but you are missing emcc (Emscripten) or cmake.".yellow()
+    );
+    println!(
+        "{}",
+        "Install Emscripten from: https://emscripten.org/docs/getting_started/downloads.html".yellow()
+    );
+    println!("{}", "Install CMake from: https://cmake.org/download/".yellow());
+    false
+}
+
+fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), anyhow::Error> {
+    create_directory(dest)?;
+
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dest_path = dest.join(entry.file_name());
+
+        if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dest_path)?;
+        } else {
+            std::fs::copy(&src_path, &dest_path)?;
+        }
+    }
+    Ok(())
 }
