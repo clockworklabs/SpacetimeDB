@@ -124,7 +124,6 @@ jobs:
       - name: Run benchmark (with provider keys)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           llm_benchmark ci-quickfix
           llm_benchmark ci-check
