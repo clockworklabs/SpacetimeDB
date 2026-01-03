@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install spacetime CLI
-        run: curl -fsSL https://install.spacetimedb.com | sh
+        run: curl -sSf https://install.spacetimedb.com | sh -s -- -y
 
       - name: Load PR info
         id: pr
