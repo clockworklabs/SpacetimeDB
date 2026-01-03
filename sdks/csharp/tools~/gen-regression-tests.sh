@@ -6,7 +6,8 @@ SDK_PATH="$(dirname "$0")/.."
 SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 
-cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --project-path "$SDK_PATH/examples~/regression-tests/server"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --project-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --project-path "$STDB_PATH/modules/sdk-test-procedure"
+cd "$STDB_PATH"
+cargo build -p spacetimedb-standalone
+cargo run -p spacetimedb-cli -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/client/module_bindings" --project-path "$SDK_PATH/examples~/regression-tests/server"
+cargo run -p spacetimedb-cli -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/republishing/client/module_bindings" --project-path "$SDK_PATH/examples~/regression-tests/republishing/server-republish"
+cargo run -p spacetimedb-cli -- generate -y -l csharp -o "$SDK_PATH/examples~/regression-tests/procedure-client/module_bindings" --project-path "$STDB_PATH/modules/sdk-test-procedure"
