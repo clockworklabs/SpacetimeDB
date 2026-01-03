@@ -1,8 +1,23 @@
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
-use std::path::Path;
+use log::{debug, warn};
+use serde_json;
+use std::collections::HashSet;
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::thread;
+use std::time::{Duration, Instant};
 use std::{env, fs};
+use tempfile::TempDir;
+
+static PRINT_LOCK: Mutex<()> = Mutex::new(());
+
+fn with_print_lock<F: FnOnce() -> R, R>(f: F) -> R {
+    let _guard = PRINT_LOCK.lock().expect("print lock poisoned");
+    f()
+}
 
 const README_PATH: &str = "tools/ci/README.md";
 
@@ -51,10 +66,74 @@ enum CiCmd {
     /// Executes the smoketests suite with some default exclusions.
     Smoketests {
         #[arg(
-            trailing_var_arg = true,
-            long_help = "Additional arguments to pass to the smoketests runner. These are usually set by the CI environment, such as `-- --docker`"
+            long = "python",
+            value_name = "PYTHON_PATH",
+            long_help = "Python interpreter to use for smoketests"
         )]
-        args: Vec<String>,
+        python: Option<String>,
+
+        /// List the tests that would be run, but don't run them
+        #[arg(
+            long = "list",
+            num_args(0..=1),
+            default_missing_value = "text",
+            value_parser = ["text", "json"]
+        )]
+        list: Option<String>,
+
+        // Args that influence test selection
+        #[arg(
+            long = "docker",
+            value_name = "COMPOSE_FILE",
+            num_args(0..=1),
+            default_missing_value = "docker-compose.yml",
+            long_help = "Use docker for smoketests, specifying a docker compose file. If no value is provided, docker-compose.yml is used by default. This cannot be combined with --start-server."
+        )]
+        docker: Option<String>,
+        /// Ignore tests which require dotnet
+        #[arg(long = "skip-dotnet", default_value_t = false)]
+        skip_dotnet: bool,
+        /// Only run tests which match the given substring (can be specified multiple times)
+        #[arg(short = 'k', action = clap::ArgAction::Append)]
+        test_name_patterns: Vec<String>,
+        /// Exclude tests matching these names/patterns
+        #[arg(short = 'x', num_args(0..))]
+        exclude: Vec<String>,
+        /// Run against a remote server
+        #[arg(long = "remote-server")]
+        remote_server: Option<String>,
+        /// Only run tests that require a local server
+        #[arg(long = "local-only", default_value_t = false)]
+        local_only: bool,
+        /// Use `spacetime login` for these tests (and disable tests that don't work with that)
+        #[arg(long = "spacetime-login", default_value_t = false)]
+        spacetime_login: bool,
+        /// Tests to run (positional); if omitted, run all
+        #[arg(value_name = "TEST")]
+        test: Vec<String>,
+
+        // Args that only influence test running
+        /// Show all stdout/stderr from the tests as they're running
+        #[arg(long = "show-all-output", default_value_t = false)]
+        show_all_output: bool,
+        /// Don't cargo build the CLI in the Python runner
+        #[arg(long = "no-build-cli", default_value_t = false)]
+        no_build_cli: bool,
+        /// Do not stream docker logs alongside test output
+        #[arg(long = "no-docker-logs", default_value_t = false)]
+        no_docker_logs: bool,
+        #[arg(
+            long = "start-server",
+            default_value_t = true,
+            long_help = "Whether to start a local SpacetimeDB server before running smoketests"
+        )]
+        start_server: bool,
+        #[arg(
+            long = "parallel",
+            default_value_t = false,
+            long_help = "Run smoketests in parallel batches grouped by test suite"
+        )]
+        parallel: bool,
     },
     /// Tests the update flow
     ///
@@ -108,6 +187,319 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
     }
     Ok(())
 }
+#[derive(Debug, Clone)]
+pub enum StartServer {
+    No,
+    Yes,
+    Docker { compose_file: PathBuf },
+}
+
+fn find_free_port() -> Result<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind to an ephemeral port")?;
+    let port = listener
+        .local_addr()
+        .context("failed to read local address for ephemeral port")?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
+    println!("Waiting for server to start: {server_url}..");
+    let deadline = Instant::now() + timeout;
+
+    while Instant::now() < deadline {
+        // Use duct::cmd directly so we can suppress output from the ping command.
+        let status = cmd(
+            "cargo",
+            &["run", "-p", "spacetimedb-cli", "--", "server", "ping", server_url],
+        )
+        .stdout_null()
+        .stderr_null()
+        .unchecked()
+        .run();
+
+        if let Ok(status) = status {
+            if status.status.success() {
+                debug!("Server started: {server_url}");
+                return Ok(());
+            }
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+    anyhow::bail!("Timed out waiting for {server_url}");
+}
+
+pub enum ServerState {
+    None,
+    Yes {
+        handle: thread::JoinHandle<()>,
+        data_dir: TempDir,
+    },
+    Docker {
+        handle: thread::JoinHandle<()>,
+        compose_file: PathBuf,
+        project: String,
+    },
+}
+
+impl ServerState {
+    fn start(start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
+        Self::start_with_output(start_mode, args, None)
+    }
+
+    fn start_with_output(start_mode: StartServer, args: &mut Vec<String>, output: Option<&mut String>) -> Result<Self> {
+        // TODO: Currently the server output leaks. We should be capturing it and only printing if the test fails.
+
+        match start_mode {
+            StartServer::No => Ok(Self::None),
+            StartServer::Docker { compose_file } => {
+                if let Some(buf) = output {
+                    buf.push_str("Starting server..\n");
+                } else {
+                    println!("Starting server..");
+                }
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                let tracy_port = find_free_port()?;
+                let project = format!("spacetimedb-smoketests-{server_port}");
+                args.push("--remote-server".into());
+                let server_url = format!("http://localhost:{server_port}");
+                args.push(server_url.clone());
+                let compose_str = compose_file.to_string_lossy().to_string();
+
+                // TODO: We don't capture the output from this, which pollutes the logs.
+                let handle = thread::spawn({
+                    let project = project.clone();
+                    move || {
+                        let _ = cmd!(
+                            "docker",
+                            "compose",
+                            "-f",
+                            &compose_str,
+                            "--project-name",
+                            &project,
+                            "up",
+                            "--abort-on-container-exit",
+                        )
+                        .env("STDB_PORT", server_port.to_string())
+                        .env("STDB_PG_PORT", pg_port.to_string())
+                        .env("STDB_TRACY_PORT", tracy_port.to_string())
+                        .run();
+                    }
+                });
+                wait_until_http_ready(Duration::from_secs(900), &server_url)?;
+                Ok(ServerState::Docker {
+                    handle,
+                    compose_file,
+                    project,
+                })
+            }
+            StartServer::Yes => {
+                // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
+
+                // Create a temporary data directory for this server instance.
+                let data_dir = TempDir::new()?;
+
+                let server_port = find_free_port()?;
+                let pg_port = find_free_port()?;
+                args.push("--remote-server".into());
+                let server_url = format!("http://localhost:{server_port}");
+                args.push(server_url.clone());
+                if let Some(buf) = output {
+                    buf.push_str("Starting server..\n");
+                } else {
+                    println!("Starting server..");
+                }
+                let data_dir_str = data_dir.path().to_string_lossy().to_string();
+                let handle = thread::spawn(move || {
+                    let _ = cmd!(
+                        "cargo",
+                        "run",
+                        "-p",
+                        "spacetimedb-cli",
+                        "--",
+                        "start",
+                        "--listen-addr",
+                        &format!("0.0.0.0:{server_port}"),
+                        "--pg-port",
+                        pg_port.to_string(),
+                        "--data-dir",
+                        data_dir_str,
+                    )
+                    .read();
+                });
+                wait_until_http_ready(Duration::from_secs(300), &server_url)?;
+                Ok(ServerState::Yes { handle, data_dir })
+            }
+        }
+    }
+}
+
+impl Drop for ServerState {
+    fn drop(&mut self) {
+        // TODO: Consider doing a dance to have the server thread die, instead of just dying with this process.
+        match self {
+            ServerState::None => {}
+            ServerState::Docker {
+                handle: _,
+                compose_file,
+                project,
+            } => {
+                with_print_lock(|| {
+                    println!("Shutting down server..");
+                });
+                let compose_str = compose_file.to_string_lossy().to_string();
+                let _ = cmd!(
+                    "docker",
+                    "compose",
+                    "-f",
+                    &compose_str,
+                    "--project-name",
+                    &project,
+                    "down",
+                )
+                .run();
+            }
+            ServerState::Yes { handle: _, data_dir } => {
+                with_print_lock(|| {
+                    println!("Shutting down server (temp data-dir will be dropped)..");
+                });
+                let _ = data_dir;
+            }
+        }
+    }
+}
+
+fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
+    let mut args: Vec<_> = args.iter().cloned().collect();
+
+    let _server = ServerState::start(server_mode, &mut args)?;
+
+    println!("Running smoketests: {}", args.join(" "));
+    cmd(
+        python,
+        ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(args),
+    )
+    .run()?;
+    Ok(())
+}
+
+// TODO: Fold this into `run_smoketests_batch`.
+fn run_smoketests_batch_captured(server_mode: StartServer, args: &[String], python: &str) -> (String, Result<()>) {
+    let mut args: Vec<_> = args.iter().cloned().collect();
+    let mut output = String::new();
+
+    let server = ServerState::start_with_output(server_mode, &mut args, Some(&mut output));
+    let _server = match server {
+        Ok(server) => server,
+        Err(e) => return (output, Err(e)),
+    };
+
+    output.push_str(&format!("Running smoketests: {}\n", args.join(" ")));
+
+    let res = cmd(
+        python,
+        ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(args),
+    )
+    .stdout_capture()
+    .stderr_capture()
+    .unchecked()
+    .run();
+
+    let res = match res {
+        Ok(res) => res,
+        Err(e) => return (output, Err(e.into())),
+    };
+
+    let stdout = String::from_utf8_lossy(&res.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&res.stderr).to_string();
+    if !stdout.is_empty() {
+        output.push_str(&stdout);
+        if !stdout.ends_with('\n') {
+            output.push('\n');
+        }
+    }
+    if !stderr.is_empty() {
+        output.push_str(&stderr);
+        if !stderr.ends_with('\n') {
+            output.push('\n');
+        }
+    }
+
+    if !res.status.success() {
+        return (
+            output,
+            Err(anyhow::anyhow!("smoketests exited with status: {}", res.status)),
+        );
+    }
+
+    (output, Ok(()))
+}
+
+fn server_start_config(start_server: bool, docker: Option<String>) -> StartServer {
+    match (start_server, docker.as_ref()) {
+        (start_server, Some(compose_file)) => {
+            if !start_server {
+                warn!("--docker implies --start-server=true");
+            }
+            StartServer::Docker {
+                compose_file: compose_file.into(),
+            }
+        }
+        (true, None) => StartServer::Yes,
+        (false, None) => StartServer::No,
+    }
+}
+
+fn common_args(
+    docker: Option<String>,
+    skip_dotnet: bool,
+    test_name_patterns: Vec<String>,
+    exclude: Vec<String>,
+    local_only: bool,
+    spacetime_login: bool,
+    show_all_output: bool,
+    no_build_cli: bool,
+    no_docker_logs: bool,
+) -> Vec<String> {
+    let mut args: Vec<String> = Vec::new();
+
+    if no_docker_logs {
+        args.push("--no-docker-logs".to_string());
+    }
+    if skip_dotnet {
+        args.push("--skip-dotnet".to_string());
+    }
+    if show_all_output {
+        args.push("--show-all-output".to_string());
+    }
+    for pat in test_name_patterns {
+        args.push("-k".to_string());
+        args.push(pat);
+    }
+    for ex in exclude {
+        args.push("-x".to_string());
+        args.push(ex);
+    }
+    if no_build_cli {
+        args.push("--no-build-cli".to_string());
+    }
+    if spacetime_login {
+        args.push("--spacetime-login".to_string());
+    }
+    if local_only {
+        args.push("--local-only".to_string());
+    }
+
+    if let Some(compose_file) = docker.as_ref() {
+        args.push("--docker".to_string());
+        args.push("--compose-file".to_string());
+        args.push(compose_file.to_string());
+    }
+
+    args
+}
 
 fn infer_python() -> String {
     let py3_available = cmd!("python3", "--version").run().is_ok();
@@ -118,10 +510,199 @@ fn infer_python() -> String {
     }
 }
 
+fn run_smoketests_serial(
+    python: String,
+    list: Option<String>,
+    docker: Option<String>,
+    skip_dotnet: bool,
+    test_name_patterns: Vec<String>,
+    exclude: Vec<String>,
+    remote_server: Option<String>,
+    local_only: bool,
+    spacetime_login: bool,
+    test: Vec<String>,
+    show_all_output: bool,
+    no_build_cli: bool,
+    no_docker_logs: bool,
+    start_server: StartServer,
+) -> Result<()> {
+    let mut args = Vec::new();
+    if let Some(list_mode) = list {
+        args.push(format!("--list={list_mode}").to_string());
+    }
+    if let Some(remote) = remote_server {
+        args.push("--remote-server".to_string());
+        args.push(remote);
+    }
+    for test in test {
+        args.push(test.clone());
+    }
+    // The python smoketests take -x X Y Z, which can be ambiguous with passing test names as args to run.
+    // So, we make sure the anonymous test name arg has been added _before_ the exclude args which are a part of common_args.
+    args.extend(common_args(
+        docker,
+        skip_dotnet,
+        test_name_patterns,
+        exclude,
+        local_only,
+        spacetime_login,
+        show_all_output,
+        no_build_cli,
+        no_docker_logs,
+    ));
+    run_smoketests_batch(start_server, &args, &python)?;
+    Ok(())
+}
+
+fn run_smoketests_parallel(
+    python: String,
+    list: Option<String>,
+    docker: Option<String>,
+    skip_dotnet: bool,
+    test_name_patterns: Vec<String>,
+    exclude: Vec<String>,
+    remote_server: Option<String>,
+    local_only: bool,
+    spacetime_login: bool,
+    test: Vec<String>,
+    show_all_output: bool,
+    no_build_cli: bool,
+    no_docker_logs: bool,
+    start_server: StartServer,
+) -> Result<()> {
+    let args = common_args(
+        docker,
+        skip_dotnet,
+        test_name_patterns,
+        exclude,
+        local_only,
+        spacetime_login,
+        show_all_output,
+        no_build_cli,
+        no_docker_logs,
+    );
+
+    if list.is_some() {
+        anyhow::bail!("--list does not make sense with --parallel");
+    }
+    if remote_server.is_some() {
+        // This is just because we manually provide --remote-server later, so it requires some refactoring.
+        anyhow::bail!("--remote-server is not supported in parallel mode");
+    }
+
+    // TODO: Handle --local-only tests separately, since we are passing --remote-server in all of our batches.
+
+    println!("Listing smoketests for parallel execution..");
+
+    let tests = {
+        let mut list_args: Vec<String> = args.clone();
+        list_args.push("--list=json".to_string());
+        // TODO: Are users able to list specific tests here, or just top-level test filenames?
+        // If they can list individual tests, then this won't work as expected (because we should past those restrictions later
+        // when we run each batch as well).
+        for test in test {
+            list_args.push(test.clone());
+        }
+
+        let output = cmd(
+            python.clone(),
+            ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(list_args),
+        )
+        .stderr_to_stdout()
+        .read()
+        .expect("Failed to list smoketests");
+
+        let parsed: serde_json::Value = serde_json::from_str(&output)?;
+        let tests = parsed.get("tests").and_then(|v| v.as_array()).cloned().unwrap();
+        let errors = parsed
+            .get("errors")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if !errors.is_empty() {
+            println!("Errors while constructing smoketests:");
+            for err in &errors {
+                let test_id = err.get("test_id").and_then(|v| v.as_str()).unwrap();
+                let msg = err.get("error").and_then(|v| v.as_str()).unwrap();
+                println!("{test_id}");
+                println!("{msg}");
+            }
+            // If there were errors constructing tests, treat this as a failure
+            // and do not run any batches.
+            anyhow::bail!("Errors encountered while constructing smoketests; aborting parallel run");
+        }
+
+        tests
+    };
+
+    let batches: HashSet<String> = tests
+        .into_iter()
+        .map(|t| {
+            let name = t.as_str().unwrap();
+            let parts = name.split('.').collect::<Vec<&str>>();
+            parts[2].to_string()
+        })
+        .collect();
+
+    // Run each batch in parallel threads.
+    let mut handles = Vec::new();
+    for batch in batches {
+        let start_server_clone = start_server.clone();
+        let python = python.clone();
+        let mut batch_args: Vec<String> = Vec::new();
+        batch_args.push(batch.clone());
+        batch_args.extend(args.iter().cloned());
+
+        handles.push((
+            batch.clone(),
+            std::thread::spawn(move || {
+                let (captured, result) = run_smoketests_batch_captured(start_server_clone, &batch_args, &python);
+
+                with_print_lock(|| {
+                    println!("===== smoketests batch: {batch} =====");
+                    print!("{captured}");
+                    if let Err(e) = &result {
+                        println!("(batch failed) {e:?}");
+                    }
+                    println!("===== end smoketests batch: {batch} =====");
+                });
+
+                result
+            }),
+        ));
+    }
+
+    let mut failed_batches = vec![];
+    for (batch, handle) in handles {
+        // If the thread panicked or the batch failed, treat it as a failure.
+        let result = handle
+            .join()
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("smoketest batch thread panicked",)));
+        if let Err(e) = result {
+            println!("Smoketest batch {batch} failed: {e:?}");
+            failed_batches.push(batch);
+        }
+    }
+
+    if !failed_batches.is_empty() {
+        anyhow::bail!("Smoketest batch(es) failed: {}", failed_batches.join(", "));
+    }
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
     let cli = Cli::parse();
+
+    // Remove all Cargo-provided env vars from the subcommand
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CARGO_") && key != "CARGO_TARGET_DIR" {
+            std::env::remove_var(key);
+        }
+    }
 
     match cli.cmd {
         Some(CiCmd::Test) => {
@@ -211,16 +792,89 @@ fn main() -> Result<()> {
             .run()?;
         }
 
-        Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
-            cmd(
-                python,
-                ["-m", "smoketests"]
-                    .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
-            )
-            .run()?;
+        Some(CiCmd::Smoketests {
+            start_server,
+            docker,
+            test,
+            no_docker_logs,
+            skip_dotnet,
+            show_all_output,
+            test_name_patterns,
+            exclude,
+            mut no_build_cli,
+            list,
+            remote_server,
+            spacetime_login,
+            local_only,
+            parallel,
+            python,
+        }) => {
+            let start_server = server_start_config(start_server, docker.clone());
+            // Do initial server build
+            match start_server.clone() {
+                StartServer::No => {}
+                StartServer::Yes { .. } => {
+                    println!("Building SpacetimeDB..");
+
+                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
+                    cmd!(
+                        "cargo",
+                        "build",
+                        "-p",
+                        "spacetimedb-cli",
+                        "-p",
+                        "spacetimedb-standalone",
+                        "-p",
+                        "spacetimedb-update",
+                    )
+                    .run()?;
+                    no_build_cli = true;
+                }
+                StartServer::Docker { compose_file } => {
+                    println!("Building docker container..");
+                    let compose_str = compose_file.to_string_lossy().to_string();
+                    let _ = cmd!("docker", "compose", "-f", &compose_str, "build",).run()?;
+                }
+            }
+
+            let python = python.unwrap_or(infer_python());
+
+            // These are split into two separate functions, so that we can ensure all the args are considered in both cases.
+            if parallel {
+                run_smoketests_parallel(
+                    python,
+                    list,
+                    docker,
+                    skip_dotnet,
+                    test_name_patterns,
+                    exclude,
+                    remote_server,
+                    local_only,
+                    spacetime_login,
+                    test,
+                    show_all_output,
+                    no_build_cli,
+                    no_docker_logs,
+                    start_server,
+                )?;
+            } else {
+                run_smoketests_serial(
+                    python,
+                    list,
+                    docker,
+                    skip_dotnet,
+                    test_name_patterns,
+                    exclude,
+                    remote_server,
+                    local_only,
+                    spacetime_login,
+                    test,
+                    show_all_output,
+                    no_build_cli,
+                    no_docker_logs,
+                    start_server,
+                )?;
+            }
         }
 
         Some(CiCmd::UpdateFlow {
@@ -277,12 +931,12 @@ fn main() -> Result<()> {
             }
 
             cmd!("pnpm", "install", "--recursive").run()?;
-            cmd!("pnpm", "generate-cli-docs").dir("docs").run()?;
-            let out = cmd!("git", "status", "--porcelain", "--", "docs").read()?;
-            if out.is_empty() {
+            cmd!("pnpm", "generate-cli-docs").run()?;
+            let out = cmd!("git", "status", "--porcelain").read()?;
+            if out == "" {
                 log::info!("No docs changes detected");
             } else {
-                anyhow::bail!("CLI docs are out of date:\n{out}");
+                anyhow::bail!("CLI docs are out of date");
             }
         }
 
