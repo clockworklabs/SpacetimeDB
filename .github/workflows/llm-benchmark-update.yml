@@ -132,7 +132,7 @@ jobs:
 
       - name: Install llm-benchmark tool from master
         run: |
-          cargo install --path crates/xtask-llm-benchmark --locked
+          cargo install --path tools/xtask-llm-benchmark --locked
           command -v llm_benchmark
 
       - name: Checkout PR head (branch)
