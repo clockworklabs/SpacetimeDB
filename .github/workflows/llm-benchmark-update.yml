@@ -32,18 +32,18 @@ jobs:
           script: |
             let prNumber;
             if (context.eventName === 'issue_comment') {
-                prNumber = context.payload.issue.number;
+              prNumber = context.payload.issue.number;
             } else if (context.eventName === 'workflow_dispatch') {
-                prNumber = Number(core.getInput('pr_number'));
-            } else {
-                core.setFailed(`Unsupported event: ${context.eventName}`);
+              const raw = context.payload.inputs?.pr_number;
+              if (!raw || !/^\d+$/.test(raw)) {
+                core.setFailed(`Invalid pr_number input: '${raw}'.`);
                 return;
+              }
+              prNumber = Number(raw);
+            } else {
+              core.setFailed(`Unsupported event: ${context.eventName}`);
+              return;
             }
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
 
             core.setOutput('number', String(prNumber));
             core.setOutput('head_ref', pr.head.ref);
