@@ -1,6 +1,7 @@
 name: Update LLM benchmarks
 
 on:
+  workflow_dispatch:
   issue_comment:
     types: [created] # only run when the comment is first created
 
@@ -101,7 +102,7 @@ jobs:
       - name: Checkout master (build/install tool from trusted code)
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: bradley/llm-benchmark # master <- Set to master before merging
           fetch-depth: 0
           persist-credentials: false
 
