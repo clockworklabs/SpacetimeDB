@@ -1,0 +1,156 @@
+name: Update LLM benchmarks
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: llm-benchmark-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  run-llm-benchmark:
+    if: github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-llm-benchmark')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check commenter permission
+        id: perm
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const user = context.payload.comment.user.login;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: user,
+            });
+
+            // data.permission is one of: admin, maintain, write, triage, read, none
+            const allowed = new Set(['admin', 'maintain', 'write', 'triage']);
+            if (!allowed.has(data.permission)) {
+              core.setFailed(`User ${user} has permission '${data.permission}', not allowed to run benchmarks.`);
+            }
+
+      - name: Load PR info
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.issue.number;
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+            });
+
+            core.setOutput('number', pr.number.toString());
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_repo_full_name', pr.head.repo.full_name);
+            core.setOutput('head_owner_type', pr.head.repo.owner.type); // "User"|"Organization"
+            core.setOutput('maintainer_can_modify', String(pr.maintainer_can_modify));
+      
+      - name: Check fork pushability (and comment if not)
+        if: steps.pr.outputs.head_repo_full_name != github.repository
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_OWNER_TYPE: ${{ steps.pr.outputs.head_owner_type }}
+          MAINTAINER_CAN_MODIFY: ${{ steps.pr.outputs.maintainer_can_modify }}
+        with:
+          script: |
+            const issue_number = Number(process.env.PR_NUMBER);
+            const headOwnerType = process.env.HEAD_OWNER_TYPE;
+            const canModify = process.env.MAINTAINER_CAN_MODIFY === 'true';
+
+            if (headOwnerType === 'Organization') {
+              await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: [
+                "I can’t push benchmark updates to this PR because it comes from an **organization-owned fork**.",
+                "GitHub doesn’t allow granting upstream maintainers push permissions to org-owned forks.",
+                "",
+                "Options:",
+                "- Reopen the PR from a **personal fork** with **Allow edits from maintainers** enabled, or",
+                "- A maintainer can apply the benchmark update on an internal branch."
+              ].join("\n"),
+              });
+              core.setFailed("Org-owned fork PR is not pushable by maintainers.");
+              return;
+            }
+
+            if (!canModify) {
+              await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              body: [
+                "I can’t push benchmark updates to this PR branch until you enable **Allow edits from maintainers**.",
+                "Please check the box on the PR page, then re-comment `/run-llm-benchmark`.",
+                "See https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork"
+              ].join("\n"),
+              });
+              core.setFailed("maintainer_can_modify is false; author must enable 'Allow edits from maintainers'.");
+            }
+
+      - name: Checkout master 
+        uses: actions/checkout@v4
+        with:
+          ref: "master" # For now use "bradley/llm-benchmark", but before merging this workflow switch to use only code in master to benchmark
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      
+      - name: Install llm-benchmark tool from master
+        run: |
+          cargo install --path crates/xtask-llm-benchmark --locked
+          command -v llm_benchmark
+      
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr.outputs.head_repo_full_name }}
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run benchmark (with provider keys)
+        working-directory: crates/xtask-llm-benchmark
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          llm_benchmark ci-quickfix 
+          llm_benchmark ci-check
+
+      - name: Commit changes
+        run: |
+          git config user.name "spacetimedb-bot"
+          git config user.email "spacetimedb-bot@users.noreply.github.com"
+
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "Update LLM benchmark results"
+
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ vars.CLOCKWORK_LABS_INFRA_APP_ID }}
+          private-key: ${{ secrets.CLOCKWORK_LABS_INFRA_APP_PRIVATE_KEY }}
+
+      - name: Push back
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ steps.pr.outputs.head_repo_full_name }}.git"
+          git push origin "HEAD:${{ steps.pr.outputs.head_ref }}"
