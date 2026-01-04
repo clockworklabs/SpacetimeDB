@@ -1,15 +1,15 @@
 {
   "version": 1,
-  "generated_at": "2025-11-03T22:57:35.363642600+00:00",
+  "generated_at": "2026-01-04T02:13:34.067131326+00:00",
   "modes": [
     {
       "mode": "docs",
       "lang": "csharp",
-      "hash": "a5323ad16696d87950656381989e534ffd48b4b77f4b4d50a255801587bbd3b8",
+      "hash": "6f75b0c555fd7577df52872b447d9237496b7f004485c56464181b8bfb7834de",
       "models": [
         {
           "name": "GPT-5",
-          "score": 100.0
+          "score": 27.868853
         }
       ]
     },
@@ -38,11 +38,11 @@
     {
       "mode": "rustdoc_json",
       "lang": "rust",
-      "hash": "b679791492659bee17566e26f221d8ab9a807b16a8a68cba53d879414c8cabab",
+      "hash": "9bb229f6cfd63a9477451e127576b9bd378ec1087b9f320e5a8576b415e021b0",
       "models": [
         {
           "name": "GPT-5",
-          "score": 62.29508
+          "score": 0.0
         }
       ]
     }
