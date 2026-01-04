@@ -648,6 +648,7 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
   csharp-testsuite:
+    needs: [lints, llm_ci_check]
     runs-on: spacetimedb-new-runner
     container:
       image: localhost:5000/spacetimedb-ci:latest
