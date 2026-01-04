@@ -756,7 +756,7 @@ jobs:
           }
 
   internal-tests:
-    name: Internal Tests / run-tests
+    name: Internal Tests
     needs: [lints, llm_ci_check]
     # Skip if not a PR or a push to master
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
