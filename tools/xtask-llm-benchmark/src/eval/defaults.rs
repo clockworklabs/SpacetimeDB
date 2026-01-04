@@ -1,20 +1,18 @@
-use crate::bench::utils::{sanitize_db_name, server_name};
+use crate::bench::utils::{sanitize_db_name};
 use crate::eval::scorers::{
     ReducerDataParityScorer, ReducerSqlCountScorer, SchemaParityScorer, Scorer, SqlCountOnlyScorer, SqlExecBothScorer,
 };
 use crate::eval::{derive_cat_task_from_file, ReducerDataParityConfig, ReducerSqlCountConfig};
 use std::time::Duration;
 
-pub fn default_schema_parity_scorers(src_file: &str, route_tag: &str) -> Vec<Box<dyn Scorer>> {
+pub fn default_schema_parity_scorers(host_url: &str, src_file: &str, route_tag: &str) -> Vec<Box<dyn Scorer>> {
     let (cat, task) = derive_cat_task_from_file(src_file);
 
     let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
 
-    let srv = server_name();
-
     vec![Box::new(SchemaParityScorer {
-        server: srv,
+        server: host_url.to_string(),
         golden_db,
         llm_db,
         timeout: Duration::from_secs(10),
@@ -22,13 +20,12 @@ pub fn default_schema_parity_scorers(src_file: &str, route_tag: &str) -> Vec<Box
     }) as Box<dyn Scorer>]
 }
 
-pub fn make_reducer_sql_count_scorer(cfg: ReducerSqlCountConfig<'_>) -> Box<dyn Scorer> {
+pub fn make_reducer_sql_count_scorer(host_url: &str, cfg: ReducerSqlCountConfig<'_>) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(cfg.src_file);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, cfg.route_tag));
-    let server = server_name();
 
     Box::new(ReducerSqlCountScorer {
-        server,
+        server: host_url.to_string(),
         db: llm_db,
         reducer: cfg.reducer,
         args: cfg.args,
@@ -40,6 +37,7 @@ pub fn make_reducer_sql_count_scorer(cfg: ReducerSqlCountConfig<'_>) -> Box<dyn 
 }
 
 pub fn make_sql_count_only_scorer(
+    host_url: &str,
     src_file: &str,
     route_tag: &str,
     sql: impl Into<String>,
@@ -50,7 +48,7 @@ pub fn make_sql_count_only_scorer(
     let (cat, task) = derive_cat_task_from_file(src_file);
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
     Box::new(SqlCountOnlyScorer {
-        server: server_name(),
+        server: host_url.to_string(),
         db: llm_db,
         sql: sql.into(),
         expected,
@@ -59,14 +57,13 @@ pub fn make_sql_count_only_scorer(
     })
 }
 
-pub fn make_reducer_data_parity_scorer(cfg: ReducerDataParityConfig<'_>) -> Box<dyn Scorer> {
+pub fn make_reducer_data_parity_scorer(host_url: &str, cfg: ReducerDataParityConfig<'_>) -> Box<dyn Scorer> {
     let (cat, task) = derive_cat_task_from_file(cfg.src_file);
     let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, cfg.route_tag));
-    let server = server_name();
 
     Box::new(ReducerDataParityScorer {
-        server,
+        server: host_url.to_string(),
         golden_db,
         llm_db,
         reducer: cfg.reducer,
@@ -79,6 +76,7 @@ pub fn make_reducer_data_parity_scorer(cfg: ReducerDataParityConfig<'_>) -> Box<
 }
 
 pub fn make_sql_exec_both_scorer(
+    host_url: &str,
     src_file: &str,
     route_tag: &str,
     sql: &str,
@@ -88,10 +86,9 @@ pub fn make_sql_exec_both_scorer(
     let (cat, task) = derive_cat_task_from_file(src_file);
     let golden_db = sanitize_db_name(&format!("{}-{}-golden", cat, task));
     let llm_db = sanitize_db_name(&format!("{}-{}-{}-llm", cat, task, route_tag));
-    let server = server_name();
 
     Box::new(SqlExecBothScorer {
-        server,
+        server: host_url.to_string(),
         golden_db,
         llm_db,
         sql: sql.to_string(),

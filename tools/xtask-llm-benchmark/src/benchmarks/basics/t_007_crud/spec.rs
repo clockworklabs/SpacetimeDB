@@ -3,8 +3,8 @@ use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
-    BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag| {
-        let mut v = default_schema_parity_scorers(file!(), route_tag);
+    BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
+        let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
@@ -14,7 +14,7 @@ pub fn spec() -> BenchmarkSpec {
         let count_id2  = sb.count_by_id("users", "id", 2);
         let count_all  = "SELECT COUNT(*) AS n FROM users";
 
-        v.push(make_reducer_data_parity_scorer(ReducerDataParityConfig {
+        v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {
             src_file: file!(),
             route_tag,
             reducer: reducer.into(),
@@ -25,10 +25,10 @@ pub fn spec() -> BenchmarkSpec {
             timeout: Duration::from_secs(10),
         }));
         v.push(make_sql_count_only_scorer(
-            file!(), route_tag, &count_id2, 0, "crud_row_id2_deleted", Duration::from_secs(10),
+            host_url, file!(), route_tag, &count_id2, 0, "crud_row_id2_deleted", Duration::from_secs(10),
         ));
         v.push(make_sql_count_only_scorer(
-            file!(), route_tag, count_all, 1, "crud_total_count_one", Duration::from_secs(10),
+            host_url, file!(), route_tag, count_all, 1, "crud_total_count_one", Duration::from_secs(10),
         ));
 
         v

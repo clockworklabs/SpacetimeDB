@@ -10,6 +10,17 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::runtime::Runtime;
 
+/// Parameters for publishing a module (golden or LLM-generated).
+pub struct PublishParams<'a> {
+    pub lang: Lang,
+    pub category: &'a str,
+    pub task_id: &'a str,
+    pub route_tag: &'a str,
+    pub source_text: &'a str,
+    pub db_name: String,
+    pub host: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RunOutcome {
     pub hash: String,
@@ -63,6 +74,7 @@ pub struct RunContext<'a> {
     pub context: &'a str,
     pub hash: &'a str,
     pub llm: &'a dyn LlmProvider,
+    pub host: Option<String>,
 }
 
 impl<'a> RunContext<'a> {
@@ -73,6 +85,7 @@ impl<'a> RunContext<'a> {
         context: &'a str,
         hash: &'a str,
         llm: &'a dyn LlmProvider,
+        host: Option<String>,
     ) -> Self {
         Self {
             lang_name,
@@ -81,6 +94,7 @@ impl<'a> RunContext<'a> {
             context,
             hash,
             llm,
+            host,
         }
     }
 }
@@ -94,6 +108,7 @@ pub struct BenchRunContext<'a> {
     pub llm: &'a dyn LlmProvider,
     pub lang: Lang,
     pub selectors: Option<&'a [String]>,
+    pub host: Option<String>,
 }
 
 pub struct RunAllContext<'a> {
@@ -107,6 +122,7 @@ pub struct RunAllContext<'a> {
     pub providers_filter: Option<&'a HashSet<Vendor>>,
     pub selectors: Option<&'a [String]>,
     pub model_filter: Option<&'a HashMap<Vendor, HashSet<String>>>,
+    pub host: Option<String>,
 }
 
 pub struct BenchModeContext<'a> {
@@ -132,4 +148,5 @@ pub struct RunConfig {
     pub force: bool,
     pub categories: Option<HashSet<String>>,
     pub model_filter: Option<HashMap<Vendor, HashSet<String>>>,
+    pub host: Option<String>,
 }

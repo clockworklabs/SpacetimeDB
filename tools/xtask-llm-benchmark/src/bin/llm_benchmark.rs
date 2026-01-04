@@ -188,6 +188,7 @@ fn cmd_run(args: RunArgs) -> Result<()> {
         force: args.force,
         categories: categories_to_set(args.categories),
         model_filter: model_filter_from_groups(args.models),
+        host: None,
     };
 
     let bench_root = find_bench_root();
@@ -202,8 +203,10 @@ fn cmd_run(args: RunArgs) -> Result<()> {
     let RuntimeInit {
         runtime,
         provider: llm_provider,
-        guard: _spacetime,
+        guard,
     } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
+
+    config.host = Some(guard.as_ref().unwrap().host_url.clone());
 
     config.selectors = apply_category_filter(&bench_root, config.categories.as_ref(), config.selectors.as_deref())?;
 
@@ -212,7 +215,7 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 
     if !config.goldens_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
-        rt.block_on(ensure_goldens_built_once(&bench_root, config.lang, selectors_ref))?;
+        rt.block_on(ensure_goldens_built_once(config.host.clone(), &bench_root, config.lang, selectors_ref))?;
     }
 
     for mode in modes {
@@ -369,6 +372,7 @@ fn cmd_ci_quickfix() -> Result<()> {
         force: true,
         categories: None,
         model_filter: Some(model_filter),
+        host: None,
     };
 
     let bench_root = find_bench_root();
@@ -377,8 +381,10 @@ fn cmd_ci_quickfix() -> Result<()> {
     let RuntimeInit {
         runtime,
         provider: llm_provider,
-        guard: _spacetime,
+        guard,
     } = initialize_runtime_and_provider(false, false)?;
+
+    base.host = Some(guard.as_ref().unwrap().host_url.clone());
 
     // --- Rust (rustdoc_json) ---
     base.lang = Lang::Rust;
@@ -456,6 +462,7 @@ fn run_all_routes_for_mode(cfg: &RunAllContext<'_>) -> Result<Vec<ModelRun>> {
                 llm: cfg.llm,
                 lang: cfg.lang,
                 selectors: cfg.selectors,
+                host: cfg.host.clone(),
             };
 
             async move {
@@ -495,6 +502,7 @@ pub async fn run_many_routes_for_lang(cfg: &BenchRunContext<'_>, routes: &[Model
     let llm = cfg.llm;
     let lang = cfg.lang;
     let selectors = cfg.selectors;
+    let host = cfg.host.clone();
 
     futures::stream::iter(routes.iter().cloned().map(move |route| {
         let bench_root = bench_root;
@@ -504,6 +512,7 @@ pub async fn run_many_routes_for_lang(cfg: &BenchRunContext<'_>, routes: &[Model
         let llm = llm;
         let lang = lang;
         let selectors = selectors;
+        let host = host.clone();
 
         async move {
             println!("→ running {}", route.display_name);
@@ -517,6 +526,7 @@ pub async fn run_many_routes_for_lang(cfg: &BenchRunContext<'_>, routes: &[Model
                 llm,
                 lang,
                 selectors,
+                host,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
@@ -652,7 +662,7 @@ fn update_existing_mode(index: usize, ctx: &mut BenchModeContext<'_>) -> Result<
         let rt = ctx.runtime.expect("runtime required for --goldens-only");
         let sels = ctx.config.selectors.as_deref();
 
-        rt.block_on(build_goldens_only_for_lang(ctx.bench_root, ctx.lang, sels))?;
+        rt.block_on(build_goldens_only_for_lang(ctx.config.host.clone(), ctx.bench_root, ctx.lang, sels))?;
         println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
         return Ok(());
     }
@@ -682,6 +692,7 @@ fn update_existing_mode(index: usize, ctx: &mut BenchModeContext<'_>) -> Result<
             providers_filter: ctx.config.providers_filter.as_ref(),
             selectors: ctx.config.selectors.as_deref(),
             model_filter: ctx.config.model_filter.as_ref(),
+            host: ctx.config.host.clone(),
         };
 
         let models = run_all_routes_for_mode(&run_ctx)?;
@@ -703,7 +714,7 @@ fn add_new_mode(ctx: &mut BenchModeContext<'_>) -> Result<()> {
         let rt = ctx.runtime.expect("runtime required for --goldens-only");
         let sels = ctx.config.selectors.as_deref();
 
-        rt.block_on(build_goldens_only_for_lang(ctx.bench_root, ctx.lang, sels))?;
+        rt.block_on(build_goldens_only_for_lang(ctx.config.host.clone(), ctx.bench_root, ctx.lang, sels))?;
         println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
 
         ctx.results.modes.push(ModeRun {
@@ -733,6 +744,7 @@ fn add_new_mode(ctx: &mut BenchModeContext<'_>) -> Result<()> {
             providers_filter: ctx.config.providers_filter.as_ref(),
             selectors: ctx.config.selectors.as_deref(),
             model_filter: ctx.config.model_filter.as_ref(),
+            host: ctx.config.host.clone(),
         };
 
         run_all_routes_for_mode(&run_ctx)?

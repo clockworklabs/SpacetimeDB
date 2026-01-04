@@ -1,4 +1,4 @@
-use crate::bench::utils::{sanitize_db_name, server_name};
+use crate::bench::utils::{sanitize_db_name};
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::Path;
@@ -9,7 +9,7 @@ use std::process::Command;
 /* -------------------------------------------------------------------------- */
 
 pub trait Publisher: Send + Sync {
-    fn publish(&self, source: &Path, module_name: &str) -> Result<()>;
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()>;
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
@@ -51,7 +51,7 @@ impl DotnetPublisher {
 }
 
 impl Publisher for DotnetPublisher {
-    fn publish(&self, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -59,7 +59,6 @@ impl Publisher for DotnetPublisher {
 
         Self::ensure_csproj(source)?;
 
-        let srv = server_name();
         let db = sanitize_db_name(module_name);
 
         let mut cmd = Command::new("spacetime");
@@ -75,7 +74,7 @@ impl Publisher for DotnetPublisher {
             .arg("-c")
             .arg("-y")
             .arg("--server")
-            .arg(&srv)
+            .arg(host_url)
             .arg(&db)
             .current_dir(source);
         run(&mut pubcmd, "spacetime publish (csharp)")?;
@@ -100,7 +99,7 @@ impl SpacetimeRustPublisher {
 }
 
 impl Publisher for SpacetimeRustPublisher {
-    fn publish(&self, source: &Path, module_name: &str) -> Result<()> {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
         if !source.exists() {
             bail!("no source: {}", source.display());
         }
@@ -110,7 +109,6 @@ impl Publisher for SpacetimeRustPublisher {
         Self::ensure_standalone_manifest(source)?;
 
         // sanitize db + server
-        let srv = server_name();
         let db = sanitize_db_name(module_name);
 
         // 2) Publish
@@ -120,7 +118,7 @@ impl Publisher for SpacetimeRustPublisher {
                 .arg("-c")
                 .arg("-y")
                 .arg("--server")
-                .arg(&srv)
+                .arg(host_url)
                 .arg(&db)
                 .current_dir(source),
             "spacetime publish",

@@ -4,7 +4,7 @@ use crate::llm::prompt::make_prompt_from_task;
 use crate::llm::PromptBuilder;
 
 type PromptFactory = Box<dyn Fn(Lang) -> PromptBuilder + Send + Sync>;
-type ScorerFactory = Box<dyn Fn(Lang, &str) -> Vec<Box<dyn Scorer>> + Send + Sync>;
+type ScorerFactory = Box<dyn Fn(Lang, &str, &str) -> Vec<Box<dyn Scorer>> + Send + Sync>;
 
 pub struct BenchmarkSpec {
     pub id: &'static str,
@@ -16,7 +16,7 @@ pub struct BenchmarkSpec {
 impl BenchmarkSpec {
     pub fn from_tasks_auto(
         spec_file: &'static str,
-        scorers_with_route: impl Fn(Lang, &str) -> Vec<Box<dyn Scorer>> + Send + Sync + 'static,
+        scorers_with_route: impl Fn(Lang, &str, &str) -> Vec<Box<dyn Scorer>> + Send + Sync + 'static,
     ) -> Self {
         let (id, category) = infer_id_and_category(spec_file);
         let make_prompt = {
@@ -32,8 +32,8 @@ impl BenchmarkSpec {
         }
     }
 
-    pub fn scorers_for(&self, lang: Lang, route_tag: &str) -> Vec<Box<dyn Scorer>> {
-        (self.scorers)(lang, route_tag)
+    pub fn scorers_for(&self, lang: Lang, route_tag: &str, host_url: &str) -> Vec<Box<dyn Scorer>> {
+        (self.scorers)(lang, route_tag, host_url)
     }
 }
 

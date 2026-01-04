@@ -13,7 +13,7 @@ use tokio::task;
 use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher};
 use crate::bench::results_merge::merge_task_runs;
 use crate::bench::templates::materialize_project;
-use crate::bench::types::{BenchRunContext, RunContext, RunOneError};
+use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
     bench_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name, task_slug,
@@ -48,7 +48,7 @@ fn build_key(lang: Lang, selectors: Option<&[String]>) -> String {
 
 /// Build goldens **once per (lang, selector-set)** in this process.
 /// If selectors is None/empty, that means "ALL tasks".
-pub async fn ensure_goldens_built_once(bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {
+pub async fn ensure_goldens_built_once(host: Option<String>, bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {
     let key = build_key(lang, selectors);
     let set = BUILT_KEYS.get_or_init(|| Mutex::new(HashSet::new()));
     {
@@ -64,7 +64,7 @@ pub async fn ensure_goldens_built_once(bench_root: &Path, lang: Lang, selectors:
     }
 
     // IMPORTANT: pass selectors through so we only build needed goldens
-    build_goldens_only_for_lang(bench_root, lang, selectors).await?;
+    build_goldens_only_for_lang(host, bench_root, lang, selectors).await?;
 
     // mark as built
     drop(set_guard);
@@ -73,12 +73,12 @@ pub async fn ensure_goldens_built_once(bench_root: &Path, lang: Lang, selectors:
     Ok(())
 }
 
-async fn publish_rust_async(publisher: SpacetimeRustPublisher, wdir: PathBuf, db: String) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&wdir, &db)).await??;
+async fn publish_rust_async(publisher: SpacetimeRustPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
     Ok(())
 }
-async fn publish_cs_async(publisher: DotnetPublisher, wdir: PathBuf, db: String) -> Result<()> {
-    task::spawn_blocking(move || publisher.publish(&wdir, &db)).await??;
+async fn publish_cs_async(publisher: DotnetPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
     Ok(())
 }
 
@@ -98,53 +98,39 @@ impl TaskRunner {
         task_id: &str,
         golden_src_text: &str,
         golden_db: String,
+        host: Option<String>,
     ) -> Result<()> {
-        let lang_name = match lang {
-            Lang::Rust => "rust",
-            Lang::CSharp => "csharp",
-        };
-
-        let golden_wdir = work_server_dir_scoped(category, task_id, lang_name, "golden", "");
-        if golden_wdir.exists() {
-            let _ = fs::remove_dir_all(&golden_wdir);
-        }
-        let _golden_proj_root = materialize_project(lang_name, category, task_id, "golden", "", golden_src_text)?;
-
-        match lang {
-            Lang::Rust => publish_rust_async(self.rust_publisher, golden_wdir, golden_db).await?,
-            Lang::CSharp => publish_cs_async(self.cs_publisher, golden_wdir, golden_db).await?,
-        }
-        Ok(())
+        self.publish(PublishParams {
+            lang,
+            category,
+            task_id,
+            route_tag: "",
+            source_text: golden_src_text,
+            db_name: golden_db,
+            host,
+        }, "golden").await
     }
 
-    async fn publish_llm(
-        &self,
-        lang: Lang,
-        category: &str,
-        task_id: &str,
-        route_tag: &str,
-        llm_output: &str,
-        llm_db: String,
-    ) -> Result<()> {
-        let lang_name = match lang {
+    async fn publish_llm(&self, params: PublishParams<'_>) -> Result<()> {
+        self.publish(params, "llm").await
+    }
+
+    async fn publish(&self, params: PublishParams<'_>, phase: &str) -> Result<()> {
+        let lang_name = match params.lang {
             Lang::Rust => "rust",
             Lang::CSharp => "csharp",
         };
 
-        // llm
-        let llm_wdir = work_server_dir_scoped(category, task_id, lang_name, "llm", route_tag);
-        if llm_wdir.exists() {
-            let _ = fs::remove_dir_all(&llm_wdir);
+        let wdir = work_server_dir_scoped(params.category, params.task_id, lang_name, phase, params.route_tag);
+        if wdir.exists() {
+            let _ = fs::remove_dir_all(&wdir);
         }
-        let _llm_proj_root = materialize_project(lang_name, category, task_id, "llm", route_tag, llm_output)?;
+        let _proj_root = materialize_project(lang_name, params.category, params.task_id, phase, params.route_tag, params.source_text)?;
 
-        match lang {
-            Lang::Rust => {
-                publish_rust_async(self.rust_publisher, llm_wdir, llm_db).await?;
-            }
-            Lang::CSharp => {
-                publish_cs_async(self.cs_publisher, llm_wdir, llm_db).await?;
-            }
+        let host_url = params.host.unwrap_or_else(|| "local".to_owned());
+        match params.lang {
+            Lang::Rust => publish_rust_async(self.rust_publisher, host_url, wdir, params.db_name).await?,
+            Lang::CSharp => publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name).await?,
         }
 
         Ok(())
@@ -163,7 +149,7 @@ impl TaskRunner {
         let ctor = resolve_by_path(&task.root)?;
         let spec = ctor();
 
-        let scorers = spec.scorers_for(cfg.lang, &route_tag);
+        let scorers = spec.scorers_for(cfg.lang, &route_tag, cfg.host.as_deref().unwrap_or("local"));
         let total_tasks = scorers.len();
 
         let prompt_builder = (spec.make_prompt)(cfg.lang);
@@ -184,7 +170,15 @@ impl TaskRunner {
         }
 
         let publish_error: Option<String> = self
-            .publish_llm(cfg.lang, &category, &task_id, &route_tag, &llm_output, llm_db.clone())
+            .publish_llm(PublishParams {
+                lang: cfg.lang,
+                category: &category,
+                task_id: &task_id,
+                route_tag: &route_tag,
+                source_text: &llm_output,
+                db_name: llm_db.clone(),
+                host: cfg.host.clone(),
+            })
             .await
             .err()
             .map(|e| {
@@ -296,6 +290,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
             let context = cfg.context;
             let hash = cfg.hash;
             let llm = cfg.llm;
+            let host = cfg.host.clone();
 
             async move {
                 let started = Utc::now();
@@ -306,6 +301,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
                     context,
                     hash,
                     llm,
+                    host,
                 };
 
                 let res = runner.run_one(&task, &run_cfg).await;
@@ -413,6 +409,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
                     context,
                     hash,
                     llm,
+                    host: cfg.host.clone(),
                 };
 
                 let res = runner.run_one(&task, &run_cfg).await;
@@ -481,6 +478,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
                 llm: ctx.llm,
                 lang: ctx.lang,
                 selectors: Option::from(sels),
+                host: ctx.host.clone(),
             };
             return run_selected_for_model_async_for_lang(&sel_cfg).await;
         }
@@ -489,7 +487,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
     run_all_for_model_async_for_lang(ctx).await
 }
 
-pub async fn build_goldens_only_for_lang(bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {
+pub async fn build_goldens_only_for_lang(host: Option<String>, bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
         let all = discover_tasks(bench_root)?;
@@ -514,6 +512,7 @@ pub async fn build_goldens_only_for_lang(bench_root: &Path, lang: Lang, selector
 
     stream::iter(tasks.into_iter().map(|task| {
         let runner = &runner;
+        let host_clone = host.clone();
         async move {
             let category = category_slug(&task.root);
             let task_id = task_slug(&task.root);
@@ -521,7 +520,7 @@ pub async fn build_goldens_only_for_lang(bench_root: &Path, lang: Lang, selector
             let golden_src_text = load_golden_source(&task, lang)?;
             println!("→ [{}] build golden {} {}", lang_name, category, task_id);
             runner
-                .publish_golden_only(lang, &category, &task_id, &golden_src_text, golden_db)
+                .publish_golden_only(lang, &category, &task_id, &golden_src_text, golden_db, host_clone)
                 .await
         }
     }))

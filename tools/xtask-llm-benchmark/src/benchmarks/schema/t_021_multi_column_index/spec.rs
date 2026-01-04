@@ -6,8 +6,8 @@ use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerSqlCountConfig, 
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
-    BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag| {
-        let mut v = default_schema_parity_scorers(file!(), route_tag);
+    BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
+        let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
 
         let case = casing_for_lang(lang);
         let sb   = SqlBuilder::new(case);
@@ -28,14 +28,14 @@ pub fn spec() -> BenchmarkSpec {
             timeout: Duration::from_secs(10),
         };
 
-        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
             sql_count_query: "SELECT COUNT(*) AS n FROM logs".into(),
             expected_count: 3,
             id_str: "mcindex_seed_count",
             ..base(&seed)
         }));
 
-        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
             sql_count_query: format!(
                 "SELECT COUNT(*) AS n FROM logs WHERE {u}=7 AND {d}=1",
                 u = user_id, d = day
@@ -45,7 +45,7 @@ pub fn spec() -> BenchmarkSpec {
             ..base(&seed)
         }));
 
-        v.push(make_reducer_sql_count_scorer(ReducerSqlCountConfig {
+        v.push(make_reducer_sql_count_scorer(host_url, ReducerSqlCountConfig {
             sql_count_query: format!(
                 "SELECT COUNT(*) AS n FROM logs WHERE {u}=7 AND {d}=2",
                 u = user_id, d = day

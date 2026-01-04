@@ -8,8 +8,8 @@ use serde_json::Value;
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
-    BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag| {
-        let mut v = default_schema_parity_scorers(file!(), route_tag);
+    BenchmarkSpec::from_tasks_auto(file!(), |lang, route_tag, host_url| {
+        let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
@@ -23,6 +23,7 @@ pub fn spec() -> BenchmarkSpec {
         );
 
         v.push(make_sql_exec_both_scorer(
+            host_url,
             file!(),
             route_tag,
             &seed_users,
@@ -38,7 +39,7 @@ pub fn spec() -> BenchmarkSpec {
             1,
         );
 
-        v.push(make_reducer_data_parity_scorer(ReducerDataParityConfig {
+        v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {
             src_file: file!(),
             route_tag,
             reducer: reducer_name.into(),
