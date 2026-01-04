@@ -497,6 +497,7 @@ fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
         .collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_many_routes_for_mode(
     bench_root: &Path,
     mode: &str,
