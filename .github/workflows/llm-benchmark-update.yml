@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'Pull Request Number'
+        description: "Pull Request Number"
         required: true
   issue_comment:
     types: [created] # only run when the comment is first created
@@ -19,18 +19,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  run-llm-benchmark:
-    # Runnable either with a comment that starts with /run-llm-benchmark
+  update-llm-benchmark:
+    # Runnable either with a comment that starts with /update-llm-benchmark
     # or by manually dispatching
     if: |
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/run-llm-benchmark')) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/update-llm-benchmark')) ||
       (github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
-        # Here we install the spacetime CLI for faster execution of the tests
-        # SpacetimeDB itself is not under test here, rather it's the docs.
-        # If we want to change that it is possible to have the benchmark compile
-        # SpacetimeDB from source.
+      # Here we install the spacetime CLI for faster execution of the tests
+      # SpacetimeDB itself is not under test here, rather it's the docs.
+      # If we want to change that it is possible to have the benchmark compile
+      # SpacetimeDB from source.
       - name: Install spacetime CLI
         run: curl -sSf https://install.spacetimedb.com | sh -s -- -y
 
@@ -131,7 +131,7 @@ jobs:
                 issue_number,
                 body: [
                   "I can’t push benchmark updates to this PR branch until you enable **Allow edits from maintainers**.",
-                  "Please check the box on the PR page, then re-comment `/run-llm-benchmark`.",
+                  "Please check the box on the PR page, then re-comment `/update-llm-benchmark`.",
                   "See https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork"
                 ].join("\n"),
               });
@@ -151,7 +151,24 @@ jobs:
           persist-credentials: false
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses:
+          Swatinem/rust-cache@v2
+
+      # Ensure we use a user-writable .NET install (not /usr/share/dotnet),
+      # so workload installs don't require sudo.
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install WASI workload (wasi-experimental)
+        env:
+          DOTNET_MULTILEVEL_LOOKUP: "0"
+          DOTNET_CLI_HOME: ${{ runner.temp }}/dotnet-home
+          DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+        run: |
+          dotnet --info
+          dotnet workload install wasi-experimental --skip-manifest-update --disable-parallel
 
       - name: Install llm-benchmark tool from master
         run: |
