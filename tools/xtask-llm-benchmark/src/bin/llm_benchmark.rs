@@ -245,12 +245,7 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
     if !config.goldens_only && !config.hash_only {
         fs::create_dir_all(docs_dir().join("llms"))?;
 
-        update_golden_answers_on_disk(
-            details_path,
-            &bench_root,
-            /*all=*/ true,
-            /*overwrite=*/ true,
-        )?;
+        update_golden_answers_on_disk(details_path, &bench_root, /*all=*/ true, /*overwrite=*/ true)?;
 
         write_summary_from_details_file(details_path, summary_path)?;
         println!("Results written to:");
@@ -288,9 +283,7 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     };
 
     // Debug hint for how to (re)generate entries
-    let hint_for = |_lang: Lang| -> &'static str {
-        "cargo llm ci-quickfix"
-    };
+    let hint_for = |_lang: Lang| -> &'static str { "cargo llm ci-quickfix" };
 
     // Load docs-benchmark summary to compare hashes against
     let summary_path = docs_benchmark_summary();
@@ -489,12 +482,7 @@ fn run_mode_benchmarks(
 fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
     default_model_routes()
         .iter()
-        .filter(|r| {
-            config
-                .providers_filter
-                .as_ref()
-                .is_none_or(|f| f.contains(&r.vendor))
-        })
+        .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| {
             if let Some(map) = &config.model_filter {
                 if let Some(allowed) = map.get(&r.vendor) {
