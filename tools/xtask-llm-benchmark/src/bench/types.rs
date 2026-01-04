@@ -1,14 +1,11 @@
 use crate::eval::{Lang, ScoreDetails};
 use crate::llm::types::Vendor;
 use crate::llm::{LlmProvider, ModelRoute};
-use crate::results::BenchmarkRun;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use thiserror::Error;
-use tokio::runtime::Runtime;
 
 /// Parameters for publishing a module (golden or LLM-generated).
 pub struct PublishParams<'a> {
@@ -109,33 +106,7 @@ pub struct BenchRunContext<'a> {
     pub lang: Lang,
     pub selectors: Option<&'a [String]>,
     pub host: Option<String>,
-}
-
-pub struct RunAllContext<'a> {
-    pub rt: &'a Runtime,
-    pub bench_root: &'a Path,
-    pub mode: &'a str,
-    pub context: &'a str,
-    pub hash: &'a str,
-    pub lang: Lang,
-    pub llm: &'a dyn LlmProvider,
-    pub providers_filter: Option<&'a HashSet<Vendor>>,
-    pub selectors: Option<&'a [String]>,
-    pub model_filter: Option<&'a HashMap<Vendor, HashSet<String>>>,
-    pub host: Option<String>,
-}
-
-pub struct BenchModeContext<'a> {
-    pub mode: &'a str,
-    pub lang_str: &'a str,
-    pub hash: &'a str,
-    pub config: &'a RunConfig,
-    pub results: &'a mut BenchmarkRun,
-    pub bench_root: &'a Path,
-    pub context: &'a str,
-    pub lang: Lang,
-    pub runtime: Option<&'a Runtime>,
-    pub llm_provider: Option<&'a Arc<dyn LlmProvider>>,
+    pub details_path: PathBuf,
 }
 
 pub struct RunConfig {
@@ -149,4 +120,6 @@ pub struct RunConfig {
     pub categories: Option<HashSet<String>>,
     pub model_filter: Option<HashMap<Vendor, HashSet<String>>>,
     pub host: Option<String>,
+    /// Path to the details.json file where results will be merged
+    pub details_path: PathBuf,
 }

@@ -1,48 +1,8 @@
 use crate::bench::RunOutcome;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-#[derive(serde::Serialize, Deserialize)]
-pub struct ModelRun {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub score: Option<f32>,
-}
-
-#[derive(serde::Serialize, Deserialize)]
-pub struct ModeRun {
-    pub mode: String,
-    pub lang: String,
-    pub hash: String,
-    pub models: Vec<ModelRun>,
-}
-
-#[derive(serde::Serialize, Deserialize, Default)]
-pub struct BenchmarkRun {
-    pub version: u32,
-    pub generated_at: String,
-    pub modes: Vec<ModeRun>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ModelScore {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub score: Option<f32>,
-    #[serde(default)]
-    pub details: serde_json::Value,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ModeResult {
-    pub mode: String,
-    pub lang: String,
-    pub hash: String,
-    #[serde(default)]
-    pub models: Vec<ModelScore>,
-}
-
-// -- RESULTS --
+// -- RESULTS (details.json) --
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Results {
@@ -54,7 +14,7 @@ pub struct LangEntry {
     pub lang: String,
     pub modes: Vec<ModeEntry>,
     #[serde(default)]
-    pub golden_answers: std::collections::HashMap<String, GoldenAnswer>,
+    pub golden_answers: BTreeMap<String, GoldenAnswer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +28,7 @@ pub struct ModeEntry {
 pub struct ModelEntry {
     pub name: String,
     pub route_api_model: Option<String>,
-    pub tasks: HashMap<String, RunOutcome>,
+    pub tasks: BTreeMap<String, RunOutcome>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -78,25 +38,26 @@ pub struct GoldenAnswer {
     pub syntax: Option<String>, // "rust" | "csharp"
 }
 
-// -- SUMMARY --
-#[derive(Debug, Serialize)]
+// -- SUMMARY (summary.json) --
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Summary {
     pub version: u32,
     pub generated_at: String,
-    pub by_language: std::collections::HashMap<String, LangSummary>,
+    pub by_language: BTreeMap<String, LangSummary>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct LangSummary {
-    pub modes: std::collections::HashMap<String, ModeSummary>,
+    pub modes: BTreeMap<String, ModeSummary>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ModeSummary {
-    pub models: std::collections::HashMap<String, ModelSummary>,
+    pub hash: String,
+    pub models: BTreeMap<String, ModelSummary>,
 }
 
-#[derive(Debug, Serialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Totals {
     pub tasks: u32,
     pub total_tests: u32,
@@ -109,13 +70,13 @@ pub struct Totals {
     pub task_pass_pct: f32,
 }
 
-#[derive(Debug, Serialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct ModelSummary {
-    pub categories: std::collections::HashMap<String, CategorySummary>,
+    pub categories: BTreeMap<String, CategorySummary>,
     pub totals: Totals,
 }
 
-#[derive(Debug, Serialize, Default, Clone)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct CategorySummary {
     pub tasks: u32,
     pub total_tests: u32,

@@ -14,16 +14,16 @@ use xtask_llm_benchmark::bench::bench_route_concurrency;
 use xtask_llm_benchmark::bench::runner::{
     build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
 };
-use xtask_llm_benchmark::bench::types::{BenchModeContext, BenchRunContext, RouteRun, RunAllContext, RunConfig};
+use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig};
 use xtask_llm_benchmark::context::constants::{
-    results_path_details, results_path_run, results_path_summary, ALL_MODES,
+    docs_benchmark_details, docs_benchmark_summary, llm_comparison_details, llm_comparison_summary, ALL_MODES,
 };
 use xtask_llm_benchmark::context::{build_context, compute_context_hash, docs_dir};
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
-use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_run, write_summary_from_details_file};
-use xtask_llm_benchmark::results::{load_run, BenchmarkRun, ModeRun, ModelRun};
+use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_summary_from_details_file};
+use xtask_llm_benchmark::results::{load_summary, Summary};
 
 #[derive(Clone, Debug)]
 struct ModelGroup {
@@ -178,6 +178,15 @@ fn main() -> Result<()> {
 /* ------------------------------ run ------------------------------ */
 
 fn cmd_run(args: RunArgs) -> Result<()> {
+    // Run command writes to llm-comparison files (for comparing LLM performance)
+    let details_path = llm_comparison_details();
+    let summary_path = llm_comparison_summary();
+
+    run_benchmarks(args, &details_path, &summary_path)
+}
+
+/// Core benchmark runner used by both `run` and `ci-quickfix`
+fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Result<()> {
     let mut config = RunConfig {
         modes: args.modes,
         hash_only: args.hash_only,
@@ -189,6 +198,7 @@ fn cmd_run(args: RunArgs) -> Result<()> {
         categories: categories_to_set(args.categories),
         model_filter: model_filter_from_groups(args.models),
         host: None,
+        details_path: details_path.to_path_buf(),
     };
 
     let bench_root = find_bench_root();
@@ -197,8 +207,6 @@ fn cmd_run(args: RunArgs) -> Result<()> {
         .modes
         .clone()
         .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
-
-    let mut run: BenchmarkRun = load_run(results_path_run()).unwrap_or_default();
 
     let RuntimeInit {
         runtime,
@@ -224,31 +232,30 @@ fn cmd_run(args: RunArgs) -> Result<()> {
     }
 
     for mode in modes {
-        process_mode(
+        run_mode_benchmarks(
             &mode,
             config.lang,
             &config,
-            &mut run,
             &bench_root,
             runtime.as_ref(),
             llm_provider.as_ref(),
         )?;
     }
 
-    if !config.goldens_only {
-        run.generated_at = chrono::Utc::now().to_rfc3339();
+    if !config.goldens_only && !config.hash_only {
         fs::create_dir_all(docs_dir().join("llms"))?;
 
-        write_run(&run)?;
-
         update_golden_answers_on_disk(
-            &results_path_details(), // the merged JSON
+            details_path,
             &bench_root,
             /*all=*/ true,
             /*overwrite=*/ true,
         )?;
 
-        write_summary_from_details_file(results_path_details(), results_path_summary())?;
+        write_summary_from_details_file(details_path, summary_path)?;
+        println!("Results written to:");
+        println!("  Details: {}", details_path.display());
+        println!("  Summary: {}", summary_path.display());
     }
 
     Ok(())
@@ -259,7 +266,7 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     // Check-only:
     //  - Verifies the required mode exists for each language
-    //  - Computes the current context hash and compares against the saved run hash
+    //  - Computes the current context hash and compares against the saved summary hash
     //  - Does NOT run any providers/models or build goldens
     //
     // Required per language:
@@ -281,16 +288,14 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     };
 
     // Debug hint for how to (re)generate entries
-    let hint_for = |lang: Lang| -> &'static str {
-        match lang {
-            Lang::Rust => "cargo llm run --modes rustdoc_json --lang rust",
-            Lang::CSharp => "cargo llm run --modes docs --lang csharp",
-        }
+    let hint_for = |_lang: Lang| -> &'static str {
+        "cargo llm ci-quickfix"
     };
 
-    // Load prior run to compare hashes against
-    let run: BenchmarkRun =
-        load_run(results_path_run()).with_context(|| format!("load prior run file at {:?}", results_path_run()))?;
+    // Load docs-benchmark summary to compare hashes against
+    let summary_path = docs_benchmark_summary();
+    let summary: Summary =
+        load_summary(&summary_path).with_context(|| format!("load summary file at {:?}", summary_path))?;
 
     for lang in langs {
         let mode = required_mode(lang);
@@ -318,18 +323,23 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
         let current_hash =
             compute_context_hash(mode).with_context(|| format!("compute context hash for `{mode}`/{lang_str}"))?;
 
-        // Find saved hash
-        let idx = match run.modes.iter().position(|m| m.mode == mode && m.lang == lang_str) {
-            Some(i) => i,
+        // Find saved hash in summary
+        let saved_hash = summary
+            .by_language
+            .get(lang_str)
+            .and_then(|lang_sum| lang_sum.modes.get(mode))
+            .map(|mode_sum| &mode_sum.hash);
+
+        let saved_hash = match saved_hash {
+            Some(h) => h,
             None => bail!(
-                "CI check FAILED: no saved run entry for {}/{}.\n→ Generate it with: {}",
+                "CI check FAILED: no saved entry for {}/{}.\n→ Generate it with: {}",
                 mode,
                 lang_str,
                 hint_for(lang)
             ),
         };
 
-        let saved_hash = &run.modes[idx].hash;
         if *saved_hash != current_hash {
             bail!(
                 "CI check FAILED: hash mismatch for {}/{}: saved={} current={}.\n→ Re-run to refresh: {}",
@@ -358,74 +368,50 @@ fn model_filter_from_groups(groups: Option<Vec<ModelGroup>>) -> Option<HashMap<V
 }
 
 fn cmd_ci_quickfix() -> Result<()> {
-    let mut providers = HashSet::new();
-    providers.insert(Vendor::OpenAi);
+    // CI quickfix writes to docs-benchmark files (for testing documentation quality)
+    let details_path = docs_benchmark_details();
+    let summary_path = docs_benchmark_summary();
 
-    let mut model_set = HashSet::new();
-    model_set.insert("gpt-5".to_string());
+    println!("Running CI quickfix (GPT-5 only) for docs-benchmark...");
 
-    let mut model_filter = HashMap::new();
-    model_filter.insert(Vendor::OpenAi, model_set);
-
-    let mut base = RunConfig {
-        modes: None,
+    // Run Rust benchmarks
+    let rust_args = RunArgs {
+        modes: Some(vec!["rustdoc_json".to_string()]),
+        lang: Lang::Rust,
         hash_only: false,
         goldens_only: false,
-        lang: Lang::Rust,
-        providers_filter: Some(providers),
-        selectors: None,
         force: true,
         categories: None,
-        model_filter: Some(model_filter),
-        host: None,
+        tasks: None,
+        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
+        models: Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-5".to_string()],
+        }]),
     };
+    run_benchmarks(rust_args, &details_path, &summary_path)?;
 
-    let bench_root = find_bench_root();
-    let mut run: BenchmarkRun = load_run(results_path_run()).unwrap_or_default();
+    // Run C# benchmarks
+    let csharp_args = RunArgs {
+        modes: Some(vec!["docs".to_string()]),
+        lang: Lang::CSharp,
+        hash_only: false,
+        goldens_only: false,
+        force: true,
+        categories: None,
+        tasks: None,
+        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
+        models: Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-5".to_string()],
+        }]),
+    };
+    run_benchmarks(csharp_args, &details_path, &summary_path)?;
 
-    let RuntimeInit {
-        runtime,
-        provider: llm_provider,
-        guard,
-    } = initialize_runtime_and_provider(false, false)?;
+    println!("CI quickfix complete. Results written to:");
+    println!("  Details: {}", details_path.display());
+    println!("  Summary: {}", summary_path.display());
 
-    base.host = Some(guard.as_ref().unwrap().host_url.clone());
-
-    // --- Rust (rustdoc_json) ---
-    base.lang = Lang::Rust;
-    process_mode(
-        "rustdoc_json",
-        Lang::Rust,
-        &base,
-        &mut run,
-        &bench_root,
-        runtime.as_ref(),
-        llm_provider.as_ref(),
-    )?;
-
-    // --- C# (docs) ---
-    base.lang = Lang::CSharp;
-    process_mode(
-        "docs",
-        Lang::CSharp,
-        &base,
-        &mut run,
-        &bench_root,
-        runtime.as_ref(),
-        llm_provider.as_ref(),
-    )?;
-
-    // Persist run + details/summary
-    run.generated_at = chrono::Utc::now().to_rfc3339();
-    fs::create_dir_all(docs_dir().join("llms"))?;
-    write_run(&run)?;
-    update_golden_answers_on_disk(
-        &results_path_details(),
-        &bench_root,
-        /*all=*/ true,
-        /*overwrite=*/ true,
-    )?;
-    write_summary_from_details_file(results_path_details(), results_path_summary())?;
     Ok(())
 }
 
@@ -435,12 +421,82 @@ fn short_hash(s: &str) -> &str {
     &s[..s.len().min(12)]
 }
 
-fn run_all_routes_for_mode(cfg: &RunAllContext<'_>) -> Result<Vec<ModelRun>> {
-    let routes: Vec<ModelRoute> = default_model_routes()
+/// Run benchmarks for a single mode. Results are merged into the details file.
+fn run_mode_benchmarks(
+    mode: &str,
+    lang: Lang,
+    config: &RunConfig,
+    bench_root: &Path,
+    runtime: Option<&Runtime>,
+    llm_provider: Option<&Arc<dyn LlmProvider>>,
+) -> Result<()> {
+    let lang_str = lang.as_str();
+    let context = build_context(mode)?;
+    let hash = compute_context_hash(mode).with_context(|| format!("compute docs hash for `{mode}`/{}", lang_str))?;
+
+    println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
+
+    if config.hash_only {
+        return Ok(());
+    }
+
+    if config.goldens_only {
+        let rt = runtime.expect("runtime required for --goldens-only");
+        let sels = config.selectors.as_deref();
+
+        rt.block_on(build_goldens_only_for_lang(config.host.clone(), bench_root, lang, sels))?;
+        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
+        return Ok(());
+    }
+
+    // Run benchmarks for all matching routes
+    let routes = filter_routes(config);
+
+    if routes.is_empty() {
+        println!("{:<12} [{:<10}] no matching models to run", mode, lang_str);
+        return Ok(());
+    }
+
+    let runtime = runtime.expect("runtime required for normal runs");
+    let llm_provider = llm_provider.expect("llm provider required for normal runs");
+
+    let route_runs = runtime.block_on(run_many_routes_for_mode(
+        bench_root,
+        mode,
+        &hash,
+        &context,
+        lang,
+        config,
+        llm_provider.as_ref(),
+        &routes,
+    ))?;
+
+    // Print summary
+    for rr in &route_runs {
+        let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
+        let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
+        let pct = if total == 0 {
+            0.0
+        } else {
+            (passed as f32 / total as f32) * 100.0
+        };
+        println!("   ↳ {}: {}/{} passed ({:.1}%)", rr.route_name, passed, total, pct);
+    }
+
+    Ok(())
+}
+
+fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
+    default_model_routes()
         .iter()
-        .filter(|r| cfg.providers_filter.is_none_or(|f| f.contains(&r.vendor)))
         .filter(|r| {
-            if let Some(map) = cfg.model_filter {
+            config
+                .providers_filter
+                .as_ref()
+                .is_none_or(|f| f.contains(&r.vendor))
+        })
+        .filter(|r| {
+            if let Some(map) = &config.model_filter {
                 if let Some(allowed) = map.get(&r.vendor) {
                     let api = r.api_model.to_ascii_lowercase();
                     let dn = r.display_name.to_ascii_lowercase();
@@ -450,74 +506,27 @@ fn run_all_routes_for_mode(cfg: &RunAllContext<'_>) -> Result<Vec<ModelRun>> {
             true
         })
         .cloned()
-        .collect();
-
-    // Run each route
-    let models: Vec<ModelRun> = cfg.rt.block_on(async {
-        use futures::{stream, TryStreamExt};
-
-        stream::iter(routes.iter().map(|route| {
-            // Build per-route context
-            let per = BenchRunContext {
-                bench_root: cfg.bench_root,
-                mode: cfg.mode,
-                hash: cfg.hash,
-                route,
-                context: cfg.context,
-                llm: cfg.llm,
-                lang: cfg.lang,
-                selectors: cfg.selectors,
-                host: cfg.host.clone(),
-            };
-
-            async move {
-                // Run (selected-or-all) for this route
-                let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
-
-                // Compute summary for ModelRun
-                let total: u32 = outcomes.iter().map(|o| o.total_tests).sum();
-                let passed: u32 = outcomes.iter().map(|o| o.passed_tests).sum();
-                let pct = if total == 0 {
-                    0.0
-                } else {
-                    (passed as f32 / total as f32) * 100.0
-                };
-
-                Ok::<ModelRun, anyhow::Error>(ModelRun {
-                    name: route.display_name.into(),
-                    score: Some(pct),
-                })
-            }
-        }))
-        .buffer_unordered(bench_route_concurrency())
-        .try_collect()
-        .await
-    })?;
-
-    Ok(models)
+        .collect()
 }
 
-pub async fn run_many_routes_for_lang(cfg: &BenchRunContext<'_>, routes: &[ModelRoute]) -> Result<Vec<RouteRun>> {
+async fn run_many_routes_for_mode(
+    bench_root: &Path,
+    mode: &str,
+    hash: &str,
+    context: &str,
+    lang: Lang,
+    config: &RunConfig,
+    llm: &dyn LlmProvider,
+    routes: &[ModelRoute],
+) -> Result<Vec<RouteRun>> {
     let rbuf = bench_route_concurrency();
+    let selectors = config.selectors.as_deref();
+    let host = config.host.clone();
+    let details_path = config.details_path.clone();
 
-    let bench_root = cfg.bench_root;
-    let mode = cfg.mode;
-    let hash = cfg.hash;
-    let context = cfg.context;
-    let llm = cfg.llm;
-    let lang = cfg.lang;
-    let selectors = cfg.selectors;
-    let host = cfg.host.clone();
-
-    futures::stream::iter(routes.iter().cloned().map(move |route| {
-        let bench_root = bench_root;
-        let mode = mode;
-        let hash = hash;
-        let context = context;
-        let llm = llm;
-        let lang = lang;
-        let selectors = selectors;
+    futures::stream::iter(routes.iter().cloned().map(|route| {
         let host = host.clone();
+        let details_path = details_path.clone();
 
         async move {
             println!("→ running {}", route.display_name);
@@ -532,19 +541,10 @@ pub async fn run_many_routes_for_lang(cfg: &BenchRunContext<'_>, routes: &[Model
                 lang,
                 selectors,
                 host,
+                details_path,
             };
 
             let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
-
-            let total: u32 = outcomes.iter().map(|o| o.total_tests).sum();
-            let passed: u32 = outcomes.iter().map(|o| o.passed_tests).sum();
-            let pct = if total == 0 {
-                0.0
-            } else {
-                (passed as f32 / total as f32) * 100.0
-            };
-
-            println!("   ↳ {}: {}/{} passed ({:.1}%)", route.display_name, passed, total, pct);
 
             Ok::<_, anyhow::Error>(RouteRun {
                 route_name: route.display_name.to_string(),
@@ -601,178 +601,6 @@ fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Resul
         provider: Some(llm_provider),
         guard: Some(spacetime),
     })
-}
-
-fn process_mode(
-    mode: &str,
-    lang: Lang,
-    config: &RunConfig,
-    run: &mut BenchmarkRun,
-    bench_root: &Path,
-    runtime: Option<&Runtime>,
-    llm_provider: Option<&Arc<dyn LlmProvider>>,
-) -> Result<()> {
-    let lang_str = lang.as_str();
-    let context = build_context(mode)?;
-    let hash = compute_context_hash(mode).with_context(|| format!("compute docs hash for `{mode}`/{}", lang_str))?;
-
-    let mode_result_index = run.modes.iter().position(|m| m.mode == mode && m.lang == lang_str);
-
-    let mut ctx = BenchModeContext {
-        mode,
-        lang_str,
-        hash: &hash,
-        config,
-        results: run,
-        bench_root,
-        context: &context,
-        lang,
-        runtime,
-        llm_provider,
-    };
-
-    match mode_result_index {
-        Some(index) => update_existing_mode(index, &mut ctx)?,
-        None => add_new_mode(&mut ctx)?,
-    }
-
-    Ok(())
-}
-
-fn update_existing_mode(index: usize, ctx: &mut BenchModeContext<'_>) -> Result<()> {
-    let run = &mut ctx.results;
-    let previous_hash = run.modes[index].hash.clone();
-    let hash_changed = previous_hash != ctx.hash;
-
-    if hash_changed {
-        println!(
-            "{:<12} [{:<10}] hash changed: {} -> {}",
-            ctx.mode,
-            ctx.lang_str,
-            short_hash(&previous_hash),
-            short_hash(ctx.hash)
-        );
-    } else {
-        println!(
-            "{:<12} [{:<10}] hash unchanged ({})",
-            ctx.mode,
-            ctx.lang_str,
-            short_hash(ctx.hash)
-        );
-    }
-
-    run.modes[index].hash = ctx.hash.to_string();
-
-    if ctx.config.goldens_only {
-        let rt = ctx.runtime.expect("runtime required for --goldens-only");
-        let sels = ctx.config.selectors.as_deref();
-
-        rt.block_on(build_goldens_only_for_lang(
-            ctx.config.host.clone(),
-            ctx.bench_root,
-            ctx.lang,
-            sels,
-        ))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
-        return Ok(());
-    }
-
-    if !hash_changed && !ctx.config.force {
-        println!(
-            "{:<12} [{:<10}] hash unchanged ({}), skipped (use --force to rerun)",
-            ctx.mode,
-            ctx.lang_str,
-            short_hash(ctx.hash)
-        );
-        return Ok(());
-    }
-
-    if !ctx.config.hash_only && !ctx.config.goldens_only {
-        let runtime = ctx.runtime.expect("runtime required for normal runs");
-        let llm_provider = ctx.llm_provider.expect("llm provider required for normal runs");
-
-        let run_ctx = RunAllContext {
-            rt: runtime,
-            bench_root: ctx.bench_root,
-            mode: ctx.mode,
-            context: ctx.context,
-            hash: ctx.hash,
-            lang: ctx.lang,
-            llm: llm_provider.as_ref(),
-            providers_filter: ctx.config.providers_filter.as_ref(),
-            selectors: ctx.config.selectors.as_deref(),
-            model_filter: ctx.config.model_filter.as_ref(),
-            host: ctx.config.host.clone(),
-        };
-
-        let models = run_all_routes_for_mode(&run_ctx)?;
-        run.modes[index].models = models;
-    }
-
-    Ok(())
-}
-
-fn add_new_mode(ctx: &mut BenchModeContext<'_>) -> Result<()> {
-    println!(
-        "{:<12} [{:<10}] added with hash {}",
-        ctx.mode,
-        ctx.lang_str,
-        short_hash(ctx.hash)
-    );
-
-    if ctx.config.goldens_only {
-        let rt = ctx.runtime.expect("runtime required for --goldens-only");
-        let sels = ctx.config.selectors.as_deref();
-
-        rt.block_on(build_goldens_only_for_lang(
-            ctx.config.host.clone(),
-            ctx.bench_root,
-            ctx.lang,
-            sels,
-        ))?;
-        println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
-
-        ctx.results.modes.push(ModeRun {
-            mode: ctx.mode.to_string(),
-            lang: ctx.lang_str.to_string(),
-            hash: ctx.hash.to_string(),
-            models: Vec::new(),
-        });
-
-        return Ok(());
-    }
-
-    let models = if ctx.config.hash_only || ctx.config.goldens_only {
-        Vec::new()
-    } else {
-        let runtime = ctx.runtime.expect("runtime required for normal runs");
-        let llm_provider = ctx.llm_provider.expect("llm provider required for normal runs");
-
-        let run_ctx = RunAllContext {
-            rt: runtime,
-            bench_root: ctx.bench_root,
-            mode: ctx.mode,
-            context: ctx.context,
-            hash: ctx.hash,
-            lang: ctx.lang,
-            llm: llm_provider.as_ref(),
-            providers_filter: ctx.config.providers_filter.as_ref(),
-            selectors: ctx.config.selectors.as_deref(),
-            model_filter: ctx.config.model_filter.as_ref(),
-            host: ctx.config.host.clone(),
-        };
-
-        run_all_routes_for_mode(&run_ctx)?
-    };
-
-    ctx.results.modes.push(ModeRun {
-        mode: ctx.mode.to_string(),
-        lang: ctx.lang_str.to_string(),
-        hash: ctx.hash.to_string(),
-        models,
-    });
-
-    Ok(())
 }
 
 fn find_bench_root() -> PathBuf {
@@ -853,12 +681,15 @@ fn apply_category_filter(
 }
 
 fn cmd_summary(args: SummaryArgs) -> Result<()> {
-    let in_path = args.details.unwrap_or_else(results_path_details);
-    let out_path = args.summary.unwrap_or_else(results_path_summary);
+    // Default to llm-comparison files (the full benchmark suite)
+    let in_path = args.details.unwrap_or_else(llm_comparison_details);
+    let out_path = args.summary.unwrap_or_else(llm_comparison_summary);
 
     if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create dir {}", parent.display()))?;
     }
 
-    write_summary_from_details_file(in_path, out_path)
+    write_summary_from_details_file(&in_path, &out_path)?;
+    println!("Summary written to: {}", out_path.display());
+    Ok(())
 }

@@ -20,7 +20,6 @@ use crate::bench::utils::{
     work_server_dir_scoped,
 };
 use crate::bench::Publisher;
-use crate::context::constants::results_path_details;
 use crate::eval::{Lang, ScoreDetails};
 use crate::generated::resolve_by_path;
 use crate::llm::model_routes::ModelRoute;
@@ -368,7 +367,7 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     println!("[runner] completed batch: ok={} err={}", outcomes.len(), errs);
 
     if !outcomes.is_empty() {
-        merge_task_runs(results_path_details().as_path(), cfg.mode, &outcomes)?;
+        merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
     } else {
         eprintln!("[runner] no successful runs; not calling merge_task_runs");
     }
@@ -474,7 +473,7 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
     }
 
     if !outcomes.is_empty() {
-        merge_task_runs(results_path_details().as_path(), cfg.mode, &outcomes)?;
+        merge_task_runs(&cfg.details_path, cfg.mode, &outcomes)?;
     }
 
     println!(
@@ -500,6 +499,7 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
                 lang: ctx.lang,
                 selectors: Option::from(sels),
                 host: ctx.host.clone(),
+                details_path: ctx.details_path.clone(),
             };
             return run_selected_for_model_async_for_lang(&sel_cfg).await;
         }

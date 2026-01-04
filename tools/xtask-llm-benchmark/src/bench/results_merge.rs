@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use fs2::FileExt;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -37,7 +37,7 @@ pub fn ensure_lang<'a>(root: &'a mut Results, lang: &str) -> &'a mut LangEntry {
     root.languages.push(LangEntry {
         lang: lang.to_string(),
         modes: Vec::new(),
-        golden_answers: HashMap::new(),
+        golden_answers: BTreeMap::new(),
     });
     root.languages.last_mut().unwrap()
 }

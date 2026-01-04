@@ -1,39 +1,28 @@
-use super::schema::{BenchmarkRun, GoldenAnswer, LangSummary, ModeSummary, ModelSummary, Results, Summary, Totals};
+use super::schema::{GoldenAnswer, LangSummary, ModeSummary, ModelSummary, Results, Summary, Totals};
 use crate::bench::results_merge::ensure_lang;
-use crate::context::constants::results_path_run;
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-pub fn load_run<P: AsRef<Path>>(path: P) -> Result<BenchmarkRun> {
+/// Load a Summary from a JSON file. Returns a default Summary if file doesn't exist.
+pub fn load_summary<P: AsRef<Path>>(path: P) -> Result<Summary> {
     use std::io::ErrorKind;
     let p = path.as_ref();
 
     match fs::read_to_string(p) {
         Ok(raw) => {
-            let v: BenchmarkRun = serde_json::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
+            let v: Summary = serde_json::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
             Ok(v)
         }
-        Err(e) if e.kind() == ErrorKind::NotFound => Ok(BenchmarkRun {
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(Summary {
             version: 1,
             generated_at: String::new(),
-            modes: vec![],
+            by_language: BTreeMap::new(),
         }),
         Err(e) => Err(e).with_context(|| format!("read {}", p.display())),
     }
-}
-
-pub fn write_run(run: &BenchmarkRun) -> Result<()> {
-    let path: PathBuf = results_path_run();
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(run)?)?;
-    fs::rename(&tmp, path)?; // atomic-ish replace
-    Ok(())
 }
 
 fn pct(passed: u32, total: u32) -> f32 {
@@ -46,25 +35,28 @@ fn pct(passed: u32, total: u32) -> f32 {
 
 /// Build `Summary` from your in-memory `Results`.
 pub fn summary_from_results(results: &Results) -> Summary {
-    let mut by_language: HashMap<String, LangSummary> = HashMap::new();
+    let mut by_language: BTreeMap<String, LangSummary> = BTreeMap::new();
 
     for lang_ent in &results.languages {
         let lang_key = lang_ent.lang.clone();
         let lang_sum = by_language
             .entry(lang_key)
-            .or_insert_with(|| LangSummary { modes: HashMap::new() });
+            .or_insert_with(|| LangSummary { modes: BTreeMap::new() });
 
         for mode_ent in &lang_ent.modes {
             let mode_key = mode_ent.mode.clone();
-            let mode_sum = lang_sum
-                .modes
-                .entry(mode_key)
-                .or_insert_with(|| ModeSummary { models: HashMap::new() });
+            let hash = mode_ent.hash.clone().unwrap_or_default();
+            let mode_sum = lang_sum.modes.entry(mode_key).or_insert_with(|| ModeSummary {
+                hash: hash.clone(),
+                models: BTreeMap::new(),
+            });
+            // Update hash if it changed
+            mode_sum.hash = hash;
 
             for model_ent in &mode_ent.models {
                 let model_key = model_ent.name.clone();
                 let model_sum = mode_sum.models.entry(model_key).or_insert_with(|| ModelSummary {
-                    categories: HashMap::new(),
+                    categories: BTreeMap::new(),
                     totals: Totals::default(),
                 });
 

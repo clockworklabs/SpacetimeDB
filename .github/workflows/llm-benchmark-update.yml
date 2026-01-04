@@ -185,7 +185,8 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const summaryPath = 'docs/llms/llm-benchmark-summary.json';
+            // docs-benchmark files are used for CI (testing documentation quality)
+            const summaryPath = 'docs/llms/docs-benchmark-summary.json';
             const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 
             // Extract results for the modes checked by ci-check
