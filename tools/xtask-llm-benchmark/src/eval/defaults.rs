@@ -1,4 +1,4 @@
-use crate::bench::utils::{sanitize_db_name};
+use crate::bench::utils::sanitize_db_name;
 use crate::eval::scorers::{
     ReducerDataParityScorer, ReducerSqlCountScorer, SchemaParityScorer, Scorer, SqlCountOnlyScorer, SqlExecBothScorer,
 };

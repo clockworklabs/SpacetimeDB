@@ -1,4 +1,4 @@
-use crate::bench::utils::{sanitize_db_name};
+use crate::bench::utils::sanitize_db_name;
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::Path;

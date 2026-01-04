@@ -513,7 +513,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run hash check (both langs)
-        working-directory: crates/xtask-llm-benchmark
         run: cargo llm ci-check
         
   unity-testsuite:

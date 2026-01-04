@@ -48,7 +48,12 @@ fn build_key(lang: Lang, selectors: Option<&[String]>) -> String {
 
 /// Build goldens **once per (lang, selector-set)** in this process.
 /// If selectors is None/empty, that means "ALL tasks".
-pub async fn ensure_goldens_built_once(host: Option<String>, bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {
+pub async fn ensure_goldens_built_once(
+    host: Option<String>,
+    bench_root: &Path,
+    lang: Lang,
+    selectors: Option<&[String]>,
+) -> Result<()> {
     let key = build_key(lang, selectors);
     let set = BUILT_KEYS.get_or_init(|| Mutex::new(HashSet::new()));
     {
@@ -73,7 +78,12 @@ pub async fn ensure_goldens_built_once(host: Option<String>, bench_root: &Path, 
     Ok(())
 }
 
-async fn publish_rust_async(publisher: SpacetimeRustPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
+async fn publish_rust_async(
+    publisher: SpacetimeRustPublisher,
+    host_url: String,
+    wdir: PathBuf,
+    db: String,
+) -> Result<()> {
     task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
     Ok(())
 }
@@ -100,15 +110,19 @@ impl TaskRunner {
         golden_db: String,
         host: Option<String>,
     ) -> Result<()> {
-        self.publish(PublishParams {
-            lang,
-            category,
-            task_id,
-            route_tag: "",
-            source_text: golden_src_text,
-            db_name: golden_db,
-            host,
-        }, "golden").await
+        self.publish(
+            PublishParams {
+                lang,
+                category,
+                task_id,
+                route_tag: "",
+                source_text: golden_src_text,
+                db_name: golden_db,
+                host,
+            },
+            "golden",
+        )
+        .await
     }
 
     async fn publish_llm(&self, params: PublishParams<'_>) -> Result<()> {
@@ -125,7 +139,14 @@ impl TaskRunner {
         if wdir.exists() {
             let _ = fs::remove_dir_all(&wdir);
         }
-        let _proj_root = materialize_project(lang_name, params.category, params.task_id, phase, params.route_tag, params.source_text)?;
+        let _proj_root = materialize_project(
+            lang_name,
+            params.category,
+            params.task_id,
+            phase,
+            params.route_tag,
+            params.source_text,
+        )?;
 
         let host_url = params.host.unwrap_or_else(|| "local".to_owned());
         match params.lang {
@@ -487,7 +508,12 @@ pub async fn run_selected_or_all_for_model_async_for_lang(ctx: &BenchRunContext<
     run_all_for_model_async_for_lang(ctx).await
 }
 
-pub async fn build_goldens_only_for_lang(host: Option<String>, bench_root: &Path, lang: Lang, selectors: Option<&[String]>) -> Result<()> {
+pub async fn build_goldens_only_for_lang(
+    host: Option<String>,
+    bench_root: &Path,
+    lang: Lang,
+    selectors: Option<&[String]>,
+) -> Result<()> {
     let tasks = if let Some(sels) = selectors {
         let wanted: HashSet<String> = sels.iter().map(|s| normalize_task_selector(s)).collect::<Result<_>>()?;
         let all = discover_tasks(bench_root)?;

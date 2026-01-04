@@ -215,7 +215,12 @@ fn cmd_run(args: RunArgs) -> Result<()> {
 
     if !config.goldens_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
-        rt.block_on(ensure_goldens_built_once(config.host.clone(), &bench_root, config.lang, selectors_ref))?;
+        rt.block_on(ensure_goldens_built_once(
+            config.host.clone(),
+            &bench_root,
+            config.lang,
+            selectors_ref,
+        ))?;
     }
 
     for mode in modes {
@@ -662,7 +667,12 @@ fn update_existing_mode(index: usize, ctx: &mut BenchModeContext<'_>) -> Result<
         let rt = ctx.runtime.expect("runtime required for --goldens-only");
         let sels = ctx.config.selectors.as_deref();
 
-        rt.block_on(build_goldens_only_for_lang(ctx.config.host.clone(), ctx.bench_root, ctx.lang, sels))?;
+        rt.block_on(build_goldens_only_for_lang(
+            ctx.config.host.clone(),
+            ctx.bench_root,
+            ctx.lang,
+            sels,
+        ))?;
         println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
         return Ok(());
     }
@@ -714,7 +724,12 @@ fn add_new_mode(ctx: &mut BenchModeContext<'_>) -> Result<()> {
         let rt = ctx.runtime.expect("runtime required for --goldens-only");
         let sels = ctx.config.selectors.as_deref();
 
-        rt.block_on(build_goldens_only_for_lang(ctx.config.host.clone(), ctx.bench_root, ctx.lang, sels))?;
+        rt.block_on(build_goldens_only_for_lang(
+            ctx.config.host.clone(),
+            ctx.bench_root,
+            ctx.lang,
+            sels,
+        ))?;
         println!("{:<12} [{:<10}] goldens-only build complete", ctx.mode, ctx.lang_str);
 
         ctx.results.modes.push(ModeRun {
