@@ -101,12 +101,12 @@ pub fn bench_concurrency() -> usize {
 }
 
 /// Concurrency for C# builds. Lower default than Rust due to dotnet/WASI SDK
-/// instability under high parallelism (can cause SIGSEGV).
+/// instability under high parallelism (causes SIGSEGV and "Pipe is broken" errors).
 pub fn bench_csharp_concurrency() -> usize {
     env::var("LLM_BENCH_CSHARP_CONCURRENCY")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(4)
+        .unwrap_or(2)
 }
 
 pub fn bench_route_concurrency() -> usize {

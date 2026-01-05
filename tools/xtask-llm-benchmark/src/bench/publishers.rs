@@ -24,6 +24,17 @@ fn was_signal_killed(_status: &std::process::ExitStatus) -> bool {
     false
 }
 
+/// Check if the failure is a transient error that should be retried.
+/// These are resource contention issues in the dotnet WASI SDK.
+fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
+    let combined = format!("{stderr}{stdout}");
+    // "Pipe is broken" errors from WASI SDK parallel builds
+    combined.contains("Pipe is broken")
+        || combined.contains("EmitBundleObjectFiles")
+        // Other transient resource errors
+        || combined.contains("Unable to read data from the transport connection")
+}
+
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
     run_with_retry(cmd, label, 2)
 }
@@ -34,11 +45,11 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
     for attempt in 0..=max_retries {
         if attempt > 0 {
             eprintln!(
-                "⚠️ {label}: retrying after signal kill (attempt {}/{})",
+                "⚠️ {label}: retrying after transient failure (attempt {}/{})",
                 attempt + 1,
                 max_retries + 1
             );
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_secs(1));
         }
 
         eprintln!("==> {label}: {:?}", cmd);
@@ -58,9 +69,15 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
         let stderr = String::from_utf8_lossy(&out.stderr);
         let stdout = String::from_utf8_lossy(&out.stdout);
 
-        // Only retry on signal kills (like SIGSEGV), not on normal failures
-        if was_signal_killed(&out.status) && attempt < max_retries {
-            eprintln!("⚠️ {label}: process killed by signal (exit=<signal>), will retry...");
+        // Retry on signal kills (like SIGSEGV) or transient build errors
+        let should_retry = was_signal_killed(&out.status) || is_transient_build_error(&stderr, &stdout);
+        if should_retry && attempt < max_retries {
+            let reason = if was_signal_killed(&out.status) {
+                "signal kill"
+            } else {
+                "transient build error"
+            };
+            eprintln!("⚠️ {label}: {reason} detected, will retry...");
             last_error = Some(format!(
                 "{label} failed (exit={code})\n--- stderr ---\n{stderr}\n--- stdout ---\n{stdout}"
             ));
