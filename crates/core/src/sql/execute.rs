@@ -190,7 +190,7 @@ pub struct SqlResult {
 /// Run the `SQL` string using the `auth` credentials
 ///
 /// If a `ModuleHost` is provided, the SQL query is executed via the module host,
-/// meaning the module’s core execution context is used to run the statement.
+/// meaning the module’s core is used to run the statement.
 /// If no module host is provided, the SQL query is executed on the current thread.
 pub async fn run(
     db: Arc<RelationalDB>,
