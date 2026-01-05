@@ -190,6 +190,11 @@ jobs:
       - name: Run benchmark (with provider keys)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
+          # when running multiple dotnet publish commands in parallel.
+          # See: https://github.com/dotnet/msbuild/issues/6657
+          MSBUILDDISABLENODEREUSE: "1"
+          DOTNET_CLI_USE_MSBUILD_SERVER: "0"
         run: |
           llm_benchmark ci-quickfix
           llm_benchmark ci-check
