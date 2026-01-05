@@ -63,6 +63,7 @@ jemalloc_pprof.workspace = true
 jsonwebtoken.workspace = true
 pretty_assertions = { workspace = true, features = ["unstable"] }
 proptest.workspace = true
+tokio = { workspace = true, features = ["full", "test-util"] }
 toml.workspace = true
 
 [lints]

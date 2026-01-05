@@ -47,7 +47,7 @@ public:
 	//   OutOfEnergy   -> FSpacetimeDBUnit
 	TVariant<FSpacetimeDBUnit, FString> MessageData;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
 	ESpacetimeDBStatusTag Tag = ESpacetimeDBStatusTag::Committed;
 
 	// -- Static constructors ----------------------
@@ -312,7 +312,7 @@ public:
 		FProcedureEvent		 // Procedure
 	> MessageData;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
 	ESpacetimeDBEventTag Tag = ESpacetimeDBEventTag::UnknownTransaction;
 
 	// Static factory methods
@@ -565,7 +565,7 @@ public:
 	//   InternalError -> FString
 	TVariant<FSpacetimeDBUnit, FString> MessageData;
 
-	UPROPERTY(BlueprintReadOnly)
+	UPROPERTY(BlueprintReadOnly, Category = "SpacetimeDB")
 	EProcedureStatusTag Tag = EProcedureStatusTag::Returned;
 
 	// -- Static constructors ----------------------

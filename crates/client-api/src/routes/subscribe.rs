@@ -32,17 +32,17 @@ use spacetimedb::client::{
 };
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::NoSuchModule;
+use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
 use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
-use std::time::Instant;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
-use tokio::time::{sleep_until, timeout};
+use tokio::time::{sleep_until, timeout, Instant};
 use tokio_tungstenite::tungstenite::protocol::frame::coding::{Data, OpCode};
 use tokio_tungstenite::tungstenite::protocol::frame::Frame;
 use tokio_tungstenite::tungstenite::Utf8Bytes;
@@ -404,6 +404,8 @@ async fn ws_client_actor_inner(
     let (idle_tx, idle_rx) = watch::channel(state.next_idle_deadline());
     let idle_timer = ws_idle_timer(idle_rx);
 
+    let bsatn_rlb_pool = client.module().subscriptions().bsatn_rlb_pool.clone();
+
     // Spawn a task to send outgoing messages
     // obtained from `sendrx` and `unordered_rx`.
     let send_task = tokio::spawn(ws_send_loop(
@@ -412,6 +414,7 @@ async fn ws_client_actor_inner(
         ws_send,
         sendrx,
         unordered_rx,
+        bsatn_rlb_pool,
     ));
     // Spawn a task to handle incoming messages.
     let recv_task = tokio::spawn(ws_recv_task(
@@ -422,7 +425,7 @@ async fn ws_client_actor_inner(
             let client = client.clone();
             move |data, timer| {
                 let client = client.clone();
-                async move { client.handle_message(data, timer).await }
+                async move { client.handle_message(data, timer.into()).await }
             }
         },
         unordered_tx.clone(),
@@ -655,7 +658,7 @@ async fn ws_main_loop<HotswapWatcher>(
 /// The `activity` should be updated whenever a new message is received.
 async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
     let mut deadline = *activity.borrow();
-    let sleep = sleep_until(deadline.into());
+    let sleep = sleep_until(deadline);
     pin_mut!(sleep);
 
     loop {
@@ -666,7 +669,7 @@ async fn ws_idle_timer(mut activity: watch::Receiver<Instant>) {
                 let new_deadline = *activity.borrow_and_update();
                 if new_deadline != deadline {
                     deadline = new_deadline;
-                    sleep.as_mut().reset(deadline.into());
+                    sleep.as_mut().reset(deadline);
                 }
             },
 
@@ -1050,10 +1053,11 @@ async fn ws_send_loop(
     ws: impl Sink<WsMessage, Error: Display> + Unpin,
     messages: impl Receiver<SerializableMessage>,
     unordered: mpsc::UnboundedReceiver<UnorderedWsMessage>,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
     let metrics = SendMetrics::new(state.database);
-    ws_send_loop_inner(state, ws, messages, unordered, |encode_rx, frames_tx| {
-        ws_encode_task(metrics, config, encode_rx, frames_tx)
+    ws_send_loop_inner(state, ws, messages, unordered, move |encode_rx, frames_tx| {
+        ws_encode_task(metrics, config, encode_rx, frames_tx, bsatn_rlb_pool)
     })
     .await
 }
@@ -1231,6 +1235,7 @@ async fn ws_encode_task(
     config: ClientConfig,
     mut messages: mpsc::UnboundedReceiver<OutboundMessage>,
     outgoing_frames: mpsc::UnboundedSender<Frame>,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) {
     // Serialize buffers can be reclaimed once all frames of a message are
     // copied to the wire. Since we don't know when that will happen, we prepare
@@ -1249,7 +1254,7 @@ async fn ws_encode_task(
 
         let in_use_buf = match message {
             OutboundMessage::Error(message) => {
-                let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false).await;
+                let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, false, &bsatn_rlb_pool).await;
                 metrics.report(None, None, stats);
                 if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
                     break;
@@ -1262,7 +1267,8 @@ async fn ws_encode_task(
                 let num_rows = message.num_rows();
                 let is_large = num_rows.is_some_and(|n| n > 1024);
 
-                let (stats, in_use, mut frames) = ws_encode_message(config, buf, message, is_large).await;
+                let (stats, in_use, mut frames) =
+                    ws_encode_message(config, buf, message, is_large, &bsatn_rlb_pool).await;
                 metrics.report(workload, num_rows, stats);
                 if frames.try_for_each(|frame| outgoing_frames.send(frame)).is_err() {
                     break;
@@ -1319,18 +1325,25 @@ async fn ws_encode_message(
     buf: SerializeBuffer,
     message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
     is_large_message: bool,
+    bsatn_rlb_pool: &BsatnRowListBuilderPool,
 ) -> (EncodeMetrics, InUseSerializeBuffer, impl Iterator<Item = Frame>) {
     const FRAGMENT_SIZE: usize = 4096;
 
-    let serialize_and_compress = |serialize_buf, message, config| {
+    fn serialize_and_compress(
+        bsatn_rlb_pool: &BsatnRowListBuilderPool,
+        serialize_buf: SerializeBuffer,
+        message: impl ToProtocol<Encoded = SwitchedServerMessage> + Send + 'static,
+        config: ClientConfig,
+    ) -> (Duration, InUseSerializeBuffer, DataMessage) {
         let start = Instant::now();
-        let (msg_alloc, msg_data) = serialize(serialize_buf, message, config);
+        let (msg_alloc, msg_data) = serialize(bsatn_rlb_pool, serialize_buf, message, config);
         (start.elapsed(), msg_alloc, msg_data)
-    };
+    }
     let (timing, msg_alloc, msg_data) = if is_large_message {
-        spawn_rayon(move || serialize_and_compress(buf, message, config)).await
+        let bsatn_rlb_pool = bsatn_rlb_pool.clone();
+        spawn_rayon(move || serialize_and_compress(&bsatn_rlb_pool, buf, message, config)).await
     } else {
-        serialize_and_compress(buf, message, config)
+        serialize_and_compress(bsatn_rlb_pool, buf, message, config)
     };
 
     let metrics = EncodeMetrics {
@@ -1449,6 +1462,20 @@ mod tests {
 
     use super::*;
 
+    // [NOTE: start_paused]:
+    //
+    // Some of the tests below test timeouts or rely on time in some other way.
+    // Since that is prone to flakiness (depending on machine load), we use
+    // [tokio::time::pause] to run those tests with paused time.
+    //
+    // Tokio will auto-advance time when [sleep] is used, and the executor has
+    // no other work to do, so this should work as expected: the elapsed time
+    // is the sum of the sleep time in the awaited future.
+    //
+    // Crucially, all timer-backed primitives must use [tokio::time::Instant]
+    // rather than [std::time::Instant]. In case a test becomes flaky again in
+    // the future, check for use of std `Instant` first.
+
     fn dummy_client_id() -> ClientActorId {
         ClientActorId {
             identity: Identity::ZERO,
@@ -1465,7 +1492,7 @@ mod tests {
         ActorState::new(Identity::ZERO, dummy_client_id(), config)
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn idle_timer_extends_sleep() {
         let timeout = Duration::from_millis(10);
 
@@ -1630,6 +1657,7 @@ mod tests {
             sink::drain(),
             messages_rx,
             unordered_rx,
+            BsatnRowListBuilderPool::new(),
         );
         pin_mut!(send_loop);
 
@@ -1653,6 +1681,7 @@ mod tests {
             sink::drain(),
             messages_rx,
             unordered_rx,
+            BsatnRowListBuilderPool::new(),
         );
         pin_mut!(send_loop);
 
@@ -1703,6 +1732,7 @@ mod tests {
                 UnfeedableSink,
                 messages_rx,
                 unordered_rx,
+                BsatnRowListBuilderPool::new(),
             );
             pin_mut!(send_loop);
 
@@ -1749,6 +1779,7 @@ mod tests {
                 UnflushableSink,
                 messages_rx,
                 unordered_rx,
+                BsatnRowListBuilderPool::new(),
             );
             pin_mut!(send_loop);
 
@@ -1783,7 +1814,7 @@ mod tests {
         .await;
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_on_idle_timeout() {
         let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             idle_timeout: Duration::from_millis(10),
@@ -1821,7 +1852,7 @@ mod tests {
         assert!(elapsed < timeout + Duration::from_millis(10));
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_keepalive_keeps_alive() {
         let state = Arc::new(dummy_actor_state_with_config(WebSocketOptions {
             ping_interval: Duration::from_millis(5),
@@ -1868,10 +1899,16 @@ mod tests {
         // It didn't time out.
         assert_matches!(res, Ok(Ok(())));
         // It didn't exit early. Allow it to miss a ping.
-        assert!(elapsed >= expected_timeout - state.config.ping_interval);
+        let expected_timeout = expected_timeout - state.config.ping_interval;
+        assert!(
+            elapsed >= expected_timeout,
+            "should not exit early: elapsed={} expected_timeout={}",
+            elapsed.as_millis(),
+            expected_timeout.as_millis()
+        );
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)] // see [NOTE: start_paused]
     async fn main_loop_terminates_when_module_exits() {
         let state = Arc::new(dummy_actor_state());
 
@@ -1885,7 +1922,7 @@ mod tests {
             }
         };
 
-        let start = Instant::now();
+        let start = tokio::time::Instant::now();
         tokio::spawn(async move {
             let hotswap = || async {
                 sleep(Duration::from_millis(5)).await;
@@ -1913,8 +1950,15 @@ mod tests {
         .await
         .unwrap();
         let elapsed = start.elapsed();
-        assert!(elapsed >= Duration::from_millis(5));
-        assert!(elapsed < Duration::from_millis(10));
+
+        assert!(
+            elapsed >= Duration::from_millis(5),
+            "main loop should run until module is shut down"
+        );
+        assert!(
+            elapsed < Duration::from_millis(10),
+            "main loop should shut down shortly after module is shut down"
+        );
     }
 
     #[tokio::test]

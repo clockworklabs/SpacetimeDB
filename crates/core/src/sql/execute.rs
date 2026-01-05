@@ -7,8 +7,8 @@ use crate::energy::EnergyQuanta;
 use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{
-    DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, ViewCallError, ViewCallResult,
-    ViewOutcome,
+    DatabaseTableUpdate, DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall, RefInstance, ViewCallError,
+    ViewCallResult, ViewOutcome, WasmInstance,
 };
 use crate::host::{ArgsTuple, ModuleHost};
 use crate::subscription::module_subscription_actor::{commit_and_broadcast_event, ModuleSubscriptions};
@@ -26,6 +26,7 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
+use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
@@ -174,6 +175,7 @@ pub fn execute_sql_tx<'a>(
     execute(&mut DbProgram::new(db, &mut tx, auth), ast, sql, &mut updates).map(Some)
 }
 
+#[derive(Debug)]
 pub struct SqlResult {
     /// The offset of the SQL operation's transaction.
     ///
@@ -188,17 +190,35 @@ pub struct SqlResult {
 
 /// Run the `SQL` string using the `auth` credentials
 pub async fn run(
-    db: &RelationalDB,
-    sql_text: &str,
+    db: Arc<RelationalDB>,
+    sql_text: String,
     auth: AuthCtx,
-    subs: Option<&ModuleSubscriptions>,
-    module: Option<&ModuleHost>,
+    subs: Option<ModuleSubscriptions>,
+    module: Option<ModuleHost>,
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
+    match module {
+        Some(module) => {
+            let info = module.info.clone();
+            module.call_view_sql(info, db, sql_text, auth, subs, head).await
+        }
+        None => run_from_module::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head)
+            .map(|x| x.0),
+    }
+}
+
+pub fn run_from_module<I: WasmInstance>(
+    instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+    db: Arc<RelationalDB>,
+    sql_text: String,
+    auth: AuthCtx,
+    subs: Option<ModuleSubscriptions>,
+    head: &mut Vec<(Box<str>, AlgebraicType)>,
+) -> Result<(SqlResult, bool), DBError> {
     // We parse the sql statement in a mutable transaction.
     // If it turns out to be a query, we downgrade the tx.
     let (tx, stmt) = db.with_auto_rollback(db.begin_mut_tx(IsolationLevel::Serializable, Workload::Sql), |tx| {
-        compile_sql_stmt(sql_text, &SchemaViewer::new(tx, &auth), &auth)
+        compile_sql_stmt(&sql_text, &SchemaViewer::new(tx, &auth), &auth)
     })?;
 
     let mut metrics = ExecutionMetrics::default();
@@ -206,16 +226,14 @@ pub async fn run(
     match stmt {
         Statement::Select(stmt) => {
             // Materialize views and downgrade to a read-only transaction
-            let tx = match module {
-                Some(module) => {
-                    module
-                        .materialize_views(tx, &stmt, auth.caller(), Workload::Sql)
-                        .await?
+            let (tx, trapped) = match instance {
+                Some(instance) => {
+                    ModuleHost::materialize_views(tx, instance.0, instance.1, &stmt, auth.caller(), Workload::Sql)?
                 }
-                None => tx,
+                None => (tx, false),
             };
 
-            let (tx_data, tx_metrics_mut, tx) = tx.commit_downgrade(Workload::Sql);
+            let (tx_data, tx_metrics_mut, tx) = db.commit_tx_downgrade(tx, Workload::Sql);
 
             let (tx_offset_send, tx_offset) = oneshot::channel();
             // Release the tx on drop, so that we record metrics
@@ -223,12 +241,7 @@ pub async fn run(
             let mut tx = scopeguard::guard(tx, |tx| {
                 let (offset, tx_metrics_downgrade, reducer) = db.release_tx(tx);
                 let _ = tx_offset_send.send(offset);
-                db.report_tx_metrics(
-                    reducer,
-                    Some(Arc::new(tx_data)),
-                    Some(tx_metrics_mut),
-                    Some(tx_metrics_downgrade),
-                );
+                db.report_tx_metrics(reducer, Some(tx_data), Some(tx_metrics_mut), Some(tx_metrics_downgrade));
             });
 
             // Compute the header for the result set
@@ -240,7 +253,7 @@ pub async fn run(
             let rows = execute_select_stmt(&auth, stmt, &DeltaTx::from(&*tx), &mut metrics, |plan| {
                 check_row_limit(
                     &[&plan],
-                    db,
+                    &db,
                     &tx,
                     |plan, tx| plan.plan_iter().map(|plan| estimate_rows_scanned(tx, plan)).sum(),
                     &auth,
@@ -251,11 +264,14 @@ pub async fn run(
             // Update transaction metrics
             tx.metrics.merge(metrics);
 
-            Ok(SqlResult {
-                tx_offset,
-                rows,
-                metrics: tx.metrics,
-            })
+            Ok((
+                SqlResult {
+                    tx_offset,
+                    rows,
+                    metrics: tx.metrics,
+                },
+                trapped,
+            ))
         }
         Statement::DML(stmt) => {
             // An extra layer of auth is required for DML
@@ -270,9 +286,9 @@ pub async fn run(
             tx.metrics.merge(metrics);
 
             // Update views
-            let result = match module {
-                Some(module) => module.call_views_with_tx(tx, auth.caller()).await?,
-                None => ViewCallResult::default(tx),
+            let (result, trapped) = match instance {
+                Some(instance) => ModuleHost::call_views_with_tx(tx, instance.0, instance.1, auth.caller())?,
+                None => (ViewCallResult::default(tx), false),
             };
 
             // Rollback transaction and report metrics if view execution failed
@@ -294,11 +310,14 @@ pub async fn run(
                     let _ = tx_offset_sender.send(tx_offset);
 
                     db.report_mut_tx_metrics(reducer, tx_metrics, Some(tx_data));
-                    SqlResult {
-                        tx_offset: tx_offset_receiver,
-                        rows: vec![],
-                        metrics,
-                    }
+                    (
+                        SqlResult {
+                            tx_offset: tx_offset_receiver,
+                            rows: vec![],
+                            metrics,
+                        },
+                        trapped,
+                    )
                 });
             }
 
@@ -321,12 +340,15 @@ pub async fn run(
                 request_id: None,
                 timer: None,
             };
-            let res = commit_and_broadcast_event(subs.unwrap(), None, event, tx);
-            Ok(SqlResult {
-                tx_offset: res.tx_offset,
-                rows: vec![],
-                metrics,
-            })
+            let res = commit_and_broadcast_event(&subs.unwrap(), None, event, tx);
+            Ok((
+                SqlResult {
+                    tx_offset: res.tx_offset,
+                    rows: vec![],
+                    metrics,
+                },
+                trapped,
+            ))
         }
     }
 }
@@ -363,23 +385,23 @@ pub(crate) mod tests {
     use spacetimedb_vm::eval::test_helpers::create_game_data;
 
     pub(crate) fn execute_for_testing(
-        db: &RelationalDB,
+        db: &Arc<RelationalDB>,
         sql_text: &str,
         q: Vec<CrudExpr>,
     ) -> Result<Vec<MemTable>, DBError> {
-        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
+        let (subs, _runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
         execute_sql(db, sql_text, q, AuthCtx::for_testing(), Some(&subs))
     }
 
     /// Short-cut for simplify test execution
-    pub(crate) fn run_for_testing(db: &RelationalDB, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
-        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(Arc::new(db.clone()));
+    pub(crate) fn run_for_testing(db: &Arc<RelationalDB>, sql_text: &str) -> Result<Vec<ProductValue>, DBError> {
+        let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(db.clone());
         runtime
             .block_on(run(
-                db,
-                sql_text,
+                db.clone(),
+                sql_text.to_string(),
                 AuthCtx::for_testing(),
-                Some(&subs),
+                Some(subs),
                 None,
                 &mut vec![],
             ))
@@ -527,13 +549,13 @@ pub(crate) mod tests {
 
     /// Assert this query returns the expected rows for this user
     async fn assert_query_results(
-        db: &RelationalDB,
+        db: Arc<RelationalDB>,
         sql: &str,
-        auth: &AuthCtx,
+        auth: AuthCtx,
         expected: impl IntoIterator<Item = ProductValue>,
     ) {
         assert_eq!(
-            run(db, sql, auth.clone(), None, None, &mut vec![])
+            run(db, sql.to_string(), auth.clone(), None, None, &mut vec![])
                 .await
                 .unwrap()
                 .rows
@@ -569,9 +591,9 @@ pub(crate) mod tests {
         )?;
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from t where c = 1 and b = 2",
-            &AuthCtx::for_testing(),
+            AuthCtx::for_testing(),
             [product![1_u64, 2_u64, 1_u64]],
         )
         .await;
@@ -621,184 +643,184 @@ pub(crate) mod tests {
         let auth_for_b = AuthCtx::new(Identity::ZERO, id_for_b);
 
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the identity for sender "a"
             "select * from users",
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the identity for sender "b"
             "select * from users",
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             "select * from users where identity = :sender",
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             "select * from users where identity = :sender",
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             &format!(
                 "select * from users where identity = :sender and identity = 0x{}",
                 id_for_a.to_hex()
             ),
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             &format!(
                 "select * from users where identity = :sender and identity = 0x{}",
                 id_for_b.to_hex()
             ),
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             &format!(
                 "select * from users where identity = :sender or identity = 0x{}",
                 id_for_b.to_hex()
             ),
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             &format!(
                 "select * from users where identity = :sender or identity = 0x{}",
                 id_for_a.to_hex()
             ),
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should not return any rows.
             // Querying as sender "a", but filtering on sender "b".
             &format!("select * from users where identity = 0x{}", id_for_b.to_hex()),
-            &auth_for_a,
+            auth_for_a.clone(),
             [],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should not return any rows.
             // Querying as sender "b", but filtering on sender "a".
             &format!("select * from users where identity = 0x{}", id_for_a.to_hex()),
-            &auth_for_b,
+            auth_for_b.clone(),
             [],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should not return any rows.
             // Querying as sender "a", but filtering on sender "b".
             &format!(
                 "select * from users where identity = :sender and identity = 0x{}",
                 id_for_b.to_hex()
             ),
-            &auth_for_a,
+            auth_for_a.clone(),
             [],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should not return any rows.
             // Querying as sender "b", but filtering on sender "a".
             &format!(
                 "select * from users where identity = :sender and identity = 0x{}",
                 id_for_a.to_hex()
             ),
-            &auth_for_b,
+            auth_for_b.clone(),
             [],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             "select * from sales",
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![1u64, id_for_a], product![3u64, id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             "select * from sales",
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![2u64, id_for_b], product![4u64, id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             "select s.* from users u join sales s on u.identity = s.customer",
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![1u64, id_for_a], product![3u64, id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             "select s.* from users u join sales s on u.identity = s.customer",
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![2u64, id_for_b], product![4u64, id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "a"
             "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
-            &auth_for_a,
+            auth_for_a.clone(),
             [product![1u64, id_for_a], product![3u64, id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             // Should only return the orders for sender "b"
             "select s.* from users u join sales s on u.identity = s.customer where u.identity = :sender",
-            &auth_for_b,
+            auth_for_b.clone(),
             [product![2u64, id_for_b], product![4u64, id_for_b]],
         )
         .await;
@@ -854,75 +876,75 @@ pub(crate) mod tests {
         let auth_for_c = AuthCtx::new(Identity::ZERO, id_for_c);
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from admins",
-            &auth_for_a,
+            auth_for_a.clone(),
             // Identity "a" is not an admin
             [],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from admins",
-            &auth_for_b,
+            auth_for_b.clone(),
             // Identity "b" is not an admin
             [],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from admins",
-            &auth_for_c,
+            auth_for_c.clone(),
             // Identity "c" is an admin
             [product![id_for_c]],
         )
         .await;
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from users",
-            &auth_for_a,
+            auth_for_a.clone(),
             // Identity "a" can only see its own user
             vec![product![id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from users",
-            &auth_for_b,
+            auth_for_b.clone(),
             // Identity "b" can only see its own user
             vec![product![id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from users",
-            &auth_for_c,
+            auth_for_c.clone(),
             // Identity "c" is an admin so it can see everyone's users
             [product![id_for_a], product![id_for_b], product![id_for_c]],
         )
         .await;
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from sales",
-            &auth_for_a,
+            auth_for_a.clone(),
             // Identity "a" can only see its own orders
             [product![1u64, 1u64, id_for_a]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from sales",
-            &auth_for_b,
+            auth_for_b.clone(),
             // Identity "b" can only see its own orders
             [product![2u64, 2u64, id_for_b]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select * from sales",
-            &auth_for_c,
+            auth_for_c.clone(),
             // Identity "c" is an admin so it can see everyone's orders
             [product![1u64, 1u64, id_for_a], product![2u64, 2u64, id_for_b]],
         )
@@ -949,9 +971,9 @@ pub(crate) mod tests {
         let auth = AuthCtx::new(Identity::ZERO, id);
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select t.x, s.y from t join s on t.id = s.id",
-            &auth,
+            auth,
             [product![2_u8, 3_u8]],
         )
         .await;
@@ -975,7 +997,7 @@ pub(crate) mod tests {
         let id = identity_from_u8(2);
         let auth = AuthCtx::new(Identity::ZERO, id);
 
-        assert_query_results(&db, "select * from my_view", &auth, [product![0u8, 2u8]]).await;
+        assert_query_results(db.clone(), "select * from my_view", auth, [product![0u8, 2u8]]).await;
 
         Ok(())
     }
@@ -996,7 +1018,13 @@ pub(crate) mod tests {
         let id = identity_from_u8(1);
         let auth = AuthCtx::new(Identity::ZERO, id);
 
-        assert_query_results(&db, "select b from my_view", &auth, [product![1u8], product![2u8]]).await;
+        assert_query_results(
+            db.clone(),
+            "select b from my_view",
+            auth,
+            [product![1u8], product![2u8]],
+        )
+        .await;
 
         Ok(())
     }
@@ -1023,37 +1051,37 @@ pub(crate) mod tests {
         let auth = AuthCtx::new(Identity::ZERO, id);
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select t.* from v join t on v.a = t.c",
-            &auth,
+            auth.clone(),
             [product![1u8, 4u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select v.* from v join t on v.a = t.c",
-            &auth,
+            auth.clone(),
             [product![1u8, 2u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select v.* from v join t where v.a = t.c",
-            &auth,
+            auth.clone(),
             [product![1u8, 2u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select v.b as b, t.d as d from v join t on v.a = t.c",
-            &auth,
+            auth.clone(),
             [product![2u8, 4u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select v.b as b, t.d as d from v join t where v.a = t.c",
-            &auth,
+            auth.clone(),
             [product![2u8, 4u8]],
         )
         .await;
@@ -1083,37 +1111,37 @@ pub(crate) mod tests {
         let auth = AuthCtx::new(Identity::ZERO, id);
 
         assert_query_results(
-            &db,
+            db.clone(),
             "select u.* from u join v on u.a = v.c",
-            &auth,
+            auth.clone(),
             [product![1u8, 2u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select v.* from u join v on u.a = v.c",
-            &auth,
+            auth.clone(),
             [product![1u8, 4u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select v.* from u join v where u.a = v.c",
-            &auth,
+            auth.clone(),
             [product![1u8, 4u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select u.b as b, v.d as d from u join v on u.a = v.c",
-            &auth,
+            auth.clone(),
             [product![2u8, 4u8]],
         )
         .await;
         assert_query_results(
-            &db,
+            db.clone(),
             "select u.b as b, v.d as d from u join v where u.a = v.c",
-            &auth,
+            auth,
             [product![2u8, 4u8]],
         )
         .await;
@@ -1391,7 +1419,7 @@ pub(crate) mod tests {
             sql.push_str("(y = 0)");
             sql
         };
-        let run = |db: &RelationalDB, sep: char, sql_text: &str| {
+        let run = |db: &Arc<RelationalDB>, sep: char, sql_text: &str| {
             run_for_testing(db, sql_text).map_err(|e| e.to_string().split(sep).next().unwrap_or_default().to_string())
         };
         let sql = build_query(1_000);
@@ -1490,30 +1518,86 @@ pub(crate) mod tests {
 
         let run = |db, sql, auth, subs, mut tmp_vec| rt.block_on(run(db, sql, auth, subs, None, &mut tmp_vec));
         // No row limit, both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None, tmp_vec.clone()).is_ok());
-
-        // Set row limit.
-        assert!(run(&db, "SET row_limit = 4", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
-
-        // External query fails.
-        assert!(run(&db, "SELECT * FROM T", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth.clone(), None, tmp_vec.clone()).is_err());
-
-        // Increase row limit.
         assert!(run(
-            &db,
-            "DELETE FROM st_var WHERE name = 'row_limit'",
+            db.clone(),
+            "SELECT * FROM T".to_string(),
             internal_auth.clone(),
             None,
             tmp_vec.clone()
         )
         .is_ok());
-        assert!(run(&db, "SET row_limit = 5", internal_auth.clone(), None, tmp_vec.clone()).is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            external_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+
+        // Set row limit.
+        assert!(run(
+            db.clone(),
+            "SET row_limit = 4".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+
+        // External query fails.
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            external_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_err());
+
+        // Increase row limit.
+        assert!(run(
+            db.clone(),
+            "DELETE FROM st_var WHERE name = 'row_limit'".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SET row_limit = 5".to_string(),
+            internal_auth.clone(),
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
 
         // Both queries pass.
-        assert!(run(&db, "SELECT * FROM T", internal_auth, None, tmp_vec.clone()).is_ok());
-        assert!(run(&db, "SELECT * FROM T", external_auth, None, tmp_vec.clone()).is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            internal_auth,
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
+        assert!(run(
+            db.clone(),
+            "SELECT * FROM T".to_string(),
+            external_auth,
+            None,
+            tmp_vec.clone()
+        )
+        .is_ok());
 
         Ok(())
     }
@@ -1538,7 +1622,10 @@ pub(crate) mod tests {
         let internal_auth = AuthCtx::new(server, server);
 
         let tmp_vec = Vec::new();
-        let run = |db, sql, auth, subs, mut tmp_vec| async move { run(db, sql, auth, subs, None, &mut tmp_vec).await };
+        let run = |db, sql: &str, auth, subs, mut tmp_vec| {
+            let sql = sql.to_string();
+            async move { run(db, sql, auth, subs, None, &mut tmp_vec).await }
+        };
 
         let check = |db, sql, auth, metrics: ExecutionMetrics| {
             let result = rt.block_on(run(db, sql, auth, None, tmp_vec.clone()))?;
@@ -1563,11 +1650,11 @@ pub(crate) mod tests {
             ..ExecutionMetrics::default()
         };
 
-        check(&db, "INSERT INTO T (a) VALUES (5)", internal_auth.clone(), ins)?;
-        check(&db, "UPDATE T SET a = 2", internal_auth.clone(), upd)?;
+        check(db.clone(), "INSERT INTO T (a) VALUES (5)", internal_auth.clone(), ins)?;
+        check(db.clone(), "UPDATE T SET a = 2", internal_auth.clone(), upd)?;
         assert_eq!(
             rt.block_on(run(
-                &db,
+                db.clone(),
                 "SELECT * FROM T",
                 internal_auth.clone(),
                 None,
@@ -1576,7 +1663,7 @@ pub(crate) mod tests {
             .rows,
             vec![product!(2u8)]
         );
-        check(&db, "DELETE FROM T", internal_auth, del)?;
+        check(db.clone(), "DELETE FROM T", internal_auth, del)?;
 
         Ok(())
     }

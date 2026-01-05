@@ -7,10 +7,12 @@ import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
+import { Timestamp } from '../lib/timestamp';
+import { Uuid } from '../lib/uuid';
+import BinaryReader from '../lib/binary_reader';
+import BinaryWriter from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
@@ -31,7 +33,6 @@ import {
   type UntypedSchemaDef,
 } from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, toCamelCase } from '../lib/util';
 import {
@@ -185,16 +186,42 @@ export const makeReducerCtx = (
   sender: Identity,
   timestamp: Timestamp,
   connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => ({
-  sender,
-  get identity() {
-    return new Identity(sys.identity().__identity__);
-  },
-  timestamp,
-  connectionId,
-  db: getDbView(),
-  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-});
+): ReducerCtx<UntypedSchemaDef> => {
+  return {
+    sender,
+    get identity() {
+      return new Identity(sys.identity().__identity__);
+    },
+    timestamp,
+    connectionId,
+    db: getDbView(),
+    senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
+    counter_uuid: { value: Number(0) },
+
+    /**
+     * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
+     *
+     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+     */
+    newUuidV4(): Uuid {
+      // TODO: Use a spacetime RNG when available
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return Uuid.fromRandomBytesV4(bytes);
+    },
+
+    /**
+     * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
+     * and the timestamp.
+     *
+     * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+     */
+    newUuidV7(): Uuid {
+      // TODO: Use a spacetime RNG when available
+      const bytes = crypto.getRandomValues(new Uint8Array(4));
+      return Uuid.fromCounterV7(this.counter_uuid, this.timestamp, bytes);
+    },
+  };
+};
 
 /**
  * Call into a user function `fn` - the backtrace from an exception thrown in
@@ -424,7 +451,7 @@ function makeTableView(
   const hasAutoIncrement = sequences.length > 0;
 
   const iter = () =>
-    new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
+    tableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
 
   const integrateGeneratedColumns = hasAutoIncrement
     ? (row: RowType<any>, ret_buf: Uint8Array) => {
@@ -541,7 +568,7 @@ function makeTableView(
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           if (numColumns === 1) colVal = [colVal];
           const args = serializeBound(colVal);
-          const iter = new TableIterator(
+          const iter = tableIterator(
             sys.datastore_index_scan_range_bsatn(index_id, ...args),
             rowType
           );
@@ -613,10 +640,10 @@ function makeTableView(
         return [prefix, prefix_elems, rstart, rend];
       };
       index = {
-        filter: (range: any): IterableIterator<RowType<any>> => {
+        filter: (range: any): IteratorObject<RowType<any>> => {
           if (numColumns === 1) range = [range];
           const args = serializeRange(range);
-          return new TableIterator(
+          return tableIterator(
             sys.datastore_index_scan_range_bsatn(index_id, ...args),
             rowType
           );
@@ -649,60 +676,70 @@ function hasOwn<K extends PropertyKey>(
   return Object.hasOwn(o, k);
 }
 
-class TableIterator implements IterableIterator<any, undefined> {
-  #id: u32 | -1;
-  #reader: BinaryReader;
-  #ty: AlgebraicType;
-  constructor(id: u32, ty: AlgebraicType) {
-    this.#id = id;
-    this.#reader = new BinaryReader(new Uint8Array());
-    this.#ty = ty;
-  }
-  [Symbol.iterator](): typeof this {
-    return this;
-  }
-  next(): IteratorResult<any, undefined> {
-    while (true) {
-      if (this.#reader.remaining > 0) {
-        const value = AlgebraicType.deserializeValue(
-          this.#reader,
-          this.#ty,
-          MODULE_DEF.typespace
-        );
-        return { value };
-      }
-      if (this.#id === -1) {
-        return { value: undefined, done: true };
-      }
-      this.#advance_iter();
+function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, undefined> {
+  using iter = new IteratorHandle(id);
+  const { typespace } = MODULE_DEF;
+
+  let buf;
+  while ((buf = advanceIter(iter)) != null) {
+    const reader = new BinaryReader(buf);
+    while (reader.remaining > 0) {
+      yield AlgebraicType.deserializeValue(reader, ty, typespace);
     }
+  }
+}
+
+function advanceIter(iter: IteratorHandle): Uint8Array | null {
+  let buf_max_len = 0x10000;
+  while (true) {
+    try {
+      return iter.advance(buf_max_len);
+    } catch (e) {
+      if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
+        buf_max_len = e.__buffer_too_small__ as number;
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/** A class to manage the lifecycle of an iterator handle. */
+class IteratorHandle implements Disposable {
+  #id: u32 | -1;
+
+  static #finalizationRegistry = new FinalizationRegistry<u32>(
+    sys.row_iter_bsatn_close
+  );
+
+  constructor(id: u32) {
+    this.#id = id;
+    IteratorHandle.#finalizationRegistry.register(this, id, this);
   }
 
-  #advance_iter() {
-    let buf_max_len = 0x10000;
-    while (true) {
-      try {
-        const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
-          this.#id,
-          buf_max_len
-        );
-        if (done) this.#id = -1;
-        this.#reader = new BinaryReader(buf);
-        return;
-      } catch (e) {
-        if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-          buf_max_len = e.__buffer_too_small__ as number;
-          continue;
-        }
-        throw e;
-      }
-    }
+  /** Unregister this object with the finalization registry and return the id */
+  #detach() {
+    const id = this.#id;
+    this.#id = -1;
+    IteratorHandle.#finalizationRegistry.unregister(this);
+    return id;
+  }
+
+  /** Call `row_iter_bsatn_advance`, returning null if this iterator was already exhausted. */
+  advance(buf_max_len: u32): Uint8Array | null {
+    if (this.#id === -1) return null;
+    const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
+      this.#id,
+      buf_max_len
+    );
+    if (done) this.#detach();
+    return buf;
   }
 
   [Symbol.dispose]() {
     if (this.#id >= 0) {
-      this.#id = -1;
-      sys.row_iter_bsatn_close(this.#id);
+      const id = this.#detach();
+      sys.row_iter_bsatn_close(id);
     }
   }
 }

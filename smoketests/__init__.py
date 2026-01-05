@@ -217,11 +217,10 @@ class Smoketest(unittest.TestCase):
         if not hasattr(self, "database_identity"):
             raise Exception("Cannot use this function without publishing a module")
 
-    def call(self, reducer, *args, anon=False):
+    def call(self, reducer, *args, anon=False, check=True, full_output = False):
         self._check_published()
         anon = ["--anonymous"] if anon else []
-        self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
-
+        return self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args), check = check, full_output=full_output)
 
     def sql(self, sql):
         self._check_published()

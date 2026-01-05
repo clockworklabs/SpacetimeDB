@@ -156,6 +156,7 @@ mod tests {
     use crate::sql::execute::collect_result;
     use crate::sql::execute::tests::run_for_testing;
     use crate::subscription::module_subscription_manager::QueriedTableIndexIds;
+    use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
     use crate::subscription::subscription::{legacy_get_all, ExecutionSet};
     use crate::subscription::tx::DeltaTx;
     use crate::vm::tests::create_table_with_rows;
@@ -355,7 +356,9 @@ mod tests {
         total_tables: usize,
         rows: &[ProductValue],
     ) -> ResultTest<()> {
-        let result = s.eval::<BsatnFormat>(db, tx, None, Compression::None).tables;
+        let result = s
+            .eval::<BsatnFormat>(db, tx, &BsatnRowListBuilderPool::new(), None, Compression::None)
+            .tables;
         assert_eq!(
             result.len(),
             total_tables,
@@ -1087,7 +1090,7 @@ mod tests {
             }
         }
 
-        let (data, _, tx) = tx.commit_downgrade(Workload::ForTests);
+        let (data, _, tx) = db.commit_tx_downgrade(tx, Workload::ForTests);
         let table_id = plan.subscribed_table_id();
         // This awful construction to convert `Arc<str>` into `Box<str>`.
         let table_name = (&**plan.subscribed_table_name()).into();

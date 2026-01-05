@@ -118,14 +118,23 @@ function parenthesize(s: string): string {
   return `(${s})`;
 }
 
-export function toString<Column extends string>(expr: Expr<Column>): string {
+export function toString<TableDef extends UntypedTableDef>(
+  tableDef: TableDef,
+  expr: Expr<ColumnsFromRow<RowType<TableDef>>>
+): string {
   switch (expr.type) {
-    case 'eq':
-      return `${escapeIdent(expr.key)} = ${formatValue(expr.value)}`;
+    case 'eq': {
+      const key = tableDef.columns[expr.key].columnMetadata.name ?? expr.key;
+      return `${escapeIdent(key)} = ${formatValue(expr.value)}`;
+    }
     case 'and':
-      return parenthesize(expr.children.map(toString).join(' AND '));
+      return parenthesize(
+        expr.children.map(expr => toString(tableDef, expr)).join(' AND ')
+      );
     case 'or':
-      return parenthesize(expr.children.map(toString).join(' OR '));
+      return parenthesize(
+        expr.children.map(expr => toString(tableDef, expr)).join(' OR ')
+      );
   }
 }
 
@@ -259,6 +268,7 @@ export function useTable<TableDef extends UntypedTableDef>(
 ): [readonly Prettify<RowType<TableDef>>[], boolean] {
   type UseTableRowType = RowType<TableDef>;
   const tableName = tableDef.name;
+  const accessorName = tableDef.accessorName;
   let whereClause: Expr<ColumnsFromRow<UseTableRowType>> | undefined;
   if (
     whereClauseOrCallbacks &&
@@ -287,14 +297,14 @@ export function useTable<TableDef extends UntypedTableDef>(
 
   const query =
     `SELECT * FROM ${tableName}` +
-    (whereClause ? ` WHERE ${toString(whereClause)}` : '');
+    (whereClause ? ` WHERE ${toString(tableDef, whereClause)}` : '');
 
   const latestTransactionEvent = useRef<any>(null);
   const lastSnapshotRef = useRef<
     [readonly Prettify<UseTableRowType>[], boolean] | null
   >(null);
 
-  const whereKey = whereClause ? toString(whereClause) : '';
+  const whereKey = whereClause ? toString(tableDef, whereClause) : '';
 
   const computeSnapshot = useCallback((): [
     readonly Prettify<UseTableRowType>[],
@@ -304,7 +314,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     if (!connection) {
       return [[], false];
     }
-    const table = connection.db[tableName];
+    const table = connection.db[accessorName];
     const result: readonly Prettify<UseTableRowType>[] = whereClause
       ? (Array.from(table.iter()).filter(row =>
           evaluate(whereClause, row as UseTableRowType)
@@ -312,7 +322,7 @@ export function useTable<TableDef extends UntypedTableDef>(
       : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
     return [result, subscribeApplied];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionState, tableName, whereKey, subscribeApplied]);
+  }, [connectionState, accessorName, whereKey, subscribeApplied]);
 
   useEffect(() => {
     const connection = connectionState.getConnection()!;
@@ -403,7 +413,7 @@ export function useTable<TableDef extends UntypedTableDef>(
         return () => {};
       }
 
-      const table = connection.db[tableName];
+      const table = connection.db[accessorName];
       table.onInsert(onInsert);
       table.onDelete(onDelete);
       table.onUpdate?.(onUpdate);
@@ -417,7 +427,7 @@ export function useTable<TableDef extends UntypedTableDef>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       connectionState,
-      tableName,
+      accessorName,
       whereKey,
       callbacks?.onDelete,
       callbacks?.onInsert,

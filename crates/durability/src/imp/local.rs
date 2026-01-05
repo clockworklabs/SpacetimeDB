@@ -12,7 +12,7 @@ use std::{
 use anyhow::Context as _;
 use itertools::Itertools as _;
 use log::{info, trace, warn};
-use scopeguard::defer_on_unwind;
+use scopeguard::defer;
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use spacetimedb_paths::server::CommitLogDir;
 use tokio::{
@@ -114,7 +114,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                 clog: Arc::downgrade(&clog),
                 period: opts.sync_interval,
                 offset: durable_tx,
-                abort: persister_task.abort_handle(),
+                persister_task: persister_task.abort_handle(),
             }
             .run(),
         );
@@ -254,7 +254,7 @@ struct FlushAndSyncTask<T> {
     period: Duration,
     offset: watch::Sender<Option<TxOffset>>,
     /// Handle to abort the [`PersisterTask`] if fsync panics.
-    abort: AbortHandle,
+    persister_task: AbortHandle,
 }
 
 impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
@@ -265,7 +265,7 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
         let mut interval = interval(self.period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-        defer_on_unwind!(self.abort.abort());
+        defer!(self.persister_task.abort());
 
         loop {
             interval.tick().await;
@@ -290,6 +290,7 @@ impl<T: Send + Sync + 'static> FlushAndSyncTask<T> {
                 }
                 Ok(Err(e)) => {
                     flush_error("flush-and-sync", e);
+                    break;
                 }
                 Ok(Ok(Some(new_offset))) => {
                     trace!("synced to offset {new_offset}");

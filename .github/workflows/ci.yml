@@ -60,9 +60,10 @@ jobs:
         with:
           workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
-          cache-on-failure: true
+          cache-on-failure: false
           cache-all-crates: true
           cache-workspace-crates: true
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -111,14 +112,9 @@ jobs:
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
-      - name: Run smoketests (windows)
-        # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
-        if: runner.os == 'Windows'
-      - name: Run smoketests (Linux)
+      - name: Run smoketests
         # Note: clear_database and replication only work in private
         run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
-        if: runner.os != 'Windows'
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
@@ -158,6 +154,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -202,6 +199,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -232,6 +230,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Run bindgen tests
         run: cargo ci wasm-bindings
@@ -495,6 +494,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Check for docs change
         run: |
@@ -559,6 +559,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -683,6 +684,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -690,6 +692,20 @@ jobs:
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
 
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp
