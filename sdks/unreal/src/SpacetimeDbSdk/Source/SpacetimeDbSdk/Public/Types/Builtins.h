@@ -177,6 +177,159 @@ namespace UE::SpacetimeDB
     UE_SPACETIMEDB_STRUCT(FSpacetimeDBConnectionId, Value);
 }
 
+/**
+ * 128-bit UUID (Universally Unique Identifier) used in SpacetimeDB.
+ * Note: UUIDs should only be created server-side in reducers.
+ * Client code should only handle UUIDs received from the server.
+ * Internally uses a FSpacetimeDBUInt128 for the value.
+ */
+USTRUCT(BlueprintType, Category = "SpacetimeDB")
+struct FSpacetimeDBUuid
+{
+    GENERATED_BODY()
+
+    /** The 128-bit value of the UUID. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    FSpacetimeDBUInt128 Value;
+
+    /** Default constructor initializes to zero (nil UUID). */
+    FSpacetimeDBUuid() = default;
+
+    /**
+     * Construct from a 128-bit unsigned integer.
+     * @param InValue The value to initialize with.
+     */
+    explicit FSpacetimeDBUuid(const FSpacetimeDBUInt128& InValue)
+        : Value(InValue)
+    {
+    }
+
+    /**
+     * Construct from Unreal's native FGuid for compatibility.
+     * @param InGuid The FGuid to convert from.
+     */
+    explicit FSpacetimeDBUuid(const FGuid& InGuid)
+    {
+        // FGuid layout: A (32-bit), B (32-bit), C (32-bit), D (32-bit)
+        // Standard UUID byte layout: A-B-C-D where each represents bytes in order
+        // We need to pack these into a 128-bit value as: Upper = (A << 32) | B, Lower = (C << 32) | D
+        // But we must respect the byte order within each 32-bit field
+        
+        // For big-endian storage in 128-bit value (which ToBytesArray() produces)
+        uint64 Upper = (static_cast<uint64>(InGuid.A) << 32) | static_cast<uint64>(InGuid.B);
+        uint64 Lower = (static_cast<uint64>(InGuid.C) << 32) | static_cast<uint64>(InGuid.D);
+        Value = FSpacetimeDBUInt128(Upper, Lower);
+    }
+
+    /**
+     * Convert to Unreal's native FGuid.
+     * @return The FGuid representation.
+     */
+    FGuid ToFGuid() const
+    {
+        // Extract the 32-bit components from our 128-bit value
+        // Upper contains A and B, Lower contains C and D
+        uint32 A = static_cast<uint32>(Value.GetUpper() >> 32);
+        uint32 B = static_cast<uint32>(Value.GetUpper() & 0xFFFFFFFF);
+        uint32 C = static_cast<uint32>(Value.GetLower() >> 32);
+        uint32 D = static_cast<uint32>(Value.GetLower() & 0xFFFFFFFF);
+        return FGuid(A, B, C, D);
+    }
+
+    /**
+     * The nil UUID (all zeros).
+     * @return A nil FSpacetimeDBUuid.
+     */
+    static FSpacetimeDBUuid Nil()
+    {
+        return FSpacetimeDBUuid();
+    }
+
+    /**
+     * Parse UUID from string representation.
+     * @param UuidString String representation (with or without hyphens).
+     * @return Parsed UUID, or nil UUID if parsing fails.
+     */
+    static FSpacetimeDBUuid FromString(const FString& UuidString)
+    {
+        FGuid ParsedGuid;
+        if (FGuid::Parse(UuidString, ParsedGuid))
+        {
+            return FSpacetimeDBUuid(ParsedGuid);
+        }
+        return FSpacetimeDBUuid::Nil();
+    }
+
+    /**
+     * Convert to string representation.
+     * @param Format The format to use (default is digits with hyphens).
+     * @return String representation of the UUID.
+     */
+    FString ToString(EGuidFormats Format = EGuidFormats::DigitsWithHyphens) const
+    {
+        return ToFGuid().ToString(Format);
+    }
+
+    /**
+     * Compare two UUIDs for equality.
+     */
+    bool operator==(const FSpacetimeDBUuid& Other) const
+    {
+        return Value == Other.Value;
+    }
+
+    bool operator!=(const FSpacetimeDBUuid& Other) const
+    {
+        return Value != Other.Value;
+    }
+
+    /**
+     * Compare for ordering (required for TMap/TSet).
+     */
+    bool operator<(const FSpacetimeDBUuid& Other) const
+    {
+        return Value < Other.Value;
+    }
+
+    bool operator>(const FSpacetimeDBUuid& Other) const
+    {
+        return Value > Other.Value;
+    }
+
+    bool operator<=(const FSpacetimeDBUuid& Other) const
+    {
+        return !(*this > Other);
+    }
+
+    bool operator>=(const FSpacetimeDBUuid& Other) const
+    {
+        return !(*this < Other);
+    }
+
+    /**
+     * Check if this is a valid (non-nil) UUID.
+     */
+    bool IsValid() const
+    {
+        return Value.GetUpper() != 0 || Value.GetLower() != 0;
+    }
+};
+
+/**
+ * Get the hash of a UUID, required for use as a TMap key.
+ */
+inline uint32 GetTypeHash(const FSpacetimeDBUuid& Uuid)
+{
+    return HashCombine(GetTypeHash(Uuid.Value.GetUpper()), GetTypeHash(Uuid.Value.GetLower()));
+}
+
+namespace UE::SpacetimeDB
+{
+    UE_SPACETIMEDB_ENABLE_TARRAY(FSpacetimeDBUuid);
+    UE_SPACETIMEDB_ENABLE_TOPTIONAL(FSpacetimeDBUuid);
+    UE_SPACETIMEDB_STRUCT(FSpacetimeDBUuid, Value);
+}
+
 
 
 /**
@@ -753,6 +906,16 @@ public:
         }
     }
 
+    /* ───────── UUID → FString ───────── */
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|Conversion",
+        meta = (DisplayName = "To String (UUID)",
+            CompactNodeTitle = ".",
+            BlueprintAutocast))
+    static FString Conv_UuidToString(const FSpacetimeDBUuid& InValue)
+    {
+        return InValue.ToString();
+    }
+
     UFUNCTION(BlueprintPure, Category = "SpacetimeDB|Comparison",
         meta = (DisplayName = "Equal (ConnectionId)",
             CompactNodeTitle = "==",
@@ -857,5 +1020,65 @@ public:
         const FSpacetimeDBScheduleAt& B)
     {
         return !Equal_ScheduleAt(A, B);
+    }
+
+    /* ───────── UUID compare ───────── */
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|Comparison",
+        meta = (DisplayName = "Equal (UUID)",
+            CompactNodeTitle = "==",
+            Keywords = "== equals equal"))
+    static bool Equal_Uuid(const FSpacetimeDBUuid& A, const FSpacetimeDBUuid& B)
+    {
+        return A == B;
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|Comparison",
+        meta = (DisplayName = "Not Equal (UUID)",
+            CompactNodeTitle = "!=",
+            Keywords = "!= notequal"))
+    static bool NotEqual_Uuid(const FSpacetimeDBUuid& A, const FSpacetimeDBUuid& B)
+    {
+        return A != B;
+    }
+};
+
+/**
+* Blueprint helpers for UUID operations.
+* Note: UUIDs should only be created server-side in reducers.
+*/
+UCLASS()
+class SPACETIMEDBSDK_API USpacetimeDBUuidLibrary : public UBlueprintFunctionLibrary
+{
+    GENERATED_BODY()
+
+public:
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|UUID")
+    static FSpacetimeDBUuid NilUuid()
+    {
+        return FSpacetimeDBUuid::Nil();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|UUID")
+    static FSpacetimeDBUuid FromString(const FString& UuidString)
+    {
+        return FSpacetimeDBUuid::FromString(UuidString);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|UUID")
+    static bool IsValid(const FSpacetimeDBUuid& Uuid)
+    {
+        return Uuid.IsValid();
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|Conversion")
+    static FGuid ToFGuid(const FSpacetimeDBUuid& Uuid)
+    {
+        return Uuid.ToFGuid();
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|Conversion")
+    static FSpacetimeDBUuid FromFGuid(const FGuid& Guid)
+    {
+        return FSpacetimeDBUuid(Guid);
     }
 };

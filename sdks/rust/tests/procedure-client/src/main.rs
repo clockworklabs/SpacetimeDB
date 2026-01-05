@@ -46,6 +46,7 @@ fn main() {
         "insert-with-tx-commit" => exec_insert_with_tx_commit(),
         "insert-with-tx-rollback" => exec_insert_with_tx_rollback(),
         "schedule-procedure" => exec_schedule_procedure(),
+        "sorted-uuids-insert" => exec_sorted_uuids_insert(),
         _ => panic!("Unknown test: {test}"),
     }
 }
@@ -100,7 +101,11 @@ fn connect_then(
 }
 
 /// A query that subscribes to all rows from all tables.
-const SUBSCRIBE_ALL: &[&str] = &["SELECT * FROM my_table;", "SELECT * FROM proc_inserts_into;"];
+const SUBSCRIBE_ALL: &[&str] = &[
+    "SELECT * FROM my_table;",
+    "SELECT * FROM proc_inserts_into;",
+    "SELECT * FROM pk_uuid;",
+];
 
 fn subscribe_all_then(ctx: &impl RemoteDbContext, callback: impl FnOnce(&SubscriptionEventContext) + Send + 'static) {
     subscribe_these_then(ctx, SUBSCRIBE_ALL, callback)
@@ -353,4 +358,42 @@ fn exec_schedule_procedure() {
     });
 
     test_counter.wait_for_all();
+}
+
+/// Test that a procedure can generate sorted UUIDs and insert them into a table
+///
+/// Invoke the procedure `sorted_uuids_insert`,
+/// which generates 1000 sorted UUIDv7 values and inserts them into the `pk_uuid` table,
+/// then (in the client) verify that the UUIDs in the table are sorted
+fn exec_sorted_uuids_insert() {
+    let test_counter = TestCounter::new();
+    let sorted_uuids_insert_result = test_counter.add_test("sorted_uuids_insert");
+
+    connect_then(&test_counter, {
+        move |ctx| {
+            ctx.procedures.sorted_uuids_insert_then(move |ctx, res| {
+                sorted_uuids_insert_result(
+                    // It's a try block!
+                    #[allow(clippy::redundant_closure_call)]
+                    (|| {
+                        anyhow::ensure!(res.is_ok(), "Expected Ok result but got {res:?}");
+
+                        let mut last_uuid = None;
+                        for row in ctx.db().pk_uuid().iter() {
+                            if let Some(last) = last_uuid {
+                                anyhow::ensure!(
+                                    last < row.u,
+                                    "UUIDs are not sorted: last UUID {last} >= current UUID {}",
+                                    row.u
+                                );
+                            }
+                            last_uuid = Some(row.u);
+                        }
+
+                        Ok(())
+                    })(),
+                )
+            });
+        }
+    });
 }
