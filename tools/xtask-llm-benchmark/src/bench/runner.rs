@@ -16,8 +16,8 @@ use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
-    bench_concurrency, bench_csharp_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output,
-    sanitize_db_name, task_slug, work_server_dir_scoped,
+    bench_concurrency, bench_csharp_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name,
+    task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
 use crate::eval::{Lang, ScoreDetails};

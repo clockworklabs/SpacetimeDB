@@ -33,7 +33,11 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
 
     for attempt in 0..=max_retries {
         if attempt > 0 {
-            eprintln!("⚠️ {label}: retrying after signal kill (attempt {}/{})", attempt + 1, max_retries + 1);
+            eprintln!(
+                "⚠️ {label}: retrying after signal kill (attempt {}/{})",
+                attempt + 1,
+                max_retries + 1
+            );
             std::thread::sleep(std::time::Duration::from_millis(500));
         }
 
@@ -63,9 +67,7 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
             continue;
         }
 
-        bail!(
-            "{label} failed (exit={code})\n--- stderr ---\n{stderr}\n--- stdout ---\n{stdout}"
-        );
+        bail!("{label} failed (exit={code})\n--- stderr ---\n{stderr}\n--- stdout ---\n{stdout}");
     }
 
     bail!(last_error.unwrap_or_else(|| format!("{label}: unknown error after retries")))
