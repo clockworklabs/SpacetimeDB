@@ -1,5 +1,5 @@
 use crate::bench::utils::sanitize_db_name;
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -12,18 +12,63 @@ pub trait Publisher: Send + Sync {
     fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()>;
 }
 
+/// Check if the process was killed by a signal (e.g., SIGSEGV = 11)
+#[cfg(unix)]
+fn was_signal_killed(status: &std::process::ExitStatus) -> bool {
+    use std::os::unix::process::ExitStatusExt;
+    status.signal().is_some()
+}
+
+#[cfg(not(unix))]
+fn was_signal_killed(_status: &std::process::ExitStatus) -> bool {
+    false
+}
+
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
-    eprintln!("==> {label}: {:?}", cmd);
-    let out = cmd.output().with_context(|| format!("{label}: spawn"))?;
-    if !out.status.success() {
+    run_with_retry(cmd, label, 2)
+}
+
+fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()> {
+    let mut last_error = None;
+
+    for attempt in 0..=max_retries {
+        if attempt > 0 {
+            eprintln!("⚠️ {label}: retrying after signal kill (attempt {}/{})", attempt + 1, max_retries + 1);
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+
+        eprintln!("==> {label}: {:?}", cmd);
+        let out = match cmd.output() {
+            Ok(o) => o,
+            Err(e) => {
+                last_error = Some(format!("{label}: spawn failed: {e}"));
+                continue;
+            }
+        };
+
+        if out.status.success() {
+            return Ok(());
+        }
+
         let code = out.status.code().unwrap_or(-1);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+
+        // Only retry on signal kills (like SIGSEGV), not on normal failures
+        if was_signal_killed(&out.status) && attempt < max_retries {
+            eprintln!("⚠️ {label}: process killed by signal (exit=<signal>), will retry...");
+            last_error = Some(format!(
+                "{label} failed (exit={code})\n--- stderr ---\n{stderr}\n--- stdout ---\n{stdout}"
+            ));
+            continue;
+        }
+
         bail!(
-            "{label} failed (exit={code})\n--- stderr ---\n{}\n--- stdout ---\n{}",
-            String::from_utf8_lossy(&out.stderr),
-            String::from_utf8_lossy(&out.stdout)
+            "{label} failed (exit={code})\n--- stderr ---\n{stderr}\n--- stdout ---\n{stdout}"
         );
     }
-    Ok(())
+
+    bail!(last_error.unwrap_or_else(|| format!("{label}: unknown error after retries")))
 }
 
 /* -------------------------------------------------------------------------- */

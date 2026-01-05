@@ -16,8 +16,8 @@ use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
 pub(crate) use crate::bench::types::{RunOutcome, TaskPaths};
 use crate::bench::utils::{
-    bench_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output, sanitize_db_name, task_slug,
-    work_server_dir_scoped,
+    bench_concurrency, bench_csharp_concurrency, category_slug, debug_llm, fmt_dur, print_llm_output,
+    sanitize_db_name, task_slug, work_server_dir_scoped,
 };
 use crate::bench::Publisher;
 use crate::eval::{Lang, ScoreDetails};
@@ -299,7 +299,10 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
     let tasks = discover_tasks(cfg.bench_root)?;
     let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher);
     let lang_name = cfg.lang.as_str();
-    let buf = bench_concurrency();
+    let buf = match cfg.lang {
+        Lang::CSharp => bench_csharp_concurrency(),
+        _ => bench_concurrency(),
+    };
 
     let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
         futures::stream::iter(tasks.into_iter().map(|task| {
@@ -408,7 +411,10 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
 
     let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher);
     let lang_name = cfg.lang.as_str();
-    let buf = bench_concurrency();
+    let buf = match cfg.lang {
+        Lang::CSharp => bench_csharp_concurrency(),
+        _ => bench_concurrency(),
+    };
 
     let results: Vec<(TaskPaths, Result<RunOutcome, RunOneError>)> =
         futures::stream::iter(selected.into_iter().map(|task| {
@@ -534,7 +540,10 @@ pub async fn build_goldens_only_for_lang(
 
     let runner = TaskRunner::new(PathBuf::from(bench_root), SpacetimeRustPublisher, DotnetPublisher);
     let lang_name = lang.as_str();
-    let buf = bench_concurrency();
+    let buf = match lang {
+        Lang::CSharp => bench_csharp_concurrency(),
+        _ => bench_concurrency(),
+    };
 
     stream::iter(tasks.into_iter().map(|task| {
         let runner = &runner;
