@@ -734,15 +734,28 @@ pub mod raw {
 
         /// Perform an HTTP request as specified by the buffer `request_ptr[..request_len]`,
         /// suspending execution until the request is complete,
-        /// then return its response via a [`BytesSource`] written to `out`.
+        /// then return its response details via a [`BytesSource`] written to `out[0]`
+        /// and its response body via another [`BytesSource`] written to `out[1]`.
         ///
         /// `request_ptr[..request_len]` should store a BSATN-serialized `spacetimedb_lib::http::Request` object
         /// containing the details of the request to be performed.
         ///
-        /// If the request is successful, a [`BytesSource`] is written to `out`
-        /// containing a BSATN-encoded `spacetimedb_lib::http::Response` object.
+        /// `body_ptr[..body_len]` should store a byte array, which will be treated as the body of the request.
+        /// `body_ptr` should be non-null and within the bounds of linear memory even when `body_len` is 0.
+        ///
+        /// If the request is successful, a [`BytesSource`] is written to `out[0]`
+        /// containing a BSATN-encoded `spacetimedb_lib::http::Response` object,
+        /// another [`BytesSource`] containing the bytes of the response body are written to `out[1]`,
+        /// and this function returns 0.
+        ///
         /// "Successful" in this context includes any connection which results in any HTTP status code,
         /// regardless of the specified meaning of that code.
+        /// This includes HTTP error codes such as 404 Not Found and 500 Internal Server Error.
+        ///
+        /// If the request fails, a [`BytesSource`] is written to `out[0]`
+        /// containing a BSATN-encoded [`String`] describing the failure,
+        /// and this function returns `HTTP_ERROR`.
+        /// In this case, `out[1]` is not written.
         ///
         /// # Errors
         ///
@@ -762,6 +775,7 @@ pub mod raw {
         /// Traps if:
         ///
         /// - `request_ptr` is NULL or `request_ptr[..request_len]` is not in bounds of WASM memory.
+        /// - `body_ptr` is NULL or `body_ptr[..body_len]` is not in bounds of WASM memory.
         /// - `out` is NULL or `out[..size_of::<RowIter>()]` is not in bounds of WASM memory.
         /// - `request_ptr[..request_len]` does not contain a valid BSATN-serialized `spacetimedb_lib::http::Request` object.
         #[cfg(feature = "unstable")]
