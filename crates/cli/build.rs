@@ -322,10 +322,11 @@ fn ls_recursively(root_dir: &Path, repo_root: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Treat `relative_path` as a relative path within `manifest_dir`
+/// Treat `relative_path` as a relative path within the repo root's templates directory
 /// and transform it into an absolute, canonical path.
-fn get_full_path_within_manifest_dir(relative_path: &Path, manifest_dir: &Path) -> PathBuf {
-    let full_path = manifest_dir.join(relative_path);
+fn get_full_path_within_manifest_dir(relative_path: &Path, _manifest_dir: &Path) -> PathBuf {
+    let repo_root = get_repo_root();
+    let full_path = repo_root.join("templates").join(relative_path);
 
     full_path.canonicalize().unwrap_or_else(|e| {
         panic!("Failed to canonicalize path {}: {}", full_path.display(), e);
