@@ -26,7 +26,6 @@ use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Timestamp;
 use spacetimedb_lib::{AlgebraicType, ProductType, ProductValue};
 use spacetimedb_query::{compile_sql_stmt, execute_dml_stmt, execute_select_stmt};
-use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_schema::relation::FieldName;
 use spacetimedb_vm::eval::run_ast;
 use spacetimedb_vm::expr::{CodeResult, CrudExpr, Expr};
@@ -189,6 +188,10 @@ pub struct SqlResult {
 }
 
 /// Run the `SQL` string using the `auth` credentials
+///
+/// If a `ModuleHost` is provided, the SQL query is executed via the module host,
+/// meaning the module’s core execution context is used to run the statement.
+/// If no module host is provided, the SQL query is executed on the current thread.
 pub async fn run(
     db: Arc<RelationalDB>,
     sql_text: String,
@@ -198,17 +201,27 @@ pub async fn run(
     head: &mut Vec<(Box<str>, AlgebraicType)>,
 ) -> Result<SqlResult, DBError> {
     match module {
-        Some(module) => {
-            let info = module.info.clone();
-            module.call_view_sql(info, db, sql_text, auth, subs, head).await
-        }
-        None => run_from_module::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head)
-            .map(|x| x.0),
+        Some(module) => module.call_view_sql(db, sql_text, auth, subs, head).await,
+        None => run_inner::<crate::host::wasmtime::WasmtimeInstance>(None, db, sql_text, auth, subs, head).map(|x| x.0),
     }
 }
 
-pub fn run_from_module<I: WasmInstance>(
-    instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+/// Run the `SQL` string using the provided `WasmInstance` and `ModuleDef`
+///
+/// Intended to be called from the module's thread.
+pub(crate) fn run_with_instance<I: WasmInstance>(
+    instance: &mut RefInstance<I>,
+    db: Arc<RelationalDB>,
+    sql_text: String,
+    auth: AuthCtx,
+    subs: Option<ModuleSubscriptions>,
+    head: &mut Vec<(Box<str>, AlgebraicType)>,
+) -> Result<(SqlResult, bool), DBError> {
+    run_inner::<I>(Some(instance), db, sql_text, auth, subs, head)
+}
+
+fn run_inner<I: WasmInstance>(
+    instance: Option<&mut RefInstance<I>>,
     db: Arc<RelationalDB>,
     sql_text: String,
     auth: AuthCtx,
@@ -227,9 +240,7 @@ pub fn run_from_module<I: WasmInstance>(
         Statement::Select(stmt) => {
             // Materialize views and downgrade to a read-only transaction
             let (tx, trapped) = match instance {
-                Some(instance) => {
-                    ModuleHost::materialize_views(tx, instance.0, instance.1, &stmt, auth.caller(), Workload::Sql)?
-                }
+                Some(instance) => ModuleHost::materialize_views(tx, instance, &stmt, auth.caller(), Workload::Sql)?,
                 None => (tx, false),
             };
 
@@ -287,7 +298,7 @@ pub fn run_from_module<I: WasmInstance>(
 
             // Update views
             let (result, trapped) = match instance {
-                Some(instance) => ModuleHost::call_views_with_tx(tx, instance.0, instance.1, auth.caller())?,
+                Some(instance) => ModuleHost::call_views_with_tx(tx, instance, auth.caller())?,
                 None => (ViewCallResult::default(tx), false),
             };
 
