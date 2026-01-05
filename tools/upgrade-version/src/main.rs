@@ -256,7 +256,7 @@ fn main() -> anyhow::Result<()> {
         // 2) StdbModule.csproj files: SpacetimeDB.Runtime dependency -> major.minor
         let stdb_modules: &[&str] = &[
             "demo/Blackholio/server-csharp/StdbModule.csproj",
-            "sdks/csharp/examples~/quickstart-chat/server/StdbModule.csproj",
+            "templates/quickstart-chat-cs/spacetimedb/StdbModule.csproj",
             "sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
         ];
         for path in stdb_modules {
