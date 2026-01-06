@@ -1,33 +1,38 @@
 import { fromByteArray } from 'base64-js';
 
 export class ResizableBuffer {
-  #buffer: ArrayBuffer;
+  #buffer: ArrayBuffer | null;
 
   constructor(init: number | ArrayBuffer) {
     this.#buffer = typeof init === 'number' ? new ArrayBuffer(init) : init;
   }
 
   get buffer(): ArrayBuffer {
+    if (this.#buffer == null) throw new TypeError('Accessing detached buffer');
     return this.#buffer;
   }
 
   get capacity(): number {
-    return this.#buffer.byteLength;
+    return this.buffer.byteLength;
   }
 
-  grow(newSize: number, copy: boolean) {
+  grow(newSize: number) {
+    if (this.#buffer == null)
+      throw new TypeError('Cannot resize detached buffer');
     if (newSize <= this.#buffer.byteLength) return;
-    if (copy) {
-      this.#buffer = this.#buffer.transfer(newSize);
-    } else {
-      // invalidate the previous buffer
-      this.#buffer.transfer();
-      this.#buffer = new ArrayBuffer(newSize);
-    }
+    this.#buffer = this.#buffer.transfer(newSize);
   }
 
-  transfer(): ArrayBuffer {
-    return this.#buffer.transfer();
+  get detached(): boolean {
+    return this.#buffer == null;
+  }
+
+  detach(): ArrayBuffer {
+    if (this.#buffer == null)
+      throw new TypeError('Cannot detach detached buffer');
+    const buf = this.#buffer!;
+    this.#buffer = null;
+    return buf;
   }
 }
 
@@ -46,7 +51,7 @@ export default class BinaryWriter {
     if (minCapacity <= this.#buffer.capacity) return;
     let newCapacity = this.#buffer.capacity * 2;
     if (newCapacity < minCapacity) newCapacity = minCapacity;
-    this.#buffer.grow(newCapacity, true);
+    this.#buffer.grow(newCapacity);
     this.#view = new DataView(this.#buffer.buffer);
   }
 
