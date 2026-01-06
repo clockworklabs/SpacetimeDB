@@ -146,7 +146,7 @@ jobs:
       - name: Checkout master (build/install tool from trusted code)
         uses: actions/checkout@v4
         with:
-          ref: bradley/llm-benchmark # master <- Set to master before merging
+          ref: master
           fetch-depth: 0
           persist-credentials: false
 
