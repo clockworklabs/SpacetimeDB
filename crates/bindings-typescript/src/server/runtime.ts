@@ -746,21 +746,25 @@ function advanceIter(iter: IteratorHandle, buf: IterBuf): Uint8Array | null {
 }
 
 class IterBuf extends ResizableBuffer implements Disposable {
-  static #bufs: ArrayBuffer[] = [];
-
   // This should guarantee in most cases that we don't have to reallocate an iterator
   // buffer, unless there's a single row that serializes to >1 MiB.
   static readonly #DEFAULT_BUFFER_CAPACITY = 32 * 1024 * 2;
 
+  static #bufs: ArrayBuffer[] = [
+    new ArrayBuffer(IterBuf.#DEFAULT_BUFFER_CAPACITY),
+  ];
+  static #bufCount = 1;
+
   static take() {
-    const buf =
-      IterBuf.#bufs.pop() ?? new ArrayBuffer(IterBuf.#DEFAULT_BUFFER_CAPACITY);
+    const buf = IterBuf.#bufCount
+      ? IterBuf.#bufs[--IterBuf.#bufCount]
+      : new ArrayBuffer(IterBuf.#DEFAULT_BUFFER_CAPACITY);
     return new IterBuf(buf);
   }
 
   [Symbol.dispose]() {
     if (!this.detached) {
-      IterBuf.#bufs.push(this.detach());
+      IterBuf.#bufs[IterBuf.#bufCount++] = this.detach();
     }
   }
 }
