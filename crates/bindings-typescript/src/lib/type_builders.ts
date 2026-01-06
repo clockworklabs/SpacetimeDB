@@ -10,6 +10,7 @@ import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
 import { set, type Prettify, type SetField } from './type_util';
+import { Uuid, type UuidAlgebraicType } from './uuid';
 
 // Used in codegen files
 export { type AlgebraicTypeType } from './algebraic_type';
@@ -1996,6 +1997,61 @@ export class TimeDurationBuilder
   }
 }
 
+export class UuidBuilder
+  extends TypeBuilder<Uuid, UuidAlgebraicType>
+  implements
+    Indexable<Uuid, UuidAlgebraicType>,
+    Uniqueable<Uuid, UuidAlgebraicType>,
+    PrimaryKeyable<Uuid, UuidAlgebraicType>,
+    Defaultable<Uuid, UuidAlgebraicType>
+{
+  constructor() {
+    super(Uuid.getAlgebraicType());
+  }
+  index(): UuidColumnBuilder<SetField<DefaultMetadata, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'indexType', IndexTypes>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+  unique(): UuidColumnBuilder<SetField<DefaultMetadata, 'isUnique', true>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isUnique: true })
+    );
+  }
+  primaryKey(): UuidColumnBuilder<
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isPrimaryKey: true })
+    );
+  }
+  autoInc(): UuidColumnBuilder<
+    SetField<DefaultMetadata, 'isAutoIncrement', true>
+  > {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isAutoIncrement: true })
+    );
+  }
+  default(
+    value: Uuid
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'defaultValue', Uuid>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { defaultValue: value })
+    );
+  }
+}
+
 /**
  * The type of index types that can be applied to a column.
  * `undefined` is the default
@@ -3472,6 +3528,46 @@ export class TimeDurationColumnBuilder<
   }
 }
 
+export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
+  extends ColumnBuilder<Uuid, UuidAlgebraicType, M>
+  implements
+    Indexable<Uuid, UuidAlgebraicType>,
+    Uniqueable<Uuid, UuidAlgebraicType>,
+    PrimaryKeyable<Uuid, UuidAlgebraicType>,
+    Defaultable<Uuid, UuidAlgebraicType>
+{
+  index(): UuidColumnBuilder<SetField<M, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): UuidColumnBuilder<SetField<M, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): UuidColumnBuilder<SetField<M, 'indexType', IndexTypes>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+  unique(): UuidColumnBuilder<SetField<M, 'isUnique', true>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isUnique: true })
+    );
+  }
+  primaryKey(): UuidColumnBuilder<SetField<M, 'isPrimaryKey', true>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isPrimaryKey: true })
+    );
+  }
+  default(value: Uuid): UuidColumnBuilder<SetField<M, 'defaultValue', Uuid>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { defaultValue: value })
+    );
+  }
+}
+
 export class RefBuilder<Type, SpacetimeType> extends TypeBuilder<
   Type,
   AlgebraicTypeVariants.Ref
@@ -3874,6 +3970,15 @@ export const t = {
    */
   timeDuration: (): TimeDurationBuilder => {
     return new TimeDurationBuilder();
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link Uuid} type.
+   * You can create a column of the same type by constructing an `object` with a single `__uuid__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link Uuid} type.
+   */
+  uuid: (): UuidBuilder => {
+    return new UuidBuilder();
   },
 
   /**

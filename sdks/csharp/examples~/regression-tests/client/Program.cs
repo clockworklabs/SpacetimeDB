@@ -65,6 +65,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
             "SELECT * FROM my_log",
+            "SELECT * FROM Admins",
         ]);
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -169,6 +170,10 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     var remoteRows = context.Db.ExampleData.RemoteQuery("WHERE Id = 1").Result;
     Debug.Assert(remoteRows != null && remoteRows.Length > 0);
 
+    Log.Debug("Calling Admins.RemoteQuery");
+    var remoteAdminRows = context.Db.Admins.RemoteQuery("WHERE IsAdmin = true").Result;
+    Debug.Assert(remoteAdminRows != null && remoteAdminRows.Length > 0);
+
     // Views test
     Log.Debug("Checking Views are populated");
     Debug.Assert(context.Db.MyPlayer != null, "context.Db.MyPlayer != null");
@@ -181,6 +186,8 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         context.Db.PlayersAtLevelOne.Count > 0,
         $"context.Db.PlayersAtLevelOne.Count = {context.Db.PlayersAtLevelOne.Count}"
     );
+    Debug.Assert(context.Db.Admins != null, "context.Db.Admins != null");
+    Debug.Assert(context.Db.Admins.Count > 0, $"context.Db.Admins.Count = {context.Db.Admins.Count}");
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
@@ -200,6 +207,16 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
             + $"Id={viewIterRows.First().Id}, Identity={viewIterRows.First().Identity}, Name={viewIterRows.First().Name}"
     );
     Debug.Assert(viewIterRows.First().Equals(expectedPlayer));
+
+    Log.Debug("Calling Iter on View Admins");
+    var adminsIterRows = context.Db.Admins.Iter();
+    var expectedAdminNames = new HashSet<string> { "Alice", "Charlie" };
+    Log.Debug("Admins Iter count: " + (adminsIterRows != null ? adminsIterRows.Count().ToString() : "null"));
+    Debug.Assert(adminsIterRows != null && adminsIterRows.Any());
+    Log.Debug("Validating Admins View row data " +
+              $"Expected Names={string.Join(", ", expectedAdminNames)} => " +
+              $"Actual Names={string.Join(", ", adminsIterRows.Select(a => a.Name))}");
+    Debug.Assert(adminsIterRows.All(a => expectedAdminNames.Contains(a.Name)));
 
     Log.Debug("Calling RemoteQuery on View");
     // If testing against Rust, the query will need to be changed to "WHERE id > 0"
