@@ -48,13 +48,13 @@ impl SpacetimeDbGuard {
 
         let mut args = vec![
             "start".to_string(),
-            "--data_dir".to_string(),
+            "--data-dir".to_string(),
             data_dir.to_string(),
             "--listen-addr".to_string(),
             address,
         ];
 
-        args.extend(extra_args.into_iter().map(ToString::to_string));
+        args.extend(extra_args.iter().map(ToString::to_string));
 
         let (cancel, cancel_recv) = tokio::sync::oneshot::channel();
         let thread = std::thread::spawn(move || {
