@@ -1,5 +1,5 @@
 ---
-Title: Procedures
+title: Procedures
 slug: /functions/procedures
 ---
 
@@ -569,3 +569,177 @@ or an error if the procedure fails.
 
 </TabItem>
 </Tabs>
+
+## Example: Calling an External AI API
+
+A common use case for procedures is integrating with external APIs like OpenAI's ChatGPT. Here's a complete example showing how to build an AI-powered chat feature.
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::{table, procedure, ProcedureContext, Identity, Timestamp};
+
+#[table(name = ai_message, public)]
+pub struct AiMessage {
+    user: Identity,
+    prompt: String,
+    response: String,
+    created_at: Timestamp,
+}
+
+#[procedure]
+pub fn ask_ai(ctx: &mut ProcedureContext, prompt: String, api_key: String) -> Result<String, String> {
+    // Build the request to OpenAI's API
+    let request_body = format!(
+        r#"{{"model": "gpt-4", "messages": [{{"role": "user", "content": "{}"}}]}}"#,
+        prompt.replace('"', "\\\"")
+    );
+
+    let request = spacetimedb::http::Request::builder()
+        .uri("https://api.openai.com/v1/chat/completions")
+        .method("POST")
+        .header("Content-Type", "application/json")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .body(request_body)
+        .map_err(|e| format!("Failed to build request: {e}"))?;
+
+    // Make the HTTP request
+    let response = ctx.http.send(request)
+        .map_err(|e| format!("HTTP request failed: {e:?}"))?;
+
+    let (parts, body) = response.into_parts();
+
+    if parts.status != 200 {
+        return Err(format!("API returned status {}", parts.status));
+    }
+
+    let body_str = body.into_string_lossy();
+
+    // Parse the response (simplified - in production use serde_json)
+    let ai_response = extract_content(&body_str)
+        .ok_or("Failed to parse AI response")?;
+
+    // Store the conversation in the database
+    ctx.with_tx(|tx_ctx| {
+        tx_ctx.db.ai_message().insert(AiMessage {
+            user: tx_ctx.sender,
+            prompt: prompt.clone(),
+            response: ai_response.clone(),
+            created_at: tx_ctx.timestamp,
+        });
+    });
+
+    Ok(ai_response)
+}
+
+fn extract_content(json: &str) -> Option<String> {
+    // Simple extraction - in production, use proper JSON parsing
+    let content_start = json.find("\"content\":")? + 11;
+    let content_end = json[content_start..].find('"')? + content_start;
+    Some(json[content_start..content_end].to_string())
+}
+```
+
+</TabItem>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+
+const AiMessage = table(
+  { name: 'ai_message', public: true },
+  {
+    user: t.identity(),
+    prompt: t.string(),
+    response: t.string(),
+    createdAt: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema(AiMessage);
+
+spacetimedb.procedure(
+  'ask_ai',
+  { prompt: t.string(), apiKey: t.string() },
+  t.string(),
+  (ctx, { prompt, apiKey }) => {
+    // Make the HTTP request to OpenAI
+    const response = ctx.http.fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4',
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (response.status !== 200) {
+      throw new SenderError(`API returned status ${response.status}`);
+    }
+
+    const data = response.json();
+    const aiResponse = data.choices?.[0]?.message?.content;
+
+    if (!aiResponse) {
+      throw new SenderError('Failed to parse AI response');
+    }
+
+    // Store the conversation in the database
+    ctx.withTx(txCtx => {
+      txCtx.db.aiMessage.insert({
+        user: txCtx.sender,
+        prompt,
+        response: aiResponse,
+        createdAt: txCtx.timestamp,
+      });
+    });
+
+    return aiResponse;
+  }
+);
+```
+
+</TabItem>
+</Tabs>
+
+### Calling from a client
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Call the procedure and wait for the AI response
+const response = await ctx.procedures.askAi({
+  prompt: "What is SpacetimeDB?",
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+console.log("AI says:", response);
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+ctx.procedures.ask_ai_then(
+    "What is SpacetimeDB?".to_string(),
+    api_key,
+    |_ctx, result| {
+        match result {
+            Ok(response) => println!("AI says: {}", response),
+            Err(e) => eprintln!("Error: {:?}", e),
+        }
+    },
+);
+```
+
+</TabItem>
+</Tabs>
+
+:::warning
+**Security note:** Never hardcode API keys in your client code. Consider storing them securely on the server side or using environment variables during development.
+:::
