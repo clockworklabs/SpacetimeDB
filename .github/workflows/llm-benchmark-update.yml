@@ -202,14 +202,15 @@ jobs:
         run: |
           set -euo pipefail
           CHANGED="$(git diff --name-only)"
+
           if [ -z "$CHANGED" ]; then
             echo "No changes."
             exit 0
           fi
-          BAD="$(echo "$CHANGED" | grep -vE '^docs/llms/')"
-          if [ -n "$BAD" ]; then
+
+          if echo "$CHANGED" | grep -qvE '^docs/llms/'; then
             echo "Benchmark produced changes outside docs/llms:"
-            echo "$BAD"
+            echo "$CHANGED" | grep -vE '^docs/llms/'
             exit 1
           fi
 
