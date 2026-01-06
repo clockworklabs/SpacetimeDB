@@ -522,6 +522,7 @@ SPACETIMEDB_REDUCER(test_btree_index_args, ReducerContext ctx) {
     return Ok();
 }
 
+
 // Test reducer for assertions
 SPACETIMEDB_REDUCER(assert_caller_identity_is_module_identity, ReducerContext ctx) {
     LOG_INFO("Sender: " + ctx.sender.to_string() + " Identity: " + ctx.identity().to_string());

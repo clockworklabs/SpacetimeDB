@@ -23,12 +23,18 @@
 #include "autogen/Lifecycle.g.h"
 #include "autogen/RawColumnDefaultValueV9.g.h"
 #include "autogen/RawMiscModuleExportV9.g.h"
+#include "autogen/RawViewDefV9.g.h"
 #include "../bsatn/bsatn.h"
 #include "../database.h"  // For FieldConstraintInfo
 #include "field_registration.h"  // For get_table_descriptors
 #include "v9_type_registration.h"  // For getV9TypeRegistration
+#include "../reducer_error.h"  // For Outcome
 
 namespace SpacetimeDb {
+
+// Forward declarations for view context types (defined in view_context.h)
+struct ViewContext;
+struct AnonymousViewContext;
 
 // Forward declare fail_reducer from reducer_error.h for use in templates
 void fail_reducer(std::string message);
@@ -39,6 +45,16 @@ namespace Internal {
 void RegisterReducerHandler(const std::string& name, 
                            std::function<void(ReducerContext&, BytesSource)> handler,
                            std::optional<Lifecycle> lifecycle = std::nullopt);
+
+// Forward declare view handler registration functions from Module.cpp
+void RegisterViewHandler(const std::string& name,
+                        std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler);
+void RegisterAnonymousViewHandler(const std::string& name,
+                                 std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler);
+
+// Get the number of registered view handlers
+size_t GetViewHandlerCount();
+size_t GetAnonymousViewHandlerCount();
 
 // Helper to consume bytes from BytesSource (declared in Module.cpp)
 std::vector<uint8_t> ConsumeBytes(BytesSource source);
@@ -170,6 +186,23 @@ public:
     template<typename Func>
     void RegisterLifecycleReducer(const std::string& reducer_name, Func func,
                                  Lifecycle lifecycle);
+    
+    /**
+     * Register a view function
+     * 
+     * Views provide read-only query capabilities with caller-specific or anonymous contexts.
+     * The template detects whether the view takes ViewContext or AnonymousViewContext.
+     * 
+     * @tparam Func The view function type (must take ViewContext or AnonymousViewContext)
+     * @param view_name The name of the view
+     * @param func The view function pointer
+     * @param is_public Whether the view is publicly accessible
+     * @param param_names The names of parameters (currently empty - parameters disabled)
+     */
+    template<typename Func>
+    void RegisterView(const std::string& view_name, Func func,
+                     bool is_public,
+                     const std::vector<std::string>& param_names = {});
     
     /**
      * Register a schedule for a table to automatically call a reducer
@@ -663,6 +696,15 @@ struct function_traits<R(*)(Args...)> {
     using arg_t = typename std::tuple_element<N, std::tuple<Args...>>::type;
 };
 
+// Helper to extract T from Outcome<T>
+template<typename T>
+struct outcome_inner_type;
+
+template<typename T>
+struct outcome_inner_type<Outcome<T>> {
+    using type = T;
+};
+
 
 // Template implementation for RegisterReducerCommon - shared logic
 template<typename Func>
@@ -794,6 +836,166 @@ void V9Builder::RegisterLifecycleReducer(const std::string& reducer_name, Func f
     // Generate default parameter names and use the common helper
     std::vector<std::string> empty_names;
     RegisterReducerCommon(reducer_name, func, empty_names, lifecycle);
+}
+
+// Template implementation for RegisterView
+template<typename Func>
+void V9Builder::RegisterView(const std::string& view_name, Func func,
+                             bool is_public,
+                             const std::vector<std::string>& param_names) {
+    // TODO: Remove this when parameters are supported - param_names will be used
+    // Parameters are currently disabled - suppress warning
+    (void)param_names;
+    
+    // Skip view registration if circular reference was detected
+    if (g_circular_ref_error) {
+        fprintf(stdout, "DEBUG: Skipping view '%s' registration due to circular reference error\n", 
+                view_name.c_str());
+        return;
+    }
+    
+    using traits = function_traits<Func>;
+    
+    // Validate that the view has at least one parameter (ViewContext or AnonymousViewContext)
+    static_assert(traits::arity > 0, 
+        "View must have at least one parameter (ViewContext or AnonymousViewContext)");
+    
+    // Determine the context type and register accordingly
+    if constexpr (traits::arity > 0) {
+        using ContextType = std::remove_cv_t<std::remove_reference_t<
+            typename traits::template arg_t<0>>>;
+        
+        // Extract return type from Outcome<T>
+        using OutcomeType = typename traits::result_type;
+        using ReturnType = typename outcome_inner_type<OutcomeType>::type;
+        
+        // Build the AlgebraicType for the return type
+        auto& type_reg = getV9TypeRegistration();
+        bsatn::AlgebraicType bsatn_return_type = bsatn::algebraic_type_of<ReturnType>::get();
+        AlgebraicType return_algebraic_type = type_reg.registerType(bsatn_return_type, "", &typeid(ReturnType));
+        
+        // TODO: When parameters are supported, extract parameter types and build ProductType:
+        // Build params (empty for now since parameters are disabled)
+        // std::vector<ProductTypeElement> param_elements;
+        // if constexpr (traits::arity > 1) {
+        //     []<std::size_t... Is>(std::index_sequence<Is...>, 
+        //                           std::vector<ProductTypeElement>& elements,
+        //                           const std::vector<std::string>& names,
+        //                           V9TypeRegistration& type_reg_inner) {
+        //         (([]<std::size_t I>(std::vector<ProductTypeElement>& elems,
+        //                             const std::vector<std::string>& n,
+        //                             V9TypeRegistration& tr) {
+        //             if constexpr (I > 0) {  // Skip the first parameter (ViewContext/AnonymousViewContext)
+        //                 using param_type = typename traits::template arg_t<I>;
+        //                 bsatn::AlgebraicType param_bsatn = bsatn::algebraic_type_of<param_type>::get();
+        //                 AlgebraicType param_alg = tr.registerType(param_bsatn, "", &typeid(param_type));
+        //                 std::string param_name = (I-1 < n.size()) ? n[I-1] : ("arg" + std::to_string(I-1));
+        //                 elems.emplace_back(std::make_optional(param_name), std::move(param_alg));
+        //             }
+        //         }.template operator()<Is>(elements, names, type_reg_inner)), ...);
+        //     }(std::make_index_sequence<traits::arity>{}, param_elements, param_names, type_reg);
+        // }
+        // ProductType params(std::move(param_elements));
+        ProductType params;
+        
+        if constexpr (std::is_same_v<ContextType, ViewContext>) {
+            // Register with ViewContext (has sender)
+            std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler =
+                [func](ViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
+                    // TODO: When parameters are supported, deserialize args_source:
+                    // For now, views don't have parameters (args_source is unused)
+                    // std::vector<uint8_t> args_bytes = ConsumeBytes(args_source);
+                    // bsatn::Reader reader(args_bytes.data(), args_bytes.size());
+                    // auto args = std::make_tuple(
+                    //     bsatn::deserialize<typename traits::template arg_t<1>>(reader),
+                    //     bsatn::deserialize<typename traits::template arg_t<2>>(reader),
+                    //     ...
+                    // );
+                    // auto result = std::apply([&ctx, func](auto&&... args) {
+                    //     return func(ctx, std::forward<decltype(args)>(args)...);
+                    // }, args);
+                    (void)args_source;
+                    
+                    // Call the view function
+                    auto result = func(ctx);
+                    
+                    // Handle errors
+                    if (result.is_err()) {
+                        // Return empty vector on error (or we could throw)
+                        fprintf(stderr, "View error: %s\n", result.error().c_str());
+                        return std::vector<uint8_t>();
+                    }
+                    
+                    // Serialize the result
+                    std::vector<uint8_t> serialized;
+                    bsatn::Writer writer(serialized);
+                    bsatn::serialize(writer, result.value());
+                    return serialized;
+                };
+            
+            RegisterViewHandler(view_name, handler);
+            
+            // Add view definition to module's misc_exports
+            uint32_t view_index = static_cast<uint32_t>(GetViewHandlerCount());
+            RawViewDefV9 view_def{
+                view_name,
+                view_index - 1,  // Index is 0-based, we just added one
+                is_public,  // is_public (from parameter)
+                false,  // is_anonymous
+                params,
+                return_algebraic_type
+            };
+            RawMiscModuleExportV9 export_entry;
+            export_entry.set<2>(view_def);  // Index 2 = View variant
+            GetV9Module().misc_exports.push_back(export_entry);
+            
+        } else if constexpr (std::is_same_v<ContextType, AnonymousViewContext>) {
+            // Register with AnonymousViewContext (no sender)
+            std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler =
+                [func](AnonymousViewContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
+                    // TODO: When parameters are supported, deserialize args_source (same pattern as ViewContext above)
+                    // For now, views don't have parameters (args_source is unused)
+                    (void)args_source;
+                    
+                    // Call the view function
+                    auto result = func(ctx);
+                    
+                    // Handle errors
+                    if (result.is_err()) {
+                        // Return empty vector on error (or we could throw)
+                        fprintf(stderr, "View error: %s\n", result.error().c_str());
+                        return std::vector<uint8_t>();
+                    }
+                    
+                    // Serialize the result
+                    std::vector<uint8_t> serialized;
+                    bsatn::Writer writer(serialized);
+                    bsatn::serialize(writer, result.value());
+                    return serialized;
+                };
+            
+            RegisterAnonymousViewHandler(view_name, handler);
+            
+            // Add view definition to module's misc_exports
+            uint32_t view_index = static_cast<uint32_t>(GetAnonymousViewHandlerCount());
+            RawViewDefV9 view_def{
+                view_name,
+                view_index - 1,  // Index is 0-based, we just added one
+                is_public,  // is_public (from parameter)
+                true,  // is_anonymous
+                params,
+                return_algebraic_type
+            };
+            RawMiscModuleExportV9 export_entry;
+            export_entry.set<2>(view_def);  // Index 2 = View variant
+            GetV9Module().misc_exports.push_back(export_entry);
+            
+        } else {
+            static_assert(std::is_same_v<ContextType, ViewContext> || 
+                         std::is_same_v<ContextType, AnonymousViewContext>,
+                "First parameter of view must be ViewContext or AnonymousViewContext");
+        }
+    }
 }
 
 // Global V9Builder instance for the module

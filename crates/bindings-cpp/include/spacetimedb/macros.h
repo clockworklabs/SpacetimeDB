@@ -9,6 +9,73 @@
 #include "spacetimedb/bsatn/traits.h"
 
 #include <string>
+#include <vector>
+#include <sstream>
+
+namespace SpacetimeDb {
+namespace Internal {
+
+/**
+ * @brief Helper function to parse parameter names from stringified parameter list
+ * 
+ * This is used internally by SPACETIMEDB_REDUCER and SPACETIMEDB_VIEW macros to
+ * extract parameter names from the stringified function signature.
+ * 
+ * Works for any context type (ReducerContext, ViewContext, AnonymousViewContext)
+ * by skipping the first parameter and extracting the rest.
+ * 
+ * @param param_list The stringified parameter list (e.g., "ReducerContext ctx, uint32_t id, std::string name")
+ * @return Vector of parameter names (excluding the first context parameter)
+ */
+inline std::vector<std::string> parseParameterNames(const std::string& param_list) {
+    std::vector<std::string> param_names;
+    
+    // Split by comma
+    std::istringstream stream(param_list);
+    std::string param;
+    bool first = true;
+    
+    while (std::getline(stream, param, ',')) {
+        // Skip the first parameter (context: ReducerContext, ViewContext, or AnonymousViewContext)
+        if (first) {
+            first = false;
+            continue;
+        }
+        
+        // Trim whitespace
+        param.erase(0, param.find_first_not_of(" \t\n\r"));
+        param.erase(param.find_last_not_of(" \t\n\r") + 1);
+        
+        // Extract the parameter name (last word before end or default value)
+        // Handle cases like:
+        // - "int x"
+        // - "const std::string& name"
+        // - "std::vector<int> values"
+        // - "MyType* ptr"
+        // - "int x = 5"
+        
+        // Remove default value if present
+        size_t eq_pos = param.find('=');
+        std::string decl = (eq_pos != std::string::npos) ? param.substr(0, eq_pos) : param;
+        
+        // Trim trailing whitespace
+        decl.erase(decl.find_last_not_of(" \t\n\r") + 1);
+        
+        // Find the last word (parameter name)
+        size_t last_space = decl.find_last_of(" \t&*");
+        if (last_space != std::string::npos && last_space + 1 < decl.length()) {
+            std::string name = decl.substr(last_space + 1);
+            if (!name.empty()) {
+                param_names.push_back(name);
+            }
+        }
+    }
+    
+    return param_names;
+}
+
+} // namespace Internal
+} // namespace SpacetimeDb
 
 // =============================================================================
 // UNIFIED HELPER MACROS FOR SPACETIMEDB TYPE REGISTRATION

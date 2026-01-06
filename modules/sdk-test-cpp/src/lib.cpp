@@ -638,127 +638,152 @@ SPACETIMEDB_REDUCER(insert_one_u8, ReducerContext ctx, uint8_t n)
     LOG_INFO("insert_one_u8 called with value: " + std::to_string(n));
     ctx.db[one_u8].insert(OneU8{.n = n});
     LOG_INFO("insert_one_u8 completed");
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_u16, ReducerContext ctx, uint16_t n)
 {
     ctx.db[one_u16].insert(OneU16{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_u32, ReducerContext ctx, uint32_t n)
 {
     ctx.db[one_u32].insert(OneU32{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_u64, ReducerContext ctx, uint64_t n)
 {
     ctx.db[one_u64].insert(OneU64{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_u128, ReducerContext ctx, u128 n)
 {
     ctx.db[one_u128].insert(OneU128{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_u256, ReducerContext ctx, u256 n)
 {
     ctx.db[one_u256].insert(OneU256{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_i8, ReducerContext ctx, int8_t n)
 {
     ctx.db[one_i8].insert(OneI8{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_i16, ReducerContext ctx, int16_t n)
 {
     ctx.db[one_i16].insert(OneI16{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_i32, ReducerContext ctx, int32_t n)
 {
     ctx.db[one_i32].insert(OneI32{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_i64, ReducerContext ctx, int64_t n)
 {
     ctx.db[one_i64].insert(OneI64{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_i128, ReducerContext ctx, i128 n)
 {
     ctx.db[one_i128].insert(OneI128{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_i256, ReducerContext ctx, i256 n)
 {
     ctx.db[one_i256].insert(OneI256{.n = n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_bool, ReducerContext ctx, bool b)
 {
     ctx.db[one_bool].insert(OneBool{.b = b});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_f32, ReducerContext ctx, float f)
 {
     ctx.db[one_f32].insert(OneF32{.f = f});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_f64, ReducerContext ctx, double f)
 {
     ctx.db[one_f64].insert(OneF64{.f = f});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_string, ReducerContext ctx, std::string s)
 {
     ctx.db[one_string].insert(OneString{.s = s});
+    return Ok();
 }
 
  SPACETIMEDB_REDUCER(insert_one_identity, ReducerContext ctx, Identity i)
 {
     ctx.db[one_identity].insert(OneIdentity{.i = i});
+    return Ok();
 } 
 
  SPACETIMEDB_REDUCER(insert_one_connection_id, ReducerContext ctx, ConnectionId a)
 {
     ctx.db[one_connection_id].insert(OneConnectionId{.a = a});
+    return Ok();
 } 
 
  SPACETIMEDB_REDUCER(insert_one_timestamp, ReducerContext ctx, Timestamp t)
 {
     ctx.db[one_timestamp].insert(OneTimestamp{.t = t});
+    return Ok();
 } 
 
 SPACETIMEDB_REDUCER(insert_one_simple_enum, ReducerContext ctx, SimpleEnum e)
 {
     ctx.db[one_simple_enum].insert(OneSimpleEnum{.e = e});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_enum_with_payload, ReducerContext ctx, EnumWithPayload e)
 {
     ctx.db[one_enum_with_payload].insert(OneEnumWithPayload{e});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_unit_struct, ReducerContext ctx, UnitStruct s)
 {
     fprintf(stdout, "SUCCESS: insert_one_unit_struct reducer called with UnitStruct\n");
     ctx.db[one_unit_struct].insert(OneUnitStruct{s});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_byte_struct, ReducerContext ctx, ByteStruct s)
 {
     ctx.db[one_byte_struct].insert(OneByteStruct{s});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_one_every_primitive_struct, ReducerContext ctx, EveryPrimitiveStruct s)
 {
     ctx.db[one_every_primitive_struct].insert(OneEveryPrimitiveStruct{s});
+    return Ok();
 }
 
  SPACETIMEDB_REDUCER(insert_one_every_vec_struct, ReducerContext ctx, EveryVecStruct s)
 {
     ctx.db[one_every_vec_struct].insert(OneEveryVecStruct{s});
+    return Ok();
 } 
 
 // =============================================================================
@@ -768,126 +793,151 @@ SPACETIMEDB_REDUCER(insert_one_every_primitive_struct, ReducerContext ctx, Every
 SPACETIMEDB_REDUCER(insert_vec_u8, ReducerContext ctx, std::vector<uint8_t> n)
 {
     ctx.db[vec_u8].insert(VecU8{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_u16, ReducerContext ctx, std::vector<uint16_t> n)
 {
     ctx.db[vec_u16].insert(VecU16{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_u32, ReducerContext ctx, std::vector<uint32_t> n)
 {
     ctx.db[vec_u32].insert(VecU32{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_u64, ReducerContext ctx, std::vector<uint64_t> n)
 {
     ctx.db[vec_u64].insert(VecU64{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_u128, ReducerContext ctx, std::vector<u128> n)
 {
     ctx.db[vec_u128].insert(VecU128{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_u256, ReducerContext ctx, std::vector<u256> n)
 {
     ctx.db[vec_u256].insert(VecU256{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_i8, ReducerContext ctx, std::vector<int8_t> n)
 {
     ctx.db[vec_i8].insert(VecI8{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_i16, ReducerContext ctx, std::vector<int16_t> n)
 {
     ctx.db[vec_i16].insert(VecI16{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_i32, ReducerContext ctx, std::vector<int32_t> n)
 {
     ctx.db[vec_i32].insert(VecI32{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_i64, ReducerContext ctx, std::vector<int64_t> n)
 {
     ctx.db[vec_i64].insert(VecI64{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_i128, ReducerContext ctx, std::vector<i128> n)
 {
     ctx.db[vec_i128].insert(VecI128{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_i256, ReducerContext ctx, std::vector<i256> n)
 {
     ctx.db[vec_i256].insert(VecI256{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_bool, ReducerContext ctx, std::vector<bool> b)
 {
     ctx.db[vec_bool].insert(VecBool{b});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_f32, ReducerContext ctx, std::vector<float> f)
 {
     ctx.db[vec_f32].insert(VecF32{f});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_f64, ReducerContext ctx, std::vector<double> f)
 {
     ctx.db[vec_f64].insert(VecF64{f});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_string, ReducerContext ctx, std::vector<std::string> s)
 {
     ctx.db[vec_string].insert(VecString{s});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_identity, ReducerContext ctx, std::vector<Identity> i)
 {
     ctx.db[vec_identity].insert(VecIdentity{i});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_connection_id, ReducerContext ctx, std::vector<ConnectionId> a)
 {
     ctx.db[vec_connection_id].insert(VecConnectionId{a});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_timestamp, ReducerContext ctx, std::vector<Timestamp> t)
 {
     ctx.db[vec_timestamp].insert(VecTimestamp{t});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_simple_enum, ReducerContext ctx, std::vector<SimpleEnum> e)
 {
     ctx.db[vec_simple_enum].insert(VecSimpleEnum{e});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_enum_with_payload, ReducerContext ctx, std::vector<EnumWithPayload> e)
 {
     ctx.db[vec_enum_with_payload].insert(VecEnumWithPayload{e});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_unit_struct, ReducerContext ctx, std::vector<UnitStruct> s)
 {
     ctx.db[vec_unit_struct].insert(VecUnitStruct{s});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_byte_struct, ReducerContext ctx, std::vector<ByteStruct> s)
 {
     ctx.db[vec_byte_struct].insert(VecByteStruct{s});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_vec_every_primitive_struct, ReducerContext ctx, std::vector<EveryPrimitiveStruct> s)
 {
     ctx.db[vec_every_primitive_struct].insert(VecEveryPrimitiveStruct{s});
+    return Ok();
 }
 
  SPACETIMEDB_REDUCER(insert_vec_every_vec_struct, ReducerContext ctx, std::vector<EveryVecStruct> s)
 {
     ctx.db[vec_every_vec_struct].insert(VecEveryVecStruct{s});
+    return Ok();
 } 
 
 // =============================================================================
@@ -897,32 +947,38 @@ SPACETIMEDB_REDUCER(insert_vec_every_primitive_struct, ReducerContext ctx, std::
 SPACETIMEDB_REDUCER(insert_option_i32, ReducerContext ctx, std::optional<int32_t> n)
 {
     ctx.db[option_i32].insert(OptionI32{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_option_string, ReducerContext ctx, std::optional<std::string> s)
 {
     ctx.db[option_string].insert(OptionString{s});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_option_identity, ReducerContext ctx, std::optional<Identity> i)
 {
     ctx.db[option_identity].insert(OptionIdentity{i});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_option_simple_enum, ReducerContext ctx, std::optional<SimpleEnum> e)
 {
     ctx.db[option_simple_enum].insert(OptionSimpleEnum{e});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_option_every_primitive_struct, ReducerContext ctx, std::optional<EveryPrimitiveStruct> s)
 {
     ctx.db[option_every_primitive_struct].insert(OptionEveryPrimitiveStruct{s});
+    return Ok();
 }
 
 // Complex nested optional type - NOW FIXED!
  SPACETIMEDB_REDUCER(insert_option_vec_option_i32, ReducerContext ctx, std::optional<std::vector<std::optional<int32_t>>> v)
 {
     ctx.db[option_vec_option_i32].insert(OptionVecOptionI32{v});
+    return Ok();
 }
 
 // =============================================================================
@@ -932,81 +988,97 @@ SPACETIMEDB_REDUCER(insert_option_every_primitive_struct, ReducerContext ctx, st
 SPACETIMEDB_REDUCER(insert_unique_u8, ReducerContext ctx, uint8_t n, int32_t data)
 {
     ctx.db[unique_u8].insert(UniqueU8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_u16, ReducerContext ctx, uint16_t n, int32_t data)
 {
     ctx.db[unique_u16].insert(UniqueU16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_u32, ReducerContext ctx, uint32_t n, int32_t data)
 {
     ctx.db[unique_u32].insert(UniqueU32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_u64, ReducerContext ctx, uint64_t n, int32_t data)
 {
     ctx.db[unique_u64].insert(UniqueU64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_u128, ReducerContext ctx, u128 n, int32_t data)
 {
     ctx.db[unique_u128].insert(UniqueU128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_u256, ReducerContext ctx, u256 n, int32_t data)
 {
     ctx.db[unique_u256].insert(UniqueU256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_i8, ReducerContext ctx, int8_t n, int32_t data)
 {
     ctx.db[unique_i8].insert(UniqueI8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_i16, ReducerContext ctx, int16_t n, int32_t data)
 {
     ctx.db[unique_i16].insert(UniqueI16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_i32, ReducerContext ctx, int32_t n, int32_t data)
 {
     ctx.db[unique_i32].insert(UniqueI32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_i64, ReducerContext ctx, int64_t n, int32_t data)
 {
     ctx.db[unique_i64].insert(UniqueI64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_i128, ReducerContext ctx, i128 n, int32_t data)
 {
     ctx.db[unique_i128].insert(UniqueI128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_i256, ReducerContext ctx, i256 n, int32_t data)
 {
     ctx.db[unique_i256].insert(UniqueI256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_bool, ReducerContext ctx, bool b, int32_t data)
 {
     ctx.db[unique_bool].insert(UniqueBool{b, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_string, ReducerContext ctx, std::string s, int32_t data)
 {
     ctx.db[unique_string].insert(UniqueString{s, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_identity, ReducerContext ctx, Identity i, int32_t data)
 {
     ctx.db[unique_identity].insert(UniqueIdentity{i, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
 {
     ctx.db[unique_connection_id].insert(UniqueConnectionId{a, data});
+    return Ok();
 }
 
 // =============================================================================
@@ -1016,91 +1088,109 @@ SPACETIMEDB_REDUCER(insert_unique_connection_id, ReducerContext ctx, ConnectionI
 SPACETIMEDB_REDUCER(insert_pk_u8, ReducerContext ctx, uint8_t n, int32_t data)
 {
     ctx.db[pk_u8].insert(PkU8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_u16, ReducerContext ctx, uint16_t n, int32_t data)
 {
     ctx.db[pk_u16].insert(PkU16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_u32, ReducerContext ctx, uint32_t n, int32_t data)
 {
     ctx.db[pk_u32].insert(PkU32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_u32_two, ReducerContext ctx, uint32_t n, int32_t data)
 {
     ctx.db[pk_u32_two].insert(PkU32Two{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_u64, ReducerContext ctx, uint64_t n, int32_t data)
 {
     ctx.db[pk_u64].insert(PkU64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_u128, ReducerContext ctx, u128 n, int32_t data)
 {
     ctx.db[pk_u128].insert(PkU128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_u256, ReducerContext ctx, u256 n, int32_t data)
 {
     ctx.db[pk_u256].insert(PkU256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_i8, ReducerContext ctx, int8_t n, int32_t data)
 {
     ctx.db[pk_i8].insert(PkI8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_i16, ReducerContext ctx, int16_t n, int32_t data)
 {
     ctx.db[pk_i16].insert(PkI16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_i32, ReducerContext ctx, int32_t n, int32_t data)
 {
     ctx.db[pk_i32].insert(PkI32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_i64, ReducerContext ctx, int64_t n, int32_t data)
 {
     ctx.db[pk_i64].insert(PkI64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_i128, ReducerContext ctx, i128 n, int32_t data)
 {
     ctx.db[pk_i128].insert(PkI128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_i256, ReducerContext ctx, i256 n, int32_t data)
 {
     ctx.db[pk_i256].insert(PkI256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_bool, ReducerContext ctx, bool b, int32_t data)
 {
     ctx.db[pk_bool].insert(PkBool{b, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_string, ReducerContext ctx, std::string s, int32_t data)
 {
     ctx.db[pk_string].insert(PkString{s, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_identity, ReducerContext ctx, Identity i, int32_t data)
 {
     ctx.db[pk_identity].insert(PkIdentity{i, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
 {
     ctx.db[pk_connection_id].insert(PkConnectionId{a, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_pk_simple_enum, ReducerContext ctx, SimpleEnum a, int32_t data)
 {
     ctx.db[pk_simple_enum].insert(PkSimpleEnum{a, data});
+    return Ok();
 }
 
 // =============================================================================
@@ -1111,102 +1201,119 @@ SPACETIMEDB_REDUCER(delete_pk_u8, ReducerContext ctx, uint8_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u8_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u16, ReducerContext ctx, uint16_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u16_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u32, ReducerContext ctx, uint32_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u32_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u32_two, ReducerContext ctx, uint32_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u32_two_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u64, ReducerContext ctx, uint64_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u64_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u128, ReducerContext ctx, u128 n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u128_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u256, ReducerContext ctx, u256 n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_u256_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_i8, ReducerContext ctx, int8_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_i8_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_i16, ReducerContext ctx, int16_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_i16_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_i32, ReducerContext ctx, int32_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_i32_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_i64, ReducerContext ctx, int64_t n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_i64_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_i128, ReducerContext ctx, i128 n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_i128_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_i256, ReducerContext ctx, i256 n)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_i256_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_bool, ReducerContext ctx, bool b)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_bool_b].delete_by_key(b);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_string, ReducerContext ctx, std::string s)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_string_s].delete_by_key(s);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_identity, ReducerContext ctx, Identity i)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_identity_i].delete_by_key(i);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_connection_id, ReducerContext ctx, ConnectionId a)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_connection_id_a].delete_by_key(a);
+    return Ok();
 }
 
 // =============================================================================
@@ -1217,96 +1324,112 @@ SPACETIMEDB_REDUCER(delete_unique_u8, ReducerContext ctx, uint8_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_u8_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_u16, ReducerContext ctx, uint16_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_u16_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_u32, ReducerContext ctx, uint32_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_u32_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_u64, ReducerContext ctx, uint64_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_u64_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_u128, ReducerContext ctx, u128 n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_u128_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_u256, ReducerContext ctx, u256 n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_u256_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_i8, ReducerContext ctx, int8_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_i8_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_i16, ReducerContext ctx, int16_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_i16_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_i32, ReducerContext ctx, int32_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_i32_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_i64, ReducerContext ctx, int64_t n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_i64_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_i128, ReducerContext ctx, i128 n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_i128_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_i256, ReducerContext ctx, i256 n)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_i256_n].delete_by_value(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_bool, ReducerContext ctx, bool b)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_bool_b].delete_by_value(b);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_string, ReducerContext ctx, std::string s)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_string_s].delete_by_value(s);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_identity, ReducerContext ctx, Identity i)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_identity_i].delete_by_value(i);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_unique_connection_id, ReducerContext ctx, ConnectionId a)
 {
     // Use optimized field accessor for direct index-based delete
     ctx.db[unique_connection_id_a].delete_by_value(a);
+    return Ok();
 }
 
 // =============================================================================
@@ -1317,108 +1440,126 @@ SPACETIMEDB_REDUCER(update_pk_u8, ReducerContext ctx, uint8_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u8_n].update(PkU8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_u16, ReducerContext ctx, uint16_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u16_n].update(PkU16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_u32, ReducerContext ctx, uint32_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u32_n].update(PkU32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_u32_two, ReducerContext ctx, uint32_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u32_two_n].update(PkU32Two{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_u64, ReducerContext ctx, uint64_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u64_n].update(PkU64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_u128, ReducerContext ctx, u128 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u128_n].update(PkU128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_u256, ReducerContext ctx, u256 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_u256_n].update(PkU256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_i8, ReducerContext ctx, int8_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_i8_n].update(PkI8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_i16, ReducerContext ctx, int16_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_i16_n].update(PkI16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_i32, ReducerContext ctx, int32_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_i32_n].update(PkI32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_i64, ReducerContext ctx, int64_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_i64_n].update(PkI64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_i128, ReducerContext ctx, i128 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_i128_n].update(PkI128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_i256, ReducerContext ctx, i256 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_i256_n].update(PkI256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_bool, ReducerContext ctx, bool b, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_bool_b].update(PkBool{b, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_string, ReducerContext ctx, std::string s, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_string_s].update(PkString{s, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_identity, ReducerContext ctx, Identity i, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_identity_i].update(PkIdentity{i, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_connection_id_a].update(PkConnectionId{a, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_pk_simple_enum, ReducerContext ctx, SimpleEnum a, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_simple_enum_a].update(PkSimpleEnum{a, data});
+    return Ok();
 }
 
 // =============================================================================
@@ -1429,96 +1570,112 @@ SPACETIMEDB_REDUCER(update_unique_u8, ReducerContext ctx, uint8_t n, int32_t dat
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_u8_n].update(UniqueU8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_u16, ReducerContext ctx, uint16_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_u16_n].update(UniqueU16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_u32, ReducerContext ctx, uint32_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_u32_n].update(UniqueU32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_u64, ReducerContext ctx, uint64_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_u64_n].update(UniqueU64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_u128, ReducerContext ctx, u128 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_u128_n].update(UniqueU128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_u256, ReducerContext ctx, u256 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_u256_n].update(UniqueU256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_i8, ReducerContext ctx, int8_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_i8_n].update(UniqueI8{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_i16, ReducerContext ctx, int16_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_i16_n].update(UniqueI16{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_i32, ReducerContext ctx, int32_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_i32_n].update(UniqueI32{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_i64, ReducerContext ctx, int64_t n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_i64_n].update(UniqueI64{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_i128, ReducerContext ctx, i128 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_i128_n].update(UniqueI128{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_i256, ReducerContext ctx, i256 n, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_i256_n].update(UniqueI256{n, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_bool, ReducerContext ctx, bool b, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_bool_b].update(UniqueBool{b, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_string, ReducerContext ctx, std::string s, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_string_s].update(UniqueString{s, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_identity, ReducerContext ctx, Identity i, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_identity_i].update(UniqueIdentity{i, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_unique_connection_id, ReducerContext ctx, ConnectionId a, int32_t data)
 {
     // Use optimized field accessor for direct index-based update
     ctx.db[unique_connection_id_a].update(UniqueConnectionId{a, data});
+    return Ok();
 }
 
 // =============================================================================
@@ -1535,6 +1692,7 @@ SPACETIMEDB_REDUCER(update_unique_connection_id, ReducerContext ctx, ConnectionI
     ctx.db[large_table].insert(LargeTable{
         a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v
     });
+    return Ok();
 } 
 
  SPACETIMEDB_REDUCER(delete_large_table, ReducerContext ctx,
@@ -1547,11 +1705,13 @@ SPACETIMEDB_REDUCER(update_unique_connection_id, ReducerContext ctx, ConnectionI
     ctx.db[large_table].delete_by_value(LargeTable{
         a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v
     });
+    return Ok();
 } 
 
 SPACETIMEDB_REDUCER(insert_table_holds_table, ReducerContext ctx, OneU8 a, VecU8 b)
 {
     ctx.db[table_holds_table].insert(TableHoldsTable{a, b});
+    return Ok();
 }
 
 // =============================================================================
@@ -1561,21 +1721,25 @@ SPACETIMEDB_REDUCER(insert_table_holds_table, ReducerContext ctx, OneU8 a, VecU8
 SPACETIMEDB_REDUCER(insert_caller_one_identity, ReducerContext ctx)
 {
     ctx.db[one_identity].insert(OneIdentity{ctx.sender});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_vec_identity, ReducerContext ctx)
 {
     ctx.db[vec_identity].insert(VecIdentity{{ctx.sender}});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_unique_identity, ReducerContext ctx, int32_t data)
 {
     ctx.db[unique_identity].insert(UniqueIdentity{ctx.sender, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_pk_identity, ReducerContext ctx, int32_t data)
 {
     ctx.db[pk_identity].insert(PkIdentity{ctx.sender, data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_one_connection_id, ReducerContext ctx)
@@ -1583,6 +1747,7 @@ SPACETIMEDB_REDUCER(insert_caller_one_connection_id, ReducerContext ctx)
     if (ctx.connection_id.has_value()) {
         ctx.db[one_connection_id].insert(OneConnectionId{ctx.connection_id.value()});
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_vec_connection_id, ReducerContext ctx)
@@ -1590,6 +1755,7 @@ SPACETIMEDB_REDUCER(insert_caller_vec_connection_id, ReducerContext ctx)
     if (ctx.connection_id.has_value()) {
         ctx.db[vec_connection_id].insert(VecConnectionId{{ctx.connection_id.value()}});
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_unique_connection_id, ReducerContext ctx, int32_t data)
@@ -1597,6 +1763,7 @@ SPACETIMEDB_REDUCER(insert_caller_unique_connection_id, ReducerContext ctx, int3
     if (ctx.connection_id.has_value()) {
         ctx.db[unique_connection_id].insert(UniqueConnectionId{ctx.connection_id.value(), data});
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_caller_pk_connection_id, ReducerContext ctx, int32_t data)
@@ -1604,11 +1771,13 @@ SPACETIMEDB_REDUCER(insert_caller_pk_connection_id, ReducerContext ctx, int32_t 
     if (ctx.connection_id.has_value()) {
         ctx.db[pk_connection_id].insert(PkConnectionId{ctx.connection_id.value(), data});
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_call_timestamp, ReducerContext ctx)
 {
     ctx.db[one_timestamp].insert(OneTimestamp{ctx.timestamp});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_primitives_as_strings, ReducerContext ctx, EveryPrimitiveStruct s)
@@ -1629,6 +1798,7 @@ SPACETIMEDB_REDUCER(insert_primitives_as_strings, ReducerContext ctx, EveryPrimi
         s.q.to_string(), s.r.to_string(), s.s.to_string(), s.t.to_string()
     };
     ctx.db[vec_string].insert(VecString{string_values});
+    return Ok();
 }
 
 // =============================================================================
@@ -1640,6 +1810,7 @@ SPACETIMEDB_REDUCER(insert_into_btree_u32, ReducerContext ctx, std::vector<BTree
     for (const auto& row : rows) {
         ctx.db[btree_u32].insert(row);
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_from_btree_u32, ReducerContext ctx, std::vector<BTreeU32> rows)
@@ -1647,6 +1818,7 @@ SPACETIMEDB_REDUCER(delete_from_btree_u32, ReducerContext ctx, std::vector<BTree
     for (const auto& row : rows) {
         ctx.db[btree_u32].delete_by_value(row);
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_into_pk_btree_u32, ReducerContext ctx, std::vector<PkU32> pk_u32, std::vector<BTreeU32> bt_u32)
@@ -1657,6 +1829,7 @@ SPACETIMEDB_REDUCER(insert_into_pk_btree_u32, ReducerContext ctx, std::vector<Pk
     for (const auto& row : bt_u32) {
         ctx.db[btree_u32].insert(row);
     }
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_unique_u32_update_pk_u32, ReducerContext ctx, uint32_t n, int32_t d_unique, int32_t d_pk)
@@ -1664,22 +1837,26 @@ SPACETIMEDB_REDUCER(insert_unique_u32_update_pk_u32, ReducerContext ctx, uint32_
     ctx.db[unique_u32].insert(UniqueU32{n, d_unique});
     // Use the update method via field accessor for primary key tables
     (void)ctx.db[pk_u32_n].update(PkU32{n, d_pk});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(delete_pk_u32_insert_pk_u32_two, ReducerContext ctx, uint32_t n, int32_t data)
 {
     ctx.db[pk_u32_two].insert(PkU32Two{n, data});
     (void)ctx.db[pk_u32_n].delete_by_key(n);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_user, ReducerContext ctx, std::string name, Identity identity)
 {
     ctx.db[users].insert(Users{identity, name});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(insert_into_indexed_simple_enum, ReducerContext ctx, SimpleEnum n)
 {
     ctx.db[indexed_simple_enum].insert(IndexedSimpleEnum{n});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_indexed_simple_enum, ReducerContext ctx, SimpleEnum a, SimpleEnum b)
@@ -1694,6 +1871,7 @@ SPACETIMEDB_REDUCER(update_indexed_simple_enum, ReducerContext ctx, SimpleEnum a
             break;  // Only update the first match
         }
     }
+    return Ok();
 }
 
 
@@ -1701,6 +1879,7 @@ SPACETIMEDB_REDUCER(update_indexed_simple_enum, ReducerContext ctx, SimpleEnum a
 SPACETIMEDB_REDUCER(send_scheduled_message, ReducerContext ctx, ScheduledTable arg)
 {
     LOG_INFO_F("Scheduled message executed: ID=%llu, text=%s", arg.scheduled_id, arg.text.c_str());
+    return Ok();
 }
 
 // =============================================================================
@@ -1724,4 +1903,5 @@ SPACETIMEDB_CLIENT_VISIBILITY_FILTER(
 SPACETIMEDB_REDUCER(no_op_succeeds, ReducerContext ctx)
 {
     LOG_INFO("No-op reducer executed successfully");
+    return Ok();
 }
