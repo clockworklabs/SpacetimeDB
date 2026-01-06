@@ -52,4 +52,32 @@ extern "C" {
         }
     }
 
+    STDB_EXPORT(__call_view__)
+    int16_t __call_view__(
+        uint32_t view_id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        SpacetimeDb::BytesSource args,
+        SpacetimeDb::BytesSink result
+    ) {
+        return SpacetimeDb::Internal::Module::__call_view__(
+            view_id,
+            sender_0, sender_1, sender_2, sender_3,
+            args,
+            result
+        );
+    }
+
+    STDB_EXPORT(__call_view_anon__)
+    int16_t __call_view_anon__(
+        uint32_t view_id,
+        SpacetimeDb::BytesSource args,
+        SpacetimeDb::BytesSink result
+    ) {
+        return SpacetimeDb::Internal::Module::__call_view_anon__(
+            view_id,
+            args,
+            result
+        );
+    }
+
 } // extern "C"

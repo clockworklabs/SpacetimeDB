@@ -188,6 +188,21 @@ public:
         BytesSink error_sink
     );
     
+    // View invocation for FFI (with sender)
+    static int16_t __call_view__(
+        uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        BytesSource args_source,
+        BytesSink result_sink
+    );
+    
+    // View invocation for FFI (anonymous - no sender)
+    static int16_t __call_view_anon__(
+        uint32_t id,
+        BytesSource args_source,
+        BytesSink result_sink
+    );
+    
     // Internal registration methods (inline to avoid linking issues)
     template<typename T>
     static void RegisterTableInternal(const char* name, bool is_public) {

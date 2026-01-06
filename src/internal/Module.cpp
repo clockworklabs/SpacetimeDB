@@ -8,7 +8,9 @@
 #include "spacetimedb/internal/v9_type_registration.h"
 #include "spacetimedb/abi/FFI.h"
 #include "spacetimedb/bsatn/bsatn.h"
+#include "spacetimedb/bsatn/writer.h"
 #include "spacetimedb/reducer_error.h"
+#include "spacetimedb/view_context.h"
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -33,6 +35,30 @@ namespace Internal {
     };
     static std::vector<ReducerHandler> g_reducer_handlers;
     
+    // Global view handler storage for runtime dispatch
+    struct ViewHandler {
+        std::string name;
+        std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler;
+    };
+    static std::vector<ViewHandler> g_view_handlers;
+    
+    struct AnonymousViewHandler {
+        std::string name;
+        std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler;
+    };
+    static std::vector<AnonymousViewHandler> g_view_anon_handlers;
+    
+    /**
+     * @brief View result header for serializing view return values
+     * 
+     * This enum is serialized before the actual view data to indicate
+     * the type of result being returned.
+     */
+    enum class ViewResultHeader : uint8_t {
+        RowData = 0,  // Followed by BSATN-encoded Vec<RowType>
+        RawSql = 1,   // Followed by SQL string (future use)
+    };
+    
     // Global error flag for multiple primary key detection
     static bool g_multiple_primary_key_error = false;
     static std::string g_multiple_primary_key_table_name = "";
@@ -55,6 +81,27 @@ namespace Internal {
         g_reducer_handlers.push_back({name, handler, lifecycle});
     }
     
+    // Register a view handler (called by V9Builder during registration)
+    void RegisterViewHandler(const std::string& name,
+                            std::function<std::vector<uint8_t>(ViewContext&, BytesSource)> handler) {
+        g_view_handlers.push_back({name, handler});
+    }
+    
+    // Register an anonymous view handler (called by V9Builder during registration)
+    void RegisterAnonymousViewHandler(const std::string& name,
+                                     std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler) {
+        g_view_anon_handlers.push_back({name, handler});
+    }
+    
+    // Get the number of registered view handlers
+    size_t GetViewHandlerCount() {
+        return g_view_handlers.size();
+    }
+    
+    size_t GetAnonymousViewHandlerCount() {
+        return g_view_anon_handlers.size();
+    }
+    
     // Get the global V9 module
     RawModuleDefV9& GetV9Module() {
         return g_v9_module;
@@ -64,6 +111,8 @@ namespace Internal {
     void ClearV9Module() {
         g_v9_module = RawModuleDefV9{};  // Reset to default state
         g_reducer_handlers.clear();  // Also clear reducer handlers
+        g_view_handlers.clear();  // Clear view handlers
+        g_view_anon_handlers.clear();  // Clear anonymous view handlers
         g_multiple_primary_key_error = false;  // Reset error flag
         g_multiple_primary_key_table_name = "";  // Reset error table name
     }
@@ -365,6 +414,94 @@ Status Module::__call_reducer__(
     }
 
     return StatusCode::OK;
+}
+
+// Dispatch function for views with ViewContext (has sender)
+int16_t Module::__call_view__(
+    uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    BytesSource args_source,
+    BytesSink result_sink
+) {
+    // Check if view ID is valid
+    if (id >= g_view_handlers.size()) {
+        fprintf(stderr, "ERROR: Invalid view ID %u (have %zu views)\n", 
+                id, g_view_handlers.size());
+        return -1;  // NO_SUCH_VIEW
+    }
+    
+    // Create sender identity from the 4 uint64_t parts
+    std::array<uint8_t, 32> sender_bytes{};
+    std::memcpy(sender_bytes.data(), &sender_0, 8);
+    std::memcpy(sender_bytes.data() + 8, &sender_1, 8);
+    std::memcpy(sender_bytes.data() + 16, &sender_2, 8);
+    std::memcpy(sender_bytes.data() + 24, &sender_3, 8);
+    
+    Identity sender_identity(sender_bytes);
+    
+    // Create view context
+    ViewContext ctx(sender_identity);
+    
+    // Get the handler
+    const auto& handler_info = g_view_handlers[id];
+    
+    // Call the view handler - returns serialized result data
+    std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
+    
+    // Serialize ViewResultHeader::RowData followed by the result
+    std::vector<uint8_t> full_result;
+    
+    // Write the header (RowData = 0)
+    ViewResultHeader header = ViewResultHeader::RowData;
+    bsatn::Writer header_writer(full_result);
+    header_writer.write_u8(static_cast<uint8_t>(header));
+    
+    // Append the actual result data
+    full_result.insert(full_result.end(), result_data.begin(), result_data.end());
+    
+    // Write to the result sink
+    WriteBytes(result_sink, full_result);
+    
+    return 2;  // Success with data
+}
+
+// Dispatch function for views with AnonymousViewContext (no sender)
+int16_t Module::__call_view_anon__(
+    uint32_t id,
+    BytesSource args_source,
+    BytesSink result_sink
+) {
+    // Check if view ID is valid
+    if (id >= g_view_anon_handlers.size()) {
+        fprintf(stderr, "ERROR: Invalid anonymous view ID %u (have %zu anonymous views)\n", 
+                id, g_view_anon_handlers.size());
+        return -1;  // NO_SUCH_VIEW
+    }
+    
+    // Create anonymous view context
+    AnonymousViewContext ctx;
+    
+    // Get the handler
+    const auto& handler_info = g_view_anon_handlers[id];
+    
+    // Call the view handler - returns serialized result data
+    std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
+    
+    // Serialize ViewResultHeader::RowData followed by the result
+    std::vector<uint8_t> full_result;
+    
+    // Write the header (RowData = 0)
+    ViewResultHeader header = ViewResultHeader::RowData;
+    bsatn::Writer header_writer(full_result);
+    header_writer.write_u8(static_cast<uint8_t>(header));
+    
+    // Append the actual result data
+    full_result.insert(full_result.end(), result_data.begin(), result_data.end());
+    
+    // Write to the result sink
+    WriteBytes(result_sink, full_result);
+    
+    return 2;  // Success with data
 }
 }
 }
