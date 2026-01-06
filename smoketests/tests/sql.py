@@ -4,7 +4,7 @@ from .. import Smoketest
 class SqlFormat(Smoketest):
     MODULE_CODE = """
 use spacetimedb::sats::{i256, u256};
-use spacetimedb::{table, ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration, SpacetimeType, Uuid};;
+use spacetimedb::{ConnectionId, Identity, ReducerContext, Table, Timestamp, TimeDuration, SpacetimeType, Uuid};
 
 #[derive(Copy, Clone)]
 #[spacetimedb::table(name = t_ints)]
