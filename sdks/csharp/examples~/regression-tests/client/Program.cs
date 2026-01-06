@@ -65,6 +65,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
             "SELECT * FROM Admins",
+            "SELECT * FROM nullable_vec_view",
         ]);
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
@@ -87,6 +88,21 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         Log.Info($"Got OnUnhandledReducerError: {exception}");
         waiting--;
         ValidateBTreeIndexes(ctx);
+        ValidateNullableVecView(ctx);
+    };
+
+    conn.Reducers.OnSetNullableVec += (ReducerEventContext ctx, uint id, bool hasPos, int x, int y) =>
+    {
+        Log.Info("Got SetNullableVec callback");
+        waiting--;
+        if (id == 1)
+        {
+            ValidateNullableVecView(ctx, hasPos, x, y);
+        }
+        else
+        {
+            ValidateNullableVecView(ctx);
+        }
     };
 }
 
@@ -111,6 +127,44 @@ void ValidateBTreeIndexes(IRemoteDbContext conn)
         }
     }
     Log.Debug("   Indexes are good.");
+}
+
+void ValidateNullableVecView(
+    IRemoteDbContext conn,
+    bool? expectedHasPos = null,
+    int expectedX = 0,
+    int expectedY = 0
+)
+{
+    Log.Debug("Checking nullable vec view...");
+    Debug.Assert(conn.Db.NullableVecView != null, "conn.Db.NullableVecView != null");
+    Debug.Assert(
+        conn.Db.NullableVecView.Count >= 2,
+        $"conn.Db.NullableVecView.Count = {conn.Db.NullableVecView.Count}"
+    );
+
+    var rows = conn.Db.NullableVecView.Iter().ToList();
+    Debug.Assert(rows.Any(r => r.Id == 1));
+    Debug.Assert(rows.Any(r => r.Id == 2));
+
+    var remoteRows = conn.Db.NullableVecView.RemoteQuery("WHERE Id = 1").Result;
+    Debug.Assert(remoteRows != null && remoteRows.Length == 1);
+    Debug.Assert(remoteRows[0].Id == 1);
+
+    if (expectedHasPos is bool hasPos)
+    {
+        var row1 = rows.First(r => r.Id == 1);
+        if (!hasPos)
+        {
+            Debug.Assert(row1.Pos == null, "Expected NullableVecView row 1 Pos == null");
+        }
+        else
+        {
+            Debug.Assert(row1.Pos != null, "Expected NullableVecView row 1 Pos != null");
+            Debug.Assert(row1.Pos.X == expectedX, $"Expected row1.Pos.X == {expectedX}, got {row1.Pos.X}");
+            Debug.Assert(row1.Pos.Y == expectedY, $"Expected row1.Pos.Y == {expectedY}, got {row1.Pos.Y}");
+        }
+    }
 }
 
 void OnSubscriptionApplied(SubscriptionEventContext context)
@@ -159,6 +213,8 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     );
     Debug.Assert(context.Db.Admins != null, "context.Db.Admins != null");
     Debug.Assert(context.Db.Admins.Count > 0, $"context.Db.Admins.Count = {context.Db.Admins.Count}");
+
+    ValidateNullableVecView(context, expectedHasPos: true, expectedX: 1, expectedY: 2);
 
     Log.Debug("Calling Iter on View");
     var viewIterRows = context.Db.MyPlayer.Iter();
@@ -229,6 +285,14 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     );
     Debug.Assert(anonViewRemoteQueryRows != null && anonViewRemoteQueryRows.Result.Length > 0);
     Debug.Assert(anonViewRemoteQueryRows.Result.First().Equals(expectedPlayerAndLevel));
+
+    Log.Debug("Calling SetNullableVec (null)");
+    waiting++;
+    context.Reducers.SetNullableVec(1, false, 0, 0);
+
+    Log.Debug("Calling SetNullableVec (some)");
+    waiting++;
+    context.Reducers.SetNullableVec(1, true, 7, 8);
 
     // Procedures tests
     Log.Debug("Calling ReadMySchemaViaHttp");
