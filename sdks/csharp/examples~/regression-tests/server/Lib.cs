@@ -192,6 +192,8 @@ public static partial class Module
     public static void InsertResult(ReducerContext ctx, Result<MyTable, string> msg)
     {
         ctx.Db.my_log.Insert(new MyLog { msg = msg });
+    }
+
     public static void SetNullableVec(ReducerContext ctx, uint id, bool hasPos, int x, int y)
     {
         var row = new NullableVec
