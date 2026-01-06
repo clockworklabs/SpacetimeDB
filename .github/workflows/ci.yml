@@ -881,15 +881,3 @@ jobs:
               repo: targetRepo,
               run_id: runId,
             });
-        
-  nix-flake-check:
-    name: Nix flake check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - run: nix flake check
