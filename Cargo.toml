@@ -229,6 +229,7 @@ percent-encoding = "2.3"
 petgraph = { version = "0.6.5", default-features = false }
 pin-project-lite = "0.2.9"
 pgwire = { version = "0.34.2", default-features = false, features = ["server-api", "pg-ext-types"] }
+portpicker = "0.1"
 postgres-types = "0.2.5"
 pretty_assertions = { version = "1.4", features = ["unstable"] }
 proc-macro2 = "1.0"
