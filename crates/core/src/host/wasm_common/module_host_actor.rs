@@ -22,7 +22,7 @@ use crate::messages::control_db::HostType;
 use crate::module_host_context::ModuleCreationContextLimited;
 use crate::replica_context::ReplicaContext;
 use crate::sql::ast::SchemaViewer;
-use crate::sql::execute::run_from_module;
+use crate::sql::execute::run_with_instance;
 use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
 use crate::subscription::module_subscription_manager::TransactionOffset;
 use crate::util::prometheus_handle::{HistogramExt, TimerGuard};
@@ -507,6 +507,10 @@ impl InstanceCommon {
         }
     }
 
+    pub(crate) fn info(&self) -> Arc<ModuleInfo> {
+        self.info.clone()
+    }
+
     #[tracing::instrument(level = "trace", skip_all)]
     pub(crate) fn update_database<I: WasmInstance>(
         &mut self,
@@ -977,26 +981,21 @@ impl InstanceCommon {
     }
 
     pub(crate) fn handle_cmd<I: WasmInstance>(&mut self, cmds: ViewCommand, inst: &mut I) -> (ViewCommandResult, bool) {
+        let info = self.info.clone();
         let mut inst = RefInstance {
             instance: inst,
             common: self,
         };
         match cmds {
             ViewCommand::AddSingleSubscription {
-                info,
                 sender,
                 auth,
                 request,
                 timer,
             } => {
-                let res = info.subscriptions.add_single_subscription_from_module(
-                    Some((&mut inst, &info.module_def)),
-                    sender,
-                    auth,
-                    request,
-                    timer,
-                    None,
-                );
+                let res = info
+                    .subscriptions
+                    .add_single_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
                     Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
@@ -1004,20 +1003,14 @@ impl InstanceCommon {
                 }
             }
             ViewCommand::AddLegacySubscription {
-                info,
                 sender,
                 auth,
                 subscribe,
                 timer,
             } => {
-                let res = info.subscriptions.add_legacy_subscriber_from_module(
-                    Some((&mut inst, &info.module_def)),
-                    sender,
-                    auth,
-                    subscribe,
-                    timer,
-                    None,
-                );
+                let res = info
+                    .subscriptions
+                    .add_legacy_subscriber_with_instance(&mut inst, sender, auth, subscribe, timer, None);
 
                 match res {
                     Ok((metrics, trapped)) => (
@@ -1030,20 +1023,14 @@ impl InstanceCommon {
                 }
             }
             ViewCommand::AddMultiSubscription {
-                info,
                 sender,
                 auth,
                 request,
                 timer,
             } => {
-                let res = info.subscriptions.add_multi_subscription_from_module(
-                    Some((&mut inst, &info.module_def)),
-                    sender,
-                    auth,
-                    request,
-                    timer,
-                    None,
-                );
+                let res = info
+                    .subscriptions
+                    .add_multi_subscription_with_instance(&mut inst, sender, auth, request, timer, None);
 
                 match res {
                     Ok((metrics, trapped)) => (ViewCommandResult::Subscription { result: Ok(metrics) }, trapped),
@@ -1052,14 +1039,13 @@ impl InstanceCommon {
             }
 
             ViewCommand::Sql {
-                info,
                 db,
                 sql_text,
                 auth,
                 subs,
             } => {
                 let mut head = vec![];
-                let res = run_from_module(Some((&mut inst, &info.module_def)), db, sql_text, auth, subs, &mut head);
+                let res = run_with_instance(&mut inst, db, sql_text, auth, subs, &mut head);
 
                 match res {
                     Ok((result, trapped)) => (

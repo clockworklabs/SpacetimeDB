@@ -43,7 +43,6 @@ use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::ArgId;
-use spacetimedb_schema::def::ModuleDef;
 use spacetimedb_table::static_assert_size;
 use std::collections::HashSet;
 use std::{sync::Arc, time::Instant};
@@ -458,6 +457,14 @@ impl ModuleSubscriptions {
         Ok((update, metrics))
     }
 
+    /// Add a subscription for a single query.
+    ///
+    /// - If `host` is `Some`, the request is forwarded to the module host. The host
+    ///   will execute the subscription logic on the module thread and call back
+    ///   into `add_single_subscription_with_instance` .
+    /// - If `host` is `None`, the subscription is executed directly without involving
+    ///   a module.
+    #[tracing::instrument(level = "trace", skip_all)]
     pub async fn add_single_subscription(
         &self,
         host: Option<&ModuleHost>,
@@ -469,23 +476,35 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
             Some(host) => {
-                let info = host.info.clone();
-                host.call_view_add_single_subscription(info, sender, auth, request, timer)
+                host.call_view_add_single_subscription(sender, auth, request, timer)
                     .await
             }
             None => self
-                .add_single_subscription_from_module::<host::wasmtime::WasmtimeInstance>(
+                .add_single_subscription_inner::<host::wasmtime::WasmtimeInstance>(
                     None, sender, auth, request, timer, _assert,
                 )
                 .map(|(metrics, _)| metrics),
         }
     }
 
-    /// Add a subscription to a single query.
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub fn add_single_subscription_from_module<I: WasmInstance>(
+    // Add a subscription for a single query with access to a module instance.
+    ///
+    /// The execution logic will always be called from the module's thread.
+    pub(crate) fn add_single_subscription_with_instance<I: WasmInstance>(
         &self,
-        instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+        instance: &mut RefInstance<I>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeSingle,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
+        self.add_single_subscription_inner(Some(instance), sender, auth, request, timer, _assert)
+    }
+
+    fn add_single_subscription_inner<I: WasmInstance>(
+        &self,
+        instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: SubscribeSingle,
@@ -851,6 +870,9 @@ impl ModuleSubscriptions {
         self.broadcast_queue.send_client_message(recipient, tx_offset, message)
     }
 
+    /// Add a subscription consisting of multiple queries.
+    ///
+    /// Read more in [`Self::add_single_subscription`].
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn add_multi_subscription(
         &self,
@@ -863,22 +885,34 @@ impl ModuleSubscriptions {
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         match host {
             Some(host) => {
-                let info = host.info.clone();
-                host.call_view_add_multi_subscription(info, sender, auth, request, timer)
+                host.call_view_add_multi_subscription(sender, auth, request, timer)
                     .await
             }
             None => self
-                .add_multi_subscription_from_module::<host::wasmtime::WasmtimeInstance>(
+                .add_multi_subscription_inner::<host::wasmtime::WasmtimeInstance>(
                     None, sender, auth, request, timer, _assert,
                 )
                 .map(|(metrics, _)| metrics),
         }
     }
 
-    #[tracing::instrument(level = "trace", skip_all)]
-    pub fn add_multi_subscription_from_module<I: WasmInstance>(
+    /// Similar to [`Self::add_single_subscription_with_instance`],
+    /// but for multiple queries.
+    pub(crate) fn add_multi_subscription_with_instance<I: WasmInstance>(
         &self,
-        instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+        instance: &mut RefInstance<I>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        request: SubscribeMulti,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
+        self.add_multi_subscription_inner(Some(instance), sender, auth, request, timer, _assert)
+    }
+
+    fn add_multi_subscription_inner<I: WasmInstance>(
+        &self,
+        instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: SubscribeMulti,
@@ -1004,14 +1038,12 @@ impl ModuleSubscriptions {
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
         match host {
-            Some(host) => {
-                let info = host.info.clone();
-                host.call_view_add_legacy_subscription(info, sender, auth, subscription, timer)
-                    .await
-                    .map(|metrics| metrics.unwrap_or_default())
-            }
+            Some(host) => host
+                .call_view_add_legacy_subscription(sender, auth, subscription, timer)
+                .await
+                .map(|metrics| metrics.unwrap_or_default()),
             None => self
-                .add_legacy_subscriber_from_module::<host::wasmtime::WasmtimeInstance>(
+                .add_legacy_subscriber_inner::<host::wasmtime::WasmtimeInstance>(
                     None,
                     sender,
                     auth,
@@ -1022,9 +1054,24 @@ impl ModuleSubscriptions {
                 .map(|(metrics, _)| metrics),
         }
     }
-    pub fn add_legacy_subscriber_from_module<I: WasmInstance>(
+
+    /// Similar to [`Self::add_single_subscription_with_instance`],
+    /// but for the legacy subscription API which uses a set of queries.
+    pub(crate) fn add_legacy_subscriber_with_instance<I: WasmInstance>(
         &self,
-        instance: Option<(&mut RefInstance<I>, &ModuleDef)>,
+        instance: &mut RefInstance<I>,
+        sender: Arc<ClientConnectionSender>,
+        auth: AuthCtx,
+        subscription: Subscribe,
+        timer: Instant,
+        _assert: Option<AssertTxFn>,
+    ) -> Result<(ExecutionMetrics, bool), DBError> {
+        self.add_legacy_subscriber_inner(Some(instance), sender, auth, subscription, timer, _assert)
+    }
+
+    fn add_legacy_subscriber_inner<I: WasmInstance>(
+        &self,
+        instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         subscription: Subscribe,
@@ -1263,15 +1310,13 @@ impl ModuleSubscriptions {
     fn materialize_views_and_downgrade_tx<I: WasmInstance>(
         &self,
         mut tx: MutTxId,
-        instance: Option<(&mut RefInstance<'_, I>, &ModuleDef)>,
+        instance: Option<&mut RefInstance<'_, I>>,
         view_collector: &impl CollectViews,
         sender: Identity,
     ) -> Result<(TxGuard<impl FnOnce(TxId) + '_>, TransactionOffset, bool), DBError> {
         let mut trapped = false;
         if let Some(instance) = instance {
-            let (instance, module_def) = instance;
-            (tx, trapped) =
-                ModuleHost::materialize_views(tx, instance, module_def, view_collector, sender, Workload::Subscribe)?;
+            (tx, trapped) = ModuleHost::materialize_views(tx, instance, view_collector, sender, Workload::Subscribe)?;
         };
 
         let (tx_data, tx_metrics_mut, tx) = self.relational_db.commit_tx_downgrade(tx, Workload::Subscribe);
