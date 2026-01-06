@@ -1197,14 +1197,15 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         AlgebraicTypeUse::String => Some(r#""""#),
         // Primitives are initialized to zero automatically.
         AlgebraicTypeUse::Primitive(_) => None,
+        // Result<,> must be explicitly initialized.
+        AlgebraicTypeUse::Result { .. } => Some("default!"),
         // these are structs, they are initialized to zero-filled automatically
         AlgebraicTypeUse::Unit
         | AlgebraicTypeUse::Identity
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
-        | AlgebraicTypeUse::Uuid
-        | AlgebraicTypeUse::Result { .. } => None,
+        | AlgebraicTypeUse::Uuid => None,
         AlgebraicTypeUse::Never => unimplemented!("never types are not yet supported in C# output"),
     }
 }

@@ -23,6 +23,7 @@ namespace SpacetimeDB.Types
 
         public MyLog()
         {
+            this.Msg = default!;
         }
     }
 }

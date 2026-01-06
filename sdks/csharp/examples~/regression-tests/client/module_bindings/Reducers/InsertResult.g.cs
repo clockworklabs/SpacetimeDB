@@ -58,6 +58,7 @@ namespace SpacetimeDB.Types
 
             public InsertResult()
             {
+                this.Msg = default!;
             }
 
             string IReducerArgs.ReducerName => "InsertResult";

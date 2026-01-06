@@ -51,6 +51,7 @@ namespace SpacetimeDB.Types
 
             public InsertWithTxRollbackResult()
             {
+                this.Value = default!;
             }
         }
         [SpacetimeDB.Type]
