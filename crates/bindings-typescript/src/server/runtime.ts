@@ -560,6 +560,7 @@ function makeTableView(
 
     let index: Index<any, any>;
     if (isUnique && serializeSinglePoint) {
+      // numColumns == 1, unique index
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
           const point = serializeSinglePoint(colVal);
@@ -596,11 +597,12 @@ function makeTableView(
         },
       } as UniqueIndex<any, any>;
     } else if (isUnique) {
+      // numColumns != 1, unique index
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
-          if (colVal.length !== numColumns)
+          if (colVal.length !== numColumns) {
             throw new TypeError('wrong number of elements');
-
+          }
           const point = serializePoint(colVal);
           const iter = tableIterator(
             sys.datastore_index_scan_point_bsatn(index_id, point),
@@ -638,6 +640,7 @@ function makeTableView(
         },
       } as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
+      // numColumns == 1
       index = {
         filter: (range: any): IteratorObject<RowType<any>> => {
           const point = serializeSinglePoint(range);
@@ -655,6 +658,7 @@ function makeTableView(
         },
       } as RangedIndex<any, any>;
     } else {
+      // numColumns != 1
       const serializeRange = (range: any[]): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
