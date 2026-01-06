@@ -1,0 +1,15 @@
+﻿Write a SpacetimeDB backend module in Rust that defines one table and an init reducer that seeds rows on database initialization.
+
+TABLE
+- users
+  - Struct: User
+  - Fields:
+    - id: i32 (primary key)
+    - name: String
+    - age: i32
+    - active: bool
+
+REDUCERS
+- init: insert exactly these rows on initialization
+  - (id=1, name="Alice", age=30, active=true)
+  - (id=2, name="Bob",   age=22, active=false)

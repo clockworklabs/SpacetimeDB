@@ -7401,7 +7401,6 @@ dependencies = [
  "names",
  "notify 7.0.0",
  "percent-encoding",
- "portpicker",
  "predicates",
  "pretty_assertions",
  "quick-xml 0.31.0",
@@ -7419,6 +7418,7 @@ dependencies = [
  "spacetimedb-codegen",
  "spacetimedb-data-structures",
  "spacetimedb-fs-utils",
+ "spacetimedb-guard",
  "spacetimedb-jsonwebtoken",
  "spacetimedb-lib 1.11.1",
  "spacetimedb-paths",
@@ -7812,6 +7812,15 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "zstd-framed",
+]
+
+[[package]]
+name = "spacetimedb-guard"
+version = "1.11.1"
+dependencies = [
+ "portpicker",
+ "reqwest 0.12.24",
+ "tempfile",
 ]
 
 [[package]]
@@ -10901,6 +10910,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b619f8c85654798007fb10afa5125590b43b088c225a25fc2fec100a9fad0fc6"
 dependencies = [
  "xml-rs",
+]
+
+[[package]]
+name = "xtask-llm-benchmark"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "blake3",
+ "chrono",
+ "clap 4.5.50",
+ "fs2",
+ "futures",
+ "heck 0.5.0",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "spacetimedb 1.11.1",
+ "spacetimedb-guard",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]
