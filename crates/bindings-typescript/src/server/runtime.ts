@@ -737,7 +737,7 @@ function advanceIter(iter: IteratorHandle, buf: IterBuf): Uint8Array | null {
       return iter.advance(buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-        buf.grow(e.__buffer_too_small__ as number, false);
+        buf.grow(e.__buffer_too_small__ as number);
         continue;
       }
       throw e;
@@ -759,8 +759,8 @@ class IterBuf extends ResizableBuffer implements Disposable {
   }
 
   [Symbol.dispose]() {
-    if (!this.buffer.detached) {
-      IterBuf.#bufs.push(this.transfer());
+    if (!this.detached) {
+      IterBuf.#bufs.push(this.detach());
     }
   }
 }
