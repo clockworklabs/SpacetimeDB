@@ -194,6 +194,7 @@ public static partial class Module
         ctx.Db.my_log.Insert(new MyLog { msg = msg });
     }
 
+    [SpacetimeDB.Reducer]
     public static void SetNullableVec(ReducerContext ctx, uint id, bool hasPos, int x, int y)
     {
         var row = new NullableVec
