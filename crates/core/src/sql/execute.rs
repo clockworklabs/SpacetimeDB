@@ -208,7 +208,7 @@ pub async fn run(
 
 /// Run the `SQL` string using the provided `WasmInstance` and `ModuleDef`
 ///
-/// Intended to be called from the module's thread.
+/// The query will always be executed on the module's thread.
 pub(crate) fn run_with_instance<I: WasmInstance>(
     instance: &mut RefInstance<I>,
     db: Arc<RelationalDB>,

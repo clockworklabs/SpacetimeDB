@@ -489,7 +489,7 @@ impl ModuleSubscriptions {
 
     // Add a subscription for a single query with access to a module instance.
     ///
-    /// Intended to be called from the module's thread.
+    /// The execution logic will always be called from the module's thread.
     pub(crate) fn add_single_subscription_with_instance<I: WasmInstance>(
         &self,
         instance: &mut RefInstance<I>,
@@ -872,7 +872,7 @@ impl ModuleSubscriptions {
 
     /// Add a subscription consisting of multiple queries.
     ///
-    /// read more in [`Self::add_single_subscription`].
+    /// Read more in [`Self::add_single_subscription`].
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn add_multi_subscription(
         &self,
