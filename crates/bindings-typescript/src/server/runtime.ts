@@ -529,14 +529,7 @@ function makeTableView(
             const point = serializeSinglePoint(buf, colVal);
             iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
           }
-          const iter = tableIterator(iter_id, deserializeRow);
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           using buf = IterBuf.take();
@@ -573,14 +566,7 @@ function makeTableView(
             const point = serializePoint(buf, colVal);
             iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
           }
-          const iter = tableIterator(iter_id, deserializeRow);
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           if (colVal.length !== numColumns)
@@ -719,7 +705,7 @@ function* tableIterator<T>(
   id: u32,
   deserialize: Deserializer<T>
 ): Generator<T, undefined> {
-  using iter = new IteratorHandle(id);
+  using iter = new GCedIteratorHandle(id);
 
   using iterBuf = IterBuf.take();
   let buf;
@@ -729,6 +715,20 @@ function* tableIterator<T>(
       yield deserialize(reader);
     }
   }
+}
+
+function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
+  using iter = new IteratorHandle(id);
+
+  using iterBuf = IterBuf.take();
+  let buf;
+  if ((buf = advanceIter(iter, iterBuf)) != null) {
+    const reader = new BinaryReader(buf);
+    if (reader.remaining > 0) {
+      return deserialize(reader);
+    }
+  }
+  return null;
 }
 
 function advanceIter(iter: IteratorHandle, buf: IterBuf): Uint8Array | null {
@@ -769,20 +769,14 @@ class IterBuf extends ResizableBuffer implements Disposable {
 class IteratorHandle implements Disposable {
   #id: u32 | -1;
 
-  static #finalizationRegistry = new FinalizationRegistry<u32>(
-    sys.row_iter_bsatn_close
-  );
-
   constructor(id: u32) {
     this.#id = id;
-    IteratorHandle.#finalizationRegistry.register(this, id, this);
   }
 
   /** Unregister this object with the finalization registry and return the id */
-  #detach() {
+  protected detach() {
     const id = this.#id;
     this.#id = -1;
-    IteratorHandle.#finalizationRegistry.unregister(this);
     return id;
   }
 
@@ -790,15 +784,32 @@ class IteratorHandle implements Disposable {
   advance(buf: ArrayBuffer): Uint8Array | null {
     if (this.#id === -1) return null;
     const [done, ret] = sys.row_iter_bsatn_advance(this.#id, buf);
-    if (done) this.#detach();
+    if (done) this.detach();
     return ret;
   }
 
   [Symbol.dispose]() {
     if (this.#id >= 0) {
-      const id = this.#detach();
+      const id = this.detach();
       sys.row_iter_bsatn_close(id);
     }
+  }
+}
+
+class GCedIteratorHandle extends IteratorHandle {
+  static #finalizationRegistry = new FinalizationRegistry<u32>(
+    sys.row_iter_bsatn_close
+  );
+
+  constructor(id: u32) {
+    super(id);
+    GCedIteratorHandle.#finalizationRegistry.register(this, id, this);
+  }
+
+  protected override detach() {
+    const id = super.detach();
+    GCedIteratorHandle.#finalizationRegistry.unregister(this);
+    return id;
   }
 }
 
