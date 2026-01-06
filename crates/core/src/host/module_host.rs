@@ -649,28 +649,24 @@ impl CallReducerParams {
 
 pub enum ViewCommand {
     AddSingleSubscription {
-        info: Arc<ModuleInfo>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: SubscribeSingle,
         timer: Instant,
     },
     AddMultiSubscription {
-        info: Arc<ModuleInfo>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: SubscribeMulti,
         timer: Instant,
     },
     AddLegacySubscription {
-        info: Arc<ModuleInfo>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         subscribe: Subscribe,
         timer: Instant,
     },
     Sql {
-        info: Arc<ModuleInfo>,
         db: Arc<RelationalDB>,
         sql_text: String,
         auth: AuthCtx,
@@ -1562,14 +1558,12 @@ impl ModuleHost {
 
     pub async fn call_view_add_single_subscription(
         &self,
-        info: Arc<ModuleInfo>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddSingleSubscription {
-            info,
             sender,
             auth,
             request,
@@ -1597,14 +1591,12 @@ impl ModuleHost {
 
     pub async fn call_view_add_multi_subscription(
         &self,
-        info: Arc<ModuleInfo>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         request: SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddMultiSubscription {
-            info,
             sender,
             auth,
             request,
@@ -1632,14 +1624,12 @@ impl ModuleHost {
 
     pub async fn call_view_add_legacy_subscription(
         &self,
-        info: Arc<ModuleInfo>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
         subscribe: spacetimedb_client_api_messages::websocket::Subscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddLegacySubscription {
-            info,
             sender,
             auth,
             subscribe,
@@ -1667,7 +1657,6 @@ impl ModuleHost {
 
     pub async fn call_view_sql(
         &self,
-        info: Arc<ModuleInfo>,
         db: Arc<RelationalDB>,
         sql_text: String,
         auth: AuthCtx,
@@ -1675,7 +1664,6 @@ impl ModuleHost {
         head: &mut Vec<(Box<str>, AlgebraicType)>,
     ) -> Result<SqlResult, DBError> {
         let cmd = ViewCommand::Sql {
-            info,
             db,
             sql_text,
             auth,
@@ -1838,7 +1826,6 @@ impl ModuleHost {
     pub fn materialize_views<I: WasmInstance>(
         mut tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
-        module_def: &ModuleDef,
         view_collector: &impl CollectViews,
         caller: Identity,
         workload: Workload,
@@ -1854,9 +1841,8 @@ impl ModuleHost {
             let is_anonymous = st_view_row.is_anonymous;
             let sender = if is_anonymous { None } else { Some(caller) };
             if !tx.is_view_materialized(view_id, ArgId::SENTINEL, caller)? {
-                let (res, trapped) = Self::call_view(
-                    instance, module_def, tx, &view_name, view_id, table_id, Nullary, caller, sender,
-                )?;
+                let (res, trapped) =
+                    Self::call_view(instance, tx, &view_name, view_id, table_id, Nullary, caller, sender)?;
                 tx = res.tx;
                 if trapped {
                     return Ok((tx, true));
@@ -1877,10 +1863,10 @@ impl ModuleHost {
     pub fn call_views_with_tx<I: WasmInstance>(
         tx: MutTxId,
         instance: &mut RefInstance<'_, I>,
-        module_def: &ModuleDef,
         caller: Identity,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
         let mut out = ViewCallResult::default(tx);
+        let module_def = &instance.common.info().module_def;
         let mut trapped = false;
         use FunctionArgs::Nullary;
         for ViewCallInfo {
@@ -1896,7 +1882,6 @@ impl ModuleHost {
 
             let (result, trap) = Self::call_view(
                 instance,
-                module_def,
                 out.tx,
                 &view_def.name,
                 view_id,
@@ -1924,7 +1909,6 @@ impl ModuleHost {
 
     fn call_view<I: WasmInstance>(
         instance: &mut RefInstance<'_, I>,
-        module_def: &ModuleDef,
         tx: MutTxId,
         view_name: &str,
         view_id: ViewId,
@@ -1933,6 +1917,7 @@ impl ModuleHost {
         caller: Identity,
         sender: Option<Identity>,
     ) -> Result<(ViewCallResult, bool), ViewCallError> {
+        let module_def = &instance.common.info().module_def;
         let view_def = module_def.view(view_name).ok_or(ViewCallError::NoSuchView)?;
         let fn_ptr = view_def.fn_ptr;
         let row_type = view_def.product_type_ref;
