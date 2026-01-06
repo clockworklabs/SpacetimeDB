@@ -353,7 +353,7 @@ And a TypeScript [client](#client) can call that procedure:
 ctx.procedures.makeRequest();
 ```
 
-A Rust [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+A TypeScript [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
 
 ```typescript
 ctx.procedures.makeRequest().then(
@@ -376,7 +376,7 @@ An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeSc
 
 ```
 
-A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+An Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
 
 ```cpp
 {
@@ -397,11 +397,11 @@ void AGameManager::OnMakeRequestComplete(const FProcedureEventContext& Context, 
 </TabItem>
 <TabItem value="blueprint" label="Unreal Blueprint">
 
-An Unreal C++ [client](#client) can call a procedure defined by a Rust or TypeScript module:
+An Unreal Blueprint [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
 ![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
 
-A Unreal C++ [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+An Unreal Blueprint [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
 
 ![MakeRequest with callback](/images/unreal/intro/ue-blueprint-makerequest-with-callback.png)
 

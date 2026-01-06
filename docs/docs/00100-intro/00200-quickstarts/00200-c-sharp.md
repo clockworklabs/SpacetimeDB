@@ -1,5 +1,5 @@
 ---
-title: C# 
+title: C#
 slug: /quickstarts/c-sharp
 id: c-sharp
 ---
