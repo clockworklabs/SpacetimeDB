@@ -4,7 +4,7 @@ pub mod util;
 pub mod version;
 
 use crate::control_db::ControlDb;
-use crate::subcommands::{extract_schema, start};
+pub use crate::subcommands::{extract_schema, start};
 use anyhow::Context as _;
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};

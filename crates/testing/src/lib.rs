@@ -7,7 +7,10 @@ use std::env;
 use std::process::Command;
 
 pub mod modules;
+mod run_standalone;
 pub mod sdk;
+
+pub use run_standalone::SpacetimeDbGuard;
 
 #[track_caller]
 pub fn invoke_cli(paths: &SpacetimePaths, args: &[&str]) {

@@ -737,3 +737,51 @@ jobs:
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1
           }
+  nix-flake-check:
+    name: Nix flake check
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Expose nix to PATH
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # GitHub normally provides these, but some container+runner setups don't.
+          PATH_FILE="${GITHUB_PATH:-/github/path}"
+          ENV_FILE="${GITHUB_ENV:-/github/env}"
+          BASH_ENV_FILE="${BASH_ENV:-/github/bash_env}"
+
+          # Ensure the files exist
+          mkdir -p "$(dirname "$PATH_FILE")" "$(dirname "$ENV_FILE")" "$(dirname "$BASH_ENV_FILE")"
+          : > "$PATH_FILE" || true
+          : > "$ENV_FILE" || true
+          : > "$BASH_ENV_FILE" || true
+
+          echo "/root/.nix-profile/bin" >> "$PATH_FILE"
+          echo "PATH=/root/.nix-profile/bin:\$PATH" >> "$ENV_FILE"
+          echo ". /root/.nix-profile/etc/profile.d/nix.sh" >> "$BASH_ENV_FILE"
+      - name: Nix flake check
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NIX_CONFIG=$'log-lines = 200000\nmax-jobs = 8\ncores = 8\n'
+          export CARGO_BUILD_JOBS=1
+          export RUST_BACKTRACE=full
+          nix flake check -L --show-trace --print-build-logs
+      - name: Dump jemalloc configure log (on failure)
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Find any jemalloc config.log produced in the workspace build dir
+          find /build/source -path '*tikv-jemalloc-sys*' -name config.log -print -exec tail -n 300 {} \; || true

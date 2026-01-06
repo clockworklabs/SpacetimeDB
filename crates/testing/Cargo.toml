@@ -28,6 +28,8 @@ lazy_static.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 serde.workspace = true
+portpicker.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
 
 [dev-dependencies]
 serial_test.workspace = true
