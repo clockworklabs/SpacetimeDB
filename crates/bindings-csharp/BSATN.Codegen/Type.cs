@@ -101,6 +101,7 @@ public abstract record TypeUse(string Name, string BSATNName)
                     typeInfo,
                     Parse(member, named.TypeArguments[0], diag)
                 ),
+                "System.Nullable<T>" => new NullableUse(type, typeInfo),
                 _ => named.IsValueType
                     ? (
                         named.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum
@@ -235,6 +236,24 @@ public record ValueUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
         string outVar,
         int level = 0
     ) => $"var {outVar} = {inVar1}.Equals({inVar2});";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
+}
+
+/// <summary>
+/// A use of a nullable value type (e.g. <c>int?</c>, <c>MyStruct?</c>).
+/// </summary>
+/// <param name="Type"></param>
+/// <param name="TypeInfo"></param>
+public record NullableUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = System.Nullable.Equals({inVar1}, {inVar2});";
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar}.GetHashCode();";

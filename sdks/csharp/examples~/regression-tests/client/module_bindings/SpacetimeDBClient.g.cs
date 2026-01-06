@@ -34,6 +34,8 @@ namespace SpacetimeDB.Types
             AddTable(MyLog = new(conn));
             AddTable(MyPlayer = new(conn));
             AddTable(MyTable = new(conn));
+            AddTable(NullableVec = new(conn));
+            AddTable(NullableVecView = new(conn));
             AddTable(Player = new(conn));
             AddTable(PlayerLevel = new(conn));
             AddTable(PlayersAtLevelOne = new(conn));
@@ -602,6 +604,7 @@ namespace SpacetimeDB.Types
                 "ClientConnected" => BSATNHelpers.Decode<Reducer.ClientConnected>(encodedArgs),
                 "Delete" => BSATNHelpers.Decode<Reducer.Delete>(encodedArgs),
                 "InsertResult" => BSATNHelpers.Decode<Reducer.InsertResult>(encodedArgs),
+                "SetNullableVec" => BSATNHelpers.Decode<Reducer.SetNullableVec>(encodedArgs),
                 "ThrowError" => BSATNHelpers.Decode<Reducer.ThrowError>(encodedArgs),
                 "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
                 var reducer => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
@@ -632,6 +635,7 @@ namespace SpacetimeDB.Types
                 Reducer.ClientConnected args => Reducers.InvokeClientConnected(eventContext, args),
                 Reducer.Delete args => Reducers.InvokeDelete(eventContext, args),
                 Reducer.InsertResult args => Reducers.InvokeInsertResult(eventContext, args),
+                Reducer.SetNullableVec args => Reducers.InvokeSetNullableVec(eventContext, args),
                 Reducer.ThrowError args => Reducers.InvokeThrowError(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")
             };
