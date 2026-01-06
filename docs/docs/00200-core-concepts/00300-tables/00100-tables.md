@@ -1,5 +1,5 @@
 ---
-title: Overview
+title: Tables
 slug: /tables
 ---
 
