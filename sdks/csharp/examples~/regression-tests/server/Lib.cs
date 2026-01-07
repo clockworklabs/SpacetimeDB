@@ -305,9 +305,12 @@ public static partial class Module
             var moduleIdentity = ProcedureContext.Identity;
             var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9";
             var res = ctx.Http.Get(uri, System.TimeSpan.FromSeconds(2));
-            return res.IsSuccess
-                ? "OK " + res.Value!.Body.ToStringUtf8Lossy()
-                : "ERR " + res.Error!.Message;
+            return res switch
+            {
+                Result<HttpResponse, HttpError>.OkR(var v) => "OK " + v.Body.ToStringUtf8Lossy(),
+                Result<HttpResponse, HttpError>.ErrR(var e) => "ERR " + e.Message,
+                _ => throw new InvalidOperationException("Unknown Result variant."),
+            };
         }
         catch (Exception e)
         {
@@ -322,9 +325,12 @@ public static partial class Module
         try
         {
             var res = ctx.Http.Get("http://foo.invalid/", System.TimeSpan.FromMilliseconds(250));
-            return res.IsSuccess
-                ? "OK " + res.Value!.Body.ToStringUtf8Lossy()
-                : "ERR " + res.Error!.Message;
+            return res switch
+            {
+                Result<HttpResponse, HttpError>.OkR(var v) => "OK " + v.Body.ToStringUtf8Lossy(),
+                Result<HttpResponse, HttpError>.ErrR(var e) => "ERR " + e.Message,
+                _ => throw new InvalidOperationException("Unknown Result variant."),
+            };
         }
         catch (Exception e)
         {
