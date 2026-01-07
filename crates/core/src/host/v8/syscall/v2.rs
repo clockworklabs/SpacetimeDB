@@ -904,7 +904,7 @@ fn no_such_iter(scope: &PinScope<'_, '_>) -> SysCallError {
 fn row_iter_bsatn_advance<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<Local<'scope, v8::Array>> {
+) -> SysCallResult<Local<'scope, v8::Number>> {
     let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
     let row_iter_idx = RowIterIdx(row_iter_idx);
     let array_buffer = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
@@ -935,13 +935,9 @@ fn row_iter_bsatn_advance<'scope>(
         // The iterator is exhausted, destroy it, and tell the caller.
         env.iters.take(row_iter_idx);
     }
-    let elements = &[
-        v8::Boolean::new(scope, done).into(),
-        v8::Uint8Array::new(scope, array_buffer, 0, written)
-            .expect("len > 8 pebibytes")
-            .into(),
-    ];
-    Ok(v8::Array::new_with_elements(scope, elements))
+    let written: i32 = written.try_into().unwrap();
+    let out = if done { -written } else { written };
+    Ok(v8::Number::new(scope, out.into()))
 }
 
 /// Module ABI that destroys the iterator registered under `iter`.

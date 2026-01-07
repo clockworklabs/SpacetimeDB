@@ -1,15 +1,20 @@
 import { fromByteArray } from 'base64-js';
 
 export class ResizableBuffer {
-  #buffer: ArrayBuffer | null;
+  #buffer: ArrayBuffer;
+  #view: DataView;
 
   constructor(init: number | ArrayBuffer) {
     this.#buffer = typeof init === 'number' ? new ArrayBuffer(init) : init;
+    this.#view = new DataView(this.#buffer);
   }
 
   get buffer(): ArrayBuffer {
-    if (this.#buffer == null) throw new TypeError('Accessing detached buffer');
     return this.#buffer;
+  }
+
+  get view(): DataView {
+    return this.#view;
   }
 
   get capacity(): number {
@@ -17,33 +22,23 @@ export class ResizableBuffer {
   }
 
   grow(newSize: number) {
-    if (this.#buffer == null)
-      throw new TypeError('Cannot resize detached buffer');
     if (newSize <= this.#buffer.byteLength) return;
     this.#buffer = this.#buffer.transfer(newSize);
-  }
-
-  get detached(): boolean {
-    return this.#buffer == null;
-  }
-
-  detach(): ArrayBuffer {
-    if (this.#buffer == null)
-      throw new TypeError('Cannot detach detached buffer');
-    const buf = this.#buffer!;
-    this.#buffer = null;
-    return buf;
+    this.#view = new DataView(this.#buffer);
   }
 }
 
 export default class BinaryWriter {
   #buffer: ResizableBuffer;
-  #view: DataView;
   #offset: number = 0;
 
   constructor(init: number | ResizableBuffer) {
     this.#buffer = typeof init === 'number' ? new ResizableBuffer(init) : init;
-    this.#view = new DataView(this.#buffer.buffer);
+  }
+
+  reset(buffer: ResizableBuffer) {
+    this.#buffer = buffer;
+    this.#offset = 0;
   }
 
   #expandBuffer(additionalCapacity: number): void {
@@ -52,7 +47,6 @@ export default class BinaryWriter {
     let newCapacity = this.#buffer.capacity * 2;
     if (newCapacity < minCapacity) newCapacity = minCapacity;
     this.#buffer.grow(newCapacity);
-    this.#view = new DataView(this.#buffer.buffer);
   }
 
   toBase64(): string {
@@ -65,6 +59,10 @@ export default class BinaryWriter {
 
   get offset(): number {
     return this.#offset;
+  }
+
+  get #view() {
+    return this.#buffer.view;
   }
 
   writeUInt8Array(value: Uint8Array): void {
