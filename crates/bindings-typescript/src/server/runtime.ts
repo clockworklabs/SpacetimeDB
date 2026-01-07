@@ -277,7 +277,8 @@ export const hooks: ModuleHooks = {
       );
     }
     const deserializeArgs = reducerArgsDeserializers[reducerId];
-    const args = deserializeArgs(new BinaryReader(argsBuf));
+    BINARY_READER.reset(argsBuf);
+    const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
     const ctx: ReducerCtx<any> = new ReducerCtxImpl(
       senderIdentity,
@@ -366,6 +367,9 @@ function makeDbView(moduleDef: Infer<typeof RawModuleDefV9>): DbView<any> {
   );
 }
 
+const BINARY_WRITER = new BinaryWriter(0);
+const BINARY_READER = new BinaryReader(new Uint8Array());
+
 function makeTableView(
   typespace: Infer<typeof Typespace>,
   table: Infer<typeof RawTableDefV9>
@@ -420,11 +424,11 @@ function makeTableView(
     tableIterator(sys.datastore_table_scan_bsatn(table_id), deserializeRow);
 
   const integrateGeneratedColumns = hasAutoIncrement
-    ? (row: RowType<any>, ret_buf: Uint8Array) => {
-        const reader = new BinaryReader(ret_buf);
+    ? (row: RowType<any>, ret_buf: DataView) => {
+        BINARY_READER.reset(ret_buf);
         for (const { colName, deserialize, sequenceTrigger } of sequences) {
           if (row[colName] === sequenceTrigger) {
-            row[colName] = deserialize(reader);
+            row[colName] = deserialize(BINARY_READER);
           }
         }
       }
@@ -436,23 +440,23 @@ function makeTableView(
     [Symbol.iterator]: () => iter(),
     insert: row => {
       const buf = LEAF_BUF;
-      const writer = new BinaryWriter(buf);
-      serializeRow(writer, row);
-      sys.datastore_insert_bsatn(table_id, buf.buffer, writer.offset);
+      BINARY_WRITER.reset(buf);
+      serializeRow(BINARY_WRITER, row);
+      sys.datastore_insert_bsatn(table_id, buf.buffer, BINARY_WRITER.offset);
       const ret = { ...row };
-      integrateGeneratedColumns?.(ret, new Uint8Array(buf.buffer));
+      integrateGeneratedColumns?.(ret, buf.view);
 
       return ret;
     },
     delete: (row: RowType<any>): boolean => {
       const buf = LEAF_BUF;
-      const writer = new BinaryWriter(buf);
-      writer.writeU32(1);
-      serializeRow(writer, row);
+      BINARY_WRITER.reset(buf);
+      BINARY_WRITER.writeU32(1);
+      serializeRow(BINARY_WRITER, row);
       const count = sys.datastore_delete_all_by_eq_bsatn(
         table_id,
         buf.buffer,
-        writer.offset
+        BINARY_WRITER.offset
       );
       return count > 0;
     },
@@ -492,11 +496,11 @@ function makeTableView(
     );
 
     const serializePoint = (buffer: ResizableBuffer, colVal: any[]): number => {
-      const writer = new BinaryWriter(buffer);
+      BINARY_WRITER.reset(buffer);
       for (let i = 0; i < numColumns; i++) {
-        indexSerializers[i](writer, colVal[i]);
+        indexSerializers[i](BINARY_WRITER, colVal[i]);
       }
-      return writer.offset;
+      return BINARY_WRITER.offset;
     };
 
     const serializeSingleElement =
@@ -505,9 +509,9 @@ function makeTableView(
     const serializeSinglePoint =
       serializeSingleElement &&
       ((buffer: ResizableBuffer, colVal: any): number => {
-        const writer = new BinaryWriter(buffer);
-        serializeSingleElement(writer, colVal);
-        return writer.offset;
+        BINARY_WRITER.reset(buffer);
+        serializeSingleElement(BINARY_WRITER, colVal);
+        return BINARY_WRITER.offset;
       });
 
     type IndexScanArgs = [
@@ -550,15 +554,15 @@ function makeTableView(
         },
         update: (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
-          const writer = new BinaryWriter(buf);
-          serializeRow(writer, row);
+          BINARY_WRITER.reset(buf);
+          serializeRow(BINARY_WRITER, row);
           sys.datastore_update_bsatn(
             table_id,
             index_id,
             buf.buffer,
-            writer.offset
+            BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, new Uint8Array(buf.buffer));
+          integrateGeneratedColumns?.(row, buf.view);
           return row;
         },
       } as UniqueIndex<any, any>;
@@ -600,15 +604,15 @@ function makeTableView(
         },
         update: (row: RowType<any>): RowType<any> => {
           const buf = LEAF_BUF;
-          const writer = new BinaryWriter(buf);
-          serializeRow(writer, row);
+          BINARY_WRITER.reset(buf);
+          serializeRow(BINARY_WRITER, row);
           sys.datastore_update_bsatn(
             table_id,
             index_id,
             buf.buffer,
-            writer.offset
+            BINARY_WRITER.offset
           );
-          integrateGeneratedColumns?.(row, new Uint8Array(buf.buffer));
+          integrateGeneratedColumns?.(row, buf.view);
           return row;
         },
       } as UniqueIndex<any, any>;
@@ -643,7 +647,8 @@ function makeTableView(
       ): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
-        const writer = new BinaryWriter(buffer);
+        BINARY_WRITER.reset(buffer);
+        const writer = BINARY_WRITER;
         const prefix_elems = range.length - 1;
         for (let i = 0; i < prefix_elems; i++) {
           indexSerializers[i](writer, range[i]);
@@ -734,7 +739,7 @@ function* tableIterator<T>(
   try {
     let amt;
     while ((amt = advanceIter(iter, iterBuf))) {
-      const reader = new BinaryReader(new Uint8Array(iterBuf.buffer, amt));
+      const reader = new BinaryReader(iterBuf.view);
       while (reader.offset < amt) {
         yield deserialize(reader);
       }

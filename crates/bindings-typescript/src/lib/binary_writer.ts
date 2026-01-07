@@ -15,15 +15,12 @@ const ArrayBufferPrototypeTransfer =
   };
 
 export class ResizableBuffer {
-  #buffer: ArrayBuffer | null;
+  buffer: ArrayBuffer;
+  view: DataView;
 
   constructor(init: number | ArrayBuffer) {
-    this.#buffer = typeof init === 'number' ? new ArrayBuffer(init) : init;
-  }
-
-  get buffer(): ArrayBuffer {
-    if (this.#buffer == null) throw new TypeError('Accessing detached buffer');
-    return this.#buffer;
+    this.buffer = typeof init === 'number' ? new ArrayBuffer(init) : init;
+    this.view = new DataView(this.buffer);
   }
 
   get capacity(): number {
@@ -31,42 +28,31 @@ export class ResizableBuffer {
   }
 
   grow(newSize: number) {
-    if (this.#buffer == null)
-      throw new TypeError('Cannot resize detached buffer');
-    if (newSize <= this.#buffer.byteLength) return;
-    this.#buffer = ArrayBufferPrototypeTransfer.call(this.#buffer, newSize);
-  }
-
-  get detached(): boolean {
-    return this.#buffer == null;
-  }
-
-  detach(): ArrayBuffer {
-    if (this.#buffer == null)
-      throw new TypeError('Cannot detach detached buffer');
-    const buf = this.#buffer!;
-    this.#buffer = null;
-    return buf;
+    if (newSize <= this.buffer.byteLength) return;
+    this.buffer = ArrayBufferPrototypeTransfer.call(this.buffer, newSize);
+    this.view = new DataView(this.buffer);
   }
 }
 
 export default class BinaryWriter {
-  #buffer: ResizableBuffer;
-  view: DataView;
+  buffer: ResizableBuffer;
   offset: number = 0;
 
   constructor(init: number | ResizableBuffer) {
-    this.#buffer = typeof init === 'number' ? new ResizableBuffer(init) : init;
-    this.view = new DataView(this.#buffer.buffer);
+    this.buffer = typeof init === 'number' ? new ResizableBuffer(init) : init;
+  }
+
+  reset(buffer: ResizableBuffer) {
+    this.buffer = buffer;
+    this.offset = 0;
   }
 
   expandBuffer(additionalCapacity: number): void {
     const minCapacity = this.offset + additionalCapacity + 1;
-    if (minCapacity <= this.#buffer.capacity) return;
-    let newCapacity = this.#buffer.capacity * 2;
+    if (minCapacity <= this.buffer.capacity) return;
+    let newCapacity = this.buffer.capacity * 2;
     if (newCapacity < minCapacity) newCapacity = minCapacity;
-    this.#buffer.grow(newCapacity);
-    this.view = new DataView(this.#buffer.buffer);
+    this.buffer.grow(newCapacity);
   }
 
   toBase64(): string {
@@ -74,7 +60,11 @@ export default class BinaryWriter {
   }
 
   getBuffer(): Uint8Array {
-    return new Uint8Array(this.#buffer.buffer, 0, this.offset);
+    return new Uint8Array(this.buffer.buffer, 0, this.offset);
+  }
+
+  get view() {
+    return this.buffer.view;
   }
 
   writeUInt8Array(value: Uint8Array): void {
@@ -83,7 +73,7 @@ export default class BinaryWriter {
     this.expandBuffer(4 + length);
 
     this.writeU32(length);
-    new Uint8Array(this.#buffer.buffer, this.offset).set(value);
+    new Uint8Array(this.buffer.buffer, this.offset).set(value);
     this.offset += length;
   }
 
