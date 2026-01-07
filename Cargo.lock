@@ -7841,7 +7841,7 @@ name = "spacetimedb-guard"
 version = "1.11.1"
 dependencies = [
  "portpicker",
- "reqwest 0.12.24",
+ "reqwest 0.12.28",
  "tempfile",
 ]
 
@@ -10839,11 +10839,11 @@ dependencies = [
  "async-trait",
  "blake3",
  "chrono",
- "clap 4.5.50",
+ "clap 4.5.54",
  "fs2",
  "futures",
  "heck 0.5.0",
- "reqwest 0.12.24",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
  "spacetimedb 1.11.1",

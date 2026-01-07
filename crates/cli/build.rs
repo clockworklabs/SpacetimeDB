@@ -271,9 +271,9 @@ fn generate_templates_json(templates: &[TemplateInfo]) -> String {
 
         json.push_str("\n    }");
         if i < templates.len() - 1 {
-            json.push_str(",");
+            json.push(',');
         }
-        json.push_str("\n");
+        json.push('\n');
     }
 
     json.push_str("  ]\n}");
