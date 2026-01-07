@@ -148,6 +148,7 @@ pub mod advisory {
         fn lock_inner(path: &Path) -> io::Result<Self> {
             create_parent_dir(path)?;
             let lock = File::create(path)?;
+            // TODO: Use `File::lock` (available since rust 1.89) instead?
             lock.try_lock_exclusive()?;
 
             Ok(Self {
