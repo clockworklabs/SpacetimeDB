@@ -20,7 +20,7 @@ Get a SpacetimeDB TypeScript app running in under 5 minutes.
 ## Create your project
 
 ```bash
-spacetime dev --template typescript my-spacetime-app
+spacetime dev --template basic-typescript my-spacetime-app
 ```
 
 This command:

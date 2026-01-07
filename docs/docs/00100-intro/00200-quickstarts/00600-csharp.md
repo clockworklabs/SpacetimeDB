@@ -28,7 +28,7 @@ dotnet workload install wasi-experimental
 ## Create your project
 
 ```bash
-spacetime dev --template csharp my-spacetime-app
+spacetime dev --template basic-c-sharp my-spacetime-app
 ```
 
 This command:
