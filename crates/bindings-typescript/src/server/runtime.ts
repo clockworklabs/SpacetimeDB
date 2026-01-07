@@ -536,14 +536,7 @@ function makeTableView(
             buf.buffer,
             point_len
           );
-          const iter = tableIterator(iter_id, deserializeRow);
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           const buf = LEAF_BUF;
@@ -583,14 +576,7 @@ function makeTableView(
             buf.buffer,
             point_len
           );
-          const iter = tableIterator(iter_id, deserializeRow);
-          const { value, done } = iter.next();
-          if (done) return null;
-          if (!iter.next().done)
-            throw new Error(
-              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
-            );
-          return value;
+          return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
           if (colVal.length !== numColumns)
@@ -741,7 +727,7 @@ function* tableIterator<T>(
   const iterBuf = takeBuf();
   try {
     let amt;
-    while ((amt = advanceIter(iter, iterBuf))) {
+    while ((amt = iter.advance(iterBuf))) {
       const reader = new BinaryReader(iterBuf.view);
       while (reader.offset < amt) {
         yield deserialize(reader);
@@ -752,10 +738,27 @@ function* tableIterator<T>(
   }
 }
 
-function advanceIter(iter: IteratorHandle, buf: ResizableBuffer): number {
+function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
+  const buf = LEAF_BUF;
+  // we only need to check for the `<= 0` case, since this function is only used
+  // with iterators that should only have zero or one element.
+  const ret = advanceIterRaw(id, buf);
+  if (ret !== 0) {
+    BINARY_READER.reset(buf.view);
+    return deserialize(BINARY_READER);
+  }
+  return null;
+}
+
+/**
+ * `ret < 0` means the iterator yielded elements but is now exhausted and has been destroyed.
+ * `ret === 0` means the iterator was empty and has been destroyed.
+ * `ret > 0` means the iterator yielded elements and has more to give.
+ */
+function advanceIterRaw(id: u32, buf: ResizableBuffer): number {
   while (true) {
     try {
-      return iter.advance(buf.buffer);
+      return 0 | sys.row_iter_bsatn_advance(id, buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
         buf.grow(e.__buffer_too_small__ as number);
@@ -814,11 +817,9 @@ class IteratorHandle implements Disposable {
   }
 
   /** Call `row_iter_bsatn_advance`, returning 0 if this iterator has been exhausted. */
-  advance(buf: ArrayBuffer): number {
+  advance(buf: ResizableBuffer): number {
     if (this.#id === -1) return 0;
-    // coerce to int32
-    const ret = 0 | sys.row_iter_bsatn_advance(this.#id, buf);
-    // ret <= 0 means the iterator is exhausted
+    const ret = advanceIterRaw(this.#id, buf);
     if (ret <= 0) this.#detach();
     return ret < 0 ? -ret : ret;
   }
