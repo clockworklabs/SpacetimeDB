@@ -108,11 +108,11 @@ export default defineConfig([
     esbuildOptions: commonEsbuildTweaks(),
   },
 
-  // Server subpath (SSR / node-friendly): dist/server/index.{mjs,cjs}
+  // Server subpath (SSR / node-friendly): dist/server/index.mjs
   {
     entry: { index: 'src/server/index.ts' },
-    format: ['esm', 'cjs'],
-    target: 'es2022',
+    format: 'esm',
+    target: 'esnext',
     outDir: 'dist/server',
     dts: false,
     sourcemap: true,

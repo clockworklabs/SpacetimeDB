@@ -351,7 +351,8 @@ export const ProductType = {
     let serializer = SERIALIZERS.get(ty);
     if (serializer != null) return serializer;
     serializer = (writer, value) => {
-      for (const { name, serialize } of elements) {
+      for (let i = 0; i < elements.length; i++) {
+        const { name, serialize } = elements[i];
         serialize(writer, value[name]);
       }
     };
@@ -394,7 +395,8 @@ export const ProductType = {
     deserializer = reader => {
       // TODO: consider null prototype?
       const result: { [key: string]: any } = {};
-      for (const { name, deserialize } of elements) {
+      for (let i = 0; i < elements.length; i++) {
+        const { name, deserialize } = elements[i];
         result[name] = deserialize(reader);
       }
       return result;
