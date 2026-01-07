@@ -1,38 +1,39 @@
-use core::ops::RangeBounds;
-use core::slice;
-use smallvec::SmallVec;
+use super::same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter};
+use core::{hash::Hash, ops::RangeBounds};
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Range};
 
 /// A multi map that relates a `K` to a *set* of `V`s.
 #[derive(Debug, PartialEq, Eq)]
-pub struct MultiMap<K, V> {
+pub struct MultiMap<K, V: Eq + Hash> {
     /// The map is backed by a `BTreeMap` for relating keys to values.
     ///
     /// A value set is stored as a `SmallVec`.
     /// This is an optimization over a `Vec<_>`
     /// as we allow a single element to be stored inline
     /// to improve performance for the common case of one element.
-    map: BTreeMap<K, SmallVec<[V; 1]>>,
+    map: BTreeMap<K, SameKeyEntry<V>>,
 }
 
-impl<K, V> Default for MultiMap<K, V> {
+impl<K, V: Eq + Hash> Default for MultiMap<K, V> {
     fn default() -> Self {
         Self { map: BTreeMap::new() }
     }
 }
 
-impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for MultiMap<K, V> {
+impl<K: MemoryUsage, V: MemoryUsage + Eq + Hash> MemoryUsage for MultiMap<K, V> {
     fn heap_usage(&self) -> usize {
         let Self { map } = self;
         map.heap_usage()
     }
 }
 
-impl<K: Ord, V: Ord> MultiMap<K, V> {
+impl<K: Ord, V: Ord + Hash> MultiMap<K, V> {
     /// Inserts the relation `key -> val` to this multimap.
     ///
     /// The map does not check whether `key -> val` was already in the map.
+    /// It's assumed that the same `val` is never added twice,
+    /// and multimaps do not bind one `key` to the same `val`.
     pub fn insert(&mut self, key: K, val: V) {
         self.map.entry(key).or_default().push(val);
     }
@@ -41,14 +42,17 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     ///
     /// Returns whether `key -> val` was present.
     pub fn delete(&mut self, key: &K, val: &V) -> bool {
-        if let Some(vset) = self.map.get_mut(key) {
-            // The `vset` is not sorted, so we have to do a linear scan first.
-            if let Some(idx) = vset.iter().position(|v| v == val) {
-                vset.swap_remove(idx);
-                return true;
-            }
+        let Some(vset) = self.map.get_mut(key) else {
+            return false;
+        };
+
+        let (deleted, is_empty) = vset.delete(val);
+
+        if is_empty {
+            self.map.remove(key);
         }
-        false
+
+        deleted
     }
 
     /// Returns an iterator over the multimap that yields all the `V`s
@@ -56,15 +60,13 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     pub fn values_in_range(&self, range: &impl RangeBounds<K>) -> MultiMapRangeIter<'_, K, V> {
         MultiMapRangeIter {
             outer: self.map.range((range.start_bound(), range.end_bound())),
-            inner: None,
+            inner: SameKeyEntry::empty_iter(),
         }
     }
 
     /// Returns an iterator over the multimap that yields all the `V`s of the `key: &K`.
-    pub fn values_in_point(&self, key: &K) -> MultiMapPointIter<'_, V> {
-        let vals = self.map.get(key).map(|vs| &**vs).unwrap_or_default();
-        let iter = vals.iter();
-        MultiMapPointIter { iter }
+    pub fn values_in_point(&self, key: &K) -> SameKeyEntryIter<'_, V> {
+        same_key_iter(self.map.get(key))
     }
 
     /// Returns the number of unique keys in the multimap.
@@ -75,7 +77,7 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     /// Returns the total number of entries in the multimap.
     #[allow(unused)] // No use for this currently.
     pub fn len(&self) -> usize {
-        self.map.values().map(|ptrs| ptrs.len()).sum()
+        self.map.values().map(|vals: &SameKeyEntry<V>| vals.len()).sum()
     }
 
     /// Returns whether there are any entries in the multimap.
@@ -91,46 +93,28 @@ impl<K: Ord, V: Ord> MultiMap<K, V> {
     }
 }
 
-/// An iterator over values in a [`MultiMap`] where the key is a point.
-pub struct MultiMapPointIter<'a, V> {
-    /// The inner iterator for the value set for a found key.
-    iter: slice::Iter<'a, V>,
-}
-
-impl<'a, V> Iterator for MultiMapPointIter<'a, V> {
-    type Item = &'a V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
-    }
-}
-
 /// An iterator over values in a [`MultiMap`] where the keys are in a certain range.
-pub struct MultiMapRangeIter<'a, K, V> {
+pub struct MultiMapRangeIter<'a, K, V: Eq + Hash> {
     /// The outer iterator seeking for matching keys in the range.
-    outer: Range<'a, K, SmallVec<[V; 1]>>,
+    outer: Range<'a, K, SameKeyEntry<V>>,
     /// The inner iterator for the value set for a found key.
-    inner: Option<slice::Iter<'a, V>>,
+    inner: SameKeyEntryIter<'a, V>,
 }
 
-impl<'a, K, V> Iterator for MultiMapRangeIter<'a, K, V> {
+impl<'a, K, V: Eq + Hash> Iterator for MultiMapRangeIter<'a, K, V> {
     type Item = &'a V;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(inner) = self.inner.as_mut() {
-                if let Some(val) = inner.next() {
-                    // While the inner iterator has elements, yield them.
-                    return Some(val);
-                }
+            // While the inner iterator has elements, yield them.
+            if let Some(val) = self.inner.next() {
+                return Some(val);
             }
 
-            // This makes the iterator fused.
-            self.inner = None;
             // Advance and get a new inner, if possible, or quit.
             // We'll come back and yield elements from it in the next iteration.
-            let (_, next) = self.outer.next()?;
-            self.inner = Some(next.iter());
+            let inner = self.outer.next().map(|(_, i)| i)?;
+            self.inner = inner.iter();
         }
     }
 }
