@@ -14,7 +14,7 @@ declare module 'spacetime:sys@2.0' {
       sender: u256,
       connId: u128,
       timestamp: bigint,
-      argsBuf: Uint8Array
+      argsBuf: DataView
     ): { tag: 'ok' } | { tag: 'err'; value: string };
 
     __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
