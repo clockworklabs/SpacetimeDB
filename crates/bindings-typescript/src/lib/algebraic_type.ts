@@ -350,20 +350,26 @@ export const ProductType = {
   ): Serializer<any> {
     let serializer = SERIALIZERS.get(ty);
     if (serializer != null) return serializer;
-    serializer = (writer, value) => {
-      for (let i = 0; i < elements.length; i++) {
-        const { name, serialize } = elements[i];
-        serialize(writer, value[name]);
-      }
-    };
+    const serializers: Record<string, Serializer<any>> = {};
+    serializer = Function(
+      'serializers',
+      'writer',
+      'value',
+      ty.elements
+        .map(({ name }) => `serializers.${name!}(writer, value.${name!});`)
+        .join('\n')
+    ).bind(undefined, serializers) as Serializer<any>;
     // In case `ty` is recursive, we cache the function *before* before computing
-    // `elements`, so that a recursive `makeSerializer` with the same `ty` has
+    // `serializers`, so that a recursive `makeSerializer` with the same `ty` has
     // an exit condition.
     SERIALIZERS.set(ty, serializer);
-    const elements = ty.elements.map(element => ({
-      name: element.name!,
-      serialize: AlgebraicType.makeSerializer(element.algebraicType, typespace),
-    }));
+    for (const { name, algebraicType } of ty.elements) {
+      serializers[name!] = AlgebraicType.makeSerializer(
+        algebraicType,
+        typespace
+      );
+    }
+    Object.freeze(serializers);
     return serializer;
   },
   serializeValue(
@@ -392,26 +398,23 @@ export const ProductType = {
 
     let deserializer = DESERIALIZERS.get(ty);
     if (deserializer != null) return deserializer;
-    deserializer = reader => {
-      // TODO: consider null prototype?
-      const result: { [key: string]: any } = {};
-      for (let i = 0; i < elements.length; i++) {
-        const { name, deserialize } = elements[i];
-        result[name] = deserialize(reader);
-      }
-      return result;
-    };
+    const deserializers: Record<string, Deserializer<any>> = {};
+    deserializer = Function(
+      'deserializers',
+      'reader',
+      `return { ${ty.elements.map(({ name }) => `${name!}: deserializers.${name!}(reader)`).join(', ')} };`
+    ).bind(undefined, deserializers) as Deserializer<any>;
     // In case `ty` is recursive, we cache the function *before* before computing
-    // `elements`, so that a recursive `makeDeserializer` with the same `ty` has
+    // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
     // an exit condition.
     DESERIALIZERS.set(ty, deserializer);
-    const elements = ty.elements.map(element => ({
-      name: element.name!,
-      deserialize: AlgebraicType.makeDeserializer(
-        element.algebraicType,
+    for (const { name, algebraicType } of ty.elements) {
+      deserializers[name!] = AlgebraicType.makeDeserializer(
+        algebraicType,
         typespace
-      ),
-    }));
+      );
+    }
+    Object.freeze(deserializers);
     return deserializer;
   },
   deserializeValue(
@@ -571,23 +574,28 @@ export const SumType = {
     } else {
       let deserializer = DESERIALIZERS.get(ty);
       if (deserializer != null) return deserializer;
-      deserializer = reader => {
-        const tag = reader.readU8();
-        const { name, deserialize } = variants[tag];
-        const value = deserialize(reader);
-        return { tag: name, value };
-      };
+      const deserializers: Record<string, Deserializer<any>> = {};
+      deserializer = Function(
+        'deserializers',
+        'reader',
+        `switch (reader.readU8()) {\n${ty.variants
+          .map(
+            ({ name }, i) =>
+              `case ${i}: return { tag: ${JSON.stringify(name!)}, value: deserializers.${name!}(reader) };`
+          )
+          .join('\n')} }`
+      ).bind(undefined, deserializers) as Deserializer<any>;
       // In case `ty` is recursive, we cache the function *before* before computing
-      // `variants`, so that a recursive `makeDeserializer` with the same `ty` has
+      // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
       // an exit condition.
       DESERIALIZERS.set(ty, deserializer);
-      const variants = ty.variants.map(variant => ({
-        name: variant.name!,
-        deserialize: AlgebraicType.makeDeserializer(
-          variant.algebraicType,
+      for (const { name, algebraicType } of ty.variants) {
+        deserializers[name!] = AlgebraicType.makeDeserializer(
+          algebraicType,
           typespace
-        ),
-      }));
+        );
+      }
+      Object.freeze(deserializers);
       return deserializer;
     }
   },
