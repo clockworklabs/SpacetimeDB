@@ -43,10 +43,7 @@ declare module 'spacetime:sys@2.0' {
     rstart: Uint8Array,
     rend: Uint8Array
   ): u32;
-  export function row_iter_bsatn_advance(
-    iter: u32,
-    buffer: ArrayBuffer
-  ): [boolean, Uint8Array];
+  export function row_iter_bsatn_advance(iter: u32, buffer: ArrayBuffer): u32;
   export function row_iter_bsatn_close(iter: u32): void;
   export function datastore_insert_bsatn(
     table_id: u32,
