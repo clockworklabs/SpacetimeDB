@@ -399,10 +399,47 @@ export const ProductType = {
     let deserializer = DESERIALIZERS.get(ty);
     if (deserializer != null) return deserializer;
     const deserializers: Record<string, Deserializer<any>> = {};
+    const getElementInitializer = (element: ProductTypeElement) => {
+      let init: string;
+      switch (element.algebraicType.tag) {
+        case 'String':
+          init = "''";
+          break;
+        case 'Bool':
+          init = 'false';
+          break;
+        case 'I8':
+        case 'U8':
+        case 'I16':
+        case 'U16':
+        case 'I32':
+        case 'U32':
+          init = '0';
+          break;
+        case 'I64':
+        case 'U64':
+        case 'I128':
+        case 'U128':
+        case 'I256':
+        case 'U256':
+          init = '0n';
+          break;
+        case 'F32':
+        case 'F64':
+          init = '0.0';
+          break;
+        default:
+          init = 'undefined';
+      }
+      return `${element.name!}: ${init}`;
+    };
     deserializer = Function(
       'deserializers',
       'reader',
-      `return { ${ty.elements.map(({ name }) => `${name!}: deserializers.${name!}(reader)`).join(', ')} };`
+      `\
+const result = { ${ty.elements.map(getElementInitializer).join(', ')} };
+${ty.elements.map(({ name }) => `result.${name!} = deserializers.${name!}(reader);`).join('\n')}
+return result;`
     ).bind(undefined, deserializers) as Deserializer<any>;
     // In case `ty` is recursive, we cache the function *before* before computing
     // `deserializers`, so that a recursive `makeDeserializer` with the same `ty` has
