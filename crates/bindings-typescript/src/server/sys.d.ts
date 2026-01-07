@@ -15,7 +15,7 @@ declare module 'spacetime:sys@2.0' {
       connId: u128,
       timestamp: bigint,
       argsBuf: DataView
-    ): { tag: 'ok' } | { tag: 'err'; value: string };
+    ): undefined | { tag: 'ok' } | { tag: 'err'; value: string };
 
     __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
 
@@ -38,32 +38,37 @@ declare module 'spacetime:sys@2.0' {
   export function datastore_table_scan_bsatn(table_id: u32): u32;
   export function datastore_index_scan_range_bsatn(
     index_id: u32,
-    prefix: Uint8Array,
+    buf: ArrayBuffer,
+    prefix_len: u32,
     prefix_elems: u16,
-    rstart: Uint8Array,
-    rend: Uint8Array
+    rstart_len: u32,
+    rend_len: u32
   ): u32;
   export function row_iter_bsatn_advance(iter: u32, buffer: ArrayBuffer): u32;
   export function row_iter_bsatn_close(iter: u32): void;
   export function datastore_insert_bsatn(
     table_id: u32,
-    row: Uint8Array
-  ): Uint8Array;
+    row: ArrayBuffer,
+    row_len: u32
+  ): u32;
   export function datastore_update_bsatn(
     table_id: u32,
     index_id: u32,
-    row: Uint8Array
-  ): Uint8Array;
+    row: ArrayBuffer,
+    row_len: u32
+  ): u32;
   export function datastore_delete_by_index_scan_range_bsatn(
     index_id: u32,
-    prefix: Uint8Array,
+    buf: ArrayBuffer,
+    prefix_len: u32,
     prefix_elems: u16,
-    rstart: Uint8Array,
-    rend: Uint8Array
+    rstart_len: u32,
+    rend_len: u32
   ): u32;
   export function datastore_delete_all_by_eq_bsatn(
     table_id: u32,
-    relation: Uint8Array
+    relation: ArrayBuffer,
+    relation_len: u32
   ): u32;
   export function volatile_nonatomic_schedule_immediate(
     reducer_name: string,
@@ -88,11 +93,13 @@ declare module 'spacetime:sys@2.0' {
 
   export function datastore_index_scan_point_bsatn(
     index_id: u32,
-    point: Uint8Array
+    point: ArrayBuffer,
+    point_len: u32
   ): u32;
 
   export function datastore_delete_by_index_scan_point_bsatn(
     index_id: u32,
-    point: Uint8Array
+    point: ArrayBuffer,
+    point_len: u32
   ): u32;
 }

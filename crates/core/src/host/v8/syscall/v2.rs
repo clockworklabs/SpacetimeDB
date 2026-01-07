@@ -1,14 +1,17 @@
 use super::hooks::{get_hook_function, set_hook_slots};
-use super::{AbiVersion, FnRet, ModuleHookKey};
+use super::{AbiVersion, ModuleHookKey};
 use crate::database_logger::{LogLevel, Record};
 use crate::error::NodesError;
 use crate::host::instance_env::InstanceEnv;
 use crate::host::v8::de::{deserialize_js, scratch_buf};
-use crate::host::v8::error::{CodeError, CodeMessageError, ErrorOrException, ExcResult, ExceptionThrown, TypeError};
+use crate::host::v8::error::{
+    CodeError, CodeMessageError, ErrorOrException, ExcResult, ExceptionThrown, RangeError, TypeError,
+};
 use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
 use crate::host::v8::syscall::hooks::HookFunctions;
+use crate::host::v8::to_value::ToValue;
 use crate::host::v8::util::{make_dataview, make_uint8array};
 use crate::host::v8::{
     call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, JsInstanceEnv, JsStackTrace,
@@ -24,7 +27,7 @@ use anyhow::Context;
 use bytes::Bytes;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
-use spacetimedb_sats::Serialize;
+use spacetimedb_sats::u256;
 use v8::{
     callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
     PinCallbackScope, PinScope,
@@ -36,8 +39,8 @@ macro_rules! create_synthetic_module {
         let eval_steps = |context, module| {
             callback_scope!(unsafe scope, context);
             $(
-                register_module_fun(scope, &module, str_from_ident!($fun), |s, a| {
-                    $wrapper($abi_call, s, a, $fun)
+                register_module_fun(scope, &module, str_from_ident!($fun), |s, a, rv| {
+                    $wrapper($abi_call, s, a, rv, $fun)
                 })?;
             )*
 
@@ -60,86 +63,70 @@ pub(super) fn sys_v2_0<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
         scope,
         "spacetime:sys@2.0",
         (with_nothing, (), register_hooks),
-        (with_sys_result_ret, AbiCall::TableIdFromName, table_id_from_name),
-        (with_sys_result_ret, AbiCall::IndexIdFromName, index_id_from_name),
+        (with_sys_result, AbiCall::TableIdFromName, table_id_from_name),
+        (with_sys_result, AbiCall::IndexIdFromName, index_id_from_name),
         (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreTableRowCount,
             datastore_table_row_count
         ),
         (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreTableScanBsatn,
             datastore_table_scan_bsatn
         ),
         (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreIndexScanRangeBsatn,
             datastore_index_scan_range_bsatn
         ),
+        (with_sys_result, AbiCall::RowIterBsatnAdvance, row_iter_bsatn_advance),
+        (with_sys_result, AbiCall::RowIterBsatnClose, row_iter_bsatn_close),
+        (with_sys_result, AbiCall::DatastoreInsertBsatn, datastore_insert_bsatn),
+        (with_sys_result, AbiCall::DatastoreUpdateBsatn, datastore_update_bsatn),
         (
-            with_sys_result_value,
-            AbiCall::RowIterBsatnAdvance,
-            row_iter_bsatn_advance
-        ),
-        (with_sys_result_noret, AbiCall::RowIterBsatnClose, row_iter_bsatn_close),
-        (
-            with_sys_result_value,
-            AbiCall::DatastoreInsertBsatn,
-            datastore_insert_bsatn
-        ),
-        (
-            with_sys_result_value,
-            AbiCall::DatastoreUpdateBsatn,
-            datastore_update_bsatn
-        ),
-        (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreDeleteByIndexScanRangeBsatn,
             datastore_delete_by_index_scan_range_bsatn
         ),
         (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreDeleteAllByEqBsatn,
             datastore_delete_all_by_eq_bsatn
         ),
         (
-            with_sys_result_noret,
+            with_sys_result,
             AbiCall::VolatileNonatomicScheduleImmediate,
             volatile_nonatomic_schedule_immediate
         ),
-        (with_sys_result_noret, AbiCall::ConsoleLog, console_log),
-        (with_sys_result_ret, AbiCall::ConsoleTimerStart, console_timer_start),
-        (with_sys_result_noret, AbiCall::ConsoleTimerEnd, console_timer_end),
-        (with_sys_result_ret, AbiCall::Identity, identity),
-        (with_sys_result_ret, AbiCall::GetJwt, get_jwt_payload),
+        (with_sys_result, AbiCall::ConsoleLog, console_log),
+        (with_sys_result, AbiCall::ConsoleTimerStart, console_timer_start),
+        (with_sys_result, AbiCall::ConsoleTimerEnd, console_timer_end),
+        (with_sys_result, AbiCall::Identity, identity),
+        (with_sys_result, AbiCall::GetJwt, get_jwt_payload),
+        (with_sys_result, AbiCall::ProcedureHttpRequest, procedure_http_request),
         (
-            with_sys_result_value,
-            AbiCall::ProcedureHttpRequest,
-            procedure_http_request
-        ),
-        (
-            with_sys_result_value,
+            with_sys_result,
             AbiCall::ProcedureStartMutTransaction,
             procedure_start_mut_tx
         ),
         (
-            with_sys_result_noret,
+            with_sys_result,
             AbiCall::ProcedureAbortMutTransaction,
             procedure_abort_mut_tx
         ),
         (
-            with_sys_result_noret,
+            with_sys_result,
             AbiCall::ProcedureCommitMutTransaction,
             procedure_commit_mut_tx
         ),
         (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreIndexScanPointBsatn,
             datastore_index_scan_point_bsatn
         ),
         (
-            with_sys_result_ret,
+            with_sys_result,
             AbiCall::DatastoreDeleteByIndexScanPointBsatn,
             datastore_delete_by_index_scan_point_bsatn
         ),
@@ -152,7 +139,7 @@ fn register_module_fun(
     scope: &mut PinCallbackScope<'_, '_>,
     module: &Local<'_, Module>,
     name: &'static StringConst,
-    body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
+    body: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
 ) -> Option<bool> {
     // Convert the name.
     let name = name.string(scope);
@@ -170,11 +157,11 @@ fn register_module_fun(
 /// If the flag is set, the call is prevented.
 struct TerminationFlag;
 
-/// Adapts `fun`, which returns a [`Value`] to one that works on [`v8::ReturnValue`].
+/// Adapts `fun` to check for termination
 fn adapt_fun(
-    fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
-) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue) {
-    move |scope, args, mut rv| {
+    fun: impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>),
+) -> impl Copy + for<'scope> Fn(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>, v8::ReturnValue<'_>) {
+    move |scope, args, rv| {
         // If the flag was set in `handle_nodes_error`,
         // we need to block all module -> host ABI calls.
         if scope.get_slot::<TerminationFlag>().is_some() {
@@ -185,10 +172,7 @@ fn adapt_fun(
             return;
         }
 
-        // Set the result `value` on success.
-        if let Ok(value) = fun(scope, args) {
-            rv.set(value);
-        }
+        fun(scope, args, rv)
     }
 }
 
@@ -196,65 +180,94 @@ fn adapt_fun(
 #[derive(derive_more::From)]
 enum SysCallError {
     NoEnv,
+    OutOfBounds,
     Error(NodesError),
     Exception(ExceptionThrown),
 }
 
+const OOB: SysCallError = SysCallError::OutOfBounds;
+
 type SysCallResult<T> = Result<T, SysCallError>;
+
+trait JsReturnValue {
+    fn set_return(self, scope: &mut PinScope<'_, '_>, rv: v8::ReturnValue<'_>);
+}
+
+macro_rules! impl_returnvalue {
+    ($t:ty, $set:ident) => {
+        impl_returnvalue!($t, (me, _, rv) => rv.$set(me));
+    };
+    ($t:ty, self$($field:tt)*) => {
+        impl_returnvalue!($t, (me, scope, rv) => me$($field)*.set_return(scope, rv));
+    };
+    ($t:ty, ($me:pat, $scope:pat, $rv:ident) => $body:expr) => {
+        impl JsReturnValue for $t {
+            fn set_return(self, $scope: &mut PinScope<'_, '_>, #[allow(unused_mut)] mut $rv: v8::ReturnValue<'_>) {
+                let $me = self;
+                $body
+            }
+        }
+    };
+}
+
+impl_returnvalue!((), ((), _, rv) => rv.set_undefined());
+impl_returnvalue!(u32, set_uint32);
+impl_returnvalue!(i32, set_int32);
+impl_returnvalue!(u64, (me, scope, rv) => rv.set(me.to_value(scope)));
+impl_returnvalue!(u128, (me, scope, rv) => rv.set(me.to_value(scope)));
+impl_returnvalue!(u256, (me, scope, rv) => rv.set(me.to_value(scope)));
+
+impl_returnvalue!(TableId, self.0);
+impl_returnvalue!(IndexId, self.0);
+impl_returnvalue!(RowIterIdx, self.0);
+impl_returnvalue!(Identity, self.to_u256());
+
+impl<'s, T> JsReturnValue for Local<'s, T>
+where
+    Self: Into<Local<'s, v8::Value>>,
+{
+    fn set_return(self, _scope: &mut PinScope<'_, '_>, mut rv: v8::ReturnValue<'_>) {
+        rv.set(self.into())
+    }
+}
 
 /// Wraps `run` in [`with_span`] and returns the return value of `run` to JS.
 /// Handles [`SysCallError`] if it occurs by throwing exceptions into JS.
-fn with_sys_result_ret<'scope, O: Serialize>(
+fn with_sys_result<'scope, O: JsReturnValue>(
     abi_call: AbiCall,
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
+    rv: v8::ReturnValue<'_>,
     run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> SysCallResult<O>,
-) -> FnRet<'scope> {
-    match with_span(abi_call, scope, args, run) {
-        Ok(ret) => serialize_to_js(scope, &ret),
-        Err(err) => handle_sys_call_error(abi_call, scope, err),
+) {
+    // Start the span.
+    let span_start = span::CallSpanStart::new(abi_call);
+
+    // Call `fun` with `args` in `scope`.
+    let result = run(scope, args).map_err(|err| handle_sys_call_error(abi_call, scope, err));
+
+    // Track the span of this call.
+    let span = span_start.end();
+    if let Some(env) = env_on_isolate(scope) {
+        span::record_span(&mut env.call_times, span);
+    }
+
+    if let Ok(ret) = result {
+        ret.set_return(scope, rv)
     }
 }
 
-/// Wraps `run` in [`with_span`] and returns undefined to JS.
-/// Handles [`SysCallError`] if it occurs by throwing exceptions into JS.
-fn with_sys_result_noret<'scope>(
-    abi_call: AbiCall,
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> SysCallResult<()>,
-) -> FnRet<'scope> {
-    match with_span(abi_call, scope, args, run) {
-        Ok(()) => Ok(v8::undefined(scope).into()),
-        Err(err) => handle_sys_call_error(abi_call, scope, err),
-    }
-}
-
-/// Wraps `run` in [`with_span`] and returns undefined to JS.
-/// Handles [`SysCallError`] if it occurs by throwing exceptions into JS.
-fn with_sys_result_value<'scope, O>(
-    abi_call: AbiCall,
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> SysCallResult<Local<'scope, O>>,
-) -> FnRet<'scope>
-where
-    Local<'scope, O>: Into<Local<'scope, v8::Value>>,
-{
-    match with_span(abi_call, scope, args, run) {
-        Ok(v) => Ok(v.into()),
-        Err(err) => handle_sys_call_error(abi_call, scope, err),
-    }
-}
-
-/// A higher order function conforming to the interface of [`with_sys_result`] and [`with_span`].
-fn with_nothing<'scope>(
+/// A higher order function conforming to the interface of [`with_sys_result`].
+fn with_nothing<'scope, O: JsReturnValue>(
     (): (),
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
-    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> FnRet<'scope>,
-) -> FnRet<'scope> {
-    run(scope, args)
+    rv: v8::ReturnValue<'_>,
+    run: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> ExcResult<O>,
+) {
+    if let Ok(ret) = run(scope, args) {
+        ret.set_return(scope, rv)
+    }
 }
 
 /// Converts a `SysCallError` into a `ExceptionThrown`.
@@ -262,12 +275,13 @@ fn handle_sys_call_error<'scope>(
     abi_call: AbiCall,
     scope: &mut PinScope<'scope, '_>,
     err: SysCallError,
-) -> FnRet<'scope> {
+) -> ExceptionThrown {
     const ENV_NOT_SET: u16 = 1;
     match err {
-        SysCallError::NoEnv => Err(code_error(scope, ENV_NOT_SET)),
-        SysCallError::Exception(exc) => Err(exc),
-        SysCallError::Error(error) => Err(throw_nodes_error(abi_call, scope, error)),
+        SysCallError::NoEnv => code_error(scope, ENV_NOT_SET),
+        SysCallError::OutOfBounds => RangeError("length argument was out of bounds for `ArrayBuffer`").throw(scope),
+        SysCallError::Exception(exc) => exc,
+        SysCallError::Error(error) => throw_nodes_error(abi_call, scope, error),
     }
 }
 
@@ -310,28 +324,6 @@ fn get_env(isolate: &mut Isolate) -> Result<&mut JsInstanceEnv, SysCallError> {
     env_on_isolate(isolate).ok_or(SysCallError::NoEnv)
 }
 
-/// Tracks the span of `body` under the label `abi_call`.
-fn with_span<'scope, T, E: From<ExceptionThrown>>(
-    abi_call: AbiCall,
-    scope: &mut PinScope<'scope, '_>,
-    args: FunctionCallbackArguments<'scope>,
-    body: impl FnOnce(&mut PinScope<'scope, '_>, FunctionCallbackArguments<'scope>) -> Result<T, E>,
-) -> Result<T, E> {
-    // Start the span.
-    let span_start = span::CallSpanStart::new(abi_call);
-
-    // Call `fun` with `args` in `scope`.
-    let result = body(scope, args);
-
-    // Track the span of this call.
-    let span = span_start.end();
-    if let Some(env) = env_on_isolate(scope) {
-        span::record_span(&mut env.call_times, span);
-    }
-
-    result
-}
-
 /// Module ABI that registers the functions called by the host.
 ///
 /// # Signature
@@ -365,7 +357,7 @@ fn with_span<'scope, T, E: From<ExceptionThrown>>(
 ///
 /// Throws a `TypeError` if:
 /// - `hooks` is not an object that has functions `__describe_module__` and `__call_reducer__`.
-fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> FnRet<'scope> {
+fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionCallbackArguments<'_>) -> ExcResult<()> {
     // Convert `hooks` to an object.
     let hooks = cast!(scope, args.get(0), Object, "hooks object").map_err(|e| e.throw(scope))?;
 
@@ -388,7 +380,7 @@ fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
         ],
     )?;
 
-    Ok(v8::undefined(scope).into())
+    Ok(())
 }
 
 /// Calls the `__call_reducer__` function `fun`.
@@ -417,7 +409,11 @@ pub(super) fn call_call_reducer(
     let ret = call_free_fun(scope, hooks.call_reducer, args)?;
 
     // Deserialize the user result.
-    let user_res = deserialize_js(scope, ret)?;
+    let user_res = if ret.is_undefined() {
+        Ok(())
+    } else {
+        deserialize_js(scope, ret)?
+    };
 
     Ok(user_res)
 }
@@ -822,29 +818,36 @@ fn datastore_index_scan_range_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let mut prefix: &[u8] = deserialize_js(scope, args.get(1))?;
-    let prefix_elems: ColId = deserialize_js(scope, args.get(2))?;
-    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
-    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
+    let buf = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
+    let prefix_len = deserialize_js::<u32>(scope, args.get(2))? as usize;
+    let prefix_elems: ColId = deserialize_js(scope, args.get(3))?;
+    let rstart_len = deserialize_js::<u32>(scope, args.get(4))? as usize;
+    let rend_len = deserialize_js::<u32>(scope, args.get(5))? as usize;
 
-    if prefix_elems.idx() == 0 {
-        prefix = &[];
-    }
+    with_arraybuffer(buf, |mut buf| {
+        let prefix = buf.split_off(..prefix_len).ok_or(OOB)?;
+        let rstart = buf.split_off(..rstart_len).ok_or(OOB)?;
+        let rend = if rend_len == 0 {
+            rstart
+        } else {
+            buf.split_off(..rend_len).ok_or(OOB)?
+        };
 
-    let env = get_env(scope)?;
+        let env = get_env(scope)?;
 
-    // Find the relevant rows.
-    let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
-        &mut env.chunk_pool,
-        index_id,
-        prefix,
-        prefix_elems,
-        rstart,
-        rend,
-    )?;
+        // Find the relevant rows.
+        let chunks = env.instance_env.datastore_index_scan_range_bsatn_chunks(
+            &mut env.chunk_pool,
+            index_id,
+            prefix,
+            prefix_elems,
+            rstart,
+            rend,
+        )?;
 
-    // Insert the encoded + concatenated rows into a new buffer and return its id.
-    Ok(env.iters.insert(chunks.into_iter()).0)
+        // Insert the encoded + concatenated rows into a new buffer and return its id.
+        Ok(env.iters.insert(chunks.into_iter()).0)
+    })
 }
 
 /// Throws `{ __code_error__: NO_SUCH_ITER }`.
@@ -904,7 +907,7 @@ fn no_such_iter(scope: &PinScope<'_, '_>) -> SysCallError {
 fn row_iter_bsatn_advance<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'scope>,
-) -> SysCallResult<Local<'scope, v8::Number>> {
+) -> SysCallResult<i32> {
     let row_iter_idx: u32 = deserialize_js(scope, args.get(0))?;
     let row_iter_idx = RowIterIdx(row_iter_idx);
     let array_buffer = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
@@ -937,7 +940,7 @@ fn row_iter_bsatn_advance<'scope>(
     }
     let written: i32 = written.try_into().unwrap();
     let out = if done { -written } else { written };
-    Ok(v8::Number::new(scope, out.into()))
+    Ok(out)
 }
 
 /// Module ABI that destroys the iterator registered under `iter`.
@@ -1051,35 +1054,26 @@ fn row_iter_bsatn_close<'scope>(
 fn datastore_insert_bsatn<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'_>,
-) -> SysCallResult<Local<'scope, v8::Uint8Array>> {
+) -> SysCallResult<u32> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let row_arr = cast!(scope, args.get(1), v8::Uint8Array, "buffer").map_err(|e| e.throw(scope))?;
+    let row_arr = cast!(scope, args.get(1), v8::ArrayBuffer, "buffer").map_err(|e| e.throw(scope))?;
+    let row_len = deserialize_js::<u32>(scope, args.get(2))? as usize;
 
-    let row_offset = row_arr.byte_offset();
-    let row_len = with_uint8array_mut(row_arr, |buf| -> SysCallResult<_> {
+    // let row_offset = row_arr.byte_offset();
+    let row_len = with_arraybuffer_mut(row_arr, |buf| -> SysCallResult<_> {
+        let buf = buf.get_mut(..row_len).ok_or(OOB)?;
         // Insert the row into the DB and write back the generated column values.
         Ok(get_env(scope)?.instance_env.insert(table_id, buf)?)
     })?;
 
-    let arraybuffer = row_arr.buffer(scope).unwrap();
-    let ret = v8::Uint8Array::new(scope, arraybuffer, row_offset, row_len).expect("len > 8 pebibytes");
-    Ok(ret)
+    Ok(row_len as u32)
 }
 
-fn with_uint8array_mut<R>(arr: Local<'_, v8::Uint8Array>, f: impl FnOnce(&mut [u8]) -> R) -> R {
-    // SAFETY: unclear. There aren't any other mutable references to this same buffer,
-    // but there are javascript objects that hold the same reference, though those are probably
-    // equivalent to raw pointers in the context of Rust's memory model. However, the v8 crate's
-    // API is almost certainly unsound in this regard already - `ArrayBufferView::get_contents()`
-    // returns an `&[u8]` but `BackingStore` derefs to `&[Cell<u8>]`, and you can obtain both
-    // of those simultaneously.
-    let buf: &mut [u8] = unsafe {
-        let (data, len) = arr.get_contents_raw_parts(&mut [0; v8::TYPED_ARRAY_MAX_SIZE_IN_HEAP]);
-        if data.is_null() {
-            &mut []
-        } else {
-            std::slice::from_raw_parts_mut(data, len)
-        }
+fn with_arraybuffer<R>(buf: Local<'_, v8::ArrayBuffer>, f: impl FnOnce(&[u8]) -> R) -> R {
+    let buf: &[u8] = match buf.data().map(|p| p.cast::<u8>()) {
+        // SAFETY: see comment in `with_uint8array_mut`
+        Some(data) => unsafe { std::slice::from_raw_parts(data.as_ptr(), buf.byte_length()) },
+        None => &[],
     };
     f(buf)
 }
@@ -1167,21 +1161,20 @@ fn with_arraybuffer_mut<R>(buf: Local<'_, v8::ArrayBuffer>, f: impl FnOnce(&mut 
 fn datastore_update_bsatn<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: FunctionCallbackArguments<'_>,
-) -> SysCallResult<Local<'scope, v8::Uint8Array>> {
+) -> SysCallResult<u32> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
     let index_id: IndexId = deserialize_js(scope, args.get(1))?;
-    let row_arr = cast!(scope, args.get(2), v8::Uint8Array, "buffer").map_err(|e| e.throw(scope))?;
+    let row_arr = cast!(scope, args.get(2), v8::ArrayBuffer, "buffer").map_err(|e| e.throw(scope))?;
+    let row_len = deserialize_js::<u32>(scope, args.get(3))? as usize;
 
     // Insert the row into the DB and write back the generated column values.
-    let row_offset = row_arr.byte_offset();
-    let row_len = with_uint8array_mut(row_arr, |buf| -> SysCallResult<_> {
+    let row_len = with_arraybuffer_mut(row_arr, |buf| -> SysCallResult<_> {
+        let buf = buf.get_mut(..row_len).ok_or(OOB)?;
         // Insert the row into the DB and write back the generated column values.
         Ok(get_env(scope)?.instance_env.update(table_id, index_id, buf)?)
     })?;
 
-    let arraybuffer = row_arr.buffer(scope).unwrap();
-    let ret = v8::Uint8Array::new(scope, arraybuffer, row_offset, row_len).expect("len > 8 pebibytes");
-    Ok(ret)
+    Ok(row_len as u32)
 }
 
 /// Module ABI that deletes all rows found in the index identified by `index_id`,
@@ -1243,20 +1236,29 @@ fn datastore_delete_by_index_scan_range_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let mut prefix: &[u8] = deserialize_js(scope, args.get(1))?;
-    let prefix_elems: ColId = deserialize_js(scope, args.get(2))?;
-    let rstart: &[u8] = deserialize_js(scope, args.get(3))?;
-    let rend: &[u8] = deserialize_js(scope, args.get(4))?;
+    let buf = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
+    let prefix_len = deserialize_js::<u32>(scope, args.get(2))? as usize;
+    let prefix_elems: ColId = deserialize_js(scope, args.get(3))?;
+    let rstart_len = deserialize_js::<u32>(scope, args.get(4))? as usize;
+    let rend_len = deserialize_js::<u32>(scope, args.get(5))? as usize;
 
-    if prefix_elems.idx() == 0 {
-        prefix = &[];
-    }
+    with_arraybuffer(buf, |mut buf| {
+        let oob = || OOB;
 
-    // Delete the relevant rows.
-    let count = get_env(scope)?
-        .instance_env
-        .datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)?;
-    Ok(count)
+        let prefix = buf.split_off(..prefix_len).ok_or_else(oob)?;
+        let rstart = buf.split_off(..rstart_len).ok_or_else(oob)?;
+        let rend = if rend_len == 0 {
+            rstart
+        } else {
+            buf.split_off(..rend_len).ok_or_else(oob)?
+        };
+
+        // Delete the relevant rows.
+        let count = get_env(scope)?
+            .instance_env
+            .datastore_delete_by_index_scan_range_bsatn(index_id, prefix, prefix_elems, rstart, rend)?;
+        Ok(count)
+    })
 }
 
 /// Module ABI that deletes those rows, in the table identified by `table_id`,
@@ -1309,12 +1311,16 @@ fn datastore_delete_all_by_eq_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let table_id: TableId = deserialize_js(scope, args.get(0))?;
-    let relation: &[u8] = deserialize_js(scope, args.get(1))?;
+    let buf = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
+    let relation_len = deserialize_js::<u32>(scope, args.get(2))? as usize;
 
-    let count = get_env(scope)?
-        .instance_env
-        .datastore_delete_all_by_eq_bsatn(table_id, relation)?;
-    Ok(count)
+    with_arraybuffer(buf, |buf| {
+        let relation = buf.get(..relation_len).ok_or(OOB)?;
+        let count = get_env(scope)?
+            .instance_env
+            .datastore_delete_all_by_eq_bsatn(table_id, relation)?;
+        Ok(count)
+    })
 }
 
 /// # Signature
@@ -1511,7 +1517,10 @@ fn console_timer_end<'scope>(
 ///
 /// - [`spacetimedb_primitives::errno::NOT_IN_TRANSACTION`]
 ///   when called outside of a transaction.
-fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments<'_>) -> SysCallResult<Vec<u8>> {
+fn get_jwt_payload<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: FunctionCallbackArguments<'_>,
+) -> SysCallResult<Local<'scope, v8::Uint8Array>> {
     let connection_id: u128 = deserialize_js(scope, args.get(0))?;
     let connection_id = ConnectionId::from_u128(connection_id);
     let payload = get_env(scope)?
@@ -1519,7 +1528,7 @@ fn get_jwt_payload(scope: &mut PinScope<'_, '_>, args: FunctionCallbackArguments
         .get_jwt_payload(connection_id)?
         .map(String::into_bytes)
         .unwrap_or_default();
-    Ok(payload)
+    Ok(make_uint8array(scope, payload))
 }
 
 /// Module ABI that returns the module identity.
@@ -1601,17 +1610,14 @@ fn procedure_http_request<'scope>(
     ))
 }
 
-fn procedure_start_mut_tx<'scope>(
-    scope: &mut PinScope<'scope, '_>,
-    _args: FunctionCallbackArguments<'_>,
-) -> SysCallResult<Local<'scope, v8::BigInt>> {
+fn procedure_start_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
     let env = get_env(scope)?;
 
     env.instance_env.start_mutable_tx()?;
 
     let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
 
-    Ok(v8::BigInt::new_from_u64(scope, timestamp))
+    Ok(timestamp)
 }
 
 fn procedure_abort_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
@@ -1634,17 +1640,22 @@ fn datastore_index_scan_point_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let point: &[u8] = deserialize_js(scope, args.get(1))?;
+    let buf = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
+    let point_len = deserialize_js::<u32>(scope, args.get(2))? as usize;
 
-    let env = get_env(scope)?;
+    with_arraybuffer(buf, |buf| {
+        let point = buf.get(..point_len).ok_or(OOB)?;
 
-    // Find the relevant rows.
-    let chunks = env
-        .instance_env
-        .datastore_index_scan_point_bsatn_chunks(&mut env.chunk_pool, index_id, point)?;
+        let env = get_env(scope)?;
 
-    // Insert the encoded + concatenated rows into a new buffer and return its id.
-    Ok(env.iters.insert(chunks.into_iter()).0)
+        // Find the relevant rows.
+        let chunks = env
+            .instance_env
+            .datastore_index_scan_point_bsatn_chunks(&mut env.chunk_pool, index_id, point)?;
+
+        // Insert the encoded + concatenated rows into a new buffer and return its id.
+        Ok(env.iters.insert(chunks.into_iter()).0)
+    })
 }
 
 fn datastore_delete_by_index_scan_point_bsatn(
@@ -1652,11 +1663,16 @@ fn datastore_delete_by_index_scan_point_bsatn(
     args: FunctionCallbackArguments<'_>,
 ) -> SysCallResult<u32> {
     let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let point: &[u8] = deserialize_js(scope, args.get(1))?;
+    let buf = cast!(scope, args.get(1), v8::ArrayBuffer, "`ArrayBuffer`").map_err(|e| e.throw(scope))?;
+    let point_len = deserialize_js::<u32>(scope, args.get(2))? as usize;
 
-    // Delete the relevant rows.
-    let count = get_env(scope)?
-        .instance_env
-        .datastore_delete_by_index_scan_point_bsatn(index_id, point)?;
-    Ok(count)
+    with_arraybuffer(buf, |buf| {
+        let point = buf.get(..point_len).ok_or(OOB)?;
+
+        // Delete the relevant rows.
+        let count = get_env(scope)?
+            .instance_env
+            .datastore_delete_by_index_scan_point_bsatn(index_id, point)?;
+        Ok(count)
+    })
 }
