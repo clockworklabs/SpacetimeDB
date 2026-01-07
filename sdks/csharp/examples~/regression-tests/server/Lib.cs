@@ -2,6 +2,7 @@
 // Everything we're testing for happens SDK-side so this module is very uninteresting.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using SpacetimeDB;
 
 [SpacetimeDB.Type]
@@ -293,6 +294,42 @@ public static partial class Module
     public static SpacetimeDB.Unit WillPanic(ProcedureContext ctx)
     {
         throw new InvalidOperationException("This procedure is expected to panic");
+    }
+
+    [SpacetimeDB.Procedure]
+    [Experimental("STDB_UNSTABLE")]
+    public static string ReadMySchemaViaHttp(ProcedureContext ctx)
+    {
+        try
+        {
+            var moduleIdentity = ProcedureContext.Identity;
+            var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9";
+            var res = ctx.Http.Get(uri, System.TimeSpan.FromSeconds(2));
+            return res.IsSuccess
+                ? "OK " + res.Value!.Body.ToStringUtf8Lossy()
+                : "ERR " + res.Error!.Message;
+        }
+        catch (Exception e)
+        {
+            return "EXN " + e;
+        }
+    }
+
+    [SpacetimeDB.Procedure]
+    [Experimental("STDB_UNSTABLE")]
+    public static string InvalidHttpRequest(ProcedureContext ctx)
+    {
+        try
+        {
+            var res = ctx.Http.Get("http://foo.invalid/", System.TimeSpan.FromMilliseconds(250));
+            return res.IsSuccess
+                ? "OK " + res.Value!.Body.ToStringUtf8Lossy()
+                : "ERR " + res.Error!.Message;
+        }
+        catch (Exception e)
+        {
+            return "EXN " + e;
+        }
     }
 
 #pragma warning disable STDB_UNSTABLE

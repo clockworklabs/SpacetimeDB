@@ -1,7 +1,6 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
-using Internal;
 
 #pragma warning disable STDB_UNSTABLE
 public abstract class ProcedureContextBase(
@@ -17,6 +16,10 @@ public abstract class ProcedureContextBase(
     public Random Rng { get; } = random;
     public Timestamp Timestamp { get; private set; } = time;
     public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
+
+    // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
+    // (WOULD_BLOCK_TRANSACTION). Avoid calling `Http.*` inside WithTx.
+    public HttpClient Http { get; } = new();
 
     // **Note:** must be 0..=u32::MAX
     protected int CounterUuid = 0;

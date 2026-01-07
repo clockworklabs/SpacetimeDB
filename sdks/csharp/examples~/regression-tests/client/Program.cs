@@ -324,6 +324,42 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     context.Reducers.SetNullableVec(1, true, 7, 8);
 
     // Procedures tests
+    Log.Debug("Calling ReadMySchemaViaHttp");
+    waiting++;
+    context.Procedures.ReadMySchemaViaHttp((IProcedureEventContext ctx, ProcedureCallbackResult<string> result) =>
+    {
+        try
+        {
+            Debug.Assert(result.IsSuccess, $"ReadMySchemaViaHttp should succeed. Error received: {result.Error}");
+            Debug.Assert(result.Value != null, "ReadMySchemaViaHttp should return a string");
+            Debug.Assert(result.Value.StartsWith("OK "), $"Expected OK prefix, got: {result.Value}");
+            Debug.Assert(
+                result.Value.Contains("example_data"),
+                $"Expected schema response to mention example_data, got: {result.Value}"
+            );
+        }
+        finally
+        {
+            waiting--;
+        }
+    });
+
+    Log.Debug("Calling InvalidHttpRequest");
+    waiting++;
+    context.Procedures.InvalidHttpRequest((IProcedureEventContext ctx, ProcedureCallbackResult<string> result) =>
+    {
+        try
+        {
+            Debug.Assert(result.IsSuccess, $"InvalidHttpRequest should succeed. Error received: {result.Error}");
+            Debug.Assert(result.Value != null, "InvalidHttpRequest should return a string");
+            Debug.Assert(result.Value.StartsWith("ERR "), $"Expected ERR prefix, got: {result.Value}");
+        }
+        finally
+        {
+            waiting--;
+        }
+    });
+
     Log.Debug("Calling InsertWithTxRollback");
     waiting++;
     context.Procedures.InsertWithTxRollback((IProcedureEventContext ctx, ProcedureCallbackResult<SpacetimeDB.Unit> result) =>
