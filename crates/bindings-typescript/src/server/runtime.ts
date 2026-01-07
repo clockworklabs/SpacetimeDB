@@ -28,7 +28,6 @@ import {
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
-  type ReducerCtx,
   type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
 import {
@@ -186,6 +185,8 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
+let REDUCER_CTX: InstanceType<typeof ReducerCtxImpl> | undefined;
+
 // Using a class expression rather than declaration keeps the class out of the
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
@@ -210,6 +211,19 @@ export const ReducerCtxImpl = class ReducerCtx<
     this.timestamp = timestamp;
     this.connectionId = connectionId;
     this.db = getDbView();
+  }
+
+  static reset(
+    me: InstanceType<typeof this>,
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    me.sender = sender;
+    me.timestamp = timestamp;
+    me.connectionId = connectionId;
+    me.#uuidCounter = undefined;
+    me.#senderAuth = undefined;
   }
 
   get identity() {
@@ -279,11 +293,22 @@ export const hooks: ModuleHooks = {
     BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = new ReducerCtxImpl(
-      senderIdentity,
-      new Timestamp(timestamp),
-      ConnectionId.nullIfZero(new ConnectionId(connId))
-    );
+    let ctx;
+    if (REDUCER_CTX == null) {
+      ctx = REDUCER_CTX = new ReducerCtxImpl(
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      );
+    } else {
+      ctx = REDUCER_CTX;
+      ReducerCtxImpl.reset(
+        REDUCER_CTX,
+        senderIdentity,
+        new Timestamp(timestamp),
+        ConnectionId.nullIfZero(new ConnectionId(connId))
+      );
+    }
     try {
       callUserFunction(REDUCERS[reducerId], ctx, args);
     } catch (e) {
@@ -809,10 +834,13 @@ function* tableIterator<T>(
 }
 
 function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
-  const iter = new IteratorHandle(id);
   const buf = takeBuf();
   try {
-    const amt = advanceIter(iter, buf);
+    // coerce to int32
+    const ret = advanceIterRaw(id, buf);
+    // ret <= 0 means the iterator is exhausted
+    if (ret > 0) throw new Error('iter should only have one');
+    const amt = -ret;
     if (amt) {
       BINARY_READER.reset(buf.view);
       return deserialize(BINARY_READER);
@@ -820,7 +848,6 @@ function tableIterateOne<T>(id: u32, deserialize: Deserializer<T>): T | null {
     return null;
   } finally {
     returnBuf(buf);
-    iter[Symbol.dispose]();
   }
 }
 
@@ -828,6 +855,20 @@ function advanceIter(iter: IteratorHandle, buf: ResizableBuffer): number {
   while (true) {
     try {
       return iter.advance(buf.buffer);
+    } catch (e) {
+      if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
+        buf.grow(e.__buffer_too_small__ as number);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+function advanceIterRaw(id: u32, buf: ResizableBuffer): number {
+  while (true) {
+    try {
+      return 0 | sys.row_iter_bsatn_advance(id, buf.buffer);
     } catch (e) {
       if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
         buf.grow(e.__buffer_too_small__ as number);
