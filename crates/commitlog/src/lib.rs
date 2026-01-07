@@ -1,6 +1,6 @@
 use std::{
     io,
-    num::{NonZeroU16, NonZeroU64},
+    num::NonZeroU64,
     ops::RangeBounds,
     sync::{Arc, RwLock},
 };
@@ -20,7 +20,7 @@ mod varint;
 pub use crate::{
     commit::{Commit, StoredCommit},
     payload::{Decoder, Encode},
-    repo::fs::SizeOnDisk,
+    repo::{fs::SizeOnDisk, TxOffset},
     segment::{Transaction, DEFAULT_LOG_FORMAT_VERSION},
     varchar::Varchar,
 };
@@ -57,14 +57,6 @@ pub struct Options {
     /// Default: 1GiB
     #[cfg_attr(feature = "serde", serde(default = "Options::default_max_segment_size"))]
     pub max_segment_size: u64,
-    /// The maximum number of records in a commit.
-    ///
-    /// If this number is exceeded, the commit is flushed to disk even without
-    /// explicitly calling [`Commitlog::flush`].
-    ///
-    /// Default: 1
-    #[cfg_attr(feature = "serde", serde(default = "Options::default_max_records_in_commit"))]
-    pub max_records_in_commit: NonZeroU16,
     /// Whenever at least this many bytes have been written to the currently
     /// active segment, an entry is added to its offset index.
     ///
@@ -106,7 +98,6 @@ impl Default for Options {
 
 impl Options {
     pub const DEFAULT_MAX_SEGMENT_SIZE: u64 = 1024 * 1024 * 1024;
-    pub const DEFAULT_MAX_RECORDS_IN_COMMIT: NonZeroU16 = NonZeroU16::new(1).expect("1 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_INTERVAL_BYTES: NonZeroU64 = NonZeroU64::new(4096).expect("4096 > 0, qed");
     pub const DEFAULT_OFFSET_INDEX_REQUIRE_SEGMENT_FSYNC: bool = false;
     pub const DEFAULT_PREALLOCATE_SEGMENTS: bool = false;
@@ -114,7 +105,6 @@ impl Options {
     pub const DEFAULT: Self = Self {
         log_format_version: DEFAULT_LOG_FORMAT_VERSION,
         max_segment_size: Self::default_max_segment_size(),
-        max_records_in_commit: Self::default_max_records_in_commit(),
         offset_index_interval_bytes: Self::default_offset_index_interval_bytes(),
         offset_index_require_segment_fsync: Self::default_offset_index_require_segment_fsync(),
         preallocate_segments: Self::default_preallocate_segments(),
@@ -126,10 +116,6 @@ impl Options {
 
     pub const fn default_max_segment_size() -> u64 {
         Self::DEFAULT_MAX_SEGMENT_SIZE
-    }
-
-    pub const fn default_max_records_in_commit() -> NonZeroU16 {
-        Self::DEFAULT_MAX_RECORDS_IN_COMMIT
     }
 
     pub const fn default_offset_index_interval_bytes() -> NonZeroU64 {
@@ -262,7 +248,7 @@ impl<T> Commitlog<T> {
     pub fn flush(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
         trace!("flush commitlog");
-        inner.commit()?;
+        inner.flush()?;
 
         Ok(inner.max_committed_offset())
     }
@@ -282,7 +268,7 @@ impl<T> Commitlog<T> {
     pub fn flush_and_sync(&self) -> io::Result<Option<u64>> {
         let mut inner = self.inner.write().unwrap();
         trace!("flush and sync commitlog");
-        inner.commit()?;
+        inner.flush()?;
         inner.sync();
 
         Ok(inner.max_committed_offset())
@@ -383,57 +369,9 @@ impl<T> Commitlog<T> {
 }
 
 impl<T: Encode> Commitlog<T> {
-    /// Append the record `txdata` to the log.
-    ///
-    /// If the internal buffer exceeds [`Options::max_records_in_commit`], the
-    /// argument is returned in an `Err`. The caller should [`Self::flush`] the
-    /// log and try again.
-    ///
-    /// In case the log is appended to from multiple threads, this may result in
-    /// a busy loop trying to acquire a slot in the buffer. In such scenarios,
-    /// [`Self::append_maybe_flush`] is preferable.
-    pub fn append(&self, txdata: T) -> Result<(), T> {
+    pub fn commit<U: Into<Transaction<T>>>(&self, transactions: impl IntoIterator<Item = U>) -> io::Result<()> {
         let mut inner = self.inner.write().unwrap();
-        inner.append(txdata)
-    }
-
-    /// Append the record `txdata` to the log.
-    ///
-    /// The `txdata` payload is buffered in memory until either:
-    ///
-    /// - [`Self::flush`] is called explicitly, or
-    /// - [`Options::max_records_in_commit`] is exceeded
-    ///
-    /// In the latter case, [`Self::append`] flushes implicitly, _before_
-    /// appending the `txdata` argument.
-    ///
-    /// I.e. the argument is not guaranteed to be flushed after the method
-    /// returns. If that is desired, [`Self::flush`] must be called explicitly.
-    ///
-    /// If writing `txdata` to the commitlog results in a new segment file being opened,
-    /// we will send a message down `on_new_segment`.
-    /// This will be hooked up to the `request_snapshot` channel of a `SnapshotWorker`.
-    ///
-    /// # Errors
-    ///
-    /// If the log needs to be flushed, but an I/O error occurs, ownership of
-    /// `txdata` is returned back to the caller alongside the [`io::Error`].
-    ///
-    /// The value can then be used to retry appending.
-    pub fn append_maybe_flush(&self, txdata: T) -> Result<(), error::Append<T>> {
-        let mut inner = self.inner.write().unwrap();
-
-        if let Err(txdata) = inner.append(txdata) {
-            if let Err(source) = inner.commit() {
-                return Err(error::Append { txdata, source });
-            }
-
-            // `inner.commit.n` must be zero at this point
-            let res = inner.append(txdata);
-            debug_assert!(res.is_ok(), "failed to append while holding write lock");
-        }
-
-        Ok(())
+        inner.commit(transactions)
     }
 
     /// Obtain an iterator which traverses the log from the start, yielding

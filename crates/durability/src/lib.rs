@@ -104,19 +104,9 @@ pub trait Durability: Send + Sync {
     /// The payload representing a single transaction.
     type TxData;
 
-    /// Submit the transaction payload to be made durable.
-    ///
-    /// This method must never block, and accept new transactions even if they
-    /// cannot be made durable immediately.
-    ///
-    /// A permanent failure of the durable storage may be signalled by panicking.
-    fn append_tx(&self, tx: Self::TxData);
+    fn commit(&self, txs: Box<[Transaction<Self::TxData>]>);
 
-    /// The [`TxOffset`] considered durable.
-    ///
-    /// A `None` return value indicates that the durable offset is not known,
-    /// either because nothing has been persisted yet, or because the status
-    /// cannot be retrieved.
+    /// Obtain a handle to the [DurableOffset].
     fn durable_tx_offset(&self) -> DurableOffset;
 
     /// Asynchronously request the durability to shut down, without dropping it.

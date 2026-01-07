@@ -1,6 +1,6 @@
 use std::{
     io,
-    num::{NonZeroU16, NonZeroU64},
+    num::NonZeroU64,
     ops::RangeBounds,
     path::{Path, PathBuf},
 };
@@ -183,7 +183,6 @@ async fn assert_equal_dirs(src: &Path, dst: &Path) {
 fn default_options() -> Options {
     Options {
         max_segment_size: 8 * 1024,
-        max_records_in_commit: NonZeroU16::MIN,
         // Write an index entry for every commit.
         offset_index_interval_bytes: NonZeroU64::new(256).unwrap(),
         offset_index_require_segment_fsync: false,
@@ -195,8 +194,8 @@ async fn fill_log(path: PathBuf) {
     spawn_blocking(move || {
         let clog = Commitlog::open(CommitLogDir::from_path_unchecked(path), default_options(), None).unwrap();
         let payload = random_payload::gen_payload();
-        for _ in 0..100 {
-            clog.append_maybe_flush(payload).unwrap();
+        for i in 0..100 {
+            clog.commit([(i, payload)]).unwrap();
         }
         clog.flush_and_sync().unwrap();
     })

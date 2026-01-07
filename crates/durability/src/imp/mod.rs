@@ -15,7 +15,7 @@ mod testing {
     use futures::FutureExt as _;
     use tokio::sync::watch;
 
-    use crate::{Close, Durability, DurableOffset, TxOffset};
+    use crate::{Close, Durability, DurableOffset, Transaction, TxOffset};
 
     /// A [`Durability`] impl that sends all transactions into the void.
     ///
@@ -41,7 +41,7 @@ mod testing {
     impl<T: Send + Sync> Durability for NoDurability<T> {
         type TxData = T;
 
-        fn append_tx(&self, _: Self::TxData) {
+        fn commit(&self, _: Box<[Transaction<Self::TxData>]>) {
             if self.closed.load(Ordering::Relaxed) {
                 panic!("`close` was called on this `NoDurability` instance");
             }

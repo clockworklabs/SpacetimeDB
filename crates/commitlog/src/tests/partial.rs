@@ -2,142 +2,29 @@ use std::{
     cmp,
     fmt::{self, Debug},
     io::{self, Seek as _, SeekFrom},
-    iter::{self, repeat},
-    num::NonZeroU16,
+    iter,
 };
 
 use log::debug;
 use pretty_assertions::assert_matches;
 
 use crate::{
-    commitlog, error, payload,
+    commitlog,
     repo::{self, Repo, SegmentLen},
     segment::{self, FileLike},
     tests::helpers::{enable_logging, fill_log_with},
-    Commit, Encode, Options, DEFAULT_LOG_FORMAT_VERSION,
+    Options,
 };
 
 #[test]
-fn traversal() {
+#[should_panic]
+fn panics_on_enospc() {
     enable_logging();
 
     let mut log = open_log::<[u8; 32]>(ShortMem::new(800));
-    let total_commits = 100;
-    let total_txs = fill_log_enospc(&mut log, total_commits, (1..=10).cycle());
-
-    assert_eq!(
-        total_txs,
-        log.transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
-    );
-    assert_eq!(total_commits, log.commits_from(0).map(Result::unwrap).count());
-}
-
-// Note: Write errors cause the in-flight commit to be written to a fresh
-// segment. So as long as we write through the public API, partial writes
-// never surface (i.e. the log is contiguous).
-#[test]
-fn reopen() {
-    enable_logging();
-
-    let repo = ShortMem::new(800);
-    let num_commits = 10;
-
-    let mut total_txs = 0;
-    for i in 0..2 {
-        let mut log = open_log::<[u8; 32]>(repo.clone());
-        total_txs += fill_log_enospc(&mut log, num_commits, (1..=10).cycle());
-
-        debug!("fill {} done", i + 1);
+    for i in 0..100 {
+        log.commit([(i, [b'z'; 32])]).unwrap();
     }
-
-    assert_eq!(
-        total_txs,
-        open_log::<[u8; 32]>(repo.clone())
-            .transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
-    );
-
-    // Let's see if we hit a funny case in any of the segments.
-    for offset in repo.existing_offsets().unwrap().into_iter().rev() {
-        let meta = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, offset)
-            .unwrap()
-            .metadata()
-            .unwrap();
-        debug!("dropping segment: segment::{meta:?}");
-        repo.remove_segment(offset).unwrap();
-        assert_eq!(
-            meta.tx_range.start,
-            open_log::<[u8; 32]>(repo.clone())
-                .transactions_from(0, &payload::ArrayDecoder)
-                .map(Result::unwrap)
-                .count() as u64
-        );
-    }
-}
-
-#[test]
-fn overwrite_reopen() {
-    enable_logging();
-
-    let repo = ShortMem::new(800);
-    let num_commits = 10;
-    let txs_per_commit = 5;
-
-    let mut log = open_log::<[u8; 32]>(repo.clone());
-    let mut total_txs = fill_log_enospc(&mut log, num_commits, repeat(txs_per_commit));
-
-    let last_segment_offset = repo.existing_offsets().unwrap().last().copied().unwrap();
-    let last_commit: Commit = repo::open_segment_reader(&repo, DEFAULT_LOG_FORMAT_VERSION, last_segment_offset)
-        .unwrap()
-        .commits()
-        .map(Result::unwrap)
-        .last()
-        .unwrap()
-        .into();
-    debug!("last commit: {last_commit:?}");
-
-    {
-        let mut last_segment = repo.open_segment_writer(last_segment_offset).unwrap();
-        let pos = last_segment.len() - last_commit.encoded_len() + 1;
-        last_segment.modify_byte_at(pos, |_| 255);
-    }
-
-    let mut log = open_log::<[u8; 32]>(repo.clone());
-    for (i, commit) in log.commits_from(0).enumerate() {
-        if i < num_commits - 1 {
-            commit.expect("all but last commit should be good");
-        } else {
-            let last_good_offset = txs_per_commit * (num_commits - 1);
-            assert!(
-                matches!(
-                    commit,
-                    Err(error::Traversal::Checksum { offset, .. }) if offset == last_good_offset as u64,
-                ),
-                "expected checksum error with offset={last_good_offset}: {commit:?}"
-            );
-        }
-    }
-
-    // Write some more data.
-    total_txs += fill_log_enospc(&mut log, num_commits, repeat(txs_per_commit));
-    // Log should be contiguous, but missing one corrupted commit.
-    assert_eq!(
-        total_txs - txs_per_commit,
-        log.transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
-    );
-    // Check that this is true if we reopen the log.
-    assert_eq!(
-        total_txs - txs_per_commit,
-        open_log::<[u8; 32]>(repo)
-            .transactions_from(0, &payload::ArrayDecoder)
-            .map(Result::unwrap)
-            .count()
-    );
 }
 
 /// Edge case surfaced in production:
@@ -154,7 +41,6 @@ fn first_commit_in_last_segment_corrupt() {
     let repo = repo::Memory::unlimited();
     let options = Options {
         max_segment_size: 512,
-        max_records_in_commit: NonZeroU16::new(1).unwrap(),
         ..<_>::default()
     };
     {
@@ -180,7 +66,6 @@ fn open_log<T>(repo: ShortMem) -> commitlog::Generic<ShortMem, T> {
         repo,
         Options {
             max_segment_size: 1024,
-            max_records_in_commit: NonZeroU16::new(10).unwrap(),
             ..Options::default()
         },
     )
@@ -195,16 +80,6 @@ const ENOSPC: i32 = 28;
 struct ShortSegment {
     inner: repo::mem::Segment,
     max_len: u64,
-}
-
-impl ShortSegment {
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn modify_byte_at(&mut self, pos: usize, f: impl FnOnce(u8) -> u8) {
-        self.inner.modify_byte_at(pos, f);
-    }
 }
 
 impl SegmentLen for ShortSegment {
@@ -313,39 +188,4 @@ impl Repo for ShortMem {
     fn existing_offsets(&self) -> io::Result<Vec<u64>> {
         self.inner.existing_offsets()
     }
-}
-
-/// Like [`crate::tests::helpers::fill_log`], but expect that ENOSPC happens at
-/// least once.
-fn fill_log_enospc<T>(
-    log: &mut commitlog::Generic<ShortMem, T>,
-    num_commits: usize,
-    txs_per_commit: impl Iterator<Item = usize>,
-) -> usize
-where
-    T: Debug + Default + Encode,
-{
-    let mut seen_enospc = false;
-
-    let mut total_txs = 0;
-    for (_, n) in (0..num_commits).zip(txs_per_commit) {
-        for _ in 0..n {
-            log.append(T::default()).unwrap();
-            total_txs += 1;
-        }
-        let res = log.commit();
-        if let Err(Some(os)) = res.as_ref().map_err(|e| e.raw_os_error()) {
-            if os == ENOSPC {
-                debug!("fill: ignoring ENOSPC");
-                seen_enospc = true;
-                log.commit().unwrap();
-                continue;
-            }
-        }
-        res.unwrap();
-    }
-
-    assert!(seen_enospc, "expected to see ENOSPC");
-
-    total_txs
 }

@@ -8,7 +8,7 @@ use spacetimedb_commitlog::payload::{
 };
 use spacetimedb_data_structures::map::IntSet;
 use spacetimedb_datastore::{execution_context::ReducerContext, traits::TxData};
-use spacetimedb_durability::{DurableOffset, TxOffset};
+use spacetimedb_durability::{DurableOffset, Transaction, TxOffset};
 use spacetimedb_lib::Identity;
 use spacetimedb_primitives::TableId;
 use tokio::{
@@ -199,14 +199,14 @@ impl DurabilityWorkerActor {
     }
 
     pub fn do_durability(durability: &Durability, reducer_context: Option<ReducerContext>, tx_data: &TxData) {
-        if tx_data.tx_offset().is_none() {
+        let Some(tx_offset) = tx_data.tx_offset() else {
             let name = reducer_context.as_ref().map(|rcx| &*rcx.name);
             debug_assert!(
                 !tx_data.has_rows_or_connect_disconnect(name),
                 "tx_data has no rows but has connect/disconnect: `{name:?}`"
             );
             return;
-        }
+        };
 
         let is_persistent_table = |table_id: &TableId| -> bool { !tx_data.is_ephemeral_table(table_id) };
 
@@ -252,9 +252,14 @@ impl DurabilityWorkerActor {
             }),
         };
 
-        // TODO: Should measure queuing time + actual write
         // This does not block, as per trait docs.
-        durability.append_tx(txdata);
+        durability.commit(
+            [Transaction {
+                offset: tx_offset,
+                txdata,
+            }]
+            .into(),
+        );
     }
 }
 
@@ -292,9 +297,12 @@ mod tests {
     impl spacetimedb_durability::Durability for CountingDurability {
         type TxData = Txdata;
 
-        fn append_tx(&self, _tx: Self::TxData) {
+        fn commit(&self, txs: Box<[Transaction<Self::TxData>]>) {
+            let Some(max_offset) = txs.iter().map(|x| x.offset).max() else {
+                return;
+            };
             self.appended.send_modify(|offset| {
-                *offset = offset.map(|x| x + 1).or(Some(0));
+                offset.replace(max_offset);
             });
         }
 
