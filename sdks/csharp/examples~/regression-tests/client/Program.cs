@@ -12,6 +12,7 @@ using SpacetimeDB.Types;
 
 const string HOST = "http://localhost:3000";
 const string DBNAME = "btree-repro";
+const string THROW_ERROR_MESSAGE = "this is an error";
 
 DbConnection ConnectToDB()
 {
@@ -87,6 +88,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
     {
         Log.Info($"Got OnUnhandledReducerError: {exception}");
         waiting--;
+        ValidateReducerErrorDoesNotContainStackTrace(exception);
         ValidateBTreeIndexes(ctx);
         ValidateNullableVecView(ctx);
     };
@@ -167,6 +169,17 @@ void ValidateNullableVecView(
     }
 }
 
+void ValidateReducerErrorDoesNotContainStackTrace(Exception exception)
+{
+    Debug.Assert(
+        exception.Message == THROW_ERROR_MESSAGE,
+        $"Expected reducer error message '{THROW_ERROR_MESSAGE}', got '{exception.Message}'"
+    );
+    Debug.Assert(!exception.Message.Contains("\n"), "Reducer error message should not contain newline");
+    Debug.Assert(!exception.Message.Contains("\r"), "Reducer error message should not contain newline");
+    Debug.Assert(!exception.Message.Contains(" at "), "Reducer error message should not contain stack trace");
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     applied = true;
@@ -187,7 +200,7 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
     Log.Debug("Calling ThrowError");
     waiting++;
-    context.Reducers.ThrowError("this is an error");
+    context.Reducers.ThrowError(THROW_ERROR_MESSAGE);
 
     // RemoteQuery test
     Log.Debug("Calling RemoteQuery");
