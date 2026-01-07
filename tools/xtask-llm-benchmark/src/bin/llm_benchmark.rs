@@ -1,0 +1,684 @@
+#![allow(clippy::disallowed_macros)]
+
+use anyhow::{bail, Context, Result};
+use clap::{Args, Parser, Subcommand};
+use futures::{StreamExt, TryStreamExt};
+use spacetimedb_guard::SpacetimeDbGuard;
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
+use tokio::runtime::Runtime;
+use xtask_llm_benchmark::bench::bench_route_concurrency;
+use xtask_llm_benchmark::bench::runner::{
+    build_goldens_only_for_lang, ensure_goldens_built_once, run_selected_or_all_for_model_async_for_lang,
+};
+use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig};
+use xtask_llm_benchmark::context::constants::{
+    docs_benchmark_details, docs_benchmark_summary, llm_comparison_details, llm_comparison_summary, ALL_MODES,
+};
+use xtask_llm_benchmark::context::{build_context, compute_context_hash, docs_dir};
+use xtask_llm_benchmark::eval::Lang;
+use xtask_llm_benchmark::llm::types::Vendor;
+use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
+use xtask_llm_benchmark::results::io::{update_golden_answers_on_disk, write_summary_from_details_file};
+use xtask_llm_benchmark::results::{load_summary, Summary};
+
+#[derive(Clone, Debug)]
+struct ModelGroup {
+    vendor: Vendor,
+    models: Vec<String>,
+}
+
+impl std::str::FromStr for ModelGroup {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let s = s.trim();
+        let (prov_str, models_str) = s
+            .split_once(':')
+            .ok_or_else(|| format!("expected provider:model[,model...], got '{s}'"))?;
+
+        let vendor =
+            Vendor::parse(prov_str.trim()).ok_or_else(|| format!("unknown provider: '{}'", prov_str.trim()))?;
+
+        let mut models: Vec<String> = Vec::new();
+        for m in models_str.split(',').map(|m| m.trim()).filter(|m| !m.is_empty()) {
+            if m.contains(':') {
+                return Err(format!(
+                    "model name '{m}' contains ':'. Did you mean to pass another group? \
+             Use: --models openai:gpt-5 google:gemini-2.5-pro"
+                ));
+            }
+            models.push(m.to_ascii_lowercase());
+        }
+
+        if models.is_empty() {
+            return Err(format!("empty model list for provider '{}'", prov_str.trim()));
+        }
+
+        Ok(Self { vendor, models })
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "llm",
+    about = "LLM benchmark runner",
+    arg_required_else_help = true,
+    after_help = "Notes:\n  • Anthropic ids: claude-sonnet-4-5, claude-sonnet-4, claude-3-7-sonnet-latest, claude-3-5-sonnet-latest\n  • Base URLs must not include /v1; models must be valid for the chosen provider.\n"
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Run benchmarks / build goldens / compute hashes.
+    Run(RunArgs),
+
+    /// Check-only: ensure required mode exists per language and hashes match saved run.
+    CiCheck(CiCheckArgs),
+
+    /// Quickfix CI by running a minimal OpenAI model set.
+    CiQuickfix,
+
+    /// Regenerate summary.json from details.json (optionally custom paths).
+    Summary(SummaryArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+struct RunArgs {
+    /// Comma-separated list of modes (default: all modes)
+    #[arg(long, value_delimiter = ',')]
+    modes: Option<Vec<String>>,
+
+    /// Language to benchmark
+    #[arg(long, default_value = "rust")]
+    lang: Lang,
+
+    /// Only compute/print docs hash; do not run tasks
+    #[arg(long, conflicts_with = "goldens_only")]
+    hash_only: bool,
+
+    /// Build/publish goldens only (skip LLM calls)
+    #[arg(long, conflicts_with = "hash_only")]
+    goldens_only: bool,
+
+    /// Re-run even if hashes match
+    #[arg(long)]
+    force: bool,
+
+    /// Comma separated or space separated list of benchmark categories (e.g. basic,schema)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    categories: Option<Vec<String>>,
+
+    /// Comma separated or space separated list like 0,2,5 and/or task ids like t_001
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    tasks: Option<Vec<String>>,
+
+    /// Comma separated or space separated list of providers to include (e.g. openai,anthropic)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    providers: Option<Vec<VendorArg>>,
+
+    /// Model groups, repeatable. Each group is provider:model[,model...]
+    /// You can pass multiple groups after one `--models`, or repeat `--models`.
+    ///
+    /// Examples:
+    ///   --models openai:gpt-5,gpt-4.1,o4-mini google:gemini-2.5-pro
+    ///   --models "anthropic:Claude 4.5 Sonnet"
+    ///   --models "anthropic:Claude 4.5 Sonnet" --models openai:gpt-5
+    #[arg(long, num_args = 1..)]
+    models: Option<Vec<ModelGroup>>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct CiCheckArgs {
+    /// Optional: one or more languages (default: rust,csharp)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    lang: Option<Vec<Lang>>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct SummaryArgs {
+    /// Optional input details.json (default: results_path_details())
+    details: Option<PathBuf>,
+
+    /// Optional output summary.json (default: results_path_summary())
+    summary: Option<PathBuf>,
+}
+
+/// Local wrapper so we can parse Vendor without orphan-rule issues.
+#[derive(Clone, Debug)]
+struct VendorArg(pub Vendor);
+
+impl FromStr for VendorArg {
+    type Err = String;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Vendor::parse(s.trim())
+            .map(VendorArg)
+            .ok_or_else(|| format!("unknown provider: {}", s.trim()))
+    }
+}
+
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Run(args) => cmd_run(args),
+        Commands::CiCheck(args) => cmd_ci_check(args),
+        Commands::CiQuickfix => cmd_ci_quickfix(),
+        Commands::Summary(args) => cmd_summary(args),
+    }
+}
+
+/* ------------------------------ run ------------------------------ */
+
+fn cmd_run(args: RunArgs) -> Result<()> {
+    // Run command writes to llm-comparison files (for comparing LLM performance)
+    let details_path = llm_comparison_details();
+    let summary_path = llm_comparison_summary();
+
+    run_benchmarks(args, &details_path, &summary_path)
+}
+
+/// Core benchmark runner used by both `run` and `ci-quickfix`
+fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Result<()> {
+    let mut config = RunConfig {
+        modes: args.modes,
+        hash_only: args.hash_only,
+        goldens_only: args.goldens_only,
+        lang: args.lang,
+        providers_filter: args.providers.map(|v| v.into_iter().map(|vv| vv.0).collect()),
+        selectors: args.tasks.as_ref().map(|v| v.to_vec()),
+        force: args.force,
+        categories: categories_to_set(args.categories),
+        model_filter: model_filter_from_groups(args.models),
+        host: None,
+        details_path: details_path.to_path_buf(),
+    };
+
+    let bench_root = find_bench_root();
+
+    let modes = config
+        .modes
+        .clone()
+        .unwrap_or_else(|| ALL_MODES.iter().map(|s| s.to_string()).collect());
+
+    let RuntimeInit {
+        runtime,
+        provider: llm_provider,
+        guard,
+    } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
+
+    config.host = Some(guard.as_ref().unwrap().host_url.clone());
+
+    config.selectors = apply_category_filter(&bench_root, config.categories.as_ref(), config.selectors.as_deref())?;
+
+    let selectors: Option<Vec<String>> = config.selectors.clone();
+    let selectors_ref: Option<&[String]> = selectors.as_deref();
+
+    if !config.goldens_only {
+        let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
+        rt.block_on(ensure_goldens_built_once(
+            config.host.clone(),
+            &bench_root,
+            config.lang,
+            selectors_ref,
+        ))?;
+    }
+
+    for mode in modes {
+        run_mode_benchmarks(
+            &mode,
+            config.lang,
+            &config,
+            &bench_root,
+            runtime.as_ref(),
+            llm_provider.as_ref(),
+        )?;
+    }
+
+    if !config.goldens_only && !config.hash_only {
+        fs::create_dir_all(docs_dir().join("llms"))?;
+
+        update_golden_answers_on_disk(details_path, &bench_root, /*all=*/ true, /*overwrite=*/ true)?;
+
+        write_summary_from_details_file(details_path, summary_path)?;
+        println!("Results written to:");
+        println!("  Details: {}", details_path.display());
+        println!("  Summary: {}", summary_path.display());
+    }
+
+    Ok(())
+}
+
+/* --------------------------- ci-check --------------------------- */
+
+fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
+    // Check-only:
+    //  - Verifies the required mode exists for each language
+    //  - Computes the current context hash and compares against the saved summary hash
+    //  - Does NOT run any providers/models or build goldens
+    //
+    // Required per language:
+    //   Rust   → "rustdoc_json"
+    //   CSharp → "docs"
+
+    let mut langs = args.lang.unwrap_or_else(|| vec![Lang::Rust, Lang::CSharp]);
+
+    // De-dupe, preserve order
+    let mut seen = HashSet::new();
+    langs.retain(|l| seen.insert(l.as_str().to_string()));
+
+    // Required mode per language (use this everywhere)
+    let required_mode = |lang: Lang| -> &'static str {
+        match lang {
+            Lang::Rust => "rustdoc_json",
+            Lang::CSharp => "docs",
+        }
+    };
+
+    // Debug hint for how to (re)generate entries
+    let hint_for = |_lang: Lang| -> &'static str { "cargo llm ci-quickfix" };
+
+    // Load docs-benchmark summary to compare hashes against
+    let summary_path = docs_benchmark_summary();
+    let summary: Summary =
+        load_summary(&summary_path).with_context(|| format!("load summary file at {:?}", summary_path))?;
+
+    for lang in langs {
+        let mode = required_mode(lang);
+        let lang_str = lang.as_str();
+
+        // Ensure mode exists (non-empty paths)
+        match xtask_llm_benchmark::context::resolve_mode_paths(mode) {
+            Ok(paths) if !paths.is_empty() => {}
+            Ok(_) => bail!(
+                "CI check FAILED: {}/{} resolved to 0 paths.\n→ Try: {}",
+                mode,
+                lang_str,
+                hint_for(lang)
+            ),
+            Err(e) => bail!(
+                "CI check FAILED: {}/{} not available: {}.\n→ Try: {}",
+                mode,
+                lang_str,
+                e,
+                hint_for(lang)
+            ),
+        }
+
+        // Compute current context hash
+        let current_hash =
+            compute_context_hash(mode).with_context(|| format!("compute context hash for `{mode}`/{lang_str}"))?;
+
+        // Find saved hash in summary
+        let saved_hash = summary
+            .by_language
+            .get(lang_str)
+            .and_then(|lang_sum| lang_sum.modes.get(mode))
+            .map(|mode_sum| &mode_sum.hash);
+
+        let saved_hash = match saved_hash {
+            Some(h) => h,
+            None => bail!(
+                "CI check FAILED: no saved entry for {}/{}.\n→ Generate it with: {}",
+                mode,
+                lang_str,
+                hint_for(lang)
+            ),
+        };
+
+        if *saved_hash != current_hash {
+            bail!(
+                "CI check FAILED: hash mismatch for {}/{}: saved={} current={}.\n→ Re-run to refresh: {}",
+                mode,
+                lang_str,
+                short_hash(saved_hash.as_str()),
+                short_hash(&current_hash),
+                hint_for(lang)
+            );
+        }
+
+        println!("CI check OK: {}/{} hash {}", mode, lang_str, short_hash(&current_hash));
+    }
+
+    Ok(())
+}
+
+fn model_filter_from_groups(groups: Option<Vec<ModelGroup>>) -> Option<HashMap<Vendor, HashSet<String>>> {
+    let groups = groups?;
+    let mut out: HashMap<Vendor, HashSet<String>> = HashMap::new();
+
+    for g in groups {
+        out.entry(g.vendor).or_default().extend(g.models.into_iter());
+    }
+    Some(out)
+}
+
+fn cmd_ci_quickfix() -> Result<()> {
+    // CI quickfix writes to docs-benchmark files (for testing documentation quality)
+    let details_path = docs_benchmark_details();
+    let summary_path = docs_benchmark_summary();
+
+    println!("Running CI quickfix (GPT-5 only) for docs-benchmark...");
+
+    // Run Rust benchmarks
+    let rust_args = RunArgs {
+        modes: Some(vec!["rustdoc_json".to_string()]),
+        lang: Lang::Rust,
+        hash_only: false,
+        goldens_only: false,
+        force: true,
+        categories: None,
+        tasks: None,
+        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
+        models: Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-5".to_string()],
+        }]),
+    };
+    run_benchmarks(rust_args, &details_path, &summary_path)?;
+
+    // Run C# benchmarks
+    let csharp_args = RunArgs {
+        modes: Some(vec!["docs".to_string()]),
+        lang: Lang::CSharp,
+        hash_only: false,
+        goldens_only: false,
+        force: true,
+        categories: None,
+        tasks: None,
+        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
+        models: Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-5".to_string()],
+        }]),
+    };
+    run_benchmarks(csharp_args, &details_path, &summary_path)?;
+
+    println!("CI quickfix complete. Results written to:");
+    println!("  Details: {}", details_path.display());
+    println!("  Summary: {}", summary_path.display());
+
+    Ok(())
+}
+
+/* --------------------------- helpers --------------------------- */
+
+fn short_hash(s: &str) -> &str {
+    &s[..s.len().min(12)]
+}
+
+/// Run benchmarks for a single mode. Results are merged into the details file.
+fn run_mode_benchmarks(
+    mode: &str,
+    lang: Lang,
+    config: &RunConfig,
+    bench_root: &Path,
+    runtime: Option<&Runtime>,
+    llm_provider: Option<&Arc<dyn LlmProvider>>,
+) -> Result<()> {
+    let lang_str = lang.as_str();
+    let context = build_context(mode)?;
+    let hash = compute_context_hash(mode).with_context(|| format!("compute docs hash for `{mode}`/{}", lang_str))?;
+
+    println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
+
+    if config.hash_only {
+        return Ok(());
+    }
+
+    if config.goldens_only {
+        let rt = runtime.expect("runtime required for --goldens-only");
+        let sels = config.selectors.as_deref();
+
+        rt.block_on(build_goldens_only_for_lang(config.host.clone(), bench_root, lang, sels))?;
+        println!("{:<12} [{:<10}] goldens-only build complete", mode, lang_str);
+        return Ok(());
+    }
+
+    // Run benchmarks for all matching routes
+    let routes = filter_routes(config);
+
+    if routes.is_empty() {
+        println!("{:<12} [{:<10}] no matching models to run", mode, lang_str);
+        return Ok(());
+    }
+
+    let runtime = runtime.expect("runtime required for normal runs");
+    let llm_provider = llm_provider.expect("llm provider required for normal runs");
+
+    let route_runs = runtime.block_on(run_many_routes_for_mode(
+        bench_root,
+        mode,
+        &hash,
+        &context,
+        lang,
+        config,
+        llm_provider.as_ref(),
+        &routes,
+    ))?;
+
+    // Print summary
+    for rr in &route_runs {
+        let total: u32 = rr.outcomes.iter().map(|o| o.total_tests).sum();
+        let passed: u32 = rr.outcomes.iter().map(|o| o.passed_tests).sum();
+        let pct = if total == 0 {
+            0.0
+        } else {
+            (passed as f32 / total as f32) * 100.0
+        };
+        println!("   ↳ {}: {}/{} passed ({:.1}%)", rr.route_name, passed, total, pct);
+    }
+
+    Ok(())
+}
+
+fn filter_routes(config: &RunConfig) -> Vec<ModelRoute> {
+    default_model_routes()
+        .iter()
+        .filter(|r| config.providers_filter.as_ref().is_none_or(|f| f.contains(&r.vendor)))
+        .filter(|r| {
+            if let Some(map) = &config.model_filter {
+                if let Some(allowed) = map.get(&r.vendor) {
+                    let api = r.api_model.to_ascii_lowercase();
+                    let dn = r.display_name.to_ascii_lowercase();
+                    return allowed.contains(&api) || allowed.contains(&dn);
+                }
+            }
+            true
+        })
+        .cloned()
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_many_routes_for_mode(
+    bench_root: &Path,
+    mode: &str,
+    hash: &str,
+    context: &str,
+    lang: Lang,
+    config: &RunConfig,
+    llm: &dyn LlmProvider,
+    routes: &[ModelRoute],
+) -> Result<Vec<RouteRun>> {
+    let rbuf = bench_route_concurrency();
+    let selectors = config.selectors.as_deref();
+    let host = config.host.clone();
+    let details_path = config.details_path.clone();
+
+    futures::stream::iter(routes.iter().cloned().map(|route| {
+        let host = host.clone();
+        let details_path = details_path.clone();
+
+        async move {
+            println!("→ running {}", route.display_name);
+
+            let per = BenchRunContext {
+                bench_root,
+                mode,
+                hash,
+                route: &route,
+                context,
+                llm,
+                lang,
+                selectors,
+                host,
+                details_path,
+            };
+
+            let outcomes = run_selected_or_all_for_model_async_for_lang(&per).await?;
+
+            Ok::<_, anyhow::Error>(RouteRun {
+                route_name: route.display_name.to_string(),
+                api_model: route.api_model.to_string(),
+                outcomes,
+            })
+        }
+    }))
+    .buffer_unordered(rbuf)
+    .try_collect::<Vec<_>>()
+    .await
+}
+
+fn categories_to_set(v: Option<Vec<String>>) -> Option<HashSet<String>> {
+    let v = v?;
+    let set: HashSet<String> = v
+        .into_iter()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .filter(|s| !s.is_empty())
+        .collect();
+    (!set.is_empty()).then_some(set)
+}
+
+pub struct RuntimeInit {
+    pub runtime: Option<Runtime>,
+    pub provider: Option<Arc<dyn LlmProvider>>,
+    pub guard: Option<SpacetimeDbGuard>,
+}
+
+fn initialize_runtime_and_provider(hash_only: bool, goldens_only: bool) -> Result<RuntimeInit> {
+    if hash_only {
+        return Ok(RuntimeInit {
+            runtime: None,
+            provider: None,
+            guard: None,
+        });
+    }
+
+    let spacetime = SpacetimeDbGuard::spawn_in_temp_data_dir_use_cli();
+
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+
+    if goldens_only {
+        return Ok(RuntimeInit {
+            runtime: Some(runtime),
+            provider: None,
+            guard: Some(spacetime),
+        });
+    }
+
+    let llm_provider = make_provider_from_env()?;
+    Ok(RuntimeInit {
+        runtime: Some(runtime),
+        provider: Some(llm_provider),
+        guard: Some(spacetime),
+    })
+}
+
+fn find_bench_root() -> PathBuf {
+    let start = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for dir in start.ancestors() {
+        let cand = dir.join("src").join("benchmarks");
+        if cand.is_dir() {
+            return cand;
+        }
+    }
+    start.join("src").join("benchmarks")
+}
+
+fn collect_task_numbers_in_categories(bench_root: &Path, cats: &HashSet<String>) -> Result<HashSet<u32>> {
+    let mut nums = HashSet::new();
+    for c in cats {
+        let dir = bench_root.join(c);
+        if !dir.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(&dir).with_context(|| format!("read_dir {}", dir.display()))? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(rest) = name.strip_prefix("t_") {
+                if let Some((num_str, _)) = rest.split_once('_') {
+                    if num_str.len() == 3 {
+                        if let Ok(n) = num_str.parse::<u32>() {
+                            nums.insert(n);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(nums)
+}
+
+fn normalize_numeric_selectors(raw: &[String]) -> Vec<u32> {
+    raw.iter()
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+        .filter_map(|s| s.parse::<u32>().ok())
+        .collect()
+}
+
+fn apply_category_filter(
+    bench_root: &Path,
+    categories: Option<&HashSet<String>>,
+    selectors: Option<&[String]>,
+) -> Result<Option<Vec<String>>> {
+    match categories {
+        None => {
+            // No category filter; keep selectors as-is
+            Ok(selectors.map(|s| s.to_vec()))
+        }
+        Some(cats) => {
+            let allowed = collect_task_numbers_in_categories(bench_root, cats)?;
+            let out_nums: Vec<u32> = match selectors {
+                Some(user) => {
+                    let nums = normalize_numeric_selectors(user);
+                    nums.into_iter().filter(|n| allowed.contains(n)).collect()
+                }
+                None => {
+                    let mut v: Vec<u32> = allowed.into_iter().collect();
+                    v.sort_unstable();
+                    v
+                }
+            };
+            if out_nums.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(out_nums.into_iter().map(|n| n.to_string()).collect()))
+            }
+        }
+    }
+}
+
+fn cmd_summary(args: SummaryArgs) -> Result<()> {
+    // Default to llm-comparison files (the full benchmark suite)
+    let in_path = args.details.unwrap_or_else(llm_comparison_details);
+    let out_path = args.summary.unwrap_or_else(llm_comparison_summary);
+
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create dir {}", parent.display()))?;
+    }
+
+    write_summary_from_details_file(&in_path, &out_path)?;
+    println!("Summary written to: {}", out_path.display());
+    Ok(())
+}

@@ -168,7 +168,7 @@ partial struct TestDefaultFieldValues
 #nullable enable
     public bool Equals(TestDefaultFieldValues that)
     {
-        var ___eqUniqueField = this.UniqueField.Equals(that.UniqueField);
+        var ___eqUniqueField = System.Nullable.Equals(this.UniqueField, that.UniqueField);
         var ___eqDefaultString =
             this.DefaultString == null
                 ? that.DefaultString == null
@@ -187,7 +187,7 @@ partial struct TestDefaultFieldValues
         var ___eqDefaultF32 = this.DefaultF32.Equals(that.DefaultF32);
         var ___eqDefaultF64 = this.DefaultF64.Equals(that.DefaultF64);
         var ___eqDefaultEnum = this.DefaultEnum == that.DefaultEnum;
-        var ___eqDefaultNull = this.DefaultNull.Equals(that.DefaultNull);
+        var ___eqDefaultNull = System.Nullable.Equals(this.DefaultNull, that.DefaultNull);
         return ___eqUniqueField
             && ___eqDefaultString
             && ___eqDefaultBool
