@@ -1,7 +1,6 @@
 ---
 title: TypeScript
 slug: /quickstarts/typescript
-id: quickstart-typescript
 ---
 
 import { InstallCardLink } from "@site/src/components/InstallCardLink";

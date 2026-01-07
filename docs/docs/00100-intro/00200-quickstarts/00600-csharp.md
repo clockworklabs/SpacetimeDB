@@ -1,7 +1,6 @@
 ---
 title: C#
-slug: /quickstarts/csharp
-id: quickstart-csharp
+slug: /quickstarts/c-sharp
 ---
 
 import { InstallCardLink } from "@site/src/components/InstallCardLink";

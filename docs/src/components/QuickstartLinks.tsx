@@ -18,19 +18,19 @@ export function QuickstartLinks() {
         {
           icon: <TypeScriptLogo height={40} />,
           href: "/quickstarts/typescript",
-          docId: "quickstart-typescript",
+          docId: "intro/quickstarts/typescript",
           label: "TypeScript",
         },
         {
           icon: <CSharpLogo height={40} />,
-          href: "/quickstarts/csharp",
-          docId: "quickstart-csharp",
+          href: "/quickstarts/c-sharp",
+          docId: "intro/quickstarts/c-sharp",
           label: "C#",
         },
         {
           icon: <RustLogo height={40} />,
           href: "/quickstarts/rust",
-          docId: "quickstart-rust",
+          docId: "intro/quickstarts/rust",
           invertIcon: true,
           label: "Rust",
         },
