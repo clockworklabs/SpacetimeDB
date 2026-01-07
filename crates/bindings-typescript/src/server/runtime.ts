@@ -276,9 +276,7 @@ export const hooks: ModuleHooks = {
       );
     }
     const deserializeArgs = reducerArgsDeserializers[reducerId];
-    BINARY_READER.reset(
-      new DataView(argsBuf.buffer, argsBuf.byteOffset, argsBuf.byteLength)
-    );
+    BINARY_READER.reset(argsBuf);
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
     const ctx: ReducerCtx<any> = new ReducerCtxImpl(
@@ -440,25 +438,33 @@ function makeTableView(
     iter,
     [Symbol.iterator]: () => iter(),
     insert: row => {
-      using buf = IterBuf.take();
-      const writer = new BinaryWriter(buf.inner);
-      serializeRow(writer, row);
-      sys.datastore_insert_bsatn(table_id, writer.getBuffer());
-      const ret = { ...row };
-      integrateGeneratedColumns?.(ret, buf.view);
+      const buf = takeBuf();
+      try {
+        const writer = new BinaryWriter(buf);
+        serializeRow(writer, row);
+        sys.datastore_insert_bsatn(table_id, writer.getBuffer());
+        const ret = { ...row };
+        integrateGeneratedColumns?.(ret, buf.view);
 
-      return ret;
+        return ret;
+      } finally {
+        returnBuf(buf);
+      }
     },
     delete: (row: RowType<any>): boolean => {
-      using buf = IterBuf.take();
-      const writer = new BinaryWriter(buf.inner);
-      writer.writeU32(1);
-      serializeRow(writer, row);
-      const count = sys.datastore_delete_all_by_eq_bsatn(
-        table_id,
-        writer.getBuffer()
-      );
-      return count > 0;
+      const buf = takeBuf();
+      try {
+        BINARY_WRITER.reset(buf);
+        BINARY_WRITER.writeU32(1);
+        serializeRow(BINARY_WRITER, row);
+        const count = sys.datastore_delete_all_by_eq_bsatn(
+          table_id,
+          BINARY_WRITER.getBuffer()
+        );
+        return count > 0;
+      } finally {
+        returnBuf(buf);
+      }
     },
   };
 
@@ -542,13 +548,17 @@ function makeTableView(
           return tableIterateOne(iter_id, deserializeRow);
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
-          using buf = IterBuf.take();
-          const point = serializeSinglePoint(buf.inner, colVal);
-          const num = sys.datastore_delete_by_index_scan_point_bsatn(
-            index_id,
-            point
-          );
-          return num > 0;
+          const buf = takeBuf();
+          try {
+            const point = serializeSinglePoint(buf, colVal);
+            const num = sys.datastore_delete_by_index_scan_point_bsatn(
+              index_id,
+              point
+            );
+            return num > 0;
+          } finally {
+            returnBuf(buf);
+          }
         },
         update: (row: RowType<any>): RowType<any> => {
           const buf = takeBuf();
@@ -576,9 +586,13 @@ function makeTableView(
           }
           let iter_id;
           {
-            using buf = IterBuf.take();
-            const point = serializePoint(buf.inner, colVal);
-            iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+            const buf = takeBuf();
+            try {
+              const point = serializePoint(buf, colVal);
+              iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+            } finally {
+              returnBuf(buf);
+            }
           }
           return tableIterateOne(iter_id, deserializeRow);
         },
@@ -586,21 +600,29 @@ function makeTableView(
           if (colVal.length !== numColumns)
             throw new TypeError('wrong number of elements');
 
-          using buf = IterBuf.take();
-          const point = serializePoint(buf.inner, colVal);
-          const num = sys.datastore_delete_by_index_scan_point_bsatn(
-            index_id,
-            point
-          );
-          return num > 0;
+          const buf = takeBuf();
+          try {
+            const point = serializePoint(buf, colVal);
+            const num = sys.datastore_delete_by_index_scan_point_bsatn(
+              index_id,
+              point
+            );
+            return num > 0;
+          } finally {
+            returnBuf(buf);
+          }
         },
         update: (row: RowType<any>): RowType<any> => {
-          using buf = IterBuf.take();
-          const writer = new BinaryWriter(buf.inner);
-          serializeRow(writer, row);
-          sys.datastore_update_bsatn(table_id, index_id, writer.getBuffer());
-          integrateGeneratedColumns?.(row, buf.view);
-          return row;
+          const buf = takeBuf();
+          try {
+            const writer = new BinaryWriter(buf);
+            serializeRow(writer, row);
+            sys.datastore_update_bsatn(table_id, index_id, writer.getBuffer());
+            integrateGeneratedColumns?.(row, buf.view);
+            return row;
+          } finally {
+            returnBuf(buf);
+          }
         },
       } as UniqueIndex<any, any>;
     } else if (serializeSinglePoint) {
@@ -609,19 +631,27 @@ function makeTableView(
         filter: (range: any): IteratorObject<RowType<any>> => {
           let iter_id;
           {
-            using buf = IterBuf.take();
-            const point = serializeSinglePoint(buf.inner, range);
-            iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+            const buf = takeBuf();
+            try {
+              const point = serializeSinglePoint(buf, range);
+              iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+            } finally {
+              returnBuf(buf);
+            }
           }
           return tableIterator(iter_id, deserializeRow);
         },
         delete: (range: any): u32 => {
-          using buf = IterBuf.take();
-          const point = serializeSinglePoint(buf.inner, range);
-          return sys.datastore_delete_by_index_scan_point_bsatn(
-            index_id,
-            point
-          );
+          const buf = takeBuf();
+          try {
+            const point = serializeSinglePoint(buf, range);
+            return sys.datastore_delete_by_index_scan_point_bsatn(
+              index_id,
+              point
+            );
+          } finally {
+            returnBuf(buf);
+          }
         },
       } as RangedIndex<any, any>;
     } else {
@@ -666,36 +696,55 @@ function makeTableView(
           if (range.length === numColumns) {
             let iter_id;
             {
-              using buf = IterBuf.take();
-              const point = serializePoint(buf.inner, range);
-              iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+              const buf = takeBuf();
+              try {
+                const point = serializePoint(buf, range);
+                iter_id = sys.datastore_index_scan_point_bsatn(index_id, point);
+              } finally {
+                returnBuf(buf);
+              }
             }
             return tableIterator(iter_id, deserializeRow);
           } else {
             let iter_id;
             {
-              using buf = IterBuf.take();
-              const args = serializeRange(buf.inner, range);
-              iter_id = sys.datastore_index_scan_range_bsatn(index_id, ...args);
+              const buf = takeBuf();
+              try {
+                const args = serializeRange(buf, range);
+                iter_id = sys.datastore_index_scan_range_bsatn(
+                  index_id,
+                  ...args
+                );
+              } finally {
+                returnBuf(buf);
+              }
             }
             return tableIterator(iter_id, deserializeRow);
           }
         },
         delete: (range: any[]): u32 => {
           if (range.length === numColumns) {
-            using buf = IterBuf.take();
-            const point = serializePoint(buf.inner, range);
-            return sys.datastore_delete_by_index_scan_point_bsatn(
-              index_id,
-              point
-            );
+            const buf = takeBuf();
+            try {
+              const point = serializePoint(buf, range);
+              return sys.datastore_delete_by_index_scan_point_bsatn(
+                index_id,
+                point
+              );
+            } finally {
+              returnBuf(buf);
+            }
           } else {
-            using buf = IterBuf.take();
-            const args = serializeRange(buf.inner, range);
-            return sys.datastore_delete_by_index_scan_range_bsatn(
-              index_id,
-              ...args
-            );
+            const buf = takeBuf();
+            try {
+              const args = serializeRange(buf, range);
+              return sys.datastore_delete_by_index_scan_range_bsatn(
+                index_id,
+                ...args
+              );
+            } finally {
+              returnBuf(buf);
+            }
           }
         },
       } as RangedIndex<any, any>;
@@ -715,17 +764,23 @@ function* tableIterator<T>(
   id: u32,
   deserialize: Deserializer<T>
 ): Generator<T, undefined> {
-  using iter = new GCedIteratorHandle(id);
-
-  using iterBuf = IterBuf.take();
-  const reader = new BinaryReader(iterBuf.view);
-  let amt;
-  const buf = iterBuf.inner;
-  while ((amt = advanceIter(iter, buf))) {
-    reader.reset(buf.view);
-    while (reader.offset < amt) {
-      yield deserialize(reader);
+  const iter = new GCedIteratorHandle(id);
+  try {
+    const buf = takeBuf();
+    try {
+      const reader = new BinaryReader(buf.view);
+      let amt;
+      while ((amt = advanceIter(iter, buf))) {
+        reader.reset(buf.view);
+        while (reader.offset < amt) {
+          yield deserialize(reader);
+        }
+      }
+    } finally {
+      returnBuf(buf);
     }
+  } finally {
+    iter[Symbol.dispose]();
   }
 }
 
@@ -776,38 +831,6 @@ function takeBuf(): ResizableBuffer {
 
 function returnBuf(buf: ResizableBuffer) {
   ITER_BUFS[ITER_BUF_COUNT++] = buf;
-}
-
-class IterBuf implements Disposable {
-  #buf: ResizableBuffer | null;
-
-  private constructor(buf: ResizableBuffer) {
-    this.#buf = buf;
-  }
-
-  static take() {
-    return new IterBuf(takeBuf());
-  }
-
-  get inner() {
-    if (this.#buf == null) throw new TypeError('cannot access detached buffer');
-    return this.#buf;
-  }
-
-  get buffer() {
-    return this.inner.buffer;
-  }
-
-  get view() {
-    return this.inner.view;
-  }
-
-  [Symbol.dispose]() {
-    if (this.#buf != null) {
-      returnBuf(this.#buf);
-      this.#buf = null;
-    }
-  }
 }
 
 /** A class to manage the lifecycle of an iterator handle. */

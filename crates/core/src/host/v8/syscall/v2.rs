@@ -9,7 +9,7 @@ use crate::host::v8::from_value::cast;
 use crate::host::v8::ser::serialize_to_js;
 use crate::host::v8::string::{str_from_ident, StringConst};
 use crate::host::v8::syscall::hooks::HookFunctions;
-use crate::host::v8::util::make_uint8array;
+use crate::host::v8::util::{make_dataview, make_uint8array};
 use crate::host::v8::{
     call_free_fun, env_on_isolate, exception_already_thrown, BufferTooSmall, JsInstanceEnv, JsStackTrace,
     TerminationError, Throwable,
@@ -410,7 +410,7 @@ pub(super) fn call_call_reducer(
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
     let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
-    let reducer_args = serialize_to_js(scope, reducer_args.get_bsatn())?;
+    let reducer_args = make_dataview(scope, <Box<[u8]>>::from(&**reducer_args.get_bsatn())).into();
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Call the function.
