@@ -611,7 +611,8 @@ spacetime publish --server local --project-path spacetimedb quickstart-chat
 </TabItem>
 </Tabs>
 
-You can choose any unique, URL-safe database name in place of `quickstart-chat`.
+You can choose any unique database name in place of `quickstart-chat`. Must 
+be alphanumeric with internal hyphens.
 
 ## Call reducers
 
@@ -621,21 +622,21 @@ Use the CLI to call reducers. Arguments are passed as JSON:
 <TabItem value="typescript" label="TypeScript">
 
 ```bash
-spacetime call --server local quickstart-chat send_message "Hello, World!"
+spacetime call --server local quickstart-chat send_message 'Hello, World!'
 ```
 
 </TabItem>
 <TabItem value="csharp" label="C#">
 
 ```bash
-spacetime call --server local quickstart-chat SendMessage "Hello, World!"
+spacetime call --server local quickstart-chat SendMessage 'Hello, World!'
 ```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
 ```bash
-spacetime call --server local quickstart-chat send_message "Hello, World!"
+spacetime call --server local quickstart-chat send_message 'Hello, World!'
 ```
 
 </TabItem>
@@ -689,15 +690,14 @@ Make sure you're in the `quickstart-chat` directory you created earlier in this 
 cd quickstart-chat
 ```
 
-Within it, create a `client` React app:
+Initialize a React app in the current directory:
 
 ```bash
-pnpm create vite@latest client -- --template react-ts
-cd client
+pnpm create vite@latest . -- --template react-ts
 pnpm install
 ```
 
-We also need to install the `spacetime-client-sdk` package:
+We also need to install the `spacetimedb` package:
 
 ```bash
 pnpm install spacetimedb
@@ -726,7 +726,7 @@ The app we're going to create is a basic chat application. We will begin by crea
 3. A system section, where we can see system messages.
 4. A new message section, where we can send a new message.
 
-Replace the entire contents of `client/src/App.tsx` with the following:
+Replace the entire contents of `src/App.tsx` with the following:
 
 ```tsx
 import React, { useEffect, useState } from 'react';
@@ -897,7 +897,7 @@ export default App;
 
 We have configured the `onSubmitNewName` and `onSubmitMessage` callbacks to be called when the user clicks the submit button in the profile and new message sections, respectively. For now, they do nothing when called, but later we'll add some logic to call SpacetimeDB reducers when these callbacks are called.
 
-Let's also make it pretty. Replace the contents of `client/src/App.css` with the following:
+Let's also make it pretty. Replace the contents of `src/App.css` with the following:
 
 ```css
 .App {
@@ -1038,7 +1038,7 @@ Let's also make it pretty. Replace the contents of `client/src/App.css` with the
 }
 ```
 
-Next, we need to replace the global styles in `client/src/index.css` as well:
+Next, we need to replace the global styles in `src/index.css` as well:
 
 ```css
 /* ----- CSS Reset & Global Settings ----- */
@@ -1119,20 +1119,17 @@ textarea:focus {
 }
 ```
 
-Now, when you run `pnpm run dev` and open `http://localhost:5173`, you should see a basic chat app that does not yet send or receive messages.
-
 ## Generate your module types
 
-The `spacetime` CLI's `generate` command generates client-side interfaces for the tables, reducers, and types defined in your server module.
+Before we can run the app, we need to generate the TypeScript bindings that `App.tsx` imports. The `spacetime` CLI's `generate` command generates client-side interfaces for the tables, reducers, and types defined in your server module.
 
 In your `quickstart-chat` directory, run:
 
 ```bash
-mkdir -p client/src/module_bindings
-spacetime generate --lang typescript --out-dir client/src/module_bindings --project-path spacetimedb
+spacetime generate --lang typescript --out-dir src/module_bindings --project-path spacetimedb
 ```
 
-Take a look inside `client/src/module_bindings`. The CLI should have generated several files:
+Take a look inside `src/module_bindings`. The CLI should have generated several files:
 
 ```
 module_bindings
@@ -1149,9 +1146,10 @@ module_bindings
 ```
 
 With `spacetime generate` we have generated TypeScript types derived from the types you specified in your module, which we can conveniently use in our client. We've placed these in the `module_bindings` folder.
-Now that we've set up our UI and generated our types, let's connect to SpacetimeDB.
 
-The main entry to the SpacetimeDB API is the `DbConnection`, a type that manages a connection to a remote database. Let's import it and a few other types into our `client/src/main.tsx` below our other imports:
+Now you can run `pnpm run dev` and open `http://localhost:5173` to see your app's layout. It won't connect to SpacetimeDB yet - let's fix that next.
+
+The main entry to the SpacetimeDB API is the `DbConnection`, a type that manages a connection to a remote database. Let's import it and a few other types into our `src/main.tsx` below our other imports:
 
 ```tsx
 import { StrictMode } from 'react';
@@ -1160,10 +1158,8 @@ import './index.css';
 import App from './App.tsx';
 import { Identity } from 'spacetimedb';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
-import { DbConnection, ErrorContext } from './module_bindings/index.ts';
+import { type ErrorContext } from './module_bindings/index.ts';
 ```
-
-Note that we are importing `DbConnection` from our `module_bindings` so that it has all the type information about our tables and types.
 
 We've also imported the `SpacetimeDBProvider` React component which will allow us to connect our SpacetimeDB state directly to our React state seamlessly.
 
@@ -1228,7 +1224,7 @@ Once SpacetimeDB is connected, we can easily access the data in the client cache
 
 `useSpacetimeDB` gives you direct access to the connection in case you want to check the state of the connection or access database table state. Note that `useSpacetimeDB` does not automatically subscribe your app to data in the database.
 
-Add the following `useSpacetimeDB` hook to the top of your render function, just below your `useState` declarations.
+Add the following `useSpacetimeDB` hook to the top of your render function in `App.tsx`, just below your `useState` declarations.
 
 ```tsx
 const { identity, isActive: connected } = useSpacetimeDB();
@@ -1323,7 +1319,6 @@ SpacetimeDB generated these functions for us based on the type information provi
 Let's try out our app to see the result of these changes.
 
 ```sh
-cd client
 pnpm run dev
 ```
 
@@ -1354,8 +1349,8 @@ Update your `onlineUsers` React hook to add the following callbacks:
 // Subscribe to all online users in the chat
 // so we can show who's online and demonstrate
 // the `where` and `eq` query expressions
-const { rows: onlineUsers } = useTable<DbConnection, User>(
-  'user',
+const [ onlineUsers ] = useTable(
+  tables.user,
   where(eq('online', true)),
   {
     onInsert: user => {
@@ -1439,10 +1434,10 @@ Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart
 cd quickstart-chat
 ```
 
-Within it, create a new C# console application project called `client` using either Visual Studio, Rider or the .NET CLI:
+Initialize a new C# console application project in the current directory using either Visual Studio, Rider or the .NET CLI:
 
 ```bash
-dotnet new console -o client
+dotnet new console
 ```
 
 Open the project in your IDE of choice.
@@ -1455,9 +1450,9 @@ Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/S
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
-## Clear `client/Program.cs`
+## Clear `Program.cs`
 
-Clear out any data from `client/Program.cs` so we can write our chat client.
+Clear out any data from `Program.cs` so we can write our chat client.
 
 ## Generate your module types
 
@@ -1466,11 +1461,10 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-mkdir -p client/module_bindings
-spacetime generate --lang csharp --out-dir client/module_bindings --project-path server
+spacetime generate --lang csharp --out-dir module_bindings --project-path server
 ```
 
-Take a look inside `client/module_bindings`. The CLI should have generated three folders and nine files:
+Take a look inside `module_bindings`. The CLI should have generated three folders and nine files:
 
 ```
 module_bindings
@@ -1490,7 +1484,7 @@ module_bindings
 
 ## Add imports to Program.cs
 
-Open `client/Program.cs` and add the following imports:
+Open `Program.cs` and add the following imports:
 
 ```csharp
 using SpacetimeDB;
@@ -1994,20 +1988,20 @@ Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart
 cd quickstart-chat
 ```
 
-Within it, create a `client` crate, our client application, which users run locally:
+Initialize a Rust crate in the current directory for our client application:
 
 ```bash
-cargo new client
+cargo init
 ```
 
 ## Depend on `spacetimedb-sdk` and `hex`
 
-`client/Cargo.toml` should be initialized without any dependencies. We'll need two:
+`Cargo.toml` should be initialized without any dependencies. We'll need two:
 
 - [`spacetimedb-sdk`](https://crates.io/crates/spacetimedb-sdk), which defines client-side interfaces for interacting with a remote SpacetimeDB database.
 - [`hex`](https://crates.io/crates/hex), which we'll use to print unnamed users' identities as hexadecimal strings.
 
-Below the `[dependencies]` line in `client/Cargo.toml`, add:
+Below the `[dependencies]` line in `Cargo.toml`, add:
 
 ```toml
 spacetimedb-sdk = "1.0"
@@ -2016,15 +2010,15 @@ hex = "0.4"
 
 Make sure you depend on the same version of `spacetimedb-sdk` as is reported by the SpacetimeDB CLI tool's `spacetime version`!
 
-## Clear `client/src/main.rs`
+## Clear `src/main.rs`
 
-`client/src/main.rs` should be initialized with a trivial "Hello world" program. Clear it out so we can write our chat client.
+`src/main.rs` should be initialized with a trivial "Hello world" program. Clear it out so we can write our chat client.
 
 In your `quickstart-chat` directory, run:
 
 ```bash
-rm client/src/main.rs
-touch client/src/main.rs
+rm src/main.rs
+touch src/main.rs
 ```
 
 ## Generate your module types
@@ -2034,11 +2028,10 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-mkdir -p client/src/module_bindings
-spacetime generate --lang rust --out-dir client/src/module_bindings --project-path spacetimedb
+spacetime generate --lang rust --out-dir src/module_bindings --project-path spacetimedb
 ```
 
-Take a look inside `client/src/module_bindings`. The CLI should have generated a few files:
+Take a look inside `src/module_bindings`. The CLI should have generated a few files:
 
 ```
 module_bindings/
@@ -2055,7 +2048,7 @@ module_bindings/
 
 To use these, we'll declare the module in our client crate and import its definitions.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 mod module_bindings;
@@ -2066,7 +2059,7 @@ use module_bindings::*;
 
 We'll need additional imports from `spacetimedb_sdk` for interacting with the database, handling credentials, and managing events.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
@@ -2082,7 +2075,7 @@ Our `main` function will do the following:
 4. Spawn a background thread where our connection will process messages and invoke callbacks.
 5. Enter a loop to handle user input from the command line.
 
-We'll see the implementation of these functions a bit later, but for now add to `client/src/main.rs`:
+We'll see the implementation of these functions a bit later, but for now add to `src/main.rs`:
 
 ```rust
 fn main() {
@@ -2116,7 +2109,7 @@ In our case, we'll supply the following options:
 5. A `with_module_name` call, to specify the name or `Identity` of our database. Make sure to pass the same name here as you supplied to `spacetime publish`.
 6. A `with_uri` call, to specify the URI of the SpacetimeDB host where our database is running.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// The URI of the SpacetimeDB instance hosting our chat database and module.
@@ -2154,7 +2147,7 @@ SpacetimeDB will accept any [OpenID Connect](https://openid.net/developers/how-c
 
 The Rust SDK provides a pair of functions in `File`, `save` and `load`, for saving and storing these credentials in a file. By default the `save` and `load` will look for credentials in the `$HOME/.spacetimedb_client_credentials/` directory, which should be unintrusive. If saving our credentials fails, we'll print a message to standard error, but otherwise continue; even though the user won't be able to reconnect with the same identity, they can still chat normally.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 fn creds_store() -> credentials::File {
@@ -2173,7 +2166,7 @@ fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
 
 We need to handle connection errors and disconnections by printing appropriate messages and exiting the program. These callbacks take an `ErrorContext`, a `DbConnection` that's been augmented with information about the error that occured.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Our `on_connect_error` callback: print the error, then exit the process.
@@ -2204,7 +2197,7 @@ We need to handle several sorts of events:
 4. If the server rejects our attempt to set our name, we'll print an error.
 5. If the server rejects a message we send, we'll print an error.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Register all the callbacks our app will use to respond to database events.
@@ -2241,7 +2234,7 @@ This second case means that, even though the module only ever inserts online use
 
 Whenever we want to print a user, if they have set a name, we'll use that. If they haven't set a name, we'll instead print the first 8 bytes of their identity, encoded as hexadecimal. We'll define functions `user_name_or_identity` and `identity_leading_hex` to handle this.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Our `User::on_insert` callback:
@@ -2273,7 +2266,7 @@ In our module, users can be updated for three reasons:
 
 We'll print an appropriate message in each of these cases.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Our `User::on_update` callback:
@@ -2305,7 +2298,7 @@ We'll print the user's name or identity in the same way as we did when notifying
 
 Notice that our `print_message` function takes an `&impl RemoteDbContext` as an argument. This is a trait, defined in our `module_bindings` by `spacetime generate`, which is implemented by `DbConnection`, `EventContext`, `ErrorContext` and a few other similar types. (`RemoteDbContext` is actually a shorthand for `DbContext`, which applies to connections to _any_ module, with its associated types locked to module-specific ones.) Later on, we're going to call `print_message` with a `ReducerEventContext`, so we need to be more generic than just accepting `EventContext`.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Our `Message::on_insert` callback: print new messages.
@@ -2342,7 +2335,7 @@ Note that a status of `Failed` or `OutOfEnergy` implies that the caller identity
 
 We already handle successful `set_name` invocations using our `ctx.db.user().on_update(..)` callback, but if the module rejects a user's chosen name, we'd like that user's client to let them know. We define a function `on_set_name` as a `conn.reducers.on_set_name(..)` callback which checks if the reducer failed, and if it did, prints a message including the rejected name and the error.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Our `on_set_name` callback: print a warning if the reducer failed.
@@ -2368,7 +2361,7 @@ When we specify our subscriptions, we can supply an `on_applied` callback. This 
 
 We'll also provide an `on_error` callback. This will run if the subscription fails, usually due to an invalid or malformed SQL queries. We can't handle this case, so we'll just print out the error and exit the process.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Register subscriptions for all rows of both tables.
@@ -2386,7 +2379,7 @@ Messages we receive live will come in order, but when we connect, we'll receive 
 
 We'll handle this in our function `print_messages_in_order`, which we registered as an `on_applied` callback. `print_messages_in_order` iterates over all the `Message`s we've received, sorts them, and then prints them. `ctx.db.message().iter()` is defined on the trait `Table`, and returns an iterator over all the messages in the client cache. Rust iterators can't be sorted in-place, so we'll collect it to a `Vec`, then use the `sort_by_key` method to sort by timestamp.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Our `on_subscription_applied` callback:
@@ -2423,7 +2416,7 @@ Our app should allow the user to interact by typing lines into their terminal. I
 
 For each reducer defined by our module, `ctx.reducers` has a method to request an invocation. In our case, we pass `set_name` and `send_message` a `String`, which gets sent to the server to execute the corresponding reducer.
 
-To `client/src/main.rs`, add:
+To `src/main.rs`, add:
 
 ```rust
 /// Read each line of standard input, and either set our name or send a message as appropriate.
@@ -2443,10 +2436,9 @@ fn user_input_loop(ctx: &DbConnection) {
 
 ## Run it
 
-After setting everything up, change your directory to the client app, then compile and run it. From the `quickstart-chat` directory, run:
+After setting everything up, compile and run the client. From the `quickstart-chat` directory, run:
 
 ```bash
-cd client
 cargo run
 ```
 
@@ -2484,6 +2476,22 @@ User <my-name> connected.
 
 </TabItem>
 </Tabs>
+
+## Try it out!
+
+Now that everything is set up, let's send some messages and see SpacetimeDB in action.
+
+1. **Send your first message**: Type a message in the input field and press Enter (or click Send). You should see it appear in the message list almost instantly.
+
+2. **Set your name**: Click "Edit Name" in the profile section (or use `/name <your-name>` for console clients) and enter a username. Notice how your name updates immediately - not just for new messages, but for all your previous messages too! This is because messages store your `Identity`, and we look up the current name when displaying them.
+
+3. **Open multiple windows**: Open the app in a second browser tab or an incognito window (or run a second instance of the console client). You'll get a new identity and appear as a different user. Send messages from both and watch them appear in real-time on both screens.
+
+4. **Watch the online status**: Notice the "Online" sidebar (or connection messages in the console) showing connected users. Open and close browser tabs to see users connect and disconnect, with system messages announcing each event.
+
+5. **Test persistence**: Close all clients, then reopen the app. Your messages are still there! SpacetimeDB persists all your data, and your identity token lets you reconnect as the same user.
+
+You've just experienced the core features of SpacetimeDB: real-time synchronization, automatic persistence, and seamless multiplayer - all without writing any backend networking code.
 
 ## What's next?
 
