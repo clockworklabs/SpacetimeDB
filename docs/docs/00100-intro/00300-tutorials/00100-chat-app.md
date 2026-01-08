@@ -1413,6 +1413,22 @@ const [offlineUsers] = useTable(
 );
 ```
 
+## Try it out!
+
+Now that everything is set up, let's send some messages and see SpacetimeDB in action.
+
+1. **Send your first message**: Type a message in the input field and click Send. You should see it appear in the message list almost instantly.
+
+2. **Set your name**: Click "Edit Name" in the profile section and enter a username. Notice how your name updates immediately - not just for new messages, but for all your previous messages too! This is because messages store your `Identity`, and we look up the current name when displaying them.
+
+3. **Open multiple windows**: Open the app in a second browser tab or an incognito window. You'll get a new identity and appear as a different user. Send messages from both and watch them appear in real-time on both screens.
+
+4. **Watch the online status**: Notice the "Online" sidebar showing connected users. Open and close browser tabs to see users connect and disconnect, with system messages announcing each event.
+
+5. **Test persistence**: Close all browser windows, then reopen the app. Your messages are still there! SpacetimeDB persists all your data, and your identity token (saved in localStorage) lets you reconnect as the same user.
+
+You've just experienced the core features of SpacetimeDB: real-time synchronization, automatic persistence, and seamless multiplayer - all without writing any backend networking code.
+
 ## Conclusion
 
 Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-typescript/examples/quickstart-chat).
@@ -2476,22 +2492,6 @@ User <my-name> connected.
 
 </TabItem>
 </Tabs>
-
-## Try it out!
-
-Now that everything is set up, let's send some messages and see SpacetimeDB in action.
-
-1. **Send your first message**: Type a message in the input field and press Enter (or click Send). You should see it appear in the message list almost instantly.
-
-2. **Set your name**: Click "Edit Name" in the profile section (or use `/name <your-name>` for console clients) and enter a username. Notice how your name updates immediately - not just for new messages, but for all your previous messages too! This is because messages store your `Identity`, and we look up the current name when displaying them.
-
-3. **Open multiple windows**: Open the app in a second browser tab or an incognito window (or run a second instance of the console client). You'll get a new identity and appear as a different user. Send messages from both and watch them appear in real-time on both screens.
-
-4. **Watch the online status**: Notice the "Online" sidebar (or connection messages in the console) showing connected users. Open and close browser tabs to see users connect and disconnect, with system messages announcing each event.
-
-5. **Test persistence**: Close all clients, then reopen the app. Your messages are still there! SpacetimeDB persists all your data, and your identity token lets you reconnect as the same user.
-
-You've just experienced the core features of SpacetimeDB: real-time synchronization, automatic persistence, and seamless multiplayer - all without writing any backend networking code.
 
 ## What's next?
 
