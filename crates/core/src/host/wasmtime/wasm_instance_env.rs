@@ -1545,7 +1545,7 @@ impl WasmInstanceEnv {
     }
 
     /// Starts a mutable transaction,
-    /// this call blocks until a mutable transaction lock is acquired.
+    /// blocking until a mutable transaction lock is acquired.
     ///
     /// Returns `0` on success,
     /// enabling further calls that require a pending transaction,
@@ -1574,7 +1574,7 @@ impl WasmInstanceEnv {
     }
 
     /// Commits a mutable transaction,
-    /// this call blocks until the transaction has been committed
+    /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
     /// Once complete, it returns `0` on success, or an error code otherwise.
@@ -1608,7 +1608,7 @@ impl WasmInstanceEnv {
     }
 
     /// Aborts a mutable transaction,
-    /// this call blocks until the transaction has been aborted.
+    /// blocking until the transaction has been aborted.
     ///
     /// Returns `0` on success, or an error code otherwise.
     ///
