@@ -401,7 +401,7 @@ An Unreal [client](#client) can call a procedure defined by a Rust or TypeScript
 
 ![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
 
-An Unreal Blueprint [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
+An Unreal [client](#client) can also register a callback to run when a procedure call finishes, which will be invoked with that procedure's return value:
 
 ![MakeRequest with callback](/images/unreal/intro/ue-blueprint-makerequest-with-callback.png)
 
