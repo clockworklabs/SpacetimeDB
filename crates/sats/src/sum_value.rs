@@ -1,5 +1,6 @@
 use crate::algebraic_value::AlgebraicValue;
 use crate::sum_type::SumType;
+use spacetimedb_memory_usage::MemoryUsage;
 
 /// A value of a sum type choosing a specific variant of the type.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -31,7 +32,17 @@ impl SumValue {
 /// The tag of a `SumValue`.
 /// Can be used to read out the tag of a sum value without reading the payload.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
 pub struct SumTag(pub u8);
+
+impl MemoryUsage for SumTag {}
+
+impl From<&u8> for &SumTag {
+    fn from(value: &u8) -> Self {
+        // SAFETY: `SumTag` is `repr(transparent)` of `u8`.
+        unsafe { core::mem::transmute(value) }
+    }
+}
 
 impl From<SumTag> for SumValue {
     fn from(SumTag(tag): SumTag) -> Self {

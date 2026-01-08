@@ -243,20 +243,20 @@ impl Index for IFoldHash {
 }
 
 #[derive(Clone)]
-struct IDirectIndex(UniqueDirectIndex);
+struct IDirectIndex(UniqueDirectIndex<K>);
 impl Index for IDirectIndex {
     const NAME: &'static str = "IDirectIndex";
     fn new() -> Self {
         Self(<_>::default())
     }
     fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
-        self.0.insert(key as usize, val)
+        self.0.insert(key, val)
     }
     fn seek(&self, key: K) -> impl Iterator<Item = RowPointer> {
-        self.0.seek_point(&(key as usize))
+        self.0.seek_point(&key)
     }
     fn delete(&mut self, key: K) -> bool {
-        self.0.delete(&(key as usize), RowPointer(0))
+        self.0.delete(&key, RowPointer(0))
     }
 }
 

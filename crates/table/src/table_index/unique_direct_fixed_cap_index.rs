@@ -1,6 +1,8 @@
 use super::index::{Index, RangedIndex};
-use super::unique_direct_index::{UniqueDirectIndexPointIter, NONE_PTR};
+use super::unique_direct_index::{expose, injest, ToFromUsize, UniqueDirectIndexPointIter, NONE_PTR};
 use crate::indexes::RowPointer;
+use crate::table_index::KeySize;
+use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use core::slice::Iter;
@@ -12,32 +14,34 @@ use spacetimedb_sats::memory_usage::MemoryUsage;
 /// These indices are intended for small fixed capacities
 /// and will be efficient for both monotonic and random insert patterns for small capacities.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UniqueDirectFixedCapIndex {
+pub struct UniqueDirectFixedCapIndex<K> {
+    marker: PhantomData<K>,
     /// The array holding the elements.
     array: Box<[RowPointer]>,
     /// The number of keys indexed.
     len: usize,
 }
 
-impl MemoryUsage for UniqueDirectFixedCapIndex {
+impl<K> MemoryUsage for UniqueDirectFixedCapIndex<K> {
     fn heap_usage(&self) -> usize {
-        let Self { array, len } = self;
+        let Self { marker: _, array, len } = self;
         array.heap_usage() + len.heap_usage()
     }
 }
 
-impl UniqueDirectFixedCapIndex {
+impl<K: ToFromUsize> UniqueDirectFixedCapIndex<K> {
     /// Returns a new fixed capacity index.
     pub fn new(cap: usize) -> Self {
         Self {
+            marker: PhantomData,
             len: 0,
             array: vec![NONE_PTR; cap].into(),
         }
     }
 }
 
-impl Index for UniqueDirectFixedCapIndex {
-    type Key = u8;
+impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
+    type Key = K;
 
     /// Clones the structure of the index and returns one with the same capacity.
     fn clone_structure(&self) -> Self {
@@ -52,20 +56,20 @@ impl Index for UniqueDirectFixedCapIndex {
     /// Panics if the key is beyond the fixed capacity of this index.
     fn insert(&mut self, key: Self::Key, val: RowPointer) -> Result<(), RowPointer> {
         // Fetch the slot.
-        let slot = &mut self.array[key as usize];
+        let slot = &mut self.array[key.to_usize()];
         let in_slot = *slot;
         if in_slot == NONE_PTR {
             // We have `NONE_PTR`, so not set yet.
-            *slot = val.with_reserved_bit(true);
+            *slot = injest(val);
             self.len += 1;
             Ok(())
         } else {
-            Err(in_slot.with_reserved_bit(false))
+            Err(expose(in_slot))
         }
     }
 
     fn delete(&mut self, &key: &Self::Key, _: RowPointer) -> bool {
-        let Some(slot) = self.array.get_mut(key as usize) else {
+        let Some(slot) = self.array.get_mut(key.to_usize()) else {
             return false;
         };
         let old_val = mem::replace(slot, NONE_PTR);
@@ -80,7 +84,7 @@ impl Index for UniqueDirectFixedCapIndex {
         Self: 'a;
 
     fn seek_point(&self, &key: &Self::Key) -> Self::PointIter<'_> {
-        let point = self.array.get(key as usize).copied().filter(|slot| *slot != NONE_PTR);
+        let point = self.array.get(key.to_usize()).copied().filter(|slot| *slot != NONE_PTR);
         UniqueDirectIndexPointIter::new(point)
     }
 
@@ -95,7 +99,7 @@ impl Index for UniqueDirectFixedCapIndex {
 
     fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
         for (slot_s, slot_o) in self.array.iter().zip(other.array.iter()) {
-            let ptr_s = slot_s.with_reserved_bit(false);
+            let ptr_s = expose(*slot_s);
             if *slot_s != NONE_PTR && *slot_o != NONE_PTR && !ignore(&ptr_s) {
                 // For the same key, we found both slots occupied, so we cannot merge.
                 return Err(ptr_s);
@@ -105,7 +109,7 @@ impl Index for UniqueDirectFixedCapIndex {
     }
 }
 
-impl RangedIndex for UniqueDirectFixedCapIndex {
+impl<K: ToFromUsize + KeySize> RangedIndex for UniqueDirectFixedCapIndex<K> {
     type RangeIter<'a>
         = UniqueDirectFixedCapIndexRangeIter<'a>
     where
@@ -114,13 +118,13 @@ impl RangedIndex for UniqueDirectFixedCapIndex {
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
         // Translate `range` to `start..end`.
         let end = match range.end_bound() {
-            Bound::Included(&e) => e as usize + 1,
-            Bound::Excluded(&e) => e as usize,
+            Bound::Included(&e) => e.to_usize() + 1,
+            Bound::Excluded(&e) => e.to_usize(),
             Bound::Unbounded => self.array.len(),
         };
         let start = match range.start_bound() {
-            Bound::Included(&s) => s as usize,
-            Bound::Excluded(&s) => s as usize + 1,
+            Bound::Included(&s) => s.to_usize(),
+            Bound::Excluded(&s) => s.to_usize() + 1,
             Bound::Unbounded => 0,
         };
 
@@ -151,7 +155,7 @@ impl Iterator for UniqueDirectFixedCapIndexRangeIter<'_> {
         self.iter
             // Make sure the row exists.
             .find(|slot| **slot != NONE_PTR)
-            .map(|ptr| ptr.with_reserved_bit(false))
+            .map(|ptr| expose(*ptr))
     }
 }
 
@@ -168,7 +172,7 @@ mod test {
         min..max
     }
 
-    fn setup(start: u8, end: u8) -> (UniqueDirectFixedCapIndex, Range<u8>, Vec<RowPointer>) {
+    fn setup(start: u8, end: u8) -> (UniqueDirectFixedCapIndex<u8>, Range<u8>, Vec<RowPointer>) {
         let range = range(start, end);
         let (keys, ptrs): (Vec<_>, Vec<_>) = range.clone().zip(gen_row_pointers()).unzip();
 
