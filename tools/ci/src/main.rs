@@ -128,11 +128,21 @@ fn main() -> Result<()> {
             // TODO: This doesn't work on at least user Linux machines, because something here apparently uses `sudo`?
 
             // cmd!("cargo", "test", "--all", "--", "--skip", "unreal").run()?;
-            cmd!("cargo", "test", "-j", "2", "--all", "--", "--test-threads=1", "--skip", "unreal")
-                .env("CARGO_INCREMENTAL", "0")
-                .env("RUST_TEST_THREADS", "4") // redundant with --test-threads, but harmless and helpful for spawned test bins
-                .env("CARGO_BUILD_JOBS", "2")  // redundant with -j, but keeps behavior consistent if command changes
-                .run()?;
+            cmd!(
+                "cargo",
+                "test",
+                "-j",
+                "2",
+                "--all",
+                "--",
+                "--test-threads=1",
+                "--skip",
+                "unreal"
+            )
+            .env("CARGO_INCREMENTAL", "0")
+            .env("RUST_TEST_THREADS", "4") // redundant with --test-threads, but harmless and helpful for spawned test bins
+            .env("CARGO_BUILD_JOBS", "2") // redundant with -j, but keeps behavior consistent if command changes
+            .run()?;
             // TODO: This should check for a diff at the start. If there is one, we should alert the user
             // that we're disabling diff checks because they have a dirty git repo, and to re-run in a clean one
             // if they want those checks.
