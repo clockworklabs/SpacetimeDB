@@ -41,7 +41,7 @@ struct is_valid_view_return_type<std::optional<T>>
  * @brief Macro for defining SpacetimeDB views
  * 
  * CRITICAL: Return type must be explicit (no arrow notation in C++ macros).
- * Views return Outcome<T> where T is the specified return_type.
+ * Views return the specified return_type directly.
  * 
  * NOTE: Additional parameters are temporarily disabled as the SpacetimeDB host
  * doesn't fully support parameterized views yet. Only the context parameter is allowed.
@@ -62,11 +62,11 @@ struct is_valid_view_return_type<std::optional<T>>
  *     for (const auto& person : ctx.db[person_age].filter(range_from(18u))) {
  *         adults.push_back(person);
  *     }
- *     return Ok(adults);
+ *     return adults;
  * }
  * 
  * SPACETIMEDB_VIEW(std::optional<uint64_t>, count_people, Public, AnonymousViewContext ctx) {
- *     return Ok(std::optional<uint64_t>(ctx.db[person].count()));
+ *     return std::optional<uint64_t>(ctx.db[person].count());
  * }
  * 
  * // TODO: Future with parameters:
@@ -92,8 +92,8 @@ struct is_valid_view_return_type<std::optional<T>>
         "View return type must be std::vector<T> or std::optional<T> where T is a SpacetimeType"); \
     \
     /* TODO: When parameters are supported, forward declaration becomes: */ \
-    /* ::SpacetimeDb::Outcome<return_type> view_name(ctx_param, __VA_ARGS__); */ \
-    ::SpacetimeDb::Outcome<return_type> view_name(ctx_param); \
+    /* return_type view_name(ctx_param, __VA_ARGS__); */ \
+    return_type view_name(ctx_param); \
     \
     /* Preinit registration function */ \
     /* Views run at priority 40 to ensure tables/reducers are registered first */ \
@@ -113,5 +113,5 @@ struct is_valid_view_return_type<std::optional<T>>
     } \
     \
     /* TODO: When parameters are supported, function definition becomes: */ \
-    /* ::SpacetimeDb::Outcome<return_type> view_name(ctx_param, __VA_ARGS__) */ \
-    ::SpacetimeDb::Outcome<return_type> view_name(ctx_param)
+    /* return_type view_name(ctx_param, __VA_ARGS__) */ \
+    return_type view_name(ctx_param)

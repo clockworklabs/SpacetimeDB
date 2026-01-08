@@ -54,6 +54,7 @@ using ::datastore_delete_by_index_scan_range_bsatn;
 using ::datastore_delete_by_btree_scan_bsatn;
 using ::datastore_delete_all_by_eq_bsatn;
 using ::bytes_source_read;
+using ::bytes_source_remaining_length;
 using ::bytes_sink_write;
 using ::console_log;
 using ::console_timer_start;
@@ -66,6 +67,13 @@ using ::volatile_nonatomic_schedule_immediate;
 
 // ===== Identity =====
 using ::identity;
+
+// ===== Procedure Transactions =====
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+using ::procedure_start_mut_tx;
+using ::procedure_commit_mut_tx;
+using ::procedure_abort_mut_tx;
+#endif
 
 // ===== Module Export Helpers =====
 

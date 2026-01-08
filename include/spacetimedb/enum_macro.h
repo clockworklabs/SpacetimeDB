@@ -106,6 +106,12 @@
             return static_cast<EnumName>(tag); \
         } \
     }; \
+    template<> \
+    struct algebraic_type_of<EnumName> { \
+        static AlgebraicType get() { \
+            return bsatn_traits<EnumName>::algebraic_type(); \
+        } \
+    }; \
     } \
     \
     SPACETIMEDB_GENERATE_EMPTY_FIELD_REGISTRAR(EnumName)
@@ -196,6 +202,12 @@
             uint8_t tag = reader.read_u8(); \
             return EnumName{SpacetimeDb::named_variant_helper<0, SPACETIMEDB_ENUM_VARIANT_TYPES(__VA_ARGS__)>:: \
                 template deserialize_variant<typename EnumName::variant_type>(tag, reader)}; \
+        } \
+    }; \
+    template<> \
+    struct algebraic_type_of<EnumName> { \
+        static AlgebraicType get() { \
+            return bsatn_traits<EnumName>::algebraic_type(); \
         } \
     }; \
     } \

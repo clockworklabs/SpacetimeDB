@@ -140,6 +140,7 @@ namespace LogLevelValue {
     constexpr LogLevel INFO{2};
     constexpr LogLevel DEBUG{3};
     constexpr LogLevel TRACE{4};
+    constexpr LogLevel PANIC{101};
 }
 
 // Index type constants

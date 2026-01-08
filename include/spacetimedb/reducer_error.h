@@ -184,6 +184,27 @@ inline Outcome<T> Ok(T value) {
     return Outcome<T>::Ok(std::move(value)); 
 }
 
+/**
+ * @brief Helper function to create a failed Outcome<T> with an error message
+ * 
+ * This is a template version that works with any Outcome<T> type.
+ * The return type must be explicitly specified as a template parameter.
+ * 
+ * Usage: 
+ *   Outcome<uint32_t> foo() {
+ *       return Err<uint32_t>("Something went wrong");
+ *   }
+ */
+template<typename T>
+inline Outcome<T> Err(const char* msg) { 
+    return Outcome<T>::Err(std::string(msg)); 
+}
+
+template<typename T>
+inline Outcome<T> Err(std::string msg) { 
+    return Outcome<T>::Err(std::move(msg)); 
+}
+
 namespace Internal {
     /**
      * Thread-local error state for the current reducer invocation.

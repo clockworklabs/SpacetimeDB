@@ -433,6 +433,14 @@ SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE(std::string, String);
 
 #undef SPACETIMEDB_DEFINE_ALGEBRAIC_TYPE
 
+// std::monostate represents a unit type (used in std::variant for empty variants)
+template<>
+struct algebraic_type_of<std::monostate> {
+    static AlgebraicType get() {
+        return AlgebraicType::Unit();
+    }
+};
+
 // Container type specializations (properly implemented, no TODOs)
 template<typename T> 
 struct algebraic_type_of<std::vector<T>> {

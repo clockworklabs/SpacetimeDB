@@ -19,8 +19,17 @@
 // ========================================================================
 
 // Macro for declaring imported functions from the SpacetimeDB host
+// Most stable syscalls are in spacetime_10.0
 #define STDB_IMPORT(name) \
     __attribute__((import_module("spacetime_10.0"), import_name(#name))) extern
+
+// BytesSource length query is in spacetime_10.1
+#define STDB_IMPORT_10_1(name) \
+    __attribute__((import_module("spacetime_10.1"), import_name(#name))) extern
+
+// Procedure-specific syscalls are in spacetime_10.3
+#define STDB_IMPORT_10_3(name) \
+    __attribute__((import_module("spacetime_10.3"), import_name(#name))) extern
 
 // Import opaque types into global namespace for C compatibility
 using SpacetimeDb::Status;
@@ -105,6 +114,9 @@ Status datastore_delete_all_by_eq_bsatn(
 STDB_IMPORT(bytes_source_read)
 int16_t bytes_source_read(BytesSource source, uint8_t* buffer_ptr, size_t* buffer_len_ptr);
 
+STDB_IMPORT_10_1(bytes_source_remaining_length)
+int16_t bytes_source_remaining_length(BytesSource source, uint32_t* out);
+
 STDB_IMPORT(bytes_sink_write)
 Status bytes_sink_write(BytesSink sink, const uint8_t* buffer_ptr, size_t* buffer_len_ptr);
 
@@ -131,6 +143,18 @@ void volatile_nonatomic_schedule_immediate(
 // ===== Identity =====
 STDB_IMPORT(identity)
 void identity(uint8_t* id_ptr);
+
+// ===== Procedure Transactions (spacetime_10.3) =====
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+STDB_IMPORT_10_3(procedure_start_mut_tx)
+Status procedure_start_mut_tx(int64_t* out);
+
+STDB_IMPORT_10_3(procedure_commit_mut_tx)
+Status procedure_commit_mut_tx();
+
+STDB_IMPORT_10_3(procedure_abort_mut_tx)
+Status procedure_abort_mut_tx();
+#endif
 
 } // extern "C"
 

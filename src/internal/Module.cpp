@@ -3,6 +3,7 @@
 
 #include "spacetimedb.h"
 #include "spacetimedb/internal/Module.h"
+#include "spacetimedb/internal/buffer_pool.h"
 #include "spacetimedb/internal/autogen/RawModuleDefV9.g.h"
 #include "spacetimedb/internal/bsatn_adapters.h"
 #include "spacetimedb/internal/v9_type_registration.h"
@@ -11,6 +12,7 @@
 #include "spacetimedb/bsatn/writer.h"
 #include "spacetimedb/reducer_error.h"
 #include "spacetimedb/view_context.h"
+#include "spacetimedb/procedure_context.h"
 #include <cstring>
 #include <iostream>
 #include <vector>
@@ -47,6 +49,13 @@ namespace Internal {
         std::function<std::vector<uint8_t>(AnonymousViewContext&, BytesSource)> handler;
     };
     static std::vector<AnonymousViewHandler> g_view_anon_handlers;
+    
+    // Global procedure handler storage for runtime dispatch
+    struct ProcedureHandler {
+        std::string name;
+        std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler;
+    };
+    static std::vector<ProcedureHandler> g_procedure_handlers;
     
     /**
      * @brief View result header for serializing view return values
@@ -93,6 +102,12 @@ namespace Internal {
         g_view_anon_handlers.push_back({name, handler});
     }
     
+    // Register a procedure handler (called by V9Builder during registration)
+    void RegisterProcedureHandler(const std::string& name,
+                                  std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler) {
+        g_procedure_handlers.push_back({name, handler});
+    }
+    
     // Get the number of registered view handlers
     size_t GetViewHandlerCount() {
         return g_view_handlers.size();
@@ -100,6 +115,11 @@ namespace Internal {
     
     size_t GetAnonymousViewHandlerCount() {
         return g_view_anon_handlers.size();
+    }
+    
+    // Get the number of registered procedure handlers
+    size_t GetProcedureHandlerCount() {
+        return g_procedure_handlers.size();
     }
     
     // Get the global V9 module
@@ -113,6 +133,7 @@ namespace Internal {
         g_reducer_handlers.clear();  // Also clear reducer handlers
         g_view_handlers.clear();  // Clear view handlers
         g_view_anon_handlers.clear();  // Clear anonymous view handlers
+        g_procedure_handlers.clear();  // Clear procedure handlers
         g_multiple_primary_key_error = false;  // Reset error flag
         g_multiple_primary_key_table_name = "";  // Reset error table name
     }
@@ -134,12 +155,12 @@ void __preinit__01_clear_global_state() {
 // The number 99 ensures this runs last, just before __describe_module__
 extern "C" __attribute__((export_name("__preinit__99_validate_types")))
 void __preinit__99_validate_types() {
-    fprintf(stdout, "[PREINIT_99] Starting validation\n  g_circular_ref_error = %s", 
-        g_circular_ref_error ? "true" : "false");
-    if (g_circular_ref_error) {
-        fprintf(stdout, "\n  g_circular_ref_type_name = %s", g_circular_ref_type_name.c_str());
-    }
-    fflush(stdout);
+    // fprintf(stdout, "[PREINIT_99] Starting validation\n  g_circular_ref_error = %s", 
+    //     g_circular_ref_error ? "true" : "false");
+    // if (g_circular_ref_error) {
+    //     fprintf(stdout, "\n  g_circular_ref_type_name = %s", g_circular_ref_type_name.c_str());
+    // }
+    // fflush(stdout);
     
     // Check if circular reference error occurred during type building
     if (g_circular_ref_error) {
@@ -280,7 +301,7 @@ void __preinit__99_validate_types() {
         fprintf(stderr, "Original error: %s\n\n", error.c_str());
         fflush(stderr);
     }
-    #define DEBUG_TYPE_REGISTRATION
+    //#define DEBUG_TYPE_REGISTRATION
     // Type validation passed - log statistics only in debug mode
     #ifdef DEBUG_TYPE_REGISTRATION
     else {
@@ -326,17 +347,45 @@ std::vector<uint8_t> ConsumeBytes(BytesSource source) {
         return {};
     }
     
-    std::vector<uint8_t> buffer;
-    constexpr size_t CHUNK_SIZE = 1024;
-    buffer.reserve(CHUNK_SIZE);
+    // Take a buffer from the pool (typically 64 KiB pre-allocated)
+    IterBuf iter_buf = IterBuf::take();
     
-    while (true) {
-        size_t chunk_size = CHUNK_SIZE;
-        size_t old_size = buffer.size();
-        buffer.resize(old_size + chunk_size);
+    // Get the remaining length to reserve exact buffer size
+    uint32_t remaining_len = 0;
+    auto ret = FFI::bytes_source_remaining_length(source, &remaining_len);
+    if (ret != 0) {
+        // If we can't get the length, fall back to incremental reading
+        // This shouldn't happen with current host implementation
+        constexpr size_t CHUNK_SIZE = 1024;
+        iter_buf.reserve(CHUNK_SIZE);
         
-        auto ret = FFI::bytes_source_read(source, buffer.data() + old_size, &chunk_size);
-        buffer.resize(old_size + chunk_size);  // Resize to actual bytes read
+        while (true) {
+            size_t chunk_size = CHUNK_SIZE;
+            size_t old_size = iter_buf.size();
+            iter_buf.resize(old_size + chunk_size);
+            
+            ret = FFI::bytes_source_read(source, iter_buf.data() + old_size, &chunk_size);
+            iter_buf.resize(old_size + chunk_size);  // Resize to actual bytes read
+            
+            if (ret == -1) {  // EXHAUSTED
+                break;
+            } else if (ret != 0) {  // Error
+                fprintf(stderr, "ERROR: Failed to read from BytesSource: %d\n", ret);
+                break;
+            }
+        }
+        return iter_buf.release();
+    }
+    
+    // Reserve exact size needed (often no-op since pool buffer is 64 KiB)
+    iter_buf.resize(remaining_len);  // Resize to exact size BEFORE reading
+    
+    // Read all bytes - should complete in one call since we have capacity
+    size_t bytes_read = 0;
+    while (bytes_read < remaining_len) {
+        size_t chunk_size = remaining_len - bytes_read;
+        ret = FFI::bytes_source_read(source, iter_buf.data() + bytes_read, &chunk_size);
+        bytes_read += chunk_size;
         
         if (ret == -1) {  // EXHAUSTED
             break;
@@ -346,7 +395,13 @@ std::vector<uint8_t> ConsumeBytes(BytesSource source) {
         }
     }
     
-    return buffer;
+    // Resize to actual bytes read if different (shouldn't normally happen)
+    if (bytes_read != remaining_len) {
+        iter_buf.resize(bytes_read);
+    }
+    
+    // Release ownership - caller takes the buffer, won't return to pool
+    return iter_buf.release();
 }
 
 // Helper to write bytes to a BytesSink
@@ -502,6 +557,57 @@ int16_t Module::__call_view_anon__(
     WriteBytes(result_sink, full_result);
     
     return 2;  // Success with data
+}
+
+// Dispatch function for procedures
+int16_t Module::__call_procedure__(
+    uint32_t id,
+    uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+    uint64_t timestamp_microseconds,
+    uint64_t conn_id_0, uint64_t conn_id_1,
+    BytesSource args_source,
+    BytesSink result_sink
+) {
+    // Check if procedure ID is valid
+    if (id >= g_procedure_handlers.size()) {
+        fprintf(stderr, "ERROR: Invalid procedure ID %u (have %zu procedures)\n", 
+                id, g_procedure_handlers.size());
+        return -1;  // NO_SUCH_PROCEDURE
+    }
+    
+    // Create sender identity from the 4 uint64_t parts
+    std::array<uint8_t, 32> sender_bytes{};
+    std::memcpy(sender_bytes.data(), &sender_0, 8);
+    std::memcpy(sender_bytes.data() + 8, &sender_1, 8);
+    std::memcpy(sender_bytes.data() + 16, &sender_2, 8);
+    std::memcpy(sender_bytes.data() + 24, &sender_3, 8);
+    
+    Identity sender_identity(sender_bytes);
+    
+    // Create timestamp from microseconds (convert to seconds)
+    // TODO: Add from_microseconds_since_epoch support to Timestamp
+    Timestamp timestamp = Timestamp::from_seconds_since_epoch(
+        static_cast<int64_t>(timestamp_microseconds / 1000000));
+    
+    // Create connection ID from the two 64-bit parts (full 128-bit value)
+    ConnectionId connection_id;
+    if (conn_id_0 != 0 || conn_id_1 != 0) {
+        connection_id = ConnectionId(u128(conn_id_1, conn_id_0));
+    }
+    
+    // Create procedure context
+    ProcedureContext ctx(sender_identity, timestamp, connection_id);
+    
+    // Get the handler
+    const auto& handler_info = g_procedure_handlers[id];
+    
+    // Call the procedure handler - this may trap if there's an error
+    std::vector<uint8_t> result_data = handler_info.handler(ctx, args_source);
+    
+    // If we got here, procedure succeeded - write result
+    WriteBytes(result_sink, result_data);
+    
+    return 0;  // Success (StatusCode::OK)
 }
 }
 }

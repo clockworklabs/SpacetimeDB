@@ -141,17 +141,19 @@ inline void log(LogLevel level, const std::string& message) {
 #define LOG_DEBUG_F(fmt, ...) LOG_DEBUG(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
 #define LOG_TRACE_F(fmt, ...) LOG_TRACE(::SpacetimeDb::detail::format(fmt, ##__VA_ARGS__))
 
-// Special panic macro that logs as ERROR level
+// Special panic macro that logs as ERROR level matching to LOG_FATAL
+// ERROR level is used due to PANIC logging a stack trace which won't work correctly from C++
 #define LOG_PANIC(message) \
     do { \
         ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
+        __builtin_trap(); \
     } while(0)
 
 // Fatal error macro that logs and aborts (for exception-free code)
 #define LOG_FATAL(message) \
     do { \
         ::SpacetimeDb::log_with_caller_info(::SpacetimeDb::LogLevelValue::ERROR, (message), __func__, STDB_FILENAME, __LINE__); \
-        std::abort(); \
+        __builtin_trap(); \
     } while(0)
 
 // Convenience functions using string_view (inline for optimization)
@@ -160,7 +162,7 @@ inline void log_warn(std::string_view message) { log(LogLevelValue::WARN, messag
 inline void log_info(std::string_view message) { log(LogLevelValue::INFO, message); }
 inline void log_debug(std::string_view message) { log(LogLevelValue::DEBUG, message); }
 inline void log_trace(std::string_view message) { log(LogLevelValue::TRACE, message); }
-inline void log_panic(std::string_view message) { log(LogLevelValue::ERROR, message); } // Panic logs as ERROR
+inline void log_panic(std::string_view message) { log(LogLevelValue::ERROR, message); } // Panic logs as PANIC
 
 // Legacy overloads for backward compatibility
 inline void log_error(const std::string& message) { log_error(std::string_view(message)); }
