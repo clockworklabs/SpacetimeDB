@@ -1,0 +1,15 @@
+﻿Write a SpacetimeDB backend module in C# that defines one table and an Init reducer that seeds rows on database initialization.
+
+TABLE
+- users
+  - Struct: User
+  - Fields:
+    - Id: int (primary key)
+    - Name: string
+    - Age: int
+    - Active: bool
+
+REDUCERS
+- Init: insert exactly these rows on initialization
+  - (Id=1, Name="Alice", Age=30, Active=true)
+  - (Id=2, Name="Bob",   Age=22, Active=false)
