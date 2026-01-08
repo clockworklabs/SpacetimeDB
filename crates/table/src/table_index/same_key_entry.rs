@@ -2,7 +2,7 @@ use crate::{indexes::RowPointer, static_assert_size};
 use core::hash::Hash;
 use core::slice;
 use smallvec::SmallVec;
-use spacetimedb_data_structures::map::{hash_set, HashSet};
+use spacetimedb_data_structures::map::{hash_set, HashCollectionExt, HashSet};
 use spacetimedb_memory_usage::MemoryUsage;
 
 /// A supporting type for multimap implementations
@@ -75,8 +75,14 @@ impl<V: Eq + Hash> SameKeyEntry<V> {
                 list.push(val);
             }
             Self::Small(list) => {
-                let set = Self::Large(list.drain(..).collect());
-                *self = set;
+                // Reconstruct into a set.
+                let mut set = HashSet::with_capacity(list.len() + 1);
+                set.extend(list.drain(..));
+
+                // Add `val`.
+                set.insert(val);
+
+                *self = Self::Large(set);
             }
             Self::Large(set) => {
                 set.insert(val);
