@@ -284,7 +284,8 @@ impl PipelinedProject {
 #[derive(Debug)]
 pub enum PipelinedExecutor {
     TableScan(PipelinedScan),
-    IxScan(PipelinedIxScan),
+    IxScanEq(PipelinedIxScanEq),
+    IxScanRange(PipelinedIxScanRange),
     IxJoin(PipelinedIxJoin),
     IxDeltaScan(PipelinedIxDeltaScan),
     IxDeltaJoin(PipelinedIxDeltaJoin),
@@ -302,7 +303,22 @@ impl From<PhysicalPlan> for PipelinedExecutor {
                 limit,
                 delta,
             }),
-            PhysicalPlan::IxScan(scan @ IxScan { delta: None, .. }, _) => Self::IxScan(scan.into()),
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    delta: None,
+                    arg: Sarg::Eq(..),
+                    ..
+                },
+                _,
+            ) => Self::IxScanEq(scan.into()),
+            PhysicalPlan::IxScan(
+                scan @ IxScan {
+                    delta: None,
+                    arg: Sarg::Range(..),
+                    ..
+                },
+                _,
+            ) => Self::IxScanRange(scan.into()),
             PhysicalPlan::IxScan(scan, _) => Self::IxDeltaScan(scan.into()),
             PhysicalPlan::IxJoin(
                 IxJoin {
@@ -391,7 +407,7 @@ impl PipelinedExecutor {
                 lhs.visit(f);
                 rhs.visit(f);
             }
-            Self::TableScan(..) | Self::IxScan(..) | Self::IxDeltaScan(..) => {}
+            Self::TableScan(..) | Self::IxScanEq(..) | Self::IxScanRange(..) | Self::IxDeltaScan(..) => {}
         }
     }
 
@@ -399,7 +415,8 @@ impl PipelinedExecutor {
     pub fn is_empty(&self, tx: &impl DeltaStore) -> bool {
         match self {
             Self::TableScan(scan) => scan.is_empty(tx),
-            Self::IxScan(scan) => scan.is_empty(tx),
+            Self::IxScanEq(scan) => scan.is_empty(tx),
+            Self::IxScanRange(scan) => scan.is_empty(tx),
             Self::IxDeltaScan(scan) => scan.is_empty(tx),
             Self::IxJoin(join) => join.is_empty(tx),
             Self::IxDeltaJoin(join) => join.is_empty(tx),
@@ -418,7 +435,8 @@ impl PipelinedExecutor {
     ) -> Result<()> {
         match self {
             Self::TableScan(scan) => scan.execute(tx, metrics, f),
-            Self::IxScan(scan) => scan.execute(tx, metrics, f),
+            Self::IxScanEq(scan) => scan.execute(tx, metrics, f),
+            Self::IxScanRange(scan) => scan.execute(tx, metrics, f),
             Self::IxDeltaScan(scan) => scan.execute(tx, metrics, f),
             Self::IxJoin(join) => join.execute(tx, metrics, f),
             Self::IxDeltaJoin(join) => join.execute(tx, metrics, f),
@@ -506,7 +524,7 @@ impl PipelinedScan {
 
 /// An index scan executor for a delta table.
 ///
-/// TODO: There is much overlap between this executor and [PipelinedIxScan].
+/// TODO: There is much overlap between this executor and [PipelinedIxScanRange].
 /// But merging them requires merging the [Datastore] and [DeltaStore] traits,
 /// since the index scan interface is right now split between both.
 #[derive(Debug)]
@@ -659,9 +677,9 @@ impl PipelinedIxDeltaScan {
     }
 }
 
-/// A pipelined executor for scanning an index
+/// A pipelined executor for range scanning an index
 #[derive(Debug)]
-pub struct PipelinedIxScan {
+pub struct PipelinedIxScanRange {
     /// The table id
     pub table_id: TableId,
     /// The index id
@@ -675,7 +693,7 @@ pub struct PipelinedIxScan {
     pub upper: Bound<AlgebraicValue>,
 }
 
-impl From<IxScan> for PipelinedIxScan {
+impl From<IxScan> for PipelinedIxScanRange {
     fn from(scan: IxScan) -> Self {
         match scan {
             IxScan {
@@ -712,7 +730,7 @@ impl From<IxScan> for PipelinedIxScan {
     }
 }
 
-impl PipelinedIxScan {
+impl PipelinedIxScanRange {
     /// We don't know statically if an index scan will return rows
     pub fn is_empty(&self, _: &impl DeltaStore) -> bool {
         false
@@ -788,6 +806,89 @@ impl PipelinedIxScan {
                 }
             }
         }
+        metrics.index_seeks += 1;
+        metrics.rows_scanned += n;
+        Ok(())
+    }
+}
+
+/// A pipelined executor for equality scanning an index
+#[derive(Debug)]
+pub struct PipelinedIxScanEq {
+    /// The table id
+    pub table_id: TableId,
+    /// The index id
+    pub index_id: IndexId,
+    pub limit: Option<u64>,
+    /// The point to scan the index for.
+    pub point: AlgebraicValue,
+}
+
+impl From<IxScan> for PipelinedIxScanEq {
+    fn from(scan: IxScan) -> Self {
+        match scan {
+            IxScan {
+                schema,
+                limit,
+                delta: _,
+                index_id,
+                prefix,
+                arg: Sarg::Eq(_, v),
+            } => {
+                let point = if prefix.is_empty() {
+                    let mut elems = Vec::with_capacity(prefix.len() + 1);
+                    elems.extend(prefix.into_iter().map(|(_, v)| v));
+                    elems.push(v);
+                    AlgebraicValue::product(elems)
+                } else {
+                    v
+                };
+
+                Self {
+                    table_id: schema.table_id,
+                    index_id,
+                    limit,
+                    point,
+                }
+            }
+            IxScan {
+                arg: Sarg::Range(..), ..
+            } => unreachable!(),
+        }
+    }
+}
+
+impl PipelinedIxScanEq {
+    /// We don't know statically if an index scan will return rows
+    pub fn is_empty(&self, _: &impl DeltaStore) -> bool {
+        false
+    }
+
+    pub fn execute<'a, Tx: Datastore + DeltaStore>(
+        &self,
+        tx: &'a Tx,
+        metrics: &mut ExecutionMetrics,
+        f: &mut dyn FnMut(Tuple<'a>) -> Result<()>,
+    ) -> Result<()> {
+        // Scan without a row limit.
+        let scan = || tx.index_scan_point(self.table_id, self.index_id, &self.point);
+        // Scan with an optional row limit.
+        let scan_opt_limit = |limit| match limit {
+            None => scan().map(Either::Left),
+            Some(n) => scan().map(|iter| iter.take(n)).map(Either::Right),
+        };
+        let mut n = 0;
+        let mut f = |t| {
+            n += 1;
+            f(t)
+        };
+        for ptr in scan_opt_limit(self.limit.map(|n| n as usize))?
+            .map(Row::Ptr)
+            .map(Tuple::Row)
+        {
+            f(ptr)?;
+        }
+
         metrics.index_seeks += 1;
         metrics.rows_scanned += n;
         Ok(())
