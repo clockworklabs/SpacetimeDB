@@ -671,7 +671,7 @@ You've just set up your first SpacetimeDB module! You can find the full code for
 
 ---
 
-# Creating the Client
+## Creating the Client
 
 Next, you'll learn how to create a SpacetimeDB client application. Choose your preferred client language below.
 
