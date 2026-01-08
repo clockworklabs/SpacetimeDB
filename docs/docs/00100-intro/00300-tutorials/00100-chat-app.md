@@ -2,6 +2,7 @@
 title: Chat App Tutorial
 slug: /tutorials/chat-app
 id: chat-app
+toc_max_heading_level: 2
 ---
 
 import Tabs from '@theme/Tabs';
@@ -682,7 +683,7 @@ Next, you'll learn how to use TypeScript to create a SpacetimeDB client applicat
 
 By the end of this introduction, you will have created a basic single page web app which connects to the `quickstart-chat` database you just created.
 
-## Project structure
+### Project structure
 
 Make sure you're in the `quickstart-chat` directory you created earlier in this guide:
 
@@ -717,7 +718,7 @@ The `@clockworklabs/spacetimedb-sdk` package has been deprecated in favor of the
 
 You can now `pnpm run dev` to see the Vite template app running at `http://localhost:5173`.
 
-## Basic layout
+### Basic layout
 
 The app we're going to create is a basic chat application. We will begin by creating a layout for our app. The webpage will contain four sections:
 
@@ -1119,7 +1120,7 @@ textarea:focus {
 }
 ```
 
-## Generate your module types
+### Generate your module types
 
 Before we can run the app, we need to generate the TypeScript bindings that `App.tsx` imports. The `spacetime` CLI's `generate` command generates client-side interfaces for the tables, reducers, and types defined in your server module.
 
@@ -1165,7 +1166,7 @@ import { DbConnection, type ErrorContext } from './module_bindings/index.ts';
 
 We've also imported the `SpacetimeDBProvider` React component which will allow us to connect our SpacetimeDB state directly to our React state seamlessly.
 
-## Create your SpacetimeDB client
+### Create your SpacetimeDB client
 
 Now that we've imported the `DbConnection` type, we can use it to connect our app to our database.
 
@@ -1218,7 +1219,7 @@ Our React hooks will subscribe to the data in SpacetimeDB. When we subscribe, Sp
 
 We pass our connection configuration directly to the `SpacetimeDBProvider`, which will manage our connection to SpacetimeDB.
 
-### Accessing the Data
+#### Accessing the Data
 
 Once SpacetimeDB is connected, we can easily access the data in the client cache using SpacetimeDB's provided React hooks, `useTable` and `useSpacetimeDB`.
 
@@ -1292,7 +1293,7 @@ const name = (() => {
 })();
 ```
 
-### Calling Reducers
+#### Calling Reducers
 
 Let's hook up our callbacks so we can send some messages and see them displayed in the app after they are synchronised by SpacetimeDB. We need to update the `onSubmitNewName` and `onSubmitMessage` callbacks to send the appropriate reducer to the module.
 
@@ -1334,7 +1335,7 @@ Send some messages and update your username and watch it change in real-time. No
 
 Try opening a few incognito windows to see what it's like with multiple users!
 
-### Notify about new users
+#### Notify about new users
 
 We can also register `onInsert`, `onUpdate`, and `onDelete` callbacks to handle events, not just state. For example, we might want to show a notification any time a new user connects to the database.
 
@@ -1415,7 +1416,7 @@ const [offlineUsers] = useTable(
 );
 ```
 
-## Try it out!
+### Try it out!
 
 Now that everything is set up, let's send some messages and see SpacetimeDB in action.
 
@@ -1431,7 +1432,7 @@ Now that everything is set up, let's send some messages and see SpacetimeDB in a
 
 You've just experienced the core features of SpacetimeDB: real-time synchronization, automatic persistence, and seamless multiplayer - all without writing any backend networking code.
 
-## Conclusion
+### Conclusion
 
 Congratulations! You've built a simple chat app with SpacetimeDB. You can find the full source code for the client we've created in this quickstart tutorial [here](https://github.com/clockworklabs/SpacetimeDB/tree/master/crates/bindings-typescript/examples/quickstart-chat).
 
@@ -1444,7 +1445,7 @@ Next, we'll show you how to get up and running with a simple SpacetimeDB app wit
 
 We'll implement a command-line client for the module created in our [Rust](/docs/quickstarts/rust) or [C# Module](/docs/quickstarts/c-sharp) Quickstart guides. Ensure you followed one of these guides before continuing.
 
-## Project structure
+### Project structure
 
 Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
 
@@ -1460,7 +1461,7 @@ dotnet new console
 
 Open the project in your IDE of choice.
 
-## Add the NuGet package for the C# SpacetimeDB SDK
+### Add the NuGet package for the C# SpacetimeDB SDK
 
 Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/SpacetimeDB.ClientSDK/) using Visual Studio or Rider _NuGet Package Manager_ or via the .NET CLI:
 
@@ -1468,11 +1469,11 @@ Add the `SpacetimeDB.ClientSDK` [NuGet package](https://www.nuget.org/packages/S
 dotnet add package SpacetimeDB.ClientSDK
 ```
 
-## Clear `Program.cs`
+### Clear `Program.cs`
 
 Clear out any data from `Program.cs` so we can write our chat client.
 
-## Generate your module types
+### Generate your module types
 
 The `spacetime` CLI's `generate` command will generate client-side interfaces for the tables, reducers and types defined in your server module.
 
@@ -1500,7 +1501,7 @@ module_bindings
 └── SpacetimeDBClient.g.cs
 ```
 
-## Add imports to Program.cs
+### Add imports to Program.cs
 
 Open `Program.cs` and add the following imports:
 
@@ -1522,7 +1523,7 @@ Identity? local_identity = null;
 var input_queue = new ConcurrentQueue<(string Command, string Args)>();
 ```
 
-## Define Main function
+### Define Main function
 
 We'll work outside-in, first defining our `Main` function at a high level, then implementing each behavior it needs. We need `Main` to do several things:
 
@@ -1558,7 +1559,7 @@ void Main()
 }
 ```
 
-## Connect to database
+### Connect to database
 
 Before we connect, we'll store the SpacetimeDB hostname and our database name in constants `HOST` and `DB_NAME`.
 
@@ -1598,7 +1599,7 @@ DbConnection ConnectToDB()
 }
 ```
 
-### Save credentials
+#### Save credentials
 
 SpacetimeDB will accept any [OpenID Connect](https://openid.net/developers/how-connect-works/) compliant [JSON Web Token](https://jwt.io/) and use it to compute an `Identity` for the user. More complex applications will generally authenticate their user somehow, generate or retrieve a token, and attach it to their connection via `WithToken`. In our case, though, we'll connect anonymously the first time, let SpacetimeDB generate a fresh `Identity` and corresponding JWT for us, and save that token locally to re-use the next time we connect.
 
@@ -1615,7 +1616,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 }
 ```
 
-### Connect Error callback
+#### Connect Error callback
 
 Should we get an error during connection, we'll be given an `Exception` which contains the details about the exception. To keep things simple, we'll just write the exception to the console.
 
@@ -1629,7 +1630,7 @@ void OnConnectError(Exception e)
 }
 ```
 
-### Disconnect callback
+#### Disconnect callback
 
 When disconnecting, the callback contains the connection details and if an error occurs, it will also contain an `Exception`. If we get an error, we'll write the error to the console, if not, we'll just write that we disconnected.
 
@@ -1650,7 +1651,7 @@ void OnDisconnected(DbConnection conn, Exception? e)
 }
 ```
 
-## Register callbacks
+### Register callbacks
 
 Now we need to handle several sorts of events with Tables and Reducers:
 
@@ -1676,7 +1677,7 @@ void RegisterCallbacks(DbConnection conn)
 }
 ```
 
-### Notify about new users
+#### Notify about new users
 
 For each table, we can register on-insert and on-delete callbacks to be run whenever a subscribed row is inserted or deleted. We register these callbacks using the `OnInsert` and `OnDelete` methods, which are automatically generated for each table by `spacetime generate`.
 
@@ -1707,7 +1708,7 @@ void User_OnInsert(EventContext ctx, User insertedValue)
 }
 ```
 
-### Notify about updated users
+#### Notify about updated users
 
 Because we declared a primary key column in our `User` table, we can also register on-update callbacks. These run whenever a row is replaced by a row with the same primary key, like our module's `User.Identity.Update` calls. We register these callbacks using the `OnUpdate` method, which is automatically implemented by `spacetime generate` for any table with a primary key column.
 
@@ -1746,7 +1747,7 @@ void User_OnUpdate(EventContext ctx, User oldValue, User newValue)
 }
 ```
 
-### Print messages
+#### Print messages
 
 When we receive a new message, we'll print it to standard output, along with the name of the user who sent it. Keep in mind that we only want to do this for new messages, i.e. those inserted by a `SendMessage` reducer invocation. We have to handle the backlog we receive when our subscription is initialized separately, to ensure they're printed in the correct order. To that effect, our `OnInsert` callback will check if its `ReducerEvent` argument is not `null`, and only print in that case.
 
@@ -1782,7 +1783,7 @@ void PrintMessage(RemoteTables tables, Message message)
 }
 ```
 
-### Warn if our name was rejected
+#### Warn if our name was rejected
 
 We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `OnReducerEvent` method of the `Reducer` namespace, which is automatically implemented for each reducer by `spacetime generate`.
 
@@ -1821,7 +1822,7 @@ void Reducer_OnSetNameEvent(ReducerEventContext ctx, string name)
 }
 ```
 
-### Warn if our message was rejected
+#### Warn if our message was rejected
 
 We handle warnings on rejected messages the same way as rejected names, though the types and the error message are different.
 
@@ -1839,7 +1840,7 @@ void Reducer_OnSendMessageEvent(ReducerEventContext ctx, string text)
 }
 ```
 
-## Subscribe to queries
+### Subscribe to queries
 
 SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database using `SubscribeToAllTables`.
 
@@ -1864,7 +1865,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
 }
 ```
 
-## OnSubscriptionApplied callback
+### OnSubscriptionApplied callback
 
 Once our subscription is applied, we'll print all the previously sent messages. We'll define a function `PrintMessagesInOrder` to do this. `PrintMessagesInOrder` calls the automatically generated `Iter` function on our `Message` table, which returns an iterator over all rows in the table. We'll use the `OrderBy` method on the iterator to sort the messages by their `Sent` timestamp.
 
@@ -1888,7 +1889,7 @@ void PrintMessagesInOrder(RemoteTables tables)
 }
 ```
 
-## Process thread
+### Process thread
 
 Since the input loop will be blocking, we'll run our processing code in a separate thread.
 
@@ -1921,7 +1922,7 @@ void ProcessThread(DbConnection conn, CancellationToken ct)
 }
 ```
 
-## Handle user input
+### Handle user input
 
 The input loop will read commands from standard input and send them to the processing thread using the input queue. The `ProcessCommands` function is called every 100ms by the processing thread to process any pending commands.
 
@@ -1975,7 +1976,7 @@ void ProcessCommands(RemoteReducers reducers)
 }
 ```
 
-## Run the client
+### Run the client
 
 Finally, we just need to add a call to `Main`.
 
@@ -1998,7 +1999,7 @@ Next, we'll show you how to get up and running with a simple SpacetimeDB app wit
 
 We'll implement a command-line client for the module created in our Rust or C# Module Quickstart guides. Make sure you follow one of these guides before you start on this one.
 
-## Project structure
+### Project structure
 
 Enter the directory `quickstart-chat` you created in the [Rust Module Quickstart](/docs/quickstarts/rust) or [C# Module Quickstart](/docs/quickstarts/c-sharp) guides:
 
@@ -2012,7 +2013,7 @@ Initialize a Rust crate in the current directory for our client application:
 cargo init
 ```
 
-## Depend on `spacetimedb-sdk` and `hex`
+### Depend on `spacetimedb-sdk` and `hex`
 
 `Cargo.toml` should be initialized without any dependencies. We'll need two:
 
@@ -2028,7 +2029,7 @@ hex = "0.4"
 
 Make sure you depend on the same version of `spacetimedb-sdk` as is reported by the SpacetimeDB CLI tool's `spacetime version`!
 
-## Clear `src/main.rs`
+### Clear `src/main.rs`
 
 `src/main.rs` should be initialized with a trivial "Hello world" program. Clear it out so we can write our chat client.
 
@@ -2039,7 +2040,7 @@ rm src/main.rs
 touch src/main.rs
 ```
 
-## Generate your module types
+### Generate your module types
 
 The `spacetime` CLI's `generate` command will generate client-side interfaces for the tables, reducers and types referenced by tables or reducers defined in your server module.
 
@@ -2073,7 +2074,7 @@ mod module_bindings;
 use module_bindings::*;
 ```
 
-## Add more imports
+### Add more imports
 
 We'll need additional imports from `spacetimedb_sdk` for interacting with the database, handling credentials, and managing events.
 
@@ -2083,7 +2084,7 @@ To `src/main.rs`, add:
 use spacetimedb_sdk::{credentials, DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
 ```
 
-## Define the main function
+### Define the main function
 
 Our `main` function will do the following:
 
@@ -2114,7 +2115,7 @@ fn main() {
 }
 ```
 
-## Connect to the database
+### Connect to the database
 
 A connection to a SpacetimeDB database is represented by a `DbConnection`. We configure `DbConnection`s using the builder pattern, by calling `DbConnection::builder()`, chaining method calls to set various connection parameters and register callbacks, then we cap it off with a call to `.build()` to begin the connection.
 
@@ -2159,7 +2160,7 @@ fn connect_to_db() -> DbConnection {
 }
 ```
 
-### Save credentials
+#### Save credentials
 
 SpacetimeDB will accept any [OpenID Connect](https://openid.net/developers/how-connect-works/) compliant [JSON Web Token](https://jwt.io/) and use it to compute an `Identity` for the user. More complex applications will generally authenticate their user somehow, generate or retrieve a token, and attach it to their connection via `with_token`. In our case, though, we'll connect anonymously the first time, let SpacetimeDB generate a fresh `Identity` and corresponding JWT for us, and save that token locally to re-use the next time we connect.
 
@@ -2180,7 +2181,7 @@ fn on_connected(_ctx: &DbConnection, _identity: Identity, token: &str) {
 }
 ```
 
-### Handle errors and disconnections
+#### Handle errors and disconnections
 
 We need to handle connection errors and disconnections by printing appropriate messages and exiting the program. These callbacks take an `ErrorContext`, a `DbConnection` that's been augmented with information about the error that occured.
 
@@ -2205,7 +2206,7 @@ fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
 }
 ```
 
-## Register callbacks
+### Register callbacks
 
 We need to handle several sorts of events:
 
@@ -2237,7 +2238,7 @@ fn register_callbacks(ctx: &DbConnection) {
 }
 ```
 
-### Notify about new users
+#### Notify about new users
 
 For each table, we can register on-insert and on-delete callbacks to be run whenever a subscribed row is inserted or deleted. We register these callbacks using the `on_insert` and `on_delete`, which is automatically implemented for each table by `spacetime generate`.
 
@@ -2270,7 +2271,7 @@ fn user_name_or_identity(user: &User) -> String {
 }
 ```
 
-### Notify about updated users
+#### Notify about updated users
 
 Because we declared a `#[primary_key]` column in our `User` table, we can also register on-update callbacks. These run whenever a row is replaced by a row with the same primary key, like our module's `ctx.db.user().identity().update(..)` calls. We register these callbacks using the `on_update` method of the trait `TableWithPrimaryKey`, which is automatically implemented by `spacetime generate` for any table with a `#[primary_key]` column.
 
@@ -2306,7 +2307,7 @@ fn on_user_updated(_ctx: &EventContext, old: &User, new: &User) {
 }
 ```
 
-### Print messages
+#### Print messages
 
 When we receive a new message, we'll print it to standard output, along with the name of the user who sent it. Keep in mind that we only want to do this for new messages, i.e. those inserted by a `send_message` reducer invocation. We have to handle the backlog we receive when our subscription is initialized separately, to ensure they're printed in the correct order. To that effect, our `on_message_inserted` callback will check if the ctx.event type is an `Event::Reducer`, and only print in that case.
 
@@ -2338,7 +2339,7 @@ fn print_message(ctx: &impl RemoteDbContext, message: &Message) {
 }
 ```
 
-### Handle reducer failures
+#### Handle reducer failures
 
 We can also register callbacks to run each time a reducer is invoked. We register these callbacks using the `on_reducer` method of the `Reducer` trait, which is automatically implemented for each reducer by `spacetime generate`.
 
@@ -2371,7 +2372,7 @@ fn on_message_sent(ctx: &ReducerEventContext, text: &String) {
 }
 ```
 
-## Subscribe to queries
+### Subscribe to queries
 
 SpacetimeDB is set up so that each client subscribes via SQL queries to some subset of the database, and is notified about changes only to that subset. For complex apps with large databases, judicious subscriptions can save each client significant network bandwidth, memory and computation. For example, in [BitCraft](https://bitcraftonline.com), each player's client subscribes only to the entities in the "chunk" of the world where that player currently resides, rather than the entire game world. Our app is much simpler than BitCraft, so we'll just subscribe to the whole database.
 
@@ -2391,7 +2392,7 @@ fn subscribe_to_tables(ctx: &DbConnection) {
 }
 ```
 
-### Print past messages in order
+#### Print past messages in order
 
 Messages we receive live will come in order, but when we connect, we'll receive all the past messages at once. We can't just print these in the order we receive them; the logs would be all shuffled around, and would make no sense. Instead, when we receive the log of past messages, we'll sort them by their sent timestamps and print them in order.
 
@@ -2413,7 +2414,7 @@ fn on_sub_applied(ctx: &SubscriptionEventContext) {
 }
 ```
 
-### Notify about failed subscriptions
+#### Notify about failed subscriptions
 
 It's possible for SpacetimeDB to reject subscriptions. This happens most often because of a typo in the SQL queries, but can be due to use of SQL features that SpacetimeDB doesn't support. See [SQL Support: Subscriptions](/reference/sql#subscriptions) for more information about what subscription queries SpacetimeDB supports.
 
@@ -2428,7 +2429,7 @@ fn on_sub_error(_ctx: &ErrorContext, err: Error) {
 }
 ```
 
-## Handle user input
+### Handle user input
 
 Our app should allow the user to interact by typing lines into their terminal. If the line starts with `/name`, we'll change the user's name. Any other line will send a message.
 
@@ -2452,7 +2453,7 @@ fn user_input_loop(ctx: &DbConnection) {
 }
 ```
 
-## Run it
+### Run it
 
 After setting everything up, compile and run the client. From the `quickstart-chat` directory, run:
 
