@@ -247,6 +247,10 @@ strong {
   color: var(--clockworklabs-strong-color);
 }
 
+.tabs {
+  margin-top: var(--16px);
+}
+
 .tabs__item {
   border-bottom-width: 1px;
 }

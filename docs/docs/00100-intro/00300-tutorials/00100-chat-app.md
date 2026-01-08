@@ -59,8 +59,6 @@ No additional installation needed - Node.js/npm will handle dependencies.
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-## Install .NET 8
-
 Next we need to [install .NET 8 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/8.0) so that we can build and publish our module.
 
 You may already have .NET 8 installed:
@@ -77,8 +75,6 @@ dotnet workload install wasi-experimental
 
 </TabItem>
 <TabItem value="rust" label="Rust">
-
-## Install Rust
 
 Next we need to [install Rust](https://www.rust-lang.org/tools/install) so that we can create our database module.
 
