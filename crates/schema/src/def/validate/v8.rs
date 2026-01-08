@@ -399,9 +399,9 @@ fn convert_all<T, U>(input: impl IntoIterator<Item = T>, f: impl FnMut(T) -> U) 
 
 #[cfg(test)]
 mod tests {
-    use crate::def::IndexAlgorithm;
     use crate::def::validate::tests::{check_product_type, expect_identifier, expect_type_name};
     use crate::def::validate::v8::{IDENTITY_CONNECTED_NAME, IDENTITY_DISCONNECTED_NAME, INIT_NAME};
+    use crate::def::IndexAlgorithm;
     use crate::def::{validate::Result, ModuleDef};
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;

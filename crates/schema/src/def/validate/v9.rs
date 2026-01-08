@@ -1353,7 +1353,8 @@ mod tests {
     };
     use crate::def::{validate::Result, ModuleDef};
     use crate::def::{
-        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexAlgorithm, IndexDef, SequenceDef, UniqueConstraintData
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexAlgorithm, IndexDef,
+        SequenceDef, UniqueConstraintData,
     };
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
