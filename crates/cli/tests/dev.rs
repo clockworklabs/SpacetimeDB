@@ -22,7 +22,11 @@ fn cli_dev_accepts_template_flag() {
         .assert()
         .failure()
         // The error should be about the server, not about an unrecognized --template flag
-        .stderr(predicate::str::contains("template").not().or(predicate::str::contains("unrecognized").not()));
+        .stderr(
+            predicate::str::contains("template")
+                .not()
+                .or(predicate::str::contains("unrecognized").not()),
+        );
 }
 
 #[test]
@@ -32,7 +36,11 @@ fn cli_dev_accepts_short_template_flag() {
         .assert()
         .failure()
         // The error should be about the server, not about an unrecognized -t flag
-        .stderr(predicate::str::contains("-t").not().or(predicate::str::contains("unrecognized").not()));
+        .stderr(
+            predicate::str::contains("-t")
+                .not()
+                .or(predicate::str::contains("unrecognized").not()),
+        );
 }
 
 #[test]
@@ -45,7 +53,8 @@ fn cli_init_with_template_creates_project() {
     cmd.current_dir(temp_dir.path())
         .args([
             "init",
-            "--template", "basic-rust",
+            "--template",
+            "basic-rust",
             "--local",
             "--non-interactive",
             "test-project",
@@ -55,6 +64,9 @@ fn cli_init_with_template_creates_project() {
 
     // Verify expected files were created
     let project_dir = temp_dir.path().join("test-project");
-    assert!(project_dir.join("spacetimedb").exists(), "spacetimedb directory should exist");
+    assert!(
+        project_dir.join("spacetimedb").exists(),
+        "spacetimedb directory should exist"
+    );
     assert!(project_dir.join("src").exists(), "src directory should exist");
 }
