@@ -284,7 +284,7 @@ export const hooks: ModuleHooks = {
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    if (reducerArgsDeserializers == null) {
+    if (reducerArgsDeserializers === undefined) {
       reducerArgsDeserializers = MODULE_DEF.reducers.map(({ params }) =>
         ProductType.makeDeserializer(params, MODULE_DEF.typespace)
       );
@@ -294,7 +294,7 @@ export const hooks: ModuleHooks = {
     const args = deserializeArgs(BINARY_READER);
     const senderIdentity = new Identity(sender);
     let ctx;
-    if (REDUCER_CTX == null) {
+    if (REDUCER_CTX === undefined) {
       ctx = REDUCER_CTX = new ReducerCtxImpl(
         senderIdentity,
         new Timestamp(timestamp),
