@@ -2,6 +2,7 @@
 // Everything we're testing for happens SDK-side so this module is very uninteresting.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using SpacetimeDB;
 
 [SpacetimeDB.Type]
@@ -28,6 +29,13 @@ public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(
     uint A,
     string B
     )>;
+
+[SpacetimeDB.Type]
+public partial struct DbVector2
+{
+    public int X;
+    public int Y;
+}
 
 public static partial class Module
 {
@@ -78,6 +86,27 @@ public static partial class Module
         public ulong Level;
     }
 
+    [SpacetimeDB.Table(Name = "User", Public = true)]
+    public partial struct User
+    {
+        [SpacetimeDB.PrimaryKey]
+        public Uuid Id;
+
+        public string Name;
+
+        [SpacetimeDB.Index.BTree]
+        public bool IsAdmin;
+    }
+
+    [SpacetimeDB.Table(Name = "nullable_vec", Public = true)]
+    public partial struct NullableVec
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        public DbVector2? Pos;
+    }
+
     // At-most-one row: return T?
     [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
@@ -107,6 +136,34 @@ public static partial class Module
         return rows;
     }
 
+    [SpacetimeDB.View(Name = "Admins", Public = true)]
+    public static List<User> Admins(AnonymousViewContext ctx)
+    {
+        var rows = new List<User>();
+        foreach (var user in ctx.Db.User.IsAdmin.Filter(true))
+        {
+            rows.Add(user);
+        }
+        return rows;
+    }
+
+    [SpacetimeDB.View(Name = "nullable_vec_view", Public = true)]
+    public static List<NullableVec> NullableVecView(AnonymousViewContext ctx)
+    {
+        var rows = new List<NullableVec>();
+
+        if (ctx.Db.nullable_vec.Id.Find(1) is NullableVec row1)
+        {
+            rows.Add(row1);
+        }
+
+        if (ctx.Db.nullable_vec.Id.Find(2) is NullableVec row2)
+        {
+            rows.Add(row2);
+        }
+        return rows;
+    }
+
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
@@ -126,6 +183,25 @@ public static partial class Module
         throw new Exception(error);
     }
 
+    [SpacetimeDB.Reducer]
+    public static void SetNullableVec(ReducerContext ctx, uint id, bool hasPos, int x, int y)
+    {
+        var row = new NullableVec
+        {
+            Id = id,
+            Pos = hasPos ? new DbVector2 { X = x, Y = y } : null
+        };
+
+        if (ctx.Db.nullable_vec.Id.Find(id) is null)
+        {
+            ctx.Db.nullable_vec.Insert(row);
+        }
+        else
+        {
+            ctx.Db.nullable_vec.Id.Update(row);
+        }
+    }
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -141,6 +217,34 @@ public static partial class Module
             ctx.Db.player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
             var playerId = (ctx.Db.player.Identity.Find(ctx.Sender)!).Value.Id;
             ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
+        }
+
+        if (ctx.Db.nullable_vec.Id.Find(1) is null)
+        {
+            ctx.Db.nullable_vec.Insert(new NullableVec
+            {
+                Id = 1,
+                Pos = new DbVector2 { X = 1, Y = 2 },
+            });
+        }
+
+        if (ctx.Db.nullable_vec.Id.Find(2) is null)
+        {
+            ctx.Db.nullable_vec.Insert(new NullableVec
+            {
+                Id = 2,
+                Pos = null,
+            });
+        }
+
+        foreach (var (Name, IsAdmin) in new List<(string Name, bool IsAdmin)>
+            {
+                ("Alice", true),
+                ("Bob", false),
+                ("Charlie", true)
+            })
+        {
+            ctx.Db.User.Insert(new User { Id = ctx.NewUuidV7(), Name = Name, IsAdmin = IsAdmin });
         }
     }
 
@@ -169,9 +273,51 @@ public static partial class Module
     }
 
     [SpacetimeDB.Procedure]
+    public static Uuid ReturnUuid(ProcedureContext ctx, Uuid u)
+    {
+        return u;
+    }
+
+    [SpacetimeDB.Procedure]
     public static SpacetimeDB.Unit WillPanic(ProcedureContext ctx)
     {
         throw new InvalidOperationException("This procedure is expected to panic");
+    }
+
+    [SpacetimeDB.Procedure]
+    [Experimental("STDB_UNSTABLE")]
+    public static string ReadMySchemaViaHttp(ProcedureContext ctx)
+    {
+        try
+        {
+            var moduleIdentity = ProcedureContext.Identity;
+            var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9";
+            var res = ctx.Http.Get(uri, System.TimeSpan.FromSeconds(2));
+            return res.IsSuccess
+                ? "OK " + res.Value!.Body.ToStringUtf8Lossy()
+                : "ERR " + res.Error!.Message;
+        }
+        catch (Exception e)
+        {
+            return "EXN " + e;
+        }
+    }
+
+    [SpacetimeDB.Procedure]
+    [Experimental("STDB_UNSTABLE")]
+    public static string InvalidHttpRequest(ProcedureContext ctx)
+    {
+        try
+        {
+            var res = ctx.Http.Get("http://foo.invalid/", System.TimeSpan.FromMilliseconds(250));
+            return res.IsSuccess
+                ? "OK " + res.Value!.Body.ToStringUtf8Lossy()
+                : "ERR " + res.Error!.Message;
+        }
+        catch (Exception e)
+        {
+            return "EXN " + e;
+        }
     }
 
 #pragma warning disable STDB_UNSTABLE

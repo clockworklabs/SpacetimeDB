@@ -16,6 +16,7 @@
 #include "Tests/PrimitiveHandlerList.def"
 
 #include "Connection/Credentials.h"
+#include "ModuleBindings/Tables/OneUuidTable.g.h"
 
 // #include "HAL/IPlatformFile.h"
 
@@ -1538,6 +1539,10 @@ bool FInsertPrimitivesAsStringTest::RunTest(const FString &Parameters)
 					PrimitiveStructType.R = FSpacetimeDBConnectionId();
 					PrimitiveStructType.S = FSpacetimeDBTimestamp(9876543210LL);
 					PrimitiveStructType.T = FSpacetimeDBTimeDuration(-67419000000003LL);
+					// Create UUID with bytes: 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10
+					// This should result in the same string: "01020304-0506-0708-090A-0B0C0D0E0F10"
+					PrimitiveStructType.U = FSpacetimeDBUuid(FSpacetimeDBUInt128(0x0102030405060708ULL, 0x090A0B0C0D0E0F10ULL));
+					//PrimitiveStructType.U = FSpacetimeDBUuid(FGuid(TEXT("01020304-0506-0708-090A-0B0C0D0E0F10")));
 
 					TArray<FString> ExpectedStrings;
 					ExpectedStrings.Reserve(20);
@@ -1572,6 +1577,7 @@ bool FInsertPrimitivesAsStringTest::RunTest(const FString &Parameters)
 
 					ExpectedStrings.Add(NormalizeTimestamp(PrimitiveStructType.S));
 					ExpectedStrings.Add(NormalizeDuration(PrimitiveStructType.T));
+					ExpectedStrings.Add(PrimitiveStructType.U.ToString());
 
 					// Push the normalized expectation into the same handler instance
 					Handler->ExpectedStrings = MoveTemp(ExpectedStrings);
@@ -2257,3 +2263,82 @@ bool FOverlappingSubscriptionsTest::RunTest(const FString &Parameters)
 	ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
 	return true;
 }
+
+bool FInsertCallUuidV4Test::RunTest(const FString &Parameters)
+{
+    TestName = "InsertCallUuidV4";
+    
+    if (!ValidateParameterConfig(this)) {
+        return false;
+    }
+    
+    UUuidActionsHandler *Handler = CreateTestHandler<UUuidActionsHandler>();
+    Handler->Counter->Register(TEXT("InsertCallUuidV4"));
+    
+    UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn) {
+        Conn->Db->OneUuid->OnInsert.AddDynamic(Handler, &UUuidActionsHandler::OnInsertCallUuidV4);
+        
+        SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx) {
+            if (Ctx.Db->OneUuid->Count() != 0) {
+                Handler->Counter->Abort();
+                return;
+            }
+            
+            // Call the reducer to insert the new UUID v4
+            Ctx.Reducers->InsertCallUuidV4();
+        });
+    });
+    
+    ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+    return true;
+}
+
+bool FInsertCallUuidV7Test::RunTest(const FString &Parameters)
+{
+    TestName = "InsertCallUuidV7";
+    
+    if (!ValidateParameterConfig(this)) {
+        return false;
+    }
+    
+    UUuidActionsHandler *Handler = CreateTestHandler<UUuidActionsHandler>();
+    Handler->Counter->Register(TEXT("InsertCallUuidV7"));
+    
+    UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn) {
+		Conn->Db->OneUuid->OnInsert.AddDynamic(Handler, &UUuidActionsHandler::OnInsertCallUuidV7);
+        
+        SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx) {
+            if (Ctx.Db->OneUuid->Count() != 0) {
+                Handler->Counter->Abort();
+                return;
+            }
+            
+            // Call the reducer to insert the new UUID v7
+            Ctx.Reducers->InsertCallUuidV7();
+        });
+    });
+    
+    ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+    return true;
+}
+
+/*
+	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
+											{
+			Conn->Db->OneTimestamp->OnInsert.AddDynamic(Handler, &UTimestampActionsHandler::OnInsertOneTimestamp);
+
+			SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx)
+				{
+					if (Ctx.Db->OneTimestamp->Count() != 0)
+					{
+						Handler->Counter->Abort();
+						return;
+					}
+
+					FSpacetimeDBTimestamp TimeStamp;
+					Handler->SetExpectedvalue(TimeStamp);
+
+					// Call the reducer to insert the new Timestamp.
+					Ctx.Reducers->InsertOneTimestamp(TimeStamp);
+				}); });
+*/

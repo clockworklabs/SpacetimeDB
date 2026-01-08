@@ -1,7 +1,6 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
-using Internal;
 
 public readonly struct Result<T, E>(bool isSuccess, T? value, E? error)
     where E : Exception
@@ -52,6 +51,12 @@ public abstract class ProcedureContextBase(
     public Timestamp Timestamp { get; private set; } = time;
     public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
 
+    // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
+    // (WOULD_BLOCK_TRANSACTION). Avoid calling `Http.*` inside WithTx.
+    public HttpClient Http { get; } = new();
+
+    // **Note:** must be 0..=u32::MAX
+    protected int CounterUuid = 0;
     private Internal.TxContext? txContext;
     private ProcedureTxContextBase? cachedUserTxContext;
 

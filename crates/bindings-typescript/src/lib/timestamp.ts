@@ -73,6 +73,11 @@ export class Timestamp {
     return Timestamp.fromDate(new Date());
   }
 
+  /** Convert to milliseconds since Unix epoch. */
+  toMillis(): bigint {
+    return this.microsSinceUnixEpoch / 1000n;
+  }
+
   /**
    * Get a `Timestamp` representing the same point in time as `date`.
    */

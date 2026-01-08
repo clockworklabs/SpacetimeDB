@@ -15,6 +15,7 @@ members = [
   "crates/durability",
   "crates/execution",
   "crates/expr",
+  "crates/guard",
   "crates/fs-utils",
   "crates/lib",
   "crates/metrics",
@@ -56,6 +57,7 @@ members = [
   "tools/replace-spacetimedb",
   "tools/generate-client-api",
   "tools/gen-bindings",
+  "tools/xtask-llm-benchmark",
   "crates/bindings-typescript/test-app/server",
   "crates/bindings-typescript/test-react-router-app/server",
 ]
@@ -118,6 +120,7 @@ spacetimedb-datastore = { path = "crates/datastore", version = "=1.11.1" }
 spacetimedb-durability = { path = "crates/durability", version = "=1.11.1" }
 spacetimedb-execution = { path = "crates/execution", version = "=1.11.1" }
 spacetimedb-expr = { path = "crates/expr", version = "=1.11.1" }
+spacetimedb-guard = { path = "crates/guard", version = "=1.11.1" }
 spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=1.11.1" }
 spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=1.11.1", default-features = false }
 spacetimedb-metrics = { path = "crates/metrics", version = "=1.11.1" }
@@ -307,7 +310,7 @@ unicode-ident = "1.0.12"
 unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
-uuid = { version = "1.18.1", features = ["v4"] }
+uuid = { version = "1.18.1", default-features = false }
 v8 = "140.2"
 walkdir = "2.2.5"
 wasmbin = "0.6"
