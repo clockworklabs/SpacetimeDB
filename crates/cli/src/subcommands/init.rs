@@ -1720,12 +1720,11 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
 /// Strip YAML frontmatter from .mdc files (the --- delimited section at the start)
 fn strip_mdc_frontmatter(content: &str) -> &str {
     // Look for frontmatter: starts with --- and ends with ---
-    if content.starts_with("---") {
-        if let Some(end_idx) = content[3..].find("\n---") {
+    if let Some(after_opening) = content.strip_prefix("---") {
+        if let Some(end_idx) = after_opening.find("\n---") {
             // Skip past the closing --- and the newline after it
-            let skip_to = 3 + end_idx + 4; // 3 for initial ---, end_idx, 4 for \n---
-            let remaining = &content[skip_to..];
-            // Skip any leading newlines after frontmatter
+            let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
+                                                           // Skip any leading newlines after frontmatter
             return remaining.trim_start_matches('\n');
         }
     }
