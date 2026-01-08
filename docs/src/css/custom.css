@@ -410,49 +410,33 @@ ul.theme-doc-sidebar-menu {
   padding-top: 8px;
 }
 
-/* Right-aligned chevron for collapsible categories */
-.menu__list-item-collapsible {
-  position: relative;
+/* Style the Docusaurus caret button for collapsible categories */
+.menu__caret {
+  padding: 8px 6px 8px 8px !important;
 }
 
-.menu__list-item-collapsible > .menu__link {
-  padding-right: 28px !important;
-}
-
-/* Create chevron on the right side - points right (>) when collapsed */
-.menu__list-item--collapsed > .menu__list-item-collapsible > .menu__link::after {
+/* Hide the default caret SVG and use custom chevron via ::before */
+.menu__caret::before {
   content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  display: block;
   width: 16px;
   height: 16px;
   background-color: var(--clockworklabs-color-n4);
+  background-image: none !important;
+  /* Right chevron (>) when collapsed */
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M6.96967 4.46967C7.26256 4.17678 7.73744 4.17678 8.03033 4.46967L13.0303 9.46967C13.3232 9.76256 13.3232 10.2374 13.0303 10.5303L8.03033 15.5303C7.73744 15.8232 7.26256 15.8232 6.96967 15.5303C6.67678 15.2374 6.67678 14.7626 6.96967 14.4697L11.4393 10L6.96967 5.53033C6.67678 5.23744 6.67678 4.76256 6.96967 4.46967Z' fill='black'/%3E%3C/svg%3E");
   mask-size: contain;
   mask-repeat: no-repeat;
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M6.96967 4.46967C7.26256 4.17678 7.73744 4.17678 8.03033 4.46967L13.0303 9.46967C13.3232 9.76256 13.3232 10.2374 13.0303 10.5303L8.03033 15.5303C7.73744 15.8232 7.26256 15.8232 6.96967 15.5303C6.67678 15.2374 6.67678 14.7626 6.96967 14.4697L11.4393 10L6.96967 5.53033C6.67678 5.23744 6.67678 4.76256 6.96967 4.46967Z' fill='black'/%3E%3C/svg%3E");
   -webkit-mask-size: contain;
   -webkit-mask-repeat: no-repeat;
+  transform: none !important;
 }
 
-/* Point down (v) when expanded */
-.menu__list-item:not(.menu__list-item--collapsed) > .menu__list-item-collapsible > .menu__link::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 16px;
-  height: 16px;
-  background-color: var(--clockworklabs-color-n4);
+/* Down chevron (v) when expanded */
+.menu__list-item:not(.menu__list-item--collapsed) > .menu__list-item-collapsible > .menu__caret::before {
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15.5303 6.96967C15.8232 7.26257 15.8232 7.73744 15.5303 8.03033L10.5303 13.0303C10.2374 13.3232 9.76256 13.3232 9.46967 13.0303L4.46967 8.03033C4.17678 7.73744 4.17678 7.26256 4.46967 6.96967C4.76256 6.67678 5.23744 6.67678 5.53033 6.96967L10 11.4393L14.4697 6.96967C14.7626 6.67678 15.2374 6.67678 15.5303 6.96967Z' fill='black'/%3E%3C/svg%3E");
-  mask-size: contain;
-  mask-repeat: no-repeat;
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M15.5303 6.96967C15.8232 7.26257 15.8232 7.73744 15.5303 8.03033L10.5303 13.0303C10.2374 13.3232 9.76256 13.3232 9.46967 13.0303L4.46967 8.03033C4.17678 7.73744 4.17678 7.26256 4.46967 6.96967C4.76256 6.67678 5.23744 6.67678 5.53033 6.96967L10 11.4393L14.4697 6.96967C14.7626 6.67678 15.2374 6.67678 15.5303 6.96967Z' fill='black'/%3E%3C/svg%3E");
-  -webkit-mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
 }
 
 /* Style level-1 category headers (main categories under section headers) */
@@ -483,6 +467,18 @@ ul.theme-doc-sidebar-menu {
   margin-left: 16px !important;
   margin-top: 4px;
   padding-left: 8px;
+}
+
+/* Active state for collapsible categories - extend background to full width including chevron */
+.menu__list-item-collapsible:has(.menu__link--active) {
+  border-radius: var(--8px);
+  box-shadow: inset 0 0 0 1px var(--clockworklabs-color-n6);
+  background: var(--clockworklabs-color-shade1);
+}
+
+.menu__list-item-collapsible:has(.menu__link--active) > .menu__link {
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .footer {
