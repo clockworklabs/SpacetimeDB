@@ -6,7 +6,6 @@ slug: /tables
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Tables
 
 Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
 

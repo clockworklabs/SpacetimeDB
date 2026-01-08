@@ -6,7 +6,6 @@ slug: /intro/key-architecture
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Key architectural concepts
 
 ## Host
 

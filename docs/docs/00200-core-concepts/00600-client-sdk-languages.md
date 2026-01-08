@@ -3,7 +3,6 @@ title: Overview
 slug: /sdks
 ---
 
-# SpacetimeDB Client SDKs
 
 The SpacetimeDB Client SDKs provide a comprehensive interface for building applications that connect to SpacetimeDB [databases](/databases). Client applications can query data, invoke server-side functions, and receive real-time updates as the database state changes.
 

@@ -6,7 +6,6 @@ slug: /tables/access-permissions
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Access Permissions
 
 SpacetimeDB enforces different levels of table access depending on the context. All contexts access tables through `ctx.db`, but the available operations differ based on whether the context is read-write or read-only.
 

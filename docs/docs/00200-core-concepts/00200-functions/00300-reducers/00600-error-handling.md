@@ -6,7 +6,6 @@ slug: /functions/reducers/error-handling
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Error Handling & Context
 
 ## Error Handling
 

@@ -6,7 +6,6 @@ slug: /functions/procedures
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Procedures
 
 A **procedure** is a function exported by a [database](/databases), similar to a [reducer](/functions/reducers).
 Connected [clients](/sdks) can call procedures.

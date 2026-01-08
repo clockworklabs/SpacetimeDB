@@ -6,7 +6,6 @@ slug: /subscriptions
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# The SpacetimeDB Subscription API
 
 The subscription API allows a client to replicate a subset of a database.
 It does so by registering SQL queries, which we call subscriptions, through a database connection.

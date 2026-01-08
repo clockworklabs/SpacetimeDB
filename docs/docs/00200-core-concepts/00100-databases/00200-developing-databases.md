@@ -6,7 +6,6 @@ slug: /databases/developing
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Developing Databases
 
 This guide covers how to create a new SpacetimeDB database module project.
 

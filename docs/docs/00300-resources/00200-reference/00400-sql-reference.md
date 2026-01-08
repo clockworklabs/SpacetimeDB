@@ -6,7 +6,6 @@ slug: /reference/sql
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# SQL Support
 
 SpacetimeDB supports two subsets of SQL:
 One for queries issued through the [cli] or [http] api.

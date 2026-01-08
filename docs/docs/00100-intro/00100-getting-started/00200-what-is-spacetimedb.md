@@ -3,7 +3,6 @@ title: What is SpacetimeDB?
 slug: /intro/what-is-spacetimedb
 ---
 
-# What is SpacetimeDB?
 
 SpacetimeDB is a database that is also a server.
 

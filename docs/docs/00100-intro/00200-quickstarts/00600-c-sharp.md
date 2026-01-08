@@ -1,5 +1,6 @@
 ---
-title: C#
+title: C# Quickstart
+sidebar_label: C#
 slug: /quickstarts/c-sharp
 hide_table_of_contents: true
 ---
@@ -7,7 +8,6 @@ hide_table_of_contents: true
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { StepByStep, Step, StepText, StepCode } from "@site/src/components/Steps";
 
-# C# Quickstart
 
 Get a SpacetimeDB C# app running in under 5 minutes.
 

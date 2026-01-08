@@ -6,7 +6,6 @@ slug: /how-to/rls
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Row Level Security (RLS)
 
 :::warning Consider Using Views Instead
 Before implementing Row Level Security, consider using [Views](/functions/views) for access control. Views provide a simpler, more flexible approach to controlling data visibility without the complexity and performance overhead of RLS. Views are first-class functions that allow you to define custom, subscribable queries with full control over what data clients can access. RLS is experimental and should only be used for advanced use cases where views are insufficient.

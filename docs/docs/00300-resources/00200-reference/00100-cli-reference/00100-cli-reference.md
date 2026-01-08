@@ -3,7 +3,6 @@ title: CLI Reference
 slug: /cli-reference
 ---
 
-# Command-Line Help for `spacetime`
 
 This document contains the help content for the `spacetime` command-line program.
 

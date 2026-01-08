@@ -6,7 +6,6 @@ slug: /tables/indexes
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Indexes
 
 Indexes enable efficient querying of table data. SpacetimeDB supports B-Tree indexes on single or multiple columns.
 

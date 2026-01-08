@@ -3,7 +3,6 @@ title: The Database Module
 slug: /databases
 ---
 
-# The Database Module
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';

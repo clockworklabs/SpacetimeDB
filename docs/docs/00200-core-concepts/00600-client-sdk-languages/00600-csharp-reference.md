@@ -4,7 +4,6 @@ toc_max_heading_level: 6
 slug: /sdks/c-sharp
 ---
 
-# The SpacetimeDB C# client SDK
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 

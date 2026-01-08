@@ -6,7 +6,6 @@ slug: /tables/performance
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Performance Best Practices
 
 Follow these guidelines to optimize table performance in your SpacetimeDB modules.
 

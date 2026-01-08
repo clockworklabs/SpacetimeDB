@@ -6,7 +6,6 @@ slug: /tables/columns
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Column Types and Constraints
 
 Columns define the structure of your tables. Each column has a type and can have constraints that enforce data integrity.
 

@@ -6,7 +6,6 @@ slug: /functions/reducers/reducer-context
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Reducer Context
 
 Every reducer receives a special context parameter as its first argument. This context provides read-write access to the database, information about the caller, and additional utilities like random number generation.
 

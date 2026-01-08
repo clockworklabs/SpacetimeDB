@@ -3,7 +3,6 @@ title: PostgreSQL Wire Protocol (PGWire)
 slug: /how-to/pg-wire
 ---
 
-# PostgreSQL Wire Protocol (PGWire) Compatibility
 
 _SpacetimeDB_ supports the [PostgreSQL wire protocol (PGWire)](https://www.postgresql.org/docs/current/protocol.html),
 enabling compatibility with PostgreSQL clients and tools.

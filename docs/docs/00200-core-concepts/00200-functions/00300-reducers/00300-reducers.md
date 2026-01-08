@@ -6,7 +6,6 @@ slug: /functions/reducers
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Reducers
 
 Reducers are functions that modify database state in response to client requests or system events. They are the **only** way to mutate tables in SpacetimeDB - all database changes must go through reducers.
 

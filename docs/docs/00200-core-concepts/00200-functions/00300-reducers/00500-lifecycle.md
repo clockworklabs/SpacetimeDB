@@ -6,7 +6,6 @@ slug: /functions/reducers/lifecycle
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Lifecycle Reducers
 
 Special reducers handle system events during the database lifecycle.
 

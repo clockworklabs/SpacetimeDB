@@ -36,7 +36,6 @@ spacetime login
 
 With SpacetimeDB Maincloud, you benefit from automatic scaling, robust security, and the convenience of not having to manage the hosting environment.
 
-# Connect from Client SDKs
 
 To connect to your deployed module in your client code, use the host url of `https://maincloud.spacetimedb.com`:
 

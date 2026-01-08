@@ -3,7 +3,6 @@ title: Cheat Sheet
 slug: /databases/cheat-sheet
 ---
 
-# Cheat Sheet
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';

@@ -1,5 +1,6 @@
 ---
-title: TypeScript
+title: TypeScript Quickstart
+sidebar_label: TypeScript
 slug: /quickstarts/typescript
 hide_table_of_contents: true
 ---
@@ -7,7 +8,6 @@ hide_table_of_contents: true
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { StepByStep, Step, StepText, StepCode } from "@site/src/components/Steps";
 
-# TypeScript Quickstart
 
 Get a SpacetimeDB TypeScript app running in under 5 minutes.
 

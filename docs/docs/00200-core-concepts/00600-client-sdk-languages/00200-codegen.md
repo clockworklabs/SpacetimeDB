@@ -6,7 +6,6 @@ slug: /sdks/codegen
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Generating Client Bindings
 
 Before you can interact with a SpacetimeDB [database](/databases) from a client application, you must generate client bindings for your **module**. These bindings create type-safe interfaces that allow your client to query [tables](/tables), invoke [reducers](/functions/reducers), call [procedures](/functions/procedures), and subscribe to [tables](/tables), and/or [views](/functions/views).
 

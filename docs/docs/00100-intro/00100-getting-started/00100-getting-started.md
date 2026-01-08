@@ -6,7 +6,6 @@ slug: /
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
 
-# Getting Started with SpacetimeDB
 
 ## Installation
 
