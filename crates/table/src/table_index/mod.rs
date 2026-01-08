@@ -41,7 +41,7 @@ use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, sum_value::SumTag, u256, AlgebraicType,
     AlgebraicValue, ProductType, F32, F64,
 };
-use spacetimedb_schema::def::{BTreeAlgorithm, DirectAlgorithm, HashAlgorithm, IndexAlgorithm};
+use spacetimedb_schema::def::IndexAlgorithm;
 
 mod hash_index;
 mod index;
@@ -409,25 +409,48 @@ fn as_sum_tag(av: &AlgebraicValue) -> Option<&SumTag> {
     as_tag(av).map(|s| s.into())
 }
 
-impl TypedIndex {
-    /// Returns a new index with keys being of `key_type` and the index possibly `is_unique`.
-    fn new(key_type: &AlgebraicType, index_algo: &IndexAlgorithm, is_unique: bool) -> Self {
-        match index_algo {
-            IndexAlgorithm::BTree(algo) => Self::new_btree_index(key_type, algo, is_unique),
-            IndexAlgorithm::Hash(algo) => Self::new_hash_index(key_type, algo, is_unique),
-            IndexAlgorithm::Direct(algo) => Self::new_direct_index(key_type, algo, is_unique),
+#[derive(Debug, PartialEq)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub enum IndexKind {
+    BTree,
+    Hash,
+    Direct,
+}
+
+impl IndexKind {
+    pub(crate) fn from_algo(algo: &IndexAlgorithm) -> Self {
+        match algo {
+            IndexAlgorithm::BTree(_) => Self::BTree,
+            IndexAlgorithm::Hash(_) => Self::Hash,
+            IndexAlgorithm::Direct(_) => Self::Direct,
             // This is due to `#[non_exhaustive]`.
             _ => unreachable!(),
         }
     }
+}
+
+impl TypedIndex {
+    /// Returns a new index with keys being of `key_type` and the index possibly `is_unique`.
+    fn new(key_type: &AlgebraicType, kind: IndexKind, is_unique: bool) -> Self {
+        match kind {
+            IndexKind::BTree => Self::new_btree_index(key_type, is_unique),
+            IndexKind::Hash => Self::new_hash_index(key_type, is_unique),
+            IndexKind::Direct => Self::new_direct_index(key_type, is_unique)
+                .unwrap_or_else(|| Self::new_btree_index(key_type, is_unique)),
+        }
+    }
 
     /// Returns a new direct index with key being of `key_type`.
-    /// This asserts that `is_unique == true`.
-    fn new_direct_index(key_type: &AlgebraicType, _: &DirectAlgorithm, is_unique: bool) -> Self {
-        assert!(is_unique);
+    ///
+    /// If the parameters passed are not compatible with a direct index,
+    /// `None` is returned.
+    fn new_direct_index(key_type: &AlgebraicType, is_unique: bool) -> Option<Self> {
+        if !is_unique {
+            return None;
+        }
 
         use TypedIndex::*;
-        match key_type {
+        Some(match key_type {
             AlgebraicType::U8 => UniqueDirectU8(<_>::default()),
             AlgebraicType::U16 => UniqueDirectU16(<_>::default()),
             AlgebraicType::U32 => UniqueDirectU32(<_>::default()),
@@ -436,12 +459,12 @@ impl TypedIndex {
             AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
                 UniqueDirectSumTag(UniqueDirectFixedCapIndex::new(sum.variants.len()))
             }
-            _ => unreachable!("unexpected key type {key_type:?} for direct index"),
-        }
+            _ => return None,
+        })
     }
 
     /// Returns a new btree index with key being of `key_type`.
-    fn new_btree_index(key_type: &AlgebraicType, _: &BTreeAlgorithm, is_unique: bool) -> Self {
+    fn new_btree_index(key_type: &AlgebraicType, is_unique: bool) -> Self {
         use TypedIndex::*;
 
         // If the index is on a single column of a primitive type, string, or plain enum,
@@ -504,7 +527,7 @@ impl TypedIndex {
     }
 
     /// Returns a new hash index with key being of `key_type`.
-    fn new_hash_index(key_type: &AlgebraicType, _: &HashAlgorithm, is_unique: bool) -> Self {
+    fn new_hash_index(key_type: &AlgebraicType, is_unique: bool) -> Self {
         use TypedIndex::*;
 
         // If the index is on a single column of a primitive type, string, or plain enum,
@@ -1199,12 +1222,12 @@ impl TableIndex {
     /// Returns a new possibly unique index, with `index_id` for a choice of indexing algorithm.
     pub fn new(
         row_type: &ProductType,
-        index_algo: &IndexAlgorithm,
+        indexed_columns: ColList,
+        index_kind: IndexKind,
         is_unique: bool,
     ) -> Result<Self, InvalidFieldError> {
-        let indexed_columns = index_algo.columns().to_owned();
         let key_type = row_type.project(&indexed_columns)?;
-        let typed_index = TypedIndex::new(&key_type, index_algo, is_unique);
+        let typed_index = TypedIndex::new(&key_type, index_kind, is_unique);
         Ok(Self {
             idx: typed_index,
             key_type,
@@ -1446,8 +1469,12 @@ mod test {
     use core::ops::Bound::*;
     use decorum::Total;
     use proptest::prelude::*;
-    use proptest::{collection::vec, test_runner::TestCaseResult};
+    use proptest::{
+        collection::{hash_set, vec},
+        test_runner::TestCaseResult,
+    };
     use spacetimedb_data_structures::map::HashMap;
+    use spacetimedb_lib::ProductTypeElement;
     use spacetimedb_primitives::ColId;
     use spacetimedb_sats::proptest::{generate_algebraic_value, generate_primitive_algebraic_type};
     use spacetimedb_sats::{
@@ -1455,7 +1482,6 @@ mod test {
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
-    use spacetimedb_schema::def::BTreeAlgorithm;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
@@ -1472,9 +1498,15 @@ mod test {
         })
     }
 
-    fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool) -> TableIndex {
-        let algo = BTreeAlgorithm { columns: cols.clone() }.into();
-        TableIndex::new(row_type, &algo, is_unique).unwrap()
+    impl IndexKind {
+        /// Returns a strategy generating a ranged index kind.
+        fn gen_for_ranged() -> impl Strategy<Value = Self> {
+            any::<bool>().prop_map(|is_direct| if is_direct { Self::Direct } else { Self::BTree })
+        }
+    }
+
+    fn new_index(row_type: &ProductType, cols: &ColList, is_unique: bool, kind: IndexKind) -> TableIndex {
+        TableIndex::new(row_type, cols.clone(), kind, is_unique).unwrap()
     }
 
     /// Extracts from `row` the relevant column values according to what columns are indexed.
@@ -1528,40 +1560,78 @@ mod test {
     proptest! {
         #![proptest_config(ProptestConfig { max_shrink_iters: 0x10000000, ..Default::default() })]
         #[test]
-        fn remove_nonexistent_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
-            let mut index = new_index(&ty, &cols, is_unique);
+        fn remove_nonexistent_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
+            let mut index = new_index(&ty, &cols, is_unique, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             prop_assert_eq!(index.delete(row_ref).unwrap(), false);
             prop_assert!(index.idx.is_empty());
+            prop_assert_eq!(index.num_keys(), 0);
+            prop_assert_eq!(index.num_key_bytes(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
         }
 
         #[test]
-        fn insert_delete_noop(((ty, cols, pv), is_unique) in (gen_row_and_cols(), any::<bool>())) {
-            let mut index = new_index(&ty, &cols, is_unique);
+        fn insert_delete_noop((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind, is_unique: bool) {
+            let mut index = new_index(&ty, &cols, is_unique, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
+            prop_assert_eq!(index.num_keys(), 0);
             prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+            prop_assert_eq!(index.num_keys(), 1);
             prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
             prop_assert_eq!(index.delete(row_ref).unwrap(), true);
+            prop_assert_eq!(index.num_keys(), 0);
             prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
         }
 
         #[test]
-        fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols()) {
-            let mut index = new_index(&ty, &cols, true);
+        fn non_unique_allows_key_twice(
+            (ty, cols, key) in gen_row_and_cols(),
+            kind: IndexKind,
+            vals in hash_set(any::<i32>(), 1..10)
+        ) {
+            // Add a field to `ty` so we can use the same key more than once.
+            let mut ty = Vec::from(ty.elements);
+            ty.push(ProductTypeElement::new_named(AlgebraicType::I32, "extra"));
+            let ty = ProductType::from(ty.into_boxed_slice());
+
+            let mut index = new_index(&ty, &cols, false, kind);
+            let mut table = table(ty);
+            let pool = PagePool::new_for_test();
+            let mut blob_store = HashMapBlobStore::default();
+
+            let num_vals = vals.len();
+            for val in vals {
+                let mut key = Vec::from(key.clone().elements);
+                key.push(val.into());
+                let key = ProductValue::from(key);
+
+                let row_ref = table.insert(&pool, &mut blob_store, &key).unwrap().1;
+
+                // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
+                prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
+            }
+
+            assert_eq!(index.num_keys(), 1);
+            assert_eq!(index.num_rows() as usize, num_vals);
+        }
+
+        #[test]
+        fn insert_again_violates_unique_constraint((ty, cols, pv) in gen_row_and_cols(), kind: IndexKind) {
+            let mut index = new_index(&ty, &cols, true, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
@@ -1581,6 +1651,7 @@ mod test {
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
 
             // Inserting again would be a problem.
+            prop_assert_eq!(index.num_keys(), 1);
             prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
@@ -1589,15 +1660,17 @@ mod test {
             );
             // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Err(row_ref.pointer()));
+            prop_assert_eq!(index.num_keys(), 1);
+            prop_assert_eq!(index.num_rows(), 1);
         }
 
         #[test]
-        fn seek_various_ranges(needle in 1..u64::MAX) {
+        fn seek_various_ranges(needle in 1..u64::MAX, is_unique: bool, kind in IndexKind::gen_for_ranged()) {
             use AlgebraicValue::U64 as V;
 
             let cols = 0.into();
             let ty = ProductType::from_iter([AlgebraicType::U64]);
-            let mut index = new_index(&ty, &cols, true);
+            let mut index = new_index(&ty, &cols, is_unique, kind);
             let mut table = table(ty);
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
@@ -1616,6 +1689,10 @@ mod test {
                 // SAFETY: `row_ref` has the same type as was passed in when constructing `index`.
                 prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
             }
+
+            assert_eq!(index.num_keys(), 3);
+            assert_eq!(index.num_rows(), 3);
+            assert_eq!(index.num_key_bytes() as usize, 3 * size_of::<u64>());
 
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
                 check_seek(index.seek_range(&range).unwrap().collect(), val_to_ptr, expect)
@@ -1685,14 +1762,14 @@ mod test {
         }
 
         #[test]
-        fn empty_range_scans_dont_panic(((ty, val), is_unique) in (gen_primitive_ty_and_val(), any::<bool>())) {
+        fn empty_range_scans_dont_panic((ty, val) in gen_primitive_ty_and_val(), is_unique: bool, kind in IndexKind::gen_for_ranged()) {
             let succ = successor_of_primitive(&val);
             prop_assume!(succ.is_some());
             let succ = succ.unwrap();
 
             // Construct the index.
             let row_ty = ProductType::from([ty.clone()]);
-            let mut index = new_index(&row_ty, &[0].into(), is_unique);
+            let mut index = new_index(&row_ty, &[0].into(), is_unique, kind);
 
             // Construct the table and add `val` as a row.
             let mut table = table(row_ty);
@@ -1702,7 +1779,12 @@ mod test {
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
 
             // Add the row to the index.
+            assert_eq!(index.num_keys(), 0);
+            assert_eq!(index.num_rows(), 0);
+            assert_eq!(index.num_key_bytes(), 0);
             unsafe { index.check_and_insert(row_ref).unwrap(); }
+            assert_eq!(index.num_keys(), 1);
+            assert_eq!(index.num_rows(), 1);
 
             // Seek the empty ranges.
             let rows = index.seek_range(&(&succ..&val)).unwrap().collect::<Vec<_>>();
