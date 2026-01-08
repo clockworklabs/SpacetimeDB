@@ -161,7 +161,7 @@ SPACETIMEDB_INIT(init) {
 // View: my_player - Returns the player for the caller
 SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
     auto player_opt = ctx.db[player_identity].find(ctx.sender);
-    return Ok(player_opt);
+    return player_opt;
 }
 
 // View: my_player_and_level - Returns player with level joined
@@ -169,7 +169,7 @@ SPACETIMEDB_VIEW(std::optional<PlayerAndLevel>, my_player_and_level, Public, Vie
     // Find the caller's player
     auto player_opt = ctx.db[player_identity].find(ctx.sender);
     if (!player_opt.has_value()) {
-        return Ok(std::optional<PlayerAndLevel>());
+        return std::optional<PlayerAndLevel>();
     }
     
     Player p = player_opt.value();
@@ -177,7 +177,7 @@ SPACETIMEDB_VIEW(std::optional<PlayerAndLevel>, my_player_and_level, Public, Vie
     // Find the player's level
     auto level_opt = ctx.db[player_level_entity_id].find(p.entity_id);
     if (!level_opt.has_value()) {
-        return Ok(std::optional<PlayerAndLevel>());
+        return std::optional<PlayerAndLevel>();
     }
     
     // Combine into result
@@ -187,7 +187,7 @@ SPACETIMEDB_VIEW(std::optional<PlayerAndLevel>, my_player_and_level, Public, Vie
         level_opt->level
     };
     
-    return Ok(std::optional<PlayerAndLevel>(result));
+    return std::optional<PlayerAndLevel>(result);
 }
 
 // View: players_at_level_0 - Returns all players at level 0 (anonymous)
@@ -204,7 +204,7 @@ SPACETIMEDB_VIEW(std::vector<Player>, players_at_level_0, Public, AnonymousViewC
         }
     }
     
-    return Ok(results);
+    return results;
 }
 
 // View: nearby_players - Returns players within 5 units
@@ -214,13 +214,13 @@ SPACETIMEDB_VIEW(std::vector<PlayerLocation>, nearby_players, Public, ViewContex
     // Find the caller's player
     auto my_player_opt = ctx.db[player_identity].find(ctx.sender);
     if (!my_player_opt.has_value()) {
-        return Ok(results); // No player, return empty
+        return results; // No player, return empty
     }
     
     // Find the caller's location
     auto my_loc_opt = ctx.db[player_location_entity_id].find(my_player_opt->entity_id);
     if (!my_loc_opt.has_value()) {
-        return Ok(results); // No location, return empty
+        return results; // No location, return empty
     }
     
     PlayerLocation my_loc = my_loc_opt.value();
@@ -243,7 +243,7 @@ SPACETIMEDB_VIEW(std::vector<PlayerLocation>, nearby_players, Public, ViewContex
         }
     }
     
-    return Ok(results);
+    return results;
 }
 
 // =============================================================================
@@ -251,61 +251,41 @@ SPACETIMEDB_VIEW(std::vector<PlayerLocation>, nearby_players, Public, ViewContex
 // =============================================================================
 
 SPACETIMEDB_REDUCER(test_my_player, ReducerContext ctx) {
-    auto result = my_player(ViewContext{ctx.sender});
-    if (result.is_ok()) {
-        auto player_opt = result.value();
-        if (player_opt.has_value()) {
-            LOG_INFO("my_player found: entity_id=" + std::to_string(player_opt->entity_id));
-        } else {
-            LOG_INFO("my_player returned None");
-        }
+    auto player_opt = my_player(ViewContext{ctx.sender});
+    if (player_opt.has_value()) {
+        LOG_INFO("my_player found: entity_id=" + std::to_string(player_opt->entity_id));
     } else {
-        LOG_ERROR("my_player failed: " + result.error());
+        LOG_INFO("my_player returned None");
     }
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_my_player_and_level, ReducerContext ctx) {
-    auto result = my_player_and_level(ViewContext{ctx.sender});
-    if (result.is_ok()) {
-        auto data_opt = result.value();
-        if (data_opt.has_value()) {
-            LOG_INFO("my_player_and_level found: entity_id=" + std::to_string(data_opt->entity_id) + 
-                     " level=" + std::to_string(data_opt->level));
-        } else {
-            LOG_INFO("my_player_and_level returned None");
-        }
+    auto data_opt = my_player_and_level(ViewContext{ctx.sender});
+    if (data_opt.has_value()) {
+        LOG_INFO("my_player_and_level found: entity_id=" + std::to_string(data_opt->entity_id) + 
+                 " level=" + std::to_string(data_opt->level));
     } else {
-        LOG_ERROR("my_player_and_level failed: " + result.error());
+        LOG_INFO("my_player_and_level returned None");
     }
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_players_at_level_0, ReducerContext ctx) {
-    auto result = players_at_level_0(AnonymousViewContext{});
-    if (result.is_ok()) {
-        auto players = result.value();
-        LOG_INFO("players_at_level_0 found " + std::to_string(players.size()) + " players");
-        for (const auto& p : players) {
-            LOG_INFO("  - entity_id=" + std::to_string(p.entity_id));
-        }
-    } else {
-        LOG_ERROR("players_at_level_0 failed: " + result.error());
+    auto players = players_at_level_0(AnonymousViewContext{});
+    LOG_INFO("players_at_level_0 found " + std::to_string(players.size()) + " players");
+    for (const auto& p : players) {
+        LOG_INFO("  - entity_id=" + std::to_string(p.entity_id));
     }
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_nearby_players, ReducerContext ctx) {
-    auto result = nearby_players(ViewContext{ctx.sender});
-    if (result.is_ok()) {
-        auto locations = result.value();
-        LOG_INFO("nearby_players found " + std::to_string(locations.size()) + " nearby players");
-        for (const auto& loc : locations) {
-            LOG_INFO("  - entity_id=" + std::to_string(loc.entity_id) + 
-                     " at (" + std::to_string(loc.x) + ", " + std::to_string(loc.y) + ")");
-        }
-    } else {
-        LOG_ERROR("nearby_players failed: " + result.error());
+    auto locations = nearby_players(ViewContext{ctx.sender});
+    LOG_INFO("nearby_players found " + std::to_string(locations.size()) + " nearby players");
+    for (const auto& loc : locations) {
+        LOG_INFO("  - entity_id=" + std::to_string(loc.entity_id) + 
+                 " at (" + std::to_string(loc.x) + ", " + std::to_string(loc.y) + ")");
     }
     return Ok();
 }

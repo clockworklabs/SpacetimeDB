@@ -203,6 +203,16 @@ public:
         BytesSink result_sink
     );
     
+    // Procedure invocation for FFI
+    static int16_t __call_procedure__(
+        uint32_t id,
+        uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
+        uint64_t timestamp_microseconds,
+        uint64_t conn_id_0, uint64_t conn_id_1,
+        BytesSource args_source,
+        BytesSink result_sink
+    );
+    
     // Internal registration methods (inline to avoid linking issues)
     template<typename T>
     static void RegisterTableInternal(const char* name, bool is_public) {

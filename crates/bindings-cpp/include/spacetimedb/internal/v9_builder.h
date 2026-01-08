@@ -29,12 +29,16 @@
 #include "field_registration.h"  // For get_table_descriptors
 #include "v9_type_registration.h"  // For getV9TypeRegistration
 #include "../reducer_error.h"  // For Outcome
+#include "buffer_pool.h"  // For IterBuf
 
 namespace SpacetimeDb {
 
 // Forward declarations for view context types (defined in view_context.h)
 struct ViewContext;
 struct AnonymousViewContext;
+
+// Forward declaration for procedure context type (defined in procedure_context.h)
+struct ProcedureContext;
 
 // Forward declare fail_reducer from reducer_error.h for use in templates
 void fail_reducer(std::string message);
@@ -55,6 +59,13 @@ void RegisterAnonymousViewHandler(const std::string& name,
 // Get the number of registered view handlers
 size_t GetViewHandlerCount();
 size_t GetAnonymousViewHandlerCount();
+
+// Forward declare procedure handler registration function from Module.cpp
+void RegisterProcedureHandler(const std::string& name,
+                             std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler);
+
+// Get the number of registered procedure handlers
+size_t GetProcedureHandlerCount();
 
 // Helper to consume bytes from BytesSource (declared in Module.cpp)
 std::vector<uint8_t> ConsumeBytes(BytesSource source);
@@ -203,6 +214,23 @@ public:
     void RegisterView(const std::string& view_name, Func func,
                      bool is_public,
                      const std::vector<std::string>& param_names = {});
+    
+    /**
+     * Register a procedure function
+     * 
+     * Procedures can return arbitrary values and perform computations.
+     * 
+     * Procedures are always public (no access control).
+     * 
+     * @tparam Func The procedure function type
+     * @param procedure_name The name of the procedure
+     * @param func The procedure function pointer
+     * @param param_names The names of parameters
+     */
+    template<typename Func>
+    void RegisterProcedure(const std::string& procedure_name,
+                          Func func,
+                          const std::vector<std::string>& param_names = {});
     
     /**
      * Register a schedule for a table to automatically call a reducer
@@ -865,9 +893,8 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
         using ContextType = std::remove_cv_t<std::remove_reference_t<
             typename traits::template arg_t<0>>>;
         
-        // Extract return type from Outcome<T>
-        using OutcomeType = typename traits::result_type;
-        using ReturnType = typename outcome_inner_type<OutcomeType>::type;
+        // Extract return type
+        using ReturnType = typename traits::result_type;
         
         // Build the AlgebraicType for the return type
         auto& type_reg = getV9TypeRegistration();
@@ -916,21 +943,16 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
                     // }, args);
                     (void)args_source;
                     
-                    // Call the view function
+                    // Call the view function - returns raw type directly
                     auto result = func(ctx);
                     
-                    // Handle errors
-                    if (result.is_err()) {
-                        // Return empty vector on error (or we could throw)
-                        fprintf(stderr, "View error: %s\n", result.error().c_str());
-                        return std::vector<uint8_t>();
-                    }
-                    
-                    // Serialize the result
-                    std::vector<uint8_t> serialized;
-                    bsatn::Writer writer(serialized);
-                    bsatn::serialize(writer, result.value());
-                    return serialized;
+                    // Serialize using pooled buffer
+                    IterBuf buf = IterBuf::take();
+                    {
+                        bsatn::Writer writer(buf.get());
+                        bsatn::serialize(writer, result);
+                    }  // Destroy Writer before releasing buffer
+                    return buf.release();
                 };
             
             RegisterViewHandler(view_name, handler);
@@ -957,21 +979,16 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
                     // For now, views don't have parameters (args_source is unused)
                     (void)args_source;
                     
-                    // Call the view function
+                    // Call the view function - returns raw type directly
                     auto result = func(ctx);
                     
-                    // Handle errors
-                    if (result.is_err()) {
-                        // Return empty vector on error (or we could throw)
-                        fprintf(stderr, "View error: %s\n", result.error().c_str());
-                        return std::vector<uint8_t>();
-                    }
-                    
-                    // Serialize the result
-                    std::vector<uint8_t> serialized;
-                    bsatn::Writer writer(serialized);
-                    bsatn::serialize(writer, result.value());
-                    return serialized;
+                    // Serialize using pooled buffer
+                    IterBuf buf = IterBuf::take();
+                    {
+                        bsatn::Writer writer(buf.get());
+                        bsatn::serialize(writer, result);
+                    }  // Destroy Writer before releasing buffer
+                    return buf.release();
                 };
             
             RegisterAnonymousViewHandler(view_name, handler);
@@ -996,6 +1013,129 @@ void V9Builder::RegisterView(const std::string& view_name, Func func,
                 "First parameter of view must be ViewContext or AnonymousViewContext");
         }
     }
+}
+
+// Template implementation for RegisterProcedure
+template<typename Func>
+void V9Builder::RegisterProcedure(const std::string& procedure_name,
+                                  Func func,
+                                  const std::vector<std::string>& param_names) {
+    // Skip procedure registration if circular reference was detected
+    if (g_circular_ref_error) {
+        fprintf(stdout, "DEBUG: Skipping procedure '%s' registration due to circular reference error\n", 
+                procedure_name.c_str());
+        return;
+    }
+    
+    using traits = function_traits<Func>;
+    
+    // Validate that the procedure has at least one parameter (ProcedureContext)
+    static_assert(traits::arity > 0, 
+        "Procedure must have at least one parameter (ProcedureContext)");
+    
+    // Validate first parameter is ProcedureContext
+    if constexpr (traits::arity > 0) {
+        using FirstParamType = std::remove_cv_t<std::remove_reference_t<
+            typename traits::template arg_t<0>>>;
+        
+        static_assert(std::is_same_v<FirstParamType, ProcedureContext>,
+            "First parameter of procedure must be ProcedureContext");
+    }
+    
+    // Procedures return raw T (not Outcome<T>)
+    using ReturnType = typename traits::result_type;
+    
+    // Build the AlgebraicType for the return type
+    auto& type_reg = getV9TypeRegistration();
+    bsatn::AlgebraicType bsatn_return_type = bsatn::algebraic_type_of<ReturnType>::get();
+    AlgebraicType return_algebraic_type = type_reg.registerType(bsatn_return_type, "", &typeid(ReturnType));
+    
+    // Build parameter types (skip ProcedureContext at index 0)
+    std::vector<ProductTypeElement> param_elements;
+    if constexpr (traits::arity > 1) {
+        []<std::size_t... Is>(std::index_sequence<Is...>, 
+                              std::vector<ProductTypeElement>& elements,
+                              const std::vector<std::string>& names,
+                              V9TypeRegistration& type_reg_inner) {
+            (([]<std::size_t I>(std::vector<ProductTypeElement>& elems,
+                                const std::vector<std::string>& n,
+                                V9TypeRegistration& tr) {
+                if constexpr (I > 0) {  // Skip the first parameter (ProcedureContext)
+                    using param_type = typename traits::template arg_t<I>;
+                    bsatn::AlgebraicType param_bsatn = bsatn::algebraic_type_of<param_type>::get();
+                    AlgebraicType param_alg = tr.registerType(param_bsatn, "", &typeid(param_type));
+                    std::string param_name = (I-1 < n.size()) ? n[I-1] : ("arg" + std::to_string(I-1));
+                    elems.emplace_back(std::make_optional(param_name), std::move(param_alg));
+                }
+            }.template operator()<Is>(elements, names, type_reg_inner)), ...);
+        }(std::make_index_sequence<traits::arity>{}, param_elements, param_names, type_reg);
+    }
+    ProductType params(std::move(param_elements));
+    
+    // Create handler that wraps the procedure function
+    std::function<std::vector<uint8_t>(ProcedureContext&, BytesSource)> handler;
+    
+    if constexpr (traits::arity == 1) {
+        // Only ProcedureContext parameter
+        handler = [func](ProcedureContext& ctx, BytesSource) -> std::vector<uint8_t> {
+            // Procedures return raw T (not Outcome<T>)
+            // Use LOG_PANIC() for errors - procedures cannot return errors gracefully
+            auto result = func(ctx);
+            
+            // Serialize using pooled buffer
+            IterBuf buf = IterBuf::take();
+            {
+                bsatn::Writer writer(buf.get());
+                bsatn::serialize(writer, result);
+            }  // Destroy Writer before releasing buffer
+            return buf.release();
+        };
+    } else {
+        // Has additional parameters
+        handler = [func](ProcedureContext& ctx, BytesSource args_source) -> std::vector<uint8_t> {
+            std::vector<uint8_t> args_bytes = ConsumeBytes(args_source);
+            
+            return []<std::size_t... Js>(std::index_sequence<Js...>, 
+                                        Func fn,
+                                        ProcedureContext& ctx_inner,
+                                        const std::vector<uint8_t>& bytes) -> std::vector<uint8_t> {
+                if constexpr (sizeof...(Js) > 0) {
+                    bsatn::Reader reader(bytes.data(), bytes.size());
+                    auto args = std::make_tuple(
+                        bsatn::deserialize<typename traits::template arg_t<Js + 1>>(reader)...
+                    );
+                    
+                    // Procedures return raw T (not Outcome<T>)
+                    // Use LOG_PANIC() for errors - procedures cannot return errors gracefully
+                    auto result = std::apply([&ctx_inner, fn](auto&&... args) {
+                        return fn(ctx_inner, std::forward<decltype(args)>(args)...);
+                    }, args);
+                    
+                    // Serialize using pooled buffer
+                    IterBuf buf = IterBuf::take();
+                    {
+                        bsatn::Writer writer(buf.get());
+                        bsatn::serialize(writer, result);
+                    }  // Destroy Writer before releasing buffer
+                    return buf.release();
+                } else {
+                    return std::vector<uint8_t>();
+                }
+            }(std::make_index_sequence<traits::arity - 1>{}, func, ctx, args_bytes);
+        };
+    }
+    
+    RegisterProcedureHandler(procedure_name, handler);
+    
+    // Add procedure definition to module's misc_exports
+    RawProcedureDefV9 procedure_def{
+        procedure_name,
+        params,
+        return_algebraic_type
+    };
+    RawMiscModuleExportV9 export_entry;
+    export_entry.set<1>(procedure_def);  // Index 1 = Procedure variant (0=ColumnDefaultValue, 1=Procedure, 2=View)
+    GetV9Module().misc_exports.push_back(export_entry);
 }
 
 // Global V9Builder instance for the module
