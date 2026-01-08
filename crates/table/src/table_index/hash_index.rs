@@ -1,27 +1,34 @@
-use super::same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter};
-use super::{key_size::KeyBytesStorage, Index, KeySize, RangedIndex};
+use super::{
+    key_size::KeyBytesStorage,
+    same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter},
+    Index, KeySize,
+};
 use crate::indexes::RowPointer;
-use core::ops::RangeBounds;
+use core::hash::Hash;
+use spacetimedb_data_structures::map::hash_map::EntryRef;
 use spacetimedb_sats::memory_usage::MemoryUsage;
-use std::collections::btree_map::{BTreeMap, Range};
+
+// Faster than ahash, so we use this explicitly.
+use foldhash::fast::RandomState;
+use hashbrown::HashMap;
 
 /// A multi map that relates a `K` to a *set* of `RowPointer`s.
 #[derive(Debug, PartialEq, Eq)]
-pub struct MultiMap<K> {
-    /// The map is backed by a `BTreeMap` for relating keys to values.
+pub struct HashIndex<K: Eq + Hash> {
+    /// The map is backed by a `HashMap` for relating keys to values.
     ///
     /// A value set is stored as a `SmallVec`.
     /// This is an optimization over a `Vec<_>`
     /// as we allow a single element to be stored inline
     /// to improve performance for the common case of one element.
-    map: BTreeMap<K, SameKeyEntry>,
+    map: HashMap<K, SameKeyEntry, RandomState>,
     /// The memoized number of rows indexed in `self.map`.
     num_rows: usize,
     /// Storage for [`Index::num_key_bytes`].
     num_key_bytes: u64,
 }
 
-impl<K> Default for MultiMap<K> {
+impl<K: Eq + Hash> Default for HashIndex<K> {
     fn default() -> Self {
         Self {
             map: <_>::default(),
@@ -31,7 +38,7 @@ impl<K> Default for MultiMap<K> {
     }
 }
 
-impl<K: MemoryUsage> MemoryUsage for MultiMap<K> {
+impl<K: MemoryUsage + Eq + Hash> MemoryUsage for HashIndex<K> {
     fn heap_usage(&self) -> usize {
         let Self {
             map,
@@ -42,7 +49,7 @@ impl<K: MemoryUsage> MemoryUsage for MultiMap<K> {
     }
 }
 
-impl<K: Ord + KeySize> Index for MultiMap<K> {
+impl<K: KeySize + Eq + Hash> Index for HashIndex<K> {
     type Key = K;
 
     fn clone_structure(&self) -> Self {
@@ -65,19 +72,19 @@ impl<K: Ord + KeySize> Index for MultiMap<K> {
     ///
     /// Returns whether `key -> ptr` was present.
     fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
-        let Some(vset) = self.map.get_mut(key) else {
+        let EntryRef::Occupied(mut entry) = self.map.entry_ref(key) else {
             return false;
         };
 
-        let (deleted, is_empty) = vset.delete(ptr);
-
-        if is_empty {
-            self.map.remove(key);
-        }
+        let (deleted, is_empty) = entry.get_mut().delete(ptr);
 
         if deleted {
             self.num_rows -= 1;
             self.num_key_bytes.sub_from_key_bytes::<Self>(key);
+        }
+
+        if is_empty {
+            entry.remove();
         }
 
         deleted
@@ -96,10 +103,6 @@ impl<K: Ord + KeySize> Index for MultiMap<K> {
         self.map.len()
     }
 
-    fn num_key_bytes(&self) -> u64 {
-        self.num_key_bytes
-    }
-
     fn num_rows(&self) -> usize {
         self.num_rows
     }
@@ -115,47 +118,5 @@ impl<K: Ord + KeySize> Index for MultiMap<K> {
     fn can_merge(&self, _: &Self, _: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
         // `self.insert` always returns `Ok(_)`.
         Ok(())
-    }
-}
-
-impl<K: Ord + KeySize> RangedIndex for MultiMap<K> {
-    type RangeIter<'a>
-        = MultiMapRangeIter<'a, K>
-    where
-        Self: 'a;
-
-    /// Returns an iterator over the multimap that yields all the `V`s
-    /// of the `K`s that fall within the specified `range`.
-    fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
-        MultiMapRangeIter {
-            outer: self.map.range((range.start_bound(), range.end_bound())),
-            inner: SameKeyEntry::empty_iter(),
-        }
-    }
-}
-
-/// An iterator over values in a [`MultiMap`] where the keys are in a certain range.
-#[derive(Clone)]
-pub struct MultiMapRangeIter<'a, K> {
-    /// The outer iterator seeking for matching keys in the range.
-    outer: Range<'a, K, SameKeyEntry>,
-    /// The inner iterator for the value set for a found key.
-    inner: SameKeyEntryIter<'a>,
-}
-
-impl<K> Iterator for MultiMapRangeIter<'_, K> {
-    type Item = RowPointer;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // While the inner iterator has elements, yield them.
-            if let Some(val) = self.inner.next() {
-                return Some(val);
-            }
-            // Advance and get a new inner, if possible, or quit.
-            // We'll come back and yield elements from it in the next iteration.
-            let inner = self.outer.next().map(|(_, i)| i)?;
-            self.inner = inner.iter();
-        }
     }
 }

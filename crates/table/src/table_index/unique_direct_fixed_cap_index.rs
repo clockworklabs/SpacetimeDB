@@ -133,7 +133,7 @@ impl RangedIndex for UniqueDirectFixedCapIndex {
 }
 
 /// An iterator over a range of keys in a [`UniqueDirectFixedCapIndex`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UniqueDirectFixedCapIndexRangeIter<'a> {
     iter: Iter<'a, RowPointer>,
 }
