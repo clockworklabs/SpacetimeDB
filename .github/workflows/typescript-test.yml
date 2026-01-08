@@ -133,9 +133,9 @@ jobs:
       #   run: |
       #     spacetime logs quickstart-chat
 
-      - name: Check that quickstart-chat builds
-        working-directory: crates/bindings-typescript/examples/quickstart-chat
-        run: pnpm build
+      - name: Check that everything builds
+        working-directory: crates/bindings-typescript
+        run: pnpm -r --filter "./**" run build
 
       # - name: Run quickstart-chat tests
       #   working-directory: examples/quickstart-chat

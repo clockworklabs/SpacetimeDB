@@ -158,8 +158,8 @@ importers:
   crates/bindings-typescript/examples/empty:
     dependencies:
       spacetimedb:
-        specifier: ^1.5.0
-        version: 1.6.2(react@19.2.0)(undici@6.21.3)
+        specifier: workspace:*
+        version: link:../..
     devDependencies:
       typescript:
         specifier: ~5.6.2
@@ -7962,17 +7962,6 @@ packages:
 
   space-separated-tokens@2.0.2:
     resolution: {integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==}
-
-  spacetimedb@1.6.2:
-    resolution: {integrity: sha512-XOdIgnTT1j2wZNiPdEIiv9uzhpnbqO0Rk/kOxVA9XhMMmrbtS3bXduBf1MzcaS/gJzXFK+Tf27j1HVa5SNbhLQ==}
-    peerDependencies:
-      react: ^18.0.0 || ^19.0.0-0 || ^19.0.0
-      undici: ^6.19.2
-    peerDependenciesMeta:
-      react:
-        optional: true
-      undici:
-        optional: true
 
   spdy-transport@3.0.0:
     resolution: {integrity: sha512-hsLVFE5SjA6TCisWeJXFKniGGOpBgMLmerfO2aCyCU5s7nJ/rpAepqmFifv/GCbSbueEeAJJnmSQ2rKC/g8Fcw==}
@@ -19163,15 +19152,6 @@ snapshots:
       whatwg-url: 7.1.0
 
   space-separated-tokens@2.0.2: {}
-
-  spacetimedb@1.6.2(react@19.2.0)(undici@6.21.3):
-    dependencies:
-      base64-js: 1.5.1
-      fast-text-encoding: 1.0.6
-      prettier: 3.6.2
-    optionalDependencies:
-      react: 19.2.0
-      undici: 6.21.3
 
   spdy-transport@3.0.0:
     dependencies:
