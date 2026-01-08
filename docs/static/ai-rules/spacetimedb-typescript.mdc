@@ -45,7 +45,6 @@ const [items, isLoading] = useTable(tables.item);
 
 ### ⛔ DO NOT:
 - **Invent hooks** like `useItems()`, `useData()` — use `useTable(tables.tableName)`
-- **Leave `<React.StrictMode>`** — it BREAKS WebSocket connections, remove it!
 - **Import from fake packages** — only `spacetimedb`, `spacetimedb/react`, `./module_bindings`
 
 ---
@@ -75,7 +74,6 @@ const [items, isLoading] = useTable(tables.item);
 |-------|-------|-------|
 | `@spacetimedb/sdk` | `spacetimedb` | 404 / missing subpath |
 | `conn.reducers.foo("val")` | `conn.reducers.foo({ param: "val" })` | Wrong reducer syntax |
-| `<React.StrictMode>` | **REMOVE IT** | WebSocket breaks |
 | Inline `connectionBuilder` | `useMemo(() => ..., [])` | Reconnects every render |
 | `const rows = useTable(table)` | `const [rows, isLoading] = useTable(table)` | Tuple destructuring |
 | Optimistic UI updates | Let subscriptions drive state | Desync issues |
@@ -333,15 +331,6 @@ conn.subscriptionBuilder().subscribe([
 
 ## 8) React Integration
 
-### Remove StrictMode (MANDATORY)
-```typescript
-// ❌ BREAKS WebSocket
-<React.StrictMode><App /></React.StrictMode>
-
-// ✅ Works
-<App />
-```
-
 ### Connection setup
 ```typescript
 // Store connection and identity globally
@@ -445,6 +434,5 @@ spacetime logs <module-name>
 1. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
 2. **Reducers are transactional** — they do not return data
 3. **Reducers must be deterministic** — no filesystem, network, timers, random
-4. **Remove `<React.StrictMode>`** — breaks WebSocket connections
-5. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
-6. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
+4. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
+5. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`
