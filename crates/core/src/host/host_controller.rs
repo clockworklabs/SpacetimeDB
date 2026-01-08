@@ -522,7 +522,7 @@ impl HostController {
                     info!("exiting replica {} of database {}", replica_id, info.database_identity);
                     module.exit().await;
                     let db = &module.replica_ctx().relational_db;
-                    db.shutdown().await?;
+                    db.shutdown().await;
                     let table_names = info.module_def.tables().map(|t| t.name.deref());
                     remove_database_gauges(&info.database_identity, table_names);
                     info!("replica {} of database {} exited", replica_id, info.database_identity);
@@ -864,7 +864,6 @@ impl Host {
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
-                &replica_dir,
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
@@ -873,24 +872,17 @@ impl Host {
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                // Open a read-only copy of the local durability to replay from.
-                let (history, _) = relational_db::local_durability(
-                    replica_dir.commit_log(),
-                    // No need to include a snapshot request channel here, 'cause we're only reading from this instance.
-                    None,
-                )
-                .await?;
+                // Replay from the local state.
+                let history = relational_db::local_history(&replica_dir).await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
                 // Loading a database from persistent storage involves heavy
                 // blocking I/O. `asyncify` to avoid blocking the async worker.
                 let (db, clients) = asyncify({
-                    let replica_dir = replica_dir.clone();
                     let database_identity = database.database_identity;
                     let owner_identity = database.owner_identity;
                     let page_pool = page_pool.clone();
                     move || {
                         RelationalDB::open(
-                            &replica_dir,
                             database_identity,
                             owner_identity,
                             history,
@@ -1016,7 +1008,6 @@ impl Host {
         let phony_replica_dir = ReplicaDir::from_path_unchecked(phony_replica_dir.path().to_owned());
 
         let (db, _connected_clients) = RelationalDB::open(
-            &phony_replica_dir,
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),

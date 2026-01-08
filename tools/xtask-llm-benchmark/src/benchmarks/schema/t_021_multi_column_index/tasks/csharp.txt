@@ -1,0 +1,18 @@
+﻿Write a SpacetimeDB backend module in C# that defines one table with a multi-column B-Tree index and seeds rows.
+
+TABLE
+- logs
+  - Struct: Log
+  - Fields:
+    - Id: int (primary key)
+    - UserId: int
+    - Day: int
+    - Message: string
+  - Indexes:
+    - by_user_day: btree(UserId, Day)
+
+REDUCERS
+- Seed: insert exactly these rows into logs
+  - (Id=1, UserId=7, Day=1, Message="a")
+  - (Id=2, UserId=7, Day=2, Message="b")
+  - (Id=3, UserId=9, Day=1, Message="c")

@@ -1,0 +1,15 @@
+﻿Write a SpacetimeDB backend module in Rust that defines a scheduled table and a scheduled reducer.
+
+TABLE
+- tick_timer
+  - Struct: TickTimer
+  - Fields:
+    - scheduled_id: u64 (primary key, auto-increment)
+    - scheduled_at: ScheduleAt
+  - Scheduling:
+    - reducer: tick
+    - column: scheduled_at
+
+REDUCERS
+- tick: scheduled reducer triggered by tick_timer
+- init: insert exactly one row into tick_timer that schedules a repeating interval of 50_000 microseconds
