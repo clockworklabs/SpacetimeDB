@@ -446,7 +446,7 @@ export const ProductType = {
     typespace?: TypespaceType
   ): Serializer<any> {
     let serializer = SERIALIZERS.get(ty);
-    if (serializer != null) return serializer;
+    if (serializer !== undefined) return serializer;
 
     if (isFixedSizeProduct(ty)) {
       const size = productSize(ty);
@@ -525,7 +525,7 @@ writer.offset += ${primitiveSizes[tag]};`
     }
 
     let deserializer = DESERIALIZERS.get(ty);
-    if (deserializer != null) return deserializer;
+    if (deserializer !== undefined) return deserializer;
 
     if (isFixedSizeProduct(ty)) {
       const body = `\
@@ -672,7 +672,7 @@ export const SumType = {
       };
     } else {
       let serializer = SERIALIZERS.get(ty);
-      if (serializer != null) return serializer;
+      if (serializer !== undefined) return serializer;
 
       const serializers: Record<string, Serializer<any>> = {};
 
@@ -777,7 +777,7 @@ ${ty.variants
       };
     } else {
       let deserializer = DESERIALIZERS.get(ty);
-      if (deserializer != null) return deserializer;
+      if (deserializer !== undefined) return deserializer;
       const deserializers: Record<string, Deserializer<any>> = {};
       deserializer = Function(
         'reader',
