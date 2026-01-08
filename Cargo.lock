@@ -7777,10 +7777,12 @@ name = "spacetimedb-durability"
 version = "1.11.1"
 dependencies = [
  "anyhow",
+ "futures",
  "itertools 0.12.1",
  "log",
  "scopeguard",
  "spacetimedb-commitlog",
+ "spacetimedb-fs-utils",
  "spacetimedb-paths",
  "spacetimedb-sats 1.11.1",
  "tempfile",
@@ -7828,6 +7830,7 @@ name = "spacetimedb-fs-utils"
 version = "1.11.1"
 dependencies = [
  "anyhow",
+ "fs2",
  "hex",
  "rand 0.9.2",
  "tempdir",
