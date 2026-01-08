@@ -106,7 +106,6 @@ error[E0599]: no method named `iter` found for reference `&test__ViewHandle` in 
    = note: the following traits define an item `iter`, perhaps you need to implement one of them:
            candidate #1: `bitflags::traits::Flags`
            candidate #2: `spacetimedb::Table`
-           candidate #3: `toml_edit::TableLike`
 
 error[E0599]: `&test__ViewHandle` is not an iterator
   --> tests/ui/views.rs:22:33
@@ -145,7 +144,6 @@ error[E0599]: no method named `insert` found for reference `&test__ViewHandle` i
            candidate #3: `ppv_lite86::types::Vec4`
            candidate #4: `similar::algorithms::DiffHook`
            candidate #5: `spacetimedb::Table`
-           candidate #6: `toml_edit::TableLike`
 
 error[E0599]: no method named `try_insert` found for reference `&test__ViewHandle` in the current scope
   --> tests/ui/views.rs:36:25
