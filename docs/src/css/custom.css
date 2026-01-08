@@ -151,19 +151,12 @@ h6 {
 }
 
 /** 
- * Note that in markdown heading sizes are downgraded by 1 level
- * relative to the style guide. 
- * i.e., markdown h1 uses h2 styles, markdown h2 uses h3 styles, etc.
+ * Note that in markdown heading sizes are downgraded by 2 levels
+ * relative to the style guide.
+ * i.e., markdown h1 uses h3 styles, markdown h2 uses h4 styles, etc.
  * Thus h6 is not styled here at all.
  */
 .markdown h1 {
-  font-size: var(--49px);
-  line-height: var(--56px);
-  font-weight: 400;
-  letter-spacing: calc(var(--49px) * -0.04);
-}
-
-.markdown h2 {
   font-size: var(--39px);
   line-height: var(--44px);
   font-weight: 400;
@@ -171,7 +164,7 @@ h6 {
   margin-top: 3rem;
 }
 
-.markdown h3 {
+.markdown h2 {
   font-size: var(--31px);
   line-height: var(--36px);
   font-weight: 400;
@@ -179,7 +172,7 @@ h6 {
   margin-top: 2rem;
 }
 
-.markdown h4 {
+.markdown h3 {
   font-size: var(--25px);
   line-height: var(--28px);
   font-weight: 500;
@@ -187,8 +180,16 @@ h6 {
   margin-top: 1.5rem;
 }
 
+.markdown h4 {
+  font-size: var(--21px);
+  line-height: var(--24px);
+  font-weight: 600;
+  letter-spacing: calc(var(--20px) * -0.04);
+  margin-top: 1.25rem;
+}
+
 .markdown h5 {
-  font-size: var(--20px);
+  font-size: var(--21px);
   line-height: var(--24px);
   font-weight: 600;
   letter-spacing: calc(var(--20px) * -0.04);

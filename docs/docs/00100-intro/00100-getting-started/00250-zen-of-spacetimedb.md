@@ -1,9 +1,7 @@
 ---
-title: Zen of SpacetimeDB
+title: The Zen of SpacetimeDB
 slug: /intro/zen
 ---
-
-# The Zen of SpacetimeDB
 
 SpacetimeDB is built on 5 core principles. As you embrace these simple principles, you will find **your troubles simply melt away**. These principles guide both how we develop SpacetimeDB and how you should think about building applications with it.
 
