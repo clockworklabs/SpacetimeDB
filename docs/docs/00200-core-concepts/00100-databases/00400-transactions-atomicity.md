@@ -68,32 +68,27 @@ You don't need to manually start or commit transactions in reducers - SpacetimeD
 When a reducer calls another reducer directly (not via scheduling), they execute in the **same transaction**:
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[reducer]
-pub fn parent_reducer(ctx: &ReducerContext) -> Result<(), String> {
-    ctx.db.table_a().insert(RowA { /* ... */ });
+```typescript
+spacetimedb.reducer('parent_reducer', (ctx) => {
+    TableA.insert({ /* ... */ });
     
     // This runs in the SAME transaction
-    child_reducer(ctx)?;
+    childReducer(ctx);
     
-    ctx.db.table_b().insert(RowB { /* ... */ });
+    TableB.insert({ /* ... */ });
     
     // All changes from both parent and child commit together
-    Ok(())
-}
+});
 
-#[reducer]
-pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
-    ctx.db.table_c().insert(RowC { /* ... */ });
+function childReducer(ctx) {
+    TableC.insert({ /* ... */ });
     
-    // If this returns Err, the parent's changes also roll back
-    if some_condition {
-        return Err("Child failed".to_string());
+    // If this throws, the parent's changes also roll back
+    if (someCondition) {
+        throw new Error('Child failed');
     }
-    
-    Ok(())
 }
 ```
 
@@ -128,27 +123,32 @@ public static void ChildReducer(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.reducer('parent_reducer', (ctx) => {
-    TableA.insert({ /* ... */ });
+```rust
+#[reducer]
+pub fn parent_reducer(ctx: &ReducerContext) -> Result<(), String> {
+    ctx.db.table_a().insert(RowA { /* ... */ });
     
     // This runs in the SAME transaction
-    childReducer(ctx);
+    child_reducer(ctx)?;
     
-    TableB.insert({ /* ... */ });
+    ctx.db.table_b().insert(RowB { /* ... */ });
     
     // All changes from both parent and child commit together
-});
+    Ok(())
+}
 
-function childReducer(ctx) {
-    TableC.insert({ /* ... */ });
+#[reducer]
+pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
+    ctx.db.table_c().insert(RowC { /* ... */ });
     
-    // If this throws, the parent's changes also roll back
-    if (someCondition) {
-        throw new Error('Child failed');
+    // If this returns Err, the parent's changes also roll back
+    if some_condition {
+        return Err("Child failed".to_string());
     }
+    
+    Ok(())
 }
 ```
 

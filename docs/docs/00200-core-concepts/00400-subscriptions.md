@@ -19,45 +19,6 @@ By using these interfaces, you can create efficient and responsive client applic
 ## SubscriptionBuilder
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-pub struct SubscriptionBuilder<M: SpacetimeModule> { /* private fields */ }
-
-impl<M: SpacetimeModule> SubscriptionBuilder<M> {
-    /// Register a callback that runs when the subscription has been applied.
-    /// This callback receives a context containing the current state of the subscription.
-    pub fn on_applied(mut self, callback: impl FnOnce(&M::SubscriptionEventContext) + Send + 'static);
-
-    /// Register a callback to run when the subscription fails.
-    ///
-    /// Note that this callback may run either when attempting to apply the subscription,
-    /// in which case [`Self::on_applied`] will never run,
-    /// or later during the subscription's lifetime if the module's interface changes,
-    /// in which case [`Self::on_applied`] may have already run.
-    pub fn on_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static);
-
-    /// Subscribe to a subset of the database via a set of SQL queries.
-    /// Returns a handle which you can use to monitor or drop the subscription later.
-    pub fn subscribe<Queries: IntoQueries>(self, query_sql: Queries) -> M::SubscriptionHandle;
-
-    /// Subscribe to all rows from all tables.
-    ///
-    /// This method is intended as a convenience
-    /// for applications where client-side memory use and network bandwidth are not concerns.
-    /// Applications where these resources are a constraint
-    /// should register more precise queries via [`Self::subscribe`]
-    /// in order to replicate only the subset of data which the client needs to function.
-    pub fn subscribe_to_all_tables(self);
-}
-
-/// Types which specify a list of query strings.
-pub trait IntoQueries {
-    fn into_queries(self) -> Box<[Box<str>]>;
-}
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -110,6 +71,45 @@ public sealed class SubscriptionBuilder
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+pub struct SubscriptionBuilder<M: SpacetimeModule> { /* private fields */ }
+
+impl<M: SpacetimeModule> SubscriptionBuilder<M> {
+    /// Register a callback that runs when the subscription has been applied.
+    /// This callback receives a context containing the current state of the subscription.
+    pub fn on_applied(mut self, callback: impl FnOnce(&M::SubscriptionEventContext) + Send + 'static);
+
+    /// Register a callback to run when the subscription fails.
+    ///
+    /// Note that this callback may run either when attempting to apply the subscription,
+    /// in which case [`Self::on_applied`] will never run,
+    /// or later during the subscription's lifetime if the module's interface changes,
+    /// in which case [`Self::on_applied`] may have already run.
+    pub fn on_error(mut self, callback: impl FnOnce(&M::ErrorContext, crate::Error) + Send + 'static);
+
+    /// Subscribe to a subset of the database via a set of SQL queries.
+    /// Returns a handle which you can use to monitor or drop the subscription later.
+    pub fn subscribe<Queries: IntoQueries>(self, query_sql: Queries) -> M::SubscriptionHandle;
+
+    /// Subscribe to all rows from all tables.
+    ///
+    /// This method is intended as a convenience
+    /// for applications where client-side memory use and network bandwidth are not concerns.
+    /// Applications where these resources are a constraint
+    /// should register more precise queries via [`Self::subscribe`]
+    /// in order to replicate only the subset of data which the client needs to function.
+    pub fn subscribe_to_all_tables(self);
+}
+
+/// Types which specify a list of query strings.
+pub trait IntoQueries {
+    fn into_queries(self) -> Box<[Box<str>]>;
+}
+```
+
+</TabItem>
 </Tabs>
 
 A `SubscriptionBuilder` provides an interface for registering subscription queries with a database.
@@ -120,21 +120,6 @@ A client can react to these updates by registering row callbacks for the appropr
 ### Example Usage
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-// Establish a database connection
-let conn: DbConnection = connect_to_db();
-
-// Register a subscription with the database
-let subscription_handle = conn
-    .subscription_builder()
-    .on_applied(|ctx| { /* handle applied state */ })
-    .on_error(|error_ctx, error| { /* handle error */ })
-    .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -150,39 +135,26 @@ var userSubscription = conn
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// Establish a database connection
+let conn: DbConnection = connect_to_db();
+
+// Register a subscription with the database
+let subscription_handle = conn
+    .subscription_builder()
+    .on_applied(|ctx| { /* handle applied state */ })
+    .on_error(|error_ctx, error| { /* handle error */ })
+    .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+```
+
+</TabItem>
 </Tabs>
 
 ## SubscriptionHandle
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-pub trait SubscriptionHandle: InModule + Clone + Send + 'static
-where
-    Self::Module: SpacetimeModule<SubscriptionHandle = Self>,
-{
-    /// Returns `true` if the subscription has been ended.
-    /// That is, if it has been unsubscribed or terminated due to an error.
-    fn is_ended(&self) -> bool;
-
-    /// Returns `true` if the subscription is currently active.
-    fn is_active(&self) -> bool;
-
-    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
-    /// then run `on_end` when its rows are removed from the client cache.
-    /// Returns an error if the subscription is already ended,
-    /// or if unsubscribe has already been called.
-    fn unsubscribe_then(self, on_end: OnEndedCallback<Self::Module>) -> crate::Result<()>;
-
-    /// Unsubscribe from the query controlled by this `SubscriptionHandle`.
-    /// Returns an error if the subscription is already ended,
-    /// or if unsubscribe has already been called.
-    fn unsubscribe(self) -> crate::Result<()>;
-}
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -216,6 +188,34 @@ where
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+pub trait SubscriptionHandle: InModule + Clone + Send + 'static
+where
+    Self::Module: SpacetimeModule<SubscriptionHandle = Self>,
+{
+    /// Returns `true` if the subscription has been ended.
+    /// That is, if it has been unsubscribed or terminated due to an error.
+    fn is_ended(&self) -> bool;
+
+    /// Returns `true` if the subscription is currently active.
+    fn is_active(&self) -> bool;
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`,
+    /// then run `on_end` when its rows are removed from the client cache.
+    /// Returns an error if the subscription is already ended,
+    /// or if unsubscribe has already been called.
+    fn unsubscribe_then(self, on_end: OnEndedCallback<Self::Module>) -> crate::Result<()>;
+
+    /// Unsubscribe from the query controlled by this `SubscriptionHandle`.
+    /// Returns an error if the subscription is already ended,
+    /// or if unsubscribe has already been called.
+    fn unsubscribe(self) -> crate::Result<()>;
+}
+```
+
+</TabItem>
 </Tabs>
 
 When you register a subscription, you receive a `SubscriptionHandle`.
@@ -227,45 +227,6 @@ clients can dynamically subscribe to different subsets of the database as their 
 ### Example Usage
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-Consider a game client that displays shop items and discounts based on a player's level.
-You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
-
-```rust
-let conn: DbConnection = connect_to_db();
-
-let shop_items_subscription = conn
-    .subscription_builder()
-    .on_applied(|ctx| { /* handle applied state */ })
-    .on_error(|error_ctx, error| { /* handle error */ })
-    .subscribe([
-        "SELECT * FROM shop_items WHERE required_level <= 5",
-        "SELECT * FROM shop_discounts WHERE required_level <= 5",
-    ]);
-```
-
-Later, when the player reaches level 6 and new items become available,
-you can subscribe to the new queries and unsubscribe from the old ones:
-
-```rust
-let new_shop_items_subscription = conn
-    .subscription_builder()
-    .on_applied(|ctx| { /* handle applied state */ })
-    .on_error(|error_ctx, error| { /* handle error */ })
-    .subscribe([
-        "SELECT * FROM shop_items WHERE required_level <= 6",
-        "SELECT * FROM shop_discounts WHERE required_level <= 6",
-    ]);
-
-if shop_items_subscription.is_active() {
-    shop_items_subscription
-        .unsubscribe()
-        .expect("Unsubscribing from shop_items failed");
-}
-```
-
-All other subscriptions continue to remain in effect.
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 Consider a game client that displays shop items and discounts based on a player's level.
@@ -305,6 +266,45 @@ if (shopItemsSubscription.IsActive)
 
 All other subscriptions continue to remain in effect.
 </TabItem>
+<TabItem value="rust" label="Rust">
+Consider a game client that displays shop items and discounts based on a player's level.
+You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
+
+```rust
+let conn: DbConnection = connect_to_db();
+
+let shop_items_subscription = conn
+    .subscription_builder()
+    .on_applied(|ctx| { /* handle applied state */ })
+    .on_error(|error_ctx, error| { /* handle error */ })
+    .subscribe([
+        "SELECT * FROM shop_items WHERE required_level <= 5",
+        "SELECT * FROM shop_discounts WHERE required_level <= 5",
+    ]);
+```
+
+Later, when the player reaches level 6 and new items become available,
+you can subscribe to the new queries and unsubscribe from the old ones:
+
+```rust
+let new_shop_items_subscription = conn
+    .subscription_builder()
+    .on_applied(|ctx| { /* handle applied state */ })
+    .on_error(|error_ctx, error| { /* handle error */ })
+    .subscribe([
+        "SELECT * FROM shop_items WHERE required_level <= 6",
+        "SELECT * FROM shop_discounts WHERE required_level <= 6",
+    ]);
+
+if shop_items_subscription.is_active() {
+    shop_items_subscription
+        .unsubscribe()
+        .expect("Unsubscribing from shop_items failed");
+}
+```
+
+All other subscriptions continue to remain in effect.
+</TabItem>
 </Tabs>
 
 ## Best Practices for Optimizing Server Compute and Reducing Serialization Overhead
@@ -329,30 +329,6 @@ This will improve throughput by reducing the amount of data transferred from the
 #### Example
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-let conn: DbConnection = connect_to_db();
-
-// Never need to unsubscribe from global subscriptions
-let global_subscriptions = conn
-    .subscription_builder()
-    .subscribe([
-        // Global messages the client should always display
-        "SELECT * FROM announcements",
-        // A description of rewards for in-game achievements
-        "SELECT * FROM badges",
-    ]);
-
-// May unsubscribe to shop_items as player advances
-let shop_subscription = conn
-    .subscription_builder()
-    .subscribe([
-        "SELECT * FROM shop_items WHERE required_level <= 5",
-    ]);
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -377,6 +353,30 @@ var shopSubscription = conn
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+let conn: DbConnection = connect_to_db();
+
+// Never need to unsubscribe from global subscriptions
+let global_subscriptions = conn
+    .subscription_builder()
+    .subscribe([
+        // Global messages the client should always display
+        "SELECT * FROM announcements",
+        // A description of rewards for in-game achievements
+        "SELECT * FROM badges",
+    ]);
+
+// May unsubscribe to shop_items as player advances
+let shop_subscription = conn
+    .subscription_builder()
+    .subscribe([
+        "SELECT * FROM shop_items WHERE required_level <= 5",
+    ]);
+```
+
+</TabItem>
 </Tabs>
 
 ### 3. Subscribe Before Unsubscribing
@@ -392,36 +392,6 @@ unsubscribing from it does not result in any server processing or data serializt
 #### Example
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-let conn: DbConnection = connect_to_db();
-
-// Initial subscription: player at level 5.
-let shop_subscription = conn
-    .subscription_builder()
-    .subscribe([
-        // For displaying the price of shop items in the player's currency of choice
-        "SELECT * FROM exchange_rates",
-        "SELECT * FROM shop_items WHERE required_level <= 5",
-    ]);
-
-// New subscription: player now at level 6, which overlaps with the previous query.
-let new_shop_subscription = conn
-    .subscription_builder()
-    .subscribe([
-        // For displaying the price of shop items in the player's currency of choice
-        "SELECT * FROM exchange_rates",
-        "SELECT * FROM shop_items WHERE required_level <= 6",
-    ]);
-
-// Unsubscribe from the old subscription once the new one is active.
-if shop_subscription.is_active() {
-    shop_subscription.unsubscribe();
-}
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -449,6 +419,36 @@ var newShopSubscription = conn
 if (shopSubscription.IsActive)
 {
     shopSubscription.Unsubscribe();
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+let conn: DbConnection = connect_to_db();
+
+// Initial subscription: player at level 5.
+let shop_subscription = conn
+    .subscription_builder()
+    .subscribe([
+        // For displaying the price of shop items in the player's currency of choice
+        "SELECT * FROM exchange_rates",
+        "SELECT * FROM shop_items WHERE required_level <= 5",
+    ]);
+
+// New subscription: player now at level 6, which overlaps with the previous query.
+let new_shop_subscription = conn
+    .subscription_builder()
+    .subscribe([
+        // For displaying the price of shop items in the player's currency of choice
+        "SELECT * FROM exchange_rates",
+        "SELECT * FROM shop_items WHERE required_level <= 6",
+    ]);
+
+// Unsubscribe from the old subscription once the new one is active.
+if shop_subscription.is_active() {
+    shop_subscription.unsubscribe();
 }
 ```
 

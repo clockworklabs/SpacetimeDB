@@ -16,30 +16,6 @@ SpacetimeDB supports a variety of column types optimized for performance.
 ### Primitive Types
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-| Type | Description |
-|------|-------------|
-| `bool` | Boolean value |
-| `String` | UTF-8 string |
-| `f32`, `f64` | Floating point numbers |
-| `i8` through `i128` | Signed integers |
-| `u8` through `u128` | Unsigned integers |
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-| Type | Description |
-|------|-------------|
-| `bool` | Boolean value |
-| `string` | UTF-8 string |
-| `float`, `double` | Floating point numbers |
-| `sbyte`, `short`, `int`, `long` | Signed integers (8-bit to 64-bit) |
-| `byte`, `ushort`, `uint`, `ulong` | Unsigned integers (8-bit to 64-bit) |
-| `SpacetimeDB.I128`, `SpacetimeDB.I256` | Signed 128-bit and 256-bit integers |
-| `SpacetimeDB.U128`, `SpacetimeDB.U256` | Unsigned 128-bit and 256-bit integers |
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 | Type | Returns | TypeScript Type | Description |
@@ -62,53 +38,35 @@ SpacetimeDB supports a variety of column types optimized for performance.
 | `t.u256()` | `U256Builder` | `bigint` | Unsigned 256-bit integer |
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+| Type | Description |
+|------|-------------|
+| `bool` | Boolean value |
+| `string` | UTF-8 string |
+| `float`, `double` | Floating point numbers |
+| `sbyte`, `short`, `int`, `long` | Signed integers (8-bit to 64-bit) |
+| `byte`, `ushort`, `uint`, `ulong` | Unsigned integers (8-bit to 64-bit) |
+| `SpacetimeDB.I128`, `SpacetimeDB.I256` | Signed 128-bit and 256-bit integers |
+| `SpacetimeDB.U128`, `SpacetimeDB.U256` | Unsigned 128-bit and 256-bit integers |
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+| Type | Description |
+|------|-------------|
+| `bool` | Boolean value |
+| `String` | UTF-8 string |
+| `f32`, `f64` | Floating point numbers |
+| `i8` through `i128` | Signed integers |
+| `u8` through `u128` | Unsigned integers |
+
+</TabItem>
 </Tabs>
 
 ### Special Types
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-**Structured Types**
-
-| Type | Description |
-|------|-------------|
-| `enum` with `#[derive(SpacetimeType)]` | Sum type/tagged union |
-| `Option<T>` | Optional value |
-| `Vec<T>` | Vector of elements |
-
-**Special Types**
-
-| Type | Description |
-|------|-------------|
-| `Identity` | Unique identity for authentication |
-| `ConnectionId` | Client connection identifier |
-| `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
-| `Duration` | Relative duration |
-| `ScheduleAt` | When a scheduled reducer should execute (either `Time(Timestamp)` or `Interval(Duration)`) |
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-**Structured Types**
-
-| Type | Description |
-|------|-------------|
-| `TaggedEnum<Variants>` | Tagged union/enum type for sum types |
-| `T?` | Nullable/optional value |
-| `List<T>` | List of elements |
-
-**Special Types**
-
-| Type | Description |
-|------|-------------|
-| `Identity` | Unique identity for authentication |
-| `ConnectionId` | Client connection identifier |
-| `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
-| `TimeDuration` | Relative duration in microseconds |
-| `ScheduleAt` | When a scheduled reducer should execute (either at a specific time or at repeating intervals) |
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 **Structured Types**
@@ -133,6 +91,48 @@ SpacetimeDB supports a variety of column types optimized for performance.
 | `t.scheduleAt()` | `ColumnBuilder<ScheduleAt, …>` | `ScheduleAt` | Special column type for scheduling reducer execution |
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+**Structured Types**
+
+| Type | Description |
+|------|-------------|
+| `TaggedEnum<Variants>` | Tagged union/enum type for sum types |
+| `T?` | Nullable/optional value |
+| `List<T>` | List of elements |
+
+**Special Types**
+
+| Type | Description |
+|------|-------------|
+| `Identity` | Unique identity for authentication |
+| `ConnectionId` | Client connection identifier |
+| `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
+| `TimeDuration` | Relative duration in microseconds |
+| `ScheduleAt` | When a scheduled reducer should execute (either at a specific time or at repeating intervals) |
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+**Structured Types**
+
+| Type | Description |
+|------|-------------|
+| `enum` with `#[derive(SpacetimeType)]` | Sum type/tagged union |
+| `Option<T>` | Optional value |
+| `Vec<T>` | Vector of elements |
+
+**Special Types**
+
+| Type | Description |
+|------|-------------|
+| `Identity` | Unique identity for authentication |
+| `ConnectionId` | Client connection identifier |
+| `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
+| `Duration` | Relative duration |
+| `ScheduleAt` | When a scheduled reducer should execute (either `Time(Timestamp)` or `Interval(Duration)`) |
+
+</TabItem>
 </Tabs>
 
 ## Column Constraints
@@ -142,18 +142,17 @@ SpacetimeDB supports a variety of column types optimized for performance.
 Mark columns as unique to ensure only one row can exist with a given value.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::table(name = user, public)]
-pub struct User {
-    #[primary_key]
-    id: u32,
-    #[unique]
-    email: String,
-    #[unique]
-    username: String,
-}
+```typescript
+const user = table(
+  { name: 'user', public: true },
+  {
+    id: t.u32().primaryKey(),
+    email: t.string().unique(),
+    username: t.string().unique(),
+  }
+);
 ```
 
 </TabItem>
@@ -175,17 +174,18 @@ public partial struct User
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const user = table(
-  { name: 'user', public: true },
-  {
-    id: t.u32().primaryKey(),
-    email: t.string().unique(),
-    username: t.string().unique(),
-  }
-);
+```rust
+#[spacetimedb::table(name = user, public)]
+pub struct User {
+    #[primary_key]
+    id: u32,
+    #[unique]
+    email: String,
+    #[unique]
+    username: String,
+}
 ```
 
 </TabItem>
@@ -202,23 +202,23 @@ Only one column can be marked as a primary key, but multiple columns can be mark
 Use auto-increment for automatically increasing integer identifiers. Inserting a row with a zero value causes the database to assign a new unique value.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::table(name = post, public)]
-pub struct Post {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    title: String,
-}
+```typescript
+const post = table(
+  { name: 'post', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    title: t.string(),
+  }
+);
 
-#[spacetimedb::reducer]
-fn add_post(ctx: &ReducerContext, title: String) -> Result<(), String> {
-    let inserted = ctx.db.post().insert(Post { id: 0, title })?;
-    // inserted.id now contains the assigned auto-incremented value
-    Ok(())
-}
+const spacetimedb = schema(post);
+
+spacetimedb.reducer('add_post', { title: t.string() }, (ctx, { title }) => {
+  const inserted = ctx.db.post.insert({ id: 0, title });
+  // inserted.id now contains the assigned auto-incremented value
+});
 ```
 
 </TabItem>
@@ -243,23 +243,23 @@ public static void AddPost(ReducerContext ctx, string title)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const post = table(
-  { name: 'post', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    title: t.string(),
-  }
-);
+```rust
+#[spacetimedb::table(name = post, public)]
+pub struct Post {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    title: String,
+}
 
-const spacetimedb = schema(post);
-
-spacetimedb.reducer('add_post', { title: t.string() }, (ctx, { title }) => {
-  const inserted = ctx.db.post.insert({ id: 0, title });
-  // inserted.id now contains the assigned auto-incremented value
-});
+#[spacetimedb::reducer]
+fn add_post(ctx: &ReducerContext, title: String) -> Result<(), String> {
+    let inserted = ctx.db.post().insert(Post { id: 0, title })?;
+    // inserted.id now contains the assigned auto-incremented value
+    Ok(())
+}
 ```
 
 </TabItem>

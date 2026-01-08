@@ -47,6 +47,13 @@ DbConnection.builder().withUri('https://maincloud.spacetimedb.com');
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+DbConnection.Builder()
+    .WithUri("https://maincloud.spacetimedb.com")
+```
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -54,13 +61,6 @@ DbConnection::builder()
     .with_uri("https://maincloud.spacetimedb.com")
 ```
 
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-DbConnection.Builder()
-    .WithUri("https://maincloud.spacetimedb.com")
-```
 </TabItem>
 
 </Tabs>

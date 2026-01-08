@@ -36,12 +36,11 @@ The logic is contained within these three categories of server-side functions: r
 SpacetimeDB modules can be written in multiple languages:
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-Rust is fully supported for server modules. Rust is a great choice for performance-critical applications.
+TypeScript is fully supported for server modules. TypeScript is ideal for developers familiar with JavaScript/Node.js.
 
-- The Rust Module SDK docs are [hosted on docs.rs](https://docs.rs/spacetimedb/latest/spacetimedb/).
-- [Rust Quickstart Guide](/quickstarts/rust)
+- [TypeScript Quickstart Guide](/quickstarts/typescript)
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -51,11 +50,12 @@ C# is fully supported for server modules. C# is an excellent choice for develope
 - [C# Quickstart Guide](/quickstarts/c-sharp)
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-TypeScript is fully supported for server modules. TypeScript is ideal for developers familiar with JavaScript/Node.js.
+Rust is fully supported for server modules. Rust is a great choice for performance-critical applications.
 
-- [TypeScript Quickstart Guide](/quickstarts/typescript)
+- The Rust Module SDK docs are [hosted on docs.rs](https://docs.rs/spacetimedb/latest/spacetimedb/).
+- [Rust Quickstart Guide](/quickstarts/rust)
 
 </TabItem>
 </Tabs>

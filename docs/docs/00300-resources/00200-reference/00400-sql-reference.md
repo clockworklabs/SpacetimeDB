@@ -542,6 +542,43 @@ In order to conform with the best practices for optimizing performance and scala
 - `Customers` should come next because it joins directly with `Orders`.
 
 <Tabs groupId="server-language" defaultValue="rust">
+<TabItem value="csharp" label="C#">
+
+```cs
+[SpacetimeDB.Table(Name = "Inventory")]
+[SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
+public partial struct Inventory
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    public string name;
+    ..
+}
+
+[SpacetimeDB.Table(Name = "Customers")]
+public partial struct Customers
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    public string first_name;
+    public string last_name;
+    ..
+}
+
+[SpacetimeDB.Table(Name = "Orders")]
+public partial struct Orders
+{
+    [SpacetimeDB.PrimaryKey]
+    public long id;
+    [SpacetimeDB.Unique]
+    public long product_id;
+    [SpacetimeDB.Unique]
+    public long customer_id;
+    ..
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -580,43 +617,6 @@ struct Orders {
     product_id: u64,
     #[unique]
     customer_id: u64,
-    ..
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```cs
-[SpacetimeDB.Table(Name = "Inventory")]
-[SpacetimeDB.Index(Name = "product_name", BTree = ["name"])]
-public partial struct Inventory
-{
-    [SpacetimeDB.PrimaryKey]
-    public long id;
-    public string name;
-    ..
-}
-
-[SpacetimeDB.Table(Name = "Customers")]
-public partial struct Customers
-{
-    [SpacetimeDB.PrimaryKey]
-    public long id;
-    public string first_name;
-    public string last_name;
-    ..
-}
-
-[SpacetimeDB.Table(Name = "Orders")]
-public partial struct Orders
-{
-    [SpacetimeDB.PrimaryKey]
-    public long id;
-    [SpacetimeDB.Unique]
-    public long product_id;
-    [SpacetimeDB.Unique]
-    public long customer_id;
     ..
 }
 ```
