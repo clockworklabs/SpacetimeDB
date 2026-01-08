@@ -26,10 +26,10 @@ pub(super) enum SameKeyEntry<V: Eq + Hash> {
     /// This also represents the "no values" case,
     /// although the multimap may want to delete the key in that case.
     ///
-    /// The single value case is represented inline here.
+    /// Up to two values are represented inline here.
     /// It's not profitable to represent this as a separate variant
     /// as that would increase `size_of::<SameKeyEntry>()` by 8 bytes.
-    Small(SmallVec<[V; 1]>),
+    Small(SmallVec<[V; 2]>),
 
     /// A large number of values.
     ///
@@ -140,8 +140,12 @@ pub(super) fn same_key_iter<V: Eq + Hash>(ske: Option<&SameKeyEntry<V>>) -> Same
 /// An iterator over values in a [`SameKeyEntry`].
 pub enum SameKeyEntryIter<'a, V> {
     Small(slice::Iter<'a, V>),
+    /// This variant doesn't occur so much
+    /// and we'd like to reduce the footprint of `SameKeyEntryIter`.
     Large(Box<hash_set::Iter<'a, V>>),
 }
+
+static_assert_size!(SameKeyEntryIter<RowPointer>, 16);
 
 impl<'a, V> Iterator for SameKeyEntryIter<'a, V> {
     type Item = &'a V;
