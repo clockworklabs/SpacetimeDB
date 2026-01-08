@@ -2,6 +2,7 @@
 use super::util::fmt_fn;
 
 use std::fmt::{self, Write};
+use std::collections::BTreeSet;
 use std::ops::Deref;
 
 use super::code_indenter::CodeIndenter;
@@ -473,6 +474,20 @@ const REDUCER_EVENTS: &str = r#"
             Error += callback;
             return this;
         }
+    
+        /// <summary>
+        /// Add a typed query to this subscription.
+        ///
+        /// This is the entry point for building subscriptions without writing SQL by hand.
+        /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+        /// </summary>
+        public TypedSubscriptionBuilder AddQuery<TRow>(
+            Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+        )
+        {
+            var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
+            return typed.AddQuery(build);
+        }
 
         /// <summary>
         /// Subscribe to the following SQL queries.
@@ -668,6 +683,75 @@ impl Lang for Csharp<'_> {
             });
             writeln!(output);
             writeln!(output, "public readonly {csharp_table_class_name} {csharp_table_name};");
+        });
+        
+        // Emit top-level Cols/IxCols helpers for the typed query builder.
+        writeln!(output);
+
+        let cols_owner_name = table.name.deref().to_case(Case::Pascal);
+        let row_type = type_ref_name(module, table.product_type_ref);
+        let product_type = module.typespace_for_generate()[table.product_type_ref]
+            .as_product()
+            .unwrap();
+
+        let mut ix_col_positions: BTreeSet<usize> = BTreeSet::new();
+        for idx in iter_indexes(table) {
+            if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &idx.algorithm {
+                for col_pos in columns.iter() {
+                    ix_col_positions.insert(col_pos.idx());
+                }
+            }
+        }
+
+        writeln!(output, "public sealed class {cols_owner_name}Cols");
+        indented_block(&mut output, |output| {
+            for (field_name, field_type) in &product_type.elements {
+                let prop = field_name.deref().to_case(Case::Pascal);
+                let ty = ty_fmt(module, field_type);
+                writeln!(output, "public global::SpacetimeDB.Col<{row_type}, {ty}> {prop} {{ get; }}");
+            }
+            writeln!(output);
+            writeln!(output, "public {cols_owner_name}Cols(string tableName)");
+            indented_block(output, |output| {
+                for (field_name, field_type) in &product_type.elements {
+                    let prop = field_name.deref().to_case(Case::Pascal);
+                    let ty = ty_fmt(module, field_type);
+                    let col_name = field_name.deref();
+                    writeln!(
+                        output,
+                        "{prop} = new global::SpacetimeDB.Col<{row_type}, {ty}>(tableName, \"{col_name}\");"
+                    );
+                }
+            });
+        });
+        writeln!(output);
+
+        writeln!(output, "public sealed class {cols_owner_name}IxCols");
+        indented_block(&mut output, |output| {
+            for (i, (field_name, field_type)) in product_type.elements.iter().enumerate() {
+                if !ix_col_positions.contains(&i) {
+                    continue;
+                }
+                let prop = field_name.deref().to_case(Case::Pascal);
+                let ty = ty_fmt(module, field_type);
+                writeln!(output, "public global::SpacetimeDB.IxCol<{row_type}, {ty}> {prop} {{ get; }}");
+            }
+            writeln!(output);
+            writeln!(output, "public {cols_owner_name}IxCols(string tableName)");
+            indented_block(output, |output| {
+                for (i, (field_name, field_type)) in product_type.elements.iter().enumerate() {
+                    if !ix_col_positions.contains(&i) {
+                        continue;
+                    }
+                    let prop = field_name.deref().to_case(Case::Pascal);
+                    let ty = ty_fmt(module, field_type);
+                    let col_name = field_name.deref();
+                    writeln!(
+                        output,
+                        "{prop} = new global::SpacetimeDB.IxCol<{row_type}, {ty}>(tableName, \"{col_name}\");"
+                    );
+                }
+            });
         });
 
         OutputFile {
@@ -960,6 +1044,71 @@ impl Lang for Csharp<'_> {
         writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
 
         writeln!(output, "{REDUCER_EVENTS}");
+        
+        writeln!(output, "public sealed class QueryBuilder");
+        indented_block(&mut output, |output| {
+            writeln!(output, "public From From {{ get; }} = new();");
+        });
+        writeln!(output);
+
+        writeln!(output, "public sealed class From");
+        indented_block(&mut output, |output| {
+            for (table_name, product_type_ref) in iter_table_names_and_types(module) {
+                let method_name = table_name.deref().to_case(Case::Pascal);
+                let row_type = type_ref_name(module, product_type_ref);
+                let table_name_lit = format!("{:?}", table_name.deref());
+                writeln!(
+                    output,
+                    "public global::SpacetimeDB.Table<{row_type}, {method_name}Cols, {method_name}IxCols> {method_name}() => new({table_name_lit}, new {method_name}Cols({table_name_lit}), new {method_name}IxCols({table_name_lit}));"
+                );
+            }
+        });
+        writeln!(output);
+
+        writeln!(output, "public sealed class TypedSubscriptionBuilder");
+        indented_block(&mut output, |output| {
+            writeln!(output, "private readonly IDbConnection conn;");
+            writeln!(output, "private Action<SubscriptionEventContext>? Applied;");
+            writeln!(output, "private Action<ErrorContext, Exception>? Error;");
+            writeln!(output, "private readonly List<string> querySqls = new();");
+            writeln!(output);
+
+            writeln!(
+                output,
+                "internal TypedSubscriptionBuilder(IDbConnection conn, Action<SubscriptionEventContext>? applied, Action<ErrorContext, Exception>? error)"
+            );
+            indented_block(output, |output| {
+                writeln!(output, "this.conn = conn;");
+                writeln!(output, "Applied = applied;");
+                writeln!(output, "Error = error;");
+            });
+            writeln!(output);
+
+            writeln!(output, "public TypedSubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback)");
+            indented_block(output, |output| {
+                writeln!(output, "Applied += callback;");
+                writeln!(output, "return this;");
+            });
+            writeln!(output);
+
+            writeln!(output, "public TypedSubscriptionBuilder OnError(Action<ErrorContext, Exception> callback)");
+            indented_block(output, |output| {
+                writeln!(output, "Error += callback;");
+                writeln!(output, "return this;");
+            });
+            writeln!(output);
+
+            writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)");
+            indented_block(output, |output| {
+                writeln!(output, "var qb = new QueryBuilder();");
+                writeln!(output, "querySqls.Add(build(qb).Sql);");
+                writeln!(output, "return this;");
+            });
+            writeln!(output);
+
+            writeln!(output, "public SubscriptionHandle Subscribe() => new(conn, Applied, Error, querySqls.ToArray());");
+        });
+        writeln!(output);
 
         writeln!(output, "public abstract partial class Reducer");
         indented_block(&mut output, |output| {

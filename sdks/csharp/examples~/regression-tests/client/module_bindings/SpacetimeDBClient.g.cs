@@ -514,6 +514,20 @@ namespace SpacetimeDB.Types
         }
 
         /// <summary>
+        /// Add a typed query to this subscription.
+        ///
+        /// This is the entry point for building subscriptions without writing SQL by hand.
+        /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+        /// </summary>
+        public TypedSubscriptionBuilder AddQuery<TRow>(
+            Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+        )
+        {
+            var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
+            return typed.AddQuery(build);
+        }
+
+        /// <summary>
         /// Subscribe to the following SQL queries.
         ///
         /// This method returns immediately, with the data not yet added to the DbConnection.
@@ -574,6 +588,63 @@ namespace SpacetimeDB.Types
             string[] querySqls
         ) : base(conn, onApplied, onError, querySqls)
         { }
+    }
+
+    public sealed class QueryBuilder
+    {
+        public From From { get; } = new();
+    }
+
+    public sealed class From
+    {
+        public global::SpacetimeDB.Table<User, AdminsCols, AdminsIxCols> Admins() => new("Admins", new AdminsCols("Admins"), new AdminsIxCols("Admins"));
+        public global::SpacetimeDB.Table<User, UserCols, UserIxCols> User() => new("User", new UserCols("User"), new UserIxCols("User"));
+        public global::SpacetimeDB.Table<ExampleData, ExampleDataCols, ExampleDataIxCols> ExampleData() => new("example_data", new ExampleDataCols("example_data"), new ExampleDataIxCols("example_data"));
+        public global::SpacetimeDB.Table<MyLog, MyLogCols, MyLogIxCols> MyLog() => new("my_log", new MyLogCols("my_log"), new MyLogIxCols("my_log"));
+        public global::SpacetimeDB.Table<Player, MyPlayerCols, MyPlayerIxCols> MyPlayer() => new("my_player", new MyPlayerCols("my_player"), new MyPlayerIxCols("my_player"));
+        public global::SpacetimeDB.Table<MyTable, MyTableCols, MyTableIxCols> MyTable() => new("my_table", new MyTableCols("my_table"), new MyTableIxCols("my_table"));
+        public global::SpacetimeDB.Table<NullableVec, NullableVecCols, NullableVecIxCols> NullableVec() => new("nullable_vec", new NullableVecCols("nullable_vec"), new NullableVecIxCols("nullable_vec"));
+        public global::SpacetimeDB.Table<NullableVec, NullableVecViewCols, NullableVecViewIxCols> NullableVecView() => new("nullable_vec_view", new NullableVecViewCols("nullable_vec_view"), new NullableVecViewIxCols("nullable_vec_view"));
+        public global::SpacetimeDB.Table<Player, PlayerCols, PlayerIxCols> Player() => new("player", new PlayerCols("player"), new PlayerIxCols("player"));
+        public global::SpacetimeDB.Table<PlayerLevel, PlayerLevelCols, PlayerLevelIxCols> PlayerLevel() => new("player_level", new PlayerLevelCols("player_level"), new PlayerLevelIxCols("player_level"));
+        public global::SpacetimeDB.Table<PlayerAndLevel, PlayersAtLevelOneCols, PlayersAtLevelOneIxCols> PlayersAtLevelOne() => new("players_at_level_one", new PlayersAtLevelOneCols("players_at_level_one"), new PlayersAtLevelOneIxCols("players_at_level_one"));
+        public global::SpacetimeDB.Table<RetryLog, RetryLogCols, RetryLogIxCols> RetryLog() => new("retry_log", new RetryLogCols("retry_log"), new RetryLogIxCols("retry_log"));
+    }
+
+    public sealed class TypedSubscriptionBuilder
+    {
+        private readonly IDbConnection conn;
+        private Action<SubscriptionEventContext>? Applied;
+        private Action<ErrorContext, Exception>? Error;
+        private readonly List<string> querySqls = new();
+
+        internal TypedSubscriptionBuilder(IDbConnection conn, Action<SubscriptionEventContext>? applied, Action<ErrorContext, Exception>? error)
+        {
+            this.conn = conn;
+            Applied = applied;
+            Error = error;
+        }
+
+        public TypedSubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback)
+        {
+            Applied += callback;
+            return this;
+        }
+
+        public TypedSubscriptionBuilder OnError(Action<ErrorContext, Exception> callback)
+        {
+            Error += callback;
+            return this;
+        }
+
+        public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)
+        {
+            var qb = new QueryBuilder();
+            querySqls.Add(build(qb).Sql);
+            return this;
+        }
+
+        public SubscriptionHandle Subscribe() => new(conn, Applied, Error, querySqls.ToArray());
     }
 
     public abstract partial class Reducer
