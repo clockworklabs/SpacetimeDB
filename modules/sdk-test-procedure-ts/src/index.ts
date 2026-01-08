@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { ScheduleAt } from 'spacetimedb';
+import { ScheduleAt, Uuid } from 'spacetimedb';
 import {
   errors,
   schema,
@@ -24,6 +24,11 @@ const ReturnEnum = t.enum('ReturnEnum', {
 const MyTable = table(
   { name: 'my_table', public: true },
   { field: ReturnStruct }
+);
+
+const PkTable = table(
+  { name: 'pk_uuid', public: true },
+  {u: t.uuid().primaryKey(), data: t.i32()}
 );
 
 const ScheduledProcTable = t.row({
@@ -49,7 +54,7 @@ const ProcInsertsIntoTable = table(
   ProcInsertsInto
 );
 
-const spacetimedb = schema(MyTable, ScheduledProcTableTable, ProcInsertsIntoTable);
+const spacetimedb = schema(MyTable, PkTable, ScheduledProcTableTable, ProcInsertsIntoTable);
 
 spacetimedb.procedure(
   'return_primitive',
@@ -166,6 +171,26 @@ spacetimedb.procedure('scheduled_proc', { data: ScheduledProcTable }, t.unit(), 
       x,
       y
     });
+  });
+  return {};
+});
+
+spacetimedb.procedure('sorted_uuids_insert', t.unit(), ctx => {
+  ctx.withTx(ctx => {
+    for (let i = 0; i < 1000; i++) {
+      const uuid = ctx.newUuidV7();
+      ctx.db.pkUuid.insert({ u: uuid, data: 0 });
+    }
+
+    // Verify UUIDs are sorted
+    let lastUuid: Uuid | null = null;
+
+    for (const row of ctx.db.pkUuid.iter()) {
+      if (lastUuid !== null && lastUuid >= row.u) {
+        throw new Error("UUIDs are not sorted correctly");
+      }
+      lastUuid = row.u;
+    }
   });
   return {};
 });

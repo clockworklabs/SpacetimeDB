@@ -616,10 +616,18 @@ pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeU
         AlgebraicTypeUse::ConnectionId => write!(out, "__sdk::ConnectionId")?,
         AlgebraicTypeUse::Timestamp => write!(out, "__sdk::Timestamp")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__sdk::TimeDuration")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__sdk::Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__sdk::ScheduleAt")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "Option::<")?;
             write_type(module, out, inner_ty)?;
+            write!(out, ">")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "Result::<")?;
+            write_type(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type(module, out, err_ty)?;
             write!(out, ">")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {

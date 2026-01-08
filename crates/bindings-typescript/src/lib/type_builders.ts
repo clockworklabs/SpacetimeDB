@@ -4,11 +4,13 @@ import type BinaryWriter from './binary_writer';
 import { ConnectionId, type ConnectionIdAlgebraicType } from './connection_id';
 import { Identity, type IdentityAlgebraicType } from './identity';
 import { Option, type OptionAlgebraicType } from './option';
+import { Result, type ResultAlgebraicType } from './result';
 import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
 import { set, type Prettify, type SetField } from './type_util';
+import { Uuid, type UuidAlgebraicType } from './uuid';
 
 // Used in codegen files
 export { type AlgebraicTypeType } from './algebraic_type';
@@ -1403,6 +1405,57 @@ export class ProductBuilder<Elements extends ElementsObj>
   }
 }
 
+export class ResultBuilder<
+    Ok extends TypeBuilder<any, any>,
+    Err extends TypeBuilder<any, any>,
+  >
+  extends TypeBuilder<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    ResultAlgebraicType<
+      InferSpacetimeTypeOfTypeBuilder<Ok>,
+      InferSpacetimeTypeOfTypeBuilder<Err>
+    >
+  >
+  implements
+    Defaultable<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      ResultAlgebraicType<
+        InferSpacetimeTypeOfTypeBuilder<Ok>,
+        InferSpacetimeTypeOfTypeBuilder<Err>
+      >
+    >
+{
+  ok: Ok;
+  err: Err;
+
+  constructor(ok: Ok, err: Err) {
+    super(Result.getAlgebraicType(ok.algebraicType, err.algebraicType));
+    this.ok = ok;
+    this.err = err;
+  }
+  default(
+    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  ): ResultColumnBuilder<
+    Ok,
+    Err,
+    SetField<
+      DefaultMetadata,
+      'defaultValue',
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    >
+  > {
+    return new ResultColumnBuilder<
+      Ok,
+      Err,
+      SetField<
+        DefaultMetadata,
+        'defaultValue',
+        InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+      >
+    >(this, set(defaultMetadata, { defaultValue: value }));
+  }
+}
+
 class UnitBuilder extends TypeBuilder<
   {},
   { tag: 'Product'; value: { elements: [] } }
@@ -1941,6 +1994,61 @@ export class TimeDurationBuilder
     name: Name
   ): TimeDurationColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
     return new TimeDurationColumnBuilder(this, set(defaultMetadata, { name }));
+  }
+}
+
+export class UuidBuilder
+  extends TypeBuilder<Uuid, UuidAlgebraicType>
+  implements
+    Indexable<Uuid, UuidAlgebraicType>,
+    Uniqueable<Uuid, UuidAlgebraicType>,
+    PrimaryKeyable<Uuid, UuidAlgebraicType>,
+    Defaultable<Uuid, UuidAlgebraicType>
+{
+  constructor() {
+    super(Uuid.getAlgebraicType());
+  }
+  index(): UuidColumnBuilder<SetField<DefaultMetadata, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'indexType', IndexTypes>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { indexType: algorithm })
+    );
+  }
+  unique(): UuidColumnBuilder<SetField<DefaultMetadata, 'isUnique', true>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isUnique: true })
+    );
+  }
+  primaryKey(): UuidColumnBuilder<
+    SetField<DefaultMetadata, 'isPrimaryKey', true>
+  > {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isPrimaryKey: true })
+    );
+  }
+  autoInc(): UuidColumnBuilder<
+    SetField<DefaultMetadata, 'isAutoIncrement', true>
+  > {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { isAutoIncrement: true })
+    );
+  }
+  default(
+    value: Uuid
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'defaultValue', Uuid>> {
+    return new UuidColumnBuilder(
+      this,
+      set(defaultMetadata, { defaultValue: value })
+    );
   }
 }
 
@@ -3029,6 +3137,54 @@ export class OptionColumnBuilder<
   }
 }
 
+export class ResultColumnBuilder<
+    Ok extends TypeBuilder<any, any>,
+    Err extends TypeBuilder<any, any>,
+    M extends ColumnMetadata<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    > = DefaultMetadata,
+  >
+  extends ColumnBuilder<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+    ResultAlgebraicType<
+      InferSpacetimeTypeOfTypeBuilder<Ok>,
+      InferSpacetimeTypeOfTypeBuilder<Err>
+    >,
+    M
+  >
+  implements
+    Defaultable<
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
+      ResultAlgebraicType<
+        InferSpacetimeTypeOfTypeBuilder<Ok>,
+        InferSpacetimeTypeOfTypeBuilder<Err>
+      >
+    >
+{
+  constructor(typeBuilder: TypeBuilder<any, any>, metadata: M) {
+    super(typeBuilder, metadata);
+  }
+
+  default(
+    value: InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  ): ResultColumnBuilder<
+    Ok,
+    Err,
+    SetField<
+      M,
+      'defaultValue',
+      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+    >
+  > {
+    return new ResultColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, {
+        defaultValue: value,
+      })
+    );
+  }
+}
+
 export class ProductColumnBuilder<
     Elements extends ElementsObj,
     M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
@@ -3368,6 +3524,46 @@ export class TimeDurationColumnBuilder<
     return new TimeDurationColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { name })
+    );
+  }
+}
+
+export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
+  extends ColumnBuilder<Uuid, UuidAlgebraicType, M>
+  implements
+    Indexable<Uuid, UuidAlgebraicType>,
+    Uniqueable<Uuid, UuidAlgebraicType>,
+    PrimaryKeyable<Uuid, UuidAlgebraicType>,
+    Defaultable<Uuid, UuidAlgebraicType>
+{
+  index(): UuidColumnBuilder<SetField<M, 'indexType', 'btree'>>;
+  index<N extends NonNullable<IndexTypes>>(
+    algorithm: N
+  ): UuidColumnBuilder<SetField<M, 'indexType', N>>;
+  index(
+    algorithm: IndexTypes = 'btree'
+  ): UuidColumnBuilder<SetField<M, 'indexType', IndexTypes>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { indexType: algorithm })
+    );
+  }
+  unique(): UuidColumnBuilder<SetField<M, 'isUnique', true>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isUnique: true })
+    );
+  }
+  primaryKey(): UuidColumnBuilder<SetField<M, 'isPrimaryKey', true>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { isPrimaryKey: true })
+    );
+  }
+  default(value: Uuid): UuidColumnBuilder<SetField<M, 'defaultValue', Uuid>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { defaultValue: value })
     );
   }
 }
@@ -3727,6 +3923,20 @@ export const t = {
   },
 
   /**
+   * This is a convenience method for creating a column with the {@link Result} type.
+   * You can create a column of the same type by constructing an enum with an `ok` and `err` variant.
+   * @param ok The type of the value contained in the `ok` variant of the `Result`.
+   * @param err The type of the value contained in the `err` variant of the `Result`.
+   * @returns A new {@link ResultBuilder} instance with the {@link Result} type.
+   */
+  result<Ok extends TypeBuilder<any, any>, Err extends TypeBuilder<any, any>>(
+    ok: Ok,
+    err: Err
+  ): ResultBuilder<Ok, Err> {
+    return new ResultBuilder(ok, err);
+  },
+
+  /**
    * This is a convenience method for creating a column with the {@link Identity} type.
    * You can create a column of the same type by constructing an `object` with a single `__identity__` element.
    * @returns A new {@link TypeBuilder} instance with the {@link Identity} type.
@@ -3760,6 +3970,15 @@ export const t = {
    */
   timeDuration: (): TimeDurationBuilder => {
     return new TimeDurationBuilder();
+  },
+
+  /**
+   * This is a convenience method for creating a column with the {@link Uuid} type.
+   * You can create a column of the same type by constructing an `object` with a single `__uuid__` element.
+   * @returns A new {@link TypeBuilder} instance with the {@link Uuid} type.
+   */
+  uuid: (): UuidBuilder => {
+    return new UuidBuilder();
   },
 
   /**
