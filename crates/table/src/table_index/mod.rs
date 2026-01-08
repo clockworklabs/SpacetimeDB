@@ -24,9 +24,11 @@
 /// We also represent unique indices more compactly than non-unique ones, avoiding the multi-map.
 /// Additionally, beyond our btree indices,
 /// we support direct unique indices, where key are indices into `Vec`s.
+use self::hash_index::HashIndex;
 use self::same_key_entry::SameKeyEntryIter;
 use self::unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
 use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
+use self::unique_hash_index::UniqueHashIndex;
 use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size};
@@ -37,14 +39,16 @@ use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, sum_value::SumTag, u256, AlgebraicType,
     AlgebraicValue, ProductType, F32, F64,
 };
-use spacetimedb_schema::def::IndexAlgorithm;
+use spacetimedb_schema::def::{BTreeAlgorithm, DirectAlgorithm, HashAlgorithm, IndexAlgorithm};
 
+mod hash_index;
 mod index;
 mod key_size;
 mod multimap;
 mod same_key_entry;
 pub mod unique_direct_fixed_cap_index;
 pub mod unique_direct_index;
+mod unique_hash_index;
 pub mod uniquemap;
 
 pub use self::index::{Index, IndexCannotSeekRange, IndexSeekRangeResult, RangedIndex};
@@ -227,6 +231,26 @@ enum TypedIndex {
     BtreeString(BtreeIndex<Box<str>>),
     BtreeAV(BtreeIndex<AlgebraicValue>),
 
+    // All the non-unique hash index types.
+    HashBool(HashIndex<bool>),
+    HashU8(HashIndex<u8>),
+    HashSumTag(HashIndex<u8>),
+    HashI8(HashIndex<i8>),
+    HashU16(HashIndex<u16>),
+    HashI16(HashIndex<i16>),
+    HashU32(HashIndex<u32>),
+    HashI32(HashIndex<i32>),
+    HashU64(HashIndex<u64>),
+    HashI64(HashIndex<i64>),
+    HashU128(HashIndex<Packed<u128>>),
+    HashI128(HashIndex<Packed<i128>>),
+    HashU256(HashIndex<u256>),
+    HashI256(HashIndex<i256>),
+    HashF32(HashIndex<F32>),
+    HashF64(HashIndex<F64>),
+    HashString(HashIndex<Box<str>>),
+    HashAV(HashIndex<AlgebraicValue>),
+
     // All the unique btree index types.
     UniqueBtreeBool(BtreeUniqueIndex<bool>),
     UniqueBtreeU8(BtreeUniqueIndex<u8>),
@@ -247,6 +271,26 @@ enum TypedIndex {
     UniqueBtreeString(BtreeUniqueIndex<Box<str>>),
     UniqueBtreeAV(BtreeUniqueIndex<AlgebraicValue>),
 
+    // All the unique hash index types.
+    UniqueHashBool(UniqueHashIndex<bool>),
+    UniqueHashU8(UniqueHashIndex<u8>),
+    UniqueHashSumTag(UniqueHashIndex<u8>),
+    UniqueHashI8(UniqueHashIndex<i8>),
+    UniqueHashU16(UniqueHashIndex<u16>),
+    UniqueHashI16(UniqueHashIndex<i16>),
+    UniqueHashU32(UniqueHashIndex<u32>),
+    UniqueHashI32(UniqueHashIndex<i32>),
+    UniqueHashU64(UniqueHashIndex<u64>),
+    UniqueHashI64(UniqueHashIndex<i64>),
+    UniqueHashU128(UniqueHashIndex<Packed<u128>>),
+    UniqueHashI128(UniqueHashIndex<Packed<i128>>),
+    UniqueHashU256(UniqueHashIndex<u256>),
+    UniqueHashI256(UniqueHashIndex<i256>),
+    UniqueHashF32(UniqueHashIndex<F32>),
+    UniqueHashF64(UniqueHashIndex<F64>),
+    UniqueHashString(UniqueHashIndex<Box<str>>),
+    UniqueHashAV(UniqueHashIndex<AlgebraicValue>),
+
     // All the unique direct index types.
     UniqueDirectU8(UniqueDirectIndex),
     UniqueDirectSumTag(UniqueDirectFixedCapIndex),
@@ -255,57 +299,7 @@ enum TypedIndex {
     UniqueDirectU64(UniqueDirectIndex),
 }
 
-impl MemoryUsage for TypedIndex {
-    fn heap_usage(&self) -> usize {
-        match self {
-            TypedIndex::BtreeBool(this) => this.heap_usage(),
-            TypedIndex::BtreeU8(this) | TypedIndex::BtreeSumTag(this) => this.heap_usage(),
-            TypedIndex::BtreeI8(this) => this.heap_usage(),
-            TypedIndex::BtreeU16(this) => this.heap_usage(),
-            TypedIndex::BtreeI16(this) => this.heap_usage(),
-            TypedIndex::BtreeU32(this) => this.heap_usage(),
-            TypedIndex::BtreeI32(this) => this.heap_usage(),
-            TypedIndex::BtreeU64(this) => this.heap_usage(),
-            TypedIndex::BtreeI64(this) => this.heap_usage(),
-            TypedIndex::BtreeU128(this) => this.heap_usage(),
-            TypedIndex::BtreeI128(this) => this.heap_usage(),
-            TypedIndex::BtreeU256(this) => this.heap_usage(),
-            TypedIndex::BtreeI256(this) => this.heap_usage(),
-            TypedIndex::BtreeF32(this) => this.heap_usage(),
-            TypedIndex::BtreeF64(this) => this.heap_usage(),
-            TypedIndex::BtreeString(this) => this.heap_usage(),
-            TypedIndex::BtreeAV(this) => this.heap_usage(),
-
-            TypedIndex::UniqueBtreeBool(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU8(this) | TypedIndex::UniqueBtreeSumTag(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI8(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU16(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI16(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU128(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI128(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU256(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI256(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeF32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeF64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeString(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeAV(this) => this.heap_usage(),
-
-            TypedIndex::UniqueDirectSumTag(this) => this.heap_usage(),
-            TypedIndex::UniqueDirectU8(this)
-            | TypedIndex::UniqueDirectU16(this)
-            | TypedIndex::UniqueDirectU32(this)
-            | TypedIndex::UniqueDirectU64(this) => this.heap_usage(),
-        }
-    }
-}
-
-fn as_tag(av: &AlgebraicValue) -> Option<&u8> {
-    av.as_sum().map(|s| &s.tag)
-}
+static_assert_size!(TypedIndex, 64);
 
 macro_rules! same_for_all_types {
     ($scrutinee:expr, $this:ident => $body:expr) => {
@@ -328,6 +322,24 @@ macro_rules! same_for_all_types {
             Self::BtreeString($this) => $body,
             Self::BtreeAV($this) => $body,
 
+            Self::HashBool($this) => $body,
+            Self::HashU8($this) | Self::HashSumTag($this) => $body,
+            Self::HashI8($this) => $body,
+            Self::HashU16($this) => $body,
+            Self::HashI16($this) => $body,
+            Self::HashU32($this) => $body,
+            Self::HashI32($this) => $body,
+            Self::HashU64($this) => $body,
+            Self::HashI64($this) => $body,
+            Self::HashU128($this) => $body,
+            Self::HashI128($this) => $body,
+            Self::HashU256($this) => $body,
+            Self::HashI256($this) => $body,
+            Self::HashF32($this) => $body,
+            Self::HashF64($this) => $body,
+            Self::HashString($this) => $body,
+            Self::HashAV($this) => $body,
+
             Self::UniqueBtreeBool($this) => $body,
             Self::UniqueBtreeU8($this) | Self::UniqueBtreeSumTag($this) => $body,
             Self::UniqueBtreeI8($this) => $body,
@@ -346,6 +358,24 @@ macro_rules! same_for_all_types {
             Self::UniqueBtreeString($this) => $body,
             Self::UniqueBtreeAV($this) => $body,
 
+            Self::UniqueHashBool($this) => $body,
+            Self::UniqueHashU8($this) | Self::UniqueHashSumTag($this) => $body,
+            Self::UniqueHashI8($this) => $body,
+            Self::UniqueHashU16($this) => $body,
+            Self::UniqueHashI16($this) => $body,
+            Self::UniqueHashU32($this) => $body,
+            Self::UniqueHashI32($this) => $body,
+            Self::UniqueHashU64($this) => $body,
+            Self::UniqueHashI64($this) => $body,
+            Self::UniqueHashU128($this) => $body,
+            Self::UniqueHashI128($this) => $body,
+            Self::UniqueHashU256($this) => $body,
+            Self::UniqueHashI256($this) => $body,
+            Self::UniqueHashF32($this) => $body,
+            Self::UniqueHashF64($this) => $body,
+            Self::UniqueHashString($this) => $body,
+            Self::UniqueHashAV($this) => $body,
+
             Self::UniqueDirectSumTag($this) => $body,
             Self::UniqueDirectU8($this)
             | Self::UniqueDirectU16($this)
@@ -355,25 +385,50 @@ macro_rules! same_for_all_types {
     };
 }
 
+impl MemoryUsage for TypedIndex {
+    fn heap_usage(&self) -> usize {
+        same_for_all_types!(self, this => this.heap_usage())
+    }
+}
+
+fn as_tag(av: &AlgebraicValue) -> Option<&u8> {
+    av.as_sum().map(|s| &s.tag)
+}
+
 impl TypedIndex {
     /// Returns a new index with keys being of `key_type` and the index possibly `is_unique`.
     fn new(key_type: &AlgebraicType, index_algo: &IndexAlgorithm, is_unique: bool) -> Self {
-        use TypedIndex::*;
-
-        if let IndexAlgorithm::Direct(_) = index_algo {
-            assert!(is_unique);
-            return match key_type {
-                AlgebraicType::U8 => Self::UniqueDirectU8(<_>::default()),
-                AlgebraicType::U16 => Self::UniqueDirectU16(<_>::default()),
-                AlgebraicType::U32 => Self::UniqueDirectU32(<_>::default()),
-                AlgebraicType::U64 => Self::UniqueDirectU64(<_>::default()),
-                // For a plain enum, use `u8` as the native type.
-                AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
-                    UniqueDirectSumTag(UniqueDirectFixedCapIndex::new(sum.variants.len()))
-                }
-                _ => unreachable!("unexpected key type {key_type:?} for direct index"),
-            };
+        match index_algo {
+            IndexAlgorithm::BTree(algo) => Self::new_btree_index(key_type, algo, is_unique),
+            IndexAlgorithm::Hash(algo) => Self::new_hash_index(key_type, algo, is_unique),
+            IndexAlgorithm::Direct(algo) => Self::new_direct_index(key_type, algo, is_unique),
+            // This is due to `#[non_exhaustive]`.
+            _ => unreachable!(),
         }
+    }
+
+    /// Returns a new direct index with key being of `key_type`.
+    /// This asserts that `is_unique == true`.
+    fn new_direct_index(key_type: &AlgebraicType, _: &DirectAlgorithm, is_unique: bool) -> Self {
+        assert!(is_unique);
+
+        use TypedIndex::*;
+        match key_type {
+            AlgebraicType::U8 => UniqueDirectU8(<_>::default()),
+            AlgebraicType::U16 => UniqueDirectU16(<_>::default()),
+            AlgebraicType::U32 => UniqueDirectU32(<_>::default()),
+            AlgebraicType::U64 => UniqueDirectU64(<_>::default()),
+            // For a plain enum, use `u8` as the native type.
+            AlgebraicType::Sum(sum) if sum.is_simple_enum() => {
+                UniqueDirectSumTag(UniqueDirectFixedCapIndex::new(sum.variants.len()))
+            }
+            _ => unreachable!("unexpected key type {key_type:?} for direct index"),
+        }
+    }
+
+    /// Returns a new btree index with key being of `key_type`.
+    fn new_btree_index(key_type: &AlgebraicType, _: &BTreeAlgorithm, is_unique: bool) -> Self {
+        use TypedIndex::*;
 
         // If the index is on a single column of a primitive type, string, or plain enum,
         // use a homogeneous map with a native key type.
@@ -434,6 +489,69 @@ impl TypedIndex {
         }
     }
 
+    /// Returns a new hash index with key being of `key_type`.
+    fn new_hash_index(key_type: &AlgebraicType, _: &HashAlgorithm, is_unique: bool) -> Self {
+        use TypedIndex::*;
+
+        // If the index is on a single column of a primitive type, string, or plain enum,
+        // use a homogeneous map with a native key type.
+        if is_unique {
+            match key_type {
+                AlgebraicType::Bool => UniqueHashBool(<_>::default()),
+                AlgebraicType::I8 => UniqueHashI8(<_>::default()),
+                AlgebraicType::U8 => UniqueHashU8(<_>::default()),
+                AlgebraicType::I16 => UniqueHashI16(<_>::default()),
+                AlgebraicType::U16 => UniqueHashU16(<_>::default()),
+                AlgebraicType::I32 => UniqueHashI32(<_>::default()),
+                AlgebraicType::U32 => UniqueHashU32(<_>::default()),
+                AlgebraicType::I64 => UniqueHashI64(<_>::default()),
+                AlgebraicType::U64 => UniqueHashU64(<_>::default()),
+                AlgebraicType::I128 => UniqueHashI128(<_>::default()),
+                AlgebraicType::U128 => UniqueHashU128(<_>::default()),
+                AlgebraicType::I256 => UniqueHashI256(<_>::default()),
+                AlgebraicType::U256 => UniqueHashU256(<_>::default()),
+                AlgebraicType::F32 => UniqueHashF32(<_>::default()),
+                AlgebraicType::F64 => UniqueHashF64(<_>::default()),
+                AlgebraicType::String => UniqueHashString(<_>::default()),
+                // For a plain enum, use `u8` as the native type.
+                // We use a direct index here
+                AlgebraicType::Sum(sum) if sum.is_simple_enum() => UniqueHashSumTag(<_>::default()),
+
+                // The index is either multi-column,
+                // or we don't care to specialize on the key type,
+                // so use a map keyed on `AlgebraicValue`.
+                _ => UniqueHashAV(<_>::default()),
+            }
+        } else {
+            match key_type {
+                AlgebraicType::Bool => HashBool(<_>::default()),
+                AlgebraicType::I8 => HashI8(<_>::default()),
+                AlgebraicType::U8 => HashU8(<_>::default()),
+                AlgebraicType::I16 => HashI16(<_>::default()),
+                AlgebraicType::U16 => HashU16(<_>::default()),
+                AlgebraicType::I32 => HashI32(<_>::default()),
+                AlgebraicType::U32 => HashU32(<_>::default()),
+                AlgebraicType::I64 => HashI64(<_>::default()),
+                AlgebraicType::U64 => HashU64(<_>::default()),
+                AlgebraicType::I128 => HashI128(<_>::default()),
+                AlgebraicType::U128 => HashU128(<_>::default()),
+                AlgebraicType::I256 => HashI256(<_>::default()),
+                AlgebraicType::U256 => HashU256(<_>::default()),
+                AlgebraicType::F32 => HashF32(<_>::default()),
+                AlgebraicType::F64 => HashF64(<_>::default()),
+                AlgebraicType::String => HashString(<_>::default()),
+
+                // For a plain enum, use `u8` as the native type.
+                AlgebraicType::Sum(sum) if sum.is_simple_enum() => HashSumTag(<_>::default()),
+
+                // The index is either multi-column,
+                // or we don't care to specialize on the key type,
+                // so use a map keyed on `AlgebraicValue`.
+                _ => HashAV(<_>::default()),
+            }
+        }
+    }
+
     /// Clones the structure of this index but not the indexed elements,
     /// so the returned index is empty.
     fn clone_structure(&self) -> Self {
@@ -457,6 +575,26 @@ impl TypedIndex {
             BtreeF64(i) => BtreeF64(i.clone_structure()),
             BtreeString(i) => BtreeString(i.clone_structure()),
             BtreeAV(i) => BtreeAV(i.clone_structure()),
+
+            HashBool(i) => HashBool(i.clone_structure()),
+            HashU8(i) => HashU8(i.clone_structure()),
+            HashSumTag(i) => HashSumTag(i.clone_structure()),
+            HashI8(i) => HashI8(i.clone_structure()),
+            HashU16(i) => HashU16(i.clone_structure()),
+            HashI16(i) => HashI16(i.clone_structure()),
+            HashU32(i) => HashU32(i.clone_structure()),
+            HashI32(i) => HashI32(i.clone_structure()),
+            HashU64(i) => HashU64(i.clone_structure()),
+            HashI64(i) => HashI64(i.clone_structure()),
+            HashU128(i) => HashU128(i.clone_structure()),
+            HashI128(i) => HashI128(i.clone_structure()),
+            HashU256(i) => HashU256(i.clone_structure()),
+            HashI256(i) => HashI256(i.clone_structure()),
+            HashF32(i) => HashF32(i.clone_structure()),
+            HashF64(i) => HashF64(i.clone_structure()),
+            HashString(i) => HashString(i.clone_structure()),
+            HashAV(i) => HashAV(i.clone_structure()),
+
             UniqueBtreeBool(i) => UniqueBtreeBool(i.clone_structure()),
             UniqueBtreeU8(i) => UniqueBtreeU8(i.clone_structure()),
             UniqueBtreeSumTag(i) => UniqueBtreeSumTag(i.clone_structure()),
@@ -475,6 +613,24 @@ impl TypedIndex {
             UniqueBtreeF64(i) => UniqueBtreeF64(i.clone_structure()),
             UniqueBtreeString(i) => UniqueBtreeString(i.clone_structure()),
             UniqueBtreeAV(i) => UniqueBtreeAV(i.clone_structure()),
+            UniqueHashBool(i) => UniqueHashBool(i.clone_structure()),
+            UniqueHashU8(i) => UniqueHashU8(i.clone_structure()),
+            UniqueHashSumTag(i) => UniqueHashSumTag(i.clone_structure()),
+            UniqueHashI8(i) => UniqueHashI8(i.clone_structure()),
+            UniqueHashU16(i) => UniqueHashU16(i.clone_structure()),
+            UniqueHashI16(i) => UniqueHashI16(i.clone_structure()),
+            UniqueHashU32(i) => UniqueHashU32(i.clone_structure()),
+            UniqueHashI32(i) => UniqueHashI32(i.clone_structure()),
+            UniqueHashU64(i) => UniqueHashU64(i.clone_structure()),
+            UniqueHashI64(i) => UniqueHashI64(i.clone_structure()),
+            UniqueHashU128(i) => UniqueHashU128(i.clone_structure()),
+            UniqueHashI128(i) => UniqueHashI128(i.clone_structure()),
+            UniqueHashU256(i) => UniqueHashU256(i.clone_structure()),
+            UniqueHashI256(i) => UniqueHashI256(i.clone_structure()),
+            UniqueHashF32(i) => UniqueHashF32(i.clone_structure()),
+            UniqueHashF64(i) => UniqueHashF64(i.clone_structure()),
+            UniqueHashString(i) => UniqueHashString(i.clone_structure()),
+            UniqueHashAV(i) => UniqueHashAV(i.clone_structure()),
             UniqueDirectU8(i) => UniqueDirectU8(i.clone_structure()),
             UniqueDirectSumTag(i) => UniqueDirectSumTag(i.clone_structure()),
             UniqueDirectU16(i) => UniqueDirectU16(i.clone_structure()),
@@ -489,7 +645,9 @@ impl TypedIndex {
         match self {
             BtreeBool(_) | BtreeU8(_) | BtreeSumTag(_) | BtreeI8(_) | BtreeU16(_) | BtreeI16(_) | BtreeU32(_)
             | BtreeI32(_) | BtreeU64(_) | BtreeI64(_) | BtreeU128(_) | BtreeI128(_) | BtreeU256(_) | BtreeI256(_)
-            | BtreeF32(_) | BtreeF64(_) | BtreeString(_) | BtreeAV(_) => false,
+            | BtreeF32(_) | BtreeF64(_) | BtreeString(_) | BtreeAV(_) | HashBool(_) | HashU8(_) | HashSumTag(_)
+            | HashI8(_) | HashU16(_) | HashI16(_) | HashU32(_) | HashI32(_) | HashU64(_) | HashI64(_) | HashU128(_)
+            | HashI128(_) | HashU256(_) | HashI256(_) | HashF32(_) | HashF64(_) | HashString(_) | HashAV(_) => false,
             UniqueBtreeBool(_)
             | UniqueBtreeU8(_)
             | UniqueBtreeSumTag(_)
@@ -508,6 +666,24 @@ impl TypedIndex {
             | UniqueBtreeF64(_)
             | UniqueBtreeString(_)
             | UniqueBtreeAV(_)
+            | UniqueHashBool(_)
+            | UniqueHashU8(_)
+            | UniqueHashSumTag(_)
+            | UniqueHashI8(_)
+            | UniqueHashU16(_)
+            | UniqueHashI16(_)
+            | UniqueHashU32(_)
+            | UniqueHashI32(_)
+            | UniqueHashU64(_)
+            | UniqueHashI64(_)
+            | UniqueHashU128(_)
+            | UniqueHashI128(_)
+            | UniqueHashU256(_)
+            | UniqueHashI256(_)
+            | UniqueHashF32(_)
+            | UniqueHashF64(_)
+            | UniqueHashString(_)
+            | UniqueHashAV(_)
             | UniqueDirectU8(_)
             | UniqueDirectSumTag(_)
             | UniqueDirectU16(_)
@@ -603,6 +779,24 @@ impl TypedIndex {
             Self::BtreeF64(idx) => insert_at_type(idx, cols, row_ref, id),
             Self::BtreeString(idx) => insert_at_type(idx, cols, row_ref, id),
             Self::BtreeAV(idx) => insert_av(idx, cols, row_ref),
+            Self::HashBool(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashU8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(k)| k),
+            Self::HashI8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashU16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashI16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashU32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashI32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashU64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashI64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashU128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashI128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashU256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashI256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashF32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashF64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashString(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::HashAV(idx) => insert_av(idx, cols, row_ref),
             Self::UniqueBtreeBool(idx) => insert_at_type(idx, cols, row_ref, id),
             Self::UniqueBtreeU8(idx) => insert_at_type(idx, cols, row_ref, id),
             Self::UniqueBtreeSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(k)| k),
@@ -621,6 +815,24 @@ impl TypedIndex {
             Self::UniqueBtreeF64(idx) => insert_at_type(idx, cols, row_ref, id),
             Self::UniqueBtreeString(idx) => insert_at_type(idx, cols, row_ref, id),
             Self::UniqueBtreeAV(idx) => insert_av(idx, cols, row_ref),
+            Self::UniqueHashBool(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashU8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(k)| k),
+            Self::UniqueHashI8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashU16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashI16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashU32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashI32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashU64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashI64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashU128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashI128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashU256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashI256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashF32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashF64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashString(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueHashAV(this) => insert_av(this, cols, row_ref),
             Self::UniqueDirectSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(tag)| tag),
             Self::UniqueDirectU8(idx) => insert_at_type(idx, cols, row_ref, |k: u8| k as usize),
             Self::UniqueDirectU16(idx) => insert_at_type(idx, cols, row_ref, |k: u16| k as usize),
@@ -683,6 +895,24 @@ impl TypedIndex {
             Self::BtreeF64(this) => delete_at_type(this, cols, row_ref, id),
             Self::BtreeString(this) => delete_at_type(this, cols, row_ref, id),
             Self::BtreeAV(this) => delete_av(this, cols, row_ref),
+            Self::HashBool(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashU8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
+            Self::HashI8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashU16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashI16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashU32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashI32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashU64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashI64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashU128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashI128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashU256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashI256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashF32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashF64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashString(this) => delete_at_type(this, cols, row_ref, id),
+            Self::HashAV(this) => delete_av(this, cols, row_ref),
             Self::UniqueBtreeBool(this) => delete_at_type(this, cols, row_ref, id),
             Self::UniqueBtreeU8(this) => delete_at_type(this, cols, row_ref, id),
             Self::UniqueBtreeSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
@@ -701,6 +931,24 @@ impl TypedIndex {
             Self::UniqueBtreeF64(this) => delete_at_type(this, cols, row_ref, id),
             Self::UniqueBtreeString(this) => delete_at_type(this, cols, row_ref, id),
             Self::UniqueBtreeAV(this) => delete_av(this, cols, row_ref),
+            Self::UniqueHashBool(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashU8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
+            Self::UniqueHashI8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashU16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashI16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashU32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashI32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashU64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashI64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashU128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashI128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashU256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashI256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashF32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashF64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashString(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueHashAV(this) => delete_av(this, cols, row_ref),
             Self::UniqueDirectSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
             Self::UniqueDirectU8(this) => delete_at_type(this, cols, row_ref, |k: u8| k as usize),
             Self::UniqueDirectU16(this) => delete_at_type(this, cols, row_ref, |k: u16| k as usize),
@@ -748,7 +996,24 @@ impl TypedIndex {
             BtreeF64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
             BtreeString(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_string)),
             BtreeAV(this) => BTree(this.seek_point(key)),
-
+            HashBool(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            HashU8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            HashSumTag(this) => BTree(iter_at_type(this, key, as_tag)),
+            HashI8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            HashU16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            HashI16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            HashU32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            HashI32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            HashU64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            HashI64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            HashU128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            HashI128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            HashU256(this) => BTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            HashI256(this) => BTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            HashF32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            HashF64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            HashString(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_string)),
+            HashAV(this) => BTree(this.seek_point(key)),
             UniqueBtreeBool(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
             UniqueBtreeU8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
             UniqueBtreeSumTag(this) => UniqueBTree(iter_at_type(this, key, as_tag)),
@@ -767,6 +1032,25 @@ impl TypedIndex {
             UniqueBtreeF64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
             UniqueBtreeString(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_string)),
             UniqueBtreeAV(this) => UniqueBTree(this.seek_point(key)),
+
+            UniqueHashBool(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            UniqueHashU8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            UniqueHashSumTag(this) => UniqueBTree(iter_at_type(this, key, as_tag)),
+            UniqueHashI8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            UniqueHashU16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            UniqueHashI16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            UniqueHashU32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            UniqueHashI32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            UniqueHashU64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            UniqueHashI64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            UniqueHashU128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            UniqueHashI128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            UniqueHashU256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            UniqueHashI256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            UniqueHashF32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            UniqueHashF64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            UniqueHashString(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_string)),
+            UniqueHashAV(this) => UniqueBTree(this.seek_point(key)),
 
             UniqueDirectSumTag(this) => UniqueDirect(iter_at_type(this, key, as_tag)),
             UniqueDirectU8(this) => {
@@ -822,6 +1106,44 @@ impl TypedIndex {
 
         use TypedIndexRangeIter::*;
         Ok(match self {
+            // Hash indices are not `RangeIndex`.
+            Self::HashBool(_)
+            | Self::HashU8(_)
+            | Self::HashSumTag(_)
+            | Self::HashI8(_)
+            | Self::HashU16(_)
+            | Self::HashI16(_)
+            | Self::HashU32(_)
+            | Self::HashI32(_)
+            | Self::HashU64(_)
+            | Self::HashI64(_)
+            | Self::HashU128(_)
+            | Self::HashI128(_)
+            | Self::HashF32(_)
+            | Self::HashF64(_)
+            | Self::HashU256(_)
+            | Self::HashI256(_)
+            | Self::HashString(_)
+            | Self::HashAV(_)
+            | Self::UniqueHashBool(_)
+            | Self::UniqueHashU8(_)
+            | Self::UniqueHashSumTag(_)
+            | Self::UniqueHashI8(_)
+            | Self::UniqueHashU16(_)
+            | Self::UniqueHashI16(_)
+            | Self::UniqueHashU32(_)
+            | Self::UniqueHashI32(_)
+            | Self::UniqueHashU64(_)
+            | Self::UniqueHashI64(_)
+            | Self::UniqueHashU128(_)
+            | Self::UniqueHashI128(_)
+            | Self::UniqueHashF32(_)
+            | Self::UniqueHashF64(_)
+            | Self::UniqueHashU256(_)
+            | Self::UniqueHashI256(_)
+            | Self::UniqueHashString(_)
+            | Self::UniqueHashAV(_) => return Err(IndexCannotSeekRange),
+
             // Ensure we don't panic inside `BTreeMap::seek_range`.
             _ if is_empty(range) => RangeEmpty,
 
@@ -947,7 +1269,7 @@ impl MemoryUsage for TableIndex {
     }
 }
 
-static_assert_size!(TableIndex, 80);
+static_assert_size!(TableIndex, 96);
 
 impl TableIndex {
     /// Returns a new possibly unique index, with `index_id` for a choice of indexing algorithm.
@@ -1090,7 +1412,25 @@ impl TableIndex {
             | (BtreeF32(_), BtreeF32(_))
             | (BtreeF64(_), BtreeF64(_))
             | (BtreeString(_), BtreeString(_))
-            | (BtreeAV(_), BtreeAV(_)) => Ok(()),
+            | (BtreeAV(_), BtreeAV(_))
+            | (HashBool(_), HashBool(_))
+            | (HashU8(_), HashU8(_))
+            | (HashSumTag(_), HashSumTag(_))
+            | (HashI8(_), HashI8(_))
+            | (HashU16(_), HashU16(_))
+            | (HashI16(_), HashI16(_))
+            | (HashU32(_), HashU32(_))
+            | (HashI32(_), HashI32(_))
+            | (HashU64(_), HashU64(_))
+            | (HashI64(_), HashI64(_))
+            | (HashU128(_), HashU128(_))
+            | (HashI128(_), HashI128(_))
+            | (HashU256(_), HashU256(_))
+            | (HashI256(_), HashI256(_))
+            | (HashF32(_), HashF32(_))
+            | (HashF64(_), HashF64(_))
+            | (HashString(_), HashString(_))
+            | (HashAV(_), HashAV(_)) => Ok(()),
             // For unique indices, we'll need to see if everything in `other` can be added to `idx`.
             (UniqueBtreeBool(idx), UniqueBtreeBool(other)) => idx.can_merge(other, ignore),
             (UniqueBtreeU8(idx), UniqueBtreeU8(other)) => idx.can_merge(other, ignore),
@@ -1110,6 +1450,24 @@ impl TableIndex {
             (UniqueBtreeF64(idx), UniqueBtreeF64(other)) => idx.can_merge(other, ignore),
             (UniqueBtreeString(idx), UniqueBtreeString(other)) => idx.can_merge(other, ignore),
             (UniqueBtreeAV(idx), UniqueBtreeAV(other)) => idx.can_merge(other, ignore),
+            (UniqueHashBool(idx), UniqueHashBool(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU8(idx), UniqueHashU8(other)) => idx.can_merge(other, ignore),
+            (UniqueHashSumTag(idx), UniqueHashSumTag(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI8(idx), UniqueHashI8(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU16(idx), UniqueHashU16(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI16(idx), UniqueHashI16(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU32(idx), UniqueHashU32(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI32(idx), UniqueHashI32(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU64(idx), UniqueHashU64(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI64(idx), UniqueHashI64(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU128(idx), UniqueHashU128(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI128(idx), UniqueHashI128(other)) => idx.can_merge(other, ignore),
+            (UniqueHashU256(idx), UniqueHashU256(other)) => idx.can_merge(other, ignore),
+            (UniqueHashI256(idx), UniqueHashI256(other)) => idx.can_merge(other, ignore),
+            (UniqueHashF32(idx), UniqueHashF32(other)) => idx.can_merge(other, ignore),
+            (UniqueHashF64(idx), UniqueHashF64(other)) => idx.can_merge(other, ignore),
+            (UniqueHashString(idx), UniqueHashString(other)) => idx.can_merge(other, ignore),
+            (UniqueHashAV(idx), UniqueHashAV(other)) => idx.can_merge(other, ignore),
             (UniqueDirectU8(idx), UniqueDirectU8(other)) => idx.can_merge(other, ignore),
             (UniqueDirectSumTag(idx), UniqueDirectSumTag(other)) => idx.can_merge(other, ignore),
             (UniqueDirectU16(idx), UniqueDirectU16(other)) => idx.can_merge(other, ignore),

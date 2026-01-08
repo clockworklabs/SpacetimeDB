@@ -14,7 +14,7 @@ use crate::{indent_scope, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
+use spacetimedb_schema::def::{ModuleDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{
@@ -573,7 +573,7 @@ impl Lang for Csharp<'_> {
                 writeln!(output);
 
                 // If this is a table, we want to generate event accessor and indexes
-                let product_type = module.typespace_for_generate()[table.product_type_ref]
+                let product_type: &ProductTypeDef = module.typespace_for_generate()[table.product_type_ref]
                     .as_product()
                     .unwrap();
 
@@ -585,62 +585,66 @@ impl Lang for Csharp<'_> {
                         continue;
                     };
 
-                    match &idx.algorithm {
-                        IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                            let get_csharp_field_name_and_type = |col_pos: ColId| {
-                                let (field_name, field_type) = &product_type.elements[col_pos.idx()];
-                                let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
-                                let csharp_field_type = ty_fmt(module, field_type);
-                                (csharp_field_name_pascal, csharp_field_type)
-                            };
+                    // Whatever the index algorithm on the host,
+                    // the client can still use btrees.
+                    let columns = idx.algorithm.columns();
+                    let get_csharp_field_name_and_type = |col_pos: ColId| {
+                        let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                        let csharp_field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                        let csharp_field_type = ty_fmt(module, field_type);
+                        (csharp_field_name_pascal, csharp_field_type)
+                    };
 
-                            let (row_to_key, key_type) = match columns.as_singleton() {
-                                Some(col_pos) => {
-                                    let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
-                                    (format!("row.{field_name}"), field_type.to_string())
-                                }
-                                None => {
-                                    let mut key_accessors = Vec::new();
-                                    let mut key_type_elems = Vec::new();
-                                    for (field_name, field_type) in columns.iter().map(get_csharp_field_name_and_type) {
-                                        key_accessors.push(format!("row.{field_name}"));
-                                        key_type_elems.push(format!("{field_type} {field_name}"));
-                                    }
-                                    (
-                                        format!("({})", key_accessors.join(", ")),
-                                        format!("({})", key_type_elems.join(", ")),
-                                    )
-                                }
-                            };
-
-                            let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
-
-                            let mut csharp_index_class_name = csharp_index_name.clone();
-                            let csharp_index_base_class_name = if schema.is_unique(columns) {
-                                csharp_index_class_name += "UniqueIndex";
-                                "UniqueIndexBase"
-                            } else {
-                                csharp_index_class_name += "Index";
-                                "BTreeIndexBase"
-                            };
-
-                            writeln!(output, "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>");
-                            indented_block(output, |output| {
-                                writeln!(
-                                    output,
-                                    "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
-                                );
-                                writeln!(output);
-                                writeln!(output, "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}");
-                            });
-                            writeln!(output);
-                            writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
-                            writeln!(output);
-
-                            index_names.push(csharp_index_name);
+                    let (row_to_key, key_type) = match columns.as_singleton() {
+                        Some(col_pos) => {
+                            let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
+                            (format!("row.{field_name}"), field_type.to_string())
                         }
-                        _ => todo!(),
-                    }
+                        None => {
+                            let mut key_accessors = Vec::new();
+                            let mut key_type_elems = Vec::new();
+                            for (field_name, field_type) in columns.iter().map(get_csharp_field_name_and_type) {
+                                key_accessors.push(format!("row.{field_name}"));
+                                key_type_elems.push(format!("{field_type} {field_name}"));
+                            }
+                            (
+                                format!("({})", key_accessors.join(", ")),
+                                format!("({})", key_type_elems.join(", ")),
+                            )
+                        }
+                    };
+
+                    let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
+
+                    let mut csharp_index_class_name = csharp_index_name.clone();
+                    let csharp_index_base_class_name = if schema.is_unique(&columns) {
+                        csharp_index_class_name += "UniqueIndex";
+                        "UniqueIndexBase"
+                    } else {
+                        csharp_index_class_name += "Index";
+                        "BTreeIndexBase"
+                    };
+
+                    writeln!(
+                        output,
+                        "public sealed class {csharp_index_class_name} : {csharp_index_base_class_name}<{key_type}>"
+                    );
+                    indented_block(output, |output| {
+                        writeln!(
+                            output,
+                            "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
+                        );
+                        writeln!(output);
+                        writeln!(
+                            output,
+                            "public {csharp_index_class_name}({csharp_table_class_name} table) : base(table) {{ }}"
+                        );
+                    });
+                    writeln!(output);
+                    writeln!(output, "public readonly {csharp_index_class_name} {csharp_index_name};");
+                    writeln!(output);
+
+                    index_names.push(csharp_index_name);
                 }
 
                 writeln!(

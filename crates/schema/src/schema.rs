@@ -436,11 +436,11 @@ impl TableSchema {
     }
 
     /// Is there a unique constraint for this set of columns?
-    pub fn is_unique(&self, cols: &ColList) -> bool {
+    pub fn is_unique(&self, cols: &impl PartialEq<ColList>) -> bool {
         self.constraints
             .iter()
             .filter_map(|cs| cs.data.unique_columns())
-            .any(|unique_cols| **unique_cols == *cols)
+            .any(|unique_cols| *cols == **unique_cols)
     }
 
     /// Project the fields from the supplied `indexes`.
@@ -477,6 +477,7 @@ impl TableSchema {
             })
             .chain(self.indexes.iter().map(|x| match &x.index_algorithm {
                 IndexAlgorithm::BTree(btree) => (btree.columns.clone(), Constraints::indexed()),
+                IndexAlgorithm::Hash(hash) => (hash.columns.clone(), Constraints::indexed()),
                 IndexAlgorithm::Direct(direct) => (direct.column.into(), Constraints::indexed()),
             }))
             .chain(
@@ -537,10 +538,7 @@ impl TableSchema {
             .iter()
             .map(|x| (DefType::Sequence, x.sequence_name.clone(), ColList::new(x.col_pos)))
             .chain(self.indexes.iter().map(|x| {
-                let cols = match &x.index_algorithm {
-                    IndexAlgorithm::BTree(btree) => btree.columns.clone(),
-                    IndexAlgorithm::Direct(direct) => direct.column.into(),
-                };
+                let cols = x.index_algorithm.columns().to_owned();
                 (DefType::Index, x.index_name.clone(), cols)
             }))
             .chain(self.constraints.iter().map(|x| {
