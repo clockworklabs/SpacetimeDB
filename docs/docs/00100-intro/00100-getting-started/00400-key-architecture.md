@@ -397,7 +397,7 @@ void AGameManager::OnMakeRequestComplete(const FProcedureEventContext& Context, 
 </TabItem>
 <TabItem value="blueprint" label="Unreal Blueprint">
 
-An Unreal Blueprint [client](#client) can call a procedure defined by a Rust or TypeScript module:
+An Unreal [client](#client) can call a procedure defined by a Rust or TypeScript module:
 
 ![MakeRequest without callback](/images/unreal/intro/ue-blueprint-makerequest-nocallback.png)
 
