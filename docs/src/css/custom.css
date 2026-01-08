@@ -205,6 +205,19 @@ p {
   margin-bottom: 1.5rem;
 }
 
+/* Links in markdown body - per Figma */
+.markdown a {
+  color: var(--clockworklabs-color-n3);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-skip-ink: none;
+  text-underline-offset: auto;
+}
+
+.markdown a:hover {
+  color: var(--clockworklabs-color-n1);
+}
+
 /* Code 2 - per the style guide */
 .tmp {
   font-family: var(--clockworklabs-font-source);
@@ -251,6 +264,11 @@ strong {
     letter-spacing: calc(var(--14px) * 0.08);
     text-transform: uppercase;
     font-weight: 600;
+
+    /* 32px spacing between items (16px padding on each side) */
+    .navbar__item {
+      padding: 0 16px;
+    }
 
     a:not(.navbar__button) {
       font-weight: 600;
