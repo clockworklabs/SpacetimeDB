@@ -1221,6 +1221,11 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
 
 fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow::Result<()> {
     for (file_path, content) in files {
+        // Skip .template.json files - they're only for template metadata
+        if file_path.ends_with(".template.json") {
+            continue;
+        }
+
         let full_path = target_dir.join(file_path);
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;
