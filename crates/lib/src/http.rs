@@ -1,4 +1,4 @@
-//! `SpacetimeType`-ified HTTP request, response and error types,
+//! `SpacetimeType`-ified HTTP request and response types,
 //! for use in the procedure HTTP API.
 //!
 //! The types here are all mirrors of various types within the `http` crate.
