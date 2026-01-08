@@ -788,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn allows_btree_indexes() {
+    fn allows_hash_indexes() {
         let mut builder = RawModuleDefV8Builder::default();
         builder.add_table_for_tests(
             RawTableDefV8::new_for_tests(
