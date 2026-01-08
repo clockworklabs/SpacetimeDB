@@ -2,7 +2,7 @@
 source: crates/bindings/tests/deps.rs
 expression: "cargo tree -p spacetimedb -e no-dev --color never --target wasm32-unknown-unknown -f {lib}"
 ---
-total crates: 68
+total crates: 69
 spacetimedb
 ├── anyhow
 ├── bytemuck
@@ -24,6 +24,7 @@ spacetimedb
 │   └── cfg_if
 ├── http
 │   ├── bytes
+│   ├── fnv
 │   └── itoa
 ├── log
 ├── rand
@@ -37,8 +38,8 @@ spacetimedb
 ├── serde_json
 │   ├── itoa
 │   ├── memchr
-│   ├── serde_core
-│   └── zmij
+│   ├── ryu
+│   └── serde_core
 ├── spacetimedb_bindings_macro
 │   ├── heck
 │   ├── humantime
