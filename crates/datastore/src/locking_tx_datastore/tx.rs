@@ -4,14 +4,17 @@ use super::{
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
-use crate::execution_context::ExecutionContext;
+use crate::{error::IndexError, execution_context::ExecutionContext};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter};
+use spacetimedb_table::{
+    table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter},
+    table_index::IndexCannotSeekRange,
+};
 use std::sync::Arc;
 use std::{future, num::NonZeroU64};
 use std::{
@@ -64,7 +67,8 @@ impl Datastore for TxId {
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
-        self.with_index(table_id, index_id, |i| i.seek_range(range))
+        self.with_index(table_id, index_id, |i| i.seek_range(range))?
+            .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id).into())
     }
 
     fn index_scan_point<'a>(
@@ -173,14 +177,16 @@ impl TxId {
     /// Returns `None` if:
     /// - No such table as `table_id` exists.
     /// - The table `table_id` does not have an index on exactly the `cols`.
+    ///
+    /// Returns `Some(None)` if:
     /// - The table `table_id` contains zero rows (i.e. the index is empty).
     //
     // This method must never return 0, as it's used as the divisor in quotients.
     // Do not change its return type to a bare `u64`.
-    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<NonZeroU64> {
+    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<Option<NonZeroU64>> {
         let table = self.committed_state_shared_lock.get_table(table_id)?;
         let (_, index) = table.get_index_by_cols(cols)?;
-        NonZeroU64::new(index.num_keys() as u64)
+        Some(NonZeroU64::new(index.num_keys() as u64))
     }
 
     pub fn tx_offset(&self) -> future::Ready<TxOffset> {
