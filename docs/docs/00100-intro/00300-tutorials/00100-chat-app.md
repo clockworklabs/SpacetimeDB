@@ -1158,8 +1158,10 @@ import './index.css';
 import App from './App.tsx';
 import { Identity } from 'spacetimedb';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
-import { type ErrorContext } from './module_bindings/index.ts';
+import { DbConnection, type ErrorContext } from './module_bindings/index.ts';
 ```
+
+> Note that we are importing `DbConnection` from our `module_bindings` because it is a code generated type with all the type information about our tables and types.
 
 We've also imported the `SpacetimeDBProvider` React component which will allow us to connect our SpacetimeDB state directly to our React state seamlessly.
 
