@@ -2,11 +2,16 @@ use bytes::Bytes;
 use chrono::{NaiveDate, Utc};
 use futures::stream::{self, BoxStream};
 use futures::{Stream, StreamExt as _, TryStreamExt};
+use pin_project_lite::pin_project;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::future;
 use std::io::{self, Read, Seek, Write};
+use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+use tokio::io::{AsyncRead, BufReader};
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tokio_stream::wrappers::BroadcastStream;
@@ -391,35 +396,41 @@ impl DatabaseLogger {
     /// Note that this only reads from the most recent log file, even if it
     /// contains less than `num_lines` lines.
     ///
-    /// If no log file exists on disk, the stream will yield an error of kind
-    /// [io::ErrorKind::NotFound] when polled.
+    /// If no log file exists on disk, the stream will be empty.
     pub fn read_latest_on_disk(logs_dir: ModuleLogsDir, num_lines: Option<u32>) -> LogStream {
         stream::once(asyncify(move || {
-            let path = logs_dir.today();
-            let mut file = File::open(&path).or_else(|e| {
-                if e.kind() == io::ErrorKind::NotFound {
-                    let logs_dir = path.popped();
-                    let Some(path) = logs_dir.clone().most_recent()? else {
-                        return Err(io::Error::new(
-                            io::ErrorKind::NotFound,
-                            format!("no module logs found on disk at {}", logs_dir.display()),
-                        ));
-                    };
-                    File::open(&path)
-                } else {
-                    Err(e)
-                }
-            })?;
+            let Some(mut file) = Self::open_most_recent(logs_dir)? else {
+                return Ok(None);
+            };
             if let Some(n) = num_lines {
                 let mut buf = seek_buffer(n);
                 seek_to(&mut file, &mut buf, n)?;
             }
 
-            Ok::<_, io::Error>(tokio::fs::File::from_std(file))
+            Ok::<_, io::Error>(Some(file))
         }))
-        .map_ok(ReaderStream::new)
+        .map_ok(into_file_stream)
         .try_flatten()
         .boxed()
+    }
+
+    /// Open the most recent log file found in `logs_dir`, or `None` if none exists.
+    fn open_most_recent(logs_dir: ModuleLogsDir) -> io::Result<Option<File>> {
+        let path = logs_dir.today();
+        match open_file(&path)? {
+            Some(file) => Ok(Some(file)),
+            None => {
+                let logs_dir = path.popped();
+                // `most_recent` errors if the directory doesn't exist.
+                if !logs_dir.0.try_exists()? {
+                    return Ok(None);
+                }
+                let Some(path) = logs_dir.most_recent()? else {
+                    return Ok(None);
+                };
+                open_file(&path)
+            }
+        }
     }
 
     pub fn system_logger(&self) -> &SystemLogger {
@@ -591,6 +602,50 @@ fn read_exact_at(file: &std::fs::File, buf: &mut [u8], offset: u64) -> io::Resul
     {
         (&*file).seek(io::SeekFrom::Start(offset))?;
         (&*file).read_exact(buf)
+    }
+}
+
+/// Open the [File] at `path` for reading, or `None` if the file doesn't exist.
+fn open_file(path: impl AsRef<Path>) -> io::Result<Option<File>> {
+    File::open(path).map(Some).or_else(|e| {
+        if e.kind() == io::ErrorKind::NotFound {
+            Ok(None)
+        } else {
+            Err(e)
+        }
+    })
+}
+
+/// Create a buffered [Stream] from a file.
+///
+/// If `file` is `None`, the stream is empty.
+fn into_file_stream(file: impl Into<Option<File>>) -> impl Stream<Item = io::Result<Bytes>> {
+    ReaderStream::new(BufReader::new(MaybeFile::new(file.into())))
+}
+
+pin_project! {
+    #[project = MaybeFileProj]
+    enum MaybeFile {
+        File { #[pin] inner: tokio::fs::File },
+        Empty,
+    }
+}
+
+impl MaybeFile {
+    pub fn new(file: Option<File>) -> Self {
+        match file.map(tokio::fs::File::from_std) {
+            Some(inner) => Self::File { inner },
+            None => Self::Empty,
+        }
+    }
+}
+
+impl AsyncRead for MaybeFile {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
+        match self.project() {
+            MaybeFileProj::File { inner } => inner.poll_read(cx, buf),
+            MaybeFileProj::Empty => Poll::Ready(Ok(())),
+        }
     }
 }
 
