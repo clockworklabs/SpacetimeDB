@@ -2362,8 +2362,8 @@ pub(crate) mod test {
     use crate::var_len::VarLenGranule;
     use proptest::prelude::*;
     use proptest::test_runner::TestCaseResult;
-    use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
-    use spacetimedb_primitives::{col_list, TableId};
+    use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder};
+    use spacetimedb_primitives::TableId;
     use spacetimedb_sats::bsatn::to_vec;
     use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
@@ -2390,10 +2390,7 @@ pub(crate) mod test {
                 true,
             )
             .with_unique_constraint(0)
-            .with_index(
-                RawIndexAlgorithm::BTree { columns: col_list![0] },
-                "accessor_name_doesnt_matter",
-            );
+            .with_index(btree(0), "accessor_name_doesnt_matter");
 
         let def: ModuleDef = builder.finish().try_into().expect("Failed to build schema");
 
