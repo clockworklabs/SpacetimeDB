@@ -384,6 +384,7 @@ ul.theme-doc-sidebar-menu {
 }
 
 .menu__list .menu__list {
+  margin-top: 2px;
   padding: 0;
 }
 
@@ -448,8 +449,7 @@ ul.theme-doc-sidebar-menu {
 
 /* Indent nested items */
 .theme-doc-sidebar-item-category-level-1 .menu__list {
-  margin-left: 16px !important;
-  margin-top: 4px;
+  margin-left: 8px !important;
   padding-left: 8px;
 }
 
@@ -464,8 +464,7 @@ ul.theme-doc-sidebar-menu {
 /* Indent deeper nested items */
 .theme-doc-sidebar-item-category-level-2 .menu__list,
 .theme-doc-sidebar-item-category-level-3 .menu__list {
-  margin-left: 16px !important;
-  margin-top: 4px;
+  margin-left: 8px !important;
   padding-left: 8px;
 }
 
@@ -603,5 +602,84 @@ a.card {
 
   h6 {
     margin: 0;
+  }
+}
+
+/* Steps component - two-column layout for quickstarts */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin: 24px 0;
+  counter-reset: step-counter;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  align-items: start;
+  counter-increment: step-counter;
+}
+
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-title {
+  color: var(--clockworklabs-color-n1);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.step-title::before {
+  content: counter(step-counter) ". ";
+  color: var(--clockworklabs-color-n4);
+  font-weight: 500;
+}
+
+.step-description {
+  color: var(--clockworklabs-color-n3);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.step-description p {
+  margin: 0 0 8px 0;
+}
+
+.step-description p:last-child {
+  margin-bottom: 0;
+}
+
+.step-description code {
+  background-color: var(--clockworklabs-code-background-color);
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.step-code {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.step-code pre {
+  margin: 0 !important;
+}
+
+/* Responsive: stack on smaller screens */
+@media screen and (max-width: 996px) {
+  .step {
+    grid-template-columns: 1fr;
+  }
+
+  .step-code {
+    margin-top: 16px;
   }
 }
