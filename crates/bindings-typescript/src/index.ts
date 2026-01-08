@@ -10,4 +10,5 @@ export * from './lib/uuid';
 export * from './lib/util';
 export * from './lib/identity';
 export * from './lib/option';
+export * from './lib/result';
 export * from './sdk';

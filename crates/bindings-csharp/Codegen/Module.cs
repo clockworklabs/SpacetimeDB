@@ -1179,7 +1179,7 @@ record ReducerDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -1296,7 +1296,7 @@ record ProcedureDeclaration
         }
         else
         {
-            var serializer = $"new {ReturnType.BSATNName}()";
+            var serializer = $"new {ReturnType.ToBSATNString()}()";
             bodyLines = new[]
             {
                 $"var result = {invocation};",
@@ -1322,12 +1322,12 @@ record ProcedureDeclaration
             ? (
                 txPayloadIsUnit
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-                    : $"new {txPayload.BSATNName}().GetAlgebraicType(registrar)"
+                    : $"new {txPayload.ToBSATNString2()}().GetAlgebraicType(registrar)"
             )
             : (
                 ReturnType.Name == "SpacetimeDB.Unit"
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-                    : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)"
+                    : $"new {ReturnType.ToBSATNString2()}().GetAlgebraicType(registrar)"
             );
 
         var classFields = MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args);
@@ -1373,7 +1373,7 @@ record ProcedureDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
