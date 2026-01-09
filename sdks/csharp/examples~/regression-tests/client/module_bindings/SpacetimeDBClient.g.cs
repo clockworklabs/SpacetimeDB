@@ -603,6 +603,8 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Table<MyLog, MyLogCols, MyLogIxCols> MyLog() => new("my_log", new MyLogCols("my_log"), new MyLogIxCols("my_log"));
         public global::SpacetimeDB.Table<Player, MyPlayerCols, MyPlayerIxCols> MyPlayer() => new("my_player", new MyPlayerCols("my_player"), new MyPlayerIxCols("my_player"));
         public global::SpacetimeDB.Table<MyTable, MyTableCols, MyTableIxCols> MyTable() => new("my_table", new MyTableCols("my_table"), new MyTableIxCols("my_table"));
+        public global::SpacetimeDB.Table<NullStringNonNullable, NullStringNonnullableCols, NullStringNonnullableIxCols> NullStringNonnullable() => new("null_string_nonnullable", new NullStringNonnullableCols("null_string_nonnullable"), new NullStringNonnullableIxCols("null_string_nonnullable"));
+        public global::SpacetimeDB.Table<NullStringNullable, NullStringNullableCols, NullStringNullableIxCols> NullStringNullable() => new("null_string_nullable", new NullStringNullableCols("null_string_nullable"), new NullStringNullableIxCols("null_string_nullable"));
         public global::SpacetimeDB.Table<NullableVec, NullableVecCols, NullableVecIxCols> NullableVec() => new("nullable_vec", new NullableVecCols("nullable_vec"), new NullableVecIxCols("nullable_vec"));
         public global::SpacetimeDB.Table<NullableVec, NullableVecViewCols, NullableVecViewIxCols> NullableVecView() => new("nullable_vec_view", new NullableVecViewCols("nullable_vec_view"), new NullableVecViewIxCols("nullable_vec_view"));
         public global::SpacetimeDB.Table<Player, PlayerCols, PlayerIxCols> Player() => new("player", new PlayerCols("player"), new PlayerIxCols("player"));
