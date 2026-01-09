@@ -17,9 +17,11 @@ harness = true         # Use libtest harness.
 required-features = [] # Features required to build this target (N/A for lib)
 
 [features]
+unstable = ["spacetimedb-client-api/unstable"]
 # Perfmaps for profiling modules
 perfmap = ["spacetimedb-core/perfmap"]
-unstable = ["spacetimedb-client-api/unstable"]
+# Disables core pinning
+no-core-pinning = ["spacetimedb-core/no-core-pinning"]
 
 [dependencies]
 spacetimedb-client-api-messages.workspace = true
