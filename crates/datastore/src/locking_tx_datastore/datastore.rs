@@ -1006,6 +1006,10 @@ impl<F> Replay<F> {
     pub fn next_tx_offset(&self) -> u64 {
         self.committed_state.read_arc().next_tx_offset
     }
+
+    pub fn committed_state(&self) -> &Arc<RwLock<CommittedState>> {
+        &self.committed_state
+    }
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
