@@ -1,8 +1,8 @@
 // Note: the generated code depends on APIs and interfaces from crates/bindings-csharp/BSATN.Runtime.
 use super::util::fmt_fn;
 
-use std::fmt::{self, Write};
 use std::collections::BTreeSet;
+use std::fmt::{self, Write};
 use std::ops::Deref;
 
 use super::code_indenter::CodeIndenter;
@@ -684,7 +684,7 @@ impl Lang for Csharp<'_> {
             writeln!(output);
             writeln!(output, "public readonly {csharp_table_class_name} {csharp_table_name};");
         });
-        
+
         // Emit top-level Cols/IxCols helpers for the typed query builder.
         writeln!(output);
 
@@ -708,7 +708,10 @@ impl Lang for Csharp<'_> {
             for (field_name, field_type) in &product_type.elements {
                 let prop = field_name.deref().to_case(Case::Pascal);
                 let ty = ty_fmt(module, field_type);
-                writeln!(output, "public global::SpacetimeDB.Col<{row_type}, {ty}> {prop} {{ get; }}");
+                writeln!(
+                    output,
+                    "public global::SpacetimeDB.Col<{row_type}, {ty}> {prop} {{ get; }}"
+                );
             }
             writeln!(output);
             writeln!(output, "public {cols_owner_name}Cols(string tableName)");
@@ -734,7 +737,10 @@ impl Lang for Csharp<'_> {
                 }
                 let prop = field_name.deref().to_case(Case::Pascal);
                 let ty = ty_fmt(module, field_type);
-                writeln!(output, "public global::SpacetimeDB.IxCol<{row_type}, {ty}> {prop} {{ get; }}");
+                writeln!(
+                    output,
+                    "public global::SpacetimeDB.IxCol<{row_type}, {ty}> {prop} {{ get; }}"
+                );
             }
             writeln!(output);
             writeln!(output, "public {cols_owner_name}IxCols(string tableName)");
@@ -1044,7 +1050,7 @@ impl Lang for Csharp<'_> {
         writeln!(output, "public sealed partial class SetReducerFlags {{ }}");
 
         writeln!(output, "{REDUCER_EVENTS}");
-        
+
         writeln!(output, "public sealed class QueryBuilder");
         indented_block(&mut output, |output| {
             writeln!(output, "public From From {{ get; }} = new();");
@@ -1084,14 +1090,20 @@ impl Lang for Csharp<'_> {
             });
             writeln!(output);
 
-            writeln!(output, "public TypedSubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback)");
+            writeln!(
+                output,
+                "public TypedSubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback)"
+            );
             indented_block(output, |output| {
                 writeln!(output, "Applied += callback;");
                 writeln!(output, "return this;");
             });
             writeln!(output);
 
-            writeln!(output, "public TypedSubscriptionBuilder OnError(Action<ErrorContext, Exception> callback)");
+            writeln!(
+                output,
+                "public TypedSubscriptionBuilder OnError(Action<ErrorContext, Exception> callback)"
+            );
             indented_block(output, |output| {
                 writeln!(output, "Error += callback;");
                 writeln!(output, "return this;");
@@ -1106,7 +1118,10 @@ impl Lang for Csharp<'_> {
             });
             writeln!(output);
 
-            writeln!(output, "public SubscriptionHandle Subscribe() => new(conn, Applied, Error, querySqls.ToArray());");
+            writeln!(
+                output,
+                "public SubscriptionHandle Subscribe() => new(conn, Applied, Error, querySqls.ToArray());"
+            );
         });
         writeln!(output);
 
