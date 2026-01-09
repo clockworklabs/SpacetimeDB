@@ -108,6 +108,11 @@ impl CoreInfo {
 #[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct SingleCoreExecutorId(usize);
 
+#[cfg(feature = "no-core-pinning")]
+const DISABLE_CORE_PINNING: bool = true;
+#[cfg(not(feature = "no-core-pinning"))]
+const DISABLE_CORE_PINNING: bool = false;
+
 impl JobCores {
     /// Get a handle on a [`SingleCoreExecutor`] to later run a database's jobs on.
     pub fn take(&self) -> SingleCoreExecutor {
@@ -125,7 +130,7 @@ impl JobCores {
     /// and runs all databases in the `global_runtime`.
     pub fn from_pinned_cores(cores: impl IntoIterator<Item = CoreId>, global_runtime: runtime::Handle) -> Self {
         let cores: IndexMap<_, _> = cores.into_iter().map(|id| (id, CoreInfo::spawn_executor(id))).collect();
-        let inner = if cores.is_empty() {
+        let inner = if DISABLE_CORE_PINNING || cores.is_empty() {
             JobCoresInner::NoPinning(global_runtime)
         } else {
             JobCoresInner::PinnedCores(Arc::new(Mutex::new(PinnedCoresExecutorManager {
