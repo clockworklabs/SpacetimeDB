@@ -240,7 +240,7 @@ Output will resemble:
  0x93dda09db9a56d8fa6c024d843e805d8262191db3b4ba84c5efcd1ad451fed4e | 2025-04-08T15:47:46.935402+00:00 | "Hello, World!"
 ```
 
-You've just set up your first TypeScript module in SpacetimeDB! You can find the full code for this client [TypeScript server module example](https://github.com/clockworklabs/SpacetimeDB/tree/master/modules/quickstart-chat-ts).
+You've just set up your first TypeScript module in SpacetimeDB! You can find the full code for this client [TypeScript server module example](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-typescript).
 
 # Creating the client
 

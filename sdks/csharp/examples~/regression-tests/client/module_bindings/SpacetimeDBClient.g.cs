@@ -31,6 +31,7 @@ namespace SpacetimeDB.Types
             AddTable(Admins = new(conn));
             AddTable(User = new(conn));
             AddTable(ExampleData = new(conn));
+            AddTable(MyLog = new(conn));
             AddTable(MyPlayer = new(conn));
             AddTable(MyTable = new(conn));
             AddTable(NullStringNonnullable = new(conn));
@@ -607,6 +608,7 @@ namespace SpacetimeDB.Types
                 "InsertEmptyStringIntoNonNullable" => BSATNHelpers.Decode<Reducer.InsertEmptyStringIntoNonNullable>(encodedArgs),
                 "InsertNullStringIntoNonNullable" => BSATNHelpers.Decode<Reducer.InsertNullStringIntoNonNullable>(encodedArgs),
                 "InsertNullStringIntoNullable" => BSATNHelpers.Decode<Reducer.InsertNullStringIntoNullable>(encodedArgs),
+                "InsertResult" => BSATNHelpers.Decode<Reducer.InsertResult>(encodedArgs),
                 "SetNullableVec" => BSATNHelpers.Decode<Reducer.SetNullableVec>(encodedArgs),
                 "ThrowError" => BSATNHelpers.Decode<Reducer.ThrowError>(encodedArgs),
                 "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
@@ -640,6 +642,7 @@ namespace SpacetimeDB.Types
                 Reducer.InsertEmptyStringIntoNonNullable args => Reducers.InvokeInsertEmptyStringIntoNonNullable(eventContext, args),
                 Reducer.InsertNullStringIntoNonNullable args => Reducers.InvokeInsertNullStringIntoNonNullable(eventContext, args),
                 Reducer.InsertNullStringIntoNullable args => Reducers.InvokeInsertNullStringIntoNullable(eventContext, args),
+                Reducer.InsertResult args => Reducers.InvokeInsertResult(eventContext, args),
                 Reducer.SetNullableVec args => Reducers.InvokeSetNullableVec(eventContext, args),
                 Reducer.ThrowError args => Reducers.InvokeThrowError(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")

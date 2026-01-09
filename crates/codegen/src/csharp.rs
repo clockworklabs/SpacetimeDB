@@ -1104,6 +1104,12 @@ fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Disp
         AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt(module, inner_ty)),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
+            f,
+            "SpacetimeDB.Result<{}, {}>",
+            ty_fmt(module, ok_ty),
+            ty_fmt(module, err_ty)
+        ),
         AlgebraicTypeUse::Array(elem_ty) => write!(f, "System.Collections.Generic.List<{}>", ty_fmt(module, elem_ty)),
         AlgebraicTypeUse::String => f.write_str("string"),
         AlgebraicTypeUse::Ref(r) => f.write_str(&type_ref_name(module, *r)),
@@ -1139,6 +1145,12 @@ fn ty_fmt_with_ns<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace
         AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt_with_ns(module, inner_ty, namespace)),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
+            f,
+            "SpacetimeDB.Result<{}, {}>",
+            ty_fmt_with_ns(module, ok_ty, namespace),
+            ty_fmt_with_ns(module, err_ty, namespace)
+        ),
         AlgebraicTypeUse::Array(elem_ty) => write!(
             f,
             "System.Collections.Generic.List<{}>",
@@ -1185,6 +1197,8 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         AlgebraicTypeUse::String => Some(r#""""#),
         // Primitives are initialized to zero automatically.
         AlgebraicTypeUse::Primitive(_) => None,
+        // Result<,> must be explicitly initialized.
+        AlgebraicTypeUse::Result { .. } => Some("default!"),
         // these are structs, they are initialized to zero-filled automatically
         AlgebraicTypeUse::Unit
         | AlgebraicTypeUse::Identity
