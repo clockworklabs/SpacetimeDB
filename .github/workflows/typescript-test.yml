@@ -135,6 +135,10 @@ jobs:
         working-directory: templates/quickstart-chat-typescript
         run: pnpm build
 
+      - name: Check that templates build
+        working-directory: templates/
+        run: pnpm -r --filter "./**" run build
+
       - name: Check that subdirectories build
         working-directory: crates/bindings-typescript
         run: pnpm -r --filter "./**" run build
