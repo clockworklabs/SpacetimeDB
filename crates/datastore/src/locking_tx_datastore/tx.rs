@@ -4,14 +4,17 @@ use super::{
     state_view::{IterByColRangeTx, StateView},
     IterByColEqTx, SharedReadGuard,
 };
-use crate::execution_context::ExecutionContext;
+use crate::{error::IndexError, execution_context::ExecutionContext};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_execution::Datastore;
 use spacetimedb_lib::metrics::ExecutionMetrics;
 use spacetimedb_primitives::{ColList, IndexId, TableId};
 use spacetimedb_sats::AlgebraicValue;
 use spacetimedb_schema::schema::TableSchema;
-use spacetimedb_table::table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter};
+use spacetimedb_table::{
+    table::{IndexScanPointIter, IndexScanRangeIter, TableAndIndex, TableScanIter},
+    table_index::IndexCannotSeekRange,
+};
 use std::sync::Arc;
 use std::{future, num::NonZeroU64};
 use std::{
@@ -64,7 +67,8 @@ impl Datastore for TxId {
         index_id: IndexId,
         range: &impl RangeBounds<AlgebraicValue>,
     ) -> anyhow::Result<Self::RangeIndexIter<'a>> {
-        self.with_index(table_id, index_id, |i| i.seek_range(range))
+        self.with_index(table_id, index_id, |i| i.seek_range(range))?
+            .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id).into())
     }
 
     fn index_scan_point<'a>(

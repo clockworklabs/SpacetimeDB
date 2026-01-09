@@ -11,7 +11,7 @@ use spacetimedb_table::{
     pointer_map::PointerMap,
     static_assert_size,
     table::{IndexScanPointIter, IndexScanRangeIter, RowRef, Table, TableAndIndex},
-    table_index::TableIndex,
+    table_index::{IndexSeekRangeResult, TableIndex},
 };
 use std::collections::{btree_map, BTreeMap};
 use thin_vec::ThinVec;
@@ -142,7 +142,7 @@ impl TxState {
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanRangeIter<'a>> {
+    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
         self.insert_tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)

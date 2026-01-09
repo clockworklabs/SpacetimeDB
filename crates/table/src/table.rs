@@ -1,4 +1,4 @@
-use crate::blob_store::NullBlobStore;
+use crate::{blob_store::NullBlobStore, table_index::IndexCannotSeekRange};
 
 use super::{
     bflatn_from::serialize_row_from_page,
@@ -2087,7 +2087,7 @@ impl<'a> TableAndIndex<'a> {
 
     /// Returns an iterator yielding all rows in this index for `key`.
     ///
-    /// Matching is defined by `Ord for AlgebraicValue`.
+    /// Matching is defined by `Eq for AlgebraicValue`.
     pub fn seek_point(&self, key: &AlgebraicValue) -> IndexScanPointIter<'a> {
         IndexScanPointIter {
             table: self.table,
@@ -2096,15 +2096,19 @@ impl<'a> TableAndIndex<'a> {
         }
     }
 
-    /// Returns an iterator yielding all rows in this index that fall within `range`.
+    /// Returns an iterator yielding all rows in this index that fall within `range`,
+    /// if the index is compatible with range seeks.
     ///
     /// Matching is defined by `Ord for AlgebraicValue`.
-    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexScanRangeIter<'a> {
-        IndexScanRangeIter {
+    pub fn seek_range(
+        &self,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> Result<IndexScanRangeIter<'a>, IndexCannotSeekRange> {
+        Ok(IndexScanRangeIter {
             table: self.table,
             blob_store: self.blob_store,
-            btree_index_iter: self.index.seek_range(range),
-        }
+            btree_index_iter: self.index.seek_range(range)?,
+        })
     }
 }
 
@@ -2488,6 +2492,7 @@ pub(crate) mod test {
 
         index
             .seek_range(&(..))
+            .unwrap()
             .map(|row_ptr| {
                 let row_ref = table.get_row_ref(blob_store, row_ptr).unwrap();
                 let key = row_ref.project(&index.indexed_columns).unwrap();
