@@ -25,8 +25,8 @@ TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 # the contents of files for the base smoketest project template
-TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/templates/basic-rust/server/src/lib.rs").read()
-TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/templates/basic-rust/server/Cargo.toml").read()
+TEMPLATE_LIB_RS = open(STDB_DIR / "templates/basic-rust/spacetimedb/src/lib.rs").read()
+TEMPLATE_CARGO_TOML = open(STDB_DIR / "templates/basic-rust/spacetimedb/Cargo.toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
 TYPESCRIPT_BINDINGS_PATH = (STDB_DIR / "crates/bindings-typescript").absolute()
