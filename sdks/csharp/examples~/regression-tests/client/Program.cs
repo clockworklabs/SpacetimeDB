@@ -66,6 +66,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_account_missing",
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
+            "SELECT * FROM my_log",
             "SELECT * FROM Admins",
             "SELECT * FROM nullable_vec_view",
         ]);
@@ -83,6 +84,12 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         Log.Info("Got Delete callback");
         waiting--;
         ValidateBTreeIndexes(ctx);
+    };
+
+    conn.Reducers.OnInsertResult += (ReducerEventContext ctx, Result<MyTable, string> msg) =>
+    {
+        Log.Info($"Got InsertResult callback: {msg}");
+        waiting--;
     };
 
     conn.OnUnhandledReducerError += (ReducerEventContext ctx, Exception exception) =>
@@ -190,6 +197,28 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling ThrowError");
     waiting++;
     context.Reducers.ThrowError("this is an error");
+
+    Log.Debug("Calling InsertResult");
+    waiting++;
+    context.Reducers.InsertResult(Result<MyTable, string>.Ok(new MyTable(new ReturnStruct(42, "magic"))));
+    waiting++;
+    context.Reducers.InsertResult(Result<MyTable, string>.Err("Fail"));
+
+    Log.Debug("Calling RemoteQuery on my_log");
+    var logRows = context.Db.MyLog.RemoteQuery("").Result;
+    Debug.Assert(logRows != null && logRows.Length == 2);
+    var logs = logRows.ToArray();
+    var expected = new[]
+    {
+        new MyLog(Result<MyTable, string>.Ok(
+            new MyTable(new ReturnStruct(42, "magic"))
+        )),
+        new MyLog(Result<MyTable, string>.Err("Fail")),
+    };
+    Debug.Assert(
+        logs.SequenceEqual(expected),
+        "Logs did not match expected results"
+    );
 
     // RemoteQuery test
     Log.Debug("Calling RemoteQuery");
@@ -355,6 +384,22 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         else
         {
             throw new Exception("Expected InsertWithTransactionRollback to fail, but it succeeded");
+        }
+        waiting--;
+    });
+
+    Log.Debug("Calling InsertWithTxRollbackResult");
+    waiting++;
+    context.Procedures.InsertWithTxRollbackResult((IProcedureEventContext ctx, ProcedureCallbackResult<Result<ReturnStruct, string>> result) =>
+    {
+        if (result.IsSuccess)
+        {
+            Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after rollback result. Count was {context.Db.MyTable.Count}");
+            Log.Debug("Insert with transaction result rollback succeeded");
+        }
+        else
+        {
+            throw new Exception("Expected InsertWithTxRollbackResult to fail, but it succeeded");
         }
         waiting--;
     });

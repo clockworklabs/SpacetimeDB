@@ -55,53 +55,41 @@ fn get_manifest_dir() -> PathBuf {
 //
 //   * `get_templates_json` - returns contents of the JSON file with the list of templates
 //   * `get_template_files` - returns a HashMap with templates contents based on the
-//                            templates list at crates/cli/templates/templates-list.json
+//                            templates list at templates/templates-list.json
 //   * `get_cursorrules` - returns contents of a cursorrules file
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
-    let manifest_path = Path::new(&manifest_dir);
-    let templates_json_path = manifest_path.join("templates/templates-list.json");
+    let repo_root = get_repo_root();
+    let templates_dir = repo_root.join("templates");
     let out_dir = std::env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("embedded_templates.rs");
 
-    println!("cargo:rerun-if-changed=templates/templates-list.json");
+    println!("cargo:rerun-if-changed=../../templates");
 
-    let templates_json =
-        fs::read_to_string(&templates_json_path).expect("Failed to read templates/templates-list.json");
-
-    let templates: serde_json::Value =
-        serde_json::from_str(&templates_json).expect("Failed to parse templates/templates-list.json");
+    let discovered_templates = discover_templates(&templates_dir);
 
     let mut generated_code = String::new();
     generated_code.push_str("use std::collections::HashMap;\n\n");
 
     generated_code.push_str("pub fn get_templates_json() -> &'static str {\n");
-    generated_code
-        .push_str("    include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/templates/templates-list.json\"))\n");
+    generated_code.push_str("    r#\"");
+    generated_code.push_str(&generate_templates_json(&discovered_templates));
+    generated_code.push_str("\"#\n");
     generated_code.push_str("}\n\n");
 
     generated_code
         .push_str("pub fn get_template_files() -> HashMap<&'static str, HashMap<&'static str, &'static str>> {\n");
     generated_code.push_str("    let mut templates = HashMap::new();\n\n");
 
-    if let Some(template_list) = templates["templates"].as_array() {
-        for template in template_list {
-            let server_source = template["server_source"].as_str().unwrap();
-            let client_source = template["client_source"].as_str().unwrap();
-
+    for template in &discovered_templates {
+        if let Some(ref server_source) = template.server_source {
             let server_path = PathBuf::from(server_source);
+            generate_template_entry(&mut generated_code, &server_path, server_source, &manifest_dir);
+        }
+
+        if let Some(ref client_source) = template.client_source {
             let client_path = PathBuf::from(client_source);
-
-            let server_full_path = Path::new(&manifest_dir).join(&server_path);
-            let client_full_path = Path::new(&manifest_dir).join(&client_path);
-
-            if server_full_path.exists() {
-                generate_template_entry(&mut generated_code, &server_path, server_source, &manifest_dir);
-            }
-
-            if client_full_path.exists() {
-                generate_template_entry(&mut generated_code, &client_path, client_source, &manifest_dir);
-            }
+            generate_template_entry(&mut generated_code, &client_path, client_source, &manifest_dir);
         }
     }
 
@@ -157,6 +145,139 @@ fn generate_template_files() {
     generated_code.push_str("}\n");
 
     write_if_changed(&dest_path, generated_code.as_bytes()).expect("Failed to write embedded_templates.rs");
+}
+
+#[derive(Debug)]
+struct TemplateInfo {
+    id: String,
+    description: String,
+    server_source: Option<String>,
+    client_source: Option<String>,
+    server_lang: Option<String>,
+    client_lang: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct TemplateMetadata {
+    description: String,
+    client_lang: Option<String>,
+    server_lang: Option<String>,
+}
+
+fn discover_templates(templates_dir: &Path) -> Vec<TemplateInfo> {
+    let mut templates = Vec::new();
+
+    let entries = match fs::read_dir(templates_dir) {
+        Ok(entries) => entries,
+        Err(_) => return templates,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let template_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+
+        let metadata_path = path.join(".template.json");
+        if !metadata_path.exists() {
+            continue;
+        }
+
+        let metadata_content = match fs::read_to_string(&metadata_path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        let metadata: TemplateMetadata = match serde_json::from_str(&metadata_content) {
+            Ok(meta) => meta,
+            Err(_) => continue,
+        };
+
+        let server_source = if metadata.server_lang.is_some() {
+            Some(format!("{}/spacetimedb", template_name))
+        } else {
+            None
+        };
+
+        let client_source = if metadata.client_lang.is_some() {
+            Some(template_name.to_string())
+        } else {
+            None
+        };
+
+        if server_source.is_some() || client_source.is_some() {
+            templates.push(TemplateInfo {
+                id: template_name.to_string(),
+                description: metadata.description,
+                server_source,
+                client_source,
+                server_lang: metadata.server_lang,
+                client_lang: metadata.client_lang,
+            });
+        }
+    }
+
+    templates.sort_by(|a, b| a.id.cmp(&b.id));
+    templates
+}
+
+fn generate_templates_json(templates: &[TemplateInfo]) -> String {
+    let mut json = String::from("{\n  \"highlights\": [\n");
+
+    for template in templates {
+        if template.id.contains("react") {
+            json.push_str("    { \"name\": \"React\", \"template_id\": \"");
+            json.push_str(&template.id);
+            json.push_str("\" }\n");
+            break;
+        }
+    }
+
+    json.push_str("  ],\n  \"templates\": [\n");
+
+    for (i, template) in templates.iter().enumerate() {
+        json.push_str("    {\n");
+        json.push_str(&format!("      \"id\": \"{}\",\n", template.id));
+        json.push_str(&format!("      \"description\": \"{}\",\n", template.description));
+
+        if let Some(ref server_source) = template.server_source {
+            json.push_str(&format!("      \"server_source\": \"{}\",\n", server_source));
+        } else {
+            json.push_str("      \"server_source\": \"\",\n");
+        }
+
+        if let Some(ref client_source) = template.client_source {
+            json.push_str(&format!("      \"client_source\": \"{}\",\n", client_source));
+        } else {
+            json.push_str("      \"client_source\": \"\",\n");
+        }
+
+        if let Some(ref server_lang) = template.server_lang {
+            json.push_str(&format!("      \"server_lang\": \"{}\",\n", server_lang));
+        } else {
+            json.push_str("      \"server_lang\": \"\",\n");
+        }
+
+        if let Some(ref client_lang) = template.client_lang {
+            json.push_str(&format!("      \"client_lang\": \"{}\"", client_lang));
+        } else {
+            json.push_str("      \"client_lang\": \"\"");
+        }
+
+        json.push_str("\n    }");
+        if i < templates.len() - 1 {
+            json.push(',');
+        }
+        json.push('\n');
+    }
+
+    json.push_str("  ]\n}");
+    json
 }
 
 fn generate_template_entry(code: &mut String, template_path: &Path, source: &str, manifest_dir: &Path) {
@@ -320,10 +441,11 @@ fn ls_recursively(root_dir: &Path, repo_root: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Treat `relative_path` as a relative path within `manifest_dir`
+/// Treat `relative_path` as a relative path within the repo root's templates directory
 /// and transform it into an absolute, canonical path.
-fn get_full_path_within_manifest_dir(relative_path: &Path, manifest_dir: &Path) -> PathBuf {
-    let full_path = manifest_dir.join(relative_path);
+fn get_full_path_within_manifest_dir(relative_path: &Path, _manifest_dir: &Path) -> PathBuf {
+    let repo_root = get_repo_root();
+    let full_path = repo_root.join("templates").join(relative_path);
 
     full_path.canonicalize().unwrap_or_else(|e| {
         panic!("Failed to canonicalize path {}: {}", full_path.display(), e);

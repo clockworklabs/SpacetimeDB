@@ -44,6 +44,9 @@ pub fn ensure_lang<'a>(root: &'a mut Results, lang: &str) -> &'a mut LangEntry {
 
 fn ensure_mode<'a>(lang_v: &'a mut LangEntry, mode: &str, hash: Option<String>) -> &'a mut ModeEntry {
     if let Some(i) = lang_v.modes.iter().position(|m| m.mode == mode) {
+        if let Some(h) = hash {
+            lang_v.modes[i].hash = Some(h);
+        }
         return &mut lang_v.modes[i];
     }
     lang_v.modes.push(ModeEntry {
