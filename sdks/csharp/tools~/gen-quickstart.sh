@@ -7,4 +7,4 @@ SDK_PATH="$(realpath "$SDK_PATH")"
 STDB_PATH="$SDK_PATH/../.."
 
 cargo build --manifest-path "$STDB_PATH/crates/standalone/Cargo.toml"
-cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$SDK_PATH/examples~/quickstart-chat/client/module_bindings" --project-path "$SDK_PATH/examples~/quickstart-chat/server"
+cargo run --manifest-path "$STDB_PATH/crates/cli/Cargo.toml" -- generate -y -l csharp -o "$STDB_PATH/templates/quickstart-chat-c-sharp/module_bindings" --project-path "$STDB_PATH/templates/quickstart-chat-c-sharp/spacetimedb"

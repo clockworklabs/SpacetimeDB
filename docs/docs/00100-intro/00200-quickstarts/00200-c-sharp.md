@@ -308,7 +308,7 @@ spacetime sql --server local quickstart-chat "SELECT * FROM message"
  0x93dda09db9a56d8fa6c024d843e805d8262191db3b4ba84c5efcd1ad451fed4e | 2025-04-08T15:47:46.935402+00:00 | "Hello, world!"
 ```
 
-You've just set up your first database in SpacetimeDB! You can find the full code for this module [in the C# server module example](https://github.com/clockworklabs/SpacetimeDB/tree/master/sdks/csharp/examples~/quickstart-chat/server).
+You've just set up your first database in SpacetimeDB! You can find the full code for this module [in the C# server module example](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-c-sharp/spacetimedb).
 
 
 # Creating the client 

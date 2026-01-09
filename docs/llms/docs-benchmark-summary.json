@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2026-01-06T00:39:43.087Z",
+  "generated_at": "2026-01-08T17:18:21.086Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "6f75b0c555fd7577df52872b447d9237496b7f004485c56464181b8bfb7834de",
+          "hash": "e2ae15b0c07ecc43f76ec3c154f477ea7851632e6f8985dc8f0ab845ac741afa",
           "models": {
             "GPT-5": {
               "categories": {
@@ -49,10 +49,10 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 20,
-                  "pass_pct": 74.07407,
-                  "task_pass_equiv": 9.0,
-                  "task_pass_pct": 75.0
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037,
+                  "task_pass_equiv": 8.0,
+                  "task_pass_pct": 66.66667
                 },
                 "schema": {
                   "tasks": 10,
@@ -66,10 +66,10 @@
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 43,
-                "pass_pct": 70.491806,
-                "task_pass_equiv": 15.000001,
-                "task_pass_pct": 68.18182
+                "passed_tests": 42,
+                "pass_pct": 68.85246,
+                "task_pass_equiv": 14.000001,
+                "task_pass_pct": 63.636368
               }
             }
           }

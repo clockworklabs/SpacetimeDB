@@ -24,6 +24,7 @@
 /// We also represent unique indices more compactly than non-unique ones, avoiding the multi-map.
 /// Additionally, beyond our btree indices,
 /// we support direct unique indices, where key are indices into `Vec`s.
+use self::same_key_entry::SameKeyEntryIter;
 use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size};
@@ -37,6 +38,7 @@ use spacetimedb_sats::{
 
 mod key_size;
 mod multimap;
+mod same_key_entry;
 pub mod unique_direct_fixed_cap_index;
 pub mod unique_direct_index;
 pub mod uniquemap;
@@ -47,7 +49,7 @@ use unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixed
 use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
 
 type BtreeIndex<K> = multimap::MultiMap<K, RowPointer>;
-type BtreeIndexPointIter<'a> = multimap::MultiMapPointIter<'a, RowPointer>;
+type BtreeIndexPointIter<'a> = SameKeyEntryIter<'a, RowPointer>;
 type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
 type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
 type BtreeUniqueIndexPointIter<'a> = uniquemap::UniqueMapPointIter<'a, RowPointer>;

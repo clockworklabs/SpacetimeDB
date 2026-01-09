@@ -103,16 +103,16 @@ jobs:
           spacetime server clear -y
 
       - name: Generate client bindings
-        working-directory: modules/quickstart-chat
+        working-directory: templates/quickstart-chat-typescript/spacetimedb
         run: |
-          spacetime generate --lang typescript --out-dir ../../crates/bindings-typescript/examples/quickstart-chat/src/module_bindings
-          cd ../../crates/bindings-typescript
+          spacetime generate --lang typescript --out-dir ../src/module_bindings
+          cd ../../../crates/bindings-typescript
           pnpm format
 
       - name: Check for changes
-        working-directory: crates/bindings-typescript
+        working-directory: templates/quickstart-chat-typescript
         run: |
-          "${GITHUB_WORKSPACE}"/tools/check-diff.sh examples/quickstart-chat/src/module_bindings || {
+          "${GITHUB_WORKSPACE}"/tools/check-diff.sh src/module_bindings || {
             echo "Error: Bindings are dirty. Please generate bindings again and commit them to this branch."
             exit 1
           }
@@ -123,18 +123,18 @@ jobs:
       #     disown
 
       # - name: Publish module to SpacetimeDB
-      #   working-directory: SpacetimeDB/modules/quickstart-chat
+      #   working-directory: SpacetimeDB/templates/quickstart-chat-typescript/spacetimedb
       #   run: |
       #     spacetime logout && spacetime login --server-issued-login local
       #     spacetime publish -s local quickstart-chat -c -y
 
       # - name: Publish module to SpacetimeDB
-      #   working-directory: SpacetimeDB/modules/quickstart-chat
+      #   working-directory: SpacetimeDB/templates/quickstart-chat-typescript/spacetimedb
       #   run: |
       #     spacetime logs quickstart-chat
 
       - name: Check that quickstart-chat builds
-        working-directory: crates/bindings-typescript/examples/quickstart-chat
+        working-directory: templates/quickstart-chat-typescript
         run: pnpm build
 
       # - name: Run quickstart-chat tests
