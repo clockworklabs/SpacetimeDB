@@ -1,5 +1,4 @@
 use crate::db::durability::DurabilityWorker;
-use crate::db::LockFile;
 use crate::db::MetricsRecorderQueue;
 use crate::error::{DBError, RestoreSnapshotError};
 use crate::messages::control_db::HostType;
@@ -10,7 +9,7 @@ use anyhow::{anyhow, Context};
 use enum_map::EnumMap;
 use log::info;
 use spacetimedb_commitlog::repo::OnNewSegmentFn;
-use spacetimedb_commitlog::{self as commitlog, SizeOnDisk};
+use spacetimedb_commitlog::{self as commitlog, Commitlog, SizeOnDisk};
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::error::{DatastoreError, TableError, ViewError};
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
@@ -34,14 +33,14 @@ use spacetimedb_datastore::{
     },
     traits::TxData,
 };
-use spacetimedb_durability as durability;
+use spacetimedb_durability::{self as durability, History};
 use spacetimedb_lib::bsatn::ToBsatn;
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_lib::db::raw_def::v9::{btree, RawModuleDefV9Builder, RawSql};
 use spacetimedb_lib::st_var::StVarValue;
 use spacetimedb_lib::ConnectionId;
 use spacetimedb_lib::Identity;
-use spacetimedb_paths::server::{CommitLogDir, ReplicaDir, SnapshotsPath};
+use spacetimedb_paths::server::{ReplicaDir, SnapshotsPath};
 use spacetimedb_primitives::*;
 use spacetimedb_sats::algebraic_type::fmt::fmt_algebraic_type;
 use spacetimedb_sats::memory_usage::MemoryUsage;
@@ -112,10 +111,6 @@ pub struct RelationalDB {
 
     /// An async queue for recording transaction metrics off the main thread
     metrics_recorder_queue: Option<MetricsRecorderQueue>,
-
-    // TODO: Not needed when `durability` is `None` -- move to either
-    // [Persistence] or [Durability].
-    lock_file: LockFile,
 }
 
 /// Perform a snapshot every `SNAPSHOT_FREQUENCY` transactions.
@@ -137,24 +132,15 @@ impl std::fmt::Debug for RelationalDB {
 
 impl Drop for RelationalDB {
     fn drop(&mut self) {
-        // Attempt to flush the outstanding transactions,
-        // while preventing the lock file from being dropped.
-        //
-        // Unless the tokio runtime is already shutting down,
-        // it will run the spawned task to completion.
-        // Holding the lock file will prevent re-opening the database
-        // for writing while transactions are still being written to
-        // the durability backend.
+        // Attempt to flush the outstanding transactions.
         if let Some(worker) = self.durability.take() {
-            let lock_file = self.lock_file.clone();
-            worker.spawn_shutdown(self.database_identity, lock_file);
+            worker.spawn_close(self.database_identity);
         }
     }
 }
 
 impl RelationalDB {
     fn new(
-        lock: LockFile,
         database_identity: Identity,
         owner_identity: Identity,
         inner: Locking,
@@ -182,8 +168,6 @@ impl RelationalDB {
 
             workload_type_to_exec_counters,
             metrics_recorder_queue,
-
-            lock_file: lock,
         }
     }
 
@@ -272,7 +256,6 @@ impl RelationalDB {
     /// [ModuleHost]: crate::host::module_host::ModuleHost
     #[allow(clippy::too_many_arguments)]
     pub fn open(
-        root: &ReplicaDir,
         database_identity: Identity,
         owner_identity: Identity,
         history: impl durability::History<TxData = Txdata>,
@@ -281,8 +264,6 @@ impl RelationalDB {
         page_pool: PagePool,
     ) -> Result<(Self, ConnectedClients), DBError> {
         log::trace!("[{database_identity}] DATABASE: OPEN");
-
-        let lock = LockFile::lock(root)?;
 
         // Check the latest durable TX and restore from a snapshot no newer than it,
         // so that you drop TXes which were committed but not durable before the restart.
@@ -326,7 +307,6 @@ impl RelationalDB {
             .set(elapsed_time.as_secs_f64());
 
         let db = Self::new(
-            lock,
             database_identity,
             owner_identity,
             inner,
@@ -361,21 +341,22 @@ impl RelationalDB {
     /// Shut down the database, without dropping it.
     ///
     /// If the database is in-memory only, this does nothing.
-    /// Otherwise, it instructs the durability layer to shut down and waits
-    /// until all outstanding transactions are reported as durable.
+    /// Otherwise, it instructs the durability layer to shut down
+    /// and waits until all outstanding transactions are reported as durable.
     ///
-    /// Returns `Ok(None)` if the database is in-memory only.
+    /// After calling this method, calling [Self::commit_tx_downgrade] or
+    /// [Self::commit_tx] will panic.
+    ///
+    /// Returns `None` if the database is in-memory only,
+    /// or nothing has been durably persisted yet.
+    ///
     /// Returns the durable [TxOffset] in a `Some` otherwise.
-    ///
-    /// An error is returned if the durability layer failed to make the
-    /// outstanding transactions durable.
-    pub async fn shutdown(&self) -> Result<Option<TxOffset>, DBError> {
+    pub async fn shutdown(&self) -> Option<TxOffset> {
         if let Some(durability) = &self.durability {
-            let durable_offset = durability.shutdown().await?;
-            return Ok(Some(durable_offset));
+            return durability.close().await;
         }
 
-        Ok(None)
+        None
     }
 
     fn migrate_system_tables(&self) -> Result<(), DBError> {
@@ -1731,9 +1712,9 @@ pub type LocalDurability = Arc<durability::Local<ProductValue>>;
 /// Note that this operation can be expensive, as it needs to traverse a suffix
 /// of the commitlog.
 pub async fn local_durability(
-    commitlog_dir: CommitLogDir,
+    replica_dir: ReplicaDir,
     snapshot_worker: Option<&SnapshotWorker>,
-) -> io::Result<(LocalDurability, DiskSizeFn)> {
+) -> Result<(LocalDurability, DiskSizeFn), DBError> {
     let rt = tokio::runtime::Handle::current();
     // TODO: Should this better be spawn_blocking?
     let on_new_segment = snapshot_worker.map(|snapshot_worker| {
@@ -1746,7 +1727,7 @@ pub async fn local_durability(
     });
     let local = spawn_rayon(move || {
         durability::Local::open(
-            commitlog_dir,
+            replica_dir.clone(),
             rt,
             durability::local::Options {
                 commitlog: commitlog::Options {
@@ -1768,6 +1749,14 @@ pub async fn local_durability(
     });
 
     Ok((local, disk_size_fn))
+}
+
+/// Open a [History] for replay from the local durable state.
+///
+/// Currently, this is simply a read-only copy of the commitlog.
+pub async fn local_history(replica_dir: &ReplicaDir) -> io::Result<impl History<TxData = Txdata>> {
+    let commitlog_dir = replica_dir.commit_log();
+    asyncify(move || Commitlog::open(commitlog_dir, <_>::default(), None)).await
 }
 
 /// Watches snapshot creation events and compresses all commitlog segments older
@@ -1863,6 +1852,7 @@ pub mod tests_utils {
     use spacetimedb_datastore::locking_tx_datastore::TxId;
     use spacetimedb_fs_utils::compression::CompressType;
     use spacetimedb_lib::{bsatn::to_vec, ser::Serialize};
+    use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::server::SnapshotDirPath;
     use spacetimedb_paths::FromPathUnchecked;
     use tempfile::TempDir;
@@ -1894,7 +1884,7 @@ pub mod tests_utils {
         Arc<RelationalDB>,
         Option<Arc<durability::Local<ProductValue>>>,
         Option<tokio::runtime::Runtime>,
-        TestDBDir,
+        Option<TestDBDir>,
     );
 
     /// A [`RelationalDB`] in a temporary directory.
@@ -1913,11 +1903,7 @@ pub mod tests_utils {
     pub struct TestDB {
         pub db: Arc<RelationalDB>,
 
-        // nb: drop order is declaration order
         durable: Option<DurableState>,
-        dir: TestDBDir,
-
-        /// Whether to construct a snapshot repository when restarting with [`Self::reopen`].
         want_snapshot_repo: bool,
     }
 
@@ -1941,8 +1927,9 @@ pub mod tests_utils {
     }
 
     struct DurableState {
-        handle: Arc<durability::Local<ProductValue>>,
+        durability: Arc<durability::Local<ProductValue>>,
         rt: tokio::runtime::Runtime,
+        replica_dir: TestDBDir,
     }
 
     impl TestDB {
@@ -1952,13 +1939,10 @@ pub mod tests_utils {
 
         /// Create a [`TestDB`] which does not store data on disk.
         pub fn in_memory() -> Result<Self, DBError> {
-            let dir = TempReplicaDir::new()?;
-            let db = Self::in_memory_internal(&dir).map(Arc::new)?;
+            let db = Self::in_memory_internal().map(Arc::new)?;
             Ok(Self {
                 db,
-
                 durable: None,
-                dir: dir.into(),
                 want_snapshot_repo: false,
             })
         }
@@ -1973,13 +1957,16 @@ pub mod tests_utils {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
-            let durable = DurableState { handle, rt };
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), true)?;
+            let durable = DurableState {
+                durability,
+                rt,
+                replica_dir: dir.into(),
+            };
 
             Ok(Self {
                 db: Arc::new(db),
                 durable: Some(durable),
-                dir: dir.into(),
                 want_snapshot_repo: true,
             })
         }
@@ -1989,13 +1976,16 @@ pub mod tests_utils {
             let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
             // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
             let _rt = rt.enter();
-            let (db, handle) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
-            let durable = DurableState { handle, rt };
+            let (db, durability) = Self::durable_internal(&dir, rt.handle().clone(), false)?;
+            let durable = DurableState {
+                durability,
+                rt,
+                replica_dir: dir.into(),
+            };
 
             Ok(Self {
                 db: Arc::new(db),
                 durable: Some(durable),
-                dir: dir.into(),
                 want_snapshot_repo: false,
             })
         }
@@ -2015,8 +2005,8 @@ pub mod tests_utils {
                 })
                 .transpose()?;
 
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log(), snapshots.as_ref()))?;
-            let history = local.clone();
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let history = local.as_history();
 
             let persistence = Persistence {
                 durability: local.clone(),
@@ -2026,7 +2016,6 @@ pub mod tests_utils {
             };
 
             let (db, _) = RelationalDB::open(
-                root,
                 db_identity,
                 owner_identity,
                 history,
@@ -2050,12 +2039,10 @@ pub mod tests_utils {
             history: impl durability::History<TxData = Txdata>,
             expected_num_clients: usize,
         ) -> Result<Self, DBError> {
-            let dir = TempReplicaDir::new()?;
-            let db = Self::open_db(&dir, history, None, None, expected_num_clients)?;
+            let db = Self::open_db(history, None, None, expected_num_clients)?;
             Ok(Self {
                 db: Arc::new(db),
                 durable: None,
-                dir: dir.into(),
                 want_snapshot_repo: false,
             })
         }
@@ -2064,15 +2051,24 @@ pub mod tests_utils {
         /// to disk (if the database was created via [`Self::durable`]).
         pub fn reopen(self) -> Result<Self, DBError> {
             if let Some(rt) = self.runtime() {
-                rt.block_on(self.db.shutdown())?;
+                rt.block_on(self.db.shutdown());
             }
             drop(self.db);
 
-            if let Some(DurableState { handle: _, rt }) = self.durable {
+            if let Some(DurableState {
+                durability: _,
+                rt,
+                replica_dir,
+            }) = self.durable
+            {
                 // Enter the runtime so that `Self::durable_internal` can spawn a `SnapshotWorker`.
                 let _rt = rt.enter();
-                let (db, handle) = Self::durable_internal(&self.dir, rt.handle().clone(), self.want_snapshot_repo)?;
-                let durable = DurableState { handle, rt };
+                let (db, handle) = Self::durable_internal(&replica_dir, rt.handle().clone(), self.want_snapshot_repo)?;
+                let durable = DurableState {
+                    durability: handle,
+                    rt,
+                    replica_dir,
+                };
 
                 Ok(Self {
                     db: Arc::new(db),
@@ -2080,7 +2076,7 @@ pub mod tests_utils {
                     ..self
                 })
             } else {
-                let db = Self::in_memory_internal(&self.dir).map(Arc::new)?;
+                let db = Self::in_memory_internal().map(Arc::new)?;
                 Ok(Self { db, ..self })
             }
         }
@@ -2092,8 +2088,8 @@ pub mod tests_utils {
         }
 
         /// The root path of the (temporary) database directory.
-        pub fn path(&self) -> &ReplicaDir {
-            &self.dir
+        pub fn path(&self) -> Option<&TestDBDir> {
+            self.durable.as_ref().map(|dstate| &dstate.replica_dir)
         }
 
         /// Handle to the tokio runtime, available if [`Self::durable`] was used
@@ -2105,15 +2101,19 @@ pub mod tests_utils {
         /// Deconstruct `self` into its constituents.
         #[allow(unused)]
         pub fn into_parts(self) -> TestDBParts {
-            let Self { db, durable, dir, .. } = self;
-            let (durability, rt) = durable
-                .map(|DurableState { handle, rt }| (Some(handle), Some(rt)))
-                .unwrap_or((None, None));
-            (db, durability, rt, dir)
+            let Self { db, durable, .. } = self;
+            match durable {
+                Some(DurableState {
+                    durability: handle,
+                    rt,
+                    replica_dir,
+                }) => (db, Some(handle), Some(rt), Some(replica_dir)),
+                None => (db, None, None, None),
+            }
         }
 
-        fn in_memory_internal(root: &ReplicaDir) -> Result<RelationalDB, DBError> {
-            Self::open_db(root, EmptyHistory::new(), None, None, 0)
+        fn in_memory_internal() -> Result<RelationalDB, DBError> {
+            Self::open_db(EmptyHistory::new(), None, None, 0)
         }
 
         fn durable_internal(
@@ -2127,28 +2127,26 @@ pub mod tests_utils {
                         .map(|repo| SnapshotWorker::new(repo, snapshot::Compression::Disabled))
                 })
                 .transpose()?;
-            let (local, disk_size_fn) = rt.block_on(local_durability(root.commit_log(), snapshots.as_ref()))?;
-            let history = local.clone();
+            let (local, disk_size_fn) = rt.block_on(local_durability(root.clone(), snapshots.as_ref()))?;
+            let history = local.as_history();
             let persistence = Persistence {
                 durability: local.clone(),
                 disk_size: disk_size_fn,
                 snapshots,
                 runtime: rt,
             };
-            let db = Self::open_db(root, history, Some(persistence), None, 0)?;
+            let db = Self::open_db(history, Some(persistence), None, 0)?;
 
             Ok((db, local))
         }
 
         pub fn open_db(
-            root: &ReplicaDir,
             history: impl durability::History<TxData = Txdata>,
             persistence: Option<Persistence>,
             metrics_recorder_queue: Option<MetricsRecorderQueue>,
             expected_num_clients: usize,
         ) -> Result<RelationalDB, DBError> {
             let (db, connected_clients) = RelationalDB::open(
-                root,
                 Self::DATABASE_IDENTITY,
                 Self::OWNER,
                 history,
@@ -2344,7 +2342,6 @@ mod tests {
     use bytes::Bytes;
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
-    use durability::EmptyHistory;
     use pretty_assertions::{assert_eq, assert_matches};
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
@@ -2358,6 +2355,7 @@ mod tests {
     use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::Identity;
     use spacetimedb_lib::Timestamp;
+    use spacetimedb_paths::server::ReplicaDir;
     use spacetimedb_paths::FromPathUnchecked;
     use spacetimedb_sats::buffer::BufReader;
     use spacetimedb_sats::product;
@@ -2469,14 +2467,13 @@ mod tests {
         stdb.create_table(&mut tx, my_table(AlgebraicType::I32))?;
         stdb.commit_tx(tx)?;
 
-        match RelationalDB::open(
-            stdb.path(),
-            Identity::ZERO,
-            Identity::ZERO,
-            EmptyHistory::new(),
-            None,
-            None,
-            PagePool::new_for_test(),
+        match TestDB::open_existing_durable(
+            stdb.path().unwrap(),
+            stdb.runtime().unwrap().clone(),
+            0,
+            stdb.database_identity(),
+            stdb.owner_identity(),
+            false,
         ) {
             Ok(_) => {
                 panic!("Allowed to open database twice")
@@ -2484,7 +2481,7 @@ mod tests {
             Err(e) => match e {
                 DBError::Database(DatabaseError::DatabasedOpened(_, _)) => {}
                 err => {
-                    panic!("Failed with error {err}")
+                    panic!("Failed with error {err:?}")
                 }
             },
         }
@@ -2606,7 +2603,7 @@ mod tests {
             "View table should NOT be empty after insert"
         );
 
-        let root = stdb.path().snapshots();
+        let root = stdb.path().unwrap().snapshots();
         let (_, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, false);
         stdb.take_snapshot(&repo)?.expect("snapshot should succeed");
 
@@ -3424,9 +3421,9 @@ mod tests {
             // Ensure all resources are released and data is flushed to disk.
             let (db, _, rt, dir) = stdb.into_parts();
             let rt = rt.expect("Durable TestDB must have a runtime");
-            rt.block_on(db.shutdown()).expect("failed to shut down database");
+            rt.block_on(db.shutdown()).expect("should have durable offset");
             drop(db);
-            dir
+            dir.expect("Durable TestDB must have a database directory")
         };
 
         // Re-open commitlog and collect inputs.
@@ -3569,7 +3566,7 @@ mod tests {
     // NOTE: `snapshot_watching_compressor` is what filter out the last snapshot
     #[test]
     fn compress_snapshot_test() -> ResultTest<()> {
-        let stdb = TestDB::in_memory()?;
+        let stdb = TestDB::durable()?;
 
         let mut tx = begin_mut_tx(&stdb);
         let schema = my_table(AlgebraicType::I32);
@@ -3579,7 +3576,7 @@ mod tests {
         }
         stdb.commit_tx(tx)?;
 
-        let root = stdb.path().snapshots();
+        let root = stdb.path().unwrap().snapshots();
         let (dir, repo) = make_snapshot(root.clone(), Identity::ZERO, 0, CompressType::None, true);
         stdb.take_snapshot(&repo)?;
 
@@ -3680,11 +3677,22 @@ mod tests {
 
     #[test]
     fn tries_older_snapshots() -> ResultTest<()> {
-        let stdb = TestDB::in_memory()?;
-        stdb.path().snapshots().create()?;
-        let repo = SnapshotRepository::open(stdb.path().snapshots(), stdb.database_identity(), 85)?;
+        let stdb = TestDB::durable()?;
+        let snapshots_path = stdb.path().unwrap().snapshots();
+        snapshots_path.create()?;
+        let repo = SnapshotRepository::open(snapshots_path, stdb.database_identity(), 85)?;
 
-        stdb.take_snapshot(&repo)?.expect("failed to take snapshot");
+        // Ensure that an initial snapshot exists,
+        // but ignore if the snapshot worker won the race.
+        match stdb.take_snapshot(&repo) {
+            Err(e) => {
+                if !matches!(&e, DBError::Datastore(DatastoreError::Snapshot(e)) if e.is_already_exists()) {
+                    panic!("failed to create snapshot: {e:#}");
+                }
+            }
+            Ok(out) => out.map(drop).expect("snapshot not created: empty committed state"),
+        };
+        // Insert some data and take another snapshot.
         {
             let mut tx = stdb.begin_mut_tx(IsolationLevel::Serializable, Workload::ForTests);
             let schema = my_table(AlgebraicType::I32);
@@ -3898,7 +3906,7 @@ mod tests {
         })?;
         // Now we are going to shut it down and reopen it, to ensure that the new table can be
         // read from disk.
-        rt.block_on(db.shutdown())?;
+        rt.block_on(db.shutdown());
         drop(db);
 
         let (db, _) = TestDB::open_existing_durable(

@@ -2014,7 +2014,7 @@ impl MutTxId {
             self.timer,
             self.lock_wait_time,
             self.metrics,
-            true,
+            false,
             None,
             &self.committed_state_write_lock,
         );
@@ -2042,7 +2042,7 @@ impl MutTxId {
             self.timer,
             self.lock_wait_time,
             self.metrics,
-            true,
+            false,
             None,
             &self.committed_state_write_lock,
         );

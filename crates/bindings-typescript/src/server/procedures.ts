@@ -12,7 +12,7 @@ import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
 import { Timestamp } from '../lib/timestamp';
 import { Uuid } from '../lib/uuid';
 import { httpClient } from './http_internal';
-import { callUserFunction, makeReducerCtx, sys } from './runtime';
+import { callUserFunction, ReducerCtxImpl, sys } from './runtime';
 
 const { freeze } = Object;
 
@@ -45,8 +45,10 @@ export function callProcedure(
         const timestamp = sys.procedure_start_mut_tx();
 
         try {
-          const ctx: TransactionCtx<UntypedSchemaDef> = freeze(
-            makeReducerCtx(sender, new Timestamp(timestamp), connectionId)
+          const ctx: TransactionCtx<UntypedSchemaDef> = new ReducerCtxImpl(
+            sender,
+            new Timestamp(timestamp),
+            connectionId
           );
           return body(ctx);
         } catch (e) {

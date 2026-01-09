@@ -3718,4 +3718,18 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_committed_and_rollback_metrics() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        let tx = begin_mut_tx(&datastore);
+        let (_, _, metrics, _) = tx.commit();
+        assert!(metrics.committed);
+
+        let tx = begin_mut_tx(&datastore);
+        let (_, metrics, _) = tx.rollback();
+        assert!(!metrics.committed);
+        Ok(())
+    }
 }
