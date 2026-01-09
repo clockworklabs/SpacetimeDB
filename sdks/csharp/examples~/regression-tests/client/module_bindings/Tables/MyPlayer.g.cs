@@ -24,4 +24,26 @@ namespace SpacetimeDB.Types
 
         public readonly MyPlayerHandle MyPlayer;
     }
+
+    public sealed class MyPlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, ulong> Id { get; }
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public MyPlayerCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<Player, ulong>(tableName, "Id");
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "Identity");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "Name");
+        }
+    }
+
+    public sealed class MyPlayerIxCols
+    {
+
+        public MyPlayerIxCols(string tableName)
+        {
+        }
+    }
 }

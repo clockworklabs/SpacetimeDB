@@ -46,4 +46,30 @@ namespace SpacetimeDB.Types
 
         public readonly LoggedOutPlayerHandle LoggedOutPlayer;
     }
+
+    public sealed class LoggedOutPlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, int> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public LoggedOutPlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, int>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class LoggedOutPlayerIxCols
+    {
+        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, int> PlayerId { get; }
+
+        public LoggedOutPlayerIxCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.IxCol<Player, int>(tableName, "player_id");
+        }
+    }
 }

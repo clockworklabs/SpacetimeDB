@@ -1,5 +1,6 @@
 ---
 source: crates/codegen/tests/codegen.rs
+assertion_line: 37
 expression: outfiles
 ---
 "Procedures/GetMySchemaViaHttp.g.cs" = '''
@@ -1754,6 +1755,20 @@ namespace SpacetimeDB
                 Error += callback;
                 return this;
             }
+        
+            /// <summary>
+            /// Add a typed query to this subscription.
+            ///
+            /// This is the entry point for building subscriptions without writing SQL by hand.
+            /// Once a typed query is added, only typed queries may follow (SQL and typed queries cannot be mixed).
+            /// </summary>
+            public TypedSubscriptionBuilder AddQuery<TRow>(
+                Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build
+            )
+            {
+                var typed = new TypedSubscriptionBuilder(conn, Applied, Error);
+                return typed.AddQuery(build);
+            }
 
             /// <summary>
             /// Subscribe to the following SQL queries.
@@ -1816,6 +1831,65 @@ namespace SpacetimeDB
             ) : base(conn, onApplied, onError, querySqls)
             { }
         }
+
+    public sealed class QueryBuilder
+    {
+        public From From { get; } = new();
+    }
+
+    public sealed class From
+    {
+        public global::SpacetimeDB.Table<HasSpecialStuff, HasSpecialStuffCols, HasSpecialStuffIxCols> HasSpecialStuff() => new("has_special_stuff", new HasSpecialStuffCols("has_special_stuff"), new HasSpecialStuffIxCols("has_special_stuff"));
+        public global::SpacetimeDB.Table<Player, LoggedOutPlayerCols, LoggedOutPlayerIxCols> LoggedOutPlayer() => new("logged_out_player", new LoggedOutPlayerCols("logged_out_player"), new LoggedOutPlayerIxCols("logged_out_player"));
+        public global::SpacetimeDB.Table<Player, MyPlayerCols, MyPlayerIxCols> MyPlayer() => new("my_player", new MyPlayerCols("my_player"), new MyPlayerIxCols("my_player"));
+        public global::SpacetimeDB.Table<Person, PersonCols, PersonIxCols> Person() => new("person", new PersonCols("person"), new PersonIxCols("person"));
+        public global::SpacetimeDB.Table<PkMultiIdentity, PkMultiIdentityCols, PkMultiIdentityIxCols> PkMultiIdentity() => new("pk_multi_identity", new PkMultiIdentityCols("pk_multi_identity"), new PkMultiIdentityIxCols("pk_multi_identity"));
+        public global::SpacetimeDB.Table<Player, PlayerCols, PlayerIxCols> Player() => new("player", new PlayerCols("player"), new PlayerIxCols("player"));
+        public global::SpacetimeDB.Table<Point, PointsCols, PointsIxCols> Points() => new("points", new PointsCols("points"), new PointsIxCols("points"));
+        public global::SpacetimeDB.Table<PrivateTable, PrivateTableCols, PrivateTableIxCols> PrivateTable() => new("private_table", new PrivateTableCols("private_table"), new PrivateTableIxCols("private_table"));
+        public global::SpacetimeDB.Table<RepeatingTestArg, RepeatingTestArgCols, RepeatingTestArgIxCols> RepeatingTestArg() => new("repeating_test_arg", new RepeatingTestArgCols("repeating_test_arg"), new RepeatingTestArgIxCols("repeating_test_arg"));
+        public global::SpacetimeDB.Table<RemoveTable, TableToRemoveCols, TableToRemoveIxCols> TableToRemove() => new("table_to_remove", new TableToRemoveCols("table_to_remove"), new TableToRemoveIxCols("table_to_remove"));
+        public global::SpacetimeDB.Table<TestA, TestACols, TestAIxCols> TestA() => new("test_a", new TestACols("test_a"), new TestAIxCols("test_a"));
+        public global::SpacetimeDB.Table<TestD, TestDCols, TestDIxCols> TestD() => new("test_d", new TestDCols("test_d"), new TestDIxCols("test_d"));
+        public global::SpacetimeDB.Table<TestE, TestECols, TestEIxCols> TestE() => new("test_e", new TestECols("test_e"), new TestEIxCols("test_e"));
+        public global::SpacetimeDB.Table<TestFoobar, TestFCols, TestFIxCols> TestF() => new("test_f", new TestFCols("test_f"), new TestFIxCols("test_f"));
+    }
+
+    public sealed class TypedSubscriptionBuilder
+    {
+        private readonly IDbConnection conn;
+        private Action<SubscriptionEventContext>? Applied;
+        private Action<ErrorContext, Exception>? Error;
+        private readonly List<string> querySqls = new();
+
+        internal TypedSubscriptionBuilder(IDbConnection conn, Action<SubscriptionEventContext>? applied, Action<ErrorContext, Exception>? error)
+        {
+            this.conn = conn;
+            Applied = applied;
+            Error = error;
+        }
+
+        public TypedSubscriptionBuilder OnApplied(Action<SubscriptionEventContext> callback)
+        {
+            Applied += callback;
+            return this;
+        }
+
+        public TypedSubscriptionBuilder OnError(Action<ErrorContext, Exception> callback)
+        {
+            Error += callback;
+            return this;
+        }
+
+        public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)
+        {
+            var qb = new QueryBuilder();
+            querySqls.Add(build(qb).Sql);
+            return this;
+        }
+
+        public SubscriptionHandle Subscribe() => new(conn, Applied, Error, querySqls.ToArray());
+    }
 
     public abstract partial class Reducer
     {
@@ -1937,6 +2011,26 @@ namespace SpacetimeDB
 
         public readonly HasSpecialStuffHandle HasSpecialStuff;
     }
+
+    public sealed class HasSpecialStuffCols
+    {
+        public global::SpacetimeDB.Col<HasSpecialStuff, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<HasSpecialStuff, SpacetimeDB.ConnectionId> ConnectionId { get; }
+
+        public HasSpecialStuffCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<HasSpecialStuff, SpacetimeDB.Identity>(tableName, "identity");
+            ConnectionId = new global::SpacetimeDB.Col<HasSpecialStuff, SpacetimeDB.ConnectionId>(tableName, "connection_id");
+        }
+    }
+
+    public sealed class HasSpecialStuffIxCols
+    {
+
+        public HasSpecialStuffIxCols(string tableName)
+        {
+        }
+    }
 }
 '''
 "Tables/LoggedOutPlayer.g.cs" = '''
@@ -1998,6 +2092,34 @@ namespace SpacetimeDB
 
         public readonly LoggedOutPlayerHandle LoggedOutPlayer;
     }
+
+    public sealed class LoggedOutPlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, ulong> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public LoggedOutPlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, ulong>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class LoggedOutPlayerIxCols
+    {
+        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, ulong> PlayerId { get; }
+        public global::SpacetimeDB.IxCol<Player, string> Name { get; }
+
+        public LoggedOutPlayerIxCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.IxCol<Player, ulong>(tableName, "player_id");
+            Name = new global::SpacetimeDB.IxCol<Player, string>(tableName, "name");
+        }
+    }
 }
 '''
 "Tables/MyPlayer.g.cs" = '''
@@ -2026,6 +2148,28 @@ namespace SpacetimeDB
         }
 
         public readonly MyPlayerHandle MyPlayer;
+    }
+
+    public sealed class MyPlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, ulong> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public MyPlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, ulong>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class MyPlayerIxCols
+    {
+
+        public MyPlayerIxCols(string tableName)
+        {
+        }
     }
 }
 '''
@@ -2078,6 +2222,32 @@ namespace SpacetimeDB
 
         public readonly PersonHandle Person;
     }
+
+    public sealed class PersonCols
+    {
+        public global::SpacetimeDB.Col<Person, uint> Id { get; }
+        public global::SpacetimeDB.Col<Person, string> Name { get; }
+        public global::SpacetimeDB.Col<Person, byte> Age { get; }
+
+        public PersonCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<Person, uint>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<Person, string>(tableName, "name");
+            Age = new global::SpacetimeDB.Col<Person, byte>(tableName, "age");
+        }
+    }
+
+    public sealed class PersonIxCols
+    {
+        public global::SpacetimeDB.IxCol<Person, uint> Id { get; }
+        public global::SpacetimeDB.IxCol<Person, byte> Age { get; }
+
+        public PersonIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<Person, uint>(tableName, "id");
+            Age = new global::SpacetimeDB.IxCol<Person, byte>(tableName, "age");
+        }
+    }
 }
 '''
 "Tables/PkMultiIdentity.g.cs" = '''
@@ -2128,6 +2298,30 @@ namespace SpacetimeDB
         }
 
         public readonly PkMultiIdentityHandle PkMultiIdentity;
+    }
+
+    public sealed class PkMultiIdentityCols
+    {
+        public global::SpacetimeDB.Col<PkMultiIdentity, uint> Id { get; }
+        public global::SpacetimeDB.Col<PkMultiIdentity, uint> Other { get; }
+
+        public PkMultiIdentityCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<PkMultiIdentity, uint>(tableName, "id");
+            Other = new global::SpacetimeDB.Col<PkMultiIdentity, uint>(tableName, "other");
+        }
+    }
+
+    public sealed class PkMultiIdentityIxCols
+    {
+        public global::SpacetimeDB.IxCol<PkMultiIdentity, uint> Id { get; }
+        public global::SpacetimeDB.IxCol<PkMultiIdentity, uint> Other { get; }
+
+        public PkMultiIdentityIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<PkMultiIdentity, uint>(tableName, "id");
+            Other = new global::SpacetimeDB.IxCol<PkMultiIdentity, uint>(tableName, "other");
+        }
     }
 }
 '''
@@ -2190,6 +2384,34 @@ namespace SpacetimeDB
 
         public readonly PlayerHandle Player;
     }
+
+    public sealed class PlayerCols
+    {
+        public global::SpacetimeDB.Col<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.Col<Player, ulong> PlayerId { get; }
+        public global::SpacetimeDB.Col<Player, string> Name { get; }
+
+        public PlayerCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.Col<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.Col<Player, ulong>(tableName, "player_id");
+            Name = new global::SpacetimeDB.Col<Player, string>(tableName, "name");
+        }
+    }
+
+    public sealed class PlayerIxCols
+    {
+        public global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity> Identity { get; }
+        public global::SpacetimeDB.IxCol<Player, ulong> PlayerId { get; }
+        public global::SpacetimeDB.IxCol<Player, string> Name { get; }
+
+        public PlayerIxCols(string tableName)
+        {
+            Identity = new global::SpacetimeDB.IxCol<Player, SpacetimeDB.Identity>(tableName, "identity");
+            PlayerId = new global::SpacetimeDB.IxCol<Player, ulong>(tableName, "player_id");
+            Name = new global::SpacetimeDB.IxCol<Player, string>(tableName, "name");
+        }
+    }
 }
 '''
 "Tables/Points.g.cs" = '''
@@ -2229,6 +2451,30 @@ namespace SpacetimeDB
 
         public readonly PointsHandle Points;
     }
+
+    public sealed class PointsCols
+    {
+        public global::SpacetimeDB.Col<Point, long> X { get; }
+        public global::SpacetimeDB.Col<Point, long> Y { get; }
+
+        public PointsCols(string tableName)
+        {
+            X = new global::SpacetimeDB.Col<Point, long>(tableName, "x");
+            Y = new global::SpacetimeDB.Col<Point, long>(tableName, "y");
+        }
+    }
+
+    public sealed class PointsIxCols
+    {
+        public global::SpacetimeDB.IxCol<Point, long> X { get; }
+        public global::SpacetimeDB.IxCol<Point, long> Y { get; }
+
+        public PointsIxCols(string tableName)
+        {
+            X = new global::SpacetimeDB.IxCol<Point, long>(tableName, "x");
+            Y = new global::SpacetimeDB.IxCol<Point, long>(tableName, "y");
+        }
+    }
 }
 '''
 "Tables/PrivateTable.g.cs" = '''
@@ -2257,6 +2503,24 @@ namespace SpacetimeDB
         }
 
         public readonly PrivateTableHandle PrivateTable;
+    }
+
+    public sealed class PrivateTableCols
+    {
+        public global::SpacetimeDB.Col<PrivateTable, string> Name { get; }
+
+        public PrivateTableCols(string tableName)
+        {
+            Name = new global::SpacetimeDB.Col<PrivateTable, string>(tableName, "name");
+        }
+    }
+
+    public sealed class PrivateTableIxCols
+    {
+
+        public PrivateTableIxCols(string tableName)
+        {
+        }
     }
 }
 '''
@@ -2299,6 +2563,30 @@ namespace SpacetimeDB
 
         public readonly RepeatingTestArgHandle RepeatingTestArg;
     }
+
+    public sealed class RepeatingTestArgCols
+    {
+        public global::SpacetimeDB.Col<RepeatingTestArg, ulong> ScheduledId { get; }
+        public global::SpacetimeDB.Col<RepeatingTestArg, SpacetimeDB.ScheduleAt> ScheduledAt { get; }
+        public global::SpacetimeDB.Col<RepeatingTestArg, SpacetimeDB.Timestamp> PrevTime { get; }
+
+        public RepeatingTestArgCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.Col<RepeatingTestArg, ulong>(tableName, "scheduled_id");
+            ScheduledAt = new global::SpacetimeDB.Col<RepeatingTestArg, SpacetimeDB.ScheduleAt>(tableName, "scheduled_at");
+            PrevTime = new global::SpacetimeDB.Col<RepeatingTestArg, SpacetimeDB.Timestamp>(tableName, "prev_time");
+        }
+    }
+
+    public sealed class RepeatingTestArgIxCols
+    {
+        public global::SpacetimeDB.IxCol<RepeatingTestArg, ulong> ScheduledId { get; }
+
+        public RepeatingTestArgIxCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.IxCol<RepeatingTestArg, ulong>(tableName, "scheduled_id");
+        }
+    }
 }
 '''
 "Tables/TableToRemove.g.cs" = '''
@@ -2327,6 +2615,24 @@ namespace SpacetimeDB
         }
 
         public readonly TableToRemoveHandle TableToRemove;
+    }
+
+    public sealed class TableToRemoveCols
+    {
+        public global::SpacetimeDB.Col<RemoveTable, uint> Id { get; }
+
+        public TableToRemoveCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<RemoveTable, uint>(tableName, "id");
+        }
+    }
+
+    public sealed class TableToRemoveIxCols
+    {
+
+        public TableToRemoveIxCols(string tableName)
+        {
+        }
     }
 }
 '''
@@ -2367,6 +2673,30 @@ namespace SpacetimeDB
 
         public readonly TestAHandle TestA;
     }
+
+    public sealed class TestACols
+    {
+        public global::SpacetimeDB.Col<TestA, uint> X { get; }
+        public global::SpacetimeDB.Col<TestA, uint> Y { get; }
+        public global::SpacetimeDB.Col<TestA, string> Z { get; }
+
+        public TestACols(string tableName)
+        {
+            X = new global::SpacetimeDB.Col<TestA, uint>(tableName, "x");
+            Y = new global::SpacetimeDB.Col<TestA, uint>(tableName, "y");
+            Z = new global::SpacetimeDB.Col<TestA, string>(tableName, "z");
+        }
+    }
+
+    public sealed class TestAIxCols
+    {
+        public global::SpacetimeDB.IxCol<TestA, uint> X { get; }
+
+        public TestAIxCols(string tableName)
+        {
+            X = new global::SpacetimeDB.IxCol<TestA, uint>(tableName, "x");
+        }
+    }
 }
 '''
 "Tables/TestD.g.cs" = '''
@@ -2395,6 +2725,24 @@ namespace SpacetimeDB
         }
 
         public readonly TestDHandle TestD;
+    }
+
+    public sealed class TestDCols
+    {
+        public global::SpacetimeDB.Col<TestD, NamespaceTestC?> TestC { get; }
+
+        public TestDCols(string tableName)
+        {
+            TestC = new global::SpacetimeDB.Col<TestD, NamespaceTestC?>(tableName, "test_c");
+        }
+    }
+
+    public sealed class TestDIxCols
+    {
+
+        public TestDIxCols(string tableName)
+        {
+        }
     }
 }
 '''
@@ -2447,6 +2795,30 @@ namespace SpacetimeDB
 
         public readonly TestEHandle TestE;
     }
+
+    public sealed class TestECols
+    {
+        public global::SpacetimeDB.Col<TestE, ulong> Id { get; }
+        public global::SpacetimeDB.Col<TestE, string> Name { get; }
+
+        public TestECols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<TestE, ulong>(tableName, "id");
+            Name = new global::SpacetimeDB.Col<TestE, string>(tableName, "name");
+        }
+    }
+
+    public sealed class TestEIxCols
+    {
+        public global::SpacetimeDB.IxCol<TestE, ulong> Id { get; }
+        public global::SpacetimeDB.IxCol<TestE, string> Name { get; }
+
+        public TestEIxCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.IxCol<TestE, ulong>(tableName, "id");
+            Name = new global::SpacetimeDB.IxCol<TestE, string>(tableName, "name");
+        }
+    }
 }
 '''
 "Tables/TestF.g.cs" = '''
@@ -2475,6 +2847,24 @@ namespace SpacetimeDB
         }
 
         public readonly TestFHandle TestF;
+    }
+
+    public sealed class TestFCols
+    {
+        public global::SpacetimeDB.Col<TestFoobar, Foobar> Field { get; }
+
+        public TestFCols(string tableName)
+        {
+            Field = new global::SpacetimeDB.Col<TestFoobar, Foobar>(tableName, "field");
+        }
+    }
+
+    public sealed class TestFIxCols
+    {
+
+        public TestFIxCols(string tableName)
+        {
+        }
     }
 }
 '''

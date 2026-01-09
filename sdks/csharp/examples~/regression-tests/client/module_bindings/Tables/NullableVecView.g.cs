@@ -24,4 +24,24 @@ namespace SpacetimeDB.Types
 
         public readonly NullableVecViewHandle NullableVecView;
     }
+
+    public sealed class NullableVecViewCols
+    {
+        public global::SpacetimeDB.Col<NullableVec, uint> Id { get; }
+        public global::SpacetimeDB.Col<NullableVec, DbVector2?> Pos { get; }
+
+        public NullableVecViewCols(string tableName)
+        {
+            Id = new global::SpacetimeDB.Col<NullableVec, uint>(tableName, "Id");
+            Pos = new global::SpacetimeDB.Col<NullableVec, DbVector2?>(tableName, "Pos");
+        }
+    }
+
+    public sealed class NullableVecViewIxCols
+    {
+
+        public NullableVecViewIxCols(string tableName)
+        {
+        }
+    }
 }
