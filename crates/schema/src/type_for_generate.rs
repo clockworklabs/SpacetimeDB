@@ -524,7 +524,8 @@ impl TypespaceForGenerateBuilder<'_> {
             AlgebraicType::Product(product) => product
                 .elements
                 .iter()
-                .map(|ProductTypeElement { name, algebraic_type }| self.process_element(def, name, algebraic_type))
+                .enumerate()
+                .map(|(ix, ProductTypeElement { name, algebraic_type })| self.process_element(def, name.clone().or(Some(format!("_{}", ix).into())), algebraic_type))
                 .collect_all_errors()
                 .map(|elements| {
                     // We have just processed all the elements, so we know if it's recursive.
@@ -539,7 +540,7 @@ impl TypespaceForGenerateBuilder<'_> {
             AlgebraicType::Sum(sum) => sum
                 .variants
                 .iter()
-                .map(|SumTypeVariant { name, algebraic_type }| self.process_element(def, name, algebraic_type))
+                .map(|SumTypeVariant { name, algebraic_type }| self.process_element(def, name.clone(), algebraic_type))
                 .collect_all_errors::<Vec<_>>()
                 .map(|variants| {
                     if variants.iter().all(|(_, ty)| ty == &AlgebraicTypeUse::Unit) {
@@ -576,7 +577,7 @@ impl TypespaceForGenerateBuilder<'_> {
     fn process_element(
         &mut self,
         def: &AlgebraicType,
-        element_name: &Option<Box<str>>,
+        element_name: Option<Box<str>>,
         element_type: &AlgebraicType,
     ) -> Result<(Identifier, AlgebraicTypeUse)> {
         let element_name = element_name
