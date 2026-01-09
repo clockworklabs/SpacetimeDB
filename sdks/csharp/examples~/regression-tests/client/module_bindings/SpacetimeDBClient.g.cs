@@ -37,6 +37,8 @@ namespace SpacetimeDB.Types
             AddTable(MyLog = new(conn));
             AddTable(MyPlayer = new(conn));
             AddTable(MyTable = new(conn));
+            AddTable(NullStringNonnullable = new(conn));
+            AddTable(NullStringNullable = new(conn));
             AddTable(NullableVec = new(conn));
             AddTable(NullableVecView = new(conn));
             AddTable(Player = new(conn));
@@ -606,6 +608,9 @@ namespace SpacetimeDB.Types
                 "Add" => BSATNHelpers.Decode<Reducer.Add>(encodedArgs),
                 "ClientConnected" => BSATNHelpers.Decode<Reducer.ClientConnected>(encodedArgs),
                 "Delete" => BSATNHelpers.Decode<Reducer.Delete>(encodedArgs),
+                "InsertEmptyStringIntoNonNullable" => BSATNHelpers.Decode<Reducer.InsertEmptyStringIntoNonNullable>(encodedArgs),
+                "InsertNullStringIntoNonNullable" => BSATNHelpers.Decode<Reducer.InsertNullStringIntoNonNullable>(encodedArgs),
+                "InsertNullStringIntoNullable" => BSATNHelpers.Decode<Reducer.InsertNullStringIntoNullable>(encodedArgs),
                 "InsertResult" => BSATNHelpers.Decode<Reducer.InsertResult>(encodedArgs),
                 "SetNullableVec" => BSATNHelpers.Decode<Reducer.SetNullableVec>(encodedArgs),
                 "ThrowError" => BSATNHelpers.Decode<Reducer.ThrowError>(encodedArgs),
@@ -637,6 +642,9 @@ namespace SpacetimeDB.Types
                 Reducer.Add args => Reducers.InvokeAdd(eventContext, args),
                 Reducer.ClientConnected args => Reducers.InvokeClientConnected(eventContext, args),
                 Reducer.Delete args => Reducers.InvokeDelete(eventContext, args),
+                Reducer.InsertEmptyStringIntoNonNullable args => Reducers.InvokeInsertEmptyStringIntoNonNullable(eventContext, args),
+                Reducer.InsertNullStringIntoNonNullable args => Reducers.InvokeInsertNullStringIntoNonNullable(eventContext, args),
+                Reducer.InsertNullStringIntoNullable args => Reducers.InvokeInsertNullStringIntoNullable(eventContext, args),
                 Reducer.InsertResult args => Reducers.InvokeInsertResult(eventContext, args),
                 Reducer.SetNullableVec args => Reducers.InvokeSetNullableVec(eventContext, args),
                 Reducer.ThrowError args => Reducers.InvokeThrowError(eventContext, args),
