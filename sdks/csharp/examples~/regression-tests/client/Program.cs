@@ -65,6 +65,8 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_player",
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
+            "SELECT * FROM null_string_nonnullable",
+            "SELECT * FROM null_string_nullable",
             "SELECT * FROM my_log",
             "SELECT * FROM Admins",
             "SELECT * FROM nullable_vec_view",
@@ -112,6 +114,56 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         {
             ValidateNullableVecView(ctx);
         }
+    };
+
+    conn.Reducers.OnInsertEmptyStringIntoNonNullable += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertEmptyStringIntoNonNullable callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"InsertEmptyStringIntoNonNullable should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(
+            ctx.Db.NullStringNonnullable.Iter().Any(r => r.Name == ""),
+            "Expected a row inserted into null_string_nonnullable with Name == \"\""
+        );
+    };
+
+    conn.Reducers.OnInsertNullStringIntoNonNullable += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertNullStringIntoNonNullable callback");
+        waiting--;
+
+        if (ctx.Event.Status is Status.Failed(var reason))
+        {
+            Debug.Assert(
+                reason.Contains("Cannot serialize a null string", StringComparison.OrdinalIgnoreCase)
+                    || reason.Contains("BSATN", StringComparison.OrdinalIgnoreCase)
+                    || reason.Contains("nullable string", StringComparison.OrdinalIgnoreCase),
+                $"Expected a serialization-related failure message, got: {reason}"
+            );
+        }
+        else
+        {
+            throw new Exception(
+                $"InsertNullStringIntoNonNullable should fail, got status {ctx.Event.Status}"
+            );
+        }
+    };
+
+    conn.Reducers.OnInsertNullStringIntoNullable += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertNullStringIntoNullable callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"InsertNullStringIntoNullable should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(
+            ctx.Db.NullStringNullable.Iter().Any(r => r.Name == null),
+            "Expected a row inserted into null_string_nullable with Name == null"
+        );
     };
 }
 
@@ -335,6 +387,18 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     Log.Debug("Calling SetNullableVec (some)");
     waiting++;
     context.Reducers.SetNullableVec(1, true, 7, 8);
+
+    Log.Debug("Calling InsertEmptyStringIntoNonNullable");
+    waiting++;
+    context.Reducers.InsertEmptyStringIntoNonNullable();
+
+    Log.Debug("Calling InsertNullStringIntoNonNullable (should fail)");
+    waiting++;
+    context.Reducers.InsertNullStringIntoNonNullable();
+
+    Log.Debug("Calling InsertNullStringIntoNullable");
+    waiting++;
+    context.Reducers.InsertNullStringIntoNullable();
 
     // Procedures tests
     Log.Debug("Calling ReadMySchemaViaHttp");
