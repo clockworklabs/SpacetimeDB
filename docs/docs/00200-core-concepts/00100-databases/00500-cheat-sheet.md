@@ -3,7 +3,6 @@ title: Cheat Sheet
 slug: /databases/cheat-sheet
 ---
 
-# Cheat Sheet
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
@@ -13,10 +12,10 @@ Quick reference for SpacetimeDB module syntax across Rust, C#, and TypeScript.
 ## Project Setup
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
 ```bash
-spacetime init --lang rust --project-path my-project my-project
+spacetime init --lang typescript --project-path my-project my-project
 cd my-project
 spacetime login
 spacetime publish <DATABASE_NAME>
@@ -33,10 +32,10 @@ spacetime publish <DATABASE_NAME>
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
 ```bash
-spacetime init --lang typescript --project-path my-project my-project
+spacetime init --lang rust --project-path my-project my-project
 cd my-project
 spacetime login
 spacetime publish <DATABASE_NAME>
@@ -48,36 +47,39 @@ spacetime publish <DATABASE_NAME>
 ## Tables
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use spacetimedb::{table, SpacetimeType};
+```typescript
+import { table, t, schema } from 'spacetimedb/server';
 
 // Basic table
-#[table(name = player, public)]
-pub struct Player {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    #[unique]
-    username: String,
-    #[index(btree)]
-    score: i32,
-}
+const player = table(
+  { name: 'player', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    username: t.string().unique(),
+    score: t.i32().index('btree'),
+  }
+);
 
 // Multi-column index
-#[table(name = score, index(name = idx, btree(columns = [player_id, level])))]
-pub struct Score {
-    player_id: u64,
-    level: u32,
-}
+const score = table(
+  {
+    name: 'score',
+    indexes: [{
+      name: 'idx',
+      algorithm: 'btree',
+      columns: ['player_id', 'level'],
+    }],
+  },
+  {
+    player_id: t.u64(),
+    level: t.u32(),
+  }
+);
 
 // Custom types
-#[derive(SpacetimeType)]
-pub enum Status {
-    Active,
-    Inactive,
-}
+const status = t.enum('Status', ['Active', 'Inactive']);
 ```
 
 </TabItem>
@@ -120,39 +122,36 @@ public enum Status
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-import { table, t, schema } from 'spacetimedb/server';
+```rust
+use spacetimedb::{table, SpacetimeType};
 
 // Basic table
-const player = table(
-  { name: 'player', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    username: t.string().unique(),
-    score: t.i32().index('btree'),
-  }
-);
+#[table(name = player, public)]
+pub struct Player {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    #[unique]
+    username: String,
+    #[index(btree)]
+    score: i32,
+}
 
 // Multi-column index
-const score = table(
-  {
-    name: 'score',
-    indexes: [{
-      name: 'idx',
-      algorithm: 'btree',
-      columns: ['player_id', 'level'],
-    }],
-  },
-  {
-    player_id: t.u64(),
-    level: t.u32(),
-  }
-);
+#[table(name = score, index(name = idx, btree(columns = [player_id, level])))]
+pub struct Score {
+    player_id: u64,
+    level: u32,
+}
 
 // Custom types
-const status = t.enum('Status', ['Active', 'Inactive']);
+#[derive(SpacetimeType)]
+pub enum Status {
+    Active,
+    Inactive,
+}
 ```
 
 </TabItem>
@@ -161,32 +160,31 @@ const status = t.enum('Status', ['Active', 'Inactive']);
 ## Reducers
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use spacetimedb::{reducer, ReducerContext};
+```typescript
+import { schema } from 'spacetimedb/server';
+
+const spacetimedb = schema(player);
 
 // Basic reducer
-#[reducer]
-pub fn create_player(ctx: &ReducerContext, username: String) {
-    ctx.db.player().insert(Player { id: 0, username, score: 0 });
-}
+spacetimedb.reducer('create_player', { username: t.string() }, (ctx, { username }) => {
+  ctx.db.player.insert({ id: 0n, username, score: 0 });
+});
 
 // With error handling
-#[reducer]
-pub fn update_score(ctx: &ReducerContext, id: u64, points: i32) -> Result<(), String> {
-    let mut player = ctx.db.player().id().find(id)
-        .ok_or("Player not found")?;
-    player.score += points;
-    ctx.db.player().id().update(player);
-    Ok(())
-}
+spacetimedb.reducer('update_score', { id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
+  const player = ctx.db.player.id.find(id);
+  if (!player) throw new Error('Player not found');
+  player.score += points;
+  ctx.db.player.id.update(player);
+});
 
 // Query examples
-let player = ctx.db.player().id().find(123);           // Find by primary key
-let players = ctx.db.player().username().filter("Alice"); // Filter by index
-let all = ctx.db.player().iter();                      // Iterate all
-ctx.db.player().id().delete(123);                      // Delete by primary key
+const player = ctx.db.player.id.find(123n);           // Find by primary key
+const players = ctx.db.player.username.filter('Alice'); // Filter by index
+const all = ctx.db.player.iter();                      // Iterate all
+ctx.db.player.id.delete(123n);                         // Delete by primary key
 ```
 
 </TabItem>
@@ -220,31 +218,32 @@ ctx.Db.Player.Id.Delete(123);                      // Delete by primary key
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-import { schema } from 'spacetimedb/server';
-
-const spacetimedb = schema(player);
+```rust
+use spacetimedb::{reducer, ReducerContext};
 
 // Basic reducer
-spacetimedb.reducer('create_player', { username: t.string() }, (ctx, { username }) => {
-  ctx.db.player.insert({ id: 0n, username, score: 0 });
-});
+#[reducer]
+pub fn create_player(ctx: &ReducerContext, username: String) {
+    ctx.db.player().insert(Player { id: 0, username, score: 0 });
+}
 
 // With error handling
-spacetimedb.reducer('update_score', { id: t.u64(), points: t.i32() }, (ctx, { id, points }) => {
-  const player = ctx.db.player.id.find(id);
-  if (!player) throw new Error('Player not found');
-  player.score += points;
-  ctx.db.player.id.update(player);
-});
+#[reducer]
+pub fn update_score(ctx: &ReducerContext, id: u64, points: i32) -> Result<(), String> {
+    let mut player = ctx.db.player().id().find(id)
+        .ok_or("Player not found")?;
+    player.score += points;
+    ctx.db.player().id().update(player);
+    Ok(())
+}
 
 // Query examples
-const player = ctx.db.player.id.find(123n);           // Find by primary key
-const players = ctx.db.player.username.filter('Alice'); // Filter by index
-const all = ctx.db.player.iter();                      // Iterate all
-ctx.db.player.id.delete(123n);                         // Delete by primary key
+let player = ctx.db.player().id().find(123);           // Find by primary key
+let players = ctx.db.player().username().filter("Alice"); // Filter by index
+let all = ctx.db.player().iter();                      // Iterate all
+ctx.db.player().id().delete(123);                      // Delete by primary key
 ```
 
 </TabItem>
@@ -253,17 +252,14 @@ ctx.db.player.id.delete(123n);                         // Delete by primary key
 ## Lifecycle Reducers
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[reducer(init)]
-pub fn init(ctx: &ReducerContext) { /* ... */ }
+```typescript
+spacetimedb.init(ctx => { /* ... */ });
 
-#[reducer(client_connected)]
-pub fn on_connect(ctx: &ReducerContext) { /* ... */ }
+spacetimedb.clientConnected(ctx => { /* ... */ });
 
-#[reducer(client_disconnected)]
-pub fn on_disconnect(ctx: &ReducerContext) { /* ... */ }
+spacetimedb.clientDisconnected(ctx => { /* ... */ });
 ```
 
 </TabItem>
@@ -281,14 +277,17 @@ public static void OnDisconnect(ReducerContext ctx) { /* ... */ }
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.init(ctx => { /* ... */ });
+```rust
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) { /* ... */ }
 
-spacetimedb.clientConnected(ctx => { /* ... */ });
+#[reducer(client_connected)]
+pub fn on_connect(ctx: &ReducerContext) { /* ... */ }
 
-spacetimedb.clientDisconnected(ctx => { /* ... */ });
+#[reducer(client_disconnected)]
+pub fn on_disconnect(ctx: &ReducerContext) { /* ... */ }
 ```
 
 </TabItem>
@@ -297,22 +296,21 @@ spacetimedb.clientDisconnected(ctx => { /* ... */ });
 ## Scheduled Tables
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[table(name = reminder, scheduled(send_reminder))]
-pub struct Reminder {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    message: String,
-    scheduled_at: ScheduleAt,
-}
+```typescript
+const reminder = table(
+  { name: 'reminder', scheduled: 'send_reminder' },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    message: t.string(),
+    scheduled_at: t.scheduleAt(),
+  }
+);
 
-#[reducer]
-fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
-    log::info!("Reminder: {}", reminder.message);
-}
+spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (ctx, { arg }) => {
+  console.log(`Reminder: ${arg.message}`);
+});
 ```
 
 </TabItem>
@@ -337,21 +335,22 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const reminder = table(
-  { name: 'reminder', scheduled: 'send_reminder' },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    message: t.string(),
-    scheduled_at: t.scheduleAt(),
-  }
-);
+```rust
+#[table(name = reminder, scheduled(send_reminder))]
+pub struct Reminder {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    message: String,
+    scheduled_at: ScheduleAt,
+}
 
-spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (ctx, { arg }) => {
-  console.log(`Reminder: ${arg.message}`);
-});
+#[reducer]
+fn send_reminder(ctx: &ReducerContext, reminder: Reminder) {
+    log::info!("Reminder: {}", reminder.message);
+}
 ```
 
 </TabItem>
@@ -360,6 +359,34 @@ spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (ctx, { arg }) =
 ## Procedures
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+spacetimedb.procedure(
+  'fetch_data',
+  { url: t.string() },
+  t.string(),
+  (ctx, { url }) => {
+    const response = ctx.http.fetch(url);
+    const data = response.text();
+    
+    ctx.withTx(ctx => {
+      ctx.db.cache.insert({ data });
+    });
+    
+    return data;
+  }
+);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// C# procedure support coming soon
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -384,57 +411,23 @@ fn fetch_data(ctx: &mut ProcedureContext, url: String) -> String {
 ```
 
 </TabItem>
-<TabItem value="csharp" label="C#">
-
-```csharp
-// C# procedure support coming soon
-```
-
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-```typescript
-spacetimedb.procedure(
-  'fetch_data',
-  { url: t.string() },
-  t.string(),
-  (ctx, { url }) => {
-    const response = ctx.http.fetch(url);
-    const data = response.text();
-    
-    ctx.withTx(ctx => {
-      ctx.db.cache.insert({ data });
-    });
-    
-    return data;
-  }
-);
-```
-
-</TabItem>
 </Tabs>
 
 ## Views
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use spacetimedb::{view, ViewContext};
-
+```typescript
 // Return single row
-#[view(name = my_player, public)]
-fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
-}
+spacetimedb.view('my_player', {}, t.option(player.rowType), ctx => {
+  return ctx.db.player.identity.find(ctx.sender);
+});
 
 // Return multiple rows
-#[view(name = top_players, public)]
-fn top_players(ctx: &ViewContext) -> Vec<Player> {
-    ctx.db.player().iter()
-        .filter(|p| p.score > 1000)
-        .collect()
-}
+spacetimedb.view('top_players', {}, t.array(player.rowType), ctx => {
+  return ctx.db.player.iter().filter(p => p.score > 1000);
+});
 ```
 
 </TabItem>
@@ -459,18 +452,24 @@ public static IEnumerable<Player> TopPlayers(ViewContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
+use spacetimedb::{view, ViewContext};
+
 // Return single row
-spacetimedb.view('my_player', {}, t.option(player.rowType), ctx => {
-  return ctx.db.player.identity.find(ctx.sender);
-});
+#[view(name = my_player, public)]
+fn my_player(ctx: &ViewContext) -> Option<Player> {
+    ctx.db.player().identity().find(ctx.sender)
+}
 
 // Return multiple rows
-spacetimedb.view('top_players', {}, t.array(player.rowType), ctx => {
-  return ctx.db.player.iter().filter(p => p.score > 1000);
-});
+#[view(name = top_players, public)]
+fn top_players(ctx: &ViewContext) -> Vec<Player> {
+    ctx.db.player().iter()
+        .filter(|p| p.score > 1000)
+        .collect()
+}
 ```
 
 </TabItem>
@@ -479,15 +478,14 @@ spacetimedb.view('top_players', {}, t.array(player.rowType), ctx => {
 ## Context Properties
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 ctx.db                  // Database access
 ctx.sender              // Identity of caller
-ctx.connection_id       // Option<ConnectionId>
+ctx.connectionId        // ConnectionId | undefined
 ctx.timestamp           // Timestamp
-ctx.identity()          // Module's identity
-ctx.rng()               // Random number generator
+ctx.identity            // Module's identity
 ```
 
 </TabItem>
@@ -503,14 +501,15 @@ ctx.Rng                 // Random number generator
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 ctx.db                  // Database access
 ctx.sender              // Identity of caller
-ctx.connectionId        // ConnectionId | undefined
+ctx.connection_id       // Option<ConnectionId>
 ctx.timestamp           // Timestamp
-ctx.identity            // Module's identity
+ctx.identity()          // Module's identity
+ctx.rng()               // Random number generator
 ```
 
 </TabItem>
@@ -519,13 +518,13 @@ ctx.identity            // Module's identity
 ## Logging
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-log::error!("Error: {}", msg);
-log::warn!("Warning: {}", msg);
-log::info!("Info: {}", msg);
-log::debug!("Debug: {}", msg);
+```typescript
+console.error(`Error: ${msg}`);
+console.warn(`Warning: ${msg}`);
+console.log(`Info: ${msg}`);
+console.debug(`Debug: ${msg}`);
 ```
 
 </TabItem>
@@ -539,13 +538,13 @@ Log.Debug($"Debug: {msg}");
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-console.error(`Error: ${msg}`);
-console.warn(`Warning: ${msg}`);
-console.log(`Info: ${msg}`);
-console.debug(`Debug: ${msg}`);
+```rust
+log::error!("Error: {}", msg);
+log::warn!("Warning: {}", msg);
+log::info!("Info: {}", msg);
+log::debug!("Debug: {}", msg);
 ```
 
 </TabItem>
@@ -581,19 +580,23 @@ spacetime generate --lang ts <NAME>      # Generate TypeScript client
 ## Common Types
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-// Primitives
-bool, String, f32, f64
-i8, i16, i32, i64, i128
-u8, u16, u32, u64, u128
+```typescript
+// Type builders
+t.bool(), t.string(), t.f32(), t.f64()
+t.i8(), t.i16(), t.i32(), t.i64(), t.i128()
+t.u8(), t.u16(), t.u32(), t.u64(), t.u128()
 
 // Collections
-Option<T>, Vec<T>
+t.option(T), t.array(T)
 
 // SpacetimeDB types
-Identity, ConnectionId, Timestamp, Duration, ScheduleAt
+t.identity(), t.connectionId(), t.timestamp(), t.timeDuration(), t.scheduleAt()
+
+// Structured types
+t.object('Name', { field: t.type() })
+t.enum('Name', ['Variant1', 'Variant2'])
 ```
 
 </TabItem>
@@ -613,23 +616,19 @@ Identity, ConnectionId, Timestamp, TimeDuration, ScheduleAt
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-// Type builders
-t.bool(), t.string(), t.f32(), t.f64()
-t.i8(), t.i16(), t.i32(), t.i64(), t.i128()
-t.u8(), t.u16(), t.u32(), t.u64(), t.u128()
+```rust
+// Primitives
+bool, String, f32, f64
+i8, i16, i32, i64, i128
+u8, u16, u32, u64, u128
 
 // Collections
-t.option(T), t.array(T)
+Option<T>, Vec<T>
 
 // SpacetimeDB types
-t.identity(), t.connectionId(), t.timestamp(), t.timeDuration(), t.scheduleAt()
-
-// Structured types
-t.object('Name', { field: t.type() })
-t.enum('Name', ['Variant1', 'Variant2'])
+Identity, ConnectionId, Timestamp, Duration, ScheduleAt
 ```
 
 </TabItem>

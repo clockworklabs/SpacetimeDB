@@ -3,7 +3,6 @@ title: Incremental Migrations
 slug: /databases/incremental-migrations
 ---
 
-# Incremental Migrations
 
 SpacetimeDB does not provide built-in support for general schema-modifying migrations. It does, however, allow adding new tables, and changing reducers' definitions in arbitrary ways. It's possible to run general migrations using an external tool, but this is tedious, necessitates downtime, and imposes the requirement that you update all your clients at the same time as publishing your new module version.
 

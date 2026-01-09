@@ -3,7 +3,6 @@ title: Unreal Reference
 slug: /sdks/unreal
 ---
 
-# The SpacetimeDB Unreal client SDK
 
 The SpacetimeDB client for Unreal Engine contains all the tools you need to build native clients for SpacetimeDB modules using C++ and Blueprint.
 

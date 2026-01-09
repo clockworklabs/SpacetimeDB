@@ -1,12 +1,12 @@
 ---
-title: Building and Publishing
+title: spacetime publish
 slug: /databases/building-publishing
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Building and Publishing Modules
+# `spacetime publish`
 
 This guide covers how to build and publish your SpacetimeDB module.
 

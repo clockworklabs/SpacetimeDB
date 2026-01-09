@@ -6,7 +6,6 @@ slug: /tables/access-permissions
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Access Permissions
 
 SpacetimeDB enforces different levels of table access depending on the context. All contexts access tables through `ctx.db`, but the available operations differ based on whether the context is read-write or read-only.
 
@@ -15,35 +14,29 @@ SpacetimeDB enforces different levels of table access depending on the context. 
 Reducers receive a `ReducerContext` which provides full read-write access to tables. They can perform all CRUD operations: insert, read, update, and delete.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::reducer]
-fn example(ctx: &ReducerContext) -> Result<(), String> {
-    // Insert
-    ctx.db.user().insert(User {
-        id: 0,
-        name: "Alice".to_string(),
-        email: "alice@example.com".to_string(),
-    });
+```typescript
+spacetimedb.reducer('example', {}, (ctx) => {
+  // Insert
+  ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
 
-    // Read: iterate all rows
-    for user in ctx.db.user().iter() {
-        log::info!("User: {}", user.name);
-    }
+  // Read: iterate all rows
+  for (const user of ctx.db.user.iter()) {
+    console.log(user.name);
+  }
 
-    // Read: find by unique column
-    if let Some(mut user) = ctx.db.user().id().find(123) {
-        // Update
-        user.name = "Bob".to_string();
-        ctx.db.user().id().update(user);
-    }
+  // Read: find by unique column
+  const foundUser = ctx.db.user.id.find(123);
+  if (foundUser) {
+    // Update
+    foundUser.name = 'Bob';
+    ctx.db.user.id.update(foundUser);
+  }
 
-    // Delete
-    ctx.db.user().id().delete(456);
-
-    Ok(())
-}
+  // Delete
+  ctx.db.user.id.delete(456);
+});
 ```
 
 </TabItem>
@@ -76,29 +69,35 @@ public static void Example(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.reducer('example', {}, (ctx) => {
-  // Insert
-  ctx.db.user.insert({ id: 0, name: 'Alice', email: 'alice@example.com' });
+```rust
+#[spacetimedb::reducer]
+fn example(ctx: &ReducerContext) -> Result<(), String> {
+    // Insert
+    ctx.db.user().insert(User {
+        id: 0,
+        name: "Alice".to_string(),
+        email: "alice@example.com".to_string(),
+    });
 
-  // Read: iterate all rows
-  for (const user of ctx.db.user.iter()) {
-    console.log(user.name);
-  }
+    // Read: iterate all rows
+    for user in ctx.db.user().iter() {
+        log::info!("User: {}", user.name);
+    }
 
-  // Read: find by unique column
-  const foundUser = ctx.db.user.id.find(123);
-  if (foundUser) {
-    // Update
-    foundUser.name = 'Bob';
-    ctx.db.user.id.update(foundUser);
-  }
+    // Read: find by unique column
+    if let Some(mut user) = ctx.db.user().id().find(123) {
+        // Update
+        user.name = "Bob".to_string();
+        ctx.db.user().id().update(user);
+    }
 
-  // Delete
-  ctx.db.user.id.delete(456);
-});
+    // Delete
+    ctx.db.user().id().delete(456);
+
+    Ok(())
+}
 ```
 
 </TabItem>
@@ -109,29 +108,6 @@ spacetimedb.reducer('example', {}, (ctx) => {
 Procedures receive a `ProcedureContext` and can access tables through transactions. Unlike reducers, procedures must explicitly open a transaction to read from or modify the database.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-```rust
-#[spacetimedb::procedure]
-fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: String) {
-    // Must explicitly open a transaction
-    ctx.with_tx(|ctx| {
-        // Full read-write access within the transaction
-        if let Some(mut user) = ctx.db.user().id().find(user_id) {
-            user.name = new_name.clone();
-            ctx.db.user().id().update(user);
-        }
-    });
-    // Transaction is committed when the closure returns
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-Support for procedures in C# modules is coming soon!
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
@@ -152,6 +128,29 @@ spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.strin
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+Support for procedures in C# modules is coming soon!
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::procedure]
+fn update_user_procedure(ctx: &mut ProcedureContext, user_id: u64, new_name: String) {
+    // Must explicitly open a transaction
+    ctx.with_tx(|ctx| {
+        // Full read-write access within the transaction
+        if let Some(mut user) = ctx.db.user().id().find(user_id) {
+            user.name = new_name.clone();
+            ctx.db.user().id().update(user);
+        }
+    });
+    // Transaction is committed when the closure returns
+}
+```
+
+</TabItem>
 </Tabs>
 
 See the [Procedures documentation](/functions/procedures) for more details on using procedures, including making HTTP requests to external services.
@@ -161,17 +160,19 @@ See the [Procedures documentation](/functions/procedures) for more details on us
 Views receive a `ViewContext` or `AnonymousViewContext` which provides read-only access to tables. They can query and iterate tables, but cannot insert, update, or delete rows.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::view(name = find_users_by_name, public)]
-fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
+```typescript
+spacetimedb.view(
+  { name: 'findUsersByName', public: true },
+  t.array(user.rowType),
+  (ctx) => {
     // Can read and filter
-    ctx.db.user().name().filter("Alice").collect()
+    return Array.from(ctx.db.user.name.filter('Alice'));
 
     // Cannot insert, update, or delete
-    // ctx.db.user().insert(...) // ❌ Compile error
-}
+    // ctx.db.user.insert(...) // ❌ Method not available
+  });
 ```
 
 </TabItem>
@@ -190,19 +191,17 @@ public static List<User> FindUsersByName(ViewContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.view(
-  { name: 'findUsersByName', public: true },
-  t.array(user.rowType),
-  (ctx) => {
+```rust
+#[spacetimedb::view(name = find_users_by_name, public)]
+fn find_users_by_name(ctx: &ViewContext) -> Vec<User> {
     // Can read and filter
-    return Array.from(ctx.db.user.name.filter('Alice'));
+    ctx.db.user().name().filter("Alice").collect()
 
     // Cannot insert, update, or delete
-    // ctx.db.user.insert(...) // ❌ Method not available
-  });
+    // ctx.db.user().insert(...) // ❌ Compile error
+}
 ```
 
 </TabItem>

@@ -6,31 +6,28 @@ slug: /tables/scheduled-tables
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Scheduled Tables
 
 Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
 ## Defining a Scheduled Table
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::table(name = reminder_schedule, scheduled(send_reminder))]
-pub struct Reminder {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    user_id: u32,
-    message: String,
-    scheduled_at: ScheduleAt,
-}
+```typescript
+const reminder = table(
+  { name: 'reminder', scheduled: 'send_reminder' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+    message: t.string(),
+  }
+);
 
-#[spacetimedb::reducer]
-fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String> {
-    // Process the scheduled reminder
-    Ok(())
-}
+spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) => {
+  // Invoked automatically by the scheduler
+  // arg.message, arg.scheduled_at, arg.scheduled_id
+});
 ```
 
 </TabItem>
@@ -56,22 +53,24 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const reminder = table(
-  { name: 'reminder', scheduled: 'send_reminder' },
-  {
-    scheduled_id: t.u64().primaryKey().autoInc(),
-    scheduled_at: t.scheduleAt(),
-    message: t.string(),
-  }
-);
+```rust
+#[spacetimedb::table(name = reminder_schedule, scheduled(send_reminder))]
+pub struct Reminder {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    user_id: u32,
+    message: String,
+    scheduled_at: ScheduleAt,
+}
 
-spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) => {
-  // Invoked automatically by the scheduler
-  // arg.message, arg.scheduled_at, arg.scheduled_id
-});
+#[spacetimedb::reducer]
+fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String> {
+    // Process the scheduled reminder
+    Ok(())
+}
 ```
 
 </TabItem>
@@ -91,17 +90,15 @@ Scheduled reducers are normal reducers that can also be invoked by external clie
 :::
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::reducer]
-fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String> {
-    if !ctx.sender_auth().is_internal() {
-        return Err("This reducer can only be called by the scheduler".to_string());
-    }
-    // Process the scheduled reminder
-    Ok(())
-}
+```typescript
+spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) => {
+  if (!ctx.senderAuth.isInternal) {
+    throw new SenderError('This reducer can only be called by the scheduler');
+  }
+  // Process the scheduled reminder
+});
 ```
 
 </TabItem>
@@ -120,15 +117,17 @@ public static void SendReminder(ReducerContext ctx, Reminder reminder)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) => {
-  if (!ctx.senderAuth.isInternal) {
-    throw new SenderError('This reducer can only be called by the scheduler');
-  }
-  // Process the scheduled reminder
-});
+```rust
+#[spacetimedb::reducer]
+fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String> {
+    if !ctx.sender_auth().is_internal() {
+        return Err("This reducer can only be called by the scheduler".to_string());
+    }
+    // Process the scheduled reminder
+    Ok(())
+}
 ```
 
 </TabItem>

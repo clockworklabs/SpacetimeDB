@@ -3,7 +3,6 @@ title: Authorization
 slug: /http/authorization
 ---
 
-# SpacetimeDB HTTP Authorization
 
 ### Generating identities and tokens
 

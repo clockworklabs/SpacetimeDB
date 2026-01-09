@@ -3,7 +3,6 @@ title: Configuring your project
 slug: /spacetimeauth/configuring-a-project
 ---
 
-# Configuring a SpacetimeAuth Project
 
 :::warning
 

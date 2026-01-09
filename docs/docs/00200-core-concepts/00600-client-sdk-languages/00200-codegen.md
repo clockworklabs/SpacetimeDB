@@ -6,7 +6,6 @@ slug: /sdks/codegen
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Generating Client Bindings
 
 Before you can interact with a SpacetimeDB [database](/databases) from a client application, you must generate client bindings for your **module**. These bindings create type-safe interfaces that allow your client to query [tables](/tables), invoke [reducers](/functions/reducers), call [procedures](/functions/procedures), and subscribe to [tables](/tables), and/or [views](/functions/views).
 
@@ -26,34 +25,6 @@ The bindings ensure compile-time type safety between your client and server code
 Use the `spacetime generate` command to create bindings from your module:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
-
-```bash
-mkdir -p src/module_bindings
-spacetime generate --lang rust --out-dir client/src/module_bindings --project-path PATH-TO-MODULE-DIRECTORY
-```
-
-This generates Rust files in `client/src/module_bindings/`. Import them in your client with:
-
-```rust
-mod module_bindings;
-```
-
-Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, where the module's `Cargo.toml` is located.
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-```bash
-mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --project-path PATH-TO-MODULE-DIRECTORY
-```
-
-This generates C# files in `module_bindings/`. The generated files are automatically included in your project.
-
-Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, where the module's `.csproj` is located.
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 ```bash
@@ -68,6 +39,34 @@ import * as moduleBindings from './module_bindings';
 ```
 
 Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, where the module's `package.json` is located.
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```bash
+mkdir -p module_bindings
+spacetime generate --lang cs --out-dir module_bindings --project-path PATH-TO-MODULE-DIRECTORY
+```
+
+This generates C# files in `module_bindings/`. The generated files are automatically included in your project.
+
+Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, where the module's `.csproj` is located.
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```bash
+mkdir -p src/module_bindings
+spacetime generate --lang rust --out-dir client/src/module_bindings --project-path PATH-TO-MODULE-DIRECTORY
+```
+
+This generates Rust files in `client/src/module_bindings/`. Import them in your client with:
+
+```rust
+mod module_bindings;
+```
+
+Replace **PATH-TO-MODULE-DIRECTORY** with the path to your module's directory, where the module's `Cargo.toml` is located.
 
 </TabItem>
 <TabItem value="unreal" label="Unreal">
@@ -101,18 +100,18 @@ For each [table](/tables) in your module, codegen generates:
 For example, a `user` table becomes:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Generated type
-pub struct User {
-    pub id: u64,
-    pub name: String,
-    pub email: String,
-}
+export default __t.object("User", {
+  id: __t.u64(),
+  name: __t.string(),
+  email: __t.string(),
+});
 
 // Access via DbConnection
-conn.db().user()
+conn.db.User
 ```
 
 </TabItem>
@@ -132,18 +131,18 @@ conn.Db.User
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Generated type
-export default __t.object("User", {
-  id: __t.u64(),
-  name: __t.string(),
-  email: __t.string(),
-});
+pub struct User {
+    pub id: u64,
+    pub name: String,
+    pub email: String,
+}
 
 // Access via DbConnection
-conn.db.User
+conn.db().user()
 ```
 
 </TabItem>
@@ -186,15 +185,15 @@ For each [reducer](/functions/reducers) in your module, codegen generates:
 For example, a `create_user` reducer becomes:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Call the reducer
-conn.reducers().create_user(name, email);
+conn.reducers.createUser(name, email);
 
 // Register a callback to observe reducer invocations
-conn.reducers().on_create_user(|ctx, name, email| {
-    println!("User created: {}", name);
+conn.reducers.onCreateUser((ctx, name, email) => {
+  console.log(`User created: ${name}`);
 });
 ```
 
@@ -213,15 +212,15 @@ conn.Reducers.OnCreateUser += (ctx, name, email) =>
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Call the reducer
-conn.reducers.createUser(name, email);
+conn.reducers().create_user(name, email);
 
 // Register a callback to observe reducer invocations
-conn.reducers.onCreateUser((ctx, name, email) => {
-  console.log(`User created: ${name}`);
+conn.reducers().on_create_user(|ctx, name, email| {
+    println!("User created: {}", name);
 });
 ```
 
@@ -261,19 +260,14 @@ For each [procedure](/functions/procedures) in your module, codegen generates:
 Procedures are currently in beta. For example, a `fetch_external_data` procedure becomes:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-// Call the procedure without a callback
-conn.procedures().fetch_external_data(url);
-
-// Call the procedure with a callback for the result
-conn.procedures().fetch_external_data_then(url, |ctx, result| {
-    match result {
-        Ok(data) => println!("Got result: {:?}", data),
-        Err(error) => eprintln!("Error: {:?}", error),
-    }
-});
+```typescript
+// Call the procedure
+conn.procedures
+  .fetchExternalData(url)
+  .then(result => console.log(`Got result: ${result}`))
+  .catch(error => console.error(`Error: ${error}`));
 ```
 
 </TabItem>
@@ -298,14 +292,19 @@ conn.Procedures.FetchExternalData(url, (ctx, result) =>
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-// Call the procedure
-conn.procedures
-  .fetchExternalData(url)
-  .then(result => console.log(`Got result: ${result}`))
-  .catch(error => console.error(`Error: ${error}`));
+```rust
+// Call the procedure without a callback
+conn.procedures().fetch_external_data(url);
+
+// Call the procedure with a callback for the result
+conn.procedures().fetch_external_data_then(url, |ctx, result| {
+    match result {
+        Ok(data) => println!("Got result: {:?}", data),
+        Err(error) => eprintln!("Error: {:?}", error),
+    }
+});
 ```
 
 </TabItem>

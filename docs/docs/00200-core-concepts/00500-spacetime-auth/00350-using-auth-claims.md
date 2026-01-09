@@ -16,6 +16,33 @@ Within a SpacetimeDB reducer, you can access the auth claims from a client's tok
 The subject (`sub`) and issuer (`iss`) are the most commonly accessed claims in a JWT. The issuer indicates which authentication provider issued the token, and the subject represents the unique identifier assigned to the user by the issuer. These are required claims, which are used to compute each user's `Identity`. Because these are so commonly used, there are helper functions to get them.
 
 <Tabs groupId="server-language" defaultValue="typescript">
+<TabItem value="typescript" label="TS">
+
+```typescript
+import { SenderError } from "spacetimedb/server";
+
+spacetimedb.clientConnected((ctx) => {
+  const jwt = ctx.senderAuth.jwt;
+  if (jwt == null) {
+    throw new SenderError("Unauthorized: JWT is required to connect");
+  }
+  console.info(`Client connected with sub: ${jwt.subject}, iss: ${jwt.issuer}`);
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```cs
+[Reducer(ReducerKind.ClientConnected)]
+public static void ClientConnected(ReducerContext ctx)
+{
+    var claims = ctx.SenderAuth.Jwt ?? throw new Exception("Client connected without JWT");
+    Log.Info($"Client connected with csub: {claims.Subject}, and iss: {claims.Issuer}");
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -38,33 +65,6 @@ pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
 INFO: src\lib.rs:64: sub: 321321321321321, iss: https://accounts.google.com
 ```
 </TabItem>
-<TabItem value="csharp" label="C#">
-
-```cs
-[Reducer(ReducerKind.ClientConnected)]
-public static void ClientConnected(ReducerContext ctx)
-{
-    var claims = ctx.SenderAuth.Jwt ?? throw new Exception("Client connected without JWT");
-    Log.Info($"Client connected with csub: {claims.Subject}, and iss: {claims.Issuer}");
-}
-```
-
-</TabItem>
-<TabItem value="typescript" label="TS">
-
-```typescript
-import { SenderError } from "spacetimedb/server";
-
-spacetimedb.clientConnected((ctx) => {
-  const jwt = ctx.senderAuth.jwt;
-  if (jwt == null) {
-    throw new SenderError("Unauthorized: JWT is required to connect");
-  }
-  console.info(`Client connected with sub: ${jwt.subject}, iss: ${jwt.issuer}`);
-});
-```
-
-</TabItem>
 </Tabs>
 
 ## Example: Restricting auth providers
@@ -76,25 +76,22 @@ Additionally, it's imperative that you check the `aud` claim to ensure the issue
 For example, we can restrict access to clients with SpacetimeAuth credentials.
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TS">
 
-```rust
-// Set this to your the OIDC client (or set of clients) set up for your
-// SpacetimeAuth project.
-const OIDC_CLIENT_ID: &str = "client_XXXXXXXXXXXXXXXXXXXXXX";
-
-#[reducer(client_connected)]
-pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
-    let jwt = ctx.sender_auth().jwt().ok_or("Authentication required".to_string())?;
-    if jwt.issuer() != "https://auth.spacetimedb.com/oidc" {
-        return Err("Invalid issuer".to_string());
-    }
-
-    if !jwt.audience().iter().any(|a| a == OIDC_CLIENT_ID) {
-        return Err("Invalid audience".to_string());
-    }
-    Ok(())
-}
+```typescript
+const OIDC_CLIENT_IDS = ["client_XXXXXXXXXXXXXXXXXXXXXX"];
+spacetimedb.clientConnected((ctx) => {
+  const jwt = ctx.senderAuth.jwt;
+  if (jwt == null) {
+    throw new SenderError("Unauthorized: JWT is required to connect");
+  }
+  if (jwt.issuer != "https://auth.spacetimedb.com/oidc") {
+    throw new SenderError(`Unauthorized: Invalid issuer ${jwt.issuer}`);
+  }
+  if (!jwt.audience.some((aud) => OIDC_CLIENT_IDS.includes(aud))) {
+    throw new SenderError(`Unauthorized: Invalid audience ${jwt.audience}`);
+  }
+});
 ```
 
 </TabItem>
@@ -121,22 +118,25 @@ public void Connect(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TS">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const OIDC_CLIENT_IDS = ["client_XXXXXXXXXXXXXXXXXXXXXX"];
-spacetimedb.clientConnected((ctx) => {
-  const jwt = ctx.senderAuth.jwt;
-  if (jwt == null) {
-    throw new SenderError("Unauthorized: JWT is required to connect");
-  }
-  if (jwt.issuer != "https://auth.spacetimedb.com/oidc") {
-    throw new SenderError(`Unauthorized: Invalid issuer ${jwt.issuer}`);
-  }
-  if (!jwt.audience.some((aud) => OIDC_CLIENT_IDS.includes(aud))) {
-    throw new SenderError(`Unauthorized: Invalid audience ${jwt.audience}`);
-  }
-});
+```rust
+// Set this to your the OIDC client (or set of clients) set up for your
+// SpacetimeAuth project.
+const OIDC_CLIENT_ID: &str = "client_XXXXXXXXXXXXXXXXXXXXXX";
+
+#[reducer(client_connected)]
+pub fn connect(ctx: &ReducerContext) -> Result<(), String> {
+    let jwt = ctx.sender_auth().jwt().ok_or("Authentication required".to_string())?;
+    if jwt.issuer() != "https://auth.spacetimedb.com/oidc" {
+        return Err("Invalid issuer".to_string());
+    }
+
+    if !jwt.audience().iter().any(|a| a == OIDC_CLIENT_ID) {
+        return Err("Invalid audience".to_string());
+    }
+    Ok(())
+}
 ```
 
 </TabItem>
@@ -149,45 +149,29 @@ If you want to access additional claims that aren't available via helper functio
 As an example, let's say that your tokens have a "roles" claim, which is a list of priviledges. If you want to make sure that only users with the `admin` role are able to call a certain reducer, you could do the following:
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TS">
 
-Update your `Cargo.toml` like so to add `serde` and `serde_json` for parsing json:
+```typescript
 
-```toml
-[dependencies]
-...
-
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
-```
-
-```rust
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CustomClaims {
-    pub roles: Vec<String>,
+// Return an error to the client if they don't have admin rights.
+function ensureAdminAccess(ctx: ReducerCtx<any>) {
+  const auth = ctx.senderAuth;
+  if (auth.isInternal) {
+    return;
+  }
+  const jwt = auth.jwt;
+  if (jwt == null) {
+    throw new SenderError("Unauthorized: JWT is required");
+  }
+  const roles = jwt.fullPayload["roles"];
+  if (!Array.isArray(roles) || !roles.includes("admin")) {
+    throw new SenderError("Unauthorized: Admin role is required");
+  }
 }
 
-/// Returns Ok(()) if the sender has admin access, Err otherwise.
-fn ensure_admin_access(sender_auth: &spacetimedb::AuthCtx) -> Result<(), String> {
-    if sender_auth.is_internal() {
-        // This is a scheduled reducer, so it should already be trusted.
-        return Ok(());
-    }
-    let jwt = sender_auth.jwt().ok_or("Authentication required".to_string())?;
-    let claims: CustomClaims = serde_json::from_slice(jwt.raw_payload().as_bytes()).map_err(|e| format!("Client connected with invalid JWT: {}", e).to_string())?;
-
-    if claims.roles.iter().any(|r| r == "admin") {
-        return Ok(());
-    }
-    Err("Admin role required".to_string())
-}
-
-#[spacetimedb::reducer]
-pub fn admin_only_reducer(ctx: &ReducerContext) -> Result<(), String> {
-    ensure_admin_access(&ctx.sender_auth())?;
-    // Now we can safely perform admin-only actions.
-    Ok(())
-}
+spacetimedb.reducer("adminonly", (ctx) => {
+  ensureAdminAccess(ctx);
+});
 ```
 
 </TabItem>
@@ -229,29 +213,45 @@ public static void AdminOnlyReducer(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TS">
+<TabItem value="rust" label="Rust">
 
-```typescript
+Update your `Cargo.toml` like so to add `serde` and `serde_json` for parsing json:
 
-// Return an error to the client if they don't have admin rights.
-function ensureAdminAccess(ctx: ReducerCtx<any>) {
-  const auth = ctx.senderAuth;
-  if (auth.isInternal) {
-    return;
-  }
-  const jwt = auth.jwt;
-  if (jwt == null) {
-    throw new SenderError("Unauthorized: JWT is required");
-  }
-  const roles = jwt.fullPayload["roles"];
-  if (!Array.isArray(roles) || !roles.includes("admin")) {
-    throw new SenderError("Unauthorized: Admin role is required");
-  }
+```toml
+[dependencies]
+...
+
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+```
+
+```rust
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CustomClaims {
+    pub roles: Vec<String>,
 }
 
-spacetimedb.reducer("adminonly", (ctx) => {
-  ensureAdminAccess(ctx);
-});
+/// Returns Ok(()) if the sender has admin access, Err otherwise.
+fn ensure_admin_access(sender_auth: &spacetimedb::AuthCtx) -> Result<(), String> {
+    if sender_auth.is_internal() {
+        // This is a scheduled reducer, so it should already be trusted.
+        return Ok(());
+    }
+    let jwt = sender_auth.jwt().ok_or("Authentication required".to_string())?;
+    let claims: CustomClaims = serde_json::from_slice(jwt.raw_payload().as_bytes()).map_err(|e| format!("Client connected with invalid JWT: {}", e).to_string())?;
+
+    if claims.roles.iter().any(|r| r == "admin") {
+        return Ok(());
+    }
+    Err("Admin role required".to_string())
+}
+
+#[spacetimedb::reducer]
+pub fn admin_only_reducer(ctx: &ReducerContext) -> Result<(), String> {
+    ensure_admin_access(&ctx.sender_auth())?;
+    // Now we can safely perform admin-only actions.
+    Ok(())
+}
 ```
 
 </TabItem>

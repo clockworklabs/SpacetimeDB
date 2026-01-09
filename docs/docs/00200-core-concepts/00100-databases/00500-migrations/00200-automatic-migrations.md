@@ -3,7 +3,6 @@ title: Automatic Migrations
 slug: /databases/automatic-migrations
 ---
 
-# Automatic Migrations
 
 When you republish a module to an existing database using `spacetime publish {database-name}`, SpacetimeDB attempts to automatically migrate your database schema to match the new module definition. This allows you to update your module code and redeploy without losing existing data, as long as the changes are compatible.
 

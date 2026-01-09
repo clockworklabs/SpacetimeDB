@@ -1,0 +1,79 @@
+---
+description: "⛔ MANDATORY: Core SpacetimeDB concepts (all languages)."
+globs: **/*.ts,**/*.tsx,**/*.js,**/*.jsx,**/*.rs,**/*.cs
+alwaysApply: true
+---
+# SpacetimeDB Rules (All Languages)
+
+> **Last updated:** 2026-01-06
+
+## Language-Specific Rules
+
+| Language | Rule File |
+|----------|-----------|
+| **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
+| **Rust** | Check existing Rust modules in repo |
+| **C#** | Check existing C# modules in repo |
+
+---
+
+## Core Concepts
+
+1. **Reducers are transactional** — they do not return data to callers
+2. **Reducers must be deterministic** — no filesystem, network, timers, or random
+3. **Read data via tables/subscriptions** — not reducer return values
+4. **Auto-increment IDs are not sequential** — gaps are normal, don't use for ordering
+5. **`ctx.sender` is the authenticated principal** — never trust identity args
+
+---
+
+## Feature Implementation Checklist
+
+When implementing a feature that spans backend and client:
+
+1. **Backend:** Define table(s) to store the data
+2. **Backend:** Define reducer(s) to mutate the data
+3. **Client:** Subscribe to the table(s)
+4. **Client:** Call the reducer(s) from UI — **don't forget this step!**
+5. **Client:** Render the data from the table(s)
+
+**Common mistake:** Building backend tables/reducers but forgetting to wire up the client to call them.
+
+---
+
+## Commands
+
+```bash
+# Start local SpacetimeDB
+spacetime start
+
+# Publish module
+spacetime publish <db-name> --project-path <module-path>
+
+# Clear and republish
+spacetime publish <db-name> --clear-database -y --project-path <module-path>
+
+# Generate client bindings
+spacetime generate --lang <lang> --out-dir <out> --project-path <module-path>
+
+# View logs
+spacetime logs <db-name>
+```
+
+---
+
+## Debugging Checklist
+
+1. Is SpacetimeDB server running? (`spacetime start`)
+2. Is the module published? (`spacetime publish`)
+3. Are client bindings generated? (`spacetime generate`)
+4. Check server logs for errors (`spacetime logs <db-name>`)
+5. **Is the reducer actually being called from the client?**
+
+---
+
+## Editing Behavior
+
+- Make the smallest change necessary
+- Do NOT touch unrelated files, configs, or dependencies
+- Do NOT invent new SpacetimeDB APIs — use only what exists in docs or this repo

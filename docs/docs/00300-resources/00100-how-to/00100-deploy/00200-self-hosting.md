@@ -3,7 +3,6 @@ title: Self-hosting
 slug: /how-to/deploy/self-hosting
 ---
 
-# Self-hosting SpacetimeDB
 
 This tutorial will guide you through setting up SpacetimeDB on an Ubuntu 24.04 server, securing it with HTTPS using Nginx and Let's Encrypt, and configuring a systemd service to keep it running.
 

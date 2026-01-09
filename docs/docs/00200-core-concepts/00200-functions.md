@@ -3,7 +3,6 @@ title: Functions
 slug: /functions
 ---
 
-# Functions
 
 Property / Characteristic | Reducers | Procedures | Views
 -- | -- | -- | --

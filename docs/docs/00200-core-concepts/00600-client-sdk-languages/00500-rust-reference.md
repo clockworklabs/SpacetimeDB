@@ -4,7 +4,6 @@ toc_max_heading_level: 6
 slug: /sdks/rust
 ---
 
-# The SpacetimeDB Rust client SDK
 
 The SpacetimeDB client SDK for Rust contains all the tools you need to build native clients for SpacetimeDB modules using Rust.
 

@@ -1,9 +1,8 @@
 ---
-title: Overview
+title: Unity Tutorial
 slug: /tutorials/unity
 ---
 
-# Unity Tutorial - Overview
 
 Need help with the tutorial or CLI commands? [Join our Discord server](https://discord.gg/spacetimedb)!
 

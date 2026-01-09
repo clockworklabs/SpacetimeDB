@@ -6,28 +6,12 @@ slug: /
 import { InstallCardLink } from "@site/src/components/InstallCardLink";
 import { QuickstartLinks } from "@site/src/components/QuickstartLinks";
 
-# Getting Started with SpacetimeDB
 
 ## Installation
 
 You can get started by first installing the `spacetime` CLI tool. The `spacetime` CLI tool makes it extremely easy to manage your databases and deployments.
 
 <InstallCardLink />
-
-## Running SpacetimeDB Locally
-
-To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
-
-After installing the SpacetimeDB CLI, run the start command:
-
-```bash
-spacetime start
-```
-
-The server listens on port `3000` by default, customized via `--listen-addr`.
-
-💡 Standalone mode will run in the foreground.
-⚠️ SSL is not supported in standalone mode.
 
 ## Log in to SpacetimeDB
 
@@ -44,6 +28,21 @@ This will open a browser and ask you to log in via GitHub. If you forget this st
 You are now ready to start developing SpacetimeDB modules. Choose your favorite language and follow one of our quickstart guides to get started building your first app with SpacetimeDB.
 
 <QuickstartLinks />
+
+## Running SpacetimeDB Locally
+
+To develop SpacetimeDB databases locally, you will need to run the Standalone version of the server.
+
+After installing the SpacetimeDB CLI, run the start command:
+
+```bash
+spacetime start
+```
+
+The server listens on port `3000` by default, customized via `--listen-addr`.
+
+💡 Standalone mode will run in the foreground.
+⚠️ SSL is not supported in standalone mode.
 
 ## Next Steps: Learn SpacetimeDB
 

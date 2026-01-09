@@ -1,12 +1,11 @@
 ---
-title: Overview
+title: Tables
 slug: /tables
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Tables
 
 Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stored in memory for extremely low latency and high throughput access. SpacetimeDB also automatically persists all data to disk.
 
@@ -15,22 +14,24 @@ Tables are the way to store data in SpacetimeDB. All data in SpacetimeDB is stor
 Tables are defined in your module code with a name, columns, and optional configuration.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-Use the `#[spacetimedb::table]` macro on a struct:
+Use the `table` function to declare a new table:
 
-```rust
-#[spacetimedb::table(name = people, public)]
-pub struct People {
-    #[primary_key]
-    #[auto_inc]
-    id: u32,
-    #[index(btree)]
-    name: String,
-    #[unique]
-    email: String,
-}
+```typescript
+import { table, t } from 'spacetimedb/server';
+
+const people = table(
+  { name: 'people', public: true },
+  {
+    id: t.u32().primaryKey().autoInc(),
+    name: t.string().index('btree'),
+    email: t.string().unique(),
+  }
+);
 ```
+
+The first argument defines table options, and the second defines columns.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -56,25 +57,22 @@ public partial struct People
 The `partial` modifier is required to allow code generation.
 
 </TabItem>
+<TabItem value="rust" label="Rust">
 
-<TabItem value="typescript" label="TypeScript">
+Use the `#[spacetimedb::table]` macro on a struct:
 
-Use the `table` function to declare a new table:
-
-```typescript
-import { table, t } from 'spacetimedb/server';
-
-const people = table(
-  { name: 'people', public: true },
-  {
-    id: t.u32().primaryKey().autoInc(),
-    name: t.string().index('btree'),
-    email: t.string().unique(),
-  }
-);
+```rust
+#[spacetimedb::table(name = people, public)]
+pub struct People {
+    #[primary_key]
+    #[auto_inc]
+    id: u32,
+    #[index(btree)]
+    name: String,
+    #[unique]
+    email: String,
+}
 ```
-
-The first argument defines table options, and the second defines columns.
 
 </TabItem>
 </Tabs>
@@ -87,14 +85,11 @@ Tables can be **private** (default) or **public**:
 - **Public tables**: Exposed for client read access through [subscriptions](/subscriptions). Writes still occur only through reducers.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[spacetimedb::table(name = user, public)]
-pub struct User { /* ... */ }
-
-#[spacetimedb::table(name = secret)]
-pub struct Secret { /* ... */ }
+```typescript
+const publicTable = table({ name: 'user', public: true }, { /* ... */ });
+const privateTable = table({ name: 'secret', public: false }, { /* ... */ });
 ```
 
 </TabItem>
@@ -109,11 +104,14 @@ public partial struct Secret { /* ... */ }
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const publicTable = table({ name: 'user', public: true }, { /* ... */ });
-const privateTable = table({ name: 'secret', public: false }, { /* ... */ });
+```rust
+#[spacetimedb::table(name = user, public)]
+pub struct User { /* ... */ }
+
+#[spacetimedb::table(name = secret)]
+pub struct Secret { /* ... */ }
 ```
 
 </TabItem>

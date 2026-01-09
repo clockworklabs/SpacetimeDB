@@ -1139,10 +1139,8 @@ pub async fn init_from_template(
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
-    let cursorrules_content = embedded::get_cursorrules();
-    let cursorrules_path = project_path.join(".cursor/rules/spacetimedb.mdc");
-    fs::create_dir_all(cursorrules_path.parent().unwrap())?;
-    fs::write(cursorrules_path, cursorrules_content)?;
+    // Install AI assistant rules for multiple editors/tools
+    install_ai_rules(config, project_path)?;
 
     println!("{}", "Project initialized successfully!".green());
     print_next_steps(config, project_path)?;
@@ -1663,4 +1661,64 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
     }
 
     *item = value(version.to_string());
+}
+
+/// Install AI assistant rules for multiple editors/tools.
+/// Writes rules to:
+/// - .cursor/rules/ (Cursor)
+/// - CLAUDE.md (Claude Code)
+/// - .windsurfrules (Windsurf)
+/// - .github/copilot-instructions.md (VS Code Copilot)
+fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+    let base_rules = embedded::get_ai_rules_base();
+    let ts_rules = embedded::get_ai_rules_typescript();
+
+    // Check if TypeScript is used in either server or client
+    let uses_typescript = config.server_lang == Some(ServerLanguage::TypeScript)
+        || config.client_lang == Some(ClientLanguage::TypeScript);
+
+    // 1. Cursor: .cursor/rules/ directory with separate files
+    let cursor_dir = project_path.join(".cursor/rules");
+    fs::create_dir_all(&cursor_dir)?;
+    fs::write(cursor_dir.join("spacetimedb.mdc"), base_rules)?;
+    if uses_typescript {
+        fs::write(cursor_dir.join("spacetimedb-typescript.mdc"), ts_rules)?;
+    }
+
+    // Build combined content for single-file AI assistants
+    // Strip the YAML frontmatter from the .mdc files for non-Cursor tools
+    let base_content = strip_mdc_frontmatter(base_rules);
+    let combined_content = if uses_typescript {
+        let ts_content = strip_mdc_frontmatter(ts_rules);
+        format!("{}\n\n{}", base_content, ts_content)
+    } else {
+        base_content.to_string()
+    };
+
+    // 2. Claude Code: CLAUDE.md
+    fs::write(project_path.join("CLAUDE.md"), &combined_content)?;
+
+    // 3. Windsurf: .windsurfrules
+    fs::write(project_path.join(".windsurfrules"), &combined_content)?;
+
+    // 4. VS Code Copilot: .github/copilot-instructions.md
+    let github_dir = project_path.join(".github");
+    fs::create_dir_all(&github_dir)?;
+    fs::write(github_dir.join("copilot-instructions.md"), &combined_content)?;
+
+    Ok(())
+}
+
+/// Strip YAML frontmatter from .mdc files (the --- delimited section at the start)
+fn strip_mdc_frontmatter(content: &str) -> &str {
+    // Look for frontmatter: starts with --- and ends with ---
+    if let Some(after_opening) = content.strip_prefix("---") {
+        if let Some(end_idx) = after_opening.find("\n---") {
+            // Skip past the closing --- and the newline after it
+            let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
+                                                           // Skip any leading newlines after frontmatter
+            return remaining.trim_start_matches('\n');
+        }
+    }
+    content
 }
