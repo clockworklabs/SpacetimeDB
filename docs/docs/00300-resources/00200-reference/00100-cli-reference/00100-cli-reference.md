@@ -3,6 +3,7 @@ title: CLI Reference
 slug: /cli-reference
 ---
 
+# Command-Line Help for `spacetime`
 
 This document contains the help content for the `spacetime` command-line program.
 
@@ -238,6 +239,7 @@ Start development mode with auto-regenerate client module bindings, auto-rebuild
 
   Possible values: `always`, `on-conflict`, `never`
 
+* `-t`, `--template <TEMPLATE>` — Template ID or GitHub repository (owner/repo or URL) for project initialization
 
 
 
