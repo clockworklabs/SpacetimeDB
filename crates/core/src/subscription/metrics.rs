@@ -64,7 +64,7 @@ fn extract_columns(
                 extract_columns(expr, schema, columns);
             }
         }
-        PhysicalExpr::Value(_) => {}
+        PhysicalExpr::Value(_) | PhysicalExpr::Tuple(_) => {}
     }
 }
 
