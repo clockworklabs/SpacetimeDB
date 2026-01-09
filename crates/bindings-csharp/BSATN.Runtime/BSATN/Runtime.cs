@@ -548,7 +548,7 @@ public readonly struct String : IReadWrite<string>
         {
             throw new ArgumentNullException(
                 nameof(value),
-                "Cannot serialize a null string as BSATN String. If nulls are allowed, use a nullable string (string?) so it is encoded as an option."
+                "Cannot serialize a null string as BSATN String. To serialize a null string you must use a nullable string (string?) so it is encoded as a BSATN option."
             );
         }
 
