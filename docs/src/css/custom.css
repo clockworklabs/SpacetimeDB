@@ -80,7 +80,9 @@
   --ifm-blockquote-color: var(--clockworklabs-color-n4);
   --ifm-menu-color: var(--clockworklabs-color-n3);
   --ifm-menu-link-sublist-icon: none;
-  --ifm-breadcrumb-separator: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><path fill="rgb(182, 192, 207)" d="M79.093 0 48.907 30.187 146.72 128l-97.813 97.813L79.093 256l128-128z"/></svg>');
+  --ifm-breadcrumb-separator: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M6.96967 4.46967C7.26256 4.17678 7.73744 4.17678 8.03033 4.46967L13.0303 9.46967C13.3232 9.76256 13.3232 10.2374 13.0303 10.5303L8.03033 15.5303C7.73744 15.8232 7.26256 15.8232 6.96967 15.5303C6.67678 15.2374 6.67678 14.7626 6.96967 14.4697L11.4393 10L6.96967 5.53033C6.67678 5.23744 6.67678 4.76256 6.96967 4.46967Z' fill='%23b6c0cf'/%3E%3C/svg%3E");
+  --ifm-breadcrumb-padding-horizontal: 8px;
+  --ifm-breadcrumb-spacing: 0px;
   --ifm-alert-background-color-highlight: var(--clockworklabs-color-red-2);
   --ifm-alert-foreground-color: var(--clockworklabs-color-white);
   --ifm-alert-border-color: var(--clockworklabs-color-orange);
@@ -133,6 +135,55 @@
   --ifm-alert-background-color-highlight: var(--clockworklabs-code-background-color);
 }
 
+/* Breadcrumb layout - ensure horizontal and aligned */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+}
+
+.breadcrumbs__list {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.breadcrumbs__item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.breadcrumbs__link {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Current page breadcrumb - white instead of green */
+.breadcrumbs__item--active .breadcrumbs__link {
+  color: var(--clockworklabs-color-white);
+}
+
+/* Breadcrumb separator size and alignment */
+.breadcrumbs__item:not(:last-child)::after {
+  width: 20px;
+  height: 20px;
+  background-size: 20px 20px;
+}
+
+/* Custom breadcrumb home icon */
+.breadcrumbs__link[href="/docs/"] svg {
+  display: none;
+}
+
+.breadcrumbs__link[href="/docs/"]::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cg clip-path='url(%23clip0_6958_271)'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M7.06706 0.851646C7.58213 0.3359 8.4176 0.33592 8.93268 0.851646L15.5483 7.47821C16.3767 8.30838 15.792 9.73104 14.6155 9.73133H13.7132V14.2157C13.713 14.9435 13.1235 15.5358 12.3944 15.536H3.60534C2.8762 15.5359 2.28671 14.9436 2.28659 14.2157V9.73133H1.38503C0.208146 9.73133 -0.37659 8.30844 0.452217 7.47821L7.06706 0.851646ZM8.08347 1.70008C8.03713 1.65368 7.96261 1.65367 7.91628 1.70008L1.30144 8.32586C1.27676 8.35058 1.26911 8.37139 1.26628 8.38758C1.26295 8.40705 1.26513 8.43244 1.27565 8.4579C1.2862 8.48304 1.3022 8.50152 1.31784 8.51258C1.33091 8.52175 1.35059 8.53133 1.38503 8.53133H3.48659V14.2157C3.48671 14.2828 3.54087 14.3359 3.60534 14.336H5.75065V10.7657C5.75078 9.52389 6.75808 8.5167 7.99987 8.51649C9.24171 8.51665 10.2482 9.52386 10.2483 10.7657V14.336H12.3944C12.4588 14.3358 12.513 14.2827 12.5132 14.2157V8.53133H14.6155C14.65 8.53127 14.6697 8.52178 14.6827 8.51258C14.6983 8.50147 14.7144 8.48307 14.7249 8.4579C14.7354 8.43247 14.7376 8.40704 14.7342 8.38758C14.7314 8.37143 14.7236 8.3505 14.6991 8.32586L8.08347 1.70008ZM7.99987 9.71649C7.42082 9.7167 6.95078 10.1866 6.95065 10.7657V14.3352H9.04831V10.7657C9.04819 10.1866 8.57897 9.71665 7.99987 9.71649Z' fill='%236F7987'/%3E%3C/g%3E%3Cdefs%3E%3CclipPath id='clip0_6958_271'%3E%3Crect width='16' height='16' fill='white'/%3E%3C/clipPath%3E%3C/defs%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+}
+
 html {
   background-color: var(--ifm-background-color);
 }
@@ -161,7 +212,7 @@ h6 {
   line-height: var(--44px);
   font-weight: 400;
   letter-spacing: calc(var(--39px) * -0.04);
-  margin-top: 3rem;
+  margin-top: 1rem; /* Only shown at the top of a page */
 }
 
 .markdown h2 {
@@ -529,7 +580,7 @@ table {
 
 /* Make the page content left aligned */
 .container {
-  margin: 0 2rem 0;
+  margin: 0 16px 0;
 }
 
 @media screen and (max-width: 996px) {
