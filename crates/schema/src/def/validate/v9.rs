@@ -945,6 +945,9 @@ impl TableValidator<'_, '_> {
             RawIndexAlgorithm::BTree { columns } => self
                 .validate_col_ids(&name, columns)
                 .map(|columns| BTreeAlgorithm { columns }.into()),
+            RawIndexAlgorithm::Hash { columns } => self
+                .validate_col_ids(&name, columns)
+                .map(|columns| HashAlgorithm { columns }.into()),
             RawIndexAlgorithm::Direct { column } => self.validate_col_id(&name, column).and_then(|column| {
                 let field = &self.product_type.elements[column.idx()];
                 let ty = &field.algebraic_type;
@@ -966,7 +969,7 @@ impl TableValidator<'_, '_> {
                 }
                 Ok(DirectAlgorithm { column }.into())
             }),
-            _ => Err(ValidationError::HashIndexUnsupported { index: name.clone() }.into()),
+            algo => unreachable!("unknown algorithm {algo:?}"),
         };
         let name = self.add_to_global_namespace(name);
         let accessor_name = accessor_name.map(identifier).transpose();
@@ -1350,20 +1353,20 @@ mod tests {
     };
     use crate::def::{validate::Result, ModuleDef};
     use crate::def::{
-        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexDef, SequenceDef,
-        UniqueConstraintData,
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexAlgorithm, IndexDef,
+        SequenceDef, UniqueConstraintData,
     };
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
 
     use itertools::Itertools;
     use spacetimedb_data_structures::expect_error_matching;
-    use spacetimedb_lib::db::raw_def::v9::{btree, direct};
+    use spacetimedb_lib::db::raw_def::v9::{btree, direct, hash};
     use spacetimedb_lib::db::raw_def::*;
     use spacetimedb_lib::ScheduleAt;
     use spacetimedb_primitives::{ColId, ColList, ColSet};
     use spacetimedb_sats::{AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ProductType, SumValue};
-    use v9::{Lifecycle, RawIndexAlgorithm, RawModuleDefV9Builder, TableAccess, TableType};
+    use v9::{Lifecycle, RawModuleDefV9Builder, TableAccess, TableType};
 
     /// This test attempts to exercise every successful path in the validation code.
     #[test]
@@ -1854,21 +1857,20 @@ mod tests {
     }
 
     #[test]
-    fn hash_index_unsupported() {
+    fn hash_index_supported() {
         let mut builder = RawModuleDefV9Builder::new();
         builder
             .build_table_with_new_type(
                 "Bananas",
                 ProductType::from([("b", AlgebraicType::U16), ("a", AlgebraicType::U64)]),
-                false,
+                true,
             )
-            .with_index(RawIndexAlgorithm::Hash { columns: 0.into() }, "bananas_b")
+            .with_index(hash(0), "bananas_b")
             .finish();
-        let result: Result<ModuleDef> = builder.finish().try_into();
-
-        expect_error_matching!(result, ValidationError::HashIndexUnsupported { index } => {
-            &index[..] == "Bananas_b_idx_hash"
-        });
+        let def: ModuleDef = builder.finish().try_into().unwrap();
+        let indexes = def.indexes().collect::<Vec<_>>();
+        assert_eq!(indexes.len(), 1);
+        assert_eq!(indexes[0].algorithm, IndexAlgorithm::Hash(0.into()));
     }
 
     #[test]

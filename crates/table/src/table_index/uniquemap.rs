@@ -98,7 +98,7 @@ impl<K: Ord + KeySize> Index for UniqueMap<K> {
 /// An iterator over the potential value in a [`UniqueMap`] for a given key.
 pub struct UniqueMapPointIter<'a> {
     /// The iterator seeking for matching keys in the range.
-    iter: IntoIter<&'a RowPointer>,
+    pub(super) iter: IntoIter<&'a RowPointer>,
 }
 
 impl<'a> Iterator for UniqueMapPointIter<'a> {

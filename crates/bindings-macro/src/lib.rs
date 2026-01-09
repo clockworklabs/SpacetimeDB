@@ -48,6 +48,7 @@ mod sym {
     symbol!(columns);
     symbol!(crate_, crate);
     symbol!(direct);
+    symbol!(hash);
     symbol!(index);
     symbol!(init);
     symbol!(name);
