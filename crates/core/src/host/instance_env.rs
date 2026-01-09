@@ -52,8 +52,22 @@ pub struct InstanceEnv {
     procedure_last_tx_offset: Option<TransactionOffset>,
 }
 
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+unsafe impl Send for InstanceEnv {}
+
 #[derive(Clone, Default)]
 pub struct TxSlot {
+    // Wrapped in Mutex for interior mutability.
     inner: Arc<Mutex<Option<MutTxId>>>,
 }
 

@@ -943,6 +943,7 @@ impl MutTx for Locking {
             timer,
             ctx,
             metrics,
+            _not_send: std::marker::PhantomData,
         }
     }
 
