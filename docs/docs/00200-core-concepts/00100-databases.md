@@ -84,7 +84,7 @@ Create or update a database by publishing your module:
 spacetime publish <DATABASE_NAME>
 ```
 
-See [Building and Publishing](/databases/building-publishing) for details on the publishing workflow.
+See [`spacetime publish`](/databases/building-publishing) for details on the publishing workflow.
 
 When you republish to an existing database, SpacetimeDB attempts to automatically migrate the schema. For details on what changes are supported and migration strategies:
 

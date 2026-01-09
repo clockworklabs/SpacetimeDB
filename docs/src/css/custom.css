@@ -57,7 +57,7 @@
   --clockworklabs-code-color: var(--clockworklabs-color-yellow);
   --clockworklabs-code-border-color: var(--clockworklabs-color-n6);
   --clockworklabs-code-background-color: var(--clockworklabs-color-shade2);
-  --clockworklabs-navbar-border-color: rgb(var(--clockworklabs-color-white-rgb) / 11%);
+  --clockworklabs-navbar-border-color: var(--clockworklabs-color-n6);
   --clockworklabs-strong-color: var(--clockworklabs-color-n2);
   --clockworklabs-font-source: 'Source Code Pro Variable', monospace;
 
@@ -76,6 +76,7 @@
   --ifm-code-background: var(--clockworklabs-code-background-color);
   --ifm-code-padding-horizontal: 0.125rem;
   --ifm-code-padding-vertical: 0.25rem;
+  --ifm-navbar-padding-horizontal: 8px;
   --ifm-hr-background-color: rgb(var(--clockworklabs-color-white-rgb) / 11%);
   --ifm-blockquote-color: var(--clockworklabs-color-n4);
   --ifm-menu-color: var(--clockworklabs-color-n3);
@@ -97,7 +98,7 @@
   --ifm-tabs-padding-horizontal: 16px;
   --ifm-tabs-padding-vertical: 8px;
 
-  --ifm-navbar-height: 56px;
+  --ifm-navbar-height: 57px;
 }
 
 :root .alert--info {
@@ -333,13 +334,10 @@ strong {
     }
   }
 
-  [id^="inkeep-shadowradix"] {
-    font-weight: 400;
-  }
 }
 
 .navbar__logo {
-  height: var(--36px);
+  height: var(--32px);
 }
 
 .navbar__button {
