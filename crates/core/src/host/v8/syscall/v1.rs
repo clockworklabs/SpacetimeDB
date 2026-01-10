@@ -150,23 +150,6 @@ pub(super) fn sys_v1_2<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope
     )
 }
 
-pub(super) fn sys_v1_3<'scope>(scope: &mut PinScope<'scope, '_>) -> Local<'scope, Module> {
-    create_synthetic_module!(
-        scope,
-        "spacetime:sys@1.2",
-        (
-            with_sys_result_ret,
-            AbiCall::DatastoreIndexScanPointBsatn,
-            datastore_index_scan_point_bsatn
-        ),
-        (
-            with_sys_result_ret,
-            AbiCall::DatastoreDeleteByIndexScanPointBsatn,
-            datastore_delete_by_index_scan_point_bsatn
-        ),
-    )
-}
-
 /// Registers a function in `module`
 /// where the function has `name` and does `body`.
 fn register_module_fun(
@@ -1710,36 +1693,4 @@ fn procedure_commit_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallback
     rt.block_on(fut);
 
     Ok(())
-}
-
-fn datastore_index_scan_point_bsatn(
-    scope: &mut PinScope<'_, '_>,
-    args: FunctionCallbackArguments<'_>,
-) -> SysCallResult<u32> {
-    let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let point: &[u8] = deserialize_js(scope, args.get(1))?;
-
-    let env = get_env(scope)?;
-
-    // Find the relevant rows.
-    let chunks = env
-        .instance_env
-        .datastore_index_scan_point_bsatn_chunks(&mut env.chunk_pool, index_id, point)?;
-
-    // Insert the encoded + concatenated rows into a new buffer and return its id.
-    Ok(env.iters.insert(chunks.into_iter()).0)
-}
-
-fn datastore_delete_by_index_scan_point_bsatn(
-    scope: &mut PinScope<'_, '_>,
-    args: FunctionCallbackArguments<'_>,
-) -> SysCallResult<u32> {
-    let index_id: IndexId = deserialize_js(scope, args.get(0))?;
-    let point: &[u8] = deserialize_js(scope, args.get(1))?;
-
-    // Delete the relevant rows.
-    let count = get_env(scope)?
-        .instance_env
-        .datastore_delete_by_index_scan_point_bsatn(index_id, point)?;
-    Ok(count)
 }
