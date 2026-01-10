@@ -20,11 +20,9 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
-use futures::StreamExt;
 use http::StatusCode;
-use log::info;
+use log::{info, warn};
 use serde::Deserialize;
-use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
@@ -430,56 +428,27 @@ where
         .authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
         .await?;
 
-    let replica = worker_ctx
-        .get_leader_replica_by_database(database.id)
-        .await
-        .ok_or((StatusCode::NOT_FOUND, "Replica not scheduled to this node yet."))?;
-    let replica_id = replica.id;
+    fn response(body: Body) -> impl IntoResponse {
+        (
+            TypedHeader(headers::CacheControl::new().with_no_cache()),
+            TypedHeader(headers::ContentType::from(mime_ndjson())),
+            body,
+        )
+    }
 
-    let logs_dir = worker_ctx.module_logs_dir(replica_id);
-    let lines = DatabaseLogger::read_latest(logs_dir, num_lines).await;
-
-    let body = if follow {
-        let leader = worker_ctx
-            .leader(database.id)
-            .await
-            .map_err(log_and_500)?
-            .ok_or(StatusCode::NOT_FOUND)?;
-        let log_rx = leader
-            .module()
-            .await
-            .map_err(log_and_500)?
-            .subscribe_to_logs()
-            .map_err(log_and_500)?;
-
-        let stream = tokio_stream::wrappers::BroadcastStream::new(log_rx).filter_map(move |x| {
-            std::future::ready(match x {
-                Ok(log) => Some(log),
-                Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(skipped)) => {
-                    log::trace!(
-                        "Skipped {} lines in log for module {}",
-                        skipped,
-                        database_identity.to_hex()
-                    );
-                    None
-                }
-            })
-        });
-
-        let stream = futures::stream::once(std::future::ready(lines.into()))
-            .chain(stream)
-            .map(Ok::<_, std::convert::Infallible>);
-
-        Body::from_stream(stream)
-    } else {
-        Body::from(lines)
+    // TODO(kim): Need to distinguish more cases here, where the database is
+    // not running (e.g. due to being suspended), but the logs could still be
+    // served from disk.
+    let Some(host) = worker_ctx.leader(database.id).await.map_err(log_and_500)? else {
+        return Err((StatusCode::NOT_FOUND, "Replica not scheduled to this node").into());
     };
 
-    Ok((
-        TypedHeader(headers::CacheControl::new().with_no_cache()),
-        TypedHeader(headers::ContentType::from(mime_ndjson())),
-        body,
-    ))
+    let module = host.module().await.map_err(log_and_500)?;
+    let logs = module.database_logger().tail(num_lines, follow).await.map_err(|e| {
+        warn!("database={database_identity} unable to tail logs: {e:#}");
+        (StatusCode::SERVICE_UNAVAILABLE, "Logs are temporarily not available")
+    })?;
+    Ok(response(Body::from_stream(logs)))
 }
 
 fn mime_ndjson() -> mime::Mime {
