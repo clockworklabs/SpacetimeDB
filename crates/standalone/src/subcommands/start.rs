@@ -1,7 +1,7 @@
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
-use std::net::{Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener as StdTcpListener};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener as StdTcpListener};
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
@@ -202,7 +202,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     // If not, offer to find an available port by incrementing (unless non-interactive).
     let listen_addr = if let Some((host, port_str)) = listen_addr.rsplit_once(':') {
         if let Ok(requested_port) = port_str.parse::<u16>() {
-            if !is_port_available(requested_port) {
+            if !is_port_available(host, requested_port) {
                 if non_interactive {
                     anyhow::bail!(
                         "Port {} is already in use. Please free up the port or specify a different port with --listen-addr.",
@@ -210,7 +210,7 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
                     );
                 }
                 // Port is in use, try to find an alternative
-                match find_available_port(requested_port.saturating_add(1), 100) {
+                match find_available_port(host, requested_port.saturating_add(1), 100) {
                     Some(available_port) => {
                         let question = format!(
                             "Port {} is already in use. Would you like to use port {} instead?",
@@ -280,19 +280,38 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Check if a port is available on both IPv4 and IPv6.
+/// Check if a port is available on the requested host for both IPv4 and IPv6.
 ///
 /// On macOS (and some other systems), `localhost` can resolve to both IPv4 (127.0.0.1)
 /// and IPv6 (::1). If SpacetimeDB binds only to IPv4 but another service is using the
 /// same port on IPv6, browsers may connect to the wrong service depending on which
 /// address they try first.
 ///
+/// This function checks both the requested IPv4 address and its IPv6 equivalent:
+/// - 127.0.0.1 -> also checks ::1
+/// - 0.0.0.0 -> also checks ::
+/// - 10.1.1.1 -> also checks ::ffff:10.1.1.1 (IPv4-mapped IPv6)
+///
 /// Note: There is a small race condition between this check and the actual bind -
 /// another process could grab the port in between. This is unlikely in practice
 /// and the actual bind will fail with a clear error if it happens.
-fn is_port_available(port: u16) -> bool {
-    let ipv4_addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let ipv6_addr = SocketAddr::V6(SocketAddrV6::new(Ipv6Addr::LOCALHOST, port, 0, 0));
+fn is_port_available(host: &str, port: u16) -> bool {
+    // Parse the host and determine which addresses to check
+    let ipv4 = host
+        .parse::<Ipv4Addr>()
+        .unwrap_or_else(|e| panic!("Invalid IPv4 address '{}': {}", host, e));
+
+    let ipv6 = if ipv4.is_loopback() {
+        Ipv6Addr::LOCALHOST
+    } else if ipv4.is_unspecified() {
+        Ipv6Addr::UNSPECIFIED
+    } else {
+        // For specific IPs, use the IPv4-mapped IPv6 address
+        ipv4.to_ipv6_mapped()
+    };
+
+    let ipv4_addr = SocketAddr::from((ipv4, port));
+    let ipv6_addr = SocketAddr::V6(SocketAddrV6::new(ipv6, port, 0, 0));
 
     let ipv4_available = StdTcpListener::bind(ipv4_addr).is_ok();
     let ipv6_available = StdTcpListener::bind(ipv6_addr).is_ok();
@@ -302,13 +321,13 @@ fn is_port_available(port: u16) -> bool {
 
 /// Find an available port starting from the requested port.
 /// Returns the first port that is available on both IPv4 and IPv6.
-fn find_available_port(requested_port: u16, max_attempts: u16) -> Option<u16> {
+fn find_available_port(host: &str, requested_port: u16, max_attempts: u16) -> Option<u16> {
     for offset in 0..max_attempts {
         let port = requested_port.saturating_add(offset);
         if port == 0 || port == u16::MAX {
             break;
         }
-        if is_port_available(port) {
+        if is_port_available(host, port) {
             return Some(port);
         }
     }
