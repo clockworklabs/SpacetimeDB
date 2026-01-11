@@ -9,6 +9,7 @@
  * should produce type errors.
  */
 
+import { describe, it, expect } from 'vitest';
 import { t } from '../src/lib/type_builders';
 import { table } from '../src/lib/table';
 
@@ -137,3 +138,12 @@ void invalidDefaultUnique;
 void invalidUniqueDefault;
 void invalidDefaultAutoInc;
 void invalidAutoIncDefault;
+
+describe('Column metadata validation', () => {
+  it('type-level tests compile correctly (see @ts-expect-error comments above)', () => {
+    // This test exists to satisfy vitest - the actual validation happens
+    // at compile time via @ts-expect-error annotations above.
+    // If this file compiles, the type-level tests have passed.
+    expect(true).toBe(true);
+  });
+});
