@@ -9,13 +9,7 @@ import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
-import {
-  set,
-  type Prettify,
-  type SetField,
-  type HasDefaultIncompatibleFields,
-  type HasDefaultValue,
-} from './type_util';
+import { set, type Prettify, type SetField } from './type_util';
 import { Uuid, type UuidAlgebraicType } from './uuid';
 
 // Used in codegen files

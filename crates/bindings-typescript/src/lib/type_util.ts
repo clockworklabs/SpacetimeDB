@@ -107,11 +107,12 @@ export type HasDefaultValue<M> = M extends { defaultValue: any } ? true : false;
  * Validate that a column's metadata doesn't have invalid combinations.
  * Returns the metadata type if valid, or an error type if invalid.
  */
-export type ValidateColumnMetadata<M> = HasDefaultValue<M> extends true
-  ? HasDefaultIncompatibleFields<M> extends true
-    ? InvalidColumnMetadata<'default() cannot be combined with primaryKey(), unique(), or autoInc()'>
-    : M
-  : M;
+export type ValidateColumnMetadata<M> =
+  HasDefaultValue<M> extends true
+    ? HasDefaultIncompatibleFields<M> extends true
+      ? InvalidColumnMetadata<'default() cannot be combined with primaryKey(), unique(), or autoInc()'>
+      : M
+    : M;
 
 /**
  * Error type for invalid column metadata combinations.
