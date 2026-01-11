@@ -378,9 +378,9 @@ ctx.db.person().ssn()
 - [`UniqueColumn::find`]
 - [`UniqueColumn::delete`]
 - [`UniqueColumn::update`]
-<!-- TODO: "current limitations" try_update -->
+- [`UniqueColumn::try_update`]
 
-Notice that updating a row is only possible if a row has a unique column -- there is no `update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
+Notice that updating a row is only possible if a row has a unique column -- there is no `update` or `try_update` method in the base [`Table`] trait. SpacetimeDB has no notion of rows having an "identity" aside from their unique / primary keys.
 
 The `#[primary_key]` annotation implies `#[unique]` annotation, but avails additional methods in the [client]-side SDKs.
 

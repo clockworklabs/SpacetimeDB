@@ -243,6 +243,48 @@ impl<Tbl: Table> From<TryInsertError<Tbl>> for String {
     }
 }
 
+/// The error type returned from [`UniqueColumn::try_update()`], signalling a constraint violation.
+pub enum TryUpdateError<Tbl: Table> {
+    /// A [`UniqueConstraintViolation`].
+    ///
+    /// Returned from [`Table::try_update`] if an attempted update
+    /// has the same value in a unique column as an already-present row
+    /// (excluding the update key itself).
+    UniqueConstraintViolation(Tbl::UniqueConstraintViolation),
+}
+
+impl<Tbl: Table> fmt::Debug for TryUpdateError<Tbl> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TryUpdateError::<{}>::", Tbl::TABLE_NAME)?;
+        match self {
+            Self::UniqueConstraintViolation(e) => fmt::Debug::fmt(e, f),
+        }
+    }
+}
+
+impl<Tbl: Table> fmt::Display for TryUpdateError<Tbl> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "update error on table `{}`:", Tbl::TABLE_NAME)?;
+        match self {
+            Self::UniqueConstraintViolation(e) => fmt::Display::fmt(e, f),
+        }
+    }
+}
+
+impl<Tbl: Table> std::error::Error for TryUpdateError<Tbl> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(match self {
+            Self::UniqueConstraintViolation(e) => e,
+        })
+    }
+}
+
+impl<Tbl: Table> From<TryUpdateError<Tbl>> for String {
+    fn from(err: TryUpdateError<Tbl>) -> Self {
+        err.to_string()
+    }
+}
+
 #[doc(hidden)]
 pub trait MaybeError<E = Self>: std::error::Error + Send + Sync + Sized + 'static {
     fn get() -> Option<Self>;
@@ -357,13 +399,22 @@ impl<Tbl: Table, Col: Index + Column<Table = Tbl>> UniqueColumn<Tbl, Col::ColTyp
     /// Deletes the row where the value in the unique column matches that in the corresponding field of `new_row`, and
     /// then inserts the `new_row`.
     ///
-    /// Returns the new row as actually inserted, with  computed values substituted for any auto-inc placeholders.
+    /// Returns the new row as actually inserted, with computed values substituted for any auto-inc placeholders.
     ///
     /// # Panics
     /// Panics if no row was previously present with the matching value in the unique column,
     /// or if either the delete or the insertion would violate a constraint.
+    /// Callers which intend to handle constraint violation errors should instead use [`Self::try_update`].
     #[track_caller]
     pub fn update(&self, new_row: Tbl::Row) -> Tbl::Row {
+        self.try_update(new_row).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Counterpart to [`Self::update`] which allows handling failed updates.
+    ///
+    /// This method returns an `Err` when the update fails rather than panicking.
+    #[track_caller]
+    pub fn try_update(&self, new_row: Tbl::Row) -> Result<Tbl::Row, TryUpdateError<Tbl>> {
         let buf = IterBuf::take();
         update::<Tbl>(Col::index_id(), new_row, buf)
     }
@@ -1090,7 +1141,7 @@ fn insert<T: Table>(mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryInse
 
 /// Update a row of type `T` to `row` using the index identified by `index_id`.
 #[track_caller]
-fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::Row {
+fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> Result<T::Row, TryUpdateError<T>> {
     let table_id = T::table_id();
     // Encode the row as bsatn into the buffer `buf`.
     buf.clear();
@@ -1103,9 +1154,15 @@ fn update<T: Table>(index_id: IndexId, mut row: T::Row, mut buf: IterBuf) -> T::
         T::integrate_generated_columns(&mut row, gen_cols);
         row
     });
-
-    // TODO(centril): introduce a `TryUpdateError`.
-    res.unwrap_or_else(|e| panic!("unexpected update error: {e}"))
+    res.map_err(|e| {
+        let err = match e {
+            sys::Errno::UNIQUE_ALREADY_EXISTS => {
+                T::UniqueConstraintViolation::get().map(TryUpdateError::UniqueConstraintViolation)
+            }
+            _ => None,
+        };
+        err.unwrap_or_else(|| panic!("unexpected update error: {e}"))
+    })
 }
 
 /// A table iterator which yields values of the `TableType` corresponding to the table.
