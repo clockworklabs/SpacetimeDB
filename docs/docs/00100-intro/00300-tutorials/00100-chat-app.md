@@ -1129,8 +1129,8 @@ Take a look inside `src/module_bindings`. The CLI should have generated several 
 
 ```
 module_bindings
-├── identity_connected_reducer.ts
-├── identity_disconnected_reducer.ts
+├── client_connected_reducer.ts
+├── client_disconnected_reducer.ts
 ├── index.ts
 ├── init_reducer.ts
 ├── message_table.ts
@@ -1475,7 +1475,7 @@ The `spacetime` CLI's `generate` command will generate client-side interfaces fo
 In your `quickstart-chat` directory, run:
 
 ```bash
-spacetime generate --lang csharp --out-dir module_bindings --project-path server
+spacetime generate --lang csharp --out-dir module_bindings --project-path spacetimedb
 ```
 
 Take a look inside `module_bindings`. The CLI should have generated three folders and nine files:
