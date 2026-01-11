@@ -76,7 +76,7 @@ Perfect consistency, always.
 
 ## Everything is Programmable
 
-SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code—Rust, C#, or TypeScript—running inside the database. You have the full power of a procedural, normal programming language at your disposal.
+SpacetimeDB doesn't limit you to declarative rules or configuration files. Your module is real code (Rust, C#, or TypeScript) running inside the database. You have the full power of a procedural, normal programming language at your disposal.
 
 Need custom authorization logic? Write a function. Need to validate complex business rules? Write a function. Need to transform data before storing it? Write a function.
 
@@ -96,10 +96,10 @@ Never settle for less than Turing complete.
 
 When you embrace these principles, building real-time applications becomes remarkably simple:
 
-- **No backend servers to deploy** — your logic runs in the database
-- **No caching layer to manage** — the database is already in memory
-- **No sync code to write** — subscriptions handle it automatically
-- **No rollback logic to maintain** — transactions handle it automatically
-- **No limitations on your logic** — it's just code
+- **No backend servers to deploy** - your logic runs in the database
+- **No caching layer to manage** - the database is already in memory
+- **No sync code to write** - subscriptions handle it automatically
+- **No rollback logic to maintain** - transactions handle it automatically
+- **No limitations on your logic** - it's just code
 
 This is the Zen of SpacetimeDB: a simpler way to build and live.
