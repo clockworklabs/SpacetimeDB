@@ -23,12 +23,51 @@ import {
   type RowObj,
   type TypeBuilder,
 } from './type_builders';
-import type { Prettify } from './type_util';
+import type {
+  Prettify,
+  ValidateColumnMetadata,
+  InvalidColumnMetadata,
+} from './type_util';
 import { toPascalCase } from './util';
 
 export type AlgebraicTypeRef = number;
 type ColId = number;
 type ColList = ColId[];
+
+/**
+ * Check if any column in the row has invalid metadata.
+ */
+type HasInvalidColumn<Row extends RowObj> = {
+  [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+      ? true
+      : false
+    : false;
+}[keyof Row] extends false
+  ? false
+  : true;
+
+/**
+ * Extract the names of columns that have invalid metadata.
+ */
+type InvalidColumnNames<Row extends RowObj> = {
+  [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
+    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+      ? K & string
+      : never
+    : never;
+}[keyof Row];
+
+/**
+ * A descriptive error type that surfaces the validation error.
+ * The type name itself contains the error message for better CLI output.
+ */
+type ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
+  InvalidColumns extends string,
+> = {
+  _invalidColumns: InvalidColumns;
+  _fix: 'Remove either default() or the constraint (primaryKey/unique/autoInc) from these columns';
+};
 
 /**
  * A helper type to extract the row type from a TableDef
@@ -189,24 +228,58 @@ export interface TableMethods<TableDef extends UntypedTableDef>
 }
 
 /**
- * Defines a database table with schema and options
+ * Defines a database table with schema and options.
+ *
  * @param opts - Table configuration including name, indexes, and access control
  * @param row - Product type defining the table's row structure
  * @returns Table handle for use in schema() function
+ *
  * @example
  * ```ts
  * const playerTable = table(
  *   { name: 'player', public: true },
- *   t.object({
+ *   {
  *     id: t.u32().primaryKey(),
  *     name: t.string().index('btree')
- *   })
+ *   }
  * );
  * ```
+ *
+ * ## Column Validation Error
+ *
+ * **If you see an error like "Expected 3 arguments, but got 2"**, this means
+ * one of your columns has an invalid combination of attributes.
+ *
+ * Specifically, `default()` cannot be combined with:
+ * - `primaryKey()`
+ * - `unique()`
+ * - `autoInc()`
+ *
+ * **Example of invalid code:**
+ * ```ts
+ * // ERROR: default() + primaryKey() is not allowed
+ * const badTable = table(
+ *   { name: 'bad' },
+ *   { id: t.u64().default(0n).primaryKey() }  // <- This causes "Expected 3 arguments"
+ * );
+ * ```
+ *
+ * **How to fix:** Remove either `default()` or the constraint (`primaryKey`/`unique`/`autoInc`).
  */
 export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   opts: Opts,
-  row: Row | RowBuilder<Row>
+  row: Row | RowBuilder<Row>,
+  // ⚠️ INTERNAL: This parameter enforces compile-time validation of column metadata.
+  // It is never passed at runtime. If you see "Expected 3 arguments, but got 2",
+  // it means a column has an invalid combination (e.g., default + primaryKey).
+  // See the JSDoc above for details on how to fix this error.
+  ..._: HasInvalidColumn<Row> extends true
+    ? [
+        error: ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
+          InvalidColumnNames<Row>
+        >,
+      ]
+    : []
 ): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
   const {
     name,

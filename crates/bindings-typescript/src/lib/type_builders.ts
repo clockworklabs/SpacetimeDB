@@ -9,7 +9,13 @@ import ScheduleAt, { type ScheduleAtAlgebraicType } from './schedule_at';
 import type { CoerceRow } from './table';
 import { TimeDuration, type TimeDurationAlgebraicType } from './time_duration';
 import { Timestamp, type TimestampAlgebraicType } from './timestamp';
-import { set, type Prettify, type SetField } from './type_util';
+import {
+  set,
+  type Prettify,
+  type SetField,
+  type HasDefaultIncompatibleFields,
+  type HasDefaultValue,
+} from './type_util';
 import { Uuid, type UuidAlgebraicType } from './uuid';
 
 // Used in codegen files
@@ -200,8 +206,7 @@ export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
  * @remarks
  * - This interface is typically implemented by type builders for primitive and complex types.
  * - The returned `ColumnBuilder` will have its metadata extended with `{ isPrimaryKey: true }`.
- * - Marking a column as a primary key is mutually exclusive with certain other metadata flags,
- *   such as `isAutoIncrement` or `isUnique`, depending on the database schema rules.
+ * - **Cannot be combined with `default()`.**
  */
 interface PrimaryKeyable<
   Type,
@@ -210,6 +215,7 @@ interface PrimaryKeyable<
 > {
   /**
    * Specify this column as primary key
+   * @remarks Cannot be combined with `default()`.
    */
   primaryKey(): ColumnBuilder<
     Type,
@@ -232,8 +238,7 @@ interface PrimaryKeyable<
  * @remarks
  * - This interface is typically implemented by type builders for primitive and complex types.
  * - The returned `ColumnBuilder` will have its metadata extended with `{ isUnique: true }`.
- * - Marking a column as unique is mutually exclusive with certain other metadata flags,
- *   such as `isAutoIncrement` or `isPrimaryKey`, depending on the database schema rules.
+ * - **Cannot be combined with `default()`.**
  */
 interface Uniqueable<
   Type,
@@ -242,6 +247,7 @@ interface Uniqueable<
 > {
   /**
    * Specify this column as unique
+   * @remarks Cannot be combined with `default()`.
    */
   unique(): ColumnBuilder<Type, SpacetimeType, SetField<M, 'isUnique', true>>;
 }
@@ -295,8 +301,7 @@ interface Indexable<
  * @remarks
  * - This interface is typically implemented by type builders for primitive and complex types.
  * - The returned `ColumnBuilder` will have its metadata extended with `{ isAutoIncrement: true }`.
- * - Marking a column as auto-incrementing is mutually exclusive with certain other metadata flags,
- *   such as `isUnique` or `isPrimaryKey`, depending on the database schema rules.
+ * - **Cannot be combined with `default()`.**
  */
 interface AutoIncrementable<
   Type,
@@ -305,6 +310,7 @@ interface AutoIncrementable<
 > {
   /**
    * Specify this column as auto-incrementing
+   * @remarks Cannot be combined with `default()`.
    */
   autoInc(): ColumnBuilder<
     Type,
@@ -344,6 +350,7 @@ interface Optional<Type, SpacetimeType extends AlgebraicType> {
  * - The returned `ColumnBuilder` will have its metadata extended with `{ default: value }`.
  * - The default value must be of the same type as the column's TypeScript type.
  * - This method can be called multiple times; the last call takes precedence.
+ * - **Cannot be combined with `primaryKey()`, `unique()`, or `autoInc()`.**
  */
 interface Defaultable<
   Type,
@@ -360,6 +367,7 @@ interface Defaultable<
    * @remarks
    * - This method can be called multiple times; the last call takes precedence.
    * - The default value must be of the same type as the column's TypeScript type.
+   * - Cannot be combined with `primaryKey()`, `unique()`, or `autoInc()`.
    */
   default(
     value: Type
