@@ -160,6 +160,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
+    } else if args.get_one::<String>("template").is_some() {
+        println!(
+            "{}",
+            "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
+        );
     }
 
     if !module_bindings_dir.exists() {
