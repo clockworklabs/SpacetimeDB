@@ -1254,7 +1254,7 @@ const prettyMessages: PrettyMessage[] = messages
   .sort((a, b) => (a.sent.toDate() > b.sent.toDate() ? 1 : -1))
   .map(message => {
     const user = users.find(
-      u => u.identity.message?.sender?.toHexString()
+      u => u.identity.toHexString() === message.sender.toHexString()
     );
     return {
       senderName: user?.name || message.sender.toHexString().substring(0, 8),
