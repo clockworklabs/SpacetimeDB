@@ -8,7 +8,10 @@ fn cli_can_publish_spacetimedb_on_disk() {
     // Workspace root for `cargo run -p ...`
     let workspace_dir = cargo_metadata::MetadataCommand::new().exec().unwrap().workspace_root;
     // dir = <workspace_root>/modules/quickstart-chat
-    let dir = workspace_dir.join("modules").join("quickstart-chat");
+    let dir = workspace_dir
+        .join("templates")
+        .join("quickstart-chat-rust")
+        .join("spacetimedb");
 
     let mut cmd = cargo_bin_cmd!("spacetimedb-cli");
     cmd.args(["publish", "--server", &spacetime.host_url.to_string(), "foobar"])
