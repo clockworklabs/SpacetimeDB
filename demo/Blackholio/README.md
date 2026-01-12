@@ -68,6 +68,7 @@ Blackholio/
 ├── client-unreal/     # Unreal Engine client project
 ├── server-csharp/     # SpacetimeDB server module (C# implementation)
 ├── server-rust/       # SpacetimeDB server module (Rust implementation)
+├── DEVELOP.md         # Development guidelines
 └── README.md          # This file
 ```
 
