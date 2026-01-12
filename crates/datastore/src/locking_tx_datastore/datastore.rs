@@ -27,8 +27,8 @@ use crate::{
 };
 use anyhow::{anyhow, Context};
 use core::{cell::RefCell, ops::RangeBounds};
-use parking_lot::{Mutex, RwLock};
-use spacetimedb_commitlog::payload::{txdata, Txdata};
+use parking_lot::{Mutex, RwLock, RwLockReadGuard};
+use spacetimedb_commitlog::payload::txdata;
 use spacetimedb_data_structures::map::{HashCollectionExt, HashMap, IntMap};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StAccess, metrics::ExecutionMetrics};
@@ -992,7 +992,7 @@ pub struct Replay<F> {
 
 impl<F> Replay<F> {
     fn using_visitor<T>(&self, f: impl FnOnce(&mut ReplayVisitor<'_, F>) -> T) -> T {
-        let mut committed_state = self.committed_state.write_arc();
+        let mut committed_state = self.committed_state.write();
         let mut visitor = ReplayVisitor {
             database_identity: &self.database_identity,
             committed_state: &mut committed_state,
@@ -1007,13 +1007,13 @@ impl<F> Replay<F> {
         self.committed_state.read_arc().next_tx_offset
     }
 
-    pub fn committed_state(&self) -> &Arc<RwLock<CommittedState>> {
-        &self.committed_state
+    pub fn committed_state(&self) -> RwLockReadGuard<'_, CommittedState> {
+        self.committed_state.read()
     }
 }
 
-impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
-    type Record = Txdata<ProductValue>;
+impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
+    type Record = txdata::Txdata<ProductValue>;
     type Error = txdata::DecoderError<ReplayError>;
 
     fn decode_record<'a, R: BufReader<'a>>(
@@ -1041,30 +1041,6 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for Replay<F> {
         reader: &mut R,
     ) -> std::result::Result<(), Self::Error> {
         self.using_visitor(|visitor| txdata::skip_record_fn(visitor, version, reader))
-    }
-}
-
-impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
-    type Record = txdata::Txdata<ProductValue>;
-    type Error = txdata::DecoderError<ReplayError>;
-
-    #[inline]
-    fn decode_record<'a, R: BufReader<'a>>(
-        &self,
-        version: u8,
-        tx_offset: u64,
-        reader: &mut R,
-    ) -> std::result::Result<Self::Record, Self::Error> {
-        spacetimedb_commitlog::Decoder::decode_record(&**self, version, tx_offset, reader)
-    }
-
-    fn skip_record<'a, R: BufReader<'a>>(
-        &self,
-        version: u8,
-        tx_offset: u64,
-        reader: &mut R,
-    ) -> std::result::Result<(), Self::Error> {
-        spacetimedb_commitlog::Decoder::skip_record(&**self, version, tx_offset, reader)
     }
 }
 
