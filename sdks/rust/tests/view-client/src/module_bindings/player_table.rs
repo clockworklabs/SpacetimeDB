@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::player_type::Player;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `player`.
 ///
@@ -169,5 +169,21 @@ impl<'ctx> PlayerIdentityUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::Identity) -> Option<Player> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Player`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait playerQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Player`.
+    fn player(&self) -> __query_builder::Table<Player>;
+}
+
+impl playerQueryTableAccess for __sdk::QueryTableAccessor {
+    fn player(&self) -> __query_builder::Table<Player> {
+        __query_builder::Table::new("player")
     }
 }

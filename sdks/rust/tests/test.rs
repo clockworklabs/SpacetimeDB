@@ -384,6 +384,11 @@ mod view {
     }
 
     #[test]
+    fn subscribe_anonymous_view_query_builder() {
+        make_test("view-anonymous-subscribe-with-query-builder").run()
+    }
+
+    #[test]
     fn subscribe_non_anonymous_view() {
         make_test("view-non-anonymous-subscribe").run()
     }

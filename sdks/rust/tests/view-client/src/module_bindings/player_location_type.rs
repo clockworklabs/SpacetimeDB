@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -15,4 +15,44 @@ pub struct PlayerLocation {
 
 impl __sdk::InModule for PlayerLocation {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `PlayerLocation`.
+///
+/// Provides typed access to columns for query building.
+pub struct PlayerLocationCols {
+    pub entity_id: __query_builder::Col<PlayerLocation, u64>,
+    pub active: __query_builder::Col<PlayerLocation, bool>,
+    pub x: __query_builder::Col<PlayerLocation, i32>,
+    pub y: __query_builder::Col<PlayerLocation, i32>,
+}
+
+impl __query_builder::HasCols for PlayerLocation {
+    type Cols = PlayerLocationCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PlayerLocationCols {
+            entity_id: __query_builder::Col::new(table_name, "entity_id"),
+            active: __query_builder::Col::new(table_name, "active"),
+            x: __query_builder::Col::new(table_name, "x"),
+            y: __query_builder::Col::new(table_name, "y"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PlayerLocation`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PlayerLocationIxCols {
+    pub active: __query_builder::IxCol<PlayerLocation, bool>,
+    pub entity_id: __query_builder::IxCol<PlayerLocation, u64>,
+}
+
+impl __query_builder::HasIxCols for PlayerLocation {
+    type IxCols = PlayerLocationIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PlayerLocationIxCols {
+            active: __query_builder::IxCol::new(table_name, "active"),
+            entity_id: __query_builder::IxCol::new(table_name, "entity_id"),
+        }
+    }
 }

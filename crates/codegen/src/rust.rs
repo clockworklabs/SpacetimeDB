@@ -2,7 +2,7 @@ use super::code_indenter::{CodeIndenter, Indenter};
 use super::util::{collect_case, iter_reducers, print_lines, type_ref_name};
 use super::Lang;
 use crate::util::{
-    iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
+    iter_indexes, iter_procedures, iter_table_names_and_types, iter_tables, iter_types, iter_unique_cols, iter_views,
     print_auto_generated_file_comment, print_auto_generated_version_comment,
 };
 use crate::OutputFile;
@@ -65,6 +65,17 @@ impl __sdk::InModule for {type_name} {{
 }}
 ",
         );
+
+        // implement Col types for each type which is used as the product type of a table.
+
+        let name = type_ref_name(module, typ.ty);
+        if let Some(table) = module
+            .tables()
+            .find(|t| type_ref_name(module, t.product_type_ref) == name)
+        {
+            implement_query_col_types(module, out, table).expect("failed to implement query col types");
+            out.newline();
+        }
 
         vec![OutputFile {
             filename: type_module_name(&typ.name) + ".rs",
@@ -285,6 +296,8 @@ pub(super) fn parse_table_update(
         "
             );
         }
+
+        implement_query_table_accessor(table, out, &row_type).expect("failed to implement query table accessor");
 
         // TODO: expose non-unique indices.
 
@@ -608,6 +621,147 @@ impl {func_name} for super::RemoteProcedures {{
     }
 }
 
+fn implement_query_col_types(module: &ModuleDef, out: &mut impl Write, table: &TableDef) -> fmt::Result {
+    let struct_name = type_ref_name(module, table.product_type_ref);
+    let cols_struct = struct_name.clone() + "Cols";
+    let product_def = module.typespace_for_generate()[table.product_type_ref]
+        .as_product()
+        .unwrap();
+
+    writeln!(
+        out,
+        "
+/// Column accessor struct for the table `{struct_name}`.
+///
+/// Provides typed access to columns for query building.
+pub struct {cols_struct} {{"
+    )?;
+
+    for element in &product_def.elements {
+        let field_name = &element.0;
+        let field_type = type_name(module, &element.1);
+        writeln!(
+            out,
+            "    pub {field_name}: __query_builder::Col<{struct_name}, {field_type}>,"
+        )?;
+    }
+
+    writeln!(out, "}}")?;
+
+    writeln!(
+        out,
+        "
+impl __query_builder::HasCols for {struct_name} {{
+    type Cols = {cols_struct};
+    fn cols(table_name: &'static str) -> Self::Cols {{
+        {cols_struct} {{"
+    )?;
+    for element in &product_def.elements {
+        let field_name = &element.0;
+        writeln!(
+            out,
+            "            {field_name}: __query_builder::Col::new(table_name, {field_name:?}),"
+        )?;
+    }
+
+    writeln!(
+        out,
+        r#"
+        }}
+    }}
+}}"#
+    )?;
+
+    let cols_ix = struct_name.clone() + "IxCols";
+    writeln!(
+        out,
+        "
+/// Indexed column accessor struct for the table `{struct_name}`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct {cols_ix} {{"
+    )?;
+    for index in iter_indexes(table) {
+        let cols = index.algorithm.columns();
+        if cols.len() != 1 {
+            continue;
+        }
+        let column = table
+            .columns
+            .iter()
+            .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
+            .unwrap();
+        let field_name = column.name.deref();
+        let field_type = type_name(module, &column.ty_for_generate);
+
+        writeln!(
+            out,
+            "    pub {field_name}: __query_builder::IxCol<{struct_name}, {field_type}>,",
+        )?;
+    }
+    writeln!(out, "}}")?;
+
+    writeln!(
+        out,
+        "
+impl __query_builder::HasIxCols for {struct_name} {{
+    type IxCols = {cols_ix};
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {{
+        {cols_ix} {{"
+    )?;
+    for index in iter_indexes(table) {
+        let cols = index.algorithm.columns();
+        if cols.len() != 1 {
+            continue;
+        }
+        let column = table
+            .columns
+            .iter()
+            .find(|col| col.col_id == cols.as_singleton().expect("singleton column"))
+            .expect("singleton column");
+        let field_name = column.name.deref();
+
+        writeln!(
+            out,
+            "            {field_name}: __query_builder::IxCol::new(table_name, {field_name:?}),",
+        )?;
+    }
+    writeln!(
+        out,
+        r#"
+        }}
+    }}
+}}"#
+    )
+}
+
+pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, struct_name: &String) -> fmt::Result {
+    // NEW: Generate query table accessor trait and implementation
+    let accessor_method = table.name.clone();
+    let query_accessor_trait = accessor_method.to_string() + "QueryTableAccess";
+
+    writeln!(
+        out,
+        "
+        #[allow(non_camel_case_types)]
+        /// Extension trait for query builder access to the table `{struct_name}`.
+        ///
+        /// Implemented for [`__sdk::QueryTableAccessor`].
+        pub trait {query_accessor_trait} {{
+            #[allow(non_snake_case)]
+            /// Get a query builder for the table `{struct_name}`.
+            fn {accessor_method}(&self) -> __query_builder::Table<{struct_name}>;
+        }}
+        
+        impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
+            fn {accessor_method}(&self) -> __query_builder::Table<{struct_name}> {{
+                __query_builder::Table::new({accessor_method:?})
+            }}
+        }}
+        "
+    )
+}
+
 pub fn write_type<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicTypeUse) -> fmt::Result {
     match ty {
         AlgebraicTypeUse::Unit => write!(out, "()")?,
@@ -712,6 +866,7 @@ const SPACETIMEDB_IMPORTS: &[&str] = &[
     "\t__lib,",
     "\t__sats,",
     "\t__ws,",
+    "\t__query_builder,",
     "};",
 ];
 
@@ -1297,6 +1452,7 @@ type SetReducerFlags = SetReducerFlags;
 type DbUpdate = DbUpdate;
 type AppliedDiff<'r> = AppliedDiff<'r>;
 type SubscriptionHandle = SubscriptionHandle;
+type QueryBuilder = __sdk::QueryBuilder;
 "
             );
             out.delimited_block(

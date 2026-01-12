@@ -37,7 +37,9 @@ fn main() {
 
     match &*test {
         "view-anonymous-subscribe" => exec_anonymous_subscribe(),
+        "view-anonymous-subscribe-with-query-builder" => exec_anonymous_subscribe_with_query_builder(),
         "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe(),
+
         "view-non-table-return" => exec_non_table_return(),
         "view-subscription-update" => exec_subscription_update(),
         _ => panic!("Unknown test: {test}"),
@@ -127,6 +129,64 @@ fn exec_anonymous_subscribe() {
                 .delete_player(Identity::from_byte_array([4; 32]))
                 .unwrap();
         });
+    });
+    test_counter.wait_for_all();
+}
+
+fn exec_anonymous_subscribe_with_query_builder() {
+    let test_counter = TestCounter::new();
+    let mut insert_0 = Some(test_counter.add_test("insert_0"));
+    let mut insert_1 = Some(test_counter.add_test("insert_1"));
+    let mut delete_1 = Some(test_counter.add_test("delete_1"));
+    connect_then(&test_counter, move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                ctx.db.player().on_insert(move |_, player| {
+                    if player.identity == Identity::from_byte_array([2; 32]) {
+                        return put_result(&mut insert_0, Ok(()));
+                    }
+                    if player.identity == Identity::from_byte_array([4; 32]) {
+                        return put_result(&mut insert_1, Ok(()));
+                    }
+                    unreachable!("Unexpected identity on insert: `{}`", player.identity)
+                });
+
+                ctx.db.player_level().on_insert(move |_, level| {
+                    if level.level != 0 {
+                        return;
+                    }
+                });
+                ctx.db.player().on_delete(move |_, player| {
+                    if player.identity == Identity::from_byte_array([4; 32]) {
+                        return put_result(&mut delete_1, Ok(()));
+                    }
+                    unreachable!("Unexpected identity on delete: `{}`", player.identity)
+                });
+                ctx.reducers()
+                    .insert_player(Identity::from_byte_array([1; 32]), 1)
+                    .unwrap();
+                ctx.reducers()
+                    .insert_player(Identity::from_byte_array([2; 32]), 0)
+                    .unwrap();
+                ctx.reducers()
+                    .insert_player(Identity::from_byte_array([3; 32]), 1)
+                    .unwrap();
+                ctx.reducers()
+                    .insert_player(Identity::from_byte_array([4; 32]), 0)
+                    .unwrap();
+                ctx.reducers()
+                    .delete_player(Identity::from_byte_array([4; 32]))
+                    .unwrap();
+            })
+            .add_query(|ctx| {
+                ctx.from
+                    .player_level()
+                    .filter(|pl| pl.level.eq(0))
+                    .right_semijoin(ctx.from.player(), |lvl, pl| lvl.entity_id.eq(pl.entity_id))
+                    .build()
+            })
+            .subscribe();
     });
     test_counter.wait_for_all();
 }

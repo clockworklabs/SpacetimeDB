@@ -8125,6 +8125,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-lib 1.11.1",
  "spacetimedb-metrics",
+ "spacetimedb-query-builder",
  "spacetimedb-sats 1.11.1",
  "spacetimedb-testing",
  "thiserror 1.0.69",

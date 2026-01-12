@@ -4524,6 +4524,7 @@ impl __sdk::SpacetimeModule for RemoteModule {
     type DbUpdate = DbUpdate;
     type AppliedDiff<'r> = AppliedDiff<'r>;
     type SubscriptionHandle = SubscriptionHandle;
+    type QueryBuilder = __sdk::QueryBuilder;
 
     fn register_tables(client_cache: &mut __sdk::ClientCache<Self>) {
         btree_u_32_table::register_table(client_cache);
