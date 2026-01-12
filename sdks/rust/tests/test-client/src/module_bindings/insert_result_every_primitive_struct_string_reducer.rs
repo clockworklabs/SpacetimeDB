@@ -72,6 +72,7 @@ impl insert_result_every_primitive_struct_string for super::RemoteReducers {
         InsertResultEveryPrimitiveStructStringCallbackId(self.imp.on_reducer(
             "insert_result_every_primitive_struct_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

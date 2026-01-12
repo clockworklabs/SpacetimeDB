@@ -69,8 +69,8 @@ declare module 'spacetime:sys@1.0' {
 
 declare module 'spacetime:sys@1.1' {
   export type ModuleHooks = {
-    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array;
-    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array;
+    __call_view__(id: u32, sender: u256, args: Uint8Array): Uint8Array | object;
+    __call_view_anon__(id: u32, args: Uint8Array): Uint8Array | object;
   };
 
   export function register_hooks(hooks: ModuleHooks);
@@ -99,4 +99,16 @@ declare module 'spacetime:sys@1.2' {
   export function procedure_commit_mut_tx();
 
   export function procedure_abort_mut_tx();
+}
+
+declare module 'spacetime:sys@1.3' {
+  export function datastore_index_scan_point_bsatn(
+    index_id: u32,
+    point: Uint8Array
+  ): u32;
+
+  export function datastore_delete_by_index_scan_point_bsatn(
+    index_id: u32,
+    point: Uint8Array
+  ): u32;
 }

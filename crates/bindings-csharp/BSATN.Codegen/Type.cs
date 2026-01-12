@@ -53,6 +53,12 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// <returns></returns>
     public static TypeUse Parse(ISymbol member, ITypeSymbol typeSymbol, DiagReporter diag)
     {
+        if (typeSymbol.SpecialType == SpecialType.System_Void)
+        {
+            // Treat void as equivalent to Unit type
+            return new ReferenceUse("SpacetimeDB.Unit", "SpacetimeDB.Unit.BSATN");
+        }
+
         var type = SymbolToName(typeSymbol);
         string typeInfo;
 
@@ -95,6 +101,7 @@ public abstract record TypeUse(string Name, string BSATNName)
                     typeInfo,
                     Parse(member, named.TypeArguments[0], diag)
                 ),
+                "System.Nullable<T>" => new NullableUse(type, typeInfo),
                 _ => named.IsValueType
                     ? (
                         named.TypeKind == Microsoft.CodeAnalysis.TypeKind.Enum
@@ -110,7 +117,12 @@ public abstract record TypeUse(string Name, string BSATNName)
     /// <summary>
     /// Get the name of the BSATN struct for this type.
     /// </summary>
-    public virtual string to_bsatn_string()
+    public virtual string ToBSATNString()
+    {
+        return this.BSATNName;
+    }
+
+    public virtual string ToBSATNString2()
     {
         return this.BSATNName;
     }
@@ -148,7 +160,7 @@ public abstract record TypeUse(string Name, string BSATNName)
 }
 
 /// <summary>
-/// A use of a Result<T, E> type.
+/// A use of a Result&lt;T, E&gt; type.
 /// </summary>
 public sealed record ResultUse : TypeUse
 {
@@ -165,7 +177,12 @@ public sealed record ResultUse : TypeUse
         TypeName = typeName;
     }
 
-    public override string to_bsatn_string()
+    public override string ToBSATNString()
+    {
+        return $"{TypeName}.BSATN<{Ok.BSATNName}, {Err.BSATNName}>";
+    }
+
+    public override string ToBSATNString2()
     {
         return $"{TypeName}.BSATN<{Ok.BSATNName}, {Err.BSATNName}>";
     }
@@ -219,6 +236,24 @@ public record ValueUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
         string outVar,
         int level = 0
     ) => $"var {outVar} = {inVar1}.Equals({inVar2});";
+
+    public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
+        $"var {outVar} = {inVar}.GetHashCode();";
+}
+
+/// <summary>
+/// A use of a nullable value type (e.g. <c>int?</c>, <c>MyStruct?</c>).
+/// </summary>
+/// <param name="Type"></param>
+/// <param name="TypeInfo"></param>
+public record NullableUse(string Type, string TypeInfo) : TypeUse(Type, TypeInfo)
+{
+    public override string EqualsStatement(
+        string inVar1,
+        string inVar2,
+        string outVar,
+        int level = 0
+    ) => $"var {outVar} = System.Nullable.Equals({inVar1}, {inVar2});";
 
     public override string GetHashCodeStatement(string inVar, string outVar, int level = 0) =>
         $"var {outVar} = {inVar}.GetHashCode();";
@@ -396,7 +431,7 @@ public record MemberDeclaration(
         return string.Join(
             "\n        ",
             members.Select(m =>
-                $"{visStr} static readonly {m.Type.to_bsatn_string()} {m.Name}{TypeUse.BsatnFieldSuffix} = new();"
+                $"{visStr} static readonly {m.Type.ToBSATNString()} {m.Name}{TypeUse.BsatnFieldSuffix} = new();"
             )
         );
     }

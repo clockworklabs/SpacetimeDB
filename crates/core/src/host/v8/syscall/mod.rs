@@ -5,7 +5,9 @@ use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
 use crate::host::wasm_common::abi::parse_abi_version;
-use crate::host::wasm_common::module_host_actor::{AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp};
+use crate::host::wasm_common::module_host_actor::{
+    AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
+};
 
 mod hooks;
 mod v1;
@@ -55,6 +57,7 @@ fn resolve_sys_module_inner<'scope>(
             (1, 0) => Ok(v1::sys_v1_0(scope)),
             (1, 1) => Ok(v1::sys_v1_1(scope)),
             (1, 2) => Ok(v1::sys_v1_2(scope)),
+            (1, 3) => Ok(v1::sys_v1_3(scope)),
             _ => Err(TypeError(format!(
                 "Could not import {spec:?}, likely because this module was built for a newer version of SpacetimeDB.\n\
                 It requires sys module v{major}.{minor}, but that version is not supported by the database."
@@ -85,7 +88,7 @@ pub(super) fn call_call_view(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     op: ViewOp<'_>,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view(scope, hooks, op),
     }
@@ -98,7 +101,7 @@ pub(super) fn call_call_view_anon(
     scope: &mut PinScope<'_, '_>,
     hooks: &HookFunctions<'_>,
     op: AnonymousViewOp<'_>,
-) -> Result<Bytes, ErrorOrException<ExceptionThrown>> {
+) -> Result<ViewReturnData, ErrorOrException<ExceptionThrown>> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_view_anon(scope, hooks, op),
     }

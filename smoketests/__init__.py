@@ -25,8 +25,8 @@ TEMPLATE_TARGET_DIR = STDB_DIR / "target/_stdbsmoketests"
 BASE_STDB_CONFIG_PATH = TEST_DIR / "config.toml"
 
 # the contents of files for the base smoketest project template
-TEMPLATE_LIB_RS = open(STDB_DIR / "crates/cli/templates/basic-rust/server/src/lib.rs").read()
-TEMPLATE_CARGO_TOML = open(STDB_DIR / "crates/cli/templates/basic-rust/server/Cargo.toml").read()
+TEMPLATE_LIB_RS = open(STDB_DIR / "templates/basic-rust/spacetimedb/src/lib.rs").read()
+TEMPLATE_CARGO_TOML = open(STDB_DIR / "templates/basic-rust/spacetimedb/Cargo.toml").read()
 bindings_path = (STDB_DIR / "crates/bindings").absolute()
 escaped_bindings_path = str(bindings_path).replace('\\', '\\\\\\\\') # double escape for re.sub + toml
 TYPESCRIPT_BINDINGS_PATH = (STDB_DIR / "crates/bindings-typescript").absolute()
@@ -217,11 +217,10 @@ class Smoketest(unittest.TestCase):
         if not hasattr(self, "database_identity"):
             raise Exception("Cannot use this function without publishing a module")
 
-    def call(self, reducer, *args, anon=False):
+    def call(self, reducer, *args, anon=False, check=True, full_output = False):
         self._check_published()
         anon = ["--anonymous"] if anon else []
-        self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args))
-
+        return self.spacetime("call", *anon, "--", self.database_identity, reducer, *map(json.dumps, args), check = check, full_output=full_output)
 
     def sql(self, sql):
         self._check_published()
@@ -407,7 +406,14 @@ class Smoketest(unittest.TestCase):
             result = cm.__enter__()
             cls.addClassCleanup(cm.__exit__, None, None, None)
             return result
-
+    
+    def assertSql(self, sql: str, expected: str):
+        """Assert that executing `sql` produces the expected output."""
+        self.maxDiff = None
+        sql_out = self.spacetime("sql", self.database_identity, sql)
+        sql_out = "\n".join([line.rstrip() for line in sql_out.splitlines()])
+        expected = "\n".join([line.rstrip() for line in expected.splitlines()])
+        self.assertMultiLineEqual(sql_out, expected)
 
 # This is a custom thread class that will propagate an exception to the caller of `.join()`.
 # This is required because, by default, threads do not propagate exceptions to their callers,

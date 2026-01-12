@@ -129,6 +129,12 @@ pub enum SnapshotError {
     Io(#[from] std::io::Error),
 }
 
+impl SnapshotError {
+    pub fn is_already_exists(&self) -> bool {
+        matches!(self, Self::Io(e) if e.kind() == std::io::ErrorKind::AlreadyExists)
+    }
+}
+
 /// Magic number for snapshot files: a point in spacetime.
 ///
 /// Chosen because the commitlog magic number is a spacetime interval,

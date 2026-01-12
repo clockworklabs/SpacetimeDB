@@ -1,5 +1,6 @@
 import * as _syscalls1_0 from 'spacetime:sys@1.0';
 import * as _syscalls1_2 from 'spacetime:sys@1.2';
+import * as _syscalls1_3 from 'spacetime:sys@1.3';
 
 import type { ModuleHooks, u16, u32 } from 'spacetime:sys@1.0';
 import { AlgebraicType, ProductType } from '../lib/algebraic_type';
@@ -7,27 +8,33 @@ import RawModuleDef from '../lib/autogen/raw_module_def_type';
 import type RawModuleDefV9 from '../lib/autogen/raw_module_def_v_9_type';
 import type RawTableDefV9 from '../lib/autogen/raw_table_def_v_9_type';
 import type Typespace from '../lib/autogen/typespace_type';
-import BinaryReader from '../lib/binary_reader';
-import BinaryWriter from '../lib/binary_writer';
 import { ConnectionId } from '../lib/connection_id';
 import { Identity } from '../lib/identity';
+import { Timestamp } from '../lib/timestamp';
+import { Uuid } from '../lib/uuid';
+import BinaryReader from '../lib/binary_reader';
+import BinaryWriter from '../lib/binary_writer';
 import {
   type Index,
   type IndexVal,
   type RangedIndex,
   type UniqueIndex,
 } from '../lib/indexes';
-import { callProcedure } from './procedures';
+import { callProcedure as callProcedure } from './procedures';
 import {
   REDUCERS,
   type AuthCtx,
   type JsonObject,
   type JwtClaims,
   type ReducerCtx,
+  type ReducerCtx as IReducerCtx,
 } from '../lib/reducers';
-import { MODULE_DEF, type UntypedSchemaDef } from '../lib/schema';
+import {
+  MODULE_DEF,
+  getRegisteredSchema,
+  type UntypedSchemaDef,
+} from '../lib/schema';
 import { type RowType, type Table, type TableMethods } from '../lib/table';
-import { Timestamp } from '../lib/timestamp';
 import type { Infer } from '../lib/type_builders';
 import { bsatnBaseSize, toCamelCase } from '../lib/util';
 import {
@@ -36,13 +43,17 @@ import {
   type AnonymousViewCtx,
   type ViewCtx,
 } from '../lib/views';
+import { isRowTypedQuery, makeQueryBuilder, toSql } from './query';
 import type { DbView } from './db_view';
 import { SenderError, SpacetimeHostError } from './errors';
 import { Range, type Bound } from './range';
+import ViewResultHeader from '../lib/autogen/view_result_header_type';
 
 const { freeze } = Object;
 
-export const sys = freeze(wrapSyscalls(_syscalls1_0, _syscalls1_2));
+export const sys = freeze(
+  wrapSyscalls(_syscalls1_0, _syscalls1_2, _syscalls1_3)
+);
 
 export function parseJsonObject(json: string): JsonObject {
   let value: unknown;
@@ -175,20 +186,80 @@ class AuthCtxImpl implements AuthCtx {
   }
 }
 
-export const makeReducerCtx = (
-  sender: Identity,
-  timestamp: Timestamp,
-  connectionId: ConnectionId | null
-): ReducerCtx<UntypedSchemaDef> => ({
-  sender,
+// Using a class expression rather than declaration keeps the class out of the
+// type namespace, so that `ReducerCtx` still refers to the interface.
+export const ReducerCtxImpl = class ReducerCtx<
+  SchemaDef extends UntypedSchemaDef,
+> implements IReducerCtx<SchemaDef>
+{
+  #identity: Identity | undefined;
+  #senderAuth: AuthCtx | undefined;
+  #uuidCounter: { value: number } | undefined;
+  sender: Identity;
+  timestamp: Timestamp;
+  connectionId: ConnectionId | null;
+  db: DbView<SchemaDef>;
+
+  constructor(
+    sender: Identity,
+    timestamp: Timestamp,
+    connectionId: ConnectionId | null
+  ) {
+    Object.seal(this);
+    this.sender = sender;
+    this.timestamp = timestamp;
+    this.connectionId = connectionId;
+    this.db = getDbView();
+  }
+
   get identity() {
-    return new Identity(sys.identity().__identity__);
-  },
-  timestamp,
-  connectionId,
-  db: getDbView(),
-  senderAuth: AuthCtxImpl.fromSystemTables(connectionId, sender),
-});
+    return (this.#identity ??= new Identity(sys.identity().__identity__));
+  }
+
+  get senderAuth() {
+    return (this.#senderAuth ??= AuthCtxImpl.fromSystemTables(
+      this.connectionId,
+      this.sender
+    ));
+  }
+
+  /**
+   * Create a new random {@link Uuid} `v4` using the {@link crypto} RNG.
+   *
+   * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+   */
+  newUuidV4(): Uuid {
+    // TODO: Use a spacetime RNG when available
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    return Uuid.fromRandomBytesV4(bytes);
+  }
+
+  /**
+   * Create a new sortable {@link Uuid} `v7` using the {@link crypto} RNG, counter,
+   * and the timestamp.
+   *
+   * WARN: Until we use a spacetime RNG this make calls non-deterministic.
+   */
+  newUuidV7(): Uuid {
+    // TODO: Use a spacetime RNG when available
+    const bytes = crypto.getRandomValues(new Uint8Array(4));
+    const counter = (this.#uuidCounter ??= { value: 0 });
+    return Uuid.fromCounterV7(counter, this.timestamp, bytes);
+  }
+};
+
+/**
+ * Call into a user function `fn` - the backtrace from an exception thrown in
+ * `fn` or one of its descendants in the callgraph will be stripped by host
+ * code in `crates/core/src/host/v8/error.rs` such that `fn` will be shown to
+ * be the root of the call stack.
+ */
+export const callUserFunction = function __spacetimedb_end_short_backtrace<
+  Args extends any[],
+  R,
+>(fn: (...args: Args) => R, ...args: Args): R {
+  return fn(...args);
+};
 
 export const hooks: ModuleHooks = {
   __describe_module__() {
@@ -201,24 +272,20 @@ export const hooks: ModuleHooks = {
     return writer.getBuffer();
   },
   __call_reducer__(reducerId, sender, connId, timestamp, argsBuf) {
-    const argsType = AlgebraicType.Product(
-      MODULE_DEF.reducers[reducerId].params
-    );
-    const args = AlgebraicType.deserializeValue(
+    const argsType = MODULE_DEF.reducers[reducerId].params;
+    const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       argsType,
       MODULE_DEF.typespace
     );
     const senderIdentity = new Identity(sender);
-    const ctx: ReducerCtx<any> = freeze(
-      makeReducerCtx(
-        senderIdentity,
-        new Timestamp(timestamp),
-        ConnectionId.nullIfZero(new ConnectionId(connId))
-      )
+    const ctx: ReducerCtx<any> = new ReducerCtxImpl(
+      senderIdentity,
+      new Timestamp(timestamp),
+      ConnectionId.nullIfZero(new ConnectionId(connId))
     );
     try {
-      return REDUCERS[reducerId](ctx, args) ?? { tag: 'ok' };
+      return callUserFunction(REDUCERS[reducerId], ctx, args) ?? { tag: 'ok' };
     } catch (e) {
       if (e instanceof SenderError) {
         return { tag: 'err', value: e.message };
@@ -237,16 +304,45 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
+    // ViewResultHeader.RawSql
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
       MODULE_DEF.typespace
     );
-    const ret = fn(ctx, args);
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
   __call_view_anon__(id, argsBuf) {
     const { fn, params, returnType, returnTypeBaseSize } = ANON_VIEWS[id];
@@ -255,16 +351,44 @@ export const hooks_v1_1: import('spacetime:sys@1.1').ModuleHooks = {
       // the readonly one, and if they do call mutating functions it will fail
       // at runtime
       db: getDbView(),
+      from: makeQueryBuilder(getRegisteredSchema()),
     });
     const args = ProductType.deserializeValue(
       new BinaryReader(argsBuf),
       params,
       MODULE_DEF.typespace
     );
-    const ret = fn(ctx, args);
+    const ret = callUserFunction(fn, ctx, args);
     const retBuf = new BinaryWriter(returnTypeBaseSize);
-    AlgebraicType.serializeValue(retBuf, returnType, ret, MODULE_DEF.typespace);
-    return retBuf.getBuffer();
+    if (isRowTypedQuery(ret)) {
+      const query = toSql(ret);
+      const v = ViewResultHeader.RawSql(query);
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        v,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    } else {
+      AlgebraicType.serializeValue(
+        retBuf,
+        ViewResultHeader.algebraicType,
+        ViewResultHeader.RowData,
+        MODULE_DEF.typespace
+      );
+      AlgebraicType.serializeValue(
+        retBuf,
+        returnType,
+        ret,
+        MODULE_DEF.typespace
+      );
+      return {
+        data: retBuf.getBuffer(),
+      };
+    }
   },
 };
 
@@ -348,7 +472,7 @@ function makeTableView(
   const hasAutoIncrement = sequences.length > 0;
 
   const iter = () =>
-    new TableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
+    tableIterator(sys.datastore_table_scan_bsatn(table_id), rowType);
 
   const integrateGeneratedColumns = hasAutoIncrement
     ? (row: RowType<any>, ret_buf: Uint8Array) => {
@@ -423,14 +547,29 @@ function makeTableView(
       prefix: any[],
       prefix_elems: number
     ) => {
-      if (prefix_elems > numColumns - 1)
-        throw new TypeError('too many elements in prefix');
       for (let i = 0; i < prefix_elems; i++) {
         const elemType = indexType.value.elements[i].algebraicType;
         AlgebraicType.serializeValue(writer, elemType, prefix[i], typespace);
       }
       return writer;
     };
+
+    const serializePoint = (colVal: any[]): Uint8Array => {
+      const writer = new BinaryWriter(baseSize);
+      serializePrefix(writer, colVal, numColumns);
+      return writer.getBuffer();
+    };
+
+    const singleElement =
+      numColumns === 1 ? indexType.value.elements[0].algebraicType : null;
+
+    const serializeSinglePoint =
+      singleElement &&
+      ((colVal: any): Uint8Array => {
+        const writer = new BinaryWriter(baseSize);
+        AlgebraicType.serializeValue(writer, singleElement, colVal, typespace);
+        return writer.getBuffer();
+      });
 
     type IndexScanArgs = [
       prefix: Uint8Array,
@@ -440,33 +579,13 @@ function makeTableView(
     ];
 
     let index: Index<any, any>;
-    if (isUnique) {
-      const serializeBound = (colVal: any[]): IndexScanArgs => {
-        if (colVal.length !== numColumns)
-          throw new TypeError('wrong number of elements');
-
-        const writer = new BinaryWriter(baseSize + 1);
-        const prefix_elems = numColumns - 1;
-        serializePrefix(writer, colVal, prefix_elems);
-        const rstartOffset = writer.offset;
-        writer.writeU8(0);
-        AlgebraicType.serializeValue(
-          writer,
-          indexType.value.elements[numColumns - 1].algebraicType,
-          colVal[numColumns - 1],
-          typespace
-        );
-        const buffer = writer.getBuffer();
-        const prefix = buffer.slice(0, rstartOffset);
-        const rstart = buffer.slice(rstartOffset);
-        return [prefix, prefix_elems, rstart, rstart];
-      };
+    if (isUnique && serializeSinglePoint) {
+      // numColumns == 1, unique index
       index = {
         find: (colVal: IndexVal<any, any>): RowType<any> | null => {
-          if (numColumns === 1) colVal = [colVal];
-          const args = serializeBound(colVal);
-          const iter = new TableIterator(
-            sys.datastore_index_scan_range_bsatn(index_id, ...args),
+          const point = serializeSinglePoint(colVal);
+          const iter = tableIterator(
+            sys.datastore_index_scan_point_bsatn(index_id, point),
             rowType
           );
           const { value, done } = iter.next();
@@ -478,11 +597,10 @@ function makeTableView(
           return value;
         },
         delete: (colVal: IndexVal<any, any>): boolean => {
-          if (numColumns === 1) colVal = [colVal];
-          const args = serializeBound(colVal);
-          const num = sys.datastore_delete_by_index_scan_range_bsatn(
+          const point = serializeSinglePoint(colVal);
+          const num = sys.datastore_delete_by_index_scan_point_bsatn(
             index_id,
-            ...args
+            point
           );
           return num > 0;
         },
@@ -498,7 +616,69 @@ function makeTableView(
           return row;
         },
       } as UniqueIndex<any, any>;
+    } else if (isUnique) {
+      // numColumns != 1, unique index
+      index = {
+        find: (colVal: IndexVal<any, any>): RowType<any> | null => {
+          if (colVal.length !== numColumns) {
+            throw new TypeError('wrong number of elements');
+          }
+          const point = serializePoint(colVal);
+          const iter = tableIterator(
+            sys.datastore_index_scan_point_bsatn(index_id, point),
+            rowType
+          );
+          const { value, done } = iter.next();
+          if (done) return null;
+          if (!iter.next().done)
+            throw new Error(
+              '`datastore_index_scan_range_bsatn` on unique field cannot return >1 rows'
+            );
+          return value;
+        },
+        delete: (colVal: IndexVal<any, any>): boolean => {
+          if (colVal.length !== numColumns)
+            throw new TypeError('wrong number of elements');
+
+          const point = serializePoint(colVal);
+          const num = sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            point
+          );
+          return num > 0;
+        },
+        update: (row: RowType<any>): RowType<any> => {
+          const writer = new BinaryWriter(baseSize);
+          AlgebraicType.serializeValue(writer, rowType, row, typespace);
+          const ret_buf = sys.datastore_update_bsatn(
+            table_id,
+            index_id,
+            writer.getBuffer()
+          );
+          integrateGeneratedColumns?.(row, ret_buf);
+          return row;
+        },
+      } as UniqueIndex<any, any>;
+    } else if (serializeSinglePoint) {
+      // numColumns == 1
+      index = {
+        filter: (range: any): IteratorObject<RowType<any>> => {
+          const point = serializeSinglePoint(range);
+          return tableIterator(
+            sys.datastore_index_scan_point_bsatn(index_id, point),
+            rowType
+          );
+        },
+        delete: (range: any): u32 => {
+          const point = serializeSinglePoint(range);
+          return sys.datastore_delete_by_index_scan_point_bsatn(
+            index_id,
+            point
+          );
+        },
+      } as RangedIndex<any, any>;
     } else {
+      // numColumns != 1
       const serializeRange = (range: any[]): IndexScanArgs => {
         if (range.length > numColumns) throw new TypeError('too many elements');
 
@@ -537,21 +717,35 @@ function makeTableView(
         return [prefix, prefix_elems, rstart, rend];
       };
       index = {
-        filter: (range: any): IterableIterator<RowType<any>> => {
-          if (numColumns === 1) range = [range];
-          const args = serializeRange(range);
-          return new TableIterator(
-            sys.datastore_index_scan_range_bsatn(index_id, ...args),
-            rowType
-          );
+        filter: (range: any[]): IteratorObject<RowType<any>> => {
+          if (range.length === numColumns) {
+            const point = serializePoint(range);
+            return tableIterator(
+              sys.datastore_index_scan_point_bsatn(index_id, point),
+              rowType
+            );
+          } else {
+            const args = serializeRange(range);
+            return tableIterator(
+              sys.datastore_index_scan_range_bsatn(index_id, ...args),
+              rowType
+            );
+          }
         },
-        delete: (range: any): u32 => {
-          if (numColumns === 1) range = [range];
-          const args = serializeRange(range);
-          return sys.datastore_delete_by_index_scan_range_bsatn(
-            index_id,
-            ...args
-          );
+        delete: (range: any[]): u32 => {
+          if (range.length === numColumns) {
+            const point = serializePoint(range);
+            return sys.datastore_delete_by_index_scan_point_bsatn(
+              index_id,
+              point
+            );
+          } else {
+            const args = serializeRange(range);
+            return sys.datastore_delete_by_index_scan_range_bsatn(
+              index_id,
+              ...args
+            );
+          }
         },
       } as RangedIndex<any, any>;
     }
@@ -573,60 +767,70 @@ function hasOwn<K extends PropertyKey>(
   return Object.hasOwn(o, k);
 }
 
-class TableIterator implements IterableIterator<any, undefined> {
-  #id: u32 | -1;
-  #reader: BinaryReader;
-  #ty: AlgebraicType;
-  constructor(id: u32, ty: AlgebraicType) {
-    this.#id = id;
-    this.#reader = new BinaryReader(new Uint8Array());
-    this.#ty = ty;
-  }
-  [Symbol.iterator](): typeof this {
-    return this;
-  }
-  next(): IteratorResult<any, undefined> {
-    while (true) {
-      if (this.#reader.remaining > 0) {
-        const value = AlgebraicType.deserializeValue(
-          this.#reader,
-          this.#ty,
-          MODULE_DEF.typespace
-        );
-        return { value };
-      }
-      if (this.#id === -1) {
-        return { value: undefined, done: true };
-      }
-      this.#advance_iter();
+function* tableIterator(id: u32, ty: AlgebraicType): Generator<any, undefined> {
+  using iter = new IteratorHandle(id);
+  const { typespace } = MODULE_DEF;
+
+  let buf;
+  while ((buf = advanceIter(iter)) != null) {
+    const reader = new BinaryReader(buf);
+    while (reader.remaining > 0) {
+      yield AlgebraicType.deserializeValue(reader, ty, typespace);
     }
+  }
+}
+
+function advanceIter(iter: IteratorHandle): Uint8Array | null {
+  let buf_max_len = 0x10000;
+  while (true) {
+    try {
+      return iter.advance(buf_max_len);
+    } catch (e) {
+      if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
+        buf_max_len = e.__buffer_too_small__ as number;
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+/** A class to manage the lifecycle of an iterator handle. */
+class IteratorHandle implements Disposable {
+  #id: u32 | -1;
+
+  static #finalizationRegistry = new FinalizationRegistry<u32>(
+    sys.row_iter_bsatn_close
+  );
+
+  constructor(id: u32) {
+    this.#id = id;
+    IteratorHandle.#finalizationRegistry.register(this, id, this);
   }
 
-  #advance_iter() {
-    let buf_max_len = 0x10000;
-    while (true) {
-      try {
-        const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
-          this.#id,
-          buf_max_len
-        );
-        if (done) this.#id = -1;
-        this.#reader = new BinaryReader(buf);
-        return;
-      } catch (e) {
-        if (e && typeof e === 'object' && hasOwn(e, '__buffer_too_small__')) {
-          buf_max_len = e.__buffer_too_small__ as number;
-          continue;
-        }
-        throw e;
-      }
-    }
+  /** Unregister this object with the finalization registry and return the id */
+  #detach() {
+    const id = this.#id;
+    this.#id = -1;
+    IteratorHandle.#finalizationRegistry.unregister(this);
+    return id;
+  }
+
+  /** Call `row_iter_bsatn_advance`, returning null if this iterator was already exhausted. */
+  advance(buf_max_len: u32): Uint8Array | null {
+    if (this.#id === -1) return null;
+    const { 0: done, 1: buf } = sys.row_iter_bsatn_advance(
+      this.#id,
+      buf_max_len
+    );
+    if (done) this.#detach();
+    return buf;
   }
 
   [Symbol.dispose]() {
     if (this.#id >= 0) {
-      this.#id = -1;
-      sys.row_iter_bsatn_close(this.#id);
+      const id = this.#detach();
+      sys.row_iter_bsatn_close(id);
     }
   }
 }

@@ -63,6 +63,7 @@ impl insert_result_simple_enum_i_32 for super::RemoteReducers {
         InsertResultSimpleEnumI32CallbackId(self.imp.on_reducer(
             "insert_result_simple_enum_i32",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

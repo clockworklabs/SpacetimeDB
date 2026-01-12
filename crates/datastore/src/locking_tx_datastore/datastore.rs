@@ -1,15 +1,14 @@
 use super::{
-    committed_state::CommittedState,
-    mut_tx::MutTxId,
-    sequence::SequencesState,
-    state_view::{IterByColRangeTx, StateView},
-    tx::TxId,
+    committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
     tx_state::TxState,
 };
 use crate::{
     db_metrics::DB_METRICS,
     error::{DatastoreError, TableError},
-    locking_tx_datastore::state_view::{IterByColRangeMutTx, IterMutTx, IterTx},
+    locking_tx_datastore::{
+        state_view::{IterByColEqMutTx, IterByColRangeMutTx, IterMutTx},
+        IterByColEqTx, IterByColRangeTx,
+    },
     traits::{InsertFlags, UpdateFlags},
 };
 use crate::{
@@ -42,7 +41,11 @@ use spacetimedb_sats::{
 use spacetimedb_sats::{memory_usage::MemoryUsage, Deserialize};
 use spacetimedb_schema::schema::{ColumnSchema, IndexSchema, SequenceSchema, TableSchema};
 use spacetimedb_snapshot::{ReconstructedSnapshot, SnapshotRepository};
-use spacetimedb_table::{indexes::RowPointer, page_pool::PagePool, table::RowRef};
+use spacetimedb_table::{
+    indexes::RowPointer,
+    page_pool::PagePool,
+    table::{RowRef, TableScanIter},
+};
 use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -138,6 +141,18 @@ impl Locking {
     /// There may eventually be better way to do this, but this will have to do for now.
     pub fn rebuild_state_after_replay(&self) -> Result<()> {
         let mut committed_state = self.committed_state.write_arc();
+
+        // Prior versions of `RelationalDb::migrate_system_tables` (defined in the `core` crate)
+        // initialized newly-created system sequences to `allocation: 4097`,
+        // while `committed_state::bootstrap_system_tables` sets `allocation: 4096`.
+        // This affected the system table migration which added
+        // `st_view_view_id_seq` and `st_view_arg_id_seq`.
+        // As a result, when replaying these databases' commitlogs without a snapshot,
+        // we will end up with two rows in `st_sequence` for each of these sequences,
+        // resulting in a unique constraint violation in `CommittedState::build_indexes`.
+        // We fix this by, for each system sequence, deleting all but the row with the highest allocation.
+        committed_state.fixup_delete_duplicate_system_sequence_rows();
+
         // `build_missing_tables` must be called before indexes.
         // Honestly this should maybe just be one big procedure.
         // See John Carmack's philosophy on this.
@@ -157,11 +172,12 @@ impl Locking {
     /// The provided closure will be called for each transaction found in the
     /// history, the parameter is the transaction's offset. The closure is called
     /// _before_ the transaction is applied to the database state.
-    pub fn replay<F: FnMut(u64)>(&self, progress: F) -> Replay<F> {
+    pub fn replay<F: FnMut(u64)>(&self, progress: F, error_behavior: ErrorBehavior) -> Replay<F> {
         Replay {
             database_identity: self.database_identity,
             committed_state: self.committed_state.clone(),
             progress: RefCell::new(progress),
+            error_behavior,
         }
     }
 
@@ -282,12 +298,8 @@ impl Locking {
             tx_offset,
         );
 
-        let CommittedState {
-            ref mut tables,
-            ref blob_store,
-            ..
-        } = *committed_state;
-        let snapshot_dir = repo.create_snapshot(tables.values_mut(), blob_store, tx_offset)?;
+        let (tables, blob_store) = committed_state.persistent_tables_and_blob_store();
+        let snapshot_dir = repo.create_snapshot(tables, blob_store, tx_offset)?;
 
         Ok(Some((tx_offset, snapshot_dir)))
     }
@@ -384,7 +396,7 @@ impl Tx for Locking {
 
 impl TxDatastore for Locking {
     type IterTx<'a>
-        = IterTx<'a>
+        = TableScanIter<'a>
     where
         Self: 'a;
     type IterByColRangeTx<'a, R: RangeBounds<AlgebraicValue>>
@@ -392,7 +404,7 @@ impl TxDatastore for Locking {
     where
         Self: 'a;
     type IterByColEqTx<'a, 'r>
-        = IterByColRangeTx<'a, &'r AlgebraicValue>
+        = IterByColEqTx<'a, 'r>
     where
         Self: 'a;
 
@@ -471,7 +483,7 @@ impl MutTxDatastore for Locking {
         Self: 'a;
     type IterByColRangeMutTx<'a, R: RangeBounds<AlgebraicValue>> = IterByColRangeMutTx<'a, R>;
     type IterByColEqMutTx<'a, 'r>
-        = IterByColRangeMutTx<'a, &'r AlgebraicValue>
+        = IterByColEqMutTx<'a, 'r>
     where
         Self: 'a;
 
@@ -938,6 +950,8 @@ impl MutTx for Locking {
         tx.rollback()
     }
 
+    /// This method only updates the in-memory `committed_state`.
+    /// For durability, see `RelationalDB::commit_tx`.
     fn commit_mut_tx(&self, tx: Self::MutTx) -> Result<Option<(TxOffset, TxData, TxMetrics, String)>> {
         Ok(Some(tx.commit()))
     }
@@ -948,12 +962,10 @@ impl Locking {
         tx.rollback_downgrade(workload)
     }
 
-    pub fn commit_mut_tx_downgrade(
-        &self,
-        tx: MutTxId,
-        workload: Workload,
-    ) -> Result<Option<(TxData, TxMetrics, TxId)>> {
-        Ok(Some(tx.commit_downgrade(workload)))
+    /// This method only updates the in-memory `committed_state`.
+    /// For durability, see `RelationalDB::commit_tx_downgrade`.
+    pub fn commit_mut_tx_downgrade(&self, tx: MutTxId, workload: Workload) -> (TxData, TxMetrics, TxId) {
+        tx.commit_downgrade(workload)
     }
 }
 
@@ -975,6 +987,7 @@ pub struct Replay<F> {
     database_identity: Identity,
     committed_state: Arc<RwLock<CommittedState>>,
     progress: RefCell<F>,
+    error_behavior: ErrorBehavior,
 }
 
 impl<F> Replay<F> {
@@ -985,6 +998,7 @@ impl<F> Replay<F> {
             committed_state: &mut committed_state,
             progress: &mut *self.progress.borrow_mut(),
             dropped_table_names: IntMap::default(),
+            error_behavior: self.error_behavior,
         };
         f(&mut visitor)
     }
@@ -1086,6 +1100,19 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::Decoder for &mut Replay<F> {
 // the indexes and constraints as they changed during replay, but that is
 // unnecessary.
 
+/// What to do when encountering an error during commitlog replay due to an invalid TX.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum ErrorBehavior {
+    /// Return an error and refuse to continue.
+    ///
+    /// This is the behavior in production, as we don't want to reconstruct an incorrect state.
+    FailFast,
+    /// Log a warning and continue replay.
+    ///
+    /// This behavior is used when inspecting broken commitlogs during debugging.
+    Warn,
+}
+
 struct ReplayVisitor<'a, F> {
     database_identity: &'a Identity,
     committed_state: &'a mut CommittedState,
@@ -1094,6 +1121,23 @@ struct ReplayVisitor<'a, F> {
     // info is gone. We save the name on the first delete of that table so metrics
     // can still show a name.
     dropped_table_names: IntMap<TableId, Box<str>>,
+    error_behavior: ErrorBehavior,
+}
+
+impl<F> ReplayVisitor<'_, F> {
+    /// Process `err` according to `self.error_behavior`,
+    /// either warning about it or returning it.
+    ///
+    /// If this method returns an `Err`, the caller should bubble up that error with `?`.
+    fn process_error(&self, err: ReplayError) -> std::result::Result<(), ReplayError> {
+        match self.error_behavior {
+            ErrorBehavior::FailFast => Err(err),
+            ErrorBehavior::Warn => {
+                log::warn!("{err:?}");
+                Ok(())
+            }
+        }
+    }
 }
 
 impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVisitor<'_, F> {
@@ -1122,14 +1166,18 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
         let schema = self.committed_state.schema_for_table(table_id)?;
         let row = ProductValue::decode(schema.get_row_type(), reader)?;
 
-        self.committed_state
+        if let Err(e) = self
+            .committed_state
             .replay_insert(table_id, &schema, &row)
             .with_context(|| {
                 format!(
                     "Error inserting row {:?} during transaction {:?} playback",
                     row, self.committed_state.next_tx_offset
                 )
-            })?;
+            })
+        {
+            self.process_error(e.into())?;
+        }
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         DB_METRICS
@@ -1158,14 +1206,18 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
                 .insert(st_table_row.table_id, st_table_row.table_name);
         }
 
-        self.committed_state
+        if let Err(e) = self
+            .committed_state
             .replay_delete_by_rel(table_id, &row)
             .with_context(|| {
                 format!(
                     "Error deleting row {:?} from table {:?} during transaction {:?} playback",
                     row, table_name, self.committed_state.next_tx_offset
                 )
-            })?;
+            })
+        {
+            self.process_error(e.into())?;
+        }
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
         DB_METRICS
@@ -1185,17 +1237,20 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
                 if let Some(name) = self.dropped_table_names.remove(&table_id) {
                     name
                 } else {
-                    return Err(anyhow!("Error looking up name for truncated table {table_id:?}").into());
+                    return self
+                        .process_error(anyhow!("Error looking up name for truncated table {table_id:?}").into());
                 }
             }
         };
 
-        self.committed_state.replay_truncate(table_id).with_context(|| {
+        if let Err(e) = self.committed_state.replay_truncate(table_id).with_context(|| {
             format!(
                 "Error truncating table {:?} during transaction {:?} playback",
                 table_id, self.committed_state.next_tx_offset
             )
-        })?;
+        }) {
+            self.process_error(e.into())?;
+        }
 
         // NOTE: the `rdb_num_table_rows` metric is used by the query optimizer,
         // and therefore has performance implications and must not be disabled.
@@ -1229,9 +1284,7 @@ impl<F: FnMut(u64)> spacetimedb_commitlog::payload::txdata::Visitor for ReplayVi
     }
 
     fn visit_tx_end(&mut self) -> std::result::Result<(), Self::Error> {
-        self.committed_state.next_tx_offset += 1;
-
-        Ok(())
+        self.committed_state.replay_end_tx().map_err(Into::into)
     }
 }
 
@@ -2692,7 +2745,7 @@ mod tests {
         let index_id = datastore.index_id_from_name_mut_tx(&tx, "index")?.unwrap();
         let find_row_by_key = |tx: &MutTxId, key: u32| {
             let key: AlgebraicValue = key.into();
-            tx.index_scan(table_id, index_id, &key)
+            Datastore::index_scan_range(tx, table_id, index_id, &key)
                 .unwrap()
                 .map(|row| row.pointer())
                 .collect::<Vec<_>>()
@@ -3662,6 +3715,20 @@ mod tests {
             }
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_committed_and_rollback_metrics() -> ResultTest<()> {
+        let datastore = get_datastore()?;
+
+        let tx = begin_mut_tx(&datastore);
+        let (_, _, metrics, _) = tx.commit();
+        assert!(metrics.committed);
+
+        let tx = begin_mut_tx(&datastore);
+        let (_, metrics, _) = tx.rollback();
+        assert!(!metrics.committed);
         Ok(())
     }
 }

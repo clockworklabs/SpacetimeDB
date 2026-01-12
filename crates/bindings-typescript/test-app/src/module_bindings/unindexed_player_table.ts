@@ -13,7 +13,7 @@ import Point from './point_type';
 
 export default __t.row({
   id: __t.u32().primaryKey(),
-  ownerId: __t.identity(),
+  ownerId: __t.identity().name('owner_id'),
   name: __t.string(),
   get location() {
     return Point;

@@ -61,6 +61,7 @@ impl insert_result_identity_string for super::RemoteReducers {
         InsertResultIdentityStringCallbackId(self.imp.on_reducer(
             "insert_result_identity_string",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

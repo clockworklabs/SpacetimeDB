@@ -1,4 +1,6 @@
 #include "Tests/TestHandler.h"
+
+#include "ModuleBindings/Types/OneUuidType.g.h"
 #include "Tests/TestCounter.h"
 #include "Tests/CommonTestFunctions.h"
 
@@ -1683,5 +1685,30 @@ void ULargeTableActionHandler::OnDeleteLargeTable(const FEventContext& Context, 
 	else
 	{
 		Counter->MarkFailure(Name, "Unexpected Value!");
+	}
+}
+void UUuidActionsHandler::OnInsertCallUuidV4(const FEventContext& Context, const FOneUuidType& Value)
+{
+	if (Value.U.IsValid() && Value.U != FSpacetimeDBUuid::Nil())
+	{
+		Counter->MarkSuccess(TEXT("InsertCallUuidV4"));
+	}
+	else
+	{
+		FString ErrorMessage = FString::Printf(TEXT("Invalid UUID value: %s"), *Value.U.ToString());
+		Counter->MarkFailure(TEXT("InsertCallUuidV4"), ErrorMessage);
+	}
+}
+
+void UUuidActionsHandler::OnInsertCallUuidV7(const FEventContext& Context, const FOneUuidType& Value)
+{
+	if (Value.U.IsValid() && Value.U != FSpacetimeDBUuid::Nil())
+	{
+		Counter->MarkSuccess(TEXT("InsertCallUuidV7"));
+	}
+	else
+	{
+		FString ErrorMessage = FString::Printf(TEXT("Invalid UUID value: %s"), *Value.U.ToString());
+		Counter->MarkFailure(TEXT("InsertCallUuidV7"), ErrorMessage);
 	}
 }

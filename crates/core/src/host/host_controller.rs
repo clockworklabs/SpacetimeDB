@@ -16,10 +16,11 @@ use crate::module_host_context::ModuleCreationContext;
 use crate::replica_context::ReplicaContext;
 use crate::subscription::module_subscription_actor::ModuleSubscriptions;
 use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager, TransactionOffset};
+use crate::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use crate::util::asyncify;
 use crate::util::jobs::{JobCores, SingleCoreExecutor};
 use crate::worker_metrics::WORKER_METRICS;
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, bail, Context};
 use async_trait::async_trait;
 use durability::{Durability, EmptyHistory};
 use log::{info, trace, warn};
@@ -41,10 +42,12 @@ use spacetimedb_table::page_pool::PagePool;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tempfile::TempDir;
 use tokio::sync::{watch, OwnedRwLockReadGuard, OwnedRwLockWriteGuard, RwLock as AsyncRwLock};
 use tokio::task::AbortHandle;
+use tokio::time::error::Elapsed;
+use tokio::time::{interval_at, timeout, Instant};
 
 // TODO:
 //
@@ -103,9 +106,11 @@ pub struct HostController {
     runtimes: Arc<HostRuntimes>,
     /// The CPU cores that are reserved for ModuleHost operations to run on.
     db_cores: JobCores,
+    /// The pool of buffers used to build `BsatnRowList`s in subscriptions.
+    pub bsatn_rlb_pool: BsatnRowListBuilderPool,
 }
 
-struct HostRuntimes {
+pub(crate) struct HostRuntimes {
     wasmtime: WasmtimeRuntime,
     v8: V8Runtime,
 }
@@ -180,6 +185,12 @@ pub struct ProcedureCallResult {
 }
 
 #[derive(Debug)]
+pub enum CallResult {
+    Reducer(ReducerCallResult),
+    Procedure(ProcedureCallResult),
+}
+
+#[derive(Debug)]
 pub struct CallProcedureReturn {
     pub result: Result<ProcedureCallResult, ProcedureCallError>,
     pub tx_offset: Option<TransactionOffset>,
@@ -203,6 +214,7 @@ impl HostController {
             runtimes: HostRuntimes::new(Some(&data_dir)),
             data_dir,
             page_pool: PagePool::new(default_config.page_pool_max_size),
+            bsatn_rlb_pool: BsatnRowListBuilderPool::new(),
             db_cores,
         }
     }
@@ -252,17 +264,23 @@ impl HostController {
     ) -> anyhow::Result<watch::Receiver<ModuleHost>> {
         // Try a read lock first.
         {
-            let guard = self.acquire_read_lock(replica_id).await;
-            if let Some(host) = &*guard {
-                trace!("cached host {}/{}", database.database_identity, replica_id);
-                return Ok(host.module.subscribe());
+            if let Ok(guard) = self.acquire_read_lock(replica_id).await {
+                if let Some(host) = &*guard {
+                    trace!("cached host {}/{}", database.database_identity, replica_id);
+                    return Ok(host.module.subscribe());
+                }
             }
         }
 
         // We didn't find a running module, so take a write lock.
         // Since [`tokio::sync::RwLock`] doesn't support upgrading of read locks,
         // we'll need to check again if a module was added meanwhile.
-        let mut guard = self.acquire_write_lock(replica_id).await;
+        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
+            bail!(
+                "unable to lock database {} for initialization",
+                database.database_identity
+            );
+        };
         if let Some(host) = &*guard {
             trace!(
                 "cached host {}/{} (lock upgrade)",
@@ -324,6 +342,7 @@ impl HostController {
             // core - there's not a concern that we'll only end up using 1/2
             // of the actual cores.
             self.db_cores.take(),
+            self.bsatn_rlb_pool.clone(),
         )
         .await
     }
@@ -381,7 +400,9 @@ impl HostController {
             program.hash
         );
 
-        let mut guard = self.acquire_write_lock(replica_id).await;
+        let Ok(mut guard) = self.acquire_write_lock(replica_id).await else {
+            bail!("unable to lock database {} for update", database.database_identity);
+        };
 
         // `HostController::clone` is fast,
         // as all of its fields are either `Copy` or wrapped in `Arc`.
@@ -453,24 +474,68 @@ impl HostController {
             program.hash
         );
 
-        let guard = self.acquire_read_lock(replica_id).await;
+        let Ok(guard) = self.acquire_read_lock(replica_id).await else {
+            bail!(
+                "unable to lock database {} for migration planning",
+                database.database_identity
+            );
+        };
         let host = guard.as_ref().ok_or(NoSuchModule)?;
 
-        host.migrate_plan(host_type, program, style).await
+        host.migrate_plan(
+            self.page_pool.clone(),
+            self.bsatn_rlb_pool.clone(),
+            &self.runtimes,
+            host_type,
+            program,
+            style,
+        )
+        .await
     }
 
     /// Release all resources of the [`ModuleHost`] identified by `replica_id`,
     /// and deregister it from the controller.
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn exit_module_host(&self, replica_id: u64) -> Result<(), anyhow::Error> {
-        trace!("exit module host {replica_id}");
-        let lock = self.hosts.lock().remove(&replica_id);
-        if let Some(lock) = lock {
-            if let Some(host) = lock.write_owned().await.take() {
-                let module = host.module.borrow().clone();
-                module.exit().await;
-                let table_names = module.info().module_def.tables().map(|t| t.name.deref());
-                remove_database_gauges(&module.info().database_identity, table_names);
+        let Some(lock) = self.hosts.lock().remove(&replica_id) else {
+            return Ok(());
+        };
+        // To debug the potential deadlock issue reported in
+        // https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
+        // we'll log a warning every 5s if we can't acquire an exclusive lock.
+        let start = Instant::now();
+        let mut t = interval_at(start + Duration::from_secs(5), Duration::from_secs(5));
+        // Spawn so we don't lose our place in the queue.
+        let mut excl = tokio::spawn(lock.write_owned());
+        loop {
+            tokio::select! {
+                guard = &mut excl => {
+                    let Ok(mut guard) = guard else {
+                        warn!("cancelled shutdown of module of replica {replica_id}");
+                        break;
+                    };
+                    let Some(host) = guard.take() else {
+                        break;
+                    };
+                    let module = host.module.borrow().clone();
+                    let info = module.info();
+                    info!("exiting replica {} of database {}", replica_id, info.database_identity);
+                    module.exit().await;
+                    let db = &module.replica_ctx().relational_db;
+                    db.shutdown().await;
+                    let table_names = info.module_def.tables().map(|t| t.name.deref());
+                    remove_database_gauges(&info.database_identity, table_names);
+                    info!("replica {} of database {} exited", replica_id, info.database_identity);
+
+                    break;
+                },
+                _ = t.tick() => {
+                    warn!(
+                        "blocked waiting to exit module for replica {} since {}s",
+                        replica_id,
+                        start.elapsed().as_secs_f32()
+                    );
+                }
             }
         }
 
@@ -485,7 +550,10 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn get_module_host(&self, replica_id: u64) -> Result<ModuleHost, NoSuchModule> {
         trace!("get module host {replica_id}");
-        let guard = self.acquire_read_lock(replica_id).await;
+        let guard = self.acquire_read_lock(replica_id).await.map_err(|_| {
+            warn!("timeout waiting for read lock on replica {replica_id} in `get_module_host`");
+            NoSuchModule
+        })?;
         guard
             .as_ref()
             .map(|Host { module, .. }| module.borrow().clone())
@@ -500,7 +568,10 @@ impl HostController {
     #[tracing::instrument(level = "trace", skip_all)]
     pub async fn watch_module_host(&self, replica_id: u64) -> Result<watch::Receiver<ModuleHost>, NoSuchModule> {
         trace!("watch module host {replica_id}");
-        let guard = self.acquire_read_lock(replica_id).await;
+        let guard = self.acquire_read_lock(replica_id).await.map_err(|_| {
+            warn!("timeout waiting for read lock on {replica_id} in `watch_module_host`");
+            NoSuchModule
+        })?;
         guard
             .as_ref()
             .map(|Host { module, .. }| module.subscribe())
@@ -510,7 +581,13 @@ impl HostController {
     /// `true` if the module host `replica_id` is currently registered with
     /// the controller.
     pub async fn has_module_host(&self, replica_id: u64) -> bool {
-        self.acquire_read_lock(replica_id).await.is_some()
+        let Ok(maybe_host) = self.acquire_read_lock(replica_id).await else {
+            warn!("timeout waiting for read lock on replica {replica_id} in `has_module_host`");
+            // Technically, we have it.
+            return true;
+        };
+
+        maybe_host.is_some()
     }
 
     /// On-panic callback passed to [`ModuleHost`]s created by this controller.
@@ -525,14 +602,22 @@ impl HostController {
         }
     }
 
-    async fn acquire_write_lock(&self, replica_id: u64) -> OwnedRwLockWriteGuard<Option<Host>> {
+    /// Acquire a write lock on the [HostCell] for `replica_id`.
+    ///
+    /// This will time out after 5s to aid debugging of
+    /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
+    async fn acquire_write_lock(&self, replica_id: u64) -> Result<OwnedRwLockWriteGuard<Option<Host>>, Elapsed> {
         let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        lock.write_owned().await
+        timeout(Duration::from_secs(5), lock.write_owned()).await
     }
 
-    async fn acquire_read_lock(&self, replica_id: u64) -> OwnedRwLockReadGuard<Option<Host>> {
+    /// Acquire a read lock on the [HostCell] for `replica_id`.
+    ///
+    /// This will time out after 5s to aid debugging of
+    /// https://github.com/clockworklabs/SpacetimeDBPrivate/issues/2337
+    async fn acquire_read_lock(&self, replica_id: u64) -> Result<OwnedRwLockReadGuard<Option<Host>>, Elapsed> {
         let lock = self.hosts.lock().entry(replica_id).or_default().clone();
-        lock.read_owned().await
+        timeout(Duration::from_secs(5), lock.read_owned()).await
     }
 
     async fn try_init_host(&self, database: Database, replica_id: u64) -> anyhow::Result<Host> {
@@ -553,6 +638,7 @@ async fn make_replica_ctx(
     database: Database,
     replica_id: u64,
     relational_db: Arc<RelationalDB>,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) -> anyhow::Result<ReplicaContext> {
     let logger = tokio::task::block_in_place(move || Arc::new(DatabaseLogger::open_today(path.module_logs())));
     let send_worker_queue = spawn_send_worker(Some(database.database_identity));
@@ -560,7 +646,8 @@ async fn make_replica_ctx(
         send_worker_queue.clone(),
     )));
     let downgraded = Arc::downgrade(&subscriptions);
-    let subscriptions = ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue);
+    let subscriptions =
+        ModuleSubscriptions::new(relational_db.clone(), subscriptions, send_worker_queue, bsatn_rlb_pool);
 
     // If an error occurs when evaluating a subscription,
     // we mark each client that was affected,
@@ -657,11 +744,12 @@ async fn launch_module(
     replica_dir: ReplicaDir,
     runtimes: Arc<HostRuntimes>,
     executor: SingleCoreExecutor,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
 ) -> anyhow::Result<(Program, LaunchedModule)> {
     let db_identity = database.database_identity;
     let host_type = database.host_type;
 
-    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db)
+    let replica_ctx = make_replica_ctx(replica_dir, database, replica_id, relational_db, bsatn_rlb_pool)
         .await
         .map(Arc::new)?;
     let (scheduler, scheduler_starter) = Scheduler::open(replica_ctx.relational_db.clone());
@@ -767,6 +855,7 @@ impl Host {
             runtimes,
             persistence,
             page_pool,
+            bsatn_rlb_pool,
             ..
         } = host_controller;
         let on_panic = host_controller.unregister_fn(replica_id);
@@ -775,7 +864,6 @@ impl Host {
 
         let (db, connected_clients) = match config.storage {
             db::Storage::Memory => RelationalDB::open(
-                &replica_dir,
                 database.database_identity,
                 database.owner_identity,
                 EmptyHistory::new(),
@@ -784,23 +872,27 @@ impl Host {
                 page_pool.clone(),
             )?,
             db::Storage::Disk => {
-                // Open a read-only copy of the local durability to replay from.
-                let (history, _) = relational_db::local_durability(
-                    replica_dir.commit_log(),
-                    // No need to include a snapshot request channel here, 'cause we're only reading from this instance.
-                    None,
-                )
-                .await?;
+                // Replay from the local state.
+                let history = relational_db::local_history(&replica_dir).await?;
                 let persistence = persistence.persistence(&database, replica_id).await?;
-                let (db, clients) = RelationalDB::open(
-                    &replica_dir,
-                    database.database_identity,
-                    database.owner_identity,
-                    history,
-                    Some(persistence),
-                    Some(tx_metrics_queue),
-                    page_pool.clone(),
-                )
+                // Loading a database from persistent storage involves heavy
+                // blocking I/O. `asyncify` to avoid blocking the async worker.
+                let (db, clients) = asyncify({
+                    let database_identity = database.database_identity;
+                    let owner_identity = database.owner_identity;
+                    let page_pool = page_pool.clone();
+                    move || {
+                        RelationalDB::open(
+                            database_identity,
+                            owner_identity,
+                            history,
+                            Some(persistence),
+                            Some(tx_metrics_queue),
+                            page_pool,
+                        )
+                    }
+                })
+                .await
                 // Make sure we log the source chain of the error
                 // as a single line, with the help of `anyhow`.
                 .map_err(anyhow::Error::from)
@@ -833,6 +925,7 @@ impl Host {
             replica_dir,
             runtimes.clone(),
             host_controller.db_cores.take(),
+            bsatn_rlb_pool.clone(),
         )
         .await?;
 
@@ -904,6 +997,7 @@ impl Host {
         database: Database,
         program: Program,
         executor: SingleCoreExecutor,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
     ) -> anyhow::Result<Arc<ModuleInfo>> {
         // Even in-memory databases acquire a lockfile.
         // Grab a tempdir to put that lockfile in.
@@ -914,7 +1008,6 @@ impl Host {
         let phony_replica_dir = ReplicaDir::from_path_unchecked(phony_replica_dir.path().to_owned());
 
         let (db, _connected_clients) = RelationalDB::open(
-            &phony_replica_dir,
             database.database_identity,
             database.owner_identity,
             EmptyHistory::new(),
@@ -936,6 +1029,7 @@ impl Host {
             phony_replica_dir,
             runtimes.clone(),
             executor,
+            bsatn_rlb_pool,
         )
         .await?;
 
@@ -1035,13 +1129,17 @@ impl Host {
     /// Generate a migration plan for the given `program`.
     async fn migrate_plan(
         &self,
+        page_pool: PagePool,
+        bsatn_rlb_pool: BsatnRowListBuilderPool,
+        host_runtimes: &Arc<HostRuntimes>,
         host_type: HostType,
         program: Program,
         style: PrettyPrintStyle,
     ) -> anyhow::Result<MigratePlanResult> {
         let old_module = self.module.borrow().info.clone();
 
-        let module_def = extract_schema(program.bytes, host_type).await?;
+        let module_def =
+            extract_schema_with_pools(page_pool, bsatn_rlb_pool, host_runtimes, program.bytes, host_type).await?;
 
         let res = match ponder_migrate(&old_module.module_def, &module_def) {
             Ok(plan) => MigratePlanResult::Success {
@@ -1059,6 +1157,10 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
+        info!(
+            "dropping host {}/{}",
+            self.replica_ctx.database.database_identity, self.replica_ctx.replica_id
+        );
         self.disk_metrics_recorder_task.abort();
         self.tx_metrics_recorder_task.abort();
         self.view_cleanup_task.abort();
@@ -1118,7 +1220,13 @@ async fn metric_reporter(replica_ctx: Arc<ReplicaContext>) {
 /// Extracts the schema from a given module.
 ///
 /// Spins up a dummy host and returns the `ModuleDef` that it extracts.
-pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> anyhow::Result<ModuleDef> {
+pub(crate) async fn extract_schema_with_pools(
+    page_pool: PagePool,
+    bsatn_rlb_pool: BsatnRowListBuilderPool,
+    runtimes: &Arc<HostRuntimes>,
+    program_bytes: Box<[u8]>,
+    host_type: HostType,
+) -> anyhow::Result<ModuleDef> {
     let owner_identity = Identity::from_u256(0xdcba_u32.into());
     let database_identity = Identity::from_u256(0xabcd_u32.into());
     let program = Program::from_bytes(program_bytes);
@@ -1131,10 +1239,9 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
         initial_program: program.hash,
     };
 
-    let runtimes = HostRuntimes::new(None);
-    let page_pool = PagePool::new(None);
     let core = SingleCoreExecutor::in_current_tokio_runtime();
-    let module_info = Host::try_init_in_memory_to_check(&runtimes, page_pool, database, program, core).await?;
+    let module_info =
+        Host::try_init_in_memory_to_check(runtimes, page_pool, database, program, core, bsatn_rlb_pool).await?;
     // this should always succeed, but sometimes it doesn't
     let module_def = match Arc::try_unwrap(module_info) {
         Ok(info) => info.module_def,
@@ -1142,6 +1249,20 @@ pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> an
     };
 
     Ok(module_def)
+}
+
+/// Extracts the schema from a given module.
+///
+/// Spins up a dummy host and returns the `ModuleDef` that it extracts.
+pub async fn extract_schema(program_bytes: Box<[u8]>, host_type: HostType) -> anyhow::Result<ModuleDef> {
+    extract_schema_with_pools(
+        PagePool::new(None),
+        BsatnRowListBuilderPool::new(),
+        &HostRuntimes::new(None),
+        program_bytes,
+        host_type,
+    )
+    .await
 }
 
 // Remove all gauges associated with a database.

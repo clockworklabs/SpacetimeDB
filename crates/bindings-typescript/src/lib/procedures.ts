@@ -21,6 +21,7 @@ import {
   toCamelCase,
   type CoerceParams,
 } from './util';
+import type { Uuid } from './uuid';
 
 export type ProcedureFn<
   S extends UntypedSchemaDef,
@@ -34,7 +35,10 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
   readonly timestamp: Timestamp;
   readonly connectionId: ConnectionId | null;
   readonly http: HttpClient;
+  readonly counter_uuid: { value: number };
   withTx<T>(body: (ctx: TransactionCtx<S>) => T): T;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -49,8 +53,9 @@ export function procedure<
   const paramsType: ProductType = {
     elements: Object.entries(params).map(([n, c]) => ({
       name: n,
-      algebraicType:
-        'typeBuilder' in c ? c.typeBuilder.algebraicType : c.algebraicType,
+      algebraicType: registerTypesRecursively(
+        'typeBuilder' in c ? c.typeBuilder : c
+      ).algebraicType,
     })),
   };
   const returnType = registerTypesRecursively(ret).algebraicType;

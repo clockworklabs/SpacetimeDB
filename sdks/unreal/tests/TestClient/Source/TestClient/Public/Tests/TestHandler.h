@@ -494,14 +494,14 @@ public:
 	UFUNCTION() void OnDeleteUniqueU32(const FEventContext& Context, const FUniqueU32Type& Value);
 };
 
-
-
-
-
-
-
-
-
+UCLASS()
+class UUuidActionsHandler : public UTestHandler
+{
+	GENERATED_BODY()
+public:
+	UFUNCTION() void OnInsertCallUuidV4(const FEventContext& Context, const FOneUuidType& Value);
+	UFUNCTION() void OnInsertCallUuidV7(const FEventContext& Context, const FOneUuidType& Value);
+};
 
 
 /** Handler used for pk-simple-enum test. */

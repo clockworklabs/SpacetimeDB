@@ -312,7 +312,7 @@ public static class Module
         }
         catch (Exception e)
         {
-            var error_str = e.ToString();
+            var error_str = e.Message ?? e.GetType().FullName;
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
             return Errno.HOST_CALL_FAILURE;
@@ -353,13 +353,16 @@ public static class Module
                 throw new Exception("Unrecognised extra bytes in the procedure arguments");
             }
             resultSink.Write(bytes);
+
             return Errno.OK;
         }
         catch (Exception e)
         {
-            var errorBytes = System.Text.Encoding.UTF8.GetBytes(e.ToString());
-            resultSink.Write(errorBytes);
-            return Errno.HOST_CALL_FAILURE;
+            // Host contract __call_procedure__ must either return Errno.OK or trap.
+            // Returning other errno values here can put the host/runtime in an unexpected state,
+            // so we log and rethrow to trap on any exception.
+            Log.Error($"Error while invoking procedure: {e}");
+            throw;
         }
     }
 
@@ -409,6 +412,15 @@ public static class Module
             return Errno.HOST_CALL_FAILURE;
         }
     }
+}
+
+/// <summary>
+/// Read-write database access for procedure contexts.
+/// The code generator will extend this partial class with table accessors.
+/// </summary>
+public partial class Local
+{
+    // Intentionally empty – generated code adds table handles here.
 }
 
 /// <summary>

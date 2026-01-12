@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'Pull Request Number'
+        description: "Pull Request Number"
         required: false
-        default: ''
+        default: ""
 
 name: CI
 
@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   docker_smoketests:
+    needs: [lints, llm_ci_check]
     name: Smoketests
     strategy:
       matrix:
@@ -60,9 +61,10 @@ jobs:
         with:
           workspaces: ${{ github.workspace }}
           shared-key: spacetimedb
-          cache-on-failure: true
+          cache-on-failure: false
           cache-all-crates: true
           cache-workspace-crates: true
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -107,18 +109,19 @@ jobs:
           dotnet workload config --update-mode manifests
           dotnet workload update
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
+        with: { python-version: "3.12" }
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt
       - name: Run smoketests
         # Note: clear_database and replication only work in private
-        run: python -m smoketests ${{ matrix.smoketest_args }} -x clear_database replication teams
+        run: cargo ci smoketests -- ${{ matrix.smoketest_args }} -x clear_database replication teams
       - name: Stop containers (Linux)
         if: always() && runner.os == 'Linux'
         run: docker compose -f .github/docker-compose.yml down
 
   test:
+    needs: [lints, llm_ci_check]
     name: Test Suite
     runs-on: spacetimedb-new-runner
     container:
@@ -153,6 +156,7 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
@@ -167,34 +171,12 @@ jobs:
         with:
           run_install: true
 
-      - name: Create /stdb dir
-        run: |
-          sudo mkdir /stdb
-          sudo chmod 777 /stdb
-
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript
         run: pnpm build
 
-      - name: Run cargo test
-        #Note: Unreal tests will be run separately
-        run: cargo test --all -- --skip unreal
-
-        # The fallocate tests have been flakely when running in parallel
-      - name: Run fallocate tests
-        run: cargo test -p spacetimedb-durability --features fallocate -- --test-threads=1
-
-      - name: Check that the test outputs are up-to-date
-        run: bash tools/check-diff.sh
-
-      - name: Ensure C# autogen bindings are up-to-date
-        run: |
-          cargo run -p spacetimedb-codegen --example regen-csharp-moduledef
-          bash tools/check-diff.sh crates/bindings-csharp
-
-      - name: C# bindings tests
-        working-directory: crates/bindings-csharp
-        run: dotnet test -warnaserror
+      - name: Run tests
+        run: cargo ci test
 
   lints:
     name: Lints
@@ -219,35 +201,14 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - uses: actions/setup-dotnet@v3
         with:
           global-json-file: global.json
 
-      - name: Run cargo fmt
-        run: cargo fmt --all -- --check
-
-      - name: Run cargo clippy
-        run: cargo clippy --all --tests --benches -- -D warnings
-
-      - name: Run C# formatting check
-        working-directory: crates/bindings-csharp
-        run: |
-          dotnet tool restore
-          dotnet csharpier --check .
-
-      - name: Run `cargo doc` for bindings crate
-        # `bindings` is the only crate we care strongly about documenting,
-        # since we link to its docs.rs from our website.
-        # We won't pass `--no-deps`, though,
-        # since we want everything reachable through it to also work.
-        # This includes `sats` and `lib`.
-        working-directory: crates/bindings
-        env:
-          # Make `cargo doc` exit with error on warnings, most notably broken links
-          RUSTDOCFLAGS: '--deny warnings'
-        run: |
-          cargo doc
+      - name: Run ci lint
+        run: cargo ci lint
 
   wasm_bindings:
     name: Build and test wasm bindings
@@ -271,22 +232,10 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Run bindgen tests
-        run: cargo test -p spacetimedb-codegen
-
-      # Make sure the `Cargo.lock` file reflects the latest available versions.
-      # This is what users would end up with on a fresh module, so we want to
-      # catch any compile errors arising from a different transitive closure
-      # of dependencies than what is in the workspace lock file.
-      #
-      # For context see also: https://github.com/clockworklabs/SpacetimeDB/pull/2714
-      - name: Update dependencies
-        run: cargo update
-
-      - name: Build module-test
-        run: cargo run -p spacetimedb-cli -- build --project-path modules/module-test
-
+        run: cargo ci wasm-bindings
 
   publish_checks:
     name: Check that packages are publishable
@@ -350,6 +299,7 @@ jobs:
 
       - name: Build spacetimedb-update
         run: cargo build --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update
+        if: runner.os == 'Windows'
 
       - name: Run self-install
         env:
@@ -362,6 +312,13 @@ jobs:
           # happens very frequently on the `macos-runner`, but we haven't seen it on any others).
           cargo run --features github-token-auth --target ${{ matrix.target }} -p spacetimedb-update -- self-install --root-dir="${ROOT_DIR}" --yes
           "${ROOT_DIR}"/spacetime --root-dir="${ROOT_DIR}" help
+        if: runner.os == 'Windows'
+
+      - name: Test spacetimedb-update
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cargo ci update-flow --target=${{ matrix.target }} --github-token-auth
+        if: runner.os != 'Windows'
 
   unreal_engine_tests:
     name: Unreal Engine Tests
@@ -386,20 +343,20 @@ jobs:
       # without this (reassigning env vars and stuff), but was unable to get it to work and it felt like an uphill battle.
       options: --user 0:0
     steps:
-# Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
-# commits though.
-#      - name: Find Git ref
-#        env:
-#          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#        shell: bash
-#        run: |
-#          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
-#          if test -n "${PR_NUMBER}"; then
-#            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
-#          else
-#            GIT_REF="${{ github.ref }}"
-#          fi
-#          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+      # Uncomment this before merging so that it will run properly if run manually through the GH actions flow. It was playing weird with rolled back
+      # commits though.
+      #      - name: Find Git ref
+      #        env:
+      #          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #        shell: bash
+      #        run: |
+      #          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+      #          if test -n "${PR_NUMBER}"; then
+      #            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+      #          else
+      #            GIT_REF="${{ github.ref }}"
+      #          fi
+      #          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
@@ -451,6 +408,33 @@ jobs:
               cargo --version
               cargo test -- --test-threads=1
             '
+
+  ci_command_docs:
+    name: Check CI command docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find Git ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          PR_NUMBER="${{ github.event.inputs.pr_number || null }}"
+          if test -n "${PR_NUMBER}"; then
+            GIT_REF="$( gh pr view --repo clockworklabs/SpacetimeDB $PR_NUMBER --json headRefName --jq .headRefName )"
+          else
+            GIT_REF="${{ github.ref }}"
+          fi
+          echo "GIT_REF=${GIT_REF}" >>"$GITHUB_ENV"
+
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.GIT_REF }}
+
+      - uses: dsherret/rust-toolchain-file@v1
+
+      - name: Check for docs change
+        run: cargo ci self-docs --check
 
   cli_docs:
     name: Check CLI docs
@@ -512,20 +496,31 @@ jobs:
           shared-key: spacetimedb
           # Let the smoketests job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Check for docs change
         run: |
-          cargo run --features markdown-docs -p spacetimedb-cli > docs/docs/cli-reference.md
-          pnpm format
-          git status
-          if git diff --exit-code HEAD -- docs/docs/cli-reference.md; then
-            echo "No docs changes detected"
-          else
-            echo "It looks like the CLI docs have changed:"
-            exit 1
-          fi
+          cargo ci cli-docs
+
+  llm_ci_check:
+    name: Verify LLM benchmark is up to date
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run hash check (both langs)
+        run: cargo llm ci-check
 
   unity-testsuite:
+    needs: [lints, llm_ci_check]
+    # Skip if this is an external contribution.
+    # The license secrets will be empty, so the step would fail anyway.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
     permissions:
       contents: read
       checks: write
@@ -572,7 +567,7 @@ jobs:
           cat Cargo.toml
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dsherret/rust-toolchain-file@v1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -581,6 +576,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -640,8 +636,8 @@ jobs:
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
-          unityVersion: 2022.3.32f1  # Adjust Unity version to a valid tag
-          projectPath: demo/Blackholio/client-unity  # Path to the Unity project subdirectory
+          unityVersion: 2022.3.32f1 # Adjust Unity version to a valid tag
+          projectPath: demo/Blackholio/client-unity # Path to the Unity project subdirectory
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           testMode: playmode
           useHostNetwork: true
@@ -650,11 +646,9 @@ jobs:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
-        # Skip if this is an external contribution.
-        # The license secrets will be empty, so the step would fail anyway.
-        if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
 
   csharp-testsuite:
+    needs: [lints, llm_ci_check]
     runs-on: spacetimedb-new-runner
     container:
       image: localhost:5000/spacetimedb-ci:latest
@@ -699,7 +693,7 @@ jobs:
         run: dotnet format --no-restore --verify-no-changes SpacetimeDB.ClientSDK.sln
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dsherret/rust-toolchain-file@v1
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -708,6 +702,7 @@ jobs:
           shared-key: spacetimedb
           # Let the main CI job save the cache since it builds the most things
           save-if: false
+          prefix-key: v1
 
       - name: Install SpacetimeDB CLI from the local checkout
         run: |
@@ -715,6 +710,20 @@ jobs:
           cargo install --force --path crates/standalone --locked --message-format=short
           # Add a handy alias using the old binary name, so that we don't have to rewrite all scripts (incl. in submodules).
           ln -sf $CARGO_HOME/bin/spacetimedb-cli $CARGO_HOME/bin/spacetime
+
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # ChatGPT suspects that this could be due to different build invocations using the same target dir,
+      # and this makes sense to me because we only see it in this job where we mix `cargo build -p` with
+      # `cargo build --manifest-path` (which apparently build different dependency trees).
+      # However, we've been unable to fix it so... /shrug
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
 
       - name: Check quickstart-chat bindings are up to date
         working-directory: sdks/csharp
@@ -746,3 +755,129 @@ jobs:
               echo 'Error: Bindings are dirty. Please run `sdks/csharp/tools~/gen-regression-tests.sh`.'
               exit 1
           }
+
+  internal-tests:
+    name: Internal Tests
+    needs: [lints, llm_ci_check]
+    # Skip if not a PR or a push to master
+    # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
+    if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))
+      && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      TARGET_OWNER: clockworklabs
+      TARGET_REPO: SpacetimeDBPrivate
+    steps:
+      - id: dispatch
+        name: Trigger tests
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const workflowId = 'ci.yml';
+            const targetRef = 'master';
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
+            const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
+            const preDispatch = new Date().toISOString();
+  
+            // Dispatch the workflow in the target repository
+            await github.rest.actions.createWorkflowDispatch({
+              owner: targetOwner,
+              repo: targetRepo,
+              workflow_id: workflowId,
+              ref: targetRef,
+              inputs: { public_ref: publicRef }
+            });
+  
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  
+            // Find the dispatched run by name
+            let runId = null;
+            for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
+              await sleep(5000);
+              const runsResp = await github.rest.actions.listWorkflowRuns({
+                owner: targetOwner,
+                repo: targetRepo,
+                workflow_id: workflowId,
+                event: 'workflow_dispatch',
+                branch: targetRef,
+                per_page: 50,
+              });
+  
+              const expectedName = `CI [public_ref=${publicRef}]`;
+              const candidates = runsResp.data.workflow_runs
+                .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  
+              if (candidates.length > 0) {
+                runId = candidates[0].id;
+                break;
+              }
+            }
+  
+            if (!runId) {
+              core.setFailed('Failed to locate dispatched run in the private repository.');
+              return;
+            }
+  
+            const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
+            core.info(`View run: ${runUrl}`);
+            core.setOutput('run_id', String(runId));
+            core.setOutput('run_url', runUrl);
+  
+      - name: Wait for Internal Tests to complete
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
+            const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
+            const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  
+            core.info(`Waiting for workflow result... ${runUrl}`);
+  
+            let conclusion = null;
+            for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
+              const runResp = await github.rest.actions.getWorkflowRun({
+                owner: targetOwner,
+                repo: targetRepo,
+                run_id: runId
+              });
+              const { status, conclusion: c } = runResp.data;
+              if (status === 'completed') {
+                conclusion = c || 'success';
+                break;
+              }
+              await sleep(30000);
+            }
+  
+            if (!conclusion) {
+              core.setFailed('Timed out waiting for private workflow to complete.');
+              return;
+            }
+  
+            if (conclusion !== 'success') {
+              core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
+            }
+  
+      - name: Cancel invoked run if workflow cancelled
+        if: ${{ cancelled() }}
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.SPACETIMEDB_PRIVATE_TOKEN }}
+          script: |
+            const targetOwner = process.env.TARGET_OWNER;
+            const targetRepo = process.env.TARGET_REPO;
+            const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
+            if (!runId) return;
+            await github.rest.actions.cancelWorkflowRun({
+              owner: targetOwner,
+              repo: targetRepo,
+              run_id: runId,
+            });

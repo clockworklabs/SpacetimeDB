@@ -61,6 +61,7 @@ impl insert_result_string_i_32 for super::RemoteReducers {
         InsertResultStringI32CallbackId(self.imp.on_reducer(
             "insert_result_string_i32",
             Box::new(move |ctx: &super::ReducerEventContext| {
+                #[allow(irrefutable_let_patterns)]
                 let super::ReducerEventContext {
                     event:
                         __sdk::ReducerEvent {

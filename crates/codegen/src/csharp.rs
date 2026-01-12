@@ -1101,6 +1101,7 @@ fn ty_fmt<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse) -> impl fmt::Disp
         AlgebraicTypeUse::ScheduleAt => f.write_str("SpacetimeDB.ScheduleAt"),
         AlgebraicTypeUse::Timestamp => f.write_str("SpacetimeDB.Timestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
+        AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt(module, inner_ty)),
         AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
@@ -1141,6 +1142,7 @@ fn ty_fmt_with_ns<'a>(module: &'a ModuleDef, ty: &'a AlgebraicTypeUse, namespace
         AlgebraicTypeUse::ScheduleAt => f.write_str("SpacetimeDB.ScheduleAt"),
         AlgebraicTypeUse::Timestamp => f.write_str("SpacetimeDB.Timestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("SpacetimeDB.TimeDuration"),
+        AlgebraicTypeUse::Uuid => f.write_str("SpacetimeDB.Uuid"),
         AlgebraicTypeUse::Unit => f.write_str("SpacetimeDB.Unit"),
         AlgebraicTypeUse::Option(inner_ty) => write!(f, "{}?", ty_fmt_with_ns(module, inner_ty, namespace)),
         AlgebraicTypeUse::Result { ok_ty, err_ty } => write!(
@@ -1195,14 +1197,15 @@ fn default_init(ctx: &TypespaceForGenerate, ty: &AlgebraicTypeUse) -> Option<&'s
         AlgebraicTypeUse::String => Some(r#""""#),
         // Primitives are initialized to zero automatically.
         AlgebraicTypeUse::Primitive(_) => None,
+        // Result<,> must be explicitly initialized.
+        AlgebraicTypeUse::Result { .. } => Some("default!"),
         // these are structs, they are initialized to zero-filled automatically
         AlgebraicTypeUse::Unit
         | AlgebraicTypeUse::Identity
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
-        | AlgebraicTypeUse::TimeDuration => None,
-        // Result<T, E> is a struct, initialized to the "Ok with default T" variant.
-        AlgebraicTypeUse::Result { .. } => None,
+        | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid => None,
         AlgebraicTypeUse::Never => unimplemented!("never types are not yet supported in C# output"),
     }
 }

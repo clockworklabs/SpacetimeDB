@@ -5,7 +5,7 @@ use pgwire::api::Type;
 use spacetimedb_lib::sats::satn::{PsqlChars, PsqlPrintFmt, PsqlType, TypedWriter};
 use spacetimedb_lib::sats::{satn, ValueWithType};
 use spacetimedb_lib::{
-    ser, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp,
+    ser, AlgebraicType, AlgebraicValue, ProductType, ProductTypeElement, ProductValue, TimeDuration, Timestamp, Uuid,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -56,6 +56,7 @@ pub(crate) fn type_of(schema: &ProductType, ty: &ProductTypeElement) -> Type {
             PsqlPrintFmt::Hex => Type::BYTEA_ARRAY,
             PsqlPrintFmt::Timestamp => Type::TIMESTAMP,
             PsqlPrintFmt::Duration => Type::INTERVAL,
+            PsqlPrintFmt::Uuid => Type::UUID,
             _ => Type::JSON,
         },
         AlgebraicType::Sum(sum) if sum.is_simple_enum() => Type::ANYENUM,
@@ -109,6 +110,11 @@ impl TypedWriter for PsqlFormatter<'_> {
 
     fn write_duration(&mut self, value: TimeDuration) -> Result<(), Self::Error> {
         self.encoder.encode_field(&value.to_iso8601())?;
+        Ok(())
+    }
+
+    fn write_uuid(&mut self, value: Uuid) -> Result<(), Self::Error> {
+        self.encoder.encode_field(&value.to_string())?;
         Ok(())
     }
 
