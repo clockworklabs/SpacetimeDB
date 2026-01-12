@@ -151,12 +151,6 @@ fn exec_anonymous_subscribe_with_query_builder() {
                     }
                     unreachable!("Unexpected identity on insert: `{}`", player.identity)
                 });
-
-                ctx.db.player_level().on_insert(move |_, level| {
-                    if level.level != 0 {
-                        return;
-                    }
-                });
                 ctx.db.player().on_delete(move |_, player| {
                     if player.identity == Identity::from_byte_array([4; 32]) {
                         return put_result(&mut delete_1, Ok(()));
