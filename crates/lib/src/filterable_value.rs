@@ -60,6 +60,10 @@ macro_rules! impl_filterable_value {
         impl FilterableValue for $arg {
             type Column = $col;
         }
+        impl Private for Option<$arg> {}
+        impl FilterableValue for Option<$arg> {
+            type Column = Option<$col>;
+        }
     };
     (@one $arg:ty: Copy) => {
         impl_filterable_value!(@one $arg => $arg);
