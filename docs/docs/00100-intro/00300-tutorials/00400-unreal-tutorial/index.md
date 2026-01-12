@@ -6,7 +6,7 @@ slug: /tutorials/unreal
 
 Need help with the tutorial or CLI commands? [Join our Discord server](https://discord.gg/spacetimedb)!
 
-In this tutorial you'll learn how to build a small-scoped massive multiplayer online action game in Unreal, from scratch, using SpacetimeDB. Although, the game we're going to build is small in scope, it'll scale to hundreds of players and will help you get acquainted with all the features and best practices of SpacetimeDB, while building [a fun little game](https://github.com/ClockworkLabs/Blackholio).
+In this tutorial you'll learn how to build a small-scoped massive multiplayer online action game in Unreal, from scratch, using SpacetimeDB. Although, the game we're going to build is small in scope, it'll scale to hundreds of players and will help you get acquainted with all the features and best practices of SpacetimeDB, while building [a fun little game](https://github.com/clockworklabs/SpacetimeDB/tree/master/demo/Blackholio).
 
 By the end, you should have a basic understanding of what SpacetimeDB offers for developers making multiplayer games.
 
