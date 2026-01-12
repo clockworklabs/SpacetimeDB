@@ -3197,7 +3197,10 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
         // FIX: Pass FArgs directly to InvokeWithArgs instead of creating UReducer UObject.
         // UObject creation/destruction cannot keep up at 30Hz tick rate, causing memory leak.
         // Stack-allocated FArgs struct has zero allocation overhead.
-        writeln!(output, "        Reducers->Invoke{reducer_pascal}WithArgs(Context, Args);");
+        writeln!(
+            output,
+            "        Reducers->Invoke{reducer_pascal}WithArgs(Context, Args);"
+        );
         writeln!(output, "        return;");
         writeln!(output, "    }}");
     }
