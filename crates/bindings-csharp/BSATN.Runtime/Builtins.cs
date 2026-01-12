@@ -53,10 +53,13 @@ internal static class Util
     public static T Read<T>(ReadOnlySpan<byte> source, bool littleEndian)
         where T : struct
     {
-        Debug.Assert(
-            source.Length == Marshal.SizeOf<T>(),
-            $"Error while reading ${typeof(T).FullName}: expected source span to be {Marshal.SizeOf<T>()} bytes long, but was {source.Length} bytes."
-        );
+        var expectedSize = Marshal.SizeOf<T>();
+        if (source.Length != expectedSize)
+        {
+            throw new ArgumentException(
+                $"Error while reading {typeof(T).FullName}: expected source span to be {expectedSize} bytes long, but was {source.Length} bytes."
+            );
+        }
 
         var result = MemoryMarshal.Read<T>(source);
 
@@ -166,8 +169,18 @@ public readonly record struct ConnectionId
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static ConnectionId? FromHexString(string hex) =>
-        FromBigEndian(Util.StringToByteArray(hex));
+    public static ConnectionId? FromHexString(string hex)
+    {
+        if (hex.Length != 32)
+        {
+            throw new ArgumentException(
+                $"Expected ConnectionId hex string to be 32 characters long, but was {hex.Length}.",
+                nameof(hex)
+            );
+        }
+
+        return FromBigEndian(Util.StringToByteArray(hex));
+    }
 
     public static ConnectionId Random()
     {
@@ -268,7 +281,18 @@ public readonly record struct Identity : IEquatable<Identity>, IComparable, ICom
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Identity FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
+    public static Identity FromHexString(string hex)
+    {
+        if (hex.Length != 64)
+        {
+            throw new ArgumentException(
+                $"Expected Identity hex string to be 64 characters long, but was {hex.Length}.",
+                nameof(hex)
+            );
+        }
+
+        return FromBigEndian(Util.StringToByteArray(hex));
+    }
 
     // --- auto-generated ---
     public readonly struct BSATN : IReadWrite<Identity>
