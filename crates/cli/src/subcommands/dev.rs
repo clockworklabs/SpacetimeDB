@@ -37,7 +37,7 @@ pub fn cli() -> Command {
         .about("Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.")
         .arg(
             Arg::new("database")
-                .long("database")
+                .required(false)
                 .help("The database name/identity to publish to (optional, will prompt if not provided)"),
         )
         .arg(
