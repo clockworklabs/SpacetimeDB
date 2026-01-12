@@ -1,0 +1,11 @@
+[package]
+name = "spacetimedb-query-builder"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+spacetimedb-lib = { workspace = true }
+
+[lints]
+workspace = true

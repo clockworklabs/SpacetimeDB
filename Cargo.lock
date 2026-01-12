@@ -7264,6 +7264,7 @@ dependencies = [
  "spacetimedb-bindings-sys 1.11.1",
  "spacetimedb-lib 1.11.1",
  "spacetimedb-primitives 1.11.1",
+ "spacetimedb-query-builder",
  "trybuild",
 ]
 
@@ -8002,6 +8003,13 @@ dependencies = [
  "spacetimedb-primitives 1.11.1",
  "spacetimedb-sql-parser",
  "spacetimedb-table",
+]
+
+[[package]]
+name = "spacetimedb-query-builder"
+version = "1.11.1"
+dependencies = [
+ "spacetimedb-lib 1.11.1",
 ]
 
 [[package]]
