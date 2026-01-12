@@ -66,8 +66,8 @@ impl __sdk::InModule for {type_name} {{
 ",
         );
 
-        // implement Col types for each type which is used as the product type of a table.
-
+        // Do not implement query col types for nested types.
+        // as querying is only supported on top-level table row types.
         let name = type_ref_name(module, typ.ty);
         if let Some(table) = module
             .tables()

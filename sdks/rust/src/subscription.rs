@@ -267,7 +267,7 @@ impl<M: SpacetimeModule> SubscriptionBuilder<M> {
     }
 }
 
-// wrapper around `SubscriptionBuilder` that tracks typed queries
+// Wrapper around `SubscriptionBuilder` that tracks typed queries
 pub struct TypedSubscriptionBuilder<M: SpacetimeModule> {
     builder: SubscriptionBuilder<M>,
     queries: Vec<String>,
