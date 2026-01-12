@@ -65,8 +65,7 @@ export type TableCache<
 export class TableCacheImpl<
   RemoteModule extends UntypedRemoteModule,
   TableName extends TableNamesOf<RemoteModule>,
-> implements ClientTableCoreImplementable<RemoteModule, TableName>
-{
+> implements ClientTableCoreImplementable<RemoteModule, TableName> {
   private rows: Map<
     ComparablePrimitive,
     [RowType<TableDefForTableName<RemoteModule, TableName>>, number]

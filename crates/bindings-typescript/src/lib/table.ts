@@ -173,8 +173,9 @@ export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
 /**
  * A type representing the methods available on a table.
  */
-export interface TableMethods<TableDef extends UntypedTableDef>
-  extends ReadonlyTableMethods<TableDef> {
+export interface TableMethods<
+  TableDef extends UntypedTableDef,
+> extends ReadonlyTableMethods<TableDef> {
   /**
    * Insert and return the inserted row (auto-increment fields filled).
    *

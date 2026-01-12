@@ -190,8 +190,7 @@ class AuthCtxImpl implements AuthCtx {
 // type namespace, so that `ReducerCtx` still refers to the interface.
 export const ReducerCtxImpl = class ReducerCtx<
   SchemaDef extends UntypedSchemaDef,
-> implements IReducerCtx<SchemaDef>
-{
+> implements IReducerCtx<SchemaDef> {
   #identity: Identity | undefined;
   #senderAuth: AuthCtx | undefined;
   #uuidCounter: { value: number } | undefined;

@@ -353,10 +353,8 @@ function renderSelectSqlWithJoins<Table extends TypedTableDef>(
 
 // TODO: Just use UntypedTableDef if they end up being the same.
 export type TypedTableDef<
-  Columns extends Record<
-    string,
-    ColumnBuilder<any, any, ColumnMetadata<any>>
-  > = Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
+  Columns extends Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>> =
+    Record<string, ColumnBuilder<any, any, ColumnMetadata<any>>>,
 > = {
   name: string;
   columns: Columns;
