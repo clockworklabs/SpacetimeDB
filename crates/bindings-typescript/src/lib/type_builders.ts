@@ -149,9 +149,10 @@ type VariantsArrayFromVariantsObj<Obj extends VariantsObj> = {
  * A generic type builder that captures both the TypeScript type
  * and the corresponding `AlgebraicType`.
  */
-export class TypeBuilder<Type, SpacetimeType extends AlgebraicType>
-  implements Optional<Type, SpacetimeType>
-{
+export class TypeBuilder<
+  Type,
+  SpacetimeType extends AlgebraicType,
+> implements Optional<Type, SpacetimeType> {
   /**
    * The TypeScript phantom type. This is not stored at runtime,
    * but is visible to the compiler
@@ -1406,9 +1407,9 @@ export class ProductBuilder<Elements extends ElementsObj>
 }
 
 export class ResultBuilder<
-    Ok extends TypeBuilder<any, any>,
-    Err extends TypeBuilder<any, any>,
-  >
+  Ok extends TypeBuilder<any, any>,
+  Err extends TypeBuilder<any, any>,
+>
   extends TypeBuilder<
     InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
     ResultAlgebraicType<
@@ -2004,7 +2005,7 @@ export class UuidBuilder
     Uniqueable<Uuid, UuidAlgebraicType>,
     PrimaryKeyable<Uuid, UuidAlgebraicType>,
     Defaultable<Uuid, UuidAlgebraicType>,
-    Nameable<Uuid,UuidAlgebraicType>
+    Nameable<Uuid, UuidAlgebraicType>
 {
   constructor() {
     super(Uuid.getAlgebraicType());
@@ -2182,8 +2183,8 @@ export class U8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
 }
 
 export class U16ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.U16, M>
   implements
     Indexable<number, AlgebraicTypeVariants.U16>,
@@ -2244,8 +2245,8 @@ export class U16ColumnBuilder<
 }
 
 export class U32ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.U32, M>
   implements
     Indexable<number, AlgebraicTypeVariants.U32>,
@@ -2306,8 +2307,8 @@ export class U32ColumnBuilder<
 }
 
 export class U64ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.U64, M>
   implements
     Indexable<bigint, AlgebraicTypeVariants.U64>,
@@ -2368,8 +2369,8 @@ export class U64ColumnBuilder<
 }
 
 export class U128ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.U128, M>
   implements
     Indexable<bigint, AlgebraicTypeVariants.U128>,
@@ -2430,8 +2431,8 @@ export class U128ColumnBuilder<
 }
 
 export class U256ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.U256, M>
   implements
     Indexable<bigint, AlgebraicTypeVariants.U256>,
@@ -2550,8 +2551,8 @@ export class I8ColumnBuilder<M extends ColumnMetadata<number> = DefaultMetadata>
 }
 
 export class I16ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.I16, M>
   implements
     Indexable<number, AlgebraicTypeVariants.I16>,
@@ -2612,8 +2613,8 @@ export class I16ColumnBuilder<
 }
 
 export class I32ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.I32, M>
   implements
     Indexable<number, AlgebraicTypeVariants.I32>,
@@ -2674,8 +2675,8 @@ export class I32ColumnBuilder<
 }
 
 export class I64ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.I64, M>
   implements
     Indexable<bigint, AlgebraicTypeVariants.I64>,
@@ -2736,8 +2737,8 @@ export class I64ColumnBuilder<
 }
 
 export class I128ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.I128, M>
   implements
     Indexable<bigint, AlgebraicTypeVariants.I128>,
@@ -2798,8 +2799,8 @@ export class I128ColumnBuilder<
 }
 
 export class I256ColumnBuilder<
-    M extends ColumnMetadata<bigint> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<bigint> = DefaultMetadata,
+>
   extends ColumnBuilder<bigint, AlgebraicTypeVariants.I256, M>
   implements
     Indexable<bigint, AlgebraicTypeVariants.I256>,
@@ -2860,8 +2861,8 @@ export class I256ColumnBuilder<
 }
 
 export class F32ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.F32, M>
   implements
     Defaultable<number, AlgebraicTypeVariants.F32>,
@@ -2888,8 +2889,8 @@ export class F32ColumnBuilder<
 }
 
 export class F64ColumnBuilder<
-    M extends ColumnMetadata<number> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<number> = DefaultMetadata,
+>
   extends ColumnBuilder<number, AlgebraicTypeVariants.F64, M>
   implements
     Defaultable<number, AlgebraicTypeVariants.F64>,
@@ -2916,8 +2917,8 @@ export class F64ColumnBuilder<
 }
 
 export class BoolColumnBuilder<
-    M extends ColumnMetadata<boolean> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<boolean> = DefaultMetadata,
+>
   extends ColumnBuilder<boolean, AlgebraicTypeVariants.Bool, M>
   implements
     Indexable<boolean, AlgebraicTypeVariants.Bool>,
@@ -2971,8 +2972,8 @@ export class BoolColumnBuilder<
 }
 
 export class StringColumnBuilder<
-    M extends ColumnMetadata<string> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<string> = DefaultMetadata,
+>
   extends ColumnBuilder<string, AlgebraicTypeVariants.String, M>
   implements
     Indexable<string, AlgebraicTypeVariants.String>,
@@ -3026,11 +3027,10 @@ export class StringColumnBuilder<
 }
 
 export class ArrayColumnBuilder<
-    Element extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      Array<InferTypeOfTypeBuilder<Element>>
-    > = DefaultMetadata,
-  >
+  Element extends TypeBuilder<any, any>,
+  M extends ColumnMetadata<Array<InferTypeOfTypeBuilder<Element>>> =
+    DefaultMetadata,
+>
   extends ColumnBuilder<
     Array<InferTypeOfTypeBuilder<Element>>,
     { tag: 'Array'; value: InferSpacetimeTypeOfTypeBuilder<Element> },
@@ -3075,8 +3075,8 @@ type ByteArrayType = {
 };
 
 export class ByteArrayColumnBuilder<
-    M extends ColumnMetadata<Uint8Array> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<Uint8Array> = DefaultMetadata,
+>
   extends ColumnBuilder<Uint8Array, ByteArrayType, M>
   implements
     Defaultable<Uint8Array, ByteArrayType, M>,
@@ -3100,11 +3100,10 @@ export class ByteArrayColumnBuilder<
 }
 
 export class OptionColumnBuilder<
-    Value extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      InferTypeOfTypeBuilder<Value> | undefined
-    > = DefaultMetadata,
-  >
+  Value extends TypeBuilder<any, any>,
+  M extends ColumnMetadata<InferTypeOfTypeBuilder<Value> | undefined> =
+    DefaultMetadata,
+>
   extends ColumnBuilder<
     InferTypeOfTypeBuilder<Value> | undefined,
     OptionAlgebraicType<InferSpacetimeTypeOfTypeBuilder<Value>>,
@@ -3144,12 +3143,12 @@ export class OptionColumnBuilder<
 }
 
 export class ResultColumnBuilder<
-    Ok extends TypeBuilder<any, any>,
-    Err extends TypeBuilder<any, any>,
-    M extends ColumnMetadata<
-      InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
-    > = DefaultMetadata,
-  >
+  Ok extends TypeBuilder<any, any>,
+  Err extends TypeBuilder<any, any>,
+  M extends ColumnMetadata<
+    InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>
+  > = DefaultMetadata,
+>
   extends ColumnBuilder<
     InferTypeOfTypeBuilder<Ok> | InferTypeOfTypeBuilder<Err>,
     ResultAlgebraicType<
@@ -3192,9 +3191,9 @@ export class ResultColumnBuilder<
 }
 
 export class ProductColumnBuilder<
-    Elements extends ElementsObj,
-    M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
-  >
+  Elements extends ElementsObj,
+  M extends ColumnMetadata<ObjectType<Elements>> = DefaultMetadata,
+>
   extends ColumnBuilder<
     ObjectType<Elements>,
     ElementsToProductType<Elements>,
@@ -3226,9 +3225,9 @@ export class ProductColumnBuilder<
 }
 
 export class SumColumnBuilder<
-    Variants extends VariantsObj,
-    M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
-  >
+  Variants extends VariantsObj,
+  M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
+>
   extends ColumnBuilder<EnumType<Variants>, VariantsToSumType<Variants>, M>
   implements
     Defaultable<EnumType<Variants>, VariantsToSumType<Variants>>,
@@ -3256,9 +3255,9 @@ export class SumColumnBuilder<
 }
 
 export class SimpleSumColumnBuilder<
-    Variants extends VariantsObj,
-    M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
-  >
+  Variants extends VariantsObj,
+  M extends ColumnMetadata<EnumType<Variants>> = DefaultMetadata,
+>
   extends SumColumnBuilder<Variants, M>
   implements
     Indexable<EnumType<Variants>, AlgebraicTypeVariants.Sum>,
@@ -3297,8 +3296,8 @@ export class SimpleSumColumnBuilder<
 }
 
 export class ScheduleAtColumnBuilder<
-    M extends ColumnMetadata<ScheduleAt> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<ScheduleAt> = DefaultMetadata,
+>
   extends ColumnBuilder<ScheduleAt, ScheduleAtAlgebraicType, M>
   implements
     Defaultable<ScheduleAt, ScheduleAtAlgebraicType>,
@@ -3323,8 +3322,8 @@ export class ScheduleAtColumnBuilder<
 }
 
 export class IdentityColumnBuilder<
-    M extends ColumnMetadata<Identity> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<Identity> = DefaultMetadata,
+>
   extends ColumnBuilder<Identity, IdentityAlgebraicType, M>
   implements
     Indexable<Identity, IdentityAlgebraicType>,
@@ -3376,8 +3375,8 @@ export class IdentityColumnBuilder<
 }
 
 export class ConnectionIdColumnBuilder<
-    M extends ColumnMetadata<ConnectionId> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<ConnectionId> = DefaultMetadata,
+>
   extends ColumnBuilder<ConnectionId, ConnectionIdAlgebraicType, M>
   implements
     Indexable<ConnectionId, ConnectionIdAlgebraicType>,
@@ -3429,8 +3428,8 @@ export class ConnectionIdColumnBuilder<
 }
 
 export class TimestampColumnBuilder<
-    M extends ColumnMetadata<Timestamp> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<Timestamp> = DefaultMetadata,
+>
   extends ColumnBuilder<Timestamp, TimestampAlgebraicType, M>
   implements
     Indexable<Timestamp, TimestampAlgebraicType>,
@@ -3482,8 +3481,8 @@ export class TimestampColumnBuilder<
 }
 
 export class TimeDurationColumnBuilder<
-    M extends ColumnMetadata<TimeDuration> = DefaultMetadata,
-  >
+  M extends ColumnMetadata<TimeDuration> = DefaultMetadata,
+>
   extends ColumnBuilder<TimeDuration, TimeDurationAlgebraicType, M>
   implements
     Indexable<TimeDuration, TimeDurationAlgebraicType>,
@@ -3541,7 +3540,7 @@ export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
     Uniqueable<Uuid, UuidAlgebraicType>,
     PrimaryKeyable<Uuid, UuidAlgebraicType>,
     Defaultable<Uuid, UuidAlgebraicType>,
-    Nameable<Uuid,UuidAlgebraicType>
+    Nameable<Uuid, UuidAlgebraicType>
 {
   index(): UuidColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
