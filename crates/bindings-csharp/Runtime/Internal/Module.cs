@@ -312,7 +312,7 @@ public static class Module
         }
         catch (Exception e)
         {
-            var error_str = e.ToString();
+            var error_str = e.Message ?? e.GetType().FullName;
             var error_bytes = System.Text.Encoding.UTF8.GetBytes(error_str);
             error.Write(error_bytes);
             return Errno.HOST_CALL_FAILURE;
@@ -347,17 +347,7 @@ public static class Module
 
             using var stream = new MemoryStream(args.Consume());
             using var reader = new BinaryReader(stream);
-            var bytes = Array.Empty<byte>();
-            try
-            {
-                bytes = procedures[(int)id].Invoke(reader, ctx);
-            }
-            catch (Exception e)
-            {
-                var errorBytes = System.Text.Encoding.UTF8.GetBytes(e.ToString());
-                resultSink.Write(errorBytes);
-                return Errno.HOST_CALL_FAILURE;
-            }
+            var bytes = procedures[(int)id].Invoke(reader, ctx);
             if (stream.Position != stream.Length)
             {
                 throw new Exception("Unrecognised extra bytes in the procedure arguments");
@@ -368,9 +358,11 @@ public static class Module
         }
         catch (Exception e)
         {
-            var errorBytes = System.Text.Encoding.UTF8.GetBytes(e.ToString());
-            resultSink.Write(errorBytes);
-            return Errno.HOST_CALL_FAILURE;
+            // Host contract __call_procedure__ must either return Errno.OK or trap.
+            // Returning other errno values here can put the host/runtime in an unexpected state,
+            // so we log and rethrow to trap on any exception.
+            Log.Error($"Error while invoking procedure: {e}");
+            throw;
         }
     }
 

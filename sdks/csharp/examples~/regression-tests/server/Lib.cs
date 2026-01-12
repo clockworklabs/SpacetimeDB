@@ -2,6 +2,7 @@
 // Everything we're testing for happens SDK-side so this module is very uninteresting.
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using SpacetimeDB;
 
 [SpacetimeDB.Type]
@@ -29,6 +30,13 @@ public partial record ReturnEnum : SpacetimeDB.TaggedEnum<(
     string B
     )>;
 
+[SpacetimeDB.Type]
+public partial struct DbVector2
+{
+    public int X;
+    public int Y;
+}
+
 public static partial class Module
 {
     [SpacetimeDB.Table(Name = "my_table", Public = true)]
@@ -44,6 +52,12 @@ public static partial class Module
 
         [SpacetimeDB.Index.BTree]
         public uint Indexed;
+    }
+
+    [SpacetimeDB.Table(Name = "my_log", Public = true)]
+    public partial struct MyLog
+    {
+        public Result<MyTable, string> msg;
     }
 
     [SpacetimeDB.Table(Name = "player", Public = true)]
@@ -90,6 +104,35 @@ public static partial class Module
         public bool IsAdmin;
     }
 
+    [SpacetimeDB.Table(Name = "nullable_vec", Public = true)]
+    public partial struct NullableVec
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        public DbVector2? Pos;
+    }
+
+    [SpacetimeDB.Table(Name = "null_string_nonnullable", Public = true)]
+    public partial struct NullStringNonNullable
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Table(Name = "null_string_nullable", Public = true)]
+    public partial struct NullStringNullable
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public string? Name;
+    }
+
     // At-most-one row: return T?
     [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
@@ -130,6 +173,23 @@ public static partial class Module
         return rows;
     }
 
+    [SpacetimeDB.View(Name = "nullable_vec_view", Public = true)]
+    public static List<NullableVec> NullableVecView(AnonymousViewContext ctx)
+    {
+        var rows = new List<NullableVec>();
+
+        if (ctx.Db.nullable_vec.Id.Find(1) is NullableVec row1)
+        {
+            rows.Add(row1);
+        }
+
+        if (ctx.Db.nullable_vec.Id.Find(2) is NullableVec row2)
+        {
+            rows.Add(row2);
+        }
+        return rows;
+    }
+
     [SpacetimeDB.Reducer]
     public static void Delete(ReducerContext ctx, uint id)
     {
@@ -149,6 +209,49 @@ public static partial class Module
         throw new Exception(error);
     }
 
+    [SpacetimeDB.Reducer]
+    public static void InsertResult(ReducerContext ctx, Result<MyTable, string> msg)
+    {
+        ctx.Db.my_log.Insert(new MyLog { msg = msg });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SetNullableVec(ReducerContext ctx, uint id, bool hasPos, int x, int y)
+    {
+        var row = new NullableVec
+        {
+            Id = id,
+            Pos = hasPos ? new DbVector2 { X = x, Y = y } : null
+        };
+
+        if (ctx.Db.nullable_vec.Id.Find(id) is null)
+        {
+            ctx.Db.nullable_vec.Insert(row);
+        }
+        else
+        {
+            ctx.Db.nullable_vec.Id.Update(row);
+        }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertEmptyStringIntoNonNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nonnullable.Insert(new NullStringNonNullable { Name = "" });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullStringIntoNonNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nonnullable.Insert(new NullStringNonNullable { Name = null! });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullStringIntoNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nullable.Insert(new NullStringNullable { Name = null });
+    }
+
     [Reducer(ReducerKind.ClientConnected)]
     public static void ClientConnected(ReducerContext ctx)
     {
@@ -164,6 +267,24 @@ public static partial class Module
             ctx.Db.player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
             var playerId = (ctx.Db.player.Identity.Find(ctx.Sender)!).Value.Id;
             ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
+        }
+
+        if (ctx.Db.nullable_vec.Id.Find(1) is null)
+        {
+            ctx.Db.nullable_vec.Insert(new NullableVec
+            {
+                Id = 1,
+                Pos = new DbVector2 { X = 1, Y = 2 },
+            });
+        }
+
+        if (ctx.Db.nullable_vec.Id.Find(2) is null)
+        {
+            ctx.Db.nullable_vec.Insert(new NullableVec
+            {
+                Id = 2,
+                Pos = null,
+            });
         }
 
         foreach (var (Name, IsAdmin) in new List<(string Name, bool IsAdmin)>
@@ -213,6 +334,48 @@ public static partial class Module
         throw new InvalidOperationException("This procedure is expected to panic");
     }
 
+    [SpacetimeDB.Procedure]
+    [Experimental("STDB_UNSTABLE")]
+    public static string ReadMySchemaViaHttp(ProcedureContext ctx)
+    {
+        try
+        {
+            var moduleIdentity = ProcedureContext.Identity;
+            var uri = $"http://localhost:3000/v1/database/{moduleIdentity}/schema?version=9";
+            var res = ctx.Http.Get(uri, System.TimeSpan.FromSeconds(2));
+            return res switch
+            {
+                Result<HttpResponse, HttpError>.OkR(var v) => "OK " + v.Body.ToStringUtf8Lossy(),
+                Result<HttpResponse, HttpError>.ErrR(var e) => "ERR " + e.Message,
+                _ => throw new InvalidOperationException("Unknown Result variant."),
+            };
+        }
+        catch (Exception e)
+        {
+            return "EXN " + e;
+        }
+    }
+
+    [SpacetimeDB.Procedure]
+    [Experimental("STDB_UNSTABLE")]
+    public static string InvalidHttpRequest(ProcedureContext ctx)
+    {
+        try
+        {
+            var res = ctx.Http.Get("http://foo.invalid/", System.TimeSpan.FromMilliseconds(250));
+            return res switch
+            {
+                Result<HttpResponse, HttpError>.OkR(var v) => "OK " + v.Body.ToStringUtf8Lossy(),
+                Result<HttpResponse, HttpError>.ErrR(var e) => "ERR " + e.Message,
+                _ => throw new InvalidOperationException("Unknown Result variant."),
+            };
+        }
+        catch (Exception e)
+        {
+            return "EXN " + e;
+        }
+    }
+
 #pragma warning disable STDB_UNSTABLE
     [SpacetimeDB.Procedure]
     public static void InsertWithTxCommit(ProcedureContext ctx)
@@ -223,7 +386,7 @@ public static partial class Module
             {
                 Field = new ReturnStruct(a: 42, b: "magic"),
             });
-            return 0; // return value ignored by WithTx
+            return new Unit();
         });
 
         AssertRowCount(ctx, 1);
@@ -244,6 +407,30 @@ public static partial class Module
 
         Debug.Assert(!outcome.IsSuccess, "TryWithTxAsync should report failure");
         AssertRowCount(ctx, 0);
+    }
+
+    [SpacetimeDB.Procedure]
+    public static Result<ReturnStruct, string> InsertWithTxRollbackResult(ProcedureContext ctx)
+    {
+        try
+        {
+            var outcome = ctx.TryWithTx<SpacetimeDB.Unit, InvalidOperationException>(tx =>
+            {
+                tx.Db.my_table.Insert(new MyTable
+                {
+                    Field = new ReturnStruct(a: 42, b: "magic")
+                });
+
+                throw new InvalidOperationException("rollback");
+            });
+            Debug.Assert(!outcome.IsSuccess, "TryWithTxAsync should report failure");
+            AssertRowCount(ctx, 0);
+            return Result<ReturnStruct, string>.Ok(new ReturnStruct(a: 42, b: "magic"));
+        }
+        catch (System.Exception e)
+        {
+            return Result<ReturnStruct, string>.Err(e.ToString());
+        }
     }
 
     private static void AssertRowCount(ProcedureContext ctx, ulong expected)
