@@ -752,13 +752,13 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
             /// Get a query builder for the table `{struct_name}`.
             fn {accessor_method}(&self) -> __query_builder::Table<{struct_name}>;
         }}
-        
+
         impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
             fn {accessor_method}(&self) -> __query_builder::Table<{struct_name}> {{
                 __query_builder::Table::new({accessor_method:?})
             }}
         }}
-        "
+"
     )
 }
 
