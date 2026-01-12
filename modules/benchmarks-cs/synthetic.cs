@@ -293,7 +293,7 @@ public static partial class synthetic
         }
         if (hit != row_count)
         {
-            throw new Exception("Not enough rows to perform requested amount of updates");
+            throw new Exception($"Not enough rows to perform requested amount of updates. Expected: {row_count}, Actual: {hit}");
         }
     }
 
