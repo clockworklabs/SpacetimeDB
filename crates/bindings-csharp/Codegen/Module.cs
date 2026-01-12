@@ -537,7 +537,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
                 );
                 var scalars = members.Take(n).Select(m => $"{m.Type.Name} {m.Name}");
                 var lastScalar = $"{members[n].Type.Name} {members[n].Name}";
-                var lastBounds = $"global::SpacetimeDB.Bound<{members[n].Type.Name}> {members[n].Name}";
+                var lastBounds =
+                    $"global::SpacetimeDB.Bound<{members[n].Type.Name}> {members[n].Name}";
                 var argsScalar = string.Join(", ", scalars.Append(lastScalar));
                 var argsBounds = string.Join(", ", scalars.Append(lastBounds));
                 string argName;
