@@ -215,7 +215,7 @@ Run `spacetime help describe` for more detailed information.
 
 Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.
 
-**Usage:** `spacetime dev [OPTIONS]`
+**Usage:** `spacetime dev [OPTIONS] [database]`
 
 ###### **Options:**
 

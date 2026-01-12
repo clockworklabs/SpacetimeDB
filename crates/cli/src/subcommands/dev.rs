@@ -221,7 +221,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         println!(
             "{} {}",
             "Tip:".yellow().bold(),
-            format!("Use `--database {}` to skip this question next time", database_name).dimmed()
+            format!("Use `spacetime dev {}` to skip this question next time", database_name).dimmed()
         );
     }
 
