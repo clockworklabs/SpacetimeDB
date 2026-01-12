@@ -351,7 +351,7 @@ impl Lang for TypeScript {
         writeln!(out, "/** A typed query builder for this remote SpacetimeDB module. */");
         writeln!(
             out,
-            "export const query = __makeQueryBuilder(tablesSchema.schemaType);"
+            "export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);"
         );
         writeln!(out);
         writeln!(out, "/** The reducers available in this remote SpacetimeDB module. */");
@@ -464,6 +464,7 @@ fn print_index_imports(out: &mut Indenter) {
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
         "makeQueryBuilder as __makeQueryBuilder",
+        "type QueryBuilder as __QueryBuilder",
         "type EventContextInterface as __EventContextInterface",
         "type ReducerEventContextInterface as __ReducerEventContextInterface",
         "type SubscriptionEventContextInterface as __SubscriptionEventContextInterface",

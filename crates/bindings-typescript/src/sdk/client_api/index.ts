@@ -26,6 +26,7 @@ import {
   type Event as __Event,
   type EventContextInterface as __EventContextInterface,
   type Infer as __Infer,
+  type QueryBuilder as __QueryBuilder,
   type ReducerEventContextInterface as __ReducerEventContextInterface,
   type RemoteModule as __RemoteModule,
   type SubscriptionEventContextInterface as __SubscriptionEventContextInterface,
@@ -135,7 +136,8 @@ const REMOTE_MODULE = {
 export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);
 
 /** A typed query builder for this remote SpacetimeDB module. */
-export const query = __makeQueryBuilder(tablesSchema.schemaType);
+export const query: __QueryBuilder<typeof tablesSchema.schemaType> =
+  __makeQueryBuilder(tablesSchema.schemaType);
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(

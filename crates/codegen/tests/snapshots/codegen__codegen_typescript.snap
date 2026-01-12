@@ -234,6 +234,7 @@ import {
   Uuid as __Uuid,
   convertToAccessorMap as __convertToAccessorMap,
   makeQueryBuilder as __makeQueryBuilder,
+  type QueryBuilder as __QueryBuilder,
   procedureSchema as __procedureSchema,
   procedures as __procedures,
   reducerSchema as __reducerSchema,
@@ -561,7 +562,7 @@ const REMOTE_MODULE = {
 export const tables = __convertToAccessorMap(tablesSchema.schemaType.tables);
 
 /** A typed query builder for this remote SpacetimeDB module. */
-export const query = __makeQueryBuilder(tablesSchema.schemaType);
+export const query: __QueryBuilder<typeof tablesSchema.schemaType> = __makeQueryBuilder(tablesSchema.schemaType);
 
 /** The reducers available in this remote SpacetimeDB module. */
 export const reducers = __convertToAccessorMap(reducersSchema.reducersType.reducers);
