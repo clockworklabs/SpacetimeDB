@@ -113,6 +113,26 @@ public static partial class Module
         public DbVector2? Pos;
     }
 
+    [SpacetimeDB.Table(Name = "null_string_nonnullable", Public = true)]
+    public partial struct NullStringNonNullable
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public string Name;
+    }
+
+    [SpacetimeDB.Table(Name = "null_string_nullable", Public = true)]
+    public partial struct NullStringNullable
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        public string? Name;
+    }
+
     // At-most-one row: return T?
     [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
@@ -212,6 +232,24 @@ public static partial class Module
         {
             ctx.Db.nullable_vec.Id.Update(row);
         }
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertEmptyStringIntoNonNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nonnullable.Insert(new NullStringNonNullable { Name = "" });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullStringIntoNonNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nonnullable.Insert(new NullStringNonNullable { Name = null! });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void InsertNullStringIntoNullable(ReducerContext ctx)
+    {
+        ctx.Db.null_string_nullable.Insert(new NullStringNullable { Name = null });
     }
 
     [Reducer(ReducerKind.ClientConnected)]
