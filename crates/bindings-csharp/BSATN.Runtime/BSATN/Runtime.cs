@@ -542,8 +542,18 @@ public readonly struct String : IReadWrite<string>
     public string Read(BinaryReader reader) =>
         Encoding.UTF8.GetString(ByteArray.Instance.Read(reader));
 
-    public void Write(BinaryWriter writer, string value) =>
+    public void Write(BinaryWriter writer, string value)
+    {
+        if (value is null)
+        {
+            throw new ArgumentNullException(
+                nameof(value),
+                "Cannot serialize a null string as BSATN String. To serialize a null string you must use a nullable string (string?) so it is encoded as a BSATN option."
+            );
+        }
+
         ByteArray.Instance.Write(writer, Encoding.UTF8.GetBytes(value));
+    }
 
     public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
         new AlgebraicType.String(default);

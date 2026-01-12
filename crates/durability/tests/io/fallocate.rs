@@ -36,11 +36,8 @@ use spacetimedb_commitlog::{
     segment,
     tests::helpers::enable_logging,
 };
-use spacetimedb_durability::{Durability, Txdata};
-use spacetimedb_paths::{
-    server::{CommitLogDir, ReplicaDir},
-    FromPathUnchecked,
-};
+use spacetimedb_durability::{local::OpenError, Durability, Txdata};
+use spacetimedb_paths::{server::ReplicaDir, FromPathUnchecked};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::{sync::watch, time::sleep};
 
@@ -61,11 +58,11 @@ async fn local_durability_cannot_be_created_if_not_enough_space() -> anyhow::Res
         let _guard = mount(file_path, mountpoint, 512 * MB)?;
         let replica_dir = ReplicaDir::from_path_unchecked(mountpoint);
 
-        match local_durability(replica_dir.commit_log(), 1024 * MB, None).await {
-            Err(e) if e.kind() == io::ErrorKind::StorageFull => Ok(()),
+        match local_durability(replica_dir, 1024 * MB, None).await {
+            Err(e) if is_no_space_error(&e) => Ok(()),
             Err(e) => Err(e).context("unexpected error"),
             Ok(durability) => {
-                durability.close().await?;
+                durability.close().await;
                 Err(anyhow!("unexpected success"))
             }
         }
@@ -95,7 +92,7 @@ async fn local_durability_crashes_on_new_segment_if_not_enough_space() {
             let on_new_segment = Arc::new(move || {
                 new_segment_tx.send_replace(());
             });
-            let durability = local_durability(replica_dir.commit_log(), 256 * MB, Some(on_new_segment)).await?;
+            let durability = local_durability(replica_dir, 256 * MB, Some(on_new_segment)).await?;
             let txdata = txdata();
 
             // Mark initial segment as seen.
@@ -145,22 +142,26 @@ async fn local_durability_crashes_on_resume_with_insuffient_space() -> anyhow::R
 
         // Try to open local durability with a 1GiB segment size,
         // which is larger than the available disk space.
-        match local_durability(replica_dir.commit_log(), 1024 * MB, None).await {
-            Err(e) if e.kind() == io::ErrorKind::StorageFull => Ok(()),
+        match local_durability(replica_dir, 1024 * MB, None).await {
+            Err(e) if is_no_space_error(&e) => Ok(()),
             Err(e) => Err(e).context("unexpected error"),
             Ok(durability) => {
-                durability.close().await?;
+                durability.close().await;
                 Err(anyhow!("unexpected success"))
             }
         }
     }
 }
 
+fn is_no_space_error(e: &OpenError) -> bool {
+    matches!(e, OpenError::Commitlog(io) if io.kind() == io::ErrorKind::StorageFull)
+}
+
 async fn local_durability(
-    dir: CommitLogDir,
+    dir: ReplicaDir,
     max_segment_size: u64,
     on_new_segment: Option<Arc<OnNewSegmentFn>>,
-) -> io::Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>> {
+) -> Result<spacetimedb_durability::Local<[u8; 1024 * 1024]>, spacetimedb_durability::local::OpenError> {
     spacetimedb_durability::Local::open(
         dir,
         tokio::runtime::Handle::current(),

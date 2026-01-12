@@ -1,0 +1,17 @@
+﻿Write a SpacetimeDB backend module in C# that defines one table and seeds one row.
+
+TABLE
+- primitives
+  - Struct: Primitive
+  - Fields:
+    - Id: int (primary key)
+    - Count: int
+    - Total: long
+    - Price: float
+    - Ratio: double
+    - Active: bool
+    - Name: string
+
+REDUCERS
+- Seed: insert exactly this row into primitives
+  - (Id=1, Count=2, Total=3000000000, Price=1.5, Ratio=2.25, Active=true, Name="Alice")
