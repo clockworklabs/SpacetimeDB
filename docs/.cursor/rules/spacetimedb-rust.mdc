@@ -1,0 +1,721 @@
+---
+description: "⛔ MANDATORY: Read this ENTIRE file before writing ANY SpacetimeDB Rust code. Contains SDK patterns from official documentation."
+globs: **/*.rs
+alwaysApply: true
+---
+
+# SpacetimeDB Rust SDK
+
+> **Tested with:** SpacetimeDB runtime 1.11.x, `spacetimedb` crate (server), `spacetimedb-sdk` crate (client)  
+> **Last updated:** 2026-01-12
+>
+> ⚠️ **SDK Evolution:** The SDK is evolving rapidly. If using a newer version, check release notes for breaking changes.
+
+---
+
+## ⛔ COMMON MISTAKES — LLM HALLUCINATIONS
+
+These are **actual errors** observed when LLMs generate SpacetimeDB Rust code:
+
+### 1. Wrong Crate for Server vs Client
+
+```rust
+// ❌ WRONG — using client crate for server module
+use spacetimedb_sdk::*;  // This is for CLIENTS only!
+
+// ✅ CORRECT — use spacetimedb for server modules
+use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
+```
+
+### 2. Wrong Table Macro Syntax
+
+```rust
+// ❌ WRONG — using attribute-style like C#
+#[spacetimedb::table]
+#[primary_key]
+pub struct User { ... }
+
+// ✅ CORRECT — use #[table(...)] macro with options
+#[table(name = user, public)]
+pub struct User {
+    #[primary_key]
+    identity: Identity,
+    name: Option<String>,
+}
+```
+
+### 3. Wrong Table Access Pattern
+
+```rust
+// ❌ WRONG — using ctx.Db or ctx.db() method
+ctx.Db.user.Insert(...);
+ctx.db().user().insert(...);
+
+// ✅ CORRECT — ctx.db is a field, table names are methods
+ctx.db.user().insert(User { ... });
+ctx.db.user().identity().find(ctx.sender);
+```
+
+### 4. Wrong Update Pattern
+
+```rust
+// ❌ WRONG — partial update or using .update() directly on table
+ctx.db.user().update(User { name: Some("new".into()), ..Default::default() });
+
+// ✅ CORRECT — find existing, spread it, update via primary key accessor
+if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+    ctx.db.user().identity().update(User { name: Some("new".into()), ..user });
+}
+```
+
+### 5. Wrong Reducer Return Type
+
+```rust
+// ❌ WRONG — returning data from reducer
+#[reducer]
+pub fn get_user(ctx: &ReducerContext, id: Identity) -> Option<User> { ... }
+
+// ✅ CORRECT — reducers return Result<(), String> or nothing
+#[reducer]
+pub fn do_something(ctx: &ReducerContext, value: String) -> Result<(), String> {
+    if value.is_empty() {
+        return Err("Value cannot be empty".to_string());
+    }
+    // ... do work ...
+    Ok(())
+}
+```
+
+### 6. Wrong Client Connection Pattern
+
+```rust
+// ❌ WRONG — subscribing before connected
+let conn = DbConnection::builder().build()?;
+conn.subscription_builder().subscribe_to_all_tables();  // NOT CONNECTED YET!
+
+// ✅ CORRECT — subscribe in on_connect callback
+DbConnection::builder()
+    .on_connect(|conn, identity, token| {
+        conn.subscription_builder()
+            .on_applied(|ctx| println!("Ready!"))
+            .subscribe_to_all_tables();
+    })
+    .build()?;
+```
+
+### 7. Forgetting to Advance the Connection
+
+```rust
+// ❌ WRONG — connection never processes messages
+let conn = DbConnection::builder().build()?;
+// ... callbacks never fire ...
+
+// ✅ CORRECT — must call one of these to process messages
+conn.run_threaded();           // Spawn background thread
+// OR
+conn.run_async().await;        // Async task
+// OR (in game loop)
+conn.frame_tick()?;            // Manual polling
+```
+
+### 8. Missing Table Trait Import
+
+```rust
+// ❌ WRONG — "no method named `insert` found"
+use spacetimedb::{table, reducer, ReducerContext};
+ctx.db.user().insert(...);  // ERROR!
+
+// ✅ CORRECT — import Table trait for table methods
+use spacetimedb::{table, reducer, Table, ReducerContext};
+ctx.db.user().insert(...);  // Works!
+```
+
+### 9. Wrong ScheduleAt Variant
+
+```rust
+// ❌ WRONG — At variant doesn't exist
+scheduled_at: ScheduleAt::At(future_time),
+
+// ✅ CORRECT — use Time variant
+scheduled_at: ScheduleAt::Time(future_time),
+```
+
+### 10. Identity to String Conversion
+
+```rust
+// ❌ WRONG — to_hex() returns HexString<32>, not String
+let id: String = identity.to_hex();  // Type mismatch!
+
+// ✅ CORRECT — chain .to_string()
+let id: String = identity.to_hex().to_string();
+```
+
+### 11. Timestamp Duration Extraction
+
+```rust
+// ❌ WRONG — returns Result, not Duration directly
+let micros = ctx.timestamp.to_duration_since_unix_epoch().as_micros();
+
+// ✅ CORRECT — unwrap the Result
+let micros = ctx.timestamp.to_duration_since_unix_epoch()
+    .unwrap_or_default()
+    .as_micros();
+```
+
+### 12. Borrow After Move
+
+```rust
+// ❌ WRONG — `tool` moved into struct, then borrowed
+ctx.db.stroke().insert(Stroke { tool, color, ... });
+if tool == "eraser" { ... }  // ERROR: value moved!
+
+// ✅ CORRECT — check before move, or use clone
+let is_eraser = tool == "eraser";
+ctx.db.stroke().insert(Stroke { tool, color, ... });
+if is_eraser { ... }
+```
+
+### 13. Client SDK Uses Blocking I/O
+
+The SpacetimeDB Rust client SDK uses blocking I/O. If mixing with async runtimes (Tokio, async-std), use `spawn_blocking` or run the SDK on a dedicated thread to avoid blocking the async executor.
+
+---
+
+## 1) Server Module — Table Definition
+
+**Tables use `#[table(...)]` macro on `pub struct`:**
+
+> ⚠️ **CRITICAL:** Always import `Table` trait — required for `.insert()`, `.iter()`, `.find()`, etc.
+
+```rust
+use spacetimedb::{table, reducer, Table, ReducerContext, Identity, Timestamp};
+
+#[table(name = user, public)]
+pub struct User {
+    #[primary_key]
+    identity: Identity,
+    
+    #[unique]
+    username: Option<String>,
+    
+    online: bool,
+}
+
+#[table(name = message, public)]
+pub struct Message {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    
+    sender: Identity,
+    text: String,
+    sent: Timestamp,
+}
+```
+
+### Table Options
+
+```rust
+#[table(name = my_table)]           // Private table (default)
+#[table(name = my_table, public)]   // Public table - clients can subscribe
+```
+
+### Column Attributes
+
+```rust
+#[primary_key]           // Primary key (auto-indexed, enables .find())
+#[auto_inc]              // Auto-increment (use with #[primary_key])
+#[unique]                // Unique constraint (auto-indexed)
+#[index(btree)]          // B-Tree index for queries
+```
+
+### Scheduled Tables
+
+```rust
+use spacetimedb::{table, reducer, ReducerContext, ScheduleAt, Timestamp};
+
+#[table(name = cleanup_job, scheduled(cleanup_expired))]
+pub struct CleanupJob {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    
+    scheduled_at: ScheduleAt,
+    target_id: u64,
+}
+
+#[reducer]
+pub fn cleanup_expired(ctx: &ReducerContext, job: CleanupJob) {
+    // Job row is auto-deleted after reducer completes
+    log::info!("Cleaning up: {}", job.target_id);
+}
+
+// Schedule a job
+#[reducer]
+pub fn schedule_cleanup(ctx: &ReducerContext, target_id: u64, delay_ms: u64) {
+    let future_time = ctx.timestamp + std::time::Duration::from_millis(delay_ms);
+    ctx.db.cleanup_job().insert(CleanupJob {
+        scheduled_id: 0,  // auto-inc placeholder
+        scheduled_at: ScheduleAt::Time(future_time),
+        target_id,
+    });
+}
+```
+
+---
+
+## 2) Server Module — Reducers
+
+### Definition Syntax
+
+```rust
+use spacetimedb::{reducer, ReducerContext};
+
+#[reducer]
+pub fn send_message(ctx: &ReducerContext, text: String) -> Result<(), String> {
+    // Validate input
+    if text.is_empty() {
+        return Err("Message cannot be empty".to_string());
+    }
+    
+    // Insert returns the inserted row
+    let row = ctx.db.message().insert(Message {
+        id: 0,  // auto-inc placeholder
+        sender: ctx.sender,
+        text,
+        sent: ctx.timestamp,
+    });
+    
+    log::info!("Message {} sent by {:?}", row.id, ctx.sender);
+    Ok(())
+}
+```
+
+### Update Pattern (CRITICAL)
+
+```rust
+#[reducer]
+pub fn set_name(ctx: &ReducerContext, name: String) -> Result<(), String> {
+    // Find existing row
+    let user = ctx.db.user().identity().find(ctx.sender)
+        .ok_or("User not found")?;
+    
+    // ✅ CORRECT — spread existing row, override specific fields
+    ctx.db.user().identity().update(User {
+        name: Some(name),
+        ..user  // Preserves identity, online, etc.
+    });
+    
+    Ok(())
+}
+
+// ❌ WRONG — partial update nulls out other fields!
+// ctx.db.user().identity().update(User { identity: ctx.sender, name: Some(name), ..Default::default() });
+```
+
+### Delete Pattern
+
+```rust
+#[reducer]
+pub fn delete_message(ctx: &ReducerContext, message_id: u64) -> Result<(), String> {
+    // Delete by primary key value
+    ctx.db.message().id().delete(message_id);
+    Ok(())
+}
+```
+
+### Lifecycle Hooks
+
+```rust
+#[reducer(client_connected)]
+pub fn client_connected(ctx: &ReducerContext) {
+    // ctx.sender is the connecting identity
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+        // Returning user - set online
+        ctx.db.user().identity().update(User { online: true, ..user });
+    } else {
+        // New user - create record
+        ctx.db.user().insert(User {
+            identity: ctx.sender,
+            username: None,
+            online: true,
+        });
+    }
+}
+
+#[reducer(client_disconnected)]
+pub fn client_disconnected(ctx: &ReducerContext) {
+    if let Some(user) = ctx.db.user().identity().find(ctx.sender) {
+        ctx.db.user().identity().update(User { online: false, ..user });
+    }
+}
+```
+
+---
+
+## 3) Server Module — Index Access
+
+### Primary Key / Unique — `.find()` returns `Option<Row>`
+
+```rust
+// Primary key lookup
+let user = ctx.db.user().identity().find(ctx.sender);
+
+// Unique column lookup  
+let user = ctx.db.user().username().find(&"alice".to_string());
+
+if let Some(user) = user {
+    // Found
+}
+```
+
+### BTree Index — `.filter()` returns iterator
+
+```rust
+#[table(name = message, public)]
+pub struct Message {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    
+    #[index(btree)]
+    room_id: u64,
+    
+    text: String,
+}
+
+// Filter by indexed column
+for msg in ctx.db.message().room_id().filter(&room_id) {
+    // Process each message in room
+}
+```
+
+### No Index — `.iter()` + manual filter
+
+```rust
+// Full table scan
+for user in ctx.db.user().iter() {
+    if user.online {
+        // Process online users
+    }
+}
+```
+
+---
+
+## 4) Client SDK — Project Setup
+
+### Cargo.toml
+
+```toml
+[dependencies]
+spacetimedb-sdk = "1.0"
+```
+
+### Generate Module Bindings
+
+```bash
+mkdir -p src/module_bindings
+spacetime generate --lang rust --out-dir src/module_bindings --project-path <server-module-path>
+```
+
+### Declare Module in main.rs
+
+```rust
+mod module_bindings;
+use module_bindings::*;
+use spacetimedb_sdk::{DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
+```
+
+---
+
+## 5) Client SDK — Connection Setup
+
+### Basic Connection
+
+```rust
+use module_bindings::DbConnection;
+
+fn connect() -> DbConnection {
+    DbConnection::builder()
+        .with_uri("http://localhost:3000")
+        .with_module_name("my-module")
+        .with_token(load_saved_token())  // None for first connection
+        .on_connect(on_connected)
+        .on_connect_error(on_connect_error)
+        .on_disconnect(on_disconnected)
+        .build()
+        .expect("Failed to connect")
+}
+
+fn on_connected(conn: &DbConnection, identity: Identity, token: &str) {
+    // Save token for reconnection
+    save_token(token);
+    
+    // Subscribe to tables HERE - after connection established!
+    conn.subscription_builder()
+        .on_applied(|ctx| println!("Subscriptions applied!"))
+        .on_error(|ctx, err| eprintln!("Subscription error: {}", err))
+        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+}
+
+fn on_connect_error(_ctx: &ErrorContext, err: Error) {
+    eprintln!("Connection error: {:?}", err);
+}
+
+fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
+    if let Some(err) = err {
+        eprintln!("Disconnected with error: {}", err);
+    }
+}
+```
+
+### ⚠️ CRITICAL: Advance the Connection
+
+**The SDK does NOT process messages automatically.** You MUST use one of:
+
+```rust
+// Option 1: Background thread (simplest for CLI apps)
+conn.run_threaded();
+
+// Option 2: Async (for async runtimes)
+conn.run_async().await;
+
+// Option 3: Manual polling (for game loops)
+loop {
+    conn.frame_tick()?;
+    std::thread::sleep(std::time::Duration::from_millis(16));
+}
+```
+
+Without advancing the connection:
+- No callbacks will fire
+- `on_connect` will never be called
+- Subscription data will never arrive
+
+---
+
+## 6) Client SDK — Subscriptions
+
+```rust
+// Subscribe to specific queries
+conn.subscription_builder()
+    .on_applied(|ctx| {
+        // Initial data now available in ctx.db
+        for user in ctx.db.user().iter() {
+            println!("User: {:?}", user.username);
+        }
+    })
+    .on_error(|ctx, err| eprintln!("Error: {}", err))
+    .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+
+// Or subscribe to ALL public tables (simple but less efficient)
+conn.subscription_builder()
+    .on_applied(|ctx| println!("Ready!"))
+    .subscribe_to_all_tables();
+```
+
+---
+
+## 7) Client SDK — Table Access
+
+### Iterate Over Rows
+
+```rust
+// From DbConnection or any context
+for user in ctx.db.user().iter() {
+    println!("{}: online={}", user.username.unwrap_or_default(), user.online);
+}
+
+// Count rows
+let count = ctx.db.message().count();
+```
+
+### Find by Primary Key / Unique
+
+```rust
+// Primary key lookup
+if let Some(user) = ctx.db.user().identity().find(&sender_identity) {
+    println!("Found: {:?}", user.username);
+}
+
+// Unique column lookup
+if let Some(user) = ctx.db.user().username().find(&"alice".to_string()) {
+    println!("Found alice");
+}
+```
+
+### Row Callbacks
+
+```rust
+fn register_callbacks(ctx: &DbConnection) {
+    // On insert
+    ctx.db.user().on_insert(|ctx, user| {
+        println!("User joined: {:?}", user.username);
+    });
+    
+    // On delete
+    ctx.db.user().on_delete(|ctx, user| {
+        println!("User left: {:?}", user.username);
+    });
+    
+    // On update (only for tables with primary key)
+    ctx.db.user().on_update(|ctx, old, new| {
+        if old.online != new.online {
+            println!("User {} is now {}", 
+                new.username.as_deref().unwrap_or("unknown"),
+                if new.online { "online" } else { "offline" }
+            );
+        }
+    });
+}
+```
+
+---
+
+## 8) Client SDK — Invoking Reducers
+
+### Call Reducers
+
+```rust
+// Reducers are methods on ctx.reducers
+ctx.reducers.set_name("Alice".to_string()).unwrap();
+ctx.reducers.send_message("Hello, world!".to_string()).unwrap();
+```
+
+### Reducer Callbacks
+
+```rust
+// Register callback for reducer completion
+ctx.reducers.on_set_name(|ctx, name| {
+    match &ctx.event.status {
+        Status::Committed => println!("Name set to: {}", name),
+        Status::Failed(err) => eprintln!("Failed to set name: {}", err),
+        Status::OutOfEnergy => eprintln!("Out of energy!"),
+    }
+});
+
+ctx.reducers.on_send_message(|ctx, text| {
+    if let Status::Failed(err) = &ctx.event.status {
+        eprintln!("Failed to send '{}': {}", text, err);
+    }
+});
+```
+
+---
+
+## 9) Client SDK — Event Context
+
+Row callbacks receive an `EventContext` with an `event` field:
+
+```rust
+ctx.db.message().on_insert(|ctx, message| {
+    match &ctx.event {
+        Event::Reducer(reducer_event) => {
+            // Inserted by a reducer
+            println!("New message from reducer");
+        }
+        Event::SubscribeApplied => {
+            // Initial data from subscription
+            println!("Historical message loaded");
+        }
+        _ => {}
+    }
+});
+```
+
+### Event Variants
+
+```rust
+Event::Reducer(ReducerEvent)    // A reducer ran
+Event::SubscribeApplied         // Subscription initialized
+Event::UnsubscribeApplied       // Subscription removed
+Event::SubscribeError(Error)    // Subscription failed
+Event::UnknownTransaction       // Unknown transaction
+```
+
+---
+
+## 10) Project Structure
+
+### Server Module
+
+```
+my-module/
+├── Cargo.toml
+└── src/
+    └── lib.rs
+```
+
+**Cargo.toml:**
+```toml
+[package]
+name = "my-module"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+spacetimedb = "1.0"
+log = "0.4"
+```
+
+### Client
+
+```
+client/
+├── Cargo.toml
+└── src/
+    ├── main.rs
+    └── module_bindings/    # Generated by spacetime generate
+        └── ...
+```
+
+---
+
+## 11) Commands
+
+```bash
+# Start local server
+spacetime start
+
+# Build module (optional - publish auto-builds)
+spacetime build --project-path <module-dir>
+
+# Publish module
+spacetime publish <module-name> --project-path <module-dir>
+
+# Clear database and republish
+spacetime publish <module-name> --clear-database -y --project-path <module-dir>
+
+# Generate Rust client bindings
+spacetime generate --lang rust --out-dir <client>/src/module_bindings --project-path <module-dir>
+
+# View logs
+spacetime logs <module-name>
+
+# Call reducer from CLI
+spacetime call <module-name> <reducer_name> '<json-args>'
+```
+
+---
+
+## 12) Hard Requirements
+
+> **See `spacetimedb.mdc`** for core concepts (reducers are transactional, deterministic, etc.)
+
+**Rust-specific requirements:**
+
+1. **Server modules use `spacetimedb` crate** — clients use `spacetimedb-sdk`
+2. **Tables MUST use `#[table(...)]` macro** — not attribute-style macros
+3. **Reducers take `&ReducerContext` as first argument** — must be a reference
+4. **Use `ctx.timestamp`** — never `std::time::SystemTime::now()` in reducers
+5. **Client MUST advance connection** — call `run_threaded()`, `run_async()`, or `frame_tick()`
+6. **Subscribe in `on_connect` callback** — not before connection is established
+7. **Update requires full row** — spread existing row with `..existing`
+8. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
+9. **Import `Table` trait** — `use spacetimedb::Table;` required for `.insert()`, `.iter()`, etc.
+10. **Identity to String needs `.to_string()`** — `identity.to_hex().to_string()`
+11. **Client SDK is blocking** — use `spawn_blocking` or dedicated thread if mixing with async runtimes

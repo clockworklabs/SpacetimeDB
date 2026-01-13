@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ChatClient.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Official SpacetimeDB/ClockworkLabs Brand Colors -->
+            <!-- Source: https://spacetimedb.com docs CSS -->
+            
+            <!-- Primary Accent - STDB Green -->
+            <Color x:Key="StdbGreen">#4cf490</Color>
+            <Color x:Key="StdbGreenDark">#2ef27d</Color>
+            <Color x:Key="StdbGreenLight">#6af6a3</Color>
+            <Color x:Key="StdbGreen75">#4cf490bf</Color>
+            <Color x:Key="StdbGreen50">#4cf49080</Color>
+            <Color x:Key="StdbGreen25">#4cf49040</Color>
+            
+            <!-- Secondary Colors -->
+            <Color x:Key="StdbPurple">#a880ff</Color>
+            <Color x:Key="StdbBlue">#02befa</Color>
+            <Color x:Key="StdbYellow">#fbdc8e</Color>
+            <Color x:Key="StdbPink">#ff80fb</Color>
+            <Color x:Key="StdbTeal">#00ccb4</Color>
+            <Color x:Key="StdbOrange">#ff9e9e</Color>
+            <Color x:Key="StdbRed">#ff4c4c</Color>
+            
+            <!-- Backgrounds -->
+            <Color x:Key="SpaceBackground">#060606</Color>
+            <Color x:Key="SpaceBackgroundLight">#0d0d0e</Color>
+            <Color x:Key="SpaceBackgroundLighter">#141416</Color>
+            
+            <!-- Grayscale -->
+            <Color x:Key="TextPrimary">#f4f6fc</Color>
+            <Color x:Key="TextSecondary">#b6c0cf</Color>
+            <Color x:Key="TextMuted">#6f7987</Color>
+            <Color x:Key="BorderColor">#202126</Color>
+            <Color x:Key="SurfaceColor">#363840</Color>
+            
+            <!-- Semantic Colors -->
+            <Color x:Key="ErrorColor">#ff4c4c</Color>
+            <Color x:Key="SuccessColor">#4cf490</Color>
+            <Color x:Key="WarningColor">#fbdc8e</Color>
+            <Color x:Key="OnlineColor">#4cf490</Color>
+            <Color x:Key="OfflineColor">#6f7987</Color>
+            
+            <!-- Aliases for easier migration -->
+            <Color x:Key="PrimaryAccent">#4cf490</Color>
+            <Color x:Key="SecondaryAccent">#a880ff</Color>
+            
+            <!-- Button Styles -->
+            <Style x:Key="PrimaryButton" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource StdbGreen}" />
+                <Setter Property="TextColor" Value="{StaticResource SpaceBackground}" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="16,8" />
+                <Setter Property="FontAttributes" Value="Bold" />
+            </Style>
+            
+            <Style x:Key="SecondaryButton" TargetType="Button">
+                <Setter Property="BackgroundColor" Value="{StaticResource SpaceBackgroundLighter}" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="16,8" />
+                <Setter Property="BorderColor" Value="{StaticResource BorderColor}" />
+                <Setter Property="BorderWidth" Value="1" />
+            </Style>
+            
+            <!-- Entry Styles -->
+            <Style x:Key="ChatEntry" TargetType="Entry">
+                <Setter Property="BackgroundColor" Value="{StaticResource SpaceBackgroundLighter}" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="PlaceholderColor" Value="{StaticResource TextMuted}" />
+            </Style>
+            
+            <!-- Label Styles -->
+            <Style x:Key="HeaderLabel" TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="FontSize" Value="24" />
+                <Setter Property="FontAttributes" Value="Bold" />
+            </Style>
+            
+            <Style x:Key="SubheaderLabel" TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextSecondary}" />
+                <Setter Property="FontSize" Value="16" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -1,0 +1,25 @@
+{
+  "name": "chat-app-test-harness",
+  "version": "2.0.0",
+  "description": "Automated benchmark testing for chat app implementations",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "benchmark": "tsx scripts/run-benchmark.ts",
+    "metrics": "tsx scripts/collect-metrics.ts",
+    "deploy-test": "tsx scripts/deploy-and-test.ts",
+    "ai-grade": "tsx scripts/ai-grade.ts",
+    "grade": "tsx scripts/full-grade.ts",
+    "full-auto": "tsx scripts/deploy-and-test.ts",
+    "create": "tsx scripts/create-project.ts",
+    "promote": "tsx scripts/promote-graded.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.10.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  }
+}
+

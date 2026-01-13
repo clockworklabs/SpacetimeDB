@@ -1,0 +1,715 @@
+---
+description: "⛔ MANDATORY: Read this ENTIRE file before writing ANY SpacetimeDB C# code. Contains SDK patterns from official documentation."
+globs: **/*.cs
+alwaysApply: true
+---
+
+# SpacetimeDB C# SDK
+
+> **Tested with:** SpacetimeDB runtime 1.11.x, NuGet `SpacetimeDB.ClientSDK` + `SpacetimeDB.Runtime`  
+> **Last updated:** 2026-01-09
+>
+> ⚠️ **SDK Evolution:** The SDK is evolving rapidly. If using a newer version, check release notes for breaking changes.
+
+---
+
+## ⛔ COMMON MISTAKES — LLM HALLUCINATIONS
+
+These are **actual errors** observed when LLMs generate SpacetimeDB C# code:
+
+### 1. Wrong Package Name for Server Modules
+```csharp
+// ❌ WRONG — this package doesn't exist
+<PackageReference Include="SpacetimeDB.SDK" Version="1.*" />
+
+// ✅ CORRECT — use Runtime for server modules
+<PackageReference Include="SpacetimeDB.Runtime" Version="1.*" />
+```
+
+### 2. Lifecycle Hook Names Starting with "On"
+```csharp
+// ❌ WRONG — will cause STDB0010 error
+[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+public static void OnClientConnected(ReducerContext ctx) { }
+
+// ✅ CORRECT — no "On" prefix
+[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+public static void ClientConnected(ReducerContext ctx) { }
+```
+
+### 3. Wrong Timestamp Property Name
+```csharp
+// ❌ WRONG — property doesn't exist
+var micros = timestamp.MicrosecondsSinceEpoch;
+
+// ✅ CORRECT — full name
+var micros = timestamp.MicrosecondsSinceUnixEpoch;
+```
+
+### 4. Wrong ScheduleAt Syntax
+```csharp
+// ❌ WRONG — ScheduleAt.Time is not a method
+ScheduledAt = ScheduleAt.Time(timestamp)
+
+// ✅ CORRECT — use constructor syntax
+ScheduledAt = new ScheduleAt.Time(new Timestamp(microseconds))
+```
+
+### 5. Table Accessor Casing: Server vs Client DIFFER!
+```csharp
+// Table defined as:
+[SpacetimeDB.Table(Name = "user", Public = true)]
+public partial class User { ... }
+
+// SERVER-SIDE (in reducers, using ReducerContext):
+// Accessor matches the Name attribute value (lowercase if lowercase)
+ctx.Db.user.Insert(...)  // ✅ lowercase matches Name="user"
+
+// CLIENT-SIDE (in app code, using DbConnection):
+// Generated bindings use PascalCase properties regardless of Name attribute!
+_conn.Db.User.OnInsert += ...  // ✅ PascalCase property
+_conn.Db.user.OnInsert += ...  // ❌ WRONG - lowercase doesn't exist on client!
+
+// The generated RemoteTables class has PascalCase properties:
+// _conn.Db.User, _conn.Db.Canvas, _conn.Db.CanvasMember, etc.
+```
+
+### 6. Client Callback Signature Errors
+```csharp
+// ❌ WRONG — guessing at signatures
+.OnDisconnect((conn, ctx, err) => ...)
+.OnConnectError((ctx, err) => ...)
+
+// ✅ CORRECT — check actual delegate types (may vary by SDK version)
+.OnDisconnect((conn, err) => ...)  // DbConnection, Exception?
+.OnConnectError(err => ...)         // Exception
+
+// TIP: Let IDE show you the expected signature via autocomplete
+```
+
+### 7. WithUri Takes String, Not Uri
+```csharp
+// ❌ WRONG — Uri object not accepted
+.WithUri(new Uri("http://localhost:3000"))
+
+// ✅ CORRECT — use string directly
+.WithUri("http://localhost:3000")
+```
+
+### 8. Missing RuntimeIdentifier for WASM Build
+```xml
+<!-- ❌ WRONG — won't produce WASM output -->
+<TargetFramework>net8.0</TargetFramework>
+
+<!-- ✅ CORRECT — required for spacetime publish -->
+<TargetFramework>net8.0</TargetFramework>
+<RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+```
+
+### 9. Subscribing Before Connected
+```csharp
+// ❌ WRONG — subscription fails silently, data never arrives
+_conn = builder.Build();
+_conn.SubscriptionBuilder().SubscribeToAllTables();  // NOT CONNECTED YET!
+
+// ✅ CORRECT — subscribe inside OnConnect callback
+private void OnConnected(DbConnection conn, Identity identity, string token)
+{
+    conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .SubscribeToAllTables();  // Now connected!
+}
+```
+
+### 10. Nullable Struct Handling with Find()
+```csharp
+// Find() returns a nullable struct (e.g., User?)
+var existing = ctx.Db.User.Identity.Find(ctx.Sender);
+
+// ❌ WRONG — accessing properties directly on nullable struct
+if (existing != null)
+{
+    ctx.Db.User.Identity.Update(new User { Identity = existing.Identity, ... });
+}
+
+// ✅ CORRECT — use .Value after null check
+if (existing != null)
+{
+    var user = existing.Value;  // Extract the struct value
+    ctx.Db.User.Identity.Update(new User { Identity = user.Identity, ... });
+}
+```
+
+### 11. Index Accessor Name Depends on Attribute Placement
+```csharp
+// OPTION A: Class-level attribute with custom Name
+[SpacetimeDB.Table(Name = "Reaction", Public = true)]
+[SpacetimeDB.Index.BTree(Name = "idx_reaction_msg", Columns = new[] { "MessageId" })]
+public partial struct Reaction { public ulong MessageId; ... }
+
+// Accessor uses the Index Name:
+ctx.Db.Reaction.idx_reaction_msg.Filter(messageId)  // Uses index name!
+
+// OPTION B: Field-level attribute (RECOMMENDED)
+[SpacetimeDB.Table(Name = "Reaction", Public = true)]
+public partial struct Reaction
+{
+    [SpacetimeDB.Index.BTree]  // On the field itself
+    public ulong MessageId;
+}
+
+// ✅ Accessor uses the FIELD name:
+ctx.Db.Reaction.MessageId.Filter(messageId)  // Cleaner!
+```
+
+### 12. MAUI Windows Requires Platform Entry Point
+```
+❌ WRONG — Missing entry point files
+client/
+├── client.csproj
+├── App.xaml
+└── MainPage.xaml
+
+✅ CORRECT — Include Windows platform files
+client/
+├── client.csproj
+├── App.xaml
+├── MainPage.xaml
+└── Platforms/
+    └── Windows/
+        ├── App.xaml       ← Required for Windows entry point
+        └── App.xaml.cs    ← Required for Windows entry point
+```
+
+Windows App.xaml:
+```xml
+<maui:MauiWinUIApplication
+    x:Class="MyApp.WinUI.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:maui="using:Microsoft.Maui"
+    xmlns:local="using:MyApp.WinUI">
+</maui:MauiWinUIApplication>
+```
+
+Windows App.xaml.cs:
+```csharp
+namespace MyApp.WinUI;
+
+public partial class App : MauiWinUIApplication
+{
+    public App() { this.InitializeComponent(); }
+    protected override MauiApp CreateMauiApp() => MyApp.MauiProgram.CreateMauiApp();
+}
+```
+
+---
+
+## 1) Table Definition (Server-side Module)
+
+**Tables use `[SpacetimeDB.Table]` attribute on `partial struct` or `partial class`:**
+
+```csharp
+using SpacetimeDB;
+
+[SpacetimeDB.Table(Name = "my_table", Public = true)]
+public partial struct MyTable
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+
+    [SpacetimeDB.Unique]
+    public Identity Owner;
+
+    [SpacetimeDB.Index.BTree]
+    public string Name;
+
+    public ulong Value;
+    public Timestamp CreatedAt;
+}
+```
+
+### Column Attributes
+
+```csharp
+[SpacetimeDB.PrimaryKey]      // Primary key (auto-indexed)
+[SpacetimeDB.AutoInc]         // Auto-increment (use with PrimaryKey)
+[SpacetimeDB.Unique]          // Unique constraint (auto-indexed)
+[SpacetimeDB.Index.BTree]     // B-Tree index for queries
+```
+
+### Multi-Column Indexes
+
+```csharp
+[SpacetimeDB.Table(Public = true)]
+[SpacetimeDB.Index.BTree(Name = "by_foo_and_bar", Columns = new[] { "Foo", "Bar" })]
+public partial struct MyTable
+{
+    public ulong Foo;
+    public Timestamp Bar;
+    // ...
+}
+```
+
+### Table Visibility
+
+```csharp
+// Public table - clients can subscribe
+[SpacetimeDB.Table(Name = "my_table", Public = true)]
+
+// Private table - only reducers can access
+[SpacetimeDB.Table(Name = "my_table")]  // Public = false is default
+```
+
+---
+
+## 2) Reducers (Server-side Module)
+
+### Definition Syntax
+
+```csharp
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Reducer]
+    public static void DoSomething(ReducerContext ctx, string param1, ulong param2)
+    {
+        // Validate input
+        if (string.IsNullOrEmpty(param1))
+        {
+            throw new ArgumentException("param1 cannot be empty");
+        }
+
+        // Insert returns the inserted row (NOT the ID)
+        var row = ctx.Db.MyTable.Insert(new MyTable
+        {
+            Id = 0,  // Auto-increment placeholder
+            Owner = ctx.Sender,
+            Name = param1,
+            Value = param2,
+            CreatedAt = ctx.Timestamp
+        });
+
+        // row.Id now contains the assigned ID
+        Log.Info($"Created row with ID: {row.Id}");
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void UpdateSomething(ReducerContext ctx, ulong id, string newValue)
+    {
+        var row = ctx.Db.MyTable.Id.Find(id);
+        if (row == null)
+        {
+            throw new Exception("Row not found");
+        }
+
+        // Update by primary key - must provide complete row
+        ctx.Db.MyTable.Id.Update(new MyTable
+        {
+            Id = row.Id,
+            Owner = row.Owner,
+            Name = newValue,        // Changed field
+            Value = row.Value,      // Preserve other fields
+            CreatedAt = row.CreatedAt
+        });
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void DeleteSomething(ReducerContext ctx, ulong id)
+    {
+        // Delete by primary key value
+        ctx.Db.MyTable.Id.Delete(id);
+    }
+}
+```
+
+### Update Pattern (CRITICAL)
+
+```csharp
+// ✅ CORRECT — provide complete row with all fields
+var existing = ctx.Db.MyTable.Id.Find(id);
+ctx.Db.MyTable.Id.Update(new MyTable
+{
+    Id = existing.Id,
+    Owner = existing.Owner,
+    Name = newValue,           // Changed
+    Value = existing.Value,    // Preserved
+    CreatedAt = existing.CreatedAt
+});
+
+// ❌ WRONG — partial update will null out other fields!
+ctx.Db.MyTable.Id.Update(new MyTable { Id = id, Name = newValue });
+```
+
+### Lifecycle Hooks
+
+**⚠️ CRITICAL: Method names must NOT start with "On" — causes STDB0010 error!**
+
+```csharp
+// ✅ CORRECT — no "On" prefix
+[SpacetimeDB.Reducer(ReducerKind.ClientConnected)]
+public static void ClientConnected(ReducerContext ctx)
+{
+    // ctx.Sender is the connecting identity
+    Log.Info($"Client connected: {ctx.Sender}");
+}
+
+[SpacetimeDB.Reducer(ReducerKind.ClientDisconnected)]
+public static void ClientDisconnected(ReducerContext ctx)
+{
+    // Clean up ephemeral data, set offline status, etc.
+    Log.Info($"Client disconnected: {ctx.Sender}");
+}
+```
+
+---
+
+## 3) Index Access (Server-side)
+
+### Primary Key / Unique - `.Find()` returns single row or null
+
+```csharp
+// Primary key lookup
+var row = ctx.Db.MyTable.Id.Find(id);           // Returns MyTable? 
+var row = ctx.Db.MyTable.Owner.Find(ctx.Sender); // Unique column
+
+if (row == null)
+{
+    throw new Exception("Not found");
+}
+```
+
+### BTree Index - `.Filter()` returns IEnumerable
+
+```csharp
+// Index lookup - returns multiple rows
+foreach (var row in ctx.Db.MyTable.SomeColumn.Filter(value))
+{
+    // Process each matching row
+}
+
+// Or collect to list
+var rows = ctx.Db.MyTable.SomeColumn.Filter(value).ToList();
+```
+
+### No Index - `.Iter()` + manual filter
+
+```csharp
+// Full table scan - avoid for large tables
+foreach (var row in ctx.Db.MyTable.Iter())
+{
+    if (row.Name.StartsWith("A"))
+    {
+        // ...
+    }
+}
+```
+
+---
+
+## 4) Client SDK Setup
+
+### Project Setup
+
+```bash
+# .NET Console/Library
+dotnet add package SpacetimeDB.ClientSDK
+
+# Unity - use Package Manager with git URL:
+# https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
+```
+
+### Generate Bindings
+
+```bash
+mkdir -p module_bindings
+spacetime generate --lang cs --out-dir module_bindings --project-path <module-path>
+```
+
+### Connection Setup
+
+```csharp
+using SpacetimeDB;
+using SpacetimeDB.Types;
+
+private DbConnection? _conn;
+private Identity? _myIdentity;
+
+public void Connect()
+{
+    _conn = DbConnection.Builder()
+        .WithUri("http://localhost:3000")  // String, NOT Uri object!
+        .WithModuleName("my-module")
+        .WithToken(savedToken)  // null for first connection
+        .OnConnect(OnConnected)
+        .OnDisconnect((conn, err) => OnDisconnected())  // 2 params
+        .OnConnectError(err => OnConnectError(err))     // 1 param
+        .Build();
+    
+    // NOTE: Do NOT subscribe here! Subscribe in OnConnected callback.
+}
+
+public void Tick()
+{
+    // CRITICAL: Must call regularly!
+    _conn?.FrameTick();
+}
+
+private void OnConnected(DbConnection conn, Identity identity, string token)
+{
+    _myIdentity = identity;
+    // Save token for reconnection
+    
+    // SUBSCRIBE HERE — after connection is established!
+    conn.SubscriptionBuilder()
+        .OnApplied(OnSubscriptionApplied)
+        .OnError((ctx, err) => Console.WriteLine($"Subscription error: {err}"))
+        .SubscribeToAllTables();
+}
+
+private void OnSubscriptionApplied(SubscriptionEventContext ctx)
+{
+    // NOW safe to access ctx.Db
+    // Table accessor matches the Name attribute from [SpacetimeDB.Table(Name = "...")]
+    foreach (var row in ctx.Db.my_table.Iter())
+    {
+        // Initial data available
+    }
+}
+
+private void OnDisconnected() { }
+private void OnConnectError(Exception error) { }
+```
+
+### ⚠️ CRITICAL: FrameTick
+
+**The SDK does NOT process messages automatically.** You MUST call `FrameTick()`:
+
+```csharp
+// Call regularly in your main loop
+while (running)
+{
+    conn.FrameTick();
+    Thread.Sleep(16);  // ~60 times per second
+}
+```
+
+Without `FrameTick()`:
+- No callbacks will ever fire
+- `OnConnect` will never be called
+- Subscription data will never arrive
+- Reducer callbacks will never execute
+
+---
+
+## 5) Row Callbacks (Client-side)
+
+```csharp
+// Register callbacks BEFORE subscribing
+_conn.Db.MyTable.OnInsert += (EventContext ctx, MyTable row) =>
+{
+    // Row was inserted
+};
+
+_conn.Db.MyTable.OnUpdate += (EventContext ctx, MyTable oldRow, MyTable newRow) =>
+{
+    // Row was updated
+};
+
+_conn.Db.MyTable.OnDelete += (EventContext ctx, MyTable row) =>
+{
+    // Row was deleted
+};
+
+// Check if event came from our reducer call
+if (ctx.Event is Event<Reducer>.Reducer reducerEvent)
+{
+    if (reducerEvent.ReducerEvent.CallerIdentity == _myIdentity)
+    {
+        // This was our call
+    }
+}
+```
+
+---
+
+## 6) Invoking Reducers (Client-side)
+
+```csharp
+// Reducers are called as methods on conn.Reducers
+_conn.Reducers.DoSomething("value", 123);
+
+// Register callback for reducer completion
+_conn.Reducers.OnDoSomething += (ctx) =>
+{
+    if (ctx.Event.Status is Status.Committed)
+    {
+        // Success
+    }
+    else if (ctx.Event.Status is Status.Failed failed)
+    {
+        // Failed: failed.Item contains error
+    }
+};
+```
+
+---
+
+## 7) Timestamps
+
+### Server-side
+
+```csharp
+// Use ctx.Timestamp for current time
+ctx.Db.MyTable.Insert(new MyTable
+{
+    // ...
+    CreatedAt = ctx.Timestamp
+});
+
+// Never use DateTime.Now - it's non-deterministic!
+```
+
+### Client-side
+
+```csharp
+// Timestamp has MicrosecondsSinceUnixEpoch property (NOT MicrosecondsSinceEpoch!)
+var dateTime = DateTimeOffset.FromUnixTimeMilliseconds(
+    row.CreatedAt.MicrosecondsSinceUnixEpoch / 1000
+).LocalDateTime;
+```
+
+---
+
+## 8) Scheduled Tables
+
+```csharp
+// Server-side: Define scheduled table
+[SpacetimeDB.Table(Scheduled = "process_job")]
+public partial struct ScheduledJob
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong ScheduledId;
+
+    public SpacetimeDB.ScheduleAt ScheduledAt;
+    public ulong TargetId;  // Your custom data
+}
+
+// The scheduled reducer receives the row
+[SpacetimeDB.Reducer]
+public static void ProcessJob(ReducerContext ctx, ScheduledJob job)
+{
+    // job.TargetId available
+    // Row is auto-deleted after reducer completes
+    Log.Info($"Processing: {job.TargetId}");
+}
+
+// Schedule a job
+[SpacetimeDB.Reducer]
+public static void ScheduleJob(ReducerContext ctx, ulong targetId, ulong delayMs)
+{
+    var futureTime = ctx.Timestamp.MicrosecondsSinceUnixEpoch + (long)(delayMs * 1000);
+    ctx.Db.scheduled_job.Insert(new ScheduledJob  // snake_case table name!
+    {
+        ScheduledId = 0,
+        ScheduledAt = new ScheduleAt.Time(new Timestamp(futureTime)),  // constructor syntax!
+        TargetId = targetId
+    });
+}
+```
+
+---
+
+## 9) Project Structure
+
+### Server Module
+
+```
+MyModule/
+├── MyModule.csproj
+├── Lib.cs           # Tables, types
+└── Module.cs        # Reducers, lifecycle hooks
+```
+
+**MyModule.csproj:**
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SpacetimeDB.Runtime" Version="1.*" />
+  </ItemGroup>
+</Project>
+```
+
+**global.json** (pin .NET 8.x SDK for spacetime publish - use your installed version):
+```json
+{
+  "sdk": {
+    "version": "8.0.xxx",
+    "rollForward": "latestFeature"
+  }
+}
+```
+Run `dotnet --list-sdks` to find your installed 8.x version.
+
+### Client
+
+```
+MyClient/
+├── MyClient.csproj
+├── module_bindings/     # Generated (spacetime generate)
+└── Program.cs
+```
+
+---
+
+## 10) Commands
+
+**C# requires building WASM before publish (unlike TypeScript/Rust):**
+
+```bash
+# Start local server
+spacetime start
+
+# 1. Build WASM module first (REQUIRED for C#)
+cd <module-dir>
+dotnet publish -c Release
+
+# 2. Publish using --bin-path
+spacetime publish <module-name> --bin-path <module-dir>/bin/Release/net8.0/wasi-wasm/AppBundle/<module>.wasm
+
+# 3. Clear database and republish
+spacetime publish <module-name> --clear-database -y --bin-path <module-dir>/bin/Release/net8.0/wasi-wasm/AppBundle/<module>.wasm
+
+# 4. Generate C# bindings (use --bin-path)
+spacetime generate --lang csharp --out-dir <client>/module_bindings --bin-path <module-dir>/bin/Release/net8.0/wasi-wasm/AppBundle/<module>.wasm
+
+# View logs
+spacetime logs <module-name>
+```
+
+---
+
+## 11) Hard Requirements
+
+> **See `spacetimedb.mdc`** for core concepts (reducers are transactional, deterministic, etc.)
+
+**C#-specific requirements:**
+
+1. **Tables MUST be `partial struct` or `partial class`** — required for code generation
+2. **Reducers MUST be `static` methods** — instance methods won't work
+3. **MUST call `FrameTick()` regularly** — callbacks won't fire otherwise
+4. **Use `ctx.Timestamp`** — never `DateTime.Now` or `DateTime.UtcNow` in reducers
+5. **Wait for `OnApplied` before accessing `Db`** — tables are empty until subscription applies
+6. **Server uses lowercase table accessors** — `ctx.Db.user` matches `Name="user"`
+7. **Client uses PascalCase table accessors** — `_conn.Db.User` (generated bindings)
+8. **Lifecycle hook names must NOT start with "On"** — causes STDB0010 error
+9. **DO NOT edit generated bindings** — regenerate with `spacetime generate`

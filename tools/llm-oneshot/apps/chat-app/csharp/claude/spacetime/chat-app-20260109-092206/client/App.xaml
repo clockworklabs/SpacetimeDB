@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ChatApp.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- SpacetimeDB Theme -->
+            
+            <!-- Backgrounds -->
+            <Color x:Key="CosmicVoid">#0A0612</Color>
+            <Color x:Key="CosmicDark">#0F0A1A</Color>
+            <Color x:Key="CosmicMedium">#1A1425</Color>
+            <Color x:Key="CosmicLight">#251D35</Color>
+            
+            <!-- Brand -->
+            <Color x:Key="SpacetimePurple">#8B5CF6</Color>
+            <Color x:Key="SpacetimeTeal">#14B8A6</Color>
+            
+            <!-- Text -->
+            <Color x:Key="TextPrimary">#F8FAFC</Color>
+            <Color x:Key="TextSecondary">#CBD5E1</Color>
+            <Color x:Key="TextMuted">#64748B</Color>
+
+            <!-- Base Styles -->
+            <Style TargetType="Page" ApplyToDerivedTypes="True">
+                <Setter Property="BackgroundColor" Value="{StaticResource CosmicDark}" />
+            </Style>
+
+            <Style TargetType="Label">
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+            </Style>
+
+            <Style TargetType="Entry">
+                <Setter Property="BackgroundColor" Value="{StaticResource CosmicVoid}" />
+                <Setter Property="TextColor" Value="{StaticResource TextPrimary}" />
+                <Setter Property="PlaceholderColor" Value="{StaticResource TextMuted}" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

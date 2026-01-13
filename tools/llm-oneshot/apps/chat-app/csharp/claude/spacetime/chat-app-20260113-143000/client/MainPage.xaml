@@ -1,0 +1,426 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="ChatApp.MainPage"
+             Title="SpacetimeDB Chat">
+
+    <Grid ColumnDefinitions="280,*" RowDefinitions="Auto,*">
+        
+        <!-- Left Panel: Rooms & User -->
+        <Grid Grid.Column="0" Grid.RowSpan="2" BackgroundColor="{StaticResource BgDark}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            
+            <!-- App Header -->
+            <StackLayout Grid.Row="0" Padding="16" BackgroundColor="{StaticResource BgSurface}">
+                <Label Text="💬 SpacetimeDB Chat" Style="{StaticResource HeadingLabel}"/>
+                <Label x:Name="ConnectionStatus" Text="Connecting..." Style="{StaticResource MutedLabel}"/>
+            </StackLayout>
+            
+            <!-- User Setup Panel -->
+            <Frame x:Name="UserSetupPanel" Grid.Row="1" Style="{StaticResource CardFrame}" Margin="8" IsVisible="True">
+                <StackLayout Spacing="8">
+                    <Label Text="Set Your Username" Style="{StaticResource SubheadingLabel}"/>
+                    <Entry x:Name="UsernameEntry" Placeholder="Enter username..."/>
+                    <Button Text="Set Username" Style="{StaticResource PrimaryButton}" Clicked="OnSetUsername"/>
+                </StackLayout>
+            </Frame>
+            
+            <!-- User Info Panel -->
+            <Frame x:Name="UserInfoPanel" Grid.Row="1" Style="{StaticResource CardFrame}" Margin="8" IsVisible="False">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <BoxView Grid.Column="0" x:Name="StatusIndicator" WidthRequest="12" HeightRequest="12" 
+                             CornerRadius="6" Color="{StaticResource StdbGreen}" VerticalOptions="Center"/>
+                    <StackLayout Grid.Column="1" Margin="8,0">
+                        <Label x:Name="CurrentUsername" Style="{StaticResource SubheadingLabel}"/>
+                        <Label x:Name="StatusText" Text="Online" Style="{StaticResource MutedLabel}"/>
+                    </StackLayout>
+                    <Button Grid.Column="2" Text="⚙️" BackgroundColor="Transparent" Clicked="OnShowSettings"/>
+                </Grid>
+            </Frame>
+            
+            <!-- Invites Section -->
+            <StackLayout x:Name="InvitesSection" Grid.Row="2" IsVisible="False" Margin="8,0">
+                <Label Text="Pending Invites" Style="{StaticResource SubheadingLabel}" Margin="8,8,8,4"/>
+                <CollectionView x:Name="InvitesList" SelectionMode="None">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Frame Style="{StaticResource CardFrame}" Margin="0,4" Padding="8">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <Label Text="{Binding RoomName}" VerticalOptions="Center"/>
+                                    <Button Grid.Column="1" Text="✓" Style="{StaticResource PrimaryButton}" 
+                                            Padding="8,4" CommandParameter="{Binding Id}" Clicked="OnAcceptInvite"/>
+                                    <Button Grid.Column="2" Text="✗" Style="{StaticResource DangerButton}" 
+                                            Padding="8,4" CommandParameter="{Binding Id}" Clicked="OnDeclineInvite"/>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </StackLayout>
+            
+            <!-- Rooms Section -->
+            <StackLayout Grid.Row="3">
+                <Grid Margin="8" ColumnDefinitions="*,Auto">
+                    <Label Text="Rooms" Style="{StaticResource SubheadingLabel}" VerticalOptions="Center"/>
+                    <Button Grid.Column="1" Text="+" Style="{StaticResource PrimaryButton}" 
+                            Padding="12,4" Clicked="OnCreateRoom"/>
+                </Grid>
+                
+                <CollectionView x:Name="RoomsList" SelectionMode="Single" SelectionChanged="OnRoomSelected">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate>
+                            <Frame Margin="4,2" Padding="12,8" BackgroundColor="{StaticResource BgSurface}" 
+                                   BorderColor="{StaticResource BorderColor}" CornerRadius="8">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <StackLayout Grid.Column="0" VerticalOptions="Center" Margin="0,0,8,0">
+                                        <Label Text="{Binding Icon}" FontSize="16"/>
+                                    </StackLayout>
+                                    <StackLayout Grid.Column="1" VerticalOptions="Center">
+                                        <Label Text="{Binding Name}" TextColor="{StaticResource TextPrimary}"/>
+                                        <Label Text="{Binding ActivityText}" Style="{StaticResource MutedLabel}"/>
+                                    </StackLayout>
+                                    <Frame Grid.Column="2" BackgroundColor="{StaticResource StdbGreen}" 
+                                           CornerRadius="10" Padding="8,2" IsVisible="{Binding HasUnread}"
+                                           VerticalOptions="Center">
+                                        <Label Text="{Binding UnreadCount}" TextColor="{StaticResource BgDarkest}" 
+                                               FontSize="12" FontAttributes="Bold"/>
+                                    </Frame>
+                                </Grid>
+                            </Frame>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
+            </StackLayout>
+            
+            <!-- Quick Actions -->
+            <StackLayout Grid.Row="4" Padding="8" Spacing="4">
+                <Button Text="📨 Start DM" Style="{StaticResource SecondaryButton}" Clicked="OnStartDm"/>
+            </StackLayout>
+        </Grid>
+        
+        <!-- Right Panel: Chat View -->
+        <Grid Grid.Column="1" Grid.RowSpan="2">
+            <!-- No Room Selected -->
+            <StackLayout x:Name="NoRoomPanel" VerticalOptions="Center" HorizontalOptions="Center" IsVisible="True">
+                <Label Text="Select a room to start chatting" Style="{StaticResource HeadingLabel}" 
+                       HorizontalOptions="Center"/>
+                <Label Text="Or create a new room using the + button" Style="{StaticResource MutedLabel}"
+                       HorizontalOptions="Center" Margin="0,8,0,0"/>
+            </StackLayout>
+            
+            <!-- Chat Panel -->
+            <Grid x:Name="ChatPanel" IsVisible="False">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <!-- Room Header -->
+                <Frame Grid.Row="0" BackgroundColor="{StaticResource BgSurface}" Padding="16" CornerRadius="0">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackLayout Grid.Column="0">
+                            <Label x:Name="RoomTitle" Style="{StaticResource HeadingLabel}"/>
+                            <Label x:Name="RoomMembers" Style="{StaticResource MutedLabel}"/>
+                        </StackLayout>
+                        <HorizontalStackLayout Grid.Column="1" Spacing="8">
+                            <Button x:Name="LeaveRoomBtn" Text="Leave" Style="{StaticResource SecondaryButton}" 
+                                    Clicked="OnLeaveRoom"/>
+                            <Button x:Name="RoomSettingsBtn" Text="⚙️" Style="{StaticResource SecondaryButton}" 
+                                    Clicked="OnRoomSettings"/>
+                        </HorizontalStackLayout>
+                    </Grid>
+                </Frame>
+                
+                <!-- Messages -->
+                <ScrollView x:Name="MessagesScroll" Grid.Row="1">
+                    <StackLayout x:Name="MessagesContainer" Padding="16" Spacing="8">
+                        <!-- Messages populated dynamically -->
+                    </StackLayout>
+                </ScrollView>
+                
+                <!-- Typing Indicator -->
+                <Frame x:Name="TypingPanel" Grid.Row="2" BackgroundColor="{StaticResource BgSurface}" 
+                       Padding="16,8" IsVisible="False" CornerRadius="0">
+                    <Label x:Name="TypingText" Style="{StaticResource MutedLabel}" FontAttributes="Italic"/>
+                </Frame>
+                
+                <!-- Message Input -->
+                <Frame Grid.Row="3" BackgroundColor="{StaticResource BgSurface}" Padding="16" CornerRadius="0">
+                    <StackLayout Spacing="8">
+                        <!-- Reply Preview -->
+                        <Frame x:Name="ReplyPreview" IsVisible="False" BackgroundColor="{StaticResource BgDark}" 
+                               Padding="8" CornerRadius="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackLayout Grid.Column="0">
+                                    <Label Text="Replying to:" Style="{StaticResource MutedLabel}"/>
+                                    <Label x:Name="ReplyToText" TextColor="{StaticResource TextBody}"/>
+                                </StackLayout>
+                                <Button Grid.Column="1" Text="✕" BackgroundColor="Transparent" Clicked="OnCancelReply"/>
+                            </Grid>
+                        </Frame>
+                        
+                        <!-- Scheduled Message Preview -->
+                        <Frame x:Name="SchedulePreview" IsVisible="False" BackgroundColor="{StaticResource BgDark}" 
+                               Padding="8" CornerRadius="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <Label Grid.Column="0" x:Name="ScheduleText" Style="{StaticResource MutedLabel}"/>
+                                <Button Grid.Column="1" Text="✕" BackgroundColor="Transparent" Clicked="OnCancelSchedule"/>
+                            </Grid>
+                        </Frame>
+                        
+                        <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+                            <Editor x:Name="MessageInput" Grid.Column="0" Placeholder="Type a message..." 
+                                    HeightRequest="40" AutoSize="TextChanges" TextChanged="OnMessageTextChanged"/>
+                            <Button Grid.Column="1" Text="⏰" Style="{StaticResource SecondaryButton}" 
+                                    Padding="8" Clicked="OnScheduleMessage" ToolTipProperties.Text="Schedule Message"/>
+                            <Button Grid.Column="2" Text="💨" Style="{StaticResource SecondaryButton}" 
+                                    Padding="8" Clicked="OnSendEphemeral" ToolTipProperties.Text="Send Ephemeral"/>
+                            <Button Grid.Column="3" Text="📎" Style="{StaticResource SecondaryButton}" 
+                                    Padding="8" IsEnabled="False"/>
+                            <Button Grid.Column="4" Text="Send" Style="{StaticResource PrimaryButton}" 
+                                    Clicked="OnSendMessage"/>
+                        </Grid>
+                    </StackLayout>
+                </Frame>
+            </Grid>
+        </Grid>
+        
+        <!-- Overlay Panels -->
+        
+        <!-- Create Room Dialog -->
+        <Frame x:Name="CreateRoomDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="400">
+                <StackLayout Spacing="16">
+                    <Label Text="Create New Room" Style="{StaticResource HeadingLabel}"/>
+                    <Entry x:Name="NewRoomName" Placeholder="Room name..."/>
+                    <HorizontalStackLayout Spacing="8">
+                        <CheckBox x:Name="IsPrivateRoom"/>
+                        <Label Text="Private Room (invite only)" VerticalOptions="Center"/>
+                    </HorizontalStackLayout>
+                    <HorizontalStackLayout HorizontalOptions="End" Spacing="8">
+                        <Button Text="Cancel" Style="{StaticResource SecondaryButton}" Clicked="OnCancelCreateRoom"/>
+                        <Button Text="Create" Style="{StaticResource PrimaryButton}" Clicked="OnConfirmCreateRoom"/>
+                    </HorizontalStackLayout>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+        <!-- Settings Dialog -->
+        <Frame x:Name="SettingsDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="400">
+                <StackLayout Spacing="16">
+                    <Label Text="Settings" Style="{StaticResource HeadingLabel}"/>
+                    <Label Text="Status" Style="{StaticResource SubheadingLabel}"/>
+                    <Picker x:Name="StatusPicker">
+                        <Picker.Items>
+                            <x:String>🟢 Online</x:String>
+                            <x:String>🌙 Away</x:String>
+                            <x:String>⛔ Do Not Disturb</x:String>
+                            <x:String>👻 Invisible</x:String>
+                        </Picker.Items>
+                    </Picker>
+                    <HorizontalStackLayout HorizontalOptions="End" Spacing="8">
+                        <Button Text="Close" Style="{StaticResource SecondaryButton}" Clicked="OnCloseSettings"/>
+                        <Button Text="Save" Style="{StaticResource PrimaryButton}" Clicked="OnSaveSettings"/>
+                    </HorizontalStackLayout>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+        <!-- Room Settings Dialog -->
+        <Frame x:Name="RoomSettingsDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="500">
+                <StackLayout Spacing="16">
+                    <Label Text="Room Settings" Style="{StaticResource HeadingLabel}"/>
+                    
+                    <!-- Members List -->
+                    <Label Text="Members" Style="{StaticResource SubheadingLabel}"/>
+                    <CollectionView x:Name="MembersList" HeightRequest="200">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Frame Margin="0,2" Padding="8" BackgroundColor="{StaticResource BgDark}" 
+                                       CornerRadius="4">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+                                        <BoxView Grid.Column="0" WidthRequest="8" HeightRequest="8" 
+                                                 CornerRadius="4" Color="{Binding StatusColor}" VerticalOptions="Center"/>
+                                        <StackLayout Grid.Column="1" Margin="8,0">
+                                            <Label Text="{Binding Username}" TextColor="{StaticResource TextPrimary}"/>
+                                            <Label Text="{Binding RoleText}" Style="{StaticResource MutedLabel}"/>
+                                        </StackLayout>
+                                        <Button Grid.Column="2" Text="👑" BackgroundColor="Transparent" 
+                                                IsVisible="{Binding CanPromote}" CommandParameter="{Binding Username}"
+                                                Clicked="OnPromoteMember" ToolTipProperties.Text="Promote to Admin"/>
+                                        <Button Grid.Column="3" Text="👢" BackgroundColor="Transparent" 
+                                                IsVisible="{Binding CanKick}" CommandParameter="{Binding Username}"
+                                                Clicked="OnKickMember" ToolTipProperties.Text="Kick"/>
+                                        <Button Grid.Column="4" Text="🚫" BackgroundColor="Transparent" 
+                                                IsVisible="{Binding CanKick}" CommandParameter="{Binding Username}"
+                                                Clicked="OnBanMember" ToolTipProperties.Text="Ban"/>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    
+                    <!-- Invite User (for private rooms) -->
+                    <StackLayout x:Name="InviteUserSection" IsVisible="False">
+                        <Label Text="Invite User" Style="{StaticResource SubheadingLabel}"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <Entry x:Name="InviteUsername" Grid.Column="0" Placeholder="Username to invite..."/>
+                            <Button Grid.Column="1" Text="Invite" Style="{StaticResource PrimaryButton}" 
+                                    Clicked="OnInviteUser"/>
+                        </Grid>
+                    </StackLayout>
+                    
+                    <!-- Scheduled Messages -->
+                    <Label Text="Your Scheduled Messages" Style="{StaticResource SubheadingLabel}"/>
+                    <CollectionView x:Name="ScheduledMessagesList" HeightRequest="100">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Frame Margin="0,2" Padding="8" BackgroundColor="{StaticResource BgDark}" 
+                                       CornerRadius="4">
+                                    <Grid ColumnDefinitions="*,Auto,Auto">
+                                        <StackLayout Grid.Column="0">
+                                            <Label Text="{Binding Text}" TextColor="{StaticResource TextBody}" 
+                                                   LineBreakMode="TailTruncation"/>
+                                            <Label Text="{Binding ScheduledTime}" Style="{StaticResource MutedLabel}"/>
+                                        </StackLayout>
+                                        <Button Grid.Column="2" Text="✕" BackgroundColor="Transparent" 
+                                                CommandParameter="{Binding Id}" Clicked="OnCancelScheduledMessage"/>
+                                    </Grid>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                    
+                    <Button Text="Close" Style="{StaticResource SecondaryButton}" HorizontalOptions="End" 
+                            Clicked="OnCloseRoomSettings"/>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+        <!-- DM Dialog -->
+        <Frame x:Name="DmDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="400">
+                <StackLayout Spacing="16">
+                    <Label Text="Start Direct Message" Style="{StaticResource HeadingLabel}"/>
+                    <Entry x:Name="DmUsername" Placeholder="Username..."/>
+                    <HorizontalStackLayout HorizontalOptions="End" Spacing="8">
+                        <Button Text="Cancel" Style="{StaticResource SecondaryButton}" Clicked="OnCancelDm"/>
+                        <Button Text="Start Chat" Style="{StaticResource PrimaryButton}" Clicked="OnConfirmDm"/>
+                    </HorizontalStackLayout>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+        <!-- Schedule Message Dialog -->
+        <Frame x:Name="ScheduleDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="400">
+                <StackLayout Spacing="16">
+                    <Label Text="Schedule Message" Style="{StaticResource HeadingLabel}"/>
+                    <Label Text="Send in (minutes):" Style="{StaticResource SubheadingLabel}"/>
+                    <Entry x:Name="ScheduleMinutes" Placeholder="e.g., 5" Keyboard="Numeric"/>
+                    <HorizontalStackLayout HorizontalOptions="End" Spacing="8">
+                        <Button Text="Cancel" Style="{StaticResource SecondaryButton}" Clicked="OnCancelScheduleDialog"/>
+                        <Button Text="Schedule" Style="{StaticResource PrimaryButton}" Clicked="OnConfirmSchedule"/>
+                    </HorizontalStackLayout>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+        <!-- Ephemeral Message Dialog -->
+        <Frame x:Name="EphemeralDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="400">
+                <StackLayout Spacing="16">
+                    <Label Text="Send Disappearing Message" Style="{StaticResource HeadingLabel}"/>
+                    <Label Text="Message will auto-delete after:" Style="{StaticResource SubheadingLabel}"/>
+                    <Picker x:Name="EphemeralPicker">
+                        <Picker.Items>
+                            <x:String>1 minute</x:String>
+                            <x:String>5 minutes</x:String>
+                            <x:String>15 minutes</x:String>
+                            <x:String>30 minutes</x:String>
+                            <x:String>60 minutes</x:String>
+                        </Picker.Items>
+                    </Picker>
+                    <HorizontalStackLayout HorizontalOptions="End" Spacing="8">
+                        <Button Text="Cancel" Style="{StaticResource SecondaryButton}" Clicked="OnCancelEphemeral"/>
+                        <Button Text="Send" Style="{StaticResource PrimaryButton}" Clicked="OnConfirmEphemeral"/>
+                    </HorizontalStackLayout>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+        <!-- Thread View Dialog -->
+        <Frame x:Name="ThreadDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="600" HeightRequest="500">
+                <Grid RowDefinitions="Auto,*,Auto">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                        <Label Text="Thread" Style="{StaticResource HeadingLabel}"/>
+                        <Button Grid.Column="1" Text="✕" BackgroundColor="Transparent" Clicked="OnCloseThread"/>
+                    </Grid>
+                    
+                    <ScrollView Grid.Row="1">
+                        <StackLayout x:Name="ThreadMessages" Padding="8" Spacing="8"/>
+                    </ScrollView>
+                    
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+                        <Entry x:Name="ThreadReplyInput" Grid.Column="0" Placeholder="Reply to thread..."/>
+                        <Button Grid.Column="1" Text="Reply" Style="{StaticResource PrimaryButton}" 
+                                Clicked="OnSendThreadReply"/>
+                    </Grid>
+                </Grid>
+            </Frame>
+        </Frame>
+        
+        <!-- Edit History Dialog -->
+        <Frame x:Name="EditHistoryDialog" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="False"
+               BackgroundColor="#80000000" Padding="0">
+            <Frame Style="{StaticResource CardFrame}" HorizontalOptions="Center" VerticalOptions="Center" 
+                   WidthRequest="500">
+                <StackLayout Spacing="16">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Label Text="Edit History" Style="{StaticResource HeadingLabel}"/>
+                        <Button Grid.Column="1" Text="✕" BackgroundColor="Transparent" Clicked="OnCloseEditHistory"/>
+                    </Grid>
+                    <CollectionView x:Name="EditHistoryList" HeightRequest="300">
+                        <CollectionView.ItemTemplate>
+                            <DataTemplate>
+                                <Frame Margin="0,4" Padding="12" BackgroundColor="{StaticResource BgDark}" 
+                                       CornerRadius="4">
+                                    <StackLayout>
+                                        <Label Text="{Binding Text}" TextColor="{StaticResource TextBody}"/>
+                                        <Label Text="{Binding EditedAt}" Style="{StaticResource MutedLabel}"/>
+                                    </StackLayout>
+                                </Frame>
+                            </DataTemplate>
+                        </CollectionView.ItemTemplate>
+                    </CollectionView>
+                </StackLayout>
+            </Frame>
+        </Frame>
+        
+    </Grid>
+</ContentPage>
