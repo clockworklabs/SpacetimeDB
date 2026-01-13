@@ -30,6 +30,7 @@ pub mod sum_value;
 pub mod time_duration;
 pub mod timestamp;
 pub mod typespace;
+pub mod uuid;
 
 #[cfg(any(test, feature = "proptest"))]
 pub mod proptest;

@@ -1,41 +1,6 @@
 namespace SpacetimeDB;
 
 using System.Diagnostics.CodeAnalysis;
-using Internal;
-
-public readonly struct Result<T, E>(bool isSuccess, T? value, E? error)
-    where E : Exception
-{
-    public bool IsSuccess { get; } = isSuccess;
-    public T? Value { get; } = value;
-    public E? Error { get; } = error;
-
-    public static Result<T, E> Ok(T value) => new(true, value, null);
-
-    public static Result<T, E> Err(E error) => new(false, default, error);
-
-    public T UnwrapOrThrow()
-    {
-        if (IsSuccess)
-        {
-            return Value!;
-        }
-
-        if (Error is not null)
-        {
-            throw Error;
-        }
-
-        throw new InvalidOperationException("Result failed without an error object.");
-    }
-
-    public T UnwrapOr(T defaultValue) => IsSuccess ? Value! : defaultValue;
-
-    public T UnwrapOrElse(Func<E, T> f) => IsSuccess ? Value! : f(Error!);
-
-    public TResult Match<TResult>(Func<T, TResult> onOk, Func<E, TResult> onErr) =>
-        IsSuccess ? onOk(Value!) : onErr(Error!);
-}
 
 #pragma warning disable STDB_UNSTABLE
 public abstract class ProcedureContextBase(
@@ -52,6 +17,12 @@ public abstract class ProcedureContextBase(
     public Timestamp Timestamp { get; private set; } = time;
     public AuthCtx SenderAuth { get; } = AuthCtx.BuildFromSystemTables(connectionId, sender);
 
+    // NOTE: The host rejects procedure HTTP requests while a mut transaction is open
+    // (WOULD_BLOCK_TRANSACTION). Avoid calling `Http.*` inside WithTx.
+    public HttpClient Http { get; } = new();
+
+    // **Note:** must be 0..=u32::MAX
+    protected int CounterUuid = 0;
     private Internal.TxContext? txContext;
     private ProcedureTxContextBase? cachedUserTxContext;
 
@@ -122,9 +93,13 @@ public abstract class ProcedureContextBase(
         try
         {
             var result = RunWithRetry(body);
-            return result.IsSuccess
-                ? TxOutcome<TResult>.Success(result.Value!)
-                : TxOutcome<TResult>.Failure(result.Error!);
+
+            return result switch
+            {
+                Result<TResult, TError>.OkR(var value) => TxOutcome<TResult>.Success(value),
+                Result<TResult, TError>.ErrR(var error) => TxOutcome<TResult>.Failure(error),
+                _ => throw new InvalidOperationException("Unknown Result variant."),
+            };
         }
         catch (Exception ex)
         {
@@ -181,7 +156,7 @@ public abstract class ProcedureContextBase(
         where TError : Exception
     {
         var result = RunOnce(body);
-        if (!result.IsSuccess)
+        if (result is Result<TResult, TError>.ErrR)
         {
             return result;
         }
@@ -189,7 +164,7 @@ public abstract class ProcedureContextBase(
         bool Retry()
         {
             result = RunOnce(body);
-            return result.IsSuccess;
+            return result is Result<TResult, TError>.OkR;
         }
 
         if (!CommitMutTxWithRetry(Retry))
@@ -220,7 +195,7 @@ public abstract class ProcedureContextBase(
             throw;
         }
 
-        if (result.IsSuccess)
+        if (result is Result<TResult, TError>.OkR)
         {
             guard.Disarm();
             return result;

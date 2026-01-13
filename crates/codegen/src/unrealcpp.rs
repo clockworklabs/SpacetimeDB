@@ -442,7 +442,8 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{type_str} {param_pascal}");
+            let init_str = cpp_ty_init_fmt_impl(module, param_type);
+            let field_decl = format!("{type_str} {param_pascal}{init_str}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -570,7 +571,8 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{type_str} {param_pascal}");
+            let init_str = cpp_ty_init_fmt_impl(module, param_type);
+            let field_decl = format!("{type_str} {param_pascal}{init_str}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -643,7 +645,8 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &procedure.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{type_str} {param_pascal}");
+            let init_str = cpp_ty_init_fmt_impl(module, param_type);
+            let field_decl = format!("{type_str} {param_pascal}{init_str}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -3970,6 +3973,7 @@ fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_nam
         "ConnectionId" => "FSpacetimeDBConnectionId".to_string(),
         "Timestamp" => "FSpacetimeDBTimestamp".to_string(),
         "TimeDuration" => "FSpacetimeDBTimeDuration".to_string(),
+        "Uuid" => "FSpacetimeDBUuid".to_string(),
         "ScheduleAt" => "FSpacetimeDBScheduleAt".to_string(),
         _ if elem_type_str.starts_with("Int32") => {
             // Handle nested optionals like Int32 from OptionalInt32
@@ -4007,6 +4011,7 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
         AlgebraicTypeUse::ConnectionId => "ConnectionId".to_string(),
         AlgebraicTypeUse::Timestamp => "Timestamp".to_string(),
         AlgebraicTypeUse::TimeDuration => "TimeDuration".to_string(),
+        AlgebraicTypeUse::Uuid => "Uuid".to_string(),
         AlgebraicTypeUse::ScheduleAt => "ScheduleAt".to_string(),
         AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
         AlgebraicTypeUse::Option(nested_inner) => {
@@ -4042,6 +4047,7 @@ fn get_optional_type_name(module: &ModuleDef, inner: &AlgebraicTypeUse) -> Strin
         AlgebraicTypeUse::ConnectionId => "OptionalConnectionId".to_string(),
         AlgebraicTypeUse::Timestamp => "OptionalTimestamp".to_string(),
         AlgebraicTypeUse::TimeDuration => "OptionalTimeDuration".to_string(),
+        AlgebraicTypeUse::Uuid => "OptionalUuid".to_string(),
         AlgebraicTypeUse::ScheduleAt => "OptionalScheduleAt".to_string(),
         AlgebraicTypeUse::Array(elem) => {
             // Generate specific optional array types based on element type
@@ -4089,6 +4095,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
         "Timestamp" => "FSpacetimeDBTimestamp".to_string(),
         "TimeDuration" => "FSpacetimeDBTimeDuration".to_string(),
         "ScheduleAt" => "FSpacetimeDBScheduleAt".to_string(),
+        "Uuid" => "FSpacetimeDBUuid".to_string(),
         "Array" => "TArray<uint8>".to_string(), // Fallback for generic array type (should not be used with new system)
         _ if inner_type_str.starts_with("Optional") => {
             // Handle nested optionals like OptionalOptionalString
@@ -4134,7 +4141,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     // Determine if we need extra includes
     let mut extra_includes = vec![];
     match inner_type_str {
-        "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" => {
+        "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" | "Uuid" => {
             extra_includes.push("Types/Builtins.h".to_string());
         }
         "Int128" | "UInt128" | "Int256" | "UInt256" => {
@@ -4319,7 +4326,7 @@ fn autogen_cpp_struct(
     for (orig_name, ty) in product_type.into_iter() {
         let field_name = orig_name.deref().to_case(Case::Pascal);
         let ty_str = cpp_ty_fmt_with_module(module, ty, module_name).to_string();
-        let init_str = cpp_ty_init_fmt_impl(ty);
+        let init_str = cpp_ty_init_fmt_impl(module, ty);
         let field_decl = format!("{ty_str} {field_name}{init_str}");
 
         // Check if the type is blueprintable
@@ -4469,10 +4476,14 @@ fn should_pass_by_value_in_delegate(_module: &ModuleDef, ty: &AlgebraicTypeUse) 
         AlgebraicTypeUse::ConnectionId => false, // FSpacetimeDBConnectionId is a USTRUCT
         AlgebraicTypeUse::Timestamp => false,    // FSpacetimeDBTimestamp is a USTRUCT
         AlgebraicTypeUse::TimeDuration => false, // FSpacetimeDBTimeDuration is a USTRUCT
+        AlgebraicTypeUse::Uuid => false,         // FSpacetimeDBUuid is a USTRUCT
         // Custom structs/enums use const references
         AlgebraicTypeUse::Ref(_) => false,
         AlgebraicTypeUse::Array(_) => false, // Arrays use const references
         AlgebraicTypeUse::Option(inner) => should_pass_by_value_in_delegate(_module, inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            should_pass_by_value_in_delegate(_module, ok_ty) && should_pass_by_value_in_delegate(_module, err_ty)
+        }
         AlgebraicTypeUse::ScheduleAt => false,
         AlgebraicTypeUse::Never => false,
     }
@@ -4508,6 +4519,7 @@ fn is_blueprintable(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
         AlgebraicTypeUse::ConnectionId => true,
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
+        AlgebraicTypeUse::Uuid => true,
         AlgebraicTypeUse::ScheduleAt => true, // ScheduleAt is blueprintable as a property (TObjectPtr)
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -4520,6 +4532,9 @@ fn is_blueprintable(module: &ModuleDef, ty: &AlgebraicTypeUse) -> bool {
             }
         }
         AlgebraicTypeUse::Option(inner) => is_blueprintable(module, inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            is_blueprintable(module, ok_ty) && is_blueprintable(module, err_ty)
+        }
         AlgebraicTypeUse::Never => false,
     }
 }
@@ -4543,6 +4558,7 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
         AlgebraicTypeUse::ConnectionId => true,
         AlgebraicTypeUse::Timestamp => true,
         AlgebraicTypeUse::TimeDuration => true,
+        AlgebraicTypeUse::Uuid => true,
         AlgebraicTypeUse::ScheduleAt => true,
         AlgebraicTypeUse::Unit => true,
         AlgebraicTypeUse::Ref(r) => {
@@ -4553,6 +4569,9 @@ fn is_type_blueprintable_for_delegates(module: &ModuleDef, ty: &AlgebraicTypeUse
             }
         }
         AlgebraicTypeUse::Option(inner) => is_type_blueprintable_for_delegates(module, inner),
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            is_type_blueprintable_for_delegates(module, ok_ty) && is_type_blueprintable_for_delegates(module, err_ty)
+        }
         AlgebraicTypeUse::Never => false,
     }
 }
@@ -4968,6 +4987,7 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::Timestamp => f.write_str("FSpacetimeDBTimestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("FSpacetimeDBTimeDuration"),
         AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
+        AlgebraicTypeUse::Uuid => f.write_str("FSpacetimeDBUuid"),
         AlgebraicTypeUse::Unit => f.write_str("FSpacetimeDBUnit"),
 
         // --------- references to user-defined types ---------
@@ -4991,45 +5011,76 @@ fn cpp_ty_fmt_impl<'a>(
             }
         }
 
+        // Result use the generated result types
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            let ok_type = cpp_ty_fmt_impl(module, ok_ty, module_name).to_string();
+            let err_type = cpp_ty_fmt_impl(module, err_ty, module_name).to_string();
+
+            write!(f, "FSpacetimeDBResult<{ok_type}, {err_type}>")
+        }
+
         AlgebraicTypeUse::Never => unreachable!("never type"),
     })
 }
 
-// For UPROPERTY() Unreal expects initialization values for certain types
-// (e.g. bools default to true if not explicitly initialized to false).
-fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicTypeUse::Primitive(p) => f.write_str(match p {
-            PrimitiveType::Bool => " = false",
-            PrimitiveType::I8 => " = 0",
-            PrimitiveType::U8 => " = 0",
-            PrimitiveType::I16 => " = 0",
-            PrimitiveType::U16 => " = 0",
-            PrimitiveType::I32 => " = 0",
-            PrimitiveType::U32 => " = 0",
-            PrimitiveType::I64 => " = 0",
-            PrimitiveType::U64 => " = 0",
-            PrimitiveType::F32 => " = 0.0f",
-            PrimitiveType::F64 => " = 0.0",
-            PrimitiveType::I128 => "",
-            PrimitiveType::U128 => "",
-            PrimitiveType::I256 => "",
-            PrimitiveType::U256 => "",
-        }),
-        AlgebraicTypeUse::Array(_elem) => f.write_str(""),
-        AlgebraicTypeUse::String => f.write_str(""),
-        AlgebraicTypeUse::Identity => f.write_str(""),
-        AlgebraicTypeUse::ConnectionId => f.write_str(""),
-        AlgebraicTypeUse::Timestamp => f.write_str(""),
-        AlgebraicTypeUse::TimeDuration => f.write_str(""),
-        AlgebraicTypeUse::ScheduleAt => f.write_str(""),
-        AlgebraicTypeUse::Unit => f.write_str(""),
+// For UPROPERTY() Unreal expects initialization values for certain types.
+// UE5 strict mode requires all UPROPERTY fields to be explicitly initialized,
+// otherwise the engine logs "property not initialized properly" errors.
+// This includes primitives (bool defaults to true if not initialized to false),
+// and enum types (must be initialized to a valid enum value).
+fn cpp_ty_init_fmt_impl(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
+    match ty {
+        AlgebraicTypeUse::Primitive(p) => match p {
+            PrimitiveType::Bool => " = false".to_string(),
+            PrimitiveType::I8 => " = 0".to_string(),
+            PrimitiveType::U8 => " = 0".to_string(),
+            PrimitiveType::I16 => " = 0".to_string(),
+            PrimitiveType::U16 => " = 0".to_string(),
+            PrimitiveType::I32 => " = 0".to_string(),
+            PrimitiveType::U32 => " = 0".to_string(),
+            PrimitiveType::I64 => " = 0".to_string(),
+            PrimitiveType::U64 => " = 0".to_string(),
+            PrimitiveType::F32 => " = 0.0f".to_string(),
+            PrimitiveType::F64 => " = 0.0".to_string(),
+            PrimitiveType::I128 => String::new(),
+            PrimitiveType::U128 => String::new(),
+            PrimitiveType::I256 => String::new(),
+            PrimitiveType::U256 => String::new(),
+        },
+        AlgebraicTypeUse::Array(_elem) => String::new(),
+        AlgebraicTypeUse::String => String::new(),
+        AlgebraicTypeUse::Identity => String::new(),
+        AlgebraicTypeUse::ConnectionId => String::new(),
+        AlgebraicTypeUse::Timestamp => String::new(),
+        AlgebraicTypeUse::TimeDuration => String::new(),
+        AlgebraicTypeUse::ScheduleAt => String::new(),
+        AlgebraicTypeUse::Uuid => String::new(),
+        AlgebraicTypeUse::Unit => String::new(),
         // --------- references to user-defined types ---------
-        AlgebraicTypeUse::Ref(_r) => f.write_str(""),
+        AlgebraicTypeUse::Ref(r) => {
+            // Enum types must be initialized to a valid enum value in UE5.
+            // Use the first variant as the default value.
+            match &module.typespace_for_generate()[*r] {
+                AlgebraicTypeDef::PlainEnum(plain_enum) => {
+                    let type_name = type_ref_name(module, *r);
+                    if let Some(first_variant) = plain_enum.variants.first() {
+                        let variant_name = first_variant.deref().to_case(Case::Pascal);
+                        format!(" = E{type_name}Type::{variant_name}")
+                    } else {
+                        String::new()
+                    }
+                }
+                // Product and Sum types have proper default constructors
+                AlgebraicTypeDef::Product(_) => String::new(),
+                AlgebraicTypeDef::Sum(_) => String::new(),
+            }
+        }
         // Options use the generated optional types
-        AlgebraicTypeUse::Option(_inner) => f.write_str(""),
+        AlgebraicTypeUse::Option(_inner) => String::new(),
+        // Result use the generated result types
+        AlgebraicTypeUse::Result { ok_ty: _, err_ty: _ } => String::new(),
         AlgebraicTypeUse::Never => unreachable!("never type"),
-    })
+    }
 }
 
 // Given an `AlgebraicTypeUse`, add every referenced type’s generated
@@ -5055,11 +5106,18 @@ fn collect_includes_for_type(
             // Also collect includes for the inner type
             collect_includes_for_type(module, inner, out, module_name);
         }
+        Result { ok_ty, err_ty } => {
+            // Add the result type header
+            out.insert("Types/Result.h".to_string());
+            // Also collect includes for the ok and err types
+            collect_includes_for_type(module, ok_ty, out, module_name);
+            collect_includes_for_type(module, err_ty, out, module_name);
+        }
         Array(inner) => {
             collect_includes_for_type(module, inner, out, module_name);
         }
         // Builtin types that require Builtins.h (also includes LargeIntegers.h)
-        Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt => {
+        Identity | ConnectionId | Timestamp | TimeDuration | ScheduleAt | Uuid => {
             out.insert("Types/Builtins.h".to_string());
         }
         // Large integer primitives also need Builtins.h (for LargeIntegers.h)

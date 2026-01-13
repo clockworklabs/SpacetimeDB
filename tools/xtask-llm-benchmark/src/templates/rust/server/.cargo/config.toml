@@ -1,0 +1,11 @@
+﻿# .cargo/config.toml
+[build]
+rustflags = ["-C","debuginfo=0","-C","split-debuginfo=off"]
+
+[target.x86_64-pc-windows-msvc]
+# Avoid MSVC linker -> fixes .exp/.pdb handle issues
+linker = "rust-lld.exe"
+
+[target.wasm32-unknown-unknown]
+# wasm already uses wasm-ld; keep output lean
+rustflags = ["-C","debuginfo=0","-C","panic=abort"]

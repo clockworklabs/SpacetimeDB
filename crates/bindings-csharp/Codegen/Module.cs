@@ -175,7 +175,8 @@ record ColumnDeclaration : MemberDeclaration
                     SpecialType.System_String or SpecialType.System_Boolean => true,
                     SpecialType.None => type.ToString()
                         is "SpacetimeDB.ConnectionId"
-                            or "SpacetimeDB.Identity",
+                            or "SpacetimeDB.Identity"
+                            or "SpacetimeDB.Uuid",
                     _ => false,
                 }
             )
@@ -410,6 +411,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
     public readonly EquatableArray<TableAccessor> TableAccessors;
     public readonly EquatableArray<TableIndex> Indexes;
 
+    private readonly bool isRowStruct;
+
     public int? GetColumnIndex(AttributeData attrContext, string name, DiagReporter diag)
     {
         var index = Members
@@ -427,6 +430,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         : base(context, diag)
     {
         var typeSyntax = (TypeDeclarationSyntax)context.TargetNode;
+
+        isRowStruct = ((INamedTypeSymbol)context.TargetSymbol).IsValueType;
 
         if (Kind is TypeKind.Sum)
         {
@@ -481,6 +486,8 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
+        var uniqueIndexBase = isRowStruct ? "UniqueIndex" : "RefUniqueIndex";
+
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
@@ -492,12 +499,12 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
             }
             var standardIndexName = ct.ToIndex().StandardIndexName(tableAccessor);
             yield return $$"""
-                {{vis}} sealed class {{f.Name}}UniqueIndex : UniqueIndex<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
+                {{vis}} sealed class {{f.Name}}UniqueIndex : {{uniqueIndexBase}}<{{tableAccessor.Name}}, {{globalName}}, {{f.Type.Name}}, {{f.Type.BSATNName}}> {
                     internal {{f.Name}}UniqueIndex() : base("{{standardIndexName}}") {}
                     // Important: don't move this to the base class.
                     // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
                     // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-                    public {{globalName}}? Find({{f.Type.Name}} key) => DoFilter(key).Cast<{{globalName}}?>().SingleOrDefault();
+                    public {{globalName}}? Find({{f.Type.Name}} key) => FindSingle(key);
                     public {{globalName}} Update({{globalName}} row) => DoUpdate(row);
                 }
                 {{vis}} {{f.Name}}UniqueIndex {{f.Name}} => new();
@@ -570,6 +577,10 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
         var vis = SyntaxFacts.GetText(Visibility);
         var globalName = $"global::{FullName}";
 
+        var uniqueIndexBase = isRowStruct
+            ? "global::SpacetimeDB.Internal.ReadOnlyUniqueIndex"
+            : "global::SpacetimeDB.Internal.ReadOnlyRefUniqueIndex";
+
         foreach (var ct in GetConstraints(tableAccessor, ColumnAttrs.Unique))
         {
             var f = ct.Col;
@@ -582,7 +593,7 @@ record TableDeclaration : BaseTypeDeclaration<ColumnDeclaration>
 
             yield return $$$"""
                 public sealed class {{{f.Name}}}Index
-                    : global::SpacetimeDB.Internal.ReadOnlyUniqueIndex<
+                    : {{{uniqueIndexBase}}}<
                           global::SpacetimeDB.Internal.ViewHandles.{{{tableAccessor.Name}}}ReadOnly,
                           {{{globalName}}},
                           {{{f.Type.Name}}},
@@ -1168,7 +1179,7 @@ record ReducerDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.IReducer.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -1285,7 +1296,7 @@ record ProcedureDeclaration
         }
         else
         {
-            var serializer = $"new {ReturnType.BSATNName}()";
+            var serializer = $"new {ReturnType.ToBSATNString()}()";
             bodyLines = new[]
             {
                 $"var result = {invocation};",
@@ -1311,12 +1322,12 @@ record ProcedureDeclaration
             ? (
                 txPayloadIsUnit
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-                    : $"new {txPayload.BSATNName}().GetAlgebraicType(registrar)"
+                    : $"new {txPayload.ToBSATNString2()}().GetAlgebraicType(registrar)"
             )
             : (
                 ReturnType.Name == "SpacetimeDB.Unit"
                     ? "SpacetimeDB.BSATN.AlgebraicType.Unit"
-                    : $"new {ReturnType.BSATNName}().GetAlgebraicType(registrar)"
+                    : $"new {ReturnType.ToBSATNString2()}().GetAlgebraicType(registrar)"
             );
 
         var classFields = MemberDeclaration.GenerateBsatnFields(Accessibility.Private, Args);
@@ -1362,7 +1373,7 @@ record ProcedureDeclaration
                 using var writer = new BinaryWriter(stream);
                 {{string.Join(
                     "\n",
-                    Args.Select(a => $"new {a.Type.BSATNName}().Write(writer, {a.Name});")
+                    Args.Select(a => $"new {a.Type.ToBSATNString()}().Write(writer, {a.Name});")
                 )}}
                 SpacetimeDB.Internal.ProcedureExtensions.VolatileNonatomicScheduleImmediate(nameof({{Name}}), stream);
             }
@@ -1727,7 +1738,8 @@ public class Module : IIncrementalGenerator
                             public readonly Random Rng;
                             public readonly Timestamp Timestamp;
                             public readonly AuthCtx SenderAuth;
-
+                            // **Note:** must be 0..=u32::MAX
+                            internal int CounterUuid;
                             // We need this property to be non-static for parity with client SDK.
                             public Identity Identity => Internal.IReducerContext.GetIdentity();
 
@@ -1739,6 +1751,53 @@ public class Module : IIncrementalGenerator
                                 Rng = random;
                                 Timestamp = time;
                                 SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
+                                CounterUuid = 0;
+                            }
+                            /// <summary>
+                            /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
+                            /// </summary>
+                            /// <remarks>
+                            /// This method fills the random bytes using the context RNG.
+                            /// </remarks>
+                            /// <example>
+                            /// <code>
+                            /// var uuid = ctx.NewUuidV4();
+                            /// Log.Info(uuid);
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV4()
+                            {
+                                var bytes = new byte[16];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromRandomBytesV4(bytes);
+                            }
+
+                            /// <summary>
+                            /// Create a new sortable <see cref="Uuid"/> `v7` using the built-in RNG, monotonic counter,
+                            /// and timestamp.
+                            /// </summary>
+                            /// <returns>
+                            /// A newly generated <see cref="Uuid"/> `v7` that is monotonically ordered
+                            /// and suitable for use as a primary key or for ordered storage.
+                            /// </returns>
+                            /// <exception cref="Exception">
+                            /// Thrown if <see cref="Uuid"/> generation fails.
+                            /// </exception>
+                            /// <example>
+                            /// <code>
+                            /// [SpacetimeDB.Reducer]
+                            /// public static Guid GenerateUuidV7(ReducerContext ctx)
+                            /// {
+                            ///     Guid uuid = ctx.NewUuidV7();
+                            ///     Log.Info(uuid);
+                            /// }
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV7()
+                            {
+                                var bytes = new byte[4];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
                             }
                         }
                         
@@ -1766,6 +1825,53 @@ public class Module : IIncrementalGenerator
                                 Func<ProcedureTxContext, Result<TResult, TError>> body)
                                 where TError : Exception =>
                                 base.TryWithTx(tx => body((ProcedureTxContext)tx));
+
+                            /// <summary>
+                            /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
+                            /// </summary>
+                            /// <remarks>
+                            /// This method fills the random bytes using the context RNG.
+                            /// </remarks>
+                            /// <example>
+                            /// <code>
+                            /// var uuid = ctx.NewUuidV4();
+                            /// Log.Info(uuid);
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV4()
+                            {
+                                var bytes = new byte[16];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromRandomBytesV4(bytes);
+                            }
+
+                            /// <summary>
+                            /// Create a new sortable <see cref="Uuid"/> `v7` using the built-in RNG, monotonic counter,
+                            /// and timestamp.
+                            /// </summary>
+                            /// <returns>
+                            /// A newly generated <see cref="Uuid"/> `v7` that is monotonically ordered
+                            /// and suitable for use as a primary key or for ordered storage.
+                            /// </returns>
+                            /// <exception cref="Exception">
+                            /// Thrown if UUID generation fails.
+                            /// </exception>
+                            /// <example>
+                            /// <code>
+                            /// [SpacetimeDB.Procedure]
+                            /// public static Guid GenerateUuidV7(ReducerContext ctx)
+                            /// {
+                            ///     Guid uuid = ctx.NewUuidV7();
+                            ///     Log.Info(uuid);
+                            /// }
+                            /// </code>
+                            /// </example>
+                            public Uuid NewUuidV7()
+                            {
+                                var bytes = new byte[4];
+                                Rng.NextBytes(bytes);
+                                return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+                            }
                         }
 
                         [Experimental("STDB_UNSTABLE")]

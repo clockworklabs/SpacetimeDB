@@ -1,0 +1,8 @@
+﻿Write a SpacetimeDB backend module in C# that defines only these five empty reducers.
+
+REDUCERS
+- EmptyReducer_NoArgs: no arguments, returns void, empty body
+- EmptyReducer_WithInt: (int count), returns void, empty body
+- EmptyReducer_WithString: (string name), returns void, empty body
+- EmptyReducer_WithTwoArgs: (int count, string name), returns void, empty body
+- EmptyReducer_WithThreeArgs: (bool active, float ratio, string label), returns void, empty body

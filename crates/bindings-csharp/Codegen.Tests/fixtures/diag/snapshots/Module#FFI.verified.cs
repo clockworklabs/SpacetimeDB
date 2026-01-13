@@ -23,6 +23,9 @@ namespace SpacetimeDB
         public readonly Timestamp Timestamp;
         public readonly AuthCtx SenderAuth;
 
+        // **Note:** must be 0..=u32::MAX
+        internal int CounterUuid;
+
         // We need this property to be non-static for parity with client SDK.
         public Identity Identity => Internal.IReducerContext.GetIdentity();
 
@@ -39,6 +42,54 @@ namespace SpacetimeDB
             Rng = random;
             Timestamp = time;
             SenderAuth = senderAuth ?? AuthCtx.BuildFromSystemTables(connectionId, identity);
+            CounterUuid = 0;
+        }
+
+        /// <summary>
+        /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
+        /// </summary>
+        /// <remarks>
+        /// This method fills the random bytes using the context RNG.
+        /// </remarks>
+        /// <example>
+        /// <code>
+        /// var uuid = ctx.NewUuidV4();
+        /// Log.Info(uuid);
+        /// </code>
+        /// </example>
+        public Uuid NewUuidV4()
+        {
+            var bytes = new byte[16];
+            Rng.NextBytes(bytes);
+            return Uuid.FromRandomBytesV4(bytes);
+        }
+
+        /// <summary>
+        /// Create a new sortable <see cref="Uuid"/> `v7` using the built-in RNG, monotonic counter,
+        /// and timestamp.
+        /// </summary>
+        /// <returns>
+        /// A newly generated <see cref="Uuid"/> `v7` that is monotonically ordered
+        /// and suitable for use as a primary key or for ordered storage.
+        /// </returns>
+        /// <exception cref="Exception">
+        /// Thrown if <see cref="Uuid"/> generation fails.
+        /// </exception>
+        /// <example>
+        /// <code>
+        /// [SpacetimeDB.Reducer]
+        /// public static Guid GenerateUuidV7(ReducerContext ctx)
+        /// {
+        ///     Guid uuid = ctx.NewUuidV7();
+        ///     Log.Info(uuid);
+        /// }
+        /// </code>
+        /// </example>
+        public Uuid NewUuidV7()
+        {
+            var bytes = new byte[4];
+            Rng.NextBytes(bytes);
+            return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
         }
     }
 
@@ -74,6 +125,53 @@ namespace SpacetimeDB
             Func<ProcedureTxContext, Result<TResult, TError>> body
         )
             where TError : Exception => base.TryWithTx(tx => body((ProcedureTxContext)tx));
+
+        /// <summary>
+        /// Create a new random <see cref="Uuid"/> `v4` using the built-in RNG.
+        /// </summary>
+        /// <remarks>
+        /// This method fills the random bytes using the context RNG.
+        /// </remarks>
+        /// <example>
+        /// <code>
+        /// var uuid = ctx.NewUuidV4();
+        /// Log.Info(uuid);
+        /// </code>
+        /// </example>
+        public Uuid NewUuidV4()
+        {
+            var bytes = new byte[16];
+            Rng.NextBytes(bytes);
+            return Uuid.FromRandomBytesV4(bytes);
+        }
+
+        /// <summary>
+        /// Create a new sortable <see cref="Uuid"/> `v7` using the built-in RNG, monotonic counter,
+        /// and timestamp.
+        /// </summary>
+        /// <returns>
+        /// A newly generated <see cref="Uuid"/> `v7` that is monotonically ordered
+        /// and suitable for use as a primary key or for ordered storage.
+        /// </returns>
+        /// <exception cref="Exception">
+        /// Thrown if UUID generation fails.
+        /// </exception>
+        /// <example>
+        /// <code>
+        /// [SpacetimeDB.Procedure]
+        /// public static Guid GenerateUuidV7(ReducerContext ctx)
+        /// {
+        ///     Guid uuid = ctx.NewUuidV7();
+        ///     Log.Info(uuid);
+        /// }
+        /// </code>
+        /// </example>
+        public Uuid NewUuidV7()
+        {
+            var bytes = new byte[4];
+            Rng.NextBytes(bytes);
+            return Uuid.FromCounterV7(ref CounterUuid, Timestamp, bytes);
+        }
     }
 
     [Experimental("STDB_UNSTABLE")]
@@ -191,8 +289,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::Player? Find(SpacetimeDB.Identity key) =>
-                DoFilter(key).Cast<global::Player?>().SingleOrDefault();
+            public global::Player? Find(SpacetimeDB.Identity key) => FindSingle(key);
 
             public global::Player Update(global::Player row) => DoUpdate(row);
         }
@@ -302,8 +399,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestAutoIncNotInteger? Find(string key) =>
-                DoFilter(key).Cast<global::TestAutoIncNotInteger?>().SingleOrDefault();
+            public global::TestAutoIncNotInteger? Find(string key) => FindSingle(key);
 
             public global::TestAutoIncNotInteger Update(global::TestAutoIncNotInteger row) =>
                 DoUpdate(row);
@@ -766,8 +862,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestScheduleIssues? Find(int key) =>
-                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+            public global::TestScheduleIssues? Find(int key) => FindSingle(key);
 
             public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
                 DoUpdate(row);
@@ -861,8 +956,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestScheduleIssues? Find(string key) =>
-                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+            public global::TestScheduleIssues? Find(string key) => FindSingle(key);
 
             public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
                 DoUpdate(row);
@@ -956,8 +1050,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // Important: don't move this to the base class.
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
-            public global::TestScheduleIssues? Find(int key) =>
-                DoFilter(key).Cast<global::TestScheduleIssues?>().SingleOrDefault();
+            public global::TestScheduleIssues? Find(int key) => FindSingle(key);
 
             public global::TestScheduleIssues Update(global::TestScheduleIssues row) =>
                 DoUpdate(row);
@@ -1058,7 +1151,7 @@ namespace SpacetimeDB.Internal.TableHandles
             // C# generics don't play well with nullable types and can't accept both struct-type-based and class-type-based
             // `globalName` in one generic definition, leading to buggy `Row?` expansion for either one or another.
             public global::TestUniqueNotEquatable? Find(TestEnumWithExplicitValues key) =>
-                DoFilter(key).Cast<global::TestUniqueNotEquatable?>().SingleOrDefault();
+                FindSingle(key);
 
             public global::TestUniqueNotEquatable Update(global::TestUniqueNotEquatable row) =>
                 DoUpdate(row);

@@ -47,7 +47,7 @@ use spacetimedb_sats::{
     Typespace,
 };
 use spacetimedb_schema::{
-    def::IndexAlgorithm,
+    def::{BTreeAlgorithm, IndexAlgorithm},
     schema::{columns_to_row_type, ColumnSchema, IndexSchema, TableSchema},
 };
 use std::{
@@ -1410,7 +1410,26 @@ impl Table {
         // It follows that this applies to any `rows`, as required.
         let violation = unsafe { index.build_from_rows(rows) };
         violation.unwrap_or_else(|ptr| {
-            panic!("adding `index` should cause no unique constraint violations, but {ptr:?} would")
+            let index_schema = &self.schema.indexes.iter().find(|index_schema| index_schema.index_id == index_id).expect("Index should exist");
+            let indexed_column = if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &index_schema.index_algorithm {
+                Some(columns)
+            } else { None };
+            let indexed_column = indexed_column.and_then(|columns| columns.as_singleton());
+            let indexed_column_info = indexed_column.and_then(|column| self.schema.get_column(column.idx()));
+            // SAFETY: `ptr` just came out of `self.scan_rows`, so it is present.
+            let row = unsafe { self.get_row_ref_unchecked(blob_store, ptr) }.to_product_value();
+            panic!(
+                "Adding index `{}` {:?} to table `{}` {:?} on column `{}` {:?} should cause no unique constraint violations.
+
+Found violation at pointer {ptr:?} to row {:?}.",
+                index_schema.index_name,
+                index_schema.index_id,
+                self.schema.table_name,
+                self.schema.table_id,
+                indexed_column_info.map(|column| &column.col_name[..]).unwrap_or("unknown column"),
+                indexed_column,
+                row,
+            );
         });
         // SAFETY: Forward caller requirement.
         unsafe { self.add_index(index_id, index) };
@@ -2342,7 +2361,7 @@ pub(crate) mod test {
     use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
     use spacetimedb_primitives::{col_list, TableId};
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
+    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec, SIZE};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, ModuleDef};
     use spacetimedb_schema::schema::Schema as _;
@@ -2643,7 +2662,7 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
+        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
@@ -2662,16 +2681,12 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            prop_assume!(!ty.elements.is_empty());
-
+        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
             test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
-            prop_assume!(ty.elements.len() >= 2);
-
+        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
             test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }

@@ -454,6 +454,7 @@ fn print_index_imports(out: &mut Indenter) {
     let mut types = [
         "TypeBuilder as __TypeBuilder",
         "type AlgebraicTypeType as __AlgebraicTypeType",
+        "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
         "type EventContextInterface as __EventContextInterface",
@@ -729,9 +730,17 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
         AlgebraicTypeUse::Timestamp => write!(out, "__t.timestamp()")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__t.option(")?;
             write_type_builder(module, out, inner_ty)?;
+            write!(out, ")")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "__t.result(")?;
+            write_type_builder(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type_builder(module, out, err_ty)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -840,13 +849,14 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
         | AlgebraicTypeUse::String => {
             false
         }
-        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) | AlgebraicTypeUse::Result { .. } => {
             true
         }
     }
@@ -866,6 +876,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__Infer<typeof __t.connectionId()>")?,
         AlgebraicTypeUse::Timestamp => write!(out, "__Infer<typeof __t.timestamp()>")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__Infer<typeof __t.timeDuration()>")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: __Infer<typeof __t.timeDuration()> }} | {{ tag: \"Time\", value: __Infer<typeof __t.timestamp()> }}"
@@ -873,6 +884,11 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write_type(module, out, ok_ty, ref_prefix, ref_suffix)?;
+            write!(out, " | ")?;
+            write_type(module, out, err_ty, ref_prefix, ref_suffix)?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "boolean")?,

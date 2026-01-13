@@ -423,6 +423,33 @@ fn insert_auto_inc_example(ctx: &ReducerContext) {
 
 `auto_inc` is often combined with `unique` or `primary_key` to automatically assign unique integer identifiers to rows.
 
+#### Default Values
+
+Columns can be marked with [`#[default(value)]`](macro@crate::table#default) to specify a default value. This is primarily used for [automatic migrations](#automatic-migrations) when adding new columns to existing tables.
+
+When you republish a module with a new column that has a default value, existing rows are automatically populated with that default. New columns must be added at the **end** of the table definition.
+
+```no_run
+# #[cfg(target_arch = "wasm32")] mod demo {
+use spacetimedb::table;
+
+#[table(name = player)]
+struct Player {
+    id: u64,
+    name: String,
+    // New columns added with defaults for migration
+    #[default(0)]
+    score: u32,
+    #[default(true)]
+    is_active: bool,
+}
+# }
+```
+
+The `#[default(value)]` attribute accepts a const-evaluable Rust expression. The value must be usable in a `const` context, which means you cannot use methods like `.to_string()` for `String` defaults. Only primitive types, enums, and other const-constructible types can have defaults.
+
+**Constraints**: `#[default]` cannot be combined with `#[primary_key]`, `#[unique]`, or `#[auto_inc]`, as these constraints require the database to manage column values.
+
 #### Indexes
 
 SpacetimeDB supports both single- and multi-column [B-Tree](https://en.wikipedia.org/wiki/B-tree) indexes.
@@ -642,6 +669,7 @@ The following changes are always allowed and never breaking:
 
 The following changes are allowed, but may break clients:
 
+- ⚠️ **Adding new columns to the end of a table with a default value**. The new column must be added at the end of the table definition and must have a default value specified. Non-updated clients will not be aware of the new column.
 - ⚠️ **Changing or removing reducers**. Clients that attempt to call the old version of a changed reducer will receive runtime errors.
 - ⚠️ **Changing tables from public to private**. Clients that are subscribed to a newly-private table will receive runtime errors.
 - ⚠️ **Removing `#[primary_key]` annotations**. Non-updated clients will still use the old `#[primary_key]` as a unique key in their local cache, which can result in non-deterministic behavior when updates are received.
@@ -658,7 +686,9 @@ The following changes are allowed, but may break clients:
 The following changes are forbidden without a manual migration:
 
 - ❌ **Removing tables**.
-- ❌ **Changing the columns of a table**. This includes changing the order of columns of a table.
+- ❌ **Removing or modifying existing columns**. This includes changing the type, renaming, or reordering columns.
+- ❌ **Adding columns without a default value**. New columns must have a default value so existing rows can be populated.
+- ❌ **Adding columns in the middle of a table**. New columns must be added at the end of the table definition.
 - ❌ **Changing whether a table is used for [scheduling](#scheduled-reducers).** <!-- TODO: update this if we ever actually implement it... -->
 - ❌ **Adding `#[unique]` or `#[primary_key]` constraints.** This could result in existing tables being in an invalid state.
 

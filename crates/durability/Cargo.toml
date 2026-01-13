@@ -13,10 +13,12 @@ fallocate = ["spacetimedb-commitlog/fallocate"]
 
 [dependencies]
 anyhow.workspace = true
+futures.workspace = true
 itertools.workspace = true
 log.workspace = true
 scopeguard.workspace = true
 spacetimedb-commitlog.workspace = true
+spacetimedb-fs-utils.workspace = true
 spacetimedb-paths.workspace = true
 spacetimedb-sats.workspace = true
 thiserror.workspace = true

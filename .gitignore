@@ -229,3 +229,9 @@ result
 
 # Python venv directories
 venv/
+
+# Claude Code
+.claude/
+
+# Windows null device artifact
+nul
