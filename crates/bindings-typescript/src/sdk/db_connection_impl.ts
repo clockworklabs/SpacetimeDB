@@ -106,9 +106,9 @@ export type DbConnectionConfig<RemoteModule extends UntypedRemoteModule> = {
 
 type ProcedureCallback = (result: ProcedureResultMessage['result']) => void;
 
-export class DbConnectionImpl<
-  RemoteModule extends UntypedRemoteModule,
-> implements DbContext<RemoteModule> {
+export class DbConnectionImpl<RemoteModule extends UntypedRemoteModule>
+  implements DbContext<RemoteModule>
+{
   /**
    * Whether or not the connection is active.
    */

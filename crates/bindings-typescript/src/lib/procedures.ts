@@ -42,9 +42,8 @@ export interface ProcedureCtx<S extends UntypedSchemaDef> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface TransactionCtx<
-  S extends UntypedSchemaDef,
-> extends ReducerCtx<S> {}
+export interface TransactionCtx<S extends UntypedSchemaDef>
+  extends ReducerCtx<S> {}
 
 export function procedure<
   S extends UntypedSchemaDef,

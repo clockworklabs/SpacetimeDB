@@ -7,9 +7,8 @@ import type { UntypedRemoteModule } from './spacetime_module.ts';
 
 export type UntypedEventContext = EventContextInterface<UntypedRemoteModule>;
 
-export interface EventContextInterface<
-  RemoteModule extends UntypedRemoteModule,
-> extends DbContext<RemoteModule> {
+export interface EventContextInterface<RemoteModule extends UntypedRemoteModule>
+  extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event: Event<
     ReducerEventInfo<
@@ -45,9 +44,8 @@ export interface SubscriptionEventContextInterface<
   /** No event is provided **/
 }
 
-export interface ErrorContextInterface<
-  RemoteModule extends UntypedRemoteModule,
-> extends DbContext<RemoteModule> {
+export interface ErrorContextInterface<RemoteModule extends UntypedRemoteModule>
+  extends DbContext<RemoteModule> {
   /** Enum with variants for all possible events. */
   event?: Error;
 }
