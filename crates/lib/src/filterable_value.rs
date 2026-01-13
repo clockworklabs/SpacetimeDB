@@ -29,7 +29,8 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// To implement `FilterableValue` for a new column type, you must also:
 /// - Ensure (with automated tests) that the `spacetimedb-codegen` crate
 ///   and accompanying SpacetimeDB client SDK can equality-compare and ordering-compare values of the column type,
-///   and that the resulting ordering is the same as the canonical ordering implemented by `spacetimedb-sats` for [`AlgebraicValue`].
+///   and that the resulting ordering is the same as the canonical ordering
+///    implemented by `spacetimedb-sats` for [`spacetimedb_sats::AlgebraicValue`].
 ///   This will nearly always require implementing bespoke comparison methods for the type in question,
 ///   as most languages do not automatically make product types (structs or classes) sortable.
 /// - Extend our other supported module languages' bindings libraries.
