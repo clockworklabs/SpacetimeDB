@@ -96,6 +96,10 @@ impl<K: Ord + KeySize> Index for MultiMap<K> {
         self.map.len()
     }
 
+    fn num_key_bytes(&self) -> u64 {
+        self.num_key_bytes
+    }
+
     fn num_rows(&self) -> usize {
         self.num_rows
     }
