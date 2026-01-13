@@ -215,11 +215,14 @@ Run `spacetime help describe` for more detailed information.
 
 Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.
 
-**Usage:** `spacetime dev [OPTIONS]`
+**Usage:** `spacetime dev [OPTIONS] [database]`
+
+###### **Arguments:**
+
+* `<DATABASE>` — The database name/identity to publish to (optional, will prompt if not provided)
 
 ###### **Options:**
 
-* `--database <DATABASE>` — The database name/identity to publish to (optional, will prompt if not provided)
 * `--project-path <PROJECT-PATH>` — The path to the project directory
 
   Default value: `.`
