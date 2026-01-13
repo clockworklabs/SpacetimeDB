@@ -232,6 +232,14 @@ export class DbConnectionBuilder<DbConnection extends DbConnectionImpl<any>> {
     return this;
   }
 
+  getUri(): string {
+    return this.#uri?.toString() ?? '';
+  }
+
+  getModuleName(): string {
+    return this.#nameOrAddress ?? '';
+  }
+
   /**
    * Builds a new `DbConnection` with the parameters set on this `DbConnectionBuilder` and attempts to connect to the SpacetimeDB server.
    *
