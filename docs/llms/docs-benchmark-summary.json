@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2026-01-13T19:03:17.965Z",
+  "generated_at": "2026-01-13T16:50:13.733Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "5efe8924d89f16a755d08d8f302342f55650769defa4cc3aff2f78ead55931e8",
+          "hash": "5be55c40b58234b63120b67f752d6eaf8feba6c863b8986a5286527104f237d3",
           "models": {
             "GPT-5": {
               "categories": {
@@ -19,20 +19,20 @@
                 },
                 "schema": {
                   "tasks": 10,
-                  "total_tests": 34,
-                  "passed_tests": 23,
-                  "pass_pct": 67.64706,
-                  "task_pass_equiv": 7.0,
-                  "task_pass_pct": 70.0
+                  "total_tests": 32,
+                  "passed_tests": 24,
+                  "pass_pct": 75.0,
+                  "task_pass_equiv": 6.666667,
+                  "task_pass_pct": 66.66667
                 }
               },
               "totals": {
                 "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 50,
-                "pass_pct": 81.96722,
-                "task_pass_equiv": 19.0,
-                "task_pass_pct": 86.36364
+                "total_tests": 59,
+                "passed_tests": 51,
+                "pass_pct": 86.44068,
+                "task_pass_equiv": 18.666668,
+                "task_pass_pct": 84.848495
               }
             }
           }
@@ -49,10 +49,10 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 20,
-                  "pass_pct": 74.07407,
-                  "task_pass_equiv": 9.0,
-                  "task_pass_pct": 75.0
+                  "passed_tests": 19,
+                  "pass_pct": 70.37037,
+                  "task_pass_equiv": 8.0,
+                  "task_pass_pct": 66.66667
                 },
                 "schema": {
                   "tasks": 10,
@@ -66,10 +66,10 @@
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 43,
-                "pass_pct": 70.491806,
-                "task_pass_equiv": 15.000001,
-                "task_pass_pct": 68.18182
+                "passed_tests": 42,
+                "pass_pct": 68.85246,
+                "task_pass_equiv": 14.000001,
+                "task_pass_pct": 63.636368
               }
             }
           }
