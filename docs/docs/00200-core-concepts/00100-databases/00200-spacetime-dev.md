@@ -1,12 +1,12 @@
 ---
-title: Developing Databases
+title: "spacetime dev"
 slug: /databases/developing
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Developing Databases
+# `spacetime dev`
 
 This guide covers how to create a new SpacetimeDB database module project.
 
@@ -101,18 +101,19 @@ Your database will be available at `https://maincloud.spacetimedb.com`.
 After initialization, your project will contain:
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
 ```text
 my-project/
 ├── spacetimedb/            # Server module code
-│   ├── Cargo.toml
+│   ├── package.json
+│   ├── tsconfig.json
 │   └── src/
-│       └── lib.rs
+│       └── index.ts
 ├── src/                    # Client code
 │   └── module_bindings/    # Generated client bindings
-├── Cargo.toml
-├── .gitignore
+├── package.json
+├── tsconfig.json
 └── README.md
 ```
 
@@ -131,19 +132,18 @@ my-project/
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
 ```text
 my-project/
 ├── spacetimedb/            # Server module code
-│   ├── package.json
-│   ├── tsconfig.json
+│   ├── Cargo.toml
 │   └── src/
-│       └── index.ts
+│       └── lib.rs
 ├── src/                    # Client code
 │   └── module_bindings/    # Generated client bindings
-├── package.json
-├── tsconfig.json
+├── Cargo.toml
+├── .gitignore
 └── README.md
 ```
 
@@ -157,17 +157,17 @@ If you prefer more control over the development workflow, you can create a datab
 ### Create a New Project with `spacetime init`
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
 ```bash
-spacetime init --lang rust --project-path ./my-project my-project
+spacetime init --lang typescript --project-path ./my-project my-project
 cd my-project
 ```
 
-This creates a new Rust project with:
+This creates a new TypeScript project with:
 
-- A `Cargo.toml` configured for SpacetimeDB
-- A `src/lib.rs` with a sample module
+- A `package.json` configured for SpacetimeDB
+- A `src/index.ts` with a sample module
 - Sample table and reducer definitions
 
 </TabItem>
@@ -185,17 +185,17 @@ This creates a new C# project with:
 - Sample table and reducer definitions
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
 ```bash
-spacetime init --lang typescript --project-path ./my-project my-project
+spacetime init --lang rust --project-path ./my-project my-project
 cd my-project
 ```
 
-This creates a new TypeScript project with:
+This creates a new Rust project with:
 
-- A `package.json` configured for SpacetimeDB
-- A `src/index.ts` with a sample module
+- A `Cargo.toml` configured for SpacetimeDB
+- A `src/lib.rs` with a sample module
 - Sample table and reducer definitions
 
 </TabItem>

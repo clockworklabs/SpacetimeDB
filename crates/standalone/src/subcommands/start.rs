@@ -1,5 +1,7 @@
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
+use std::io::{self, Write};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener as StdTcpListener};
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
@@ -82,6 +84,12 @@ pub fn cli() -> clap::Command {
                 .help("If specified, enables the built-in PostgreSQL wire protocol server on the given port.")
                 .value_parser(clap::value_parser!(u16).range(1024..65535)),
         )
+        .arg(
+            Arg::new("non_interactive")
+                .long("non-interactive")
+                .action(SetTrue)
+                .help("Run in non-interactive mode (fail immediately if port is in use)"),
+        )
     // .after_help("Run `spacetime help start` for more detailed information.")
 }
 
@@ -102,6 +110,7 @@ impl ConfigFile {
 pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let listen_addr = args.get_one::<String>("listen_addr").unwrap();
     let pg_port = args.get_one::<u16>("pg_port");
+    let non_interactive = args.get_flag("non_interactive");
     let cert_dir = args.get_one::<spacetimedb_paths::cli::ConfigDir>("jwt_key_dir");
     let certs = Option::zip(
         args.get_one::<PubKeyPath>("jwt_pub_key_path").cloned(),
@@ -189,7 +198,52 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     let extra = axum::Router::new().nest("/health", spacetimedb_client_api::routes::health::router());
     let service = router(&ctx, db_routes, IdentityRoutes::default(), extra).with_state(ctx.clone());
 
-    let tcp = TcpListener::bind(listen_addr).await.context(format!(
+    // Check if the requested port is available on both IPv4 and IPv6.
+    // If not, offer to find an available port by incrementing (unless non-interactive).
+    let listen_addr = if let Some((host, port_str)) = listen_addr.rsplit_once(':') {
+        if let Ok(requested_port) = port_str.parse::<u16>() {
+            if !is_port_available(host, requested_port) {
+                if non_interactive {
+                    anyhow::bail!(
+                        "Port {} is already in use. Please free up the port or specify a different port with --listen-addr.",
+                        requested_port
+                    );
+                }
+                // Port is in use, try to find an alternative
+                match find_available_port(host, requested_port.saturating_add(1), 100) {
+                    Some(available_port) => {
+                        let question = format!(
+                            "Port {} is already in use. Would you like to use port {} instead?",
+                            requested_port, available_port
+                        );
+                        if prompt_yes_no(&question) {
+                            format!("{}:{}", host, available_port)
+                        } else {
+                            anyhow::bail!(
+                                "Port {} is already in use. Please free up the port or specify a different port with --listen-addr.",
+                                requested_port
+                            );
+                        }
+                    }
+                    None => {
+                        anyhow::bail!(
+                            "Port {} is already in use and could not find an available port nearby. \
+                             Please free up the port or specify a different port with --listen-addr.",
+                            requested_port
+                        );
+                    }
+                }
+            } else {
+                listen_addr.to_string()
+            }
+        } else {
+            listen_addr.to_string()
+        }
+    } else {
+        listen_addr.to_string()
+    };
+
+    let tcp = TcpListener::bind(&listen_addr).await.context(format!(
         "failed to bind the SpacetimeDB server to '{listen_addr}', please check that the address is valid and not already in use"
     ))?;
     socket2::SockRef::from(&tcp).set_nodelay(true)?;
@@ -224,6 +278,73 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Check if a port is available on the requested host for both IPv4 and IPv6.
+///
+/// On macOS (and some other systems), `localhost` can resolve to both IPv4 (127.0.0.1)
+/// and IPv6 (::1). If SpacetimeDB binds only to IPv4 but another service is using the
+/// same port on IPv6, browsers may connect to the wrong service depending on which
+/// address they try first.
+///
+/// This function checks both the requested IPv4 address and its IPv6 equivalent:
+/// - 127.0.0.1 -> also checks ::1
+/// - 0.0.0.0 -> also checks ::
+/// - 10.1.1.1 -> also checks ::ffff:10.1.1.1 (IPv4-mapped IPv6)
+///
+/// Note: There is a small race condition between this check and the actual bind -
+/// another process could grab the port in between. This is unlikely in practice
+/// and the actual bind will fail with a clear error if it happens.
+fn is_port_available(host: &str, port: u16) -> bool {
+    // Parse the host and determine which addresses to check
+    let ipv4 = host
+        .parse::<Ipv4Addr>()
+        .unwrap_or_else(|e| panic!("Invalid IPv4 address '{}': {}", host, e));
+
+    let ipv6 = if ipv4.is_loopback() {
+        Ipv6Addr::LOCALHOST
+    } else if ipv4.is_unspecified() {
+        Ipv6Addr::UNSPECIFIED
+    } else {
+        // For specific IPs, use the IPv4-mapped IPv6 address
+        ipv4.to_ipv6_mapped()
+    };
+
+    let ipv4_addr = SocketAddr::from((ipv4, port));
+    let ipv6_addr = SocketAddr::V6(SocketAddrV6::new(ipv6, port, 0, 0));
+
+    let ipv4_available = StdTcpListener::bind(ipv4_addr).is_ok();
+    let ipv6_available = StdTcpListener::bind(ipv6_addr).is_ok();
+
+    ipv4_available && ipv6_available
+}
+
+/// Find an available port starting from the requested port.
+/// Returns the first port that is available on both IPv4 and IPv6.
+fn find_available_port(host: &str, requested_port: u16, max_attempts: u16) -> Option<u16> {
+    for offset in 0..max_attempts {
+        let port = requested_port.saturating_add(offset);
+        if port == 0 || port == u16::MAX {
+            break;
+        }
+        if is_port_available(host, port) {
+            return Some(port);
+        }
+    }
+    None
+}
+
+/// Prompt the user with a yes/no question. Returns true if they answer yes.
+fn prompt_yes_no(question: &str) -> bool {
+    print!("{} [y/N] ", question);
+    io::stdout().flush().ok();
+
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_err() {
+        return false;
+    }
+
+    matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
 }
 
 fn banner() {

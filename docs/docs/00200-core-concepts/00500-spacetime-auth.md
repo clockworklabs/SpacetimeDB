@@ -3,7 +3,6 @@ title: Overview
 slug: /spacetimeauth
 ---
 
-# SpacetimeAuth - Overview
 
 :::warning
 

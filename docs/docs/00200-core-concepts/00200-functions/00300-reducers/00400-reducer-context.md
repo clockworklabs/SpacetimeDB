@@ -6,7 +6,6 @@ slug: /functions/reducers/reducer-context
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Reducer Context
 
 Every reducer receives a special context parameter as its first argument. This context provides read-write access to the database, information about the caller, and additional utilities like random number generation.
 
@@ -17,23 +16,24 @@ The reducer context is required for accessing tables, executing database operati
 The primary purpose of the reducer context is to provide access to the module's database tables.
 
 <Tabs groupId="language">
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use spacetimedb::{table, reducer, ReducerContext};
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
 
-#[table(name = user)]
-pub struct User {
-    #[primary_key]
-    #[auto_inc]
-    id: u64,
-    name: String,
-}
+const user = table(
+  { name: 'user', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string(),
+  }
+);
 
-#[reducer]
-fn create_user(ctx: &ReducerContext, name: String) {
-    ctx.db.user().insert(User { id: 0, name });
-}
+const spacetimedb = schema(user);
+
+spacetimedb.reducer('create_user', { name: t.string() }, (ctx, { name }) => {
+  ctx.db.user.insert({ id: 0n, name });
+});
 ```
 
 </TabItem>
@@ -62,24 +62,23 @@ public static partial class Module
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-import { schema, table, t } from 'spacetimedb/server';
+```rust
+use spacetimedb::{table, reducer, ReducerContext};
 
-const user = table(
-  { name: 'user', public: true },
-  {
-    id: t.u64().primaryKey().autoInc(),
-    name: t.string(),
-  }
-);
+#[table(name = user)]
+pub struct User {
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+}
 
-const spacetimedb = schema(user);
-
-spacetimedb.reducer('create_user', { name: t.string() }, (ctx, { name }) => {
-  ctx.db.user.insert({ id: 0n, name });
-});
+#[reducer]
+fn create_user(ctx: &ReducerContext, name: String) {
+    ctx.db.user().insert(User { id: 0, name });
+}
 ```
 
 </TabItem>
@@ -94,30 +93,35 @@ The context provides information about who invoked the reducer and when.
 Every reducer invocation has an associated caller identity.
 
 <Tabs groupId="language">
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use spacetimedb::{table, reducer, ReducerContext, Identity};
+```typescript
+import { schema, table, t, type Identity } from 'spacetimedb/server';
 
-#[table(name = player)]
-pub struct Player {
-    #[primary_key]
-    identity: Identity,
-    name: String,
-    score: u32,
-}
+const player = table(
+  { name: 'player', public: true },
+  {
+    identity: t.identity().primaryKey(),
+    name: t.string(),
+    score: t.u32(),
+  }
+);
 
-#[reducer]
-fn update_score(ctx: &ReducerContext, new_score: u32) {
-    // Get the caller's identity
-    let caller = ctx.sender;
-    
-    // Find and update their player record
-    if let Some(mut player) = ctx.db.player().identity().find(caller) {
-        player.score = new_score;
-        ctx.db.player().identity().update(player);
-    }
-}
+const spacetimedb = schema(player);
+
+spacetimedb.reducer('update_score', { newScore: t.u32() }, (ctx, { newScore }) => {
+  // Get the caller's identity
+  const caller = ctx.sender;
+  
+  // Find and update their player record
+  const existingPlayer = ctx.db.player.identity.find(caller);
+  if (existingPlayer) {
+    ctx.db.player.identity.update({
+      ...existingPlayer,
+      score: newScore,
+    });
+  }
+});
 ```
 
 </TabItem>
@@ -154,35 +158,30 @@ public static partial class Module
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-import { schema, table, t, type Identity } from 'spacetimedb/server';
+```rust
+use spacetimedb::{table, reducer, ReducerContext, Identity};
 
-const player = table(
-  { name: 'player', public: true },
-  {
-    identity: t.identity().primaryKey(),
-    name: t.string(),
-    score: t.u32(),
-  }
-);
+#[table(name = player)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    name: String,
+    score: u32,
+}
 
-const spacetimedb = schema(player);
-
-spacetimedb.reducer('update_score', { newScore: t.u32() }, (ctx, { newScore }) => {
-  // Get the caller's identity
-  const caller = ctx.sender;
-  
-  // Find and update their player record
-  const existingPlayer = ctx.db.player.identity.find(caller);
-  if (existingPlayer) {
-    ctx.db.player.identity.update({
-      ...existingPlayer,
-      score: newScore,
-    });
-  }
-});
+#[reducer]
+fn update_score(ctx: &ReducerContext, new_score: u32) {
+    // Get the caller's identity
+    let caller = ctx.sender;
+    
+    // Find and update their player record
+    if let Some(mut player) = ctx.db.player().identity().find(caller) {
+        player.score = new_score;
+        ctx.db.player().identity().update(player);
+    }
+}
 ```
 
 </TabItem>
@@ -215,29 +214,30 @@ The context provides access to the module's own identity, which is useful for di
 This is particularly important for [scheduled reducers](/functions/reducers) that should only be invoked by the system, not by external clients.
 
 <Tabs groupId="language">
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use spacetimedb::{table, reducer, ReducerContext, ScheduleAt};
+```typescript
+import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-#[table(name = scheduled_task, scheduled(send_reminder))]
-pub struct ScheduledTask {
-    #[primary_key]
-    #[auto_inc]
-    task_id: u64,
-    scheduled_at: ScheduleAt,
-    message: String,
-}
+const scheduledTask = table(
+  { name: 'scheduled_task', scheduled: 'send_reminder' },
+  {
+    taskId: t.u64().primaryKey().autoInc(),
+    scheduledAt: t.scheduleAt(),
+    message: t.string(),
+  }
+);
 
-#[reducer]
-fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
-    // Only allow the scheduler (module identity) to call this
-    if ctx.sender != ctx.identity() {
-        panic!("This reducer can only be called by the scheduler");
-    }
-    
-    spacetimedb::log::info!("Reminder: {}", task.message);
-}
+const spacetimedb = schema(scheduledTask);
+
+spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg }) => {
+  // Only allow the scheduler (module identity) to call this
+  if (ctx.sender != ctx.identity) {
+    throw new SenderError('This reducer can only be called by the scheduler');
+  }
+  
+  console.log(`Reminder: ${arg.message}`);
+});
 ```
 
 </TabItem>
@@ -273,30 +273,29 @@ public static partial class Module
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-import { schema, table, t, SenderError } from 'spacetimedb/server';
+```rust
+use spacetimedb::{table, reducer, ReducerContext, ScheduleAt};
 
-const scheduledTask = table(
-  { name: 'scheduled_task', scheduled: 'send_reminder' },
-  {
-    taskId: t.u64().primaryKey().autoInc(),
-    scheduledAt: t.scheduleAt(),
-    message: t.string(),
-  }
-);
+#[table(name = scheduled_task, scheduled(send_reminder))]
+pub struct ScheduledTask {
+    #[primary_key]
+    #[auto_inc]
+    task_id: u64,
+    scheduled_at: ScheduleAt,
+    message: String,
+}
 
-const spacetimedb = schema(scheduledTask);
-
-spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg }) => {
-  // Only allow the scheduler (module identity) to call this
-  if (ctx.sender != ctx.identity) {
-    throw new SenderError('This reducer can only be called by the scheduler');
-  }
-  
-  console.log(`Reminder: ${arg.message}`);
-});
+#[reducer]
+fn send_reminder(ctx: &ReducerContext, task: ScheduledTask) {
+    // Only allow the scheduler (module identity) to call this
+    if ctx.sender != ctx.identity() {
+        panic!("This reducer can only be called by the scheduler");
+    }
+    
+    spacetimedb::log::info!("Reminder: {}", task.message);
+}
 ```
 
 </TabItem>
@@ -305,6 +304,32 @@ spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg
 ## Context Properties Reference
 
 <Tabs groupId="language">
+<TabItem value="typescript" label="TypeScript">
+
+| Property       | Type                       | Description                                     |
+| -------------- | -------------------------- | ----------------------------------------------- |
+| `db`           | `DbView`                   | Access to the module's database tables          |
+| `sender`       | `Identity`                 | Identity of the caller                          |
+| `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
+| `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
+| `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
+
+:::note
+TypeScript uses `Math.random()` for random number generation, which is automatically seeded deterministically by SpacetimeDB.
+:::
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+| Property       | Type                  | Description                                     |
+| -------------- | --------------------- | ----------------------------------------------- |
+| `Db`           | `DbView`              | Access to the module's database tables          |
+| `Sender`       | `Identity`            | Identity of the caller                          |
+| `SenderAuth`   | `AuthCtx`             | Authorization context for the caller (includes JWT claims and internal call detection) |
+| `ConnectionId` | `ConnectionId?`       | Connection ID of the caller, if available       |
+| `Timestamp`    | `Timestamp`           | Time when the reducer was invoked               |
+| `Rng`          | `Random`              | Random number generator                         |
+| `Identity`     | `Identity`            | The module's identity                           |
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 | Property        | Type                  | Description                                     |
@@ -320,31 +345,5 @@ spacetimedb.reducer('send_reminder', { arg: scheduledTask.rowType }, (ctx, { arg
 - `rng() -> &StdbRng` - Get the random number generator
 - `random<T>() -> T` - Generate a single random value
 - `sender_auth() -> &AuthCtx` - Get authorization context for the caller (includes JWT claims and internal call detection)
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-| Property       | Type                  | Description                                     |
-| -------------- | --------------------- | ----------------------------------------------- |
-| `Db`           | `DbView`              | Access to the module's database tables          |
-| `Sender`       | `Identity`            | Identity of the caller                          |
-| `SenderAuth`   | `AuthCtx`             | Authorization context for the caller (includes JWT claims and internal call detection) |
-| `ConnectionId` | `ConnectionId?`       | Connection ID of the caller, if available       |
-| `Timestamp`    | `Timestamp`           | Time when the reducer was invoked               |
-| `Rng`          | `Random`              | Random number generator                         |
-| `Identity`     | `Identity`            | The module's identity                           |
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-| Property       | Type                       | Description                                     |
-| -------------- | -------------------------- | ----------------------------------------------- |
-| `db`           | `DbView`                   | Access to the module's database tables          |
-| `sender`       | `Identity`                 | Identity of the caller                          |
-| `senderAuth`   | `AuthCtx`                  | Authorization context for the caller (includes JWT claims and internal call detection) |
-| `connectionId` | `ConnectionId \| undefined`| Connection ID of the caller, if available       |
-| `timestamp`    | `Timestamp`                | Time when the reducer was invoked               |
-
-:::note
-TypeScript uses `Math.random()` for random number generation, which is automatically seeded deterministically by SpacetimeDB.
-:::
 </TabItem>
 </Tabs>

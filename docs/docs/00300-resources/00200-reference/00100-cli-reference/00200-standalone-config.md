@@ -3,7 +3,6 @@ title: Standalone Configuration
 slug: /cli-reference/standalone-config
 ---
 
-# `spacetimedb-standalone` configuration
 
 A local database instance (as started by `spacetime start`) can be configured in `{data-dir}/config.toml`, where `{data-dir}` is the database's data directory. This directory is printed when you run `spacetime start`:
 

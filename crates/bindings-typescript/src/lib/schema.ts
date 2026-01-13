@@ -77,7 +77,8 @@ type TablesToSchema<T extends readonly UntypedTableSchema[]> = {
   };
 };
 
-interface TableToSchema<T extends UntypedTableSchema> extends UntypedTableDef {
+export interface TableToSchema<T extends UntypedTableSchema>
+  extends UntypedTableDef {
   name: T['tableName'];
   accessorName: CamelCase<T['tableName']>;
   columns: T['rowType']['row'];
