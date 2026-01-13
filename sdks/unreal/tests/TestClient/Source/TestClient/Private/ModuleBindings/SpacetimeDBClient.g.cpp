@@ -34,11 +34,13 @@
 #include "ModuleBindings/Tables/OneU64Table.g.h"
 #include "ModuleBindings/Tables/OneU8Table.g.h"
 #include "ModuleBindings/Tables/OneUnitStructTable.g.h"
+#include "ModuleBindings/Tables/OneUuidTable.g.h"
 #include "ModuleBindings/Tables/OptionEveryPrimitiveStructTable.g.h"
 #include "ModuleBindings/Tables/OptionI32Table.g.h"
 #include "ModuleBindings/Tables/OptionIdentityTable.g.h"
 #include "ModuleBindings/Tables/OptionSimpleEnumTable.g.h"
 #include "ModuleBindings/Tables/OptionStringTable.g.h"
+#include "ModuleBindings/Tables/OptionUuidTable.g.h"
 #include "ModuleBindings/Tables/OptionVecOptionI32Table.g.h"
 #include "ModuleBindings/Tables/PkBoolTable.g.h"
 #include "ModuleBindings/Tables/PkConnectionIdTable.g.h"
@@ -58,6 +60,7 @@
 #include "ModuleBindings/Tables/PkU32TwoTable.g.h"
 #include "ModuleBindings/Tables/PkU64Table.g.h"
 #include "ModuleBindings/Tables/PkU8Table.g.h"
+#include "ModuleBindings/Tables/PkUuidTable.g.h"
 #include "ModuleBindings/Tables/ResultEveryPrimitiveStructStringTable.g.h"
 #include "ModuleBindings/Tables/ResultI32StringTable.g.h"
 #include "ModuleBindings/Tables/ResultIdentityStringTable.g.h"
@@ -82,6 +85,7 @@
 #include "ModuleBindings/Tables/UniqueU32Table.g.h"
 #include "ModuleBindings/Tables/UniqueU64Table.g.h"
 #include "ModuleBindings/Tables/UniqueU8Table.g.h"
+#include "ModuleBindings/Tables/UniqueUuidTable.g.h"
 #include "ModuleBindings/Tables/UsersTable.g.h"
 #include "ModuleBindings/Tables/VecBoolTable.g.h"
 #include "ModuleBindings/Tables/VecByteStructTable.g.h"
@@ -108,6 +112,7 @@
 #include "ModuleBindings/Tables/VecU64Table.g.h"
 #include "ModuleBindings/Tables/VecU8Table.g.h"
 #include "ModuleBindings/Tables/VecUnitStructTable.g.h"
+#include "ModuleBindings/Tables/VecUuidTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
@@ -233,6 +238,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::DeletePkU8(Args);
     }
 
+    if (ReducerName == TEXT("delete_pk_uuid"))
+    {
+        FDeletePkUuidArgs Args = UE::SpacetimeDB::Deserialize<FDeletePkUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::DeletePkUuid(Args);
+    }
+
     if (ReducerName == TEXT("delete_unique_bool"))
     {
         FDeleteUniqueBoolArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueBoolArgs>(Event.ReducerCall.Args);
@@ -329,10 +340,28 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::DeleteUniqueU8(Args);
     }
 
+    if (ReducerName == TEXT("delete_unique_uuid"))
+    {
+        FDeleteUniqueUuidArgs Args = UE::SpacetimeDB::Deserialize<FDeleteUniqueUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::DeleteUniqueUuid(Args);
+    }
+
     if (ReducerName == TEXT("insert_call_timestamp"))
     {
         FInsertCallTimestampArgs Args = UE::SpacetimeDB::Deserialize<FInsertCallTimestampArgs>(Event.ReducerCall.Args);
         return FReducer::InsertCallTimestamp(Args);
+    }
+
+    if (ReducerName == TEXT("insert_call_uuid_v4"))
+    {
+        FInsertCallUuidV4Args Args = UE::SpacetimeDB::Deserialize<FInsertCallUuidV4Args>(Event.ReducerCall.Args);
+        return FReducer::InsertCallUuidV4(Args);
+    }
+
+    if (ReducerName == TEXT("insert_call_uuid_v7"))
+    {
+        FInsertCallUuidV7Args Args = UE::SpacetimeDB::Deserialize<FInsertCallUuidV7Args>(Event.ReducerCall.Args);
+        return FReducer::InsertCallUuidV7(Args);
     }
 
     if (ReducerName == TEXT("insert_caller_one_connection_id"))
@@ -557,6 +586,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::InsertOneUnitStruct(Args);
     }
 
+    if (ReducerName == TEXT("insert_one_uuid"))
+    {
+        FInsertOneUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertOneUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertOneUuid(Args);
+    }
+
     if (ReducerName == TEXT("insert_option_every_primitive_struct"))
     {
         FInsertOptionEveryPrimitiveStructArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionEveryPrimitiveStructArgs>(Event.ReducerCall.Args);
@@ -585,6 +620,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
     {
         FInsertOptionStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionStringArgs>(Event.ReducerCall.Args);
         return FReducer::InsertOptionString(Args);
+    }
+
+    if (ReducerName == TEXT("insert_option_uuid"))
+    {
+        FInsertOptionUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertOptionUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertOptionUuid(Args);
     }
 
     if (ReducerName == TEXT("insert_option_vec_option_i32"))
@@ -699,6 +740,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
     {
         FInsertPkU8Args Args = UE::SpacetimeDB::Deserialize<FInsertPkU8Args>(Event.ReducerCall.Args);
         return FReducer::InsertPkU8(Args);
+    }
+
+    if (ReducerName == TEXT("insert_pk_uuid"))
+    {
+        FInsertPkUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertPkUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertPkUuid(Args);
     }
 
     if (ReducerName == TEXT("insert_primitives_as_strings"))
@@ -849,6 +896,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
     {
         FInsertUniqueU8Args Args = UE::SpacetimeDB::Deserialize<FInsertUniqueU8Args>(Event.ReducerCall.Args);
         return FReducer::InsertUniqueU8(Args);
+    }
+
+    if (ReducerName == TEXT("insert_unique_uuid"))
+    {
+        FInsertUniqueUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertUniqueUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertUniqueUuid(Args);
     }
 
     if (ReducerName == TEXT("insert_user"))
@@ -1007,6 +1060,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::InsertVecUnitStruct(Args);
     }
 
+    if (ReducerName == TEXT("insert_vec_uuid"))
+    {
+        FInsertVecUuidArgs Args = UE::SpacetimeDB::Deserialize<FInsertVecUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertVecUuid(Args);
+    }
+
     if (ReducerName == TEXT("no_op_succeeds"))
     {
         FNoOpSucceedsArgs Args = UE::SpacetimeDB::Deserialize<FNoOpSucceedsArgs>(Event.ReducerCall.Args);
@@ -1017,6 +1076,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
     {
         FSendScheduledMessageArgs Args = UE::SpacetimeDB::Deserialize<FSendScheduledMessageArgs>(Event.ReducerCall.Args);
         return FReducer::SendScheduledMessage(Args);
+    }
+
+    if (ReducerName == TEXT("sorted_uuids_insert"))
+    {
+        FSortedUuidsInsertArgs Args = UE::SpacetimeDB::Deserialize<FSortedUuidsInsertArgs>(Event.ReducerCall.Args);
+        return FReducer::SortedUuidsInsert(Args);
     }
 
     if (ReducerName == TEXT("update_indexed_simple_enum"))
@@ -1133,6 +1198,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::UpdatePkU8(Args);
     }
 
+    if (ReducerName == TEXT("update_pk_uuid"))
+    {
+        FUpdatePkUuidArgs Args = UE::SpacetimeDB::Deserialize<FUpdatePkUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::UpdatePkUuid(Args);
+    }
+
     if (ReducerName == TEXT("update_unique_bool"))
     {
         FUpdateUniqueBoolArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueBoolArgs>(Event.ReducerCall.Args);
@@ -1229,6 +1300,12 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::UpdateUniqueU8(Args);
     }
 
+    if (ReducerName == TEXT("update_unique_uuid"))
+    {
+        FUpdateUniqueUuidArgs Args = UE::SpacetimeDB::Deserialize<FUpdateUniqueUuidArgs>(Event.ReducerCall.Args);
+        return FReducer::UpdateUniqueUuid(Args);
+    }
+
     return FReducer();
 }
 
@@ -1276,11 +1353,13 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FOneU64Type, UOneU64Table, FEventContext>(TEXT("one_u64"), Db->OneU64);
 	RegisterTable<FOneU8Type, UOneU8Table, FEventContext>(TEXT("one_u8"), Db->OneU8);
 	RegisterTable<FOneUnitStructType, UOneUnitStructTable, FEventContext>(TEXT("one_unit_struct"), Db->OneUnitStruct);
+	RegisterTable<FOneUuidType, UOneUuidTable, FEventContext>(TEXT("one_uuid"), Db->OneUuid);
 	RegisterTable<FOptionEveryPrimitiveStructType, UOptionEveryPrimitiveStructTable, FEventContext>(TEXT("option_every_primitive_struct"), Db->OptionEveryPrimitiveStruct);
 	RegisterTable<FOptionI32Type, UOptionI32Table, FEventContext>(TEXT("option_i32"), Db->OptionI32);
 	RegisterTable<FOptionIdentityType, UOptionIdentityTable, FEventContext>(TEXT("option_identity"), Db->OptionIdentity);
 	RegisterTable<FOptionSimpleEnumType, UOptionSimpleEnumTable, FEventContext>(TEXT("option_simple_enum"), Db->OptionSimpleEnum);
 	RegisterTable<FOptionStringType, UOptionStringTable, FEventContext>(TEXT("option_string"), Db->OptionString);
+	RegisterTable<FOptionUuidType, UOptionUuidTable, FEventContext>(TEXT("option_uuid"), Db->OptionUuid);
 	RegisterTable<FOptionVecOptionI32Type, UOptionVecOptionI32Table, FEventContext>(TEXT("option_vec_option_i32"), Db->OptionVecOptionI32);
 	RegisterTable<FPkBoolType, UPkBoolTable, FEventContext>(TEXT("pk_bool"), Db->PkBool);
 	RegisterTable<FPkConnectionIdType, UPkConnectionIdTable, FEventContext>(TEXT("pk_connection_id"), Db->PkConnectionId);
@@ -1300,6 +1379,7 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FPkU32TwoType, UPkU32TwoTable, FEventContext>(TEXT("pk_u32_two"), Db->PkU32Two);
 	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u64"), Db->PkU64);
 	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u8"), Db->PkU8);
+	RegisterTable<FPkUuidType, UPkUuidTable, FEventContext>(TEXT("pk_uuid"), Db->PkUuid);
 	RegisterTable<FResultEveryPrimitiveStructStringType, UResultEveryPrimitiveStructStringTable, FEventContext>(TEXT("result_every_primitive_struct_string"), Db->ResultEveryPrimitiveStructString);
 	RegisterTable<FResultI32StringType, UResultI32StringTable, FEventContext>(TEXT("result_i32_string"), Db->ResultI32String);
 	RegisterTable<FResultIdentityStringType, UResultIdentityStringTable, FEventContext>(TEXT("result_identity_string"), Db->ResultIdentityString);
@@ -1324,6 +1404,7 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FUniqueU32Type, UUniqueU32Table, FEventContext>(TEXT("unique_u32"), Db->UniqueU32);
 	RegisterTable<FUniqueU64Type, UUniqueU64Table, FEventContext>(TEXT("unique_u64"), Db->UniqueU64);
 	RegisterTable<FUniqueU8Type, UUniqueU8Table, FEventContext>(TEXT("unique_u8"), Db->UniqueU8);
+	RegisterTable<FUniqueUuidType, UUniqueUuidTable, FEventContext>(TEXT("unique_uuid"), Db->UniqueUuid);
 	RegisterTable<FUsersType, UUsersTable, FEventContext>(TEXT("users"), Db->Users);
 	RegisterTable<FVecBoolType, UVecBoolTable, FEventContext>(TEXT("vec_bool"), Db->VecBool);
 	RegisterTable<FVecByteStructType, UVecByteStructTable, FEventContext>(TEXT("vec_byte_struct"), Db->VecByteStruct);
@@ -1350,6 +1431,7 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FVecU64Type, UVecU64Table, FEventContext>(TEXT("vec_u64"), Db->VecU64);
 	RegisterTable<FVecU8Type, UVecU8Table, FEventContext>(TEXT("vec_u8"), Db->VecU8);
 	RegisterTable<FVecUnitStructType, UVecUnitStructTable, FEventContext>(TEXT("vec_unit_struct"), Db->VecUnitStruct);
+	RegisterTable<FVecUuidType, UVecUuidTable, FEventContext>(TEXT("vec_uuid"), Db->VecUuid);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -1415,11 +1497,13 @@ void URemoteTables::Initialize()
 	OneU64 = NewObject<UOneU64Table>(this);
 	OneU8 = NewObject<UOneU8Table>(this);
 	OneUnitStruct = NewObject<UOneUnitStructTable>(this);
+	OneUuid = NewObject<UOneUuidTable>(this);
 	OptionEveryPrimitiveStruct = NewObject<UOptionEveryPrimitiveStructTable>(this);
 	OptionI32 = NewObject<UOptionI32Table>(this);
 	OptionIdentity = NewObject<UOptionIdentityTable>(this);
 	OptionSimpleEnum = NewObject<UOptionSimpleEnumTable>(this);
 	OptionString = NewObject<UOptionStringTable>(this);
+	OptionUuid = NewObject<UOptionUuidTable>(this);
 	OptionVecOptionI32 = NewObject<UOptionVecOptionI32Table>(this);
 	PkBool = NewObject<UPkBoolTable>(this);
 	PkConnectionId = NewObject<UPkConnectionIdTable>(this);
@@ -1439,6 +1523,7 @@ void URemoteTables::Initialize()
 	PkU32Two = NewObject<UPkU32TwoTable>(this);
 	PkU64 = NewObject<UPkU64Table>(this);
 	PkU8 = NewObject<UPkU8Table>(this);
+	PkUuid = NewObject<UPkUuidTable>(this);
 	ResultEveryPrimitiveStructString = NewObject<UResultEveryPrimitiveStructStringTable>(this);
 	ResultI32String = NewObject<UResultI32StringTable>(this);
 	ResultIdentityString = NewObject<UResultIdentityStringTable>(this);
@@ -1463,6 +1548,7 @@ void URemoteTables::Initialize()
 	UniqueU32 = NewObject<UUniqueU32Table>(this);
 	UniqueU64 = NewObject<UUniqueU64Table>(this);
 	UniqueU8 = NewObject<UUniqueU8Table>(this);
+	UniqueUuid = NewObject<UUniqueUuidTable>(this);
 	Users = NewObject<UUsersTable>(this);
 	VecBool = NewObject<UVecBoolTable>(this);
 	VecByteStruct = NewObject<UVecByteStructTable>(this);
@@ -1489,6 +1575,7 @@ void URemoteTables::Initialize()
 	VecU64 = NewObject<UVecU64Table>(this);
 	VecU8 = NewObject<UVecU8Table>(this);
 	VecUnitStruct = NewObject<UVecUnitStructTable>(this);
+	VecUuid = NewObject<UVecUuidTable>(this);
 	/**/
 
 	/** Initialization */
@@ -1522,11 +1609,13 @@ void URemoteTables::Initialize()
 	OneU64->PostInitialize();
 	OneU8->PostInitialize();
 	OneUnitStruct->PostInitialize();
+	OneUuid->PostInitialize();
 	OptionEveryPrimitiveStruct->PostInitialize();
 	OptionI32->PostInitialize();
 	OptionIdentity->PostInitialize();
 	OptionSimpleEnum->PostInitialize();
 	OptionString->PostInitialize();
+	OptionUuid->PostInitialize();
 	OptionVecOptionI32->PostInitialize();
 	PkBool->PostInitialize();
 	PkConnectionId->PostInitialize();
@@ -1546,6 +1635,7 @@ void URemoteTables::Initialize()
 	PkU32Two->PostInitialize();
 	PkU64->PostInitialize();
 	PkU8->PostInitialize();
+	PkUuid->PostInitialize();
 	ResultEveryPrimitiveStructString->PostInitialize();
 	ResultI32String->PostInitialize();
 	ResultIdentityString->PostInitialize();
@@ -1570,6 +1660,7 @@ void URemoteTables::Initialize()
 	UniqueU32->PostInitialize();
 	UniqueU64->PostInitialize();
 	UniqueU8->PostInitialize();
+	UniqueUuid->PostInitialize();
 	Users->PostInitialize();
 	VecBool->PostInitialize();
 	VecByteStruct->PostInitialize();
@@ -1596,6 +1687,7 @@ void URemoteTables::Initialize()
 	VecU64->PostInitialize();
 	VecU8->PostInitialize();
 	VecUnitStruct->PostInitialize();
+	VecUuid->PostInitialize();
 	/**/
 }
 
@@ -1679,6 +1771,10 @@ void USetReducerFlags::DeletePkU8(ECallReducerFlags Flag)
 {
 	FlagMap.Add("DeletePkU8", Flag);
 }
+void USetReducerFlags::DeletePkUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("DeletePkUuid", Flag);
+}
 void USetReducerFlags::DeleteUniqueBool(ECallReducerFlags Flag)
 {
 	FlagMap.Add("DeleteUniqueBool", Flag);
@@ -1743,9 +1839,21 @@ void USetReducerFlags::DeleteUniqueU8(ECallReducerFlags Flag)
 {
 	FlagMap.Add("DeleteUniqueU8", Flag);
 }
+void USetReducerFlags::DeleteUniqueUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("DeleteUniqueUuid", Flag);
+}
 void USetReducerFlags::InsertCallTimestamp(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertCallTimestamp", Flag);
+}
+void USetReducerFlags::InsertCallUuidV4(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertCallUuidV4", Flag);
+}
+void USetReducerFlags::InsertCallUuidV7(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertCallUuidV7", Flag);
 }
 void USetReducerFlags::InsertCallerOneConnectionId(ECallReducerFlags Flag)
 {
@@ -1895,6 +2003,10 @@ void USetReducerFlags::InsertOneUnitStruct(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertOneUnitStruct", Flag);
 }
+void USetReducerFlags::InsertOneUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertOneUuid", Flag);
+}
 void USetReducerFlags::InsertOptionEveryPrimitiveStruct(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertOptionEveryPrimitiveStruct", Flag);
@@ -1914,6 +2026,10 @@ void USetReducerFlags::InsertOptionSimpleEnum(ECallReducerFlags Flag)
 void USetReducerFlags::InsertOptionString(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertOptionString", Flag);
+}
+void USetReducerFlags::InsertOptionUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertOptionUuid", Flag);
 }
 void USetReducerFlags::InsertOptionVecOptionI32(ECallReducerFlags Flag)
 {
@@ -1990,6 +2106,10 @@ void USetReducerFlags::InsertPkU64(ECallReducerFlags Flag)
 void USetReducerFlags::InsertPkU8(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertPkU8", Flag);
+}
+void USetReducerFlags::InsertPkUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertPkUuid", Flag);
 }
 void USetReducerFlags::InsertPrimitivesAsStrings(ECallReducerFlags Flag)
 {
@@ -2090,6 +2210,10 @@ void USetReducerFlags::InsertUniqueU64(ECallReducerFlags Flag)
 void USetReducerFlags::InsertUniqueU8(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertUniqueU8", Flag);
+}
+void USetReducerFlags::InsertUniqueUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertUniqueUuid", Flag);
 }
 void USetReducerFlags::InsertUser(ECallReducerFlags Flag)
 {
@@ -2195,6 +2319,10 @@ void USetReducerFlags::InsertVecUnitStruct(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertVecUnitStruct", Flag);
 }
+void USetReducerFlags::InsertVecUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertVecUuid", Flag);
+}
 void USetReducerFlags::NoOpSucceeds(ECallReducerFlags Flag)
 {
 	FlagMap.Add("NoOpSucceeds", Flag);
@@ -2202,6 +2330,10 @@ void USetReducerFlags::NoOpSucceeds(ECallReducerFlags Flag)
 void USetReducerFlags::SendScheduledMessage(ECallReducerFlags Flag)
 {
 	FlagMap.Add("SendScheduledMessage", Flag);
+}
+void USetReducerFlags::SortedUuidsInsert(ECallReducerFlags Flag)
+{
+	FlagMap.Add("SortedUuidsInsert", Flag);
 }
 void USetReducerFlags::UpdateIndexedSimpleEnum(ECallReducerFlags Flag)
 {
@@ -2279,6 +2411,10 @@ void USetReducerFlags::UpdatePkU8(ECallReducerFlags Flag)
 {
 	FlagMap.Add("UpdatePkU8", Flag);
 }
+void USetReducerFlags::UpdatePkUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("UpdatePkUuid", Flag);
+}
 void USetReducerFlags::UpdateUniqueBool(ECallReducerFlags Flag)
 {
 	FlagMap.Add("UpdateUniqueBool", Flag);
@@ -2342,6 +2478,10 @@ void USetReducerFlags::UpdateUniqueU64(ECallReducerFlags Flag)
 void USetReducerFlags::UpdateUniqueU8(ECallReducerFlags Flag)
 {
 	FlagMap.Add("UpdateUniqueU8", Flag);
+}
+void USetReducerFlags::UpdateUniqueUuid(ECallReducerFlags Flag)
+{
+	FlagMap.Add("UpdateUniqueUuid", Flag);
 }
 
 void URemoteReducers::DeleteFromBtreeU32(const TArray<FBTreeU32Type>& Rows)
@@ -2947,6 +3087,35 @@ bool URemoteReducers::InvokeDeletePkU8(const FReducerEventContext& Context, cons
     return true;
 }
 
+void URemoteReducers::DeletePkUuid(const FSpacetimeDBUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("delete_pk_uuid"), FDeletePkUuidArgs(U), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeDeletePkUuid(const FReducerEventContext& Context, const UDeletePkUuidReducer* Args)
+{
+    if (!OnDeletePkUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkUuid"));
+        }
+        return false;
+    }
+
+    OnDeletePkUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueBool(const bool B)
 {
     if (!Conn)
@@ -3411,6 +3580,35 @@ bool URemoteReducers::InvokeDeleteUniqueU8(const FReducerEventContext& Context, 
     return true;
 }
 
+void URemoteReducers::DeleteUniqueUuid(const FSpacetimeDBUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("delete_unique_uuid"), FDeleteUniqueUuidArgs(U), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeDeleteUniqueUuid(const FReducerEventContext& Context, const UDeleteUniqueUuidReducer* Args)
+{
+    if (!OnDeleteUniqueUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
 void URemoteReducers::InsertCallTimestamp()
 {
     if (!Conn)
@@ -3437,6 +3635,64 @@ bool URemoteReducers::InvokeInsertCallTimestamp(const FReducerEventContext& Cont
     }
 
     OnInsertCallTimestamp.Broadcast(Context);
+    return true;
+}
+
+void URemoteReducers::InsertCallUuidV4()
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_call_uuid_v4"), FInsertCallUuidV4Args(), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertCallUuidV4(const FReducerEventContext& Context, const UInsertCallUuidV4Reducer* Args)
+{
+    if (!OnInsertCallUuidV4.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallUuidV4"));
+        }
+        return false;
+    }
+
+    OnInsertCallUuidV4.Broadcast(Context);
+    return true;
+}
+
+void URemoteReducers::InsertCallUuidV7()
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_call_uuid_v7"), FInsertCallUuidV7Args(), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertCallUuidV7(const FReducerEventContext& Context, const UInsertCallUuidV7Reducer* Args)
+{
+    if (!OnInsertCallUuidV7.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallUuidV7"));
+        }
+        return false;
+    }
+
+    OnInsertCallUuidV7.Broadcast(Context);
     return true;
 }
 
@@ -4536,6 +4792,35 @@ bool URemoteReducers::InvokeInsertOneUnitStruct(const FReducerEventContext& Cont
     return true;
 }
 
+void URemoteReducers::InsertOneUuid(const FSpacetimeDBUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_one_uuid"), FInsertOneUuidArgs(U), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertOneUuid(const FReducerEventContext& Context, const UInsertOneUuidReducer* Args)
+{
+    if (!OnInsertOneUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneUuid"));
+        }
+        return false;
+    }
+
+    OnInsertOneUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
 void URemoteReducers::InsertOptionEveryPrimitiveStruct(const FTestClientOptionalEveryPrimitiveStruct& S)
 {
     if (!Conn)
@@ -4678,6 +4963,35 @@ bool URemoteReducers::InvokeInsertOptionString(const FReducerEventContext& Conte
     }
 
     OnInsertOptionString.Broadcast(Context, Args->S);
+    return true;
+}
+
+void URemoteReducers::InsertOptionUuid(const FTestClientOptionalUuid& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_option_uuid"), FInsertOptionUuidArgs(U), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertOptionUuid(const FReducerEventContext& Context, const UInsertOptionUuidReducer* Args)
+{
+    if (!OnInsertOptionUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionUuid"));
+        }
+        return false;
+    }
+
+    OnInsertOptionUuid.Broadcast(Context, Args->U);
     return true;
 }
 
@@ -5229,6 +5543,35 @@ bool URemoteReducers::InvokeInsertPkU8(const FReducerEventContext& Context, cons
     }
 
     OnInsertPkU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+void URemoteReducers::InsertPkUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_pk_uuid"), FInsertPkUuidArgs(U, Data), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertPkUuid(const FReducerEventContext& Context, const UInsertPkUuidReducer* Args)
+{
+    if (!OnInsertPkUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkUuid"));
+        }
+        return false;
+    }
+
+    OnInsertPkUuid.Broadcast(Context, Args->U, Args->Data);
     return true;
 }
 
@@ -5954,6 +6297,35 @@ bool URemoteReducers::InvokeInsertUniqueU8(const FReducerEventContext& Context, 
     }
 
     OnInsertUniqueU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+void URemoteReducers::InsertUniqueUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_unique_uuid"), FInsertUniqueUuidArgs(U, Data), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertUniqueUuid(const FReducerEventContext& Context, const UInsertUniqueUuidReducer* Args)
+{
+    if (!OnInsertUniqueUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueUuid.Broadcast(Context, Args->U, Args->Data);
     return true;
 }
 
@@ -6711,6 +7083,35 @@ bool URemoteReducers::InvokeInsertVecUnitStruct(const FReducerEventContext& Cont
     return true;
 }
 
+void URemoteReducers::InsertVecUuid(const TArray<FSpacetimeDBUuid>& U)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_vec_uuid"), FInsertVecUuidArgs(U), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertVecUuid(const FReducerEventContext& Context, const UInsertVecUuidReducer* Args)
+{
+    if (!OnInsertVecUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecUuid"));
+        }
+        return false;
+    }
+
+    OnInsertVecUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
 void URemoteReducers::NoOpSucceeds()
 {
     if (!Conn)
@@ -6766,6 +7167,35 @@ bool URemoteReducers::InvokeSendScheduledMessage(const FReducerEventContext& Con
     }
 
     OnSendScheduledMessage.Broadcast(Context, Args->Arg);
+    return true;
+}
+
+void URemoteReducers::SortedUuidsInsert()
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("sorted_uuids_insert"), FSortedUuidsInsertArgs(), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeSortedUuidsInsert(const FReducerEventContext& Context, const USortedUuidsInsertReducer* Args)
+{
+    if (!OnSortedUuidsInsert.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SortedUuidsInsert"));
+        }
+        return false;
+    }
+
+    OnSortedUuidsInsert.Broadcast(Context);
     return true;
 }
 
@@ -7320,6 +7750,35 @@ bool URemoteReducers::InvokeUpdatePkU8(const FReducerEventContext& Context, cons
     return true;
 }
 
+void URemoteReducers::UpdatePkUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("update_pk_uuid"), FUpdatePkUuidArgs(U, Data), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeUpdatePkUuid(const FReducerEventContext& Context, const UUpdatePkUuidReducer* Args)
+{
+    if (!OnUpdatePkUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkUuid"));
+        }
+        return false;
+    }
+
+    OnUpdatePkUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueBool(const bool B, const int32 Data)
 {
     if (!Conn)
@@ -7784,6 +8243,35 @@ bool URemoteReducers::InvokeUpdateUniqueU8(const FReducerEventContext& Context, 
     return true;
 }
 
+void URemoteReducers::UpdateUniqueUuid(const FSpacetimeDBUuid& U, const int32 Data)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("update_unique_uuid"), FUpdateUniqueUuidArgs(U, Data), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeUpdateUniqueUuid(const FReducerEventContext& Context, const UUpdateUniqueUuidReducer* Args)
+{
+    if (!OnUpdateUniqueUuid.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
 void UDbConnection::PostInitProperties()
 {
     Super::PostInitProperties();
@@ -8020,6 +8508,14 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeletePkU8(Context, Reducer);
         return;
     }
+    if (ReducerName == TEXT("delete_pk_uuid"))
+    {
+        FDeletePkUuidArgs Args = ReducerEvent.Reducer.GetAsDeletePkUuid();
+        UDeletePkUuidReducer* Reducer = NewObject<UDeletePkUuidReducer>();
+        Reducer->U = Args.U;
+        Reducers->InvokeDeletePkUuid(Context, Reducer);
+        return;
+    }
     if (ReducerName == TEXT("delete_unique_bool"))
     {
         FDeleteUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueBool();
@@ -8148,11 +8644,33 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeDeleteUniqueU8(Context, Reducer);
         return;
     }
+    if (ReducerName == TEXT("delete_unique_uuid"))
+    {
+        FDeleteUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueUuid();
+        UDeleteUniqueUuidReducer* Reducer = NewObject<UDeleteUniqueUuidReducer>();
+        Reducer->U = Args.U;
+        Reducers->InvokeDeleteUniqueUuid(Context, Reducer);
+        return;
+    }
     if (ReducerName == TEXT("insert_call_timestamp"))
     {
         FInsertCallTimestampArgs Args = ReducerEvent.Reducer.GetAsInsertCallTimestamp();
         UInsertCallTimestampReducer* Reducer = NewObject<UInsertCallTimestampReducer>();
         Reducers->InvokeInsertCallTimestamp(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_call_uuid_v4"))
+    {
+        FInsertCallUuidV4Args Args = ReducerEvent.Reducer.GetAsInsertCallUuidV4();
+        UInsertCallUuidV4Reducer* Reducer = NewObject<UInsertCallUuidV4Reducer>();
+        Reducers->InvokeInsertCallUuidV4(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_call_uuid_v7"))
+    {
+        FInsertCallUuidV7Args Args = ReducerEvent.Reducer.GetAsInsertCallUuidV7();
+        UInsertCallUuidV7Reducer* Reducer = NewObject<UInsertCallUuidV7Reducer>();
+        Reducers->InvokeInsertCallUuidV7(Context, Reducer);
         return;
     }
     if (ReducerName == TEXT("insert_caller_one_connection_id"))
@@ -8469,6 +8987,14 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertOneUnitStruct(Context, Reducer);
         return;
     }
+    if (ReducerName == TEXT("insert_one_uuid"))
+    {
+        FInsertOneUuidArgs Args = ReducerEvent.Reducer.GetAsInsertOneUuid();
+        UInsertOneUuidReducer* Reducer = NewObject<UInsertOneUuidReducer>();
+        Reducer->U = Args.U;
+        Reducers->InvokeInsertOneUuid(Context, Reducer);
+        return;
+    }
     if (ReducerName == TEXT("insert_option_every_primitive_struct"))
     {
         FInsertOptionEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsInsertOptionEveryPrimitiveStruct();
@@ -8507,6 +9033,14 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         UInsertOptionStringReducer* Reducer = NewObject<UInsertOptionStringReducer>();
         Reducer->S = Args.S;
         Reducers->InvokeInsertOptionString(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_option_uuid"))
+    {
+        FInsertOptionUuidArgs Args = ReducerEvent.Reducer.GetAsInsertOptionUuid();
+        UInsertOptionUuidReducer* Reducer = NewObject<UInsertOptionUuidReducer>();
+        Reducer->U = Args.U;
+        Reducers->InvokeInsertOptionUuid(Context, Reducer);
         return;
     }
     if (ReducerName == TEXT("insert_option_vec_option_i32"))
@@ -8677,6 +9211,15 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducer->N = Args.N;
         Reducer->Data = Args.Data;
         Reducers->InvokeInsertPkU8(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("insert_pk_uuid"))
+    {
+        FInsertPkUuidArgs Args = ReducerEvent.Reducer.GetAsInsertPkUuid();
+        UInsertPkUuidReducer* Reducer = NewObject<UInsertPkUuidReducer>();
+        Reducer->U = Args.U;
+        Reducer->Data = Args.Data;
+        Reducers->InvokeInsertPkUuid(Context, Reducer);
         return;
     }
     if (ReducerName == TEXT("insert_primitives_as_strings"))
@@ -8898,6 +9441,15 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertUniqueU8(Context, Reducer);
         return;
     }
+    if (ReducerName == TEXT("insert_unique_uuid"))
+    {
+        FInsertUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueUuid();
+        UInsertUniqueUuidReducer* Reducer = NewObject<UInsertUniqueUuidReducer>();
+        Reducer->U = Args.U;
+        Reducer->Data = Args.Data;
+        Reducers->InvokeInsertUniqueUuid(Context, Reducer);
+        return;
+    }
     if (ReducerName == TEXT("insert_user"))
     {
         FInsertUserArgs Args = ReducerEvent.Reducer.GetAsInsertUser();
@@ -9107,6 +9659,14 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeInsertVecUnitStruct(Context, Reducer);
         return;
     }
+    if (ReducerName == TEXT("insert_vec_uuid"))
+    {
+        FInsertVecUuidArgs Args = ReducerEvent.Reducer.GetAsInsertVecUuid();
+        UInsertVecUuidReducer* Reducer = NewObject<UInsertVecUuidReducer>();
+        Reducer->U = Args.U;
+        Reducers->InvokeInsertVecUuid(Context, Reducer);
+        return;
+    }
     if (ReducerName == TEXT("no_op_succeeds"))
     {
         FNoOpSucceedsArgs Args = ReducerEvent.Reducer.GetAsNoOpSucceeds();
@@ -9120,6 +9680,13 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         USendScheduledMessageReducer* Reducer = NewObject<USendScheduledMessageReducer>();
         Reducer->Arg = Args.Arg;
         Reducers->InvokeSendScheduledMessage(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("sorted_uuids_insert"))
+    {
+        FSortedUuidsInsertArgs Args = ReducerEvent.Reducer.GetAsSortedUuidsInsert();
+        USortedUuidsInsertReducer* Reducer = NewObject<USortedUuidsInsertReducer>();
+        Reducers->InvokeSortedUuidsInsert(Context, Reducer);
         return;
     }
     if (ReducerName == TEXT("update_indexed_simple_enum"))
@@ -9293,6 +9860,15 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducers->InvokeUpdatePkU8(Context, Reducer);
         return;
     }
+    if (ReducerName == TEXT("update_pk_uuid"))
+    {
+        FUpdatePkUuidArgs Args = ReducerEvent.Reducer.GetAsUpdatePkUuid();
+        UUpdatePkUuidReducer* Reducer = NewObject<UUpdatePkUuidReducer>();
+        Reducer->U = Args.U;
+        Reducer->Data = Args.Data;
+        Reducers->InvokeUpdatePkUuid(Context, Reducer);
+        return;
+    }
     if (ReducerName == TEXT("update_unique_bool"))
     {
         FUpdateUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueBool();
@@ -9435,6 +10011,15 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
         Reducer->N = Args.N;
         Reducer->Data = Args.Data;
         Reducers->InvokeUpdateUniqueU8(Context, Reducer);
+        return;
+    }
+    if (ReducerName == TEXT("update_unique_uuid"))
+    {
+        FUpdateUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueUuid();
+        UUpdateUniqueUuidReducer* Reducer = NewObject<UUpdateUniqueUuidReducer>();
+        Reducer->U = Args.U;
+        Reducer->Data = Args.Data;
+        Reducers->InvokeUpdateUniqueUuid(Context, Reducer);
         return;
     }
 
