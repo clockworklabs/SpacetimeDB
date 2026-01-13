@@ -221,9 +221,9 @@ The `client_disconnected` reducer:
 
 ## Scheduled Reducers
 
-Reducers can be triggered at specific times using scheduled tables. See [Scheduled Tables](/tables/scheduled-tables) for details on:
+Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](/tables/schedule-tables) for details on:
 
-- Defining scheduled tables
+- Defining schedule tables
 - Triggering reducers at specific timestamps
 - Running reducers periodically
 - Canceling scheduled executions

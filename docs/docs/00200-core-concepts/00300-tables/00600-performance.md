@@ -493,7 +493,7 @@ Be mindful of unbounded table growth:
 
 - Implement cleanup reducers for temporary data
 - Archive or delete old records
-- Use scheduled tables to automatically expire data
+- Use schedule tables to automatically expire data
 - Consider pagination for large result sets
 
 ## Next Steps
