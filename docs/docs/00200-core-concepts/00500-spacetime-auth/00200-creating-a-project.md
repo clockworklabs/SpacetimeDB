@@ -3,6 +3,7 @@ title: Creating a project
 slug: /spacetimeauth/creating-a-project
 ---
 
+# Setting up a SpacetimeAuth Project
 
 :::warning
 

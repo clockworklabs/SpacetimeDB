@@ -2361,7 +2361,7 @@ pub(crate) mod test {
     use spacetimedb_lib::db::raw_def::v9::{RawIndexAlgorithm, RawModuleDefV9Builder};
     use spacetimedb_primitives::{col_list, TableId};
     use spacetimedb_sats::bsatn::to_vec;
-    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec, SIZE};
+    use spacetimedb_sats::proptest::{generate_typed_row, generate_typed_row_vec};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue};
     use spacetimedb_schema::def::{BTreeAlgorithm, ModuleDef};
     use spacetimedb_schema::schema::Schema as _;
@@ -2662,7 +2662,7 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(0..SIZE, 128, 2048)) {
+        fn row_size_reporting_matches_slow_implementations((ty, vals) in generate_typed_row_vec(128, 2048)) {
             let pool = PagePool::new_for_test();
             let mut blob_store = HashMapBlobStore::default();
             let mut table = table(ty.clone());
@@ -2681,12 +2681,16 @@ pub(crate) mod test {
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(1..SIZE, 128, 2048)) {
+        fn index_size_reporting_matches_slow_implementations_single_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            prop_assume!(!ty.elements.is_empty());
+
             test_index_size_reporting(ty, vals, ColList::from(ColId(0)))?;
         }
 
         #[test]
-        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(2..SIZE, 128, 2048)) {
+        fn index_size_reporting_matches_slow_implementations_two_column((ty, vals) in generate_typed_row_vec(128, 2048)) {
+            prop_assume!(ty.elements.len() >= 2);
+
             test_index_size_reporting(ty, vals, ColList::from([ColId(0), ColId(1)]))?;
         }
     }

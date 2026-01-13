@@ -1,5 +1,5 @@
 import {
-  CreatePlayerReducer,
+  CreatePlayer,
   DbConnection,
   Player,
   User,
@@ -149,7 +149,7 @@ describe('DbConnection', () => {
       reducerEvent:
         | ReducerEvent<{
             name: 'create_player';
-            args: Infer<typeof CreatePlayerReducer>;
+            args: Infer<typeof CreatePlayer>;
           }>
         | undefined;
       player: Infer<typeof Player>;
@@ -176,12 +176,12 @@ describe('DbConnection', () => {
     const reducerCallbackLog: {
       reducerEvent: ReducerEvent<{
         name: 'create_player';
-        args: Infer<typeof CreatePlayerReducer>;
+        args: Infer<typeof CreatePlayer>;
       }>;
       reducerArgs: any[];
     }[] = [];
     client.reducers.onCreatePlayer(
-      (ctx, { name, location }: Infer<typeof CreatePlayerReducer>) => {
+      (ctx, { name, location }: Infer<typeof CreatePlayer>) => {
         const reducerEvent = ctx.event;
         reducerCallbackLog.push({
           reducerEvent,

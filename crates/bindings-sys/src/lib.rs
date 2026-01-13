@@ -664,9 +664,10 @@ pub mod raw {
         pub fn procedure_sleep_until(wake_at_micros_since_unix_epoch: i64) -> i64;
 
         /// Starts a mutable transaction,
-        /// blocking until a mutable transaction lock is acquired.
+        /// suspending execution of this WASM instance until
+        /// a mutable transaction lock is aquired.
         ///
-        /// Returns `0` on success,
+        /// Upon resuming, returns `0` on success,
         /// enabling further calls that require a pending transaction,
         /// or an error code otherwise.
         ///
@@ -683,10 +684,11 @@ pub mod raw {
         pub fn procedure_start_mut_tx(out: *mut i64) -> u16;
 
         /// Commits a mutable transaction,
-        /// blocking until the transaction has been committed
+        /// suspending execution of this WASM instance until
+        /// the transaction has been committed
         /// and subscription queries have been run and broadcast.
         ///
-        /// Once complete, it returns `0` on success, or an error code otherwise.
+        /// Upon resuming, returns `0` on success, or an error code otherwise.
         ///
         /// # Traps
         ///
@@ -707,9 +709,10 @@ pub mod raw {
         pub fn procedure_commit_mut_tx() -> u16;
 
         /// Aborts a mutable transaction,
-        /// blocking until the transaction has been aborted.
+        /// suspending execution of this WASM instance until
+        /// the transaction has been rolled back.
         ///
-        /// Returns `0` on success, or an error code otherwise.
+        /// Upon resuming, returns `0` on success, or an error code otherwise.
         ///
         /// # Traps
         ///
@@ -1511,9 +1514,10 @@ pub mod procedure {
     }
 
     /// Starts a mutable transaction,
-    /// blocking until a mutable transaction lock is acquired.
+    /// suspending execution of this WASM instance until
+    /// a mutable transaction lock is aquired.
     ///
-    /// Once complete, returns `Ok(timestamp)` on success,
+    /// Upon resuming, returns `Ok(timestamp)` on success,
     /// enabling further calls that require a pending transaction,
     /// or [`Errno`] otherwise.
     ///
@@ -1528,10 +1532,11 @@ pub mod procedure {
     }
 
     /// Commits a mutable transaction,
-    /// blocking until the transaction has been committed
+    /// suspending execution of this WASM instance until
+    /// the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Upon resuming, returns `Ok(()` on success, or an [`Errno`] otherwise.
     ///
     /// # Errors
     ///
@@ -1551,9 +1556,10 @@ pub mod procedure {
     }
 
     /// Aborts a mutable transaction,
-    /// blocking until the transaction has been rolled back.
+    /// suspending execution of this WASM instance until
+    /// the transaction has been rolled back.
     ///
-    /// Once complete, returns `Ok(())` on success, or an [`Errno`] otherwise.
+    /// Upon resuming, returns `Ok(())` on success, or an [`Errno`] otherwise.
     ///
     /// # Errors
     ///

@@ -73,13 +73,6 @@ pub fn cli() -> Command {
         .arg(common_args::server().help("The nickname, host name or URL of the server to publish to"))
         .arg(common_args::yes())
         .arg(common_args::clear_database())
-        .arg(
-            Arg::new("template")
-                .short('t')
-                .long("template")
-                .value_name("TEMPLATE")
-                .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
-        )
 }
 
 #[derive(Deserialize)]
@@ -135,16 +128,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .interact()?;
 
         if should_init {
-            let mut init_argv = vec!["init"];
-            if resolved_server == "local" {
-                init_argv.push("--local");
-            }
-            let template = args.get_one::<String>("template");
-            if let Some(template_str) = template {
-                init_argv.push("--template");
-                init_argv.push(template_str);
-            }
-            let init_args = init::cli().get_matches_from(init_argv);
+            let init_args = init::cli().get_matches_from(if resolved_server == "local" {
+                vec!["init", "--local"]
+            } else {
+                vec!["init"]
+            });
             let created_project_path = init::exec(config.clone(), &init_args).await?;
 
             let canonical_created_path = created_project_path
@@ -160,11 +148,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
-    } else if args.get_one::<String>("template").is_some() {
-        println!(
-            "{}",
-            "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
-        );
     }
 
     if !module_bindings_dir.exists() {

@@ -46,7 +46,7 @@ async function main() {
     'docs',
     'docs',
     '00300-resources',
-    '00200-reference',
+    '01000-reference',
     '00100-cli-reference',
     '00100-cli-reference.md',
   );

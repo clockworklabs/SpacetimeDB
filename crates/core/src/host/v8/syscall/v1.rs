@@ -1684,7 +1684,10 @@ fn procedure_start_mut_tx<'scope>(
 ) -> SysCallResult<Local<'scope, v8::BigInt>> {
     let env = get_env(scope)?;
 
-    env.instance_env.start_mutable_tx()?;
+    let fut = env.instance_env.start_mutable_tx()?;
+
+    let rt = tokio::runtime::Handle::current();
+    rt.block_on(fut);
 
     let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
 
@@ -1701,7 +1704,10 @@ fn procedure_abort_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackA
 fn procedure_commit_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
     let env = get_env(scope)?;
 
-    env.instance_env.commit_mutable_tx()?;
+    let fut = env.instance_env.commit_mutable_tx()?;
+
+    let rt = tokio::runtime::Handle::current();
+    rt.block_on(fut);
 
     Ok(())
 }
