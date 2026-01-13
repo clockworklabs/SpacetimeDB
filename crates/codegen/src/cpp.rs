@@ -79,12 +79,17 @@ impl<'opts> Cpp<'opts> {
                 self.write_algebraic_type(output, module, inner_type)?;
                 write!(output, ">")
             }
+            AlgebraicTypeUse::Result { .. } => {
+                // TODO: Implement proper Result<T, E> type support
+                write!(output, "ResultPlaceholder")
+            }
             AlgebraicTypeUse::String => write!(output, "std::string"),
             AlgebraicTypeUse::Identity => write!(output, "__sdk::Identity"),
             AlgebraicTypeUse::ConnectionId => write!(output, "__sdk::ConnectionId"),
             AlgebraicTypeUse::Timestamp => write!(output, "__sdk::Timestamp"),
             AlgebraicTypeUse::TimeDuration => write!(output, "__sdk::TimeDuration"),
             AlgebraicTypeUse::ScheduleAt => write!(output, "__sdk::ScheduleAt"),
+            AlgebraicTypeUse::Uuid => write!(output, "UuidPlaceholder"), // TODO: Implement proper UUID type
             AlgebraicTypeUse::Unit => write!(output, "std::monostate"),
             AlgebraicTypeUse::Never => write!(output, "std::monostate"),
             AlgebraicTypeUse::Ref(type_ref) => {

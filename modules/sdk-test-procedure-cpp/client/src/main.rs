@@ -229,4 +229,50 @@ fn run_tests(ctx: &DbConnection) {
             eprintln!("  ✗ insert_with_tx_commit failed: {}", err);
         }
     });
+
+    // Test read_my_schema (HTTP)
+    println!("Testing read_my_schema (HTTP)...");
+    ctx.procedures.read_my_schema_then(|_, res| match res {
+        Ok(schema) => {
+            if !schema.is_empty() {
+                println!("  ✓ read_my_schema returned schema data ({} bytes)", schema.len());
+                if schema.len() > 100 {
+                    println!("    Preview: {}...", &schema[..100]);
+                } else {
+                    println!("    Data: {}", schema);
+                }
+            } else {
+                eprintln!("  ✗ read_my_schema returned empty string");
+            }
+        }
+        Err(err) => {
+            eprintln!("  ✗ read_my_schema failed: {}", err);
+        }
+    });
+
+    // Test invalid_request (HTTP error handling)
+    println!("Testing invalid_request (HTTP)...");
+    ctx.procedures.invalid_request_then(|_, res| match res {
+        Ok(error_msg) => {
+            if !error_msg.is_empty() {
+                println!("  ✓ invalid_request returned error message: {}", error_msg);
+            } else {
+                eprintln!("  ✗ invalid_request returned empty error");
+            }
+        }
+        Err(err) => {
+            eprintln!("  ✗ invalid_request failed: {}", err);
+        }
+    });
+
+    // Test simple HTTP GET request
+    println!("Testing test_simple_http (HTTP)...");
+    ctx.procedures.test_simple_http_then(|_, res| match res {
+        Ok(result) => {
+            println!("  ✓ test_simple_http: {}", result);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_simple_http failed: {}", err);
+        }
+    });
 }

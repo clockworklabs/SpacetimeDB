@@ -5,6 +5,9 @@
 #include <spacetimedb/bsatn/timestamp.h> // For Timestamp
 #include <spacetimedb/tx_context.h> // For TxContext
 #include <spacetimedb/abi/FFI.h> // For transaction syscalls
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+#include <spacetimedb/http.h> // For HttpClient
+#endif
 #include <cstdint>
 #include <functional>
 #include <stdexcept>
@@ -26,7 +29,7 @@ namespace SpacetimeDb {
  * Future Parts (documented for reference):
  * - Part 2: Transactions via ctx.WithTx() and ctx.TryWithTx()
  * - Part 3: Scheduled execution via table attributes
- * - Part 4: HTTP requests via HttpClient
+ * - Part 4: HTTP requests via ctx.http
  * 
  * Key differences from ReducerContext:
  * - NO db field (database operations require explicit transactions in Part 2)
@@ -66,6 +69,13 @@ struct ProcedureContext {
     // Used to track which client connection initiated this procedure
     ConnectionId connection_id;
     
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+    // HTTP client for making external requests
+    // IMPORTANT: HTTP calls are NOT allowed inside transactions!
+    // Always call HTTP before with_tx() or try_with_tx()
+    HttpClient http;
+#endif
+    
     // NOTE: NO db field!
     // Part 1 procedures are pure functions - no database access
     // Part 2 will add WithTx() and TryWithTx() methods for transactions
@@ -75,6 +85,25 @@ struct ProcedureContext {
     
     ProcedureContext(Identity s, Timestamp t, ConnectionId conn_id)
         : sender(s), timestamp(t), connection_id(conn_id) {}
+
+    /**
+     * @brief Read the current module's Identity
+     * 
+     * Returns the Identity (database address) of the module instance.
+     * This is useful for constructing URLs or making API calls to the module's own endpoints.
+     * 
+     * Example:
+     * @code
+     * auto module_id = ctx.identity();
+     * std::string url = "http://localhost:3000/v1/database/" + 
+     *                   module_id.to_hex() + "/schema?version=9";
+     * @endcode
+     */
+    Identity identity() const {
+        std::array<uint8_t, 32> id_bytes;
+        ::identity(id_bytes.data());
+        return Identity(id_bytes);
+    }
 
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
     /**

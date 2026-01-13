@@ -105,15 +105,85 @@ SPACETIMEDB_PROCEDURE(Unit, insert_with_tx_rollback, ProcedureContext ctx) {
 #endif // SPACETIMEDB_UNSTABLE_FEATURES
 
 // ============================================================================
-// NOTE: HTTP and Scheduled Procedure tests are excluded
+// Procedure Tests - Part 4: HTTP Requests
+// ============================================================================
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+
+// Test HTTP GET request to the module's own schema endpoint
+SPACETIMEDB_PROCEDURE(std::string, read_my_schema, ProcedureContext ctx) {
+    // Get the module identity (database address)
+    Identity module_identity = ctx.identity();
+    std::string identity_hex = module_identity.to_hex_string();
+    
+    LOG_INFO("read_my_schema using identity: " + identity_hex);
+    
+    // Make HTTP GET request to the schema endpoint (matches Rust)
+    std::string url = "http://localhost:3000/v1/database/" + identity_hex + "/schema?version=9";
+    auto result = ctx.http.Get(url);
+    
+    if (!result.is_ok()) {
+        LOG_INFO("read_my_schema error: " + result.error());
+        LOG_PANIC(result.error());
+        return ""; // Never reached
+    }
+    
+    auto& response = result.value();
+    std::string body = response.body.ToStringUtf8Lossy();
+    
+    LOG_INFO("read_my_schema status: " + std::to_string(response.status_code) + ", body length: " + std::to_string(body.length()));
+    
+    return body;
+}
+
+// Test HTTP request with invalid URL (should fail gracefully)
+SPACETIMEDB_PROCEDURE(std::string, invalid_request, ProcedureContext ctx) {
+    auto result = ctx.http.Get("http://foo.invalid/");
+    
+    if (result.is_ok()) {
+        // Unexpected success - panic like Rust version
+        auto& response = result.value();
+        std::string body = response.body.ToStringUtf8Lossy();
+        LOG_INFO("invalid_request unexpected success: " + body);
+        LOG_PANIC("Got result from requesting `http://foo.invalid`... huh?\n" + body);
+        return ""; // Never reached
+    }
+    
+    std::string error = result.error();
+    LOG_INFO("invalid_request expected error: " + error);
+    return error;
+}
+
+// Test HTTP GET request to a simple JSON endpoint
+SPACETIMEDB_PROCEDURE(std::string, test_simple_http, ProcedureContext ctx) {
+    // Use httpbin.org which returns simple JSON responses
+    auto result = ctx.http.Get("https://httpbin.org/get");
+    
+    if (!result.is_ok()) {
+        LOG_INFO("test_simple_http error: " + result.error());
+        return "Error: " + result.error();
+    }
+    
+    auto& response = result.value();
+    std::string body = response.body.ToStringUtf8Lossy();
+    
+    LOG_INFO("test_simple_http status: " + std::to_string(response.status_code));
+    LOG_INFO("test_simple_http headers count: " + std::to_string(response.headers.size()));
+    LOG_INFO("test_simple_http body preview (first 100 chars): " + body.substr(0, std::min(size_t(100), body.length())));
+    
+    // Return a summary
+    return "Status: " + std::to_string(response.status_code) + ", Body length: " + std::to_string(body.length()) + " bytes";
+}
+
+#endif // SPACETIMEDB_UNSTABLE_FEATURES
+
+// ============================================================================
+// NOTE: Scheduled Procedure tests are excluded
 // ============================================================================
 //
 // The following tests from the Rust version are NOT included yet:
 //
-// - read_my_schema (requires HTTP support - Part 4)
-// - invalid_request (requires HTTP support - Part 4)
 // - schedule_proc (requires scheduled procedures - Part 3)
 // - scheduled_proc (requires scheduled procedures - Part 3)
 //
-// These will be added in future parts as the features are implemented.
+// These will be added in Part 3 as the feature is implemented.
 // ============================================================================
