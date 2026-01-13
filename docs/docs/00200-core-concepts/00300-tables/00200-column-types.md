@@ -7,128 +7,130 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-Columns define the structure of your tables. SpacetimeDB supports a variety of column types optimized for performance.
+Columns define the structure of your tables. SpacetimeDB supports primitive types, structured types for complex data, and special types for database-specific functionality.
 
-## Primitive Types
+## Representing Collections
 
-<Tabs groupId="server-language" queryString>
-<TabItem value="typescript" label="TypeScript">
+When modeling data that contains multiple items, you have two choices: store the collection as a column (using `Vec`, `List`, or `Array`) or store each item as a row in a separate table. This decision affects how you query, update, and subscribe to that data.
 
-| Type | Returns | TypeScript Type | Description |
-|------|---------|----------------|-------------|
-| `t.bool()` | `BoolBuilder` | `boolean` | Boolean value |
-| `t.string()` | `StringBuilder` | `string` | UTF-8 string |
-| `t.f32()` | `F32Builder` | `number` | 32-bit floating point |
-| `t.f64()` | `F64Builder` | `number` | 64-bit floating point |
-| `t.i8()` | `I8Builder` | `number` | Signed 8-bit integer |
-| `t.u8()` | `U8Builder` | `number` | Unsigned 8-bit integer |
-| `t.i16()` | `I16Builder` | `number` | Signed 16-bit integer |
-| `t.u16()` | `U16Builder` | `number` | Unsigned 16-bit integer |
-| `t.i32()` | `I32Builder` | `number` | Signed 32-bit integer |
-| `t.u32()` | `U32Builder` | `number` | Unsigned 32-bit integer |
-| `t.i64()` | `I64Builder` | `bigint` | Signed 64-bit integer |
-| `t.u64()` | `U64Builder` | `bigint` | Unsigned 64-bit integer |
-| `t.i128()` | `I128Builder` | `bigint` | Signed 128-bit integer |
-| `t.u128()` | `U128Builder` | `bigint` | Unsigned 128-bit integer |
-| `t.i256()` | `I256Builder` | `bigint` | Signed 256-bit integer |
-| `t.u256()` | `U256Builder` | `bigint` | Unsigned 256-bit integer |
+**Use a collection column when:**
+- The items form an atomic unit that you always read and write together
+- Order is semantically important and frequently accessed by position
+- The collection is small and bounded (e.g., a fixed-size inventory)
+- The items are values without independent identity
 
-</TabItem>
-<TabItem value="csharp" label="C#">
+**Use a separate table when:**
+- Items have independent identity and lifecycle
+- You need to query, filter, or index individual items
+- The collection can grow unbounded
+- Clients should receive updates for individual item changes, not the entire collection
+- You want to enforce referential integrity between items and other data
 
-| Type | Description |
-|------|-------------|
-| `bool` | Boolean value |
-| `string` | UTF-8 string |
-| `float`, `double` | Floating point numbers |
-| `sbyte`, `short`, `int`, `long` | Signed integers (8-bit to 64-bit) |
-| `byte`, `ushort`, `uint`, `ulong` | Unsigned integers (8-bit to 64-bit) |
-| `SpacetimeDB.I128`, `SpacetimeDB.I256` | Signed 128-bit and 256-bit integers |
-| `SpacetimeDB.U128`, `SpacetimeDB.U256` | Unsigned 128-bit and 256-bit integers |
+Consider a game inventory with ordered pockets. A `Vec<Item>` preserves pocket order naturally, but if you need to query "all items owned by player X" across multiple players, a separate `inventory_item` table with a `pocket_index` column allows that query efficiently. The right choice depends on your dominant access patterns.
 
-</TabItem>
-<TabItem value="rust" label="Rust">
+## Binary Data and Files
 
-| Type | Description |
-|------|-------------|
-| `bool` | Boolean value |
-| `String` | UTF-8 string |
-| `f32`, `f64` | Floating point numbers |
-| `i8` through `i128` | Signed integers |
-| `u8` through `u128` | Unsigned integers |
+SpacetimeDB includes optimizations for storing binary data as `Vec<u8>` (Rust), `List<byte>` (C#), or `t.array(t.u8())` (TypeScript). You can store files, images, serialized data, or other binary blobs directly in table columns.
 
-</TabItem>
-</Tabs>
+This approach works well when:
+- The binary data is associated with a specific row (e.g., a user's avatar image)
+- You want the data to participate in transactions and subscriptions
+- The data size is reasonable (up to several megabytes per row)
 
-## Structured Types
+For very large files or data that changes independently of other row fields, consider external storage with a reference stored in the table.
+
+## Type Performance
+
+SpacetimeDB optimizes reading and writing by taking advantage of memory layout. Several factors affect performance:
+
+**Prefer smaller types.** Use the smallest integer type that fits your data range. A `u8` storing values 0-255 uses less memory and bandwidth than a `u64` storing the same values. This reduces storage, speeds up serialization, and improves cache efficiency.
+
+**Prefer fixed-size types.** Fixed-size types (`u32`, `f64`, fixed-size structs) allow SpacetimeDB to compute memory offsets directly. Variable-size types (`String`, `Vec<T>`) require additional indirection. When performance matters, consider fixed-size alternatives:
+- Use `[u8; 32]` instead of `Vec<u8>` for fixed-length hashes or identifiers
+- Use an enum with a fixed set of variants instead of a `String` for categorical data
+
+**Consider column ordering.** Types require alignment in memory. A `u64` aligns to 8-byte boundaries, while a `u8` aligns to 1-byte boundaries. When smaller types precede larger ones, the compiler may insert padding bytes to satisfy alignment requirements. Ordering columns from largest to smallest alignment can reduce padding and improve memory density.
+
+For example, a struct with fields `(u8, u64, u8)` may require 24 bytes due to padding, while `(u64, u8, u8)` requires only 16 bytes. This optimization is not something to follow religiously, but it can help performance in memory-intensive scenarios.
+
+These optimizations apply across all supported languages.
+
+## Type Reference
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
 
-| Type | Returns | TypeScript Type | Description |
-|------|---------|----------------|-------------|
-| `t.object(name, obj)` | `ProductBuilder<Obj>` | `{ [K in keyof Obj]: T<Obj[K]> }` | Product/object type for nested or structured data |
-| `t.row(obj)` | `RowBuilder<Obj>` | `{ [K in keyof Obj]: T<Obj[K]> }` | Row type for table schemas (allows column metadata) |
-| `t.enum(name, variants)` | `SumBuilder<Obj>` or `SimpleSumBuilder` | `{ tag: 'variant' } \| { tag: 'variant', value: T }` | Sum/enum type (tagged union or simple enum) |
-| `t.array(element)` | `ArrayBuilder<Element>` | `T<Element>[]` | Array of the given element type |
-| `t.unit()` | `UnitBuilder` | `{}` or `undefined` | Zero-field product type (unit) |
-| `t.option(value)` | `OptionBuilder<Value>` | `Value \| undefined` | Optional value type |
+| Category | Type | TypeScript Type | Description |
+|----------|------|-----------------|-------------|
+| Primitive | `t.bool()` | `boolean` | Boolean value |
+| Primitive | `t.string()` | `string` | UTF-8 string |
+| Primitive | `t.f32()` | `number` | 32-bit floating point |
+| Primitive | `t.f64()` | `number` | 64-bit floating point |
+| Primitive | `t.i8()` | `number` | Signed 8-bit integer |
+| Primitive | `t.u8()` | `number` | Unsigned 8-bit integer |
+| Primitive | `t.i16()` | `number` | Signed 16-bit integer |
+| Primitive | `t.u16()` | `number` | Unsigned 16-bit integer |
+| Primitive | `t.i32()` | `number` | Signed 32-bit integer |
+| Primitive | `t.u32()` | `number` | Unsigned 32-bit integer |
+| Primitive | `t.i64()` | `bigint` | Signed 64-bit integer |
+| Primitive | `t.u64()` | `bigint` | Unsigned 64-bit integer |
+| Primitive | `t.i128()` | `bigint` | Signed 128-bit integer |
+| Primitive | `t.u128()` | `bigint` | Unsigned 128-bit integer |
+| Primitive | `t.i256()` | `bigint` | Signed 256-bit integer |
+| Primitive | `t.u256()` | `bigint` | Unsigned 256-bit integer |
+| Structured | `t.object(name, obj)` | `{ [K in keyof Obj]: T<Obj[K]> }` | Product/object type for nested data |
+| Structured | `t.enum(name, variants)` | `{ tag: 'variant' } \| { tag: 'variant', value: T }` | Sum/enum type (tagged union) |
+| Structured | `t.array(element)` | `T<Element>[]` | Array of elements |
+| Structured | `t.option(value)` | `Value \| undefined` | Optional value |
+| Structured | `t.unit()` | `{}` | Zero-field product type |
+| Special | `t.identity()` | `Identity` | Unique identity for authentication |
+| Special | `t.connectionId()` | `ConnectionId` | Client connection identifier |
+| Special | `t.timestamp()` | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
+| Special | `t.timeDuration()` | `TimeDuration` | Relative duration in microseconds |
+| Special | `t.scheduleAt()` | `ScheduleAt` | Column type for scheduling reducer execution |
 
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-| Type | Description |
-|------|-------------|
-| `TaggedEnum<Variants>` | Tagged union/enum type for sum types |
-| `T?` | Nullable/optional value |
-| `List<T>` | List of elements |
+| Category | Type | Description |
+|----------|------|-------------|
+| Primitive | `bool` | Boolean value |
+| Primitive | `string` | UTF-8 string |
+| Primitive | `float` | 32-bit floating point |
+| Primitive | `double` | 64-bit floating point |
+| Primitive | `sbyte`, `short`, `int`, `long` | Signed integers (8-bit to 64-bit) |
+| Primitive | `byte`, `ushort`, `uint`, `ulong` | Unsigned integers (8-bit to 64-bit) |
+| Primitive | `SpacetimeDB.I128`, `SpacetimeDB.I256` | Signed 128-bit and 256-bit integers |
+| Primitive | `SpacetimeDB.U128`, `SpacetimeDB.U256` | Unsigned 128-bit and 256-bit integers |
+| Structured | `struct` with `[SpacetimeDB.Type]` | Product type for nested data |
+| Structured | `TaggedEnum<Variants>` | Sum type (tagged union) |
+| Structured | `List<T>` | List of elements |
+| Structured | `T?` | Nullable/optional value |
+| Special | `Identity` | Unique identity for authentication |
+| Special | `ConnectionId` | Client connection identifier |
+| Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
+| Special | `TimeDuration` | Relative duration in microseconds |
+| Special | `ScheduleAt` | When a scheduled reducer should execute |
 
 </TabItem>
 <TabItem value="rust" label="Rust">
 
-| Type | Description |
-|------|-------------|
-| `enum` with `#[derive(SpacetimeType)]` | Sum type/tagged union |
-| `Option<T>` | Optional value |
-| `Vec<T>` | Vector of elements |
-
-</TabItem>
-</Tabs>
-
-## Special Types
-
-<Tabs groupId="server-language" queryString>
-<TabItem value="typescript" label="TypeScript">
-
-| Type | Returns | TypeScript Type | Description |
-|------|---------|----------------|-------------|
-| `t.identity()` | `IdentityBuilder` | `Identity` | Unique identity for authentication |
-| `t.connectionId()` | `ConnectionIdBuilder` | `ConnectionId` | Client connection identifier |
-| `t.timestamp()` | `TimestampBuilder` | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
-| `t.timeDuration()` | `TimeDurationBuilder` | `TimeDuration` | Relative duration in microseconds |
-| `t.scheduleAt()` | `ColumnBuilder<ScheduleAt, …>` | `ScheduleAt` | Special column type for scheduling reducer execution |
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-| Type | Description |
-|------|-------------|
-| `Identity` | Unique identity for authentication |
-| `ConnectionId` | Client connection identifier |
-| `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
-| `TimeDuration` | Relative duration in microseconds |
-| `ScheduleAt` | When a scheduled reducer should execute (either at a specific time or at repeating intervals) |
-
-</TabItem>
-<TabItem value="rust" label="Rust">
-
-| Type | Description |
-|------|-------------|
-| `Identity` | Unique identity for authentication |
-| `ConnectionId` | Client connection identifier |
-| `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
-| `Duration` | Relative duration |
-| `ScheduleAt` | When a scheduled reducer should execute (either `Time(Timestamp)` or `Interval(Duration)`) |
+| Category | Type | Description |
+|----------|------|-------------|
+| Primitive | `bool` | Boolean value |
+| Primitive | `String` | UTF-8 string |
+| Primitive | `f32`, `f64` | Floating point numbers |
+| Primitive | `i8`, `i16`, `i32`, `i64`, `i128` | Signed integers |
+| Primitive | `u8`, `u16`, `u32`, `u64`, `u128` | Unsigned integers |
+| Structured | `struct` with `#[derive(SpacetimeType)]` | Product type for nested data |
+| Structured | `enum` with `#[derive(SpacetimeType)]` | Sum type (tagged union) |
+| Structured | `Vec<T>` | Vector of elements |
+| Structured | `Option<T>` | Optional value |
+| Special | `Identity` | Unique identity for authentication |
+| Special | `ConnectionId` | Client connection identifier |
+| Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
+| Special | `Duration` | Relative duration |
+| Special | `ScheduleAt` | When a scheduled reducer should execute |
 
 </TabItem>
 </Tabs>
