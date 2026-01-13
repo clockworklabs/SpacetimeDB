@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3276d3db4a1a70d78db9a6a01eaa3bba810a2317e9c67e4d5d8d93cbba472c99 # shrinks to ((ty, cols, pv), is_unique) = ((ProductType {None: Bool}, [ColId(0)], ProductValue { elements: [Bool(false)] }), false)

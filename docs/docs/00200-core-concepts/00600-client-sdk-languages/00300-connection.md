@@ -6,7 +6,6 @@ slug: /sdks/connection
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Connecting to SpacetimeDB
 
 After [generating client bindings](/sdks/codegen) for your module, you can establish a connection to your SpacetimeDB [database](/databases) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
 
@@ -23,15 +22,14 @@ Before connecting, ensure you have:
 Create a connection using the `DbConnection` builder pattern:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-use module_bindings::DbConnection;
+```typescript
+import { DbConnection } from './module_bindings';
 
-let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
-    .with_module_name("my_database")
-    .build();
+const conn = new DbConnection.builder()
+    .withUri("http://localhost:3000")
+    .withModuleName("my_database");
 ```
 
 </TabItem>
@@ -47,14 +45,15 @@ var conn = DbConnection.Builder()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-import { DbConnection } from './module_bindings';
+```rust
+use module_bindings::DbConnection;
 
-const conn = new DbConnection.builder()
-    .withUri("http://localhost:3000")
-    .withModuleName("my_database");
+let conn = DbConnection::builder()
+    .with_uri("http://localhost:3000")
+    .with_module_name("my_database")
+    .build();
 ```
 
 </TabItem>
@@ -79,13 +78,12 @@ Replace `"http://localhost:3000"` with your SpacetimeDB host URI, and `"my_datab
 To connect to a database hosted on MainCloud:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-let conn = DbConnection::builder()
-    .with_uri("https://maincloud.spacetimedb.com")
-    .with_module_name("my_database")
-    .build();
+```typescript
+const conn = new DbConnection.builder()
+    .withUri("https://maincloud.spacetimedb.com")
+    .withModuleName("my_database");
 ```
 
 </TabItem>
@@ -99,12 +97,13 @@ var conn = DbConnection.Builder()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const conn = new DbConnection.builder()
-    .withUri("https://maincloud.spacetimedb.com")
-    .withModuleName("my_database");
+```rust
+let conn = DbConnection::builder()
+    .with_uri("https://maincloud.spacetimedb.com")
+    .with_module_name("my_database")
+    .build();
 ```
 
 </TabItem>
@@ -125,14 +124,13 @@ UDbConnection* Conn = UDbConnection::Builder()
 To authenticate with a token (for example, from [SpacetimeAuth](/spacetimeauth)), provide it when building the connection:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-let conn = DbConnection::builder()
-    .with_uri("https://maincloud.spacetimedb.com")
-    .with_module_name("my_database")
-    .with_token("your_auth_token_here")
-    .build();
+```typescript
+const conn = new DbConnection.builder()
+    .withUri("https://maincloud.spacetimedb.com")
+    .withModuleName("my_database")
+    .withToken("your_auth_token_here");
 ```
 
 </TabItem>
@@ -147,13 +145,14 @@ var conn = DbConnection.Builder()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const conn = new DbConnection.builder()
-    .withUri("https://maincloud.spacetimedb.com")
-    .withModuleName("my_database")
-    .withToken("your_auth_token_here");
+```rust
+let conn = DbConnection::builder()
+    .with_uri("https://maincloud.spacetimedb.com")
+    .with_module_name("my_database")
+    .with_token("your_auth_token_here")
+    .build();
 ```
 
 </TabItem>
@@ -230,28 +229,23 @@ In Rust and TypeScript, the connection processes messages automatically via the 
 Register callbacks to observe connection state changes:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
-    .with_module_name("my_database")
-    .on_connect(|_ctx, _identity, token| {
-        println!("Connected! Saving token...");
+```typescript
+const conn = DbConnection.builder()
+    .withUri("http://localhost:3000")
+    .withModuleName("my_database")
+    .onConnect((conn, identity, token) => {
+        console.log(`Connected! Identity: ${identity.toHexString()}`);
         // Save token for reconnection
+        localStorage.setItem('auth_token', token);
     })
-    .on_connect_error(|_ctx, error| {
-        eprintln!("Connection failed: {}", error);
+    .onConnectError((_ctx, error) => {
+        console.error(`Connection failed:`, error);
     })
-    .on_disconnect(|_ctx, error| {
-        if let Some(err) = error {
-            eprintln!("Disconnected with error: {}", err);
-        } else {
-            println!("Disconnected normally");
-        }
-    })
-    .build()
-    .expect("Failed to connect");
+    .onDisconnect(() => {
+        console.log('Disconnected from SpacetimeDB');
+    });
 ```
 
 </TabItem>
@@ -285,23 +279,28 @@ var conn = DbConnection.Builder()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-const conn = DbConnection.builder()
-    .withUri("http://localhost:3000")
-    .withModuleName("my_database")
-    .onConnect((conn, identity, token) => {
-        console.log(`Connected! Identity: ${identity.toHexString()}`);
+```rust
+let conn = DbConnection::builder()
+    .with_uri("http://localhost:3000")
+    .with_module_name("my_database")
+    .on_connect(|_ctx, _identity, token| {
+        println!("Connected! Saving token...");
         // Save token for reconnection
-        localStorage.setItem('auth_token', token);
     })
-    .onConnectError((_ctx, error) => {
-        console.error(`Connection failed:`, error);
+    .on_connect_error(|_ctx, error| {
+        eprintln!("Connection failed: {}", error);
     })
-    .onDisconnect(() => {
-        console.log('Disconnected from SpacetimeDB');
-    });
+    .on_disconnect(|_ctx, error| {
+        if let Some(err) = error {
+            eprintln!("Disconnected with error: {}", err);
+        } else {
+            println!("Disconnected normally");
+        }
+    })
+    .build()
+    .expect("Failed to connect");
 ```
 
 </TabItem>
@@ -356,9 +355,9 @@ void OnDisconnected()
 Explicitly close the connection when you're done:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 conn.disconnect();
 ```
 
@@ -370,9 +369,9 @@ conn.Disconnect();
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 conn.disconnect();
 ```
 
@@ -401,12 +400,11 @@ We recommend implementing reconnection logic in your application if reliable con
 Every connection receives a unique [identity](/intro/key-architecture#identity) from the server. Access it through the `on_connect` callback:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-.on_connect(|ctx, identity, token| {
-    let connection_id = ctx.connection_id();
-    println!("Identity: {:?}, ConnectionId: {:?}", identity, connection_id);
+```typescript
+.onConnect((conn, identity, token) => {
+    console.log(`Identity: ${identity.toHexString()}, ConnectionId: ${conn.connectionId}`);
 })
 ```
 
@@ -422,11 +420,12 @@ Every connection receives a unique [identity](/intro/key-architecture#identity) 
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-.onConnect((conn, identity, token) => {
-    console.log(`Identity: ${identity.toHexString()}, ConnectionId: ${conn.connectionId}`);
+```rust
+.on_connect(|ctx, identity, token| {
+    let connection_id = ctx.connection_id();
+    println!("Identity: {:?}, ConnectionId: {:?}", identity, connection_id);
 })
 ```
 
