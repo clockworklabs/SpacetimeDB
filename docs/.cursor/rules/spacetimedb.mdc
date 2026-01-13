@@ -5,18 +5,6 @@ alwaysApply: true
 ---
 # SpacetimeDB Rules (All Languages)
 
-> **Last updated:** 2026-01-08
-
-## Language-Specific Rules
-
-| Language | Rule File |
-|----------|-----------|
-| **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
-| **C#/Unity** | `spacetimedb-csharp.mdc` (MANDATORY) |
-| **Rust** | `spacetimedb-rust.mdc` (MANDATORY) |
-
----
-
 ## Core Concepts
 
 1. **Reducers are transactional** — they do not return data to callers
@@ -35,54 +23,12 @@ SpacetimeDB automatically creates indexes for:
 
 You can add explicit indexes on non-unique columns for query performance.
 
-**How index naming works:**
-- You declare an index name in your schema
-- SpacetimeDB generates internal identifiers from that name
-- These identifiers must be unique across your **entire module** (all tables)
-- If two tables have indexes with the same declared name → conflict error
-
-**Implication:** When multiple tables have similar columns (e.g., `roomId`, `ownerId`), ensure your index names don't collide. Any naming convention that guarantees uniqueness works.
+**Index names must be unique across your entire module (all tables).** If two tables have indexes with the same declared name → conflict error.
 
 **Schema ↔ Code coupling:**
 - Your query code references indexes by name
 - If you add/remove/rename an index in the schema, update all code that uses it
 - Removing an index without updating queries causes runtime errors
-
----
-
-## Feature Implementation Checklist
-
-When implementing a feature that spans backend and client:
-
-1. **Backend:** Define table(s) to store the data
-2. **Backend:** Define reducer(s) to mutate the data
-3. **Client:** Subscribe to the table(s)
-4. **Client:** Call the reducer(s) from UI — **don't forget this step!**
-5. **Client:** Render the data from the table(s)
-
-**Common mistake:** Building backend tables/reducers but forgetting to wire up the client to call them.
-
----
-
-## Commands
-
-```bash
-spacetime start                                      # Start local server
-spacetime publish <name> --project-path <path>       # Publish module
-spacetime publish <name> --clear-database -y ...     # Clear and republish
-spacetime generate --lang <lang> --out-dir <out> ... # Generate client bindings
-spacetime logs <name>                                # View server logs
-```
-
----
-
-## Debugging Checklist
-
-1. Is SpacetimeDB server running? (`spacetime start`)
-2. Is the module published? (`spacetime publish`)
-3. Are client bindings generated? (`spacetime generate`)
-4. Check server logs for errors (`spacetime logs <db-name>`)
-5. **Is the reducer actually being called from the client?**
 
 ---
 

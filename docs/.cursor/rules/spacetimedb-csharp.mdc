@@ -6,13 +6,6 @@ alwaysApply: true
 
 # SpacetimeDB C# SDK
 
-> **Tested with:** SpacetimeDB runtime 1.11.x, NuGet `SpacetimeDB.ClientSDK` + `SpacetimeDB.Runtime`  
-> **Last updated:** 2026-01-09
->
-> ⚠️ **SDK Evolution:** The SDK is evolving rapidly. If using a newer version, check release notes for breaking changes.
-
----
-
 ## ⛔ COMMON MISTAKES — LLM HALLUCINATIONS
 
 These are **actual errors** observed when LLMs generate SpacetimeDB C# code:
@@ -160,47 +153,6 @@ public partial struct Reaction
 
 // ✅ Accessor uses the FIELD name:
 ctx.Db.Reaction.MessageId.Filter(messageId)  // Cleaner!
-```
-
-### 12. MAUI Windows Requires Platform Entry Point
-```
-❌ WRONG — Missing entry point files
-client/
-├── client.csproj
-├── App.xaml
-└── MainPage.xaml
-
-✅ CORRECT — Include Windows platform files
-client/
-├── client.csproj
-├── App.xaml
-├── MainPage.xaml
-└── Platforms/
-    └── Windows/
-        ├── App.xaml       ← Required for Windows entry point
-        └── App.xaml.cs    ← Required for Windows entry point
-```
-
-Windows App.xaml:
-```xml
-<maui:MauiWinUIApplication
-    x:Class="MyApp.WinUI.App"
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:maui="using:Microsoft.Maui"
-    xmlns:local="using:MyApp.WinUI">
-</maui:MauiWinUIApplication>
-```
-
-Windows App.xaml.cs:
-```csharp
-namespace MyApp.WinUI;
-
-public partial class App : MauiWinUIApplication
-{
-    public App() { this.InitializeComponent(); }
-    protected override MauiApp CreateMauiApp() => MyApp.MauiProgram.CreateMauiApp();
-}
 ```
 
 ---
@@ -411,96 +363,37 @@ foreach (var row in ctx.Db.MyTable.Iter())
 
 ## 4) Client SDK Setup
 
-### Project Setup
-
-```bash
-# .NET Console/Library
-dotnet add package SpacetimeDB.ClientSDK
-
-# Unity - use Package Manager with git URL:
-# https://github.com/clockworklabs/com.clockworklabs.spacetimedbsdk.git
-```
-
-### Generate Bindings
-
-```bash
-mkdir -p module_bindings
-spacetime generate --lang cs --out-dir module_bindings --project-path <module-path>
-```
-
-### Connection Setup
-
 ```csharp
-using SpacetimeDB;
-using SpacetimeDB.Types;
+// Connection pattern
+_conn = DbConnection.Builder()
+    .WithUri("http://localhost:3000")  // String, NOT Uri object!
+    .WithModuleName("my-module")
+    .WithToken(savedToken)  // null for first connection
+    .OnConnect(OnConnected)
+    .OnDisconnect((conn, err) => { })  // 2 params
+    .OnConnectError(err => { })        // 1 param
+    .Build();
 
-private DbConnection? _conn;
-private Identity? _myIdentity;
-
-public void Connect()
-{
-    _conn = DbConnection.Builder()
-        .WithUri("http://localhost:3000")  // String, NOT Uri object!
-        .WithModuleName("my-module")
-        .WithToken(savedToken)  // null for first connection
-        .OnConnect(OnConnected)
-        .OnDisconnect((conn, err) => OnDisconnected())  // 2 params
-        .OnConnectError(err => OnConnectError(err))     // 1 param
-        .Build();
-    
-    // NOTE: Do NOT subscribe here! Subscribe in OnConnected callback.
-}
-
-public void Tick()
-{
-    // CRITICAL: Must call regularly!
-    _conn?.FrameTick();
-}
-
+// Subscribe in OnConnected callback, NOT before!
 private void OnConnected(DbConnection conn, Identity identity, string token)
 {
-    _myIdentity = identity;
-    // Save token for reconnection
-    
-    // SUBSCRIBE HERE — after connection is established!
     conn.SubscriptionBuilder()
         .OnApplied(OnSubscriptionApplied)
-        .OnError((ctx, err) => Console.WriteLine($"Subscription error: {err}"))
         .SubscribeToAllTables();
 }
-
-private void OnSubscriptionApplied(SubscriptionEventContext ctx)
-{
-    // NOW safe to access ctx.Db
-    // Table accessor matches the Name attribute from [SpacetimeDB.Table(Name = "...")]
-    foreach (var row in ctx.Db.my_table.Iter())
-    {
-        // Initial data available
-    }
-}
-
-private void OnDisconnected() { }
-private void OnConnectError(Exception error) { }
 ```
 
 ### ⚠️ CRITICAL: FrameTick
 
-**The SDK does NOT process messages automatically.** You MUST call `FrameTick()`:
+**You MUST call `FrameTick()` regularly** — without it, no callbacks fire:
 
 ```csharp
-// Call regularly in your main loop
 while (running)
 {
     conn.FrameTick();
     Thread.Sleep(16);  // ~60 times per second
 }
 ```
-
-Without `FrameTick()`:
-- No callbacks will ever fire
-- `OnConnect` will never be called
-- Subscription data will never arrive
-- Reducer callbacks will never execute
 
 ---
 
@@ -623,86 +516,9 @@ public static void ScheduleJob(ReducerContext ctx, ulong targetId, ulong delayMs
 
 ---
 
-## 9) Project Structure
+## 9) Hard Requirements
 
-### Server Module
-
-```
-MyModule/
-├── MyModule.csproj
-├── Lib.cs           # Tables, types
-└── Module.cs        # Reducers, lifecycle hooks
-```
-
-**MyModule.csproj:**
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="SpacetimeDB.Runtime" Version="1.*" />
-  </ItemGroup>
-</Project>
-```
-
-**global.json** (pin .NET 8.x SDK for spacetime publish - use your installed version):
-```json
-{
-  "sdk": {
-    "version": "8.0.xxx",
-    "rollForward": "latestFeature"
-  }
-}
-```
-Run `dotnet --list-sdks` to find your installed 8.x version.
-
-### Client
-
-```
-MyClient/
-├── MyClient.csproj
-├── module_bindings/     # Generated (spacetime generate)
-└── Program.cs
-```
-
----
-
-## 10) Commands
-
-**C# requires building WASM before publish (unlike TypeScript/Rust):**
-
-```bash
-# Start local server
-spacetime start
-
-# 1. Build WASM module first (REQUIRED for C#)
-cd <module-dir>
-dotnet publish -c Release
-
-# 2. Publish using --bin-path
-spacetime publish <module-name> --bin-path <module-dir>/bin/Release/net8.0/wasi-wasm/AppBundle/<module>.wasm
-
-# 3. Clear database and republish
-spacetime publish <module-name> --clear-database -y --bin-path <module-dir>/bin/Release/net8.0/wasi-wasm/AppBundle/<module>.wasm
-
-# 4. Generate C# bindings (use --bin-path)
-spacetime generate --lang csharp --out-dir <client>/module_bindings --bin-path <module-dir>/bin/Release/net8.0/wasi-wasm/AppBundle/<module>.wasm
-
-# View logs
-spacetime logs <module-name>
-```
-
----
-
-## 11) Hard Requirements
-
-> **See `spacetimedb.mdc`** for core concepts (reducers are transactional, deterministic, etc.)
-
-**C#-specific requirements:**
+**C#-specific:**
 
 1. **Tables MUST be `partial struct` or `partial class`** — required for code generation
 2. **Reducers MUST be `static` methods** — instance methods won't work

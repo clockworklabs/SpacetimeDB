@@ -6,13 +6,6 @@ alwaysApply: true
 
 # SpacetimeDB TypeScript SDK
 
-> **Tested with:** SpacetimeDB runtime 1.11.x, npm `spacetimedb` 1.11.x  
-> **Last updated:** 2026-01-07
->
-> ⚠️ **SDK Evolution:** The SDK is evolving rapidly. If using a newer version, check release notes for breaking changes.
-
----
-
 ## ⛔ HALLUCINATED APIs — DO NOT USE
 
 **These APIs DO NOT EXIST. LLMs frequently hallucinate them.**
@@ -166,8 +159,6 @@ export const spacetimedb = schema(Table1, Table2, Table3);
 ---
 
 ## 3) Index Access
-
-> **See `spacetimedb.mdc`** for index principles (auto-indexing, naming, schema-code coupling).
 
 ### TypeScript Query Patterns
 
@@ -464,23 +455,9 @@ conn.subscriptionBuilder().subscribe([
 
 ## 8) React Integration
 
-### Connection setup
+### Key patterns
 ```typescript
-// Store connection and identity globally
-declare global {
-  interface Window {
-    __db_conn: DbConnection | null;
-    __my_identity: Identity | null;
-  }
-}
-
-// In onConnect callback
-window.__db_conn = conn;
-window.__my_identity = identity;
-```
-
-### Memoize connectionBuilder
-```typescript
+// Memoize connectionBuilder to prevent reconnects on re-render
 const builder = useMemo(() => 
   DbConnection.builder()
     .withUri(SPACETIMEDB_URI)
@@ -490,102 +467,19 @@ const builder = useMemo(() =>
     .onConnectError(onConnectError),
   []  // Empty deps - only create once
 );
-```
 
-### Connection event handlers
-```typescript
-DbConnection.builder()
-  .withUri(SPACETIMEDB_URI)
-  .withModuleName(MODULE_NAME)
-  .onConnect((conn, identity, token) => {
-    // Persist token for reconnection
-    localStorage.setItem('auth_token', token);
-    window.__db_conn = conn;
-    window.__my_identity = identity;
-  })
-  .onDisconnect(() => {
-    console.log('Disconnected - SDK will auto-reconnect');
-  })
-  .onConnectError((ctx, err) => {
-    console.error('Connection failed:', err.message);
-  })
-```
-
-### Stale token handling
-```typescript
-const onConnectError = (_ctx: ErrorContext, err: Error) => {
-  if (err.message?.includes('Unauthorized') || err.message?.includes('401')) {
-    localStorage.removeItem('auth_token');
-    window.location.reload();
-  }
-};
-```
-
-### useTable returns tuple
-```typescript
+// useTable returns tuple [rows, isLoading]
 const [rows, isLoading] = useTable(tables.myTable);
-```
 
-### Identity comparison
-```typescript
 // Compare identities using toHexString()
 const isOwner = row.ownerId.toHexString() === myIdentity.toHexString();
 ```
 
 ---
 
-## 9) Project Structure
+## 9) Hard Requirements
 
-### Server (`backend/spacetimedb/`)
-```
-src/schema.ts   → Tables, export spacetimedb
-src/index.ts    → Reducers, lifecycle, import schema
-package.json    → { "type": "module", "dependencies": { "spacetimedb": "^1.11.0" } }
-tsconfig.json   → Standard config
-```
-
-### Avoiding circular imports
-```
-schema.ts → defines tables AND exports spacetimedb
-index.ts  → imports spacetimedb from ./schema, defines reducers
-```
-
-### Client (`client/`)
-```
-src/module_bindings/ → Generated (spacetime generate)
-src/main.tsx         → Provider, connection setup
-src/App.tsx          → UI components
-src/config.ts        → MODULE_NAME, SPACETIMEDB_URI
-```
-
----
-
-## 10) Commands
-
-```bash
-# Start local server
-spacetime start
-
-# Publish module
-spacetime publish <module-name> --project-path <backend-dir>
-
-# Clear database and republish
-spacetime publish <module-name> --clear-database -y --project-path <backend-dir>
-
-# Generate TypeScript bindings
-spacetime generate --lang typescript --out-dir <client>/src/module_bindings --project-path <backend-dir>
-
-# View logs
-spacetime logs <module-name>
-```
-
----
-
-## 11) Hard Requirements
-
-> **See `spacetimedb.mdc`** for core concepts (reducers are transactional, deterministic, etc.)
-
-**TypeScript-specific requirements:**
+**TypeScript-specific:**
 
 1. **Reducer calls use object syntax** — `{ param: 'value' }` not positional args
 2. **Import `DbConnection` from `./module_bindings`** — not from `spacetimedb`

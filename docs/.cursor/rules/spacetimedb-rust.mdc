@@ -6,13 +6,6 @@ alwaysApply: true
 
 # SpacetimeDB Rust SDK
 
-> **Tested with:** SpacetimeDB runtime 1.11.x, `spacetimedb` crate (server), `spacetimedb-sdk` crate (client)  
-> **Last updated:** 2026-01-12
->
-> ⚠️ **SDK Evolution:** The SDK is evolving rapidly. If using a newer version, check release notes for breaking changes.
-
----
-
 ## ⛔ COMMON MISTAKES — LLM HALLUCINATIONS
 
 These are **actual errors** observed when LLMs generate SpacetimeDB Rust code:
@@ -403,310 +396,59 @@ for user in ctx.db.user().iter() {
 
 ---
 
-## 4) Client SDK — Project Setup
-
-### Cargo.toml
-
-```toml
-[dependencies]
-spacetimedb-sdk = "1.0"
-```
-
-### Generate Module Bindings
-
-```bash
-mkdir -p src/module_bindings
-spacetime generate --lang rust --out-dir src/module_bindings --project-path <server-module-path>
-```
-
-### Declare Module in main.rs
+## 4) Client SDK
 
 ```rust
-mod module_bindings;
-use module_bindings::*;
-use spacetimedb_sdk::{DbContext, Error, Event, Identity, Status, Table, TableWithPrimaryKey};
-```
+// Connection pattern
+let conn = DbConnection::builder()
+    .with_uri("http://localhost:3000")
+    .with_module_name("my-module")
+    .with_token(load_saved_token())  // None for first connection
+    .on_connect(on_connected)
+    .build()
+    .expect("Failed to connect");
 
----
-
-## 5) Client SDK — Connection Setup
-
-### Basic Connection
-
-```rust
-use module_bindings::DbConnection;
-
-fn connect() -> DbConnection {
-    DbConnection::builder()
-        .with_uri("http://localhost:3000")
-        .with_module_name("my-module")
-        .with_token(load_saved_token())  // None for first connection
-        .on_connect(on_connected)
-        .on_connect_error(on_connect_error)
-        .on_disconnect(on_disconnected)
-        .build()
-        .expect("Failed to connect")
-}
-
+// Subscribe in on_connect callback, NOT before!
 fn on_connected(conn: &DbConnection, identity: Identity, token: &str) {
-    // Save token for reconnection
-    save_token(token);
-    
-    // Subscribe to tables HERE - after connection established!
     conn.subscription_builder()
-        .on_applied(|ctx| println!("Subscriptions applied!"))
-        .on_error(|ctx, err| eprintln!("Subscription error: {}", err))
-        .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
-}
-
-fn on_connect_error(_ctx: &ErrorContext, err: Error) {
-    eprintln!("Connection error: {:?}", err);
-}
-
-fn on_disconnected(_ctx: &ErrorContext, err: Option<Error>) {
-    if let Some(err) = err {
-        eprintln!("Disconnected with error: {}", err);
-    }
+        .on_applied(|ctx| println!("Ready!"))
+        .subscribe_to_all_tables();
 }
 ```
 
 ### ⚠️ CRITICAL: Advance the Connection
 
-**The SDK does NOT process messages automatically.** You MUST use one of:
+**You MUST call one of these** — without it, no callbacks fire:
 
 ```rust
-// Option 1: Background thread (simplest for CLI apps)
-conn.run_threaded();
-
-// Option 2: Async (for async runtimes)
-conn.run_async().await;
-
-// Option 3: Manual polling (for game loops)
-loop {
-    conn.frame_tick()?;
-    std::thread::sleep(std::time::Duration::from_millis(16));
-}
+conn.run_threaded();           // Background thread (simplest)
+conn.run_async().await;        // Async task
+conn.frame_tick()?;            // Manual polling (game loops)
 ```
 
-Without advancing the connection:
-- No callbacks will fire
-- `on_connect` will never be called
-- Subscription data will never arrive
-
----
-
-## 6) Client SDK — Subscriptions
+### Table Access & Callbacks
 
 ```rust
-// Subscribe to specific queries
-conn.subscription_builder()
-    .on_applied(|ctx| {
-        // Initial data now available in ctx.db
-        for user in ctx.db.user().iter() {
-            println!("User: {:?}", user.username);
-        }
-    })
-    .on_error(|ctx, err| eprintln!("Error: {}", err))
-    .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+// Iterate
+for user in ctx.db.user().iter() { ... }
 
-// Or subscribe to ALL public tables (simple but less efficient)
-conn.subscription_builder()
-    .on_applied(|ctx| println!("Ready!"))
-    .subscribe_to_all_tables();
-```
+// Find by primary key
+if let Some(user) = ctx.db.user().identity().find(&identity) { ... }
 
----
+// Row callbacks
+ctx.db.user().on_insert(|ctx, user| { ... });
+ctx.db.user().on_update(|ctx, old, new| { ... });
+ctx.db.user().on_delete(|ctx, user| { ... });
 
-## 7) Client SDK — Table Access
-
-### Iterate Over Rows
-
-```rust
-// From DbConnection or any context
-for user in ctx.db.user().iter() {
-    println!("{}: online={}", user.username.unwrap_or_default(), user.online);
-}
-
-// Count rows
-let count = ctx.db.message().count();
-```
-
-### Find by Primary Key / Unique
-
-```rust
-// Primary key lookup
-if let Some(user) = ctx.db.user().identity().find(&sender_identity) {
-    println!("Found: {:?}", user.username);
-}
-
-// Unique column lookup
-if let Some(user) = ctx.db.user().username().find(&"alice".to_string()) {
-    println!("Found alice");
-}
-```
-
-### Row Callbacks
-
-```rust
-fn register_callbacks(ctx: &DbConnection) {
-    // On insert
-    ctx.db.user().on_insert(|ctx, user| {
-        println!("User joined: {:?}", user.username);
-    });
-    
-    // On delete
-    ctx.db.user().on_delete(|ctx, user| {
-        println!("User left: {:?}", user.username);
-    });
-    
-    // On update (only for tables with primary key)
-    ctx.db.user().on_update(|ctx, old, new| {
-        if old.online != new.online {
-            println!("User {} is now {}", 
-                new.username.as_deref().unwrap_or("unknown"),
-                if new.online { "online" } else { "offline" }
-            );
-        }
-    });
-}
-```
-
----
-
-## 8) Client SDK — Invoking Reducers
-
-### Call Reducers
-
-```rust
-// Reducers are methods on ctx.reducers
+// Call reducers
 ctx.reducers.set_name("Alice".to_string()).unwrap();
-ctx.reducers.send_message("Hello, world!".to_string()).unwrap();
-```
-
-### Reducer Callbacks
-
-```rust
-// Register callback for reducer completion
-ctx.reducers.on_set_name(|ctx, name| {
-    match &ctx.event.status {
-        Status::Committed => println!("Name set to: {}", name),
-        Status::Failed(err) => eprintln!("Failed to set name: {}", err),
-        Status::OutOfEnergy => eprintln!("Out of energy!"),
-    }
-});
-
-ctx.reducers.on_send_message(|ctx, text| {
-    if let Status::Failed(err) = &ctx.event.status {
-        eprintln!("Failed to send '{}': {}", text, err);
-    }
-});
 ```
 
 ---
 
-## 9) Client SDK — Event Context
+## 5) Hard Requirements
 
-Row callbacks receive an `EventContext` with an `event` field:
-
-```rust
-ctx.db.message().on_insert(|ctx, message| {
-    match &ctx.event {
-        Event::Reducer(reducer_event) => {
-            // Inserted by a reducer
-            println!("New message from reducer");
-        }
-        Event::SubscribeApplied => {
-            // Initial data from subscription
-            println!("Historical message loaded");
-        }
-        _ => {}
-    }
-});
-```
-
-### Event Variants
-
-```rust
-Event::Reducer(ReducerEvent)    // A reducer ran
-Event::SubscribeApplied         // Subscription initialized
-Event::UnsubscribeApplied       // Subscription removed
-Event::SubscribeError(Error)    // Subscription failed
-Event::UnknownTransaction       // Unknown transaction
-```
-
----
-
-## 10) Project Structure
-
-### Server Module
-
-```
-my-module/
-├── Cargo.toml
-└── src/
-    └── lib.rs
-```
-
-**Cargo.toml:**
-```toml
-[package]
-name = "my-module"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-spacetimedb = "1.0"
-log = "0.4"
-```
-
-### Client
-
-```
-client/
-├── Cargo.toml
-└── src/
-    ├── main.rs
-    └── module_bindings/    # Generated by spacetime generate
-        └── ...
-```
-
----
-
-## 11) Commands
-
-```bash
-# Start local server
-spacetime start
-
-# Build module (optional - publish auto-builds)
-spacetime build --project-path <module-dir>
-
-# Publish module
-spacetime publish <module-name> --project-path <module-dir>
-
-# Clear database and republish
-spacetime publish <module-name> --clear-database -y --project-path <module-dir>
-
-# Generate Rust client bindings
-spacetime generate --lang rust --out-dir <client>/src/module_bindings --project-path <module-dir>
-
-# View logs
-spacetime logs <module-name>
-
-# Call reducer from CLI
-spacetime call <module-name> <reducer_name> '<json-args>'
-```
-
----
-
-## 12) Hard Requirements
-
-> **See `spacetimedb.mdc`** for core concepts (reducers are transactional, deterministic, etc.)
-
-**Rust-specific requirements:**
+**Rust-specific:**
 
 1. **Server modules use `spacetimedb` crate** — clients use `spacetimedb-sdk`
 2. **Tables MUST use `#[table(...)]` macro** — not attribute-style macros
