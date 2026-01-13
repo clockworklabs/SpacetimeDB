@@ -102,11 +102,6 @@ jobs:
           # Clear any existing information
           spacetime server clear -y
 
-      - name: Generate client bindings
-        working-directory: templates/quickstart-chat-typescript
-        run: |
-          pnpm generate
-
       # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
       # This may be due to reusing CARGO_TARGET_DIR while mixing different build strategies (`cargo install` and `cargo build -p`).
       # However, this fix seems to work.
@@ -118,6 +113,11 @@ jobs:
             cargo clean -p v8 || true
             cargo build -p v8
           fi
+
+      - name: Generate client bindings
+        working-directory: templates/quickstart-chat-typescript
+        run: |
+          pnpm generate
 
       - name: Check for changes
         working-directory: templates/quickstart-chat-typescript
