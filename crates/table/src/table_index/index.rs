@@ -119,3 +119,9 @@ pub trait RangedIndex: Index {
     /// as it will be faster.
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_>;
 }
+
+/// An error indicating that the [`Index`] is not a [`RangedIndex`].
+#[derive(Debug)]
+pub struct IndexCannotSeekRange;
+
+pub type IndexSeekRangeResult<T> = Result<T, IndexCannotSeekRange>;

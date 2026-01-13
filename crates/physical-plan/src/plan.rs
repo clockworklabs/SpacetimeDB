@@ -1185,6 +1185,17 @@ pub struct IxScan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sarg {
     Eq(ColId, AlgebraicValue),
+    /// NOTE(centril): We currently never construct this variant.
+    /// We do have non-ranged hash indices.
+    /// This means that when we get around to using this variant,
+    /// we must change the rewrite rules such that we do not emit
+    /// [`IxScan`] on a hash index.
+    ///
+    /// Moreover, an equality scan (the variant above)
+    /// `(a0, b0)` on an index `(a, b, c)` is actually a ranged scan.
+    /// We also currently do not emit such `IxScan`s where the number
+    /// of equalities provided are fewer than the number of columns in the index.
+    /// When we do, we must also account for hash indices in the rewrite rules.
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 
