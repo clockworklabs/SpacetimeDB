@@ -6,45 +6,42 @@ slug: /how-to/logging
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Logging
 
 SpacetimeDB provides logging capabilities for debugging and monitoring your modules. Log messages are private to the database owner and are not visible to clients.
 
 ## Writing Logs
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-Use the `log` crate to write logs from your reducers:
+Use the standard `console` API to write logs from your reducers:
 
-```rust
-use spacetimedb::{reducer, ReducerContext};
+```typescript
+import { spacetimedb } from 'spacetimedb/server';
 
-#[reducer]
-pub fn process_data(ctx: &ReducerContext, value: u32) -> Result<(), String> {
-    log::info!("Processing data with value: {}", value);
-    
-    if value > 100 {
-        log::warn!("Value {} exceeds threshold", value);
-    }
-    
-    if value == 0 {
-        log::error!("Invalid value: 0");
-        return Err("Value cannot be zero".to_string());
-    }
-    
-    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender);
-    
-    Ok(())
-}
+spacetimedb.reducer('process_data', { value: t.u32() }, (ctx, { value }) => {
+  console.log(`Processing data with value: ${value}`);
+  
+  if (value > 100) {
+    console.warn(`Value ${value} exceeds threshold`);
+  }
+  
+  if (value === 0) {
+    console.error('Invalid value: 0');
+    throw new Error('Value cannot be zero');
+  }
+  
+  console.debug(`Debug information: ctx.sender = ${ctx.sender}`);
+});
 ```
 
-Available log levels:
-- `log::error!()` - Error messages
-- `log::warn!()` - Warning messages
-- `log::info!()` - Informational messages
-- `log::debug!()` - Debug messages
-- `log::trace!()` - Trace messages
+Available console methods:
+- `console.error()` - Error messages
+- `console.warn()` - Warning messages
+- `console.log()` - Informational messages
+- `console.debug()` - Debug messages
+
+SpacetimeDB automatically routes these standard console calls through its internal logging system.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -85,36 +82,38 @@ Available log methods:
 - `Log.Trace()` - Trace messages
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-Use the standard `console` API to write logs from your reducers:
+Use the `log` crate to write logs from your reducers:
 
-```typescript
-import { spacetimedb } from 'spacetimedb/server';
+```rust
+use spacetimedb::{reducer, ReducerContext};
 
-spacetimedb.reducer('process_data', { value: t.u32() }, (ctx, { value }) => {
-  console.log(`Processing data with value: ${value}`);
-  
-  if (value > 100) {
-    console.warn(`Value ${value} exceeds threshold`);
-  }
-  
-  if (value === 0) {
-    console.error('Invalid value: 0');
-    throw new Error('Value cannot be zero');
-  }
-  
-  console.debug(`Debug information: ctx.sender = ${ctx.sender}`);
-});
+#[reducer]
+pub fn process_data(ctx: &ReducerContext, value: u32) -> Result<(), String> {
+    log::info!("Processing data with value: {}", value);
+    
+    if value > 100 {
+        log::warn!("Value {} exceeds threshold", value);
+    }
+    
+    if value == 0 {
+        log::error!("Invalid value: 0");
+        return Err("Value cannot be zero".to_string());
+    }
+    
+    log::debug!("Debug information: ctx.sender = {:?}", ctx.sender);
+    
+    Ok(())
+}
 ```
 
-Available console methods:
-- `console.error()` - Error messages
-- `console.warn()` - Warning messages
-- `console.log()` - Informational messages
-- `console.debug()` - Debug messages
-
-SpacetimeDB automatically routes these standard console calls through its internal logging system.
+Available log levels:
+- `log::error!()` - Error messages
+- `log::warn!()` - Warning messages
+- `log::info!()` - Informational messages
+- `log::debug!()` - Debug messages
+- `log::trace!()` - Trace messages
 
 </TabItem>
 </Tabs>
@@ -179,6 +178,37 @@ Use appropriate log levels for different types of messages:
 ### Structured Logging
 
 <Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Include relevant context in your log messages:
+
+```typescript
+spacetimedb.reducer('transfer_credits', 
+  { to_user: t.u64(), amount: t.u32() },
+  (ctx, { to_user, amount }) => {
+    console.log(`Credit transfer: from=${ctx.sender}, to=${to_user}, amount=${amount}`);
+    
+    // ... transfer logic
+  }
+);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Include relevant context in your log messages:
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
+{
+    Log.Info($"Credit transfer: from={ctx.Sender}, to={toUser}, amount={amount}");
+    
+    // ... transfer logic
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Use structured logging with key-value pairs for better log analysis:
@@ -199,37 +229,6 @@ pub fn transfer_credits(ctx: &ReducerContext, to_user: u64, amount: u32) -> Resu
     
     Ok(())
 }
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-Include relevant context in your log messages:
-
-```csharp
-[SpacetimeDB.Reducer]
-public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
-{
-    Log.Info($"Credit transfer: from={ctx.Sender}, to={toUser}, amount={amount}");
-    
-    // ... transfer logic
-}
-```
-
-</TabItem>
-<TabItem value="typescript" label="TypeScript">
-
-Include relevant context in your log messages:
-
-```typescript
-spacetimedb.reducer('transfer_credits', 
-  { to_user: t.u64(), amount: t.u32() },
-  (ctx, { to_user, amount }) => {
-    console.log(`Credit transfer: from=${ctx.sender}, to=${to_user}, amount=${amount}`);
-    
-    // ... transfer logic
-  }
-);
 ```
 
 </TabItem>

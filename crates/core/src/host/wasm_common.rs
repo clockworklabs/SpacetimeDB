@@ -422,15 +422,19 @@ macro_rules! abi_funcs {
 
             "spacetime_10.2"::get_jwt,
 
+            // The procedure must not be suspended while holding the transaction lock,
+            // as this can result in a deadlock; therefore, these ABIs are synchronous.
+            "spacetime_10.3"::procedure_start_mut_tx,
+            "spacetime_10.3"::procedure_commit_mut_tx,
+            "spacetime_10.3"::procedure_abort_mut_tx,
+
             "spacetime_10.4"::datastore_index_scan_point_bsatn,
             "spacetime_10.4"::datastore_delete_by_index_scan_point_bsatn,
+
         }
 
         $link_async! {
             "spacetime_10.3"::procedure_sleep_until,
-            "spacetime_10.3"::procedure_start_mut_tx,
-            "spacetime_10.3"::procedure_commit_mut_tx,
-            "spacetime_10.3"::procedure_abort_mut_tx,
             "spacetime_10.3"::procedure_http_request,
         }
     };
