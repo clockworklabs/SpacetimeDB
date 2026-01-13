@@ -24,6 +24,7 @@ Before diving into the reference, you may want to review:
 | [`ErrorContext` type](#type-errorcontext)                         | [`DbContext`](#interface-dbcontext) available in error-related callbacks.                                                              |
 | [Access the client cache](#access-the-client-cache)               | Make local queries against subscribed rows, and register [row callbacks](#callback-oninsert) to run when subscribed rows change.       |
 | [Observe and invoke reducers](#observe-and-invoke-reducers)       | Send requests to the database to run reducers, and register callbacks to run when notified of reducers.                                |
+| [React Integration](#react-integration)                           | React hooks and components for SpacetimeDB (`spacetimedb/react`).                                                                      |
 | [Identify a client](#identify-a-client)                           | Types for identifying users and client connections.                                                                                    |
 
 ## Project setup
@@ -876,6 +877,118 @@ Each reducer defined by the module has three methods on the `.reducers`:
 - An invoke method, whose name is the reducer's name converted to camel case, like `setName`. This requests that the module run the reducer.
 - A callback registation method, whose name is prefixed with `on`, like `onSetName`. This registers a callback to run whenever we are notified that the reducer ran, including successfully committed runs and runs we requested which failed. This method returns a callback id, which can be passed to the callback remove method.
 - A callback remove method, whose name is prefixed with `removeOn`, like `removeOnSetName`. This cancels a callback previously registered via the callback registration method.
+
+## React Integration
+
+The SpacetimeDB TypeScript SDK includes React bindings under the `spacetimedb/react` subpath. These bindings provide a `SpacetimeDBProvider` component and hooks for easily integrating SpacetimeDB into React applications.
+
+The React integration is fully compatible with React StrictMode and correctly handles the double-mount behavior (only one WebSocket connection is created).
+
+| Name                                                        | Description                                               |
+| ----------------------------------------------------------- | --------------------------------------------------------- |
+| [`SpacetimeDBProvider` component](#component-spacetimedbprovider) | Context provider that manages the database connection.    |
+| [`useSpacetimeDB` hook](#hook-usespacetimedb)               | Access the connection and connection state.               |
+| [`useTable` hook](#hook-usetable)                           | Subscribe to table data with automatic re-renders.        |
+
+### Component `SpacetimeDBProvider`
+
+```tsx
+import { SpacetimeDBProvider } from 'spacetimedb/react';
+```
+
+Wrap your application with `SpacetimeDBProvider` to provide connection context to child components. Pass a configured `DbConnectionBuilder` (without calling `.build()`).
+
+```tsx
+import { DbConnection } from './module_bindings';
+import { SpacetimeDBProvider } from 'spacetimedb/react';
+
+const connectionBuilder = DbConnection.builder()
+  .withUri('ws://localhost:3000')
+  .withModuleName('my-module')
+  .onConnect((conn, identity, token) => {
+    console.log('Connected:', identity.toHexString());
+    conn.subscriptionBuilder().subscribe('SELECT * FROM player');
+  })
+  .onDisconnect(() => console.log('Disconnected'));
+
+function App() {
+  return (
+    <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
+      <MyComponent />
+    </SpacetimeDBProvider>
+  );
+}
+```
+
+### Hook `useSpacetimeDB`
+
+```tsx
+import { useSpacetimeDB } from 'spacetimedb/react';
+
+function useSpacetimeDB<DbConnection>(): {
+  isActive: boolean;
+  identity?: Identity;
+  token?: string;
+  connectionId: ConnectionId;
+  connectionError?: Error;
+  getConnection(): DbConnection | null;
+};
+```
+
+Returns the current connection state and a function to access the connection. The hook re-renders the component when the connection state changes.
+
+```tsx
+function MyComponent() {
+  const { isActive, identity, getConnection } = useSpacetimeDB<DbConnection>();
+  const conn = getConnection();
+
+  if (!isActive) {
+    return <div>Connecting...</div>;
+  }
+
+  return (
+    <div>
+      <p>Connected as: {identity?.toHexString()}</p>
+      <button onClick={() => conn?.reducers.createPlayer('Alice')}>
+        Create Player
+      </button>
+    </div>
+  );
+}
+```
+
+### Hook `useTable`
+
+```tsx
+import { useTable } from 'spacetimedb/react';
+
+function useTable<DbConnection, Row>(tableName: string): {
+  rows: Row[];
+  loading: boolean;
+};
+```
+
+Subscribe to a table and receive automatic re-renders when rows change. Returns the current rows and a loading state.
+
+```tsx
+import { Player } from './module_bindings';
+
+function PlayerList() {
+  const { rows: players, loading } = useTable<DbConnection, Player>('player');
+
+  if (loading) {
+    return <div>Loading players...</div>;
+  }
+
+  return (
+    <ul>
+      {players.map(player => (
+        <li key={player.id}>{player.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
 
 ## Identify a client
 

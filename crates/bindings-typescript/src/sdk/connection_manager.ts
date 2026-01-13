@@ -1,3 +1,32 @@
+/**
+ * ConnectionManager - A reference-counted connection manager for SpacetimeDB.
+ *
+ * This module implements a TanStack Query-style pattern for managing WebSocket
+ * connections in React applications. It solves the React StrictMode double-mount
+ * problem by using reference counting and deferred cleanup.
+ *
+ * ## How it works:
+ *
+ * 1. **Reference Counting**: Each `retain()` increments a counter, `release()` decrements it.
+ *    The connection is only closed when the count reaches zero.
+ *
+ * 2. **Deferred Cleanup**: When refCount hits zero, cleanup is scheduled via `setTimeout(0)`.
+ *    This allows React StrictMode's rapid unmount→remount cycle to cancel the cleanup.
+ *
+ * 3. **useSyncExternalStore Integration**: The `subscribe()` and `getSnapshot()` methods
+ *    are designed to work with React's `useSyncExternalStore` hook for tear-free reads.
+ *
+ * ## StrictMode Lifecycle:
+ *
+ * ```
+ * Mount   → retain()  → refCount: 0→1, connection created
+ * Unmount → release() → refCount: 1→0, cleanup SCHEDULED (not executed)
+ * Remount → retain()  → refCount: 0→1, cleanup CANCELLED
+ * Result: Single WebSocket survives ✓
+ * ```
+ *
+ * @module connection_manager
+ */
 import type {
   DbConnectionBuilder,
   DbConnectionImpl,
@@ -6,6 +35,7 @@ import type {
 import type { Identity } from '../lib/identity';
 import { ConnectionId } from '../lib/connection_id';
 
+/** Represents the current state of a managed connection. */
 export type ConnectionState = {
   isActive: boolean;
   identity?: Identity;
@@ -37,13 +67,19 @@ function defaultState(): ConnectionState {
   };
 }
 
+/**
+ * Singleton manager for SpacetimeDB connections.
+ * Use the exported `ConnectionManager` instance rather than instantiating directly.
+ */
 class ConnectionManagerImpl {
   #connections = new Map<string, ManagedConnection>();
 
+  /** Generates a unique key for a connection based on URI and module name. */
   static getKey(uri: string, moduleName: string): string {
     return `${uri}::${moduleName}`;
   }
 
+  /** Instance method wrapper for getKey. */
   getKey(uri: string, moduleName: string): string {
     return ConnectionManagerImpl.getKey(uri, moduleName);
   }
@@ -70,6 +106,15 @@ class ConnectionManagerImpl {
     }
   }
 
+  /**
+   * Retains a connection, incrementing its reference count.
+   * Creates the connection on first call; returns existing connection on subsequent calls.
+   * Cancels any pending release if the connection was about to be cleaned up.
+   *
+   * @param key - Unique identifier for the connection (use getKey to generate)
+   * @param builder - Connection builder to create the connection if needed
+   * @returns The managed connection instance
+   */
   retain<T extends DbConnectionImpl<any>>(
     key: string,
     builder: DbConnectionBuilder<T>
