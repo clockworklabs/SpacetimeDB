@@ -12,13 +12,14 @@ use std::{
 use futures::{FutureExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
 use log::{info, trace, warn};
+use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
 use thiserror::Error;
 use tokio::{
     sync::{futures::OwnedNotified, mpsc, oneshot, watch, Notify},
-    task::spawn_blocking,
+    task::{spawn_blocking, AbortHandle},
     time::{interval, MissedTickBehavior},
 };
 use tracing::{instrument, Span};
@@ -86,6 +87,8 @@ pub struct Local<T> {
     queue_depth: Arc<AtomicU64>,
     /// Channel to request the actor to exit.
     shutdown: mpsc::Sender<ShutdownReply>,
+    /// [AbortHandle] to force cancellation of the [Actor].
+    abort: AbortHandle,
 }
 
 impl<T: Encode + Send + Sync + 'static> Local<T> {
@@ -120,23 +123,22 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
 
-        rt.spawn(
-            Actor {
-                clog: clog.clone(),
+        let abort = rt
+            .spawn(
+                Actor {
+                    clog: clog.clone(),
 
-                txdata_rx,
-                shutdown_rx,
+                    durable_offset: durable_tx,
+                    queue_depth: queue_depth.clone(),
 
-                durable_offset: durable_tx,
-                queue_depth: queue_depth.clone(),
+                    sync_interval: opts.sync_interval,
+                    max_records_in_commit: opts.commitlog.max_records_in_commit,
 
-                sync_interval: opts.sync_interval,
-                max_records_in_commit: opts.commitlog.max_records_in_commit,
-
-                lockfile,
-            }
-            .run(),
-        );
+                    lockfile,
+                }
+                .run(txdata_rx, shutdown_rx),
+            )
+            .abort_handle();
 
         Ok(Self {
             clog,
@@ -144,6 +146,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             queue,
             shutdown: shutdown_tx,
             queue_depth,
+            abort,
         })
     }
 
@@ -184,9 +187,6 @@ impl<T: Send + Sync + 'static> Local<T> {
 struct Actor<T> {
     clog: Arc<Commitlog<Txdata<T>>>,
 
-    txdata_rx: mpsc::UnboundedReceiver<Txdata<T>>,
-    shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
-
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
 
@@ -199,7 +199,11 @@ struct Actor<T> {
 
 impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
-    async fn run(mut self) {
+    async fn run(
+        self,
+        mut txdata_rx: mpsc::UnboundedReceiver<Txdata<T>>,
+        mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
+    ) {
         info!("starting durability actor");
 
         // Always notify waiters (i.e. [Close] futures) when the actor exits.
@@ -222,8 +226,8 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 // high transaction throughput.
                 biased;
 
-                Some(reply) = self.shutdown_rx.recv() => {
-                    self.txdata_rx.close();
+                Some(reply) = shutdown_rx.recv() => {
+                    txdata_rx.close();
                     let _ = reply.send(done.clone().notified_owned());
                 },
 
@@ -234,7 +238,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     }
                 },
 
-                data = self.txdata_rx.recv() => {
+                data = txdata_rx.recv() => {
                     let Some(txdata) = data else {
                         break;
                     };
@@ -344,6 +348,11 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
 
         let durable_offset = self.durable_tx_offset();
         let shutdown = self.shutdown.clone();
+        // Abort actor if shutdown future is dropped.
+        let abort = scopeguard::guard(self.abort.clone(), |actor| {
+            warn!("close future dropped, aborting durability actor");
+            actor.abort();
+        });
 
         async move {
             let (done_tx, done_rx) = oneshot::channel();
@@ -357,6 +366,8 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
                     Ok(())
                 })
                 .await;
+            // Don't abort if we completed normally.
+            let _ = ScopeGuard::into_inner(abort);
 
             durable_offset.last_seen()
         }

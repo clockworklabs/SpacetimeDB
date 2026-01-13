@@ -4,7 +4,6 @@ toc_max_heading_level: 6
 slug: /sdks/c-sharp
 ---
 
-# The SpacetimeDB C# client SDK
 
 The SpacetimeDB client for C# contains all the tools you need to build native clients for SpacetimeDB modules using C#.
 
@@ -825,7 +824,7 @@ class RemoteTableHandle
 
 The `OnInsert` callback runs whenever a new row is inserted into the client cache, either when applying a subscription or being notified of a transaction. The passed [`EventContext`](#type-eventcontext) contains an [`Event`](#record-event) which can identify the change which caused the insertion, and also allows the callback to interact with the connection, inspect the client cache and invoke reducers. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
 
 #### Callback `OnDelete`
 
@@ -839,7 +838,7 @@ class RemoteTableHandle
 
 The `OnDelete` callback runs whenever a previously-resident row is deleted from the client cache. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
 
 #### Callback `OnUpdate`
 
@@ -853,7 +852,7 @@ class RemoteTableHandle
 
 The `OnUpdate` callback runs whenever an already-resident row in the client cache is updated, i.e. replaced with a new row that has the same primary key. The table must have a primary key for callbacks to be triggered. Newly registered or canceled callbacks do not take effect until the following event.
 
-See [the quickstart](/docs/quickstarts/c-sharp#register-callbacks) for examples of regstering and unregistering row callbacks.
+See [the quickstart](/quickstarts/c-sharp) for examples of registering and unregistering row callbacks.
 
 ### Unique constraint index access
 
