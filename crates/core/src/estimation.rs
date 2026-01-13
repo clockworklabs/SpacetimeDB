@@ -1,5 +1,5 @@
 use crate::db::relational_db::Tx;
-use spacetimedb_datastore::locking_tx_datastore::state_view::StateView as _;
+use spacetimedb_datastore::locking_tx_datastore::{state_view::StateView as _, NumDistinctValues};
 use spacetimedb_lib::query::Delta;
 use spacetimedb_physical_plan::plan::{HashJoin, IxJoin, IxScan, PhysicalPlan, Sarg, TableScan};
 use spacetimedb_primitives::{ColList, TableId};
@@ -162,8 +162,9 @@ fn row_est(tx: &Tx, src: &SourceExpr, ops: &[Query]) -> u64 {
 fn index_row_est(tx: &Tx, table_id: TableId, cols: &ColList) -> u64 {
     let table_rc = || tx.table_row_count(table_id).unwrap_or_default();
     match tx.num_distinct_values(table_id, cols) {
-        Some(ndv) => ndv.map_or(0, |ndv| table_rc() / ndv),
-        None => table_rc(),
+        NumDistinctValues::NonZero(ndv) => table_rc() / ndv,
+        NumDistinctValues::Zero => 0,
+        NumDistinctValues::Error => table_rc(),
     }
 }
 

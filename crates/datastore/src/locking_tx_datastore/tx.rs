@@ -174,22 +174,43 @@ impl TxId {
     /// The Number of Distinct Values (NDV) for a column or list of columns,
     /// if there's an index available on `cols`.
     ///
-    /// Returns `None` if:
+    /// Returns `Error` if:
     /// - No such table as `table_id` exists.
     /// - The table `table_id` does not have an index on exactly the `cols`.
     ///
-    /// Returns `Some(None)` if:
+    /// Returns `Zero` if:
     /// - The table `table_id` contains zero rows (i.e. the index is empty).
-    //
+    ///
+    /// Otherwise, `NonZero` is returned.
+    ///
     // This method must never return 0, as it's used as the divisor in quotients.
     // Do not change its return type to a bare `u64`.
-    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> Option<Option<NonZeroU64>> {
-        let table = self.committed_state_shared_lock.get_table(table_id)?;
-        let (_, index) = table.get_index_by_cols(cols)?;
-        Some(NonZeroU64::new(index.num_keys() as u64))
+    pub fn num_distinct_values(&self, table_id: TableId, cols: &ColList) -> NumDistinctValues {
+        let Some((_, index)) = self
+            .committed_state_shared_lock
+            .get_table(table_id)
+            .and_then(|table| table.get_index_by_cols(cols))
+        else {
+            return NumDistinctValues::Error;
+        };
+
+        match NonZeroU64::new(index.num_keys() as u64) {
+            Some(val) => NumDistinctValues::NonZero(val),
+            None => NumDistinctValues::Zero,
+        }
     }
 
     pub fn tx_offset(&self) -> future::Ready<TxOffset> {
         future::ready(self.committed_state_shared_lock.next_tx_offset)
     }
+}
+
+/// The Number of Distinct Values (NDV) for an index.
+pub enum NumDistinctValues {
+    /// There was an error in computing the NDV.
+    Error,
+    /// Zero distinct values. The table has zero rows.
+    Zero,
+    /// Non-zero distinct values.
+    NonZero(NonZeroU64),
 }

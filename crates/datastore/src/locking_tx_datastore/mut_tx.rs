@@ -1395,7 +1395,7 @@ impl MutTxId {
         let tx_iter = tx_index.map(|i| i.seek_range(bounds)).transpose();
         let commit_iter = commit_index.seek_range(bounds);
 
-        // Deal with not having ranged indices.
+        // If we don't have a range-capable index, return an error.
         let (tx_iter, commit_iter) = match (tx_iter, commit_iter) {
             (Ok(t), Ok(c)) => (t, c),
             (Err(e), _) | (_, Err(e)) => return Err(e),
