@@ -245,6 +245,7 @@ struct named_variant_helper<I> {
     
     template<typename Variant>
     static Variant deserialize_variant(size_t index, bsatn::Reader& reader) {
+        (void)index;
         (void)reader;
         std::abort(); // Invalid variant index
     }

@@ -154,6 +154,13 @@ Status procedure_commit_mut_tx();
 
 STDB_IMPORT_10_3(procedure_abort_mut_tx)
 Status procedure_abort_mut_tx();
+
+// ===== Procedure HTTP (spacetime_10.3) =====
+STDB_IMPORT_10_3(procedure_http_request)
+Status procedure_http_request(
+    const uint8_t* request_ptr, size_t request_len,
+    const uint8_t* body_ptr, size_t body_len,
+    BytesSource out[2]);
 #endif
 
 } // extern "C"

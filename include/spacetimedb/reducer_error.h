@@ -1,17 +1,16 @@
 #ifndef SPACETIMEDB_REDUCER_ERROR_H
 #define SPACETIMEDB_REDUCER_ERROR_H
 
+#include "spacetimedb/outcome.h"
 #include <string>
 #include <optional>
-#include <variant>
-#include <utility>
 
 /**
  * @file reducer_error.h
- * @brief Graceful error handling for reducers using Outcome<T, E> pattern
+ * @brief Graceful error handling for reducers using Outcome<T> pattern
  *
- * This module provides a Rust-like Outcome type for reducers to fail gracefully
- * with error messages, matching the Rust SDK's Result<(), E> pattern.
+ * This module provides reducer-specific error handling utilities using the Outcome type.
+ * For the general Outcome<T> type definition, see outcome.h.
  *
  * Modern usage (recommended):
  * @code
@@ -47,163 +46,23 @@
 
 namespace SpacetimeDb {
 
-// Forward declarations
-template<typename T> class Outcome;
-
-/**
- * @brief Outcome type for operations that can succeed with a value or fail with an error.
- *
- * This type is similar to Rust's Result<T, E> where E is always std::string.
- * It provides a type-safe way to handle errors without exceptions.
- *
- * @tparam T The success value type
- */
-template<typename T>
-class [[nodiscard]] Outcome {
-private:
-    std::variant<T, std::string> value_;
-    bool is_ok_;
-    
-    // Private constructors - use Ok() and Err() factory functions
-    Outcome(T value, bool) : value_(std::move(value)), is_ok_(true) {}
-    Outcome(std::string error, int) : value_(std::move(error)), is_ok_(false) {}
-    
-public:
-    /**
-     * @brief Create a successful Outcome with a value
-     */
-    static Outcome Ok(T value) {
-        return Outcome(std::move(value), true);
-    }
-    
-    /**
-     * @brief Create a failed Outcome with an error message
-     */
-    static Outcome Err(std::string error) {
-        return Outcome(std::move(error), 0);
-    }
-    
-    /**
-     * @brief Check if the result is successful
-     */
-    bool is_ok() const { return is_ok_; }
-    
-    /**
-     * @brief Check if the result is an error
-     */
-    bool is_err() const { return !is_ok_; }
-    
-    /**
-     * @brief Get the success value (only valid if is_ok())
-     */
-    T& value() & { return std::get<T>(value_); }
-    T&& value() && { return std::get<T>(std::move(value_)); }
-    const T& value() const & { return std::get<T>(value_); }
-    
-    /**
-     * @brief Get the error message (only valid if is_err())
-     */
-    const std::string& error() const { return std::get<std::string>(value_); }
-};
-
-/**
- * @brief Specialization of Outcome for void (used by reducers)
- *
- * This matches Rust's Result<(), E> pattern where () represents success with no value.
- */
-template<>
-class [[nodiscard]] Outcome<void> {
-private:
-    std::optional<std::string> error_;
-    
-    // Private constructors
-    Outcome(bool success) : error_(success ? std::nullopt : std::optional<std::string>("")) {}
-    Outcome(std::string error) : error_(std::move(error)) {}
-    
-public:
-    /**
-     * @brief Create a successful Outcome (no value)
-     */
-    static Outcome Ok() {
-        return Outcome(true);
-    }
-    
-    /**
-     * @brief Create a failed Outcome with an error message
-     */
-    static Outcome Err(std::string error) {
-        return Outcome(std::move(error));
-    }
-    
-    /**
-     * @brief Check if the result is successful
-     */
-    bool is_ok() const { return !error_.has_value(); }
-    
-    /**
-     * @brief Check if the result is an error
-     */
-    bool is_err() const { return error_.has_value(); }
-    
-    /**
-     * @brief Get the error message (only valid if is_err())
-     */
-    const std::string& error() const { return error_.value(); }
-};
-
 /**
  * @brief Type alias for reducer return type, matching Rust's ReducerResult
+ * 
+ * Reducers use Outcome<void> for their return type. The Ok() and Err() helper
+ * functions from outcome.h can be used directly:
+ * 
+ * @code
+ * SPACETIMEDB_REDUCER(my_reducer, ReducerContext ctx, uint32_t id) {
+ *     if (id == 0) {
+ *         return Err("ID must be non-zero");
+ *     }
+ *     // ... rest of logic
+ *     return Ok();
+ * }
+ * @endcode
  */
 using ReducerResult = Outcome<void>;
-
-/**
- * @brief Helper function to create a successful Outcome<void>
- * 
- * Usage: return Ok();
- */
-inline ReducerResult Ok() { 
-    return ReducerResult::Ok(); 
-}
-
-/**
- * @brief Helper function to create a failed Outcome with an error message
- * 
- * Usage: return Err("Something went wrong");
- */
-inline ReducerResult Err(std::string msg) { 
-    return ReducerResult::Err(std::move(msg)); 
-}
-
-/**
- * @brief Helper function to create a successful Outcome<T> with a value
- * 
- * Usage: return Ok(user);
- */
-template<typename T>
-inline Outcome<T> Ok(T value) { 
-    return Outcome<T>::Ok(std::move(value)); 
-}
-
-/**
- * @brief Helper function to create a failed Outcome<T> with an error message
- * 
- * This is a template version that works with any Outcome<T> type.
- * The return type must be explicitly specified as a template parameter.
- * 
- * Usage: 
- *   Outcome<uint32_t> foo() {
- *       return Err<uint32_t>("Something went wrong");
- *   }
- */
-template<typename T>
-inline Outcome<T> Err(const char* msg) { 
-    return Outcome<T>::Err(std::string(msg)); 
-}
-
-template<typename T>
-inline Outcome<T> Err(std::string msg) { 
-    return Outcome<T>::Err(std::move(msg)); 
-}
 
 namespace Internal {
     /**

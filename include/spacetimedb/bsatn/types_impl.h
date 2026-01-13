@@ -29,7 +29,10 @@ inline std::string Identity::to_hex_string() const {
     std::ostringstream oss;
     oss << std::hex << std::setfill('0');
     
-    for (size_t i = 0; i < IDENTITY_SIZE; ++i) {
+    // Identity is stored in little-endian format (from syscall),
+    // but needs to be displayed in big-endian (most significant byte first)
+    // to match Rust's to_hex() which uses to_be_bytes()
+    for (int i = IDENTITY_SIZE - 1; i >= 0; --i) {
         oss << std::setw(2) << static_cast<unsigned int>(value[i]);
     }
     

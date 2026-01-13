@@ -41,11 +41,6 @@ public:
     Identity identity() const {
         std::array<uint8_t, 32> buffer;
         ::identity(buffer.data());
-        
-        // Reverse the bytes to convert from little-endian to big-endian
-        std::reverse(buffer.begin(), buffer.end());
-        
-        // Use constructor instead of from_byte_array
         return Identity(buffer);
     }
 
