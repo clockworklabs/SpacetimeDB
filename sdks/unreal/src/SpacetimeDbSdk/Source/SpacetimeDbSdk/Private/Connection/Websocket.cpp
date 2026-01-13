@@ -81,7 +81,7 @@ void UWebsocketManager::Connect(const FString& ServerUrl)
 	WebSocket->OnConnected().AddUObject(this, &UWebsocketManager::HandleConnected);
 	WebSocket->OnConnectionError().AddUObject(this, &UWebsocketManager::HandleConnectionError);
 	WebSocket->OnMessage().AddUObject(this, &UWebsocketManager::HandleMessageReceived);
-	WebSocket->OnRawMessage().AddUObject(this, &UWebsocketManager::HandleBinaryMessageReceived);
+	WebSocket->OnBinaryMessage().AddUObject(this, &UWebsocketManager::HandleBinaryMessageReceived);
 	WebSocket->OnClosed().AddUObject(this, &UWebsocketManager::HandleClosed);
 
 	UE_LOG(LogTemp, Log, TEXT("UWebsocketManager::Connect: Connecting to %s..."), *ServerUrl);
@@ -173,7 +173,7 @@ void UWebsocketManager::HandleMessageReceived(const FString& Message)
 	OnMessageReceived.Broadcast(Message);
 }
 
-void UWebsocketManager::HandleBinaryMessageReceived(const void* Data, SIZE_T Size, SIZE_T BytesRemaining)
+void UWebsocketManager::HandleBinaryMessageReceived(const void* Data, SIZE_T Size, bool bIsLastFragment)
 {
 	if (Size == 0)
 	{
@@ -183,30 +183,25 @@ void UWebsocketManager::HandleBinaryMessageReceived(const void* Data, SIZE_T Siz
 	// Handle binary messages, which may be fragmented
 	const uint8* Bytes = static_cast<const uint8*>(Data);
 
-	if (IncompleteMessage.Num() > 0 && !bAwaitingBinaryFragments)
-	{
-		UE_LOG(LogTemp, Error, TEXT("Received binary fragment while previous data pending"));
-	}
-
-	// Append new incoming bytes to any incomplete message
+	// Append this fragment to our buffer
 	IncompleteMessage.Append(Bytes, Size);
 
-	if (BytesRemaining > 0)
+	// If this is the last fragment, we have the complete message
+	if (bIsLastFragment)
 	{
-		// Still expecting more fragments
-		bAwaitingBinaryFragments = true;
-		return;
+		// We have the complete message
+		TArray<uint8> MessageBytes = IncompleteMessage;
+		IncompleteMessage.Reset();
+		bAwaitingBinaryFragments = false;
+
+		// Forward the complete binary payload to listeners.
+		OnBinaryMessageReceived.Broadcast(MessageBytes);
 	}
-
-	// Final fragment received, reset and process
-	bAwaitingBinaryFragments = false;
-
-	TArray<uint8> MessageBytes = IncompleteMessage;
-	IncompleteMessage.Reset();
-
-	// Forward the complete binary payload to listeners.
-	OnBinaryMessageReceived.Broadcast(MessageBytes);
-
+	else
+	{
+		// More fragments are coming
+		bAwaitingBinaryFragments = true;
+	}
 }
 
 void UWebsocketManager::HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean)
