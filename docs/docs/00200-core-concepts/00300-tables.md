@@ -26,7 +26,7 @@ You can query system tables, but you should not modify them directly. Make schem
 
 ### Tables and Data-Oriented Design
 
-The relational model underlying tables represents the logical endpoint of [data-oriented design](https://spacetimedb.com/blog/databases-and-data-oriented-design). Patterns such as Entity Component Systems (ECS) implement a strict subset of relational capabilities. Tables give you the full power of relational theory—over fifty years of proven techniques for organizing and querying data efficiently.
+The relational model underlying tables represents the logical endpoint of [data-oriented design](https://spacetimedb.com/blog/databases-and-data-oriented-design). Patterns such as Entity Component Systems (ECS) implement a strict subset of relational capabilities. Tables give you the full power of relational theory: over fifty years of proven techniques for organizing and querying data efficiently.
 
 The central principle of data-oriented design holds that **the purpose of any program is to transform data from one form to another**. Tables provide a principled, universal representation for that data, giving you:
 
@@ -36,6 +36,14 @@ The central principle of data-oriented design holds that **the purpose of any pr
 - **Real-time synchronization** through subscriptions
 
 For further discussion of this philosophy, see [The Zen of SpacetimeDB](/intro/zen).
+
+### Physical and Logical Independence
+
+A core goal of the relational model is separating *logical* access patterns from *physical* data representation. When you write a subscription query, you express *what* data you need, not *how* the database should retrieve it. This separation allows SpacetimeDB to change the physical representation of your data for performance reasons without requiring you to rewrite your queries.
+
+The clearest example is indexing. When you add an index to a column, you change how SpacetimeDB physically organizes that data. It builds an additional data structure to accelerate lookups. But your subscription queries continue to work unchanged. The same query that previously scanned the entire table now uses the index automatically. You improve performance by modifying the schema, not the queries.
+
+This independence extends beyond indexes. SpacetimeDB can change internal storage formats, memory layouts, and access algorithms across versions. Your queries remain stable because they operate at the logical level (rows and columns) rather than the physical level of bytes and pointers.
 
 ### Table Decomposition
 
@@ -194,6 +202,26 @@ pub struct Secret { /* ... */ }
 
 </TabItem>
 </Tabs>
+
+For more fine-grained access control, you can use [view functions](/functions/views) to expose computed subsets of your data to clients. Views allow you to filter rows, select specific columns, or join data from multiple tables before exposing it.
+
+See [Access Permissions](/tables/access-permissions) for complete details on table visibility and access patterns.
+
+## Constraints
+
+Tables support several constraints to enforce data integrity:
+
+- **Primary keys** uniquely identify each row and define how updates and deletes work
+- **Unique constraints** ensure no two rows share the same value for a column
+- **Auto-increment** automatically assigns increasing values to integer columns
+
+See [Primary Keys](/tables/primary-keys) and [Constraints](/tables/constraints) for details.
+
+## Schedule Tables
+
+Tables can trigger reducers at specific times by including a scheduling column. This allows you to schedule future actions like sending reminders, expiring content, or running periodic maintenance.
+
+See [Schedule Tables](/tables/schedule-tables) for details.
 
 ## Next Steps
 
