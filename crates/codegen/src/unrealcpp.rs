@@ -2508,10 +2508,17 @@ fn generate_remote_reducers_class(
         writeln!(output, ");");
         writeln!(output);
 
-        // Generate invoke method
+        // Generate invoke method (UObject version - kept for backwards compatibility)
         write!(
             output,
             "    bool Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args);"
+        );
+        writeln!(output);
+
+        // Generate invoke method (FArgs version - zero allocation, used internally)
+        write!(
+            output,
+            "    bool Invoke{reducer_pascal}WithArgs(const FReducerEventContext& Context, const F{reducer_pascal}Args& Args);"
         );
         writeln!(output);
         writeln!(output);
@@ -3190,18 +3197,13 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
             output,
             "        F{reducer_pascal}Args Args = ReducerEvent.Reducer.GetAs{reducer_pascal}();"
         );
+        // FIX: Pass FArgs directly to InvokeWithArgs instead of creating UReducer UObject.
+        // UObject creation/destruction cannot keep up at 30Hz tick rate, causing memory leak.
+        // Stack-allocated FArgs struct has zero allocation overhead.
         writeln!(
             output,
-            "        U{reducer_pascal}Reducer* Reducer = NewObject<U{reducer_pascal}Reducer>();"
+            "        Reducers->Invoke{reducer_pascal}WithArgs(Context, Args);"
         );
-
-        // Copy fields from Args struct to Reducer object
-        for (param_name, _) in &reducer.params_for_generate.elements {
-            let param_pascal = param_name.deref().to_case(Case::Pascal);
-            writeln!(output, "        Reducer->{param_pascal} = Args.{param_pascal};");
-        }
-
-        writeln!(output, "        Reducers->Invoke{reducer_pascal}(Context, Reducer);");
         writeln!(output, "        return;");
         writeln!(output, "    }}");
     }
@@ -3698,6 +3700,44 @@ fn generate_remote_reducer_calls(output: &mut UnrealCppAutogen, module: &ModuleD
             for (param_name, _) in &reducer.params_for_generate.elements {
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
                 write!(output, ", Args->{param_pascal}");
+            }
+            writeln!(output, ");");
+        }
+
+        writeln!(output, "    return true;");
+        writeln!(output, "}}");
+        writeln!(output);
+
+        // InvokeWithArgs method implementation (zero allocation version)
+        write!(
+            output,
+            "bool URemoteReducers::Invoke{reducer_pascal}WithArgs(const FReducerEventContext& Context, const F{reducer_pascal}Args& Args)"
+        );
+        writeln!(output);
+        writeln!(output, "{{");
+        writeln!(output, "    if (!On{reducer_pascal}.IsBound())");
+        writeln!(output, "    {{");
+        writeln!(output, "        if (InternalOnUnhandledReducerError.IsBound())");
+        writeln!(output, "        {{");
+        writeln!(
+            output,
+            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {reducer_pascal}\"));"
+        );
+        writeln!(output, "        }}");
+        writeln!(output, "        return false;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        // Check if we're using args struct (more than 9 params including context)
+        if use_args_struct {
+            // Pass args struct directly
+            writeln!(output, "    On{reducer_pascal}.Broadcast(Context, Args);");
+        } else {
+            // Use individual parameters from Args struct
+            write!(output, "    On{reducer_pascal}.Broadcast(Context");
+            for (param_name, _) in &reducer.params_for_generate.elements {
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(output, ", Args.{param_pascal}");
             }
             writeln!(output, ");");
         }
