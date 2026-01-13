@@ -2,7 +2,8 @@ use super::Index;
 use core::mem;
 use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_sats::{
-    AlgebraicValue, ArrayValue, F32, F64, ProductValue, SumValue, algebraic_value::Packed, i256, sum_value::SumTag, u256
+    algebraic_value::Packed, i256, sum_value::SumTag, u256, AlgebraicValue, ArrayValue, ProductValue, SumValue, F32,
+    F64,
 };
 
 /// Storage for memoizing `KeySize` statistics.

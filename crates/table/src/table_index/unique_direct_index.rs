@@ -277,7 +277,10 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
 }
 
 impl<K: ToFromUsize + KeySize> RangedIndex for UniqueDirectIndex<K> {
-    type RangeIter<'a> = UniqueDirectIndexRangeIter<'a> where K: 'a;
+    type RangeIter<'a>
+        = UniqueDirectIndexRangeIter<'a>
+    where
+        K: 'a;
 
     /// Returns an iterator yielding all the [`RowPointer`] that correspond to the provided `range`.
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
