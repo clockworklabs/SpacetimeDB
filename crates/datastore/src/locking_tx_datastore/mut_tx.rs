@@ -67,7 +67,7 @@ use spacetimedb_table::{
         BlobNumBytes, DuplicateError, IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table,
         TableAndIndex, UniqueConstraintViolation,
     },
-    table_index::TableIndex,
+    table_index::{IndexCannotSeekRange, IndexSeekRangeResult, TableIndex},
 };
 use std::{
     sync::Arc,
@@ -429,7 +429,8 @@ impl Datastore for MutTxId {
             .get_table_and_index(index_id)
             .ok_or_else(|| IndexError::NotFound(index_id))?;
 
-        Ok(self.index_scan_range_inner(table_id, tx_index, commit_index, range))
+        self.index_scan_range_inner(table_id, tx_index, commit_index, range)
+            .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id).into())
     }
 
     fn index_scan_point<'a>(
@@ -1366,34 +1367,40 @@ impl MutTxId {
         // Extract the index type.
         let index_ty = &commit_index.index().key_type;
 
-        // TODO(centril): Once we have more index types than range-compatible ones,
-        // we'll need to enforce that `index_id` refers to a range-compatible index.
-
         // We have the index key type, so we can decode everything.
         let bounds =
             Self::range_scan_decode_bounds(index_ty, prefix, prefix_elems, rstart, rend).map_err(IndexError::Decode)?;
 
-        let iter = self.index_scan_range_inner(table_id, tx_index, commit_index, &bounds);
+        let iter = self
+            .index_scan_range_inner(table_id, tx_index, commit_index, &bounds)
+            .map_err(|IndexCannotSeekRange| IndexError::IndexCannotSeekRange(index_id))?;
 
         let (lower, upper) = bounds;
         Ok((table_id, lower, upper, iter))
     }
 
     /// See [`MutTxId::index_scan_range`].
+    #[inline(always)]
     fn index_scan_range_inner<'a>(
         &'a self,
         table_id: TableId,
         tx_index: Option<TableAndIndex<'a>>,
         commit_index: TableAndIndex<'a>,
         bounds: &impl RangeBounds<AlgebraicValue>,
-    ) -> IndexScanRanged<'a> {
+    ) -> IndexSeekRangeResult<IndexScanRanged<'a>> {
         // Get an index seek iterator for the tx and committed state.
-        let tx_iter = tx_index.map(|i| i.seek_range(bounds));
+        let tx_iter = tx_index.map(|i| i.seek_range(bounds)).transpose();
         let commit_iter = commit_index.seek_range(bounds);
+
+        // If we don't have a range-capable index, return an error.
+        let (tx_iter, commit_iter) = match (tx_iter, commit_iter) {
+            (Ok(t), Ok(c)) => (t, c),
+            (Err(e), _) | (_, Err(e)) => return Err(e),
+        };
 
         // Combine it all.
         let dt = self.tx_state.get_delete_table(table_id);
-        ScanMutTx::combine(dt, tx_iter, commit_iter)
+        Ok(ScanMutTx::combine(dt, tx_iter, commit_iter))
     }
 
     /// Translate `index_id` to the table id, and commit/tx indices.
@@ -3176,8 +3183,10 @@ fn iter_by_col_range<'a, R: RangeBounds<AlgebraicValue>>(
     // If there's an index, use that.
     // It's sufficient to check that the committed state has an index
     // as index schema changes are applied immediately.
-    if let Some(commit_iter) = committed_state.index_seek_range(table_id, &cols, &range) {
-        let tx_iter = tx_state.index_seek_range_by_cols(table_id, &cols, &range);
+    if let Some(Ok(commit_iter)) = committed_state.index_seek_range(table_id, &cols, &range) {
+        let tx_iter = tx_state
+            .index_seek_range_by_cols(table_id, &cols, &range)
+            .map(|r| r.expect("got a commit index so we should have a compatible tx index"));
         let delete_table = tx_state.get_delete_table(table_id);
         let iter = ScanMutTx::combine(delete_table, tx_iter, commit_iter);
         Ok(ScanOrIndex::Index(iter))

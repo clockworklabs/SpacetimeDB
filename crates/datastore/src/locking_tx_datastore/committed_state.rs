@@ -50,6 +50,7 @@ use spacetimedb_table::{
     indexes::{RowPointer, SquashedOffset},
     page_pool::PagePool,
     table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
+    table_index::IndexSeekRangeResult,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -213,8 +214,8 @@ impl StateView for CommittedState {
         range: R,
     ) -> Result<Self::IterByColRange<'_, R>> {
         match self.index_seek_range(table_id, &cols, &range) {
-            Some(iter) => Ok(ScanOrIndex::Index(iter)),
-            None => Ok(ScanOrIndex::Scan(ApplyFilter::new(
+            Some(Ok(iter)) => Ok(ScanOrIndex::Index(iter)),
+            None | Some(Err(_)) => Ok(ScanOrIndex::Scan(ApplyFilter::new(
                 RangeOnColumn { cols, range },
                 self.iter(table_id)?,
             ))),
@@ -948,7 +949,7 @@ impl CommittedState {
         table_id: TableId,
         cols: &ColList,
         range: &impl RangeBounds<AlgebraicValue>,
-    ) -> Option<IndexScanRangeIter<'a>> {
+    ) -> Option<IndexSeekRangeResult<IndexScanRangeIter<'a>>> {
         self.tables
             .get(&table_id)?
             .get_index_by_cols_with_table(&self.blob_store, cols)

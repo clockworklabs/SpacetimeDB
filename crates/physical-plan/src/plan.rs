@@ -840,7 +840,7 @@ impl PhysicalPlan {
     pub(crate) fn returns_distinct_values(&self, label: &Label, cols: &ColSet) -> bool {
         match self {
             // Is there a unique constraint for these cols?
-            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(cols),
+            Self::TableScan(TableScan { schema, .. }, var) => var == label && schema.as_ref().is_unique(&**cols),
             // Is there a unique constraint for these cols + the index cols?
             Self::IxScan(
                 IxScan {
@@ -852,7 +852,7 @@ impl PhysicalPlan {
                 var,
             ) => {
                 var == label
-                    && schema.as_ref().is_unique(&ColSet::from_iter(
+                    && schema.as_ref().is_unique(&*ColSet::from_iter(
                         cols.iter()
                             .chain(prefix.iter().map(|(col_id, _)| *col_id))
                             .chain(vec![*col]),
@@ -885,7 +885,7 @@ impl PhysicalPlan {
                 _,
             ) => {
                 lhs.returns_distinct_values(lhs_label, &ColSet::from(ColId(*lhs_field_pos as u16)))
-                    && rhs.as_ref().is_unique(cols)
+                    && rhs.as_ref().is_unique(&**cols)
             }
             // If the table in question is on the lhs,
             // and if the lhs returns distinct values,
@@ -1185,6 +1185,17 @@ pub struct IxScan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sarg {
     Eq(ColId, AlgebraicValue),
+    /// NOTE(centril): We currently never construct this variant.
+    /// We do have non-ranged hash indices.
+    /// This means that when we get around to using this variant,
+    /// we must change the rewrite rules such that we do not emit
+    /// [`IxScan`] on a hash index.
+    ///
+    /// Moreover, an equality scan (the variant above)
+    /// `(a0, b0)` on an index `(a, b, c)` is actually a ranged scan.
+    /// We also currently do not emit such `IxScan`s where the number
+    /// of equalities provided are fewer than the number of columns in the index.
+    /// When we do, we must also account for hash indices in the rewrite rules.
     Range(ColId, Bound<AlgebraicValue>, Bound<AlgebraicValue>),
 }
 

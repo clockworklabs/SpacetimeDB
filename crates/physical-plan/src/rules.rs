@@ -2,29 +2,29 @@
 //!
 //! These include:
 //!
-//! * [PushConstEq]  
+//! * [PushConstEq]
 //!   Push down predicates of the form `x=1`
-//! * [PushConstAnd]  
+//! * [PushConstAnd]
 //!   Push down predicates of the form `x=1 and y=2`
-//! * [IxScanEq]  
+//! * [IxScanEq]
 //!   Generate 1-column index scan for `x=1`
-//! * [IxScanAnd]  
+//! * [IxScanAnd]
 //!   Generate 1-column index scan for `x=1 and y=2`
-//! * [IxScanEq2Col]  
+//! * [IxScanEq2Col]
 //!   Generate 2-column index scan
-//! * [IxScanEq3Col]  
+//! * [IxScanEq3Col]
 //!   Generate 3-column index scan
-//! * [ReorderHashJoin]  
+//! * [ReorderHashJoin]
 //!   Reorder the sides of a hash join
 //! * [ReorderDeltaJoinRhs]
 //!   Reorder the sides of a hash join with delta tables
 //! * [PullFilterAboveHashJoin]
 //!   Pull a filter above a hash join with delta tables
-//! * [HashToIxJoin]  
+//! * [HashToIxJoin]
 //!   Convert hash join to index join
-//! * [UniqueIxJoinRule]  
+//! * [UniqueIxJoinRule]
 //!   Mark index join as unique
-//! * [UniqueHashJoinRule]  
+//! * [UniqueHashJoinRule]
 //!   Mark hash join as unique
 use anyhow::{bail, Result};
 use spacetimedb_primitives::{ColId, ColSet, IndexId};
@@ -440,7 +440,8 @@ impl RewriteRule for IxScanEq {
                              index_algorithm,
                              ..
                          }| {
-                            // TODO: Support prefix scans
+                            // TODO: Support prefix scans.
+                            // Remember to consider non-ranged indices.
                             if index_algorithm.columns().len() == 1 {
                                 Some((*index_id, index_algorithm.find_col_index(*pos)?))
                             } else {

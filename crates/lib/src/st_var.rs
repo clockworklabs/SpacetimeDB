@@ -82,62 +82,20 @@ impl From<StVarValue> for AlgebraicValue {
 impl From<StVarValue> for SumValue {
     fn from(value: StVarValue) -> Self {
         match value {
-            StVarValue::Bool(v) => SumValue {
-                tag: 0,
-                value: Box::new(AlgebraicValue::Bool(v)),
-            },
-            StVarValue::I8(v) => SumValue {
-                tag: 1,
-                value: Box::new(AlgebraicValue::I8(v)),
-            },
-            StVarValue::U8(v) => SumValue {
-                tag: 2,
-                value: Box::new(AlgebraicValue::U8(v)),
-            },
-            StVarValue::I16(v) => SumValue {
-                tag: 3,
-                value: Box::new(AlgebraicValue::I16(v)),
-            },
-            StVarValue::U16(v) => SumValue {
-                tag: 4,
-                value: Box::new(AlgebraicValue::U16(v)),
-            },
-            StVarValue::I32(v) => SumValue {
-                tag: 5,
-                value: Box::new(AlgebraicValue::I32(v)),
-            },
-            StVarValue::U32(v) => SumValue {
-                tag: 6,
-                value: Box::new(AlgebraicValue::U32(v)),
-            },
-            StVarValue::I64(v) => SumValue {
-                tag: 7,
-                value: Box::new(AlgebraicValue::I64(v)),
-            },
-            StVarValue::U64(v) => SumValue {
-                tag: 8,
-                value: Box::new(AlgebraicValue::U64(v)),
-            },
-            StVarValue::I128(v) => SumValue {
-                tag: 9,
-                value: Box::new(AlgebraicValue::I128(v.into())),
-            },
-            StVarValue::U128(v) => SumValue {
-                tag: 10,
-                value: Box::new(AlgebraicValue::U128(v.into())),
-            },
-            StVarValue::F32(v) => SumValue {
-                tag: 11,
-                value: Box::new(AlgebraicValue::F32(v.into())),
-            },
-            StVarValue::F64(v) => SumValue {
-                tag: 12,
-                value: Box::new(AlgebraicValue::F64(v.into())),
-            },
-            StVarValue::String(v) => SumValue {
-                tag: 13,
-                value: Box::new(AlgebraicValue::String(v)),
-            },
+            StVarValue::Bool(v) => SumValue::new(0, v),
+            StVarValue::I8(v) => SumValue::new(1, v),
+            StVarValue::U8(v) => SumValue::new(2, v),
+            StVarValue::I16(v) => SumValue::new(3, v),
+            StVarValue::U16(v) => SumValue::new(4, v),
+            StVarValue::I32(v) => SumValue::new(5, v),
+            StVarValue::U32(v) => SumValue::new(6, v),
+            StVarValue::I64(v) => SumValue::new(7, v),
+            StVarValue::U64(v) => SumValue::new(8, v),
+            StVarValue::I128(v) => SumValue::new(9, v),
+            StVarValue::U128(v) => SumValue::new(10, v),
+            StVarValue::F32(v) => SumValue::new(11, v),
+            StVarValue::F64(v) => SumValue::new(12, v),
+            StVarValue::String(v) => SumValue::new(13, v),
         }
     }
 }
