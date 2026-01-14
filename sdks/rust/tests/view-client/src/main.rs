@@ -41,6 +41,7 @@ fn main() {
         "view-non-anonymous-subscribe" => exec_non_anonymous_subscribe(),
 
         "view-non-table-return" => exec_non_table_return(),
+        "view-non-table-query-builder-return" => exec_non_table_query_builder_return(),
         "view-subscription-update" => exec_subscription_update(),
         _ => panic!("Unknown test: {test}"),
     }
@@ -239,6 +240,41 @@ fn exec_non_table_return() {
                 .unwrap();
             ctx.reducers().delete_player(my_identity).unwrap();
         });
+    });
+    test_counter.wait_for_all();
+}
+
+fn exec_non_table_query_builder_return() {
+    let test_counter = TestCounter::new();
+    let mut insert = Some(test_counter.add_test("insert"));
+    let mut delete = Some(test_counter.add_test("delete"));
+    connect_then(&test_counter, move |ctx| {
+        ctx.subscription_builder()
+            .on_error(|_ctx, error| panic!("Subscription errored: {error:?}"))
+            .on_applied(move |ctx| {
+                let my_identity = ctx.identity();
+                ctx.db.my_player_and_level().on_insert(move |_, player| {
+                    assert_eq!(player.identity, my_identity);
+                    assert_eq!(player.level, 1);
+                    put_result(&mut insert, Ok(()));
+                });
+                ctx.db.my_player_and_level().on_delete(move |_, player| {
+                    assert_eq!(player.identity, my_identity);
+                    assert_eq!(player.level, 1);
+                    put_result(&mut delete, Ok(()));
+                });
+                ctx.reducers()
+                    .insert_player(Identity::from_byte_array([1; 32]), 0)
+                    .unwrap();
+                ctx.reducers().insert_player(my_identity, 1).unwrap();
+
+                ctx.reducers()
+                    .delete_player(Identity::from_byte_array([1; 32]))
+                    .unwrap();
+                ctx.reducers().delete_player(my_identity).unwrap();
+            })
+            .add_query(|q_ctx| q_ctx.from.my_player_and_level().filter(|p| p.level.eq(1)).build())
+            .subscribe();
     });
     test_counter.wait_for_all();
 }

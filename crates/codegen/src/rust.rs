@@ -69,12 +69,28 @@ impl __sdk::InModule for {type_name} {{
         // Do not implement query col types for nested types.
         // as querying is only supported on top-level table row types.
         let name = type_ref_name(module, typ.ty);
-        if let Some(table) = module
+        let implemened = if let Some(table) = module
             .tables()
             .find(|t| type_ref_name(module, t.product_type_ref) == name)
         {
-            implement_query_col_types(module, out, table).expect("failed to implement query col types");
+            implement_query_col_types_for_table_struct(module, out, table)
+                .expect("failed to implement query col types");
             out.newline();
+            true
+        } else {
+            false
+        };
+
+        if !implemened {
+            if let Some(type_ref) = module
+                .views()
+                .map(|v| v.product_type_ref)
+                .find(|type_ref| type_ref_name(module, *type_ref) == name)
+            {
+                implement_query_col_types_for_struct(module, out, type_ref)
+                    .expect("failed to implement query col types");
+                out.newline();
+            }
         }
 
         vec![OutputFile {
@@ -621,12 +637,17 @@ impl {func_name} for super::RemoteProcedures {{
     }
 }
 
-fn implement_query_col_types(module: &ModuleDef, out: &mut impl Write, table: &TableDef) -> fmt::Result {
-    let struct_name = type_ref_name(module, table.product_type_ref);
+/// Implements `HasCols` for the given `AlgebraicTypeRef` struct type.
+fn implement_query_col_types_for_struct(
+    module: &ModuleDef,
+    out: &mut impl Write,
+    type_ref: AlgebraicTypeRef,
+) -> fmt::Result {
+    let struct_name = type_ref_name(module, type_ref);
     let cols_struct = struct_name.clone() + "Cols";
-    let product_def = module.typespace_for_generate()[table.product_type_ref]
+    let product_def = module.typespace_for_generate()[type_ref]
         .as_product()
-        .unwrap();
+        .expect("expected product type");
 
     writeln!(
         out,
@@ -670,8 +691,19 @@ impl __query_builder::HasCols for {struct_name} {{
         }}
     }}
 }}"#
-    )?;
+    )
+}
 
+/// Implements `HasCols` and `HasIxCols` for the given table's row struct type.
+fn implement_query_col_types_for_table_struct(
+    module: &ModuleDef,
+    out: &mut impl Write,
+    table: &TableDef,
+) -> fmt::Result {
+    let type_ref = table.product_type_ref;
+    let struct_name = type_ref_name(module, type_ref);
+
+    implement_query_col_types_for_struct(module, out, type_ref)?;
     let cols_ix = struct_name.clone() + "IxCols";
     writeln!(
         out,

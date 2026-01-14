@@ -399,6 +399,11 @@ mod view {
     }
 
     #[test]
+    fn subscribe_view_non_table_query_builder_return() {
+        make_test("view-non-table-query-builder-return").run()
+    }
+
+    #[test]
     fn subscription_updates_for_view() {
         make_test("view-subscription-update").run()
     }
