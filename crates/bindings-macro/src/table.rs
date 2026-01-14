@@ -996,8 +996,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         #[allow(dead_code)]
         #[derive(SpacetimeType)]
         struct #pk_type_ident(#pk_type);
-        impl std::borrow::Borrow<#pk_type> for #pk_type_ident {
-            fn borrow(&self) -> &#pk_type {
+        impl std::ops::Deref for #pk_type_ident {
+            type Target = #pk_type;
+            fn deref(&self) -> &#pk_type {
                 &self.0
             }
         }
