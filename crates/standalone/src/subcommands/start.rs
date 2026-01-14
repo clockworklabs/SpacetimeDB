@@ -1,11 +1,9 @@
+use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
 use std::net::IpAddr;
 use std::sync::Arc;
-use netstat2::{
-    get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState,
-};
 
 use crate::{StandaloneEnv, StandaloneOptions};
 use anyhow::Context;
@@ -341,10 +339,7 @@ fn parse_host(host: &str) -> Option<RequestedHost> {
     let host = host.trim();
 
     // Allow common bracketed IPv6 formats like "[::1]"
-    let host = host
-        .strip_prefix('[')
-        .and_then(|s| s.strip_suffix(']'))
-        .unwrap_or(host);
+    let host = host.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host);
 
     if host.eq_ignore_ascii_case("localhost") {
         return Some(RequestedHost::Localhost);
