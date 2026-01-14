@@ -245,7 +245,7 @@ impl Iterator for UniqueDirectIndexPointIter {
 }
 
 /// An iterator over a range of keys in a [`UniqueDirectIndex`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UniqueDirectIndexRangeIter<'a> {
     outer: &'a [Option<InnerIndex>],
     start: usize,

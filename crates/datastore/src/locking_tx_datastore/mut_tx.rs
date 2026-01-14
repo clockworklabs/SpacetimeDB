@@ -1367,9 +1367,6 @@ impl MutTxId {
         // Extract the index type.
         let index_ty = &commit_index.index().key_type;
 
-        // TODO(centril): Once we have more index types than range-compatible ones,
-        // we'll need to enforce that `index_id` refers to a range-compatible index.
-
         // We have the index key type, so we can decode everything.
         let bounds =
             Self::range_scan_decode_bounds(index_ty, prefix, prefix_elems, rstart, rend).map_err(IndexError::Decode)?;

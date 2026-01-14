@@ -121,7 +121,7 @@ pub trait RangedIndex: Index {
 }
 
 /// An error indicating that the [`Index`] is not a [`RangedIndex`].
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IndexCannotSeekRange;
 
 pub type IndexSeekRangeResult<T> = Result<T, IndexCannotSeekRange>;
