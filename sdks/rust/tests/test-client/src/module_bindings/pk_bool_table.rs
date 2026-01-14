@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_bool_type::PkBool;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `pk_bool`.
 ///
@@ -138,5 +138,21 @@ impl<'ctx> PkBoolBUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &bool) -> Option<PkBool> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkBool`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_boolQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkBool`.
+    fn pk_bool(&self) -> __query_builder::Table<PkBool>;
+}
+
+impl pk_boolQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_bool(&self) -> __query_builder::Table<PkBool> {
+        __query_builder::Table::new("pk_bool")
     }
 }

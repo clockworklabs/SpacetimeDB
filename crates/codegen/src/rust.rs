@@ -69,7 +69,7 @@ impl __sdk::InModule for {type_name} {{
         // Do not implement query col types for nested types.
         // as querying is only supported on top-level table row types.
         let name = type_ref_name(module, typ.ty);
-        let implemened = if let Some(table) = module
+        let implemented = if let Some(table) = module
             .tables()
             .find(|t| type_ref_name(module, t.product_type_ref) == name)
         {
@@ -81,7 +81,7 @@ impl __sdk::InModule for {type_name} {{
             false
         };
 
-        if !implemened {
+        if !implemented {
             if let Some(type_ref) = module
                 .views()
                 .map(|v| v.product_type_ref)

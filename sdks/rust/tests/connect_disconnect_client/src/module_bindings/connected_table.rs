@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::connected_type::Connected;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `connected`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Connected`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait connectedQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Connected`.
+    fn connected(&self) -> __query_builder::Table<Connected>;
+}
+
+impl connectedQueryTableAccess for __sdk::QueryTableAccessor {
+    fn connected(&self) -> __query_builder::Table<Connected> {
+        __query_builder::Table::new("connected")
+    }
 }

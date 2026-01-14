@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_connection_id_type::OneConnectionId;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_connection_id`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneConnectionId`.
+    fn one_connection_id(&self) -> __query_builder::Table<OneConnectionId>;
+}
+
+impl one_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_connection_id(&self) -> __query_builder::Table<OneConnectionId> {
+        __query_builder::Table::new("one_connection_id")
+    }
 }

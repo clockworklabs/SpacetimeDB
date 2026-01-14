@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::result_every_primitive_struct_string_type::ResultEveryPrimitiveStructString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `result_every_primitive_struct_string`.
 ///
@@ -96,4 +96,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ResultEveryPrimitiveStructString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait result_every_primitive_struct_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ResultEveryPrimitiveStructString`.
+    fn result_every_primitive_struct_string(&self) -> __query_builder::Table<ResultEveryPrimitiveStructString>;
+}
+
+impl result_every_primitive_struct_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_every_primitive_struct_string(&self) -> __query_builder::Table<ResultEveryPrimitiveStructString> {
+        __query_builder::Table::new("result_every_primitive_struct_string")
+    }
 }

@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,4 +13,38 @@ pub struct BTreeU32 {
 
 impl __sdk::InModule for BTreeU32 {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `BTreeU32`.
+///
+/// Provides typed access to columns for query building.
+pub struct BTreeU32Cols {
+    pub n: __query_builder::Col<BTreeU32, u32>,
+    pub data: __query_builder::Col<BTreeU32, i32>,
+}
+
+impl __query_builder::HasCols for BTreeU32 {
+    type Cols = BTreeU32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        BTreeU32Cols {
+            n: __query_builder::Col::new(table_name, "n"),
+            data: __query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `BTreeU32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct BTreeU32IxCols {
+    pub n: __query_builder::IxCol<BTreeU32, u32>,
+}
+
+impl __query_builder::HasIxCols for BTreeU32 {
+    type IxCols = BTreeU32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        BTreeU32IxCols {
+            n: __query_builder::IxCol::new(table_name, "n"),
+        }
+    }
 }

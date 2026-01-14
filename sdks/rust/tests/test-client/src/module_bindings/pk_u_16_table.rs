@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_u_16_type::PkU16;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `pk_u16`.
 ///
@@ -138,5 +138,21 @@ impl<'ctx> PkU16NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u16) -> Option<PkU16> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkU16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_u16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkU16`.
+    fn pk_u16(&self) -> __query_builder::Table<PkU16>;
+}
+
+impl pk_u16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u16(&self) -> __query_builder::Table<PkU16> {
+        __query_builder::Table::new("pk_u16")
     }
 }

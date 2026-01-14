@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,4 +13,38 @@ pub struct PkConnectionId {
 
 impl __sdk::InModule for PkConnectionId {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `PkConnectionId`.
+///
+/// Provides typed access to columns for query building.
+pub struct PkConnectionIdCols {
+    pub a: __query_builder::Col<PkConnectionId, __sdk::ConnectionId>,
+    pub data: __query_builder::Col<PkConnectionId, i32>,
+}
+
+impl __query_builder::HasCols for PkConnectionId {
+    type Cols = PkConnectionIdCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PkConnectionIdCols {
+            a: __query_builder::Col::new(table_name, "a"),
+            data: __query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PkConnectionId`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PkConnectionIdIxCols {
+    pub a: __query_builder::IxCol<PkConnectionId, __sdk::ConnectionId>,
+}
+
+impl __query_builder::HasIxCols for PkConnectionId {
+    type IxCols = PkConnectionIdIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PkConnectionIdIxCols {
+            a: __query_builder::IxCol::new(table_name, "a"),
+        }
+    }
 }

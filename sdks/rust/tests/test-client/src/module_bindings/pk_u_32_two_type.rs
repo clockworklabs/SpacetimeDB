@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,4 +13,38 @@ pub struct PkU32Two {
 
 impl __sdk::InModule for PkU32Two {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `PkU32Two`.
+///
+/// Provides typed access to columns for query building.
+pub struct PkU32TwoCols {
+    pub n: __query_builder::Col<PkU32Two, u32>,
+    pub data: __query_builder::Col<PkU32Two, i32>,
+}
+
+impl __query_builder::HasCols for PkU32Two {
+    type Cols = PkU32TwoCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PkU32TwoCols {
+            n: __query_builder::Col::new(table_name, "n"),
+            data: __query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PkU32Two`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PkU32TwoIxCols {
+    pub n: __query_builder::IxCol<PkU32Two, u32>,
+}
+
+impl __query_builder::HasIxCols for PkU32Two {
+    type IxCols = PkU32TwoIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PkU32TwoIxCols {
+            n: __query_builder::IxCol::new(table_name, "n"),
+        }
+    }
 }

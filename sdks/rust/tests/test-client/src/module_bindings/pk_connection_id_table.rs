@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_connection_id_type::PkConnectionId;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `pk_connection_id`.
 ///
@@ -138,5 +138,21 @@ impl<'ctx> PkConnectionIdAUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::ConnectionId) -> Option<PkConnectionId> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkConnectionId`.
+    fn pk_connection_id(&self) -> __query_builder::Table<PkConnectionId>;
+}
+
+impl pk_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_connection_id(&self) -> __query_builder::Table<PkConnectionId> {
+        __query_builder::Table::new("pk_connection_id")
     }
 }

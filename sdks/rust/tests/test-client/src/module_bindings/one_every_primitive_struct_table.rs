@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::one_every_primitive_struct_type::OneEveryPrimitiveStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_every_primitive_struct`.
 ///
@@ -95,4 +95,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneEveryPrimitiveStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_every_primitive_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneEveryPrimitiveStruct`.
+    fn one_every_primitive_struct(&self) -> __query_builder::Table<OneEveryPrimitiveStruct>;
+}
+
+impl one_every_primitive_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_every_primitive_struct(&self) -> __query_builder::Table<OneEveryPrimitiveStruct> {
+        __query_builder::Table::new("one_every_primitive_struct")
+    }
 }

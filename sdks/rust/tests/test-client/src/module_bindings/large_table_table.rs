@@ -9,7 +9,7 @@ use super::every_vec_struct_type::EveryVecStruct;
 use super::large_table_type::LargeTable;
 use super::simple_enum_type::SimpleEnum;
 use super::unit_struct_type::UnitStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `large_table`.
 ///
@@ -98,4 +98,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `LargeTable`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait large_tableQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `LargeTable`.
+    fn large_table(&self) -> __query_builder::Table<LargeTable>;
+}
+
+impl large_tableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn large_table(&self) -> __query_builder::Table<LargeTable> {
+        __query_builder::Table::new("large_table")
+    }
 }

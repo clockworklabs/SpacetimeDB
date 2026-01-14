@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,4 +12,32 @@ pub struct OneF64 {
 
 impl __sdk::InModule for OneF64 {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `OneF64`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneF64Cols {
+    pub f: __query_builder::Col<OneF64, f64>,
+}
+
+impl __query_builder::HasCols for OneF64 {
+    type Cols = OneF64Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneF64Cols {
+            f: __query_builder::Col::new(table_name, "f"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneF64`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneF64IxCols {}
+
+impl __query_builder::HasIxCols for OneF64 {
+    type IxCols = OneF64IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneF64IxCols {}
+    }
 }

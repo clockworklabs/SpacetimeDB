@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::option_uuid_type::OptionUuid;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `option_uuid`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionUuid`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_uuidQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionUuid`.
+    fn option_uuid(&self) -> __query_builder::Table<OptionUuid>;
+}
+
+impl option_uuidQueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_uuid(&self) -> __query_builder::Table<OptionUuid> {
+        __query_builder::Table::new("option_uuid")
+    }
 }

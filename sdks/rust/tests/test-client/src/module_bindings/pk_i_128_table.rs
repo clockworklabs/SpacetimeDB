@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_i_128_type::PkI128;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `pk_i128`.
 ///
@@ -138,5 +138,21 @@ impl<'ctx> PkI128NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i128) -> Option<PkI128> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkI128`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_i128QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkI128`.
+    fn pk_i128(&self) -> __query_builder::Table<PkI128>;
+}
+
+impl pk_i128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_i128(&self) -> __query_builder::Table<PkI128> {
+        __query_builder::Table::new("pk_i128")
     }
 }

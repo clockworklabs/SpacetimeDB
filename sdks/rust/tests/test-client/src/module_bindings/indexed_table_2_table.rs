@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::indexed_table_2_type::IndexedTable2;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `indexed_table_2`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `IndexedTable2`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait indexed_table_2QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `IndexedTable2`.
+    fn indexed_table_2(&self) -> __query_builder::Table<IndexedTable2>;
+}
+
+impl indexed_table_2QueryTableAccess for __sdk::QueryTableAccessor {
+    fn indexed_table_2(&self) -> __query_builder::Table<IndexedTable2> {
+        __query_builder::Table::new("indexed_table_2")
+    }
 }

@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_connection_id_type::UniqueConnectionId;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `unique_connection_id`.
 ///
@@ -122,5 +122,21 @@ impl<'ctx> UniqueConnectionIdAUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &__sdk::ConnectionId) -> Option<UniqueConnectionId> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueConnectionId`.
+    fn unique_connection_id(&self) -> __query_builder::Table<UniqueConnectionId>;
+}
+
+impl unique_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_connection_id(&self) -> __query_builder::Table<UniqueConnectionId> {
+        __query_builder::Table::new("unique_connection_id")
     }
 }

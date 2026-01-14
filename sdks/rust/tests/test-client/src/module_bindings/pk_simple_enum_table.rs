@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::pk_simple_enum_type::PkSimpleEnum;
 use super::simple_enum_type::SimpleEnum;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `pk_simple_enum`.
 ///
@@ -139,5 +139,21 @@ impl<'ctx> PkSimpleEnumAUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &SimpleEnum) -> Option<PkSimpleEnum> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkSimpleEnum`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_simple_enumQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkSimpleEnum`.
+    fn pk_simple_enum(&self) -> __query_builder::Table<PkSimpleEnum>;
+}
+
+impl pk_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_simple_enum(&self) -> __query_builder::Table<PkSimpleEnum> {
+        __query_builder::Table::new("pk_simple_enum")
     }
 }

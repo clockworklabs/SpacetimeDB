@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,4 +12,32 @@ pub struct OneBool {
 
 impl __sdk::InModule for OneBool {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `OneBool`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneBoolCols {
+    pub b: __query_builder::Col<OneBool, bool>,
+}
+
+impl __query_builder::HasCols for OneBool {
+    type Cols = OneBoolCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneBoolCols {
+            b: __query_builder::Col::new(table_name, "b"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneBool`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneBoolIxCols {}
+
+impl __query_builder::HasIxCols for OneBool {
+    type IxCols = OneBoolIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneBoolIxCols {}
+    }
 }

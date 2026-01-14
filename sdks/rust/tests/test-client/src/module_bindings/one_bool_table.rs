@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_bool_type::OneBool;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_bool`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneBool`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_boolQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneBool`.
+    fn one_bool(&self) -> __query_builder::Table<OneBool>;
+}
+
+impl one_boolQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_bool(&self) -> __query_builder::Table<OneBool> {
+        __query_builder::Table::new("one_bool")
+    }
 }

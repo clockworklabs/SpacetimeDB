@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,4 +13,38 @@ pub struct UniqueString {
 
 impl __sdk::InModule for UniqueString {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `UniqueString`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueStringCols {
+    pub s: __query_builder::Col<UniqueString, String>,
+    pub data: __query_builder::Col<UniqueString, i32>,
+}
+
+impl __query_builder::HasCols for UniqueString {
+    type Cols = UniqueStringCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueStringCols {
+            s: __query_builder::Col::new(table_name, "s"),
+            data: __query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueString`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueStringIxCols {
+    pub s: __query_builder::IxCol<UniqueString, String>,
+}
+
+impl __query_builder::HasIxCols for UniqueString {
+    type IxCols = UniqueStringIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueStringIxCols {
+            s: __query_builder::IxCol::new(table_name, "s"),
+        }
+    }
 }

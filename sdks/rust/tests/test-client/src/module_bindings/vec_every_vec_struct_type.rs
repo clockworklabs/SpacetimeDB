@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 use super::every_vec_struct_type::EveryVecStruct;
 
@@ -14,4 +14,32 @@ pub struct VecEveryVecStruct {
 
 impl __sdk::InModule for VecEveryVecStruct {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `VecEveryVecStruct`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecEveryVecStructCols {
+    pub s: __query_builder::Col<VecEveryVecStruct, Vec<EveryVecStruct>>,
+}
+
+impl __query_builder::HasCols for VecEveryVecStruct {
+    type Cols = VecEveryVecStructCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecEveryVecStructCols {
+            s: __query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecEveryVecStruct`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecEveryVecStructIxCols {}
+
+impl __query_builder::HasIxCols for VecEveryVecStruct {
+    type IxCols = VecEveryVecStructIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecEveryVecStructIxCols {}
+    }
 }

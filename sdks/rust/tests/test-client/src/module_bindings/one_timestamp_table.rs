@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_timestamp_type::OneTimestamp;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_timestamp`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneTimestamp`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_timestampQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneTimestamp`.
+    fn one_timestamp(&self) -> __query_builder::Table<OneTimestamp>;
+}
+
+impl one_timestampQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_timestamp(&self) -> __query_builder::Table<OneTimestamp> {
+        __query_builder::Table::new("one_timestamp")
+    }
 }

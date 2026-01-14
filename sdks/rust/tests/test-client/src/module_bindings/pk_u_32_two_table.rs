@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_u_32_two_type::PkU32Two;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `pk_u32_two`.
 ///
@@ -138,5 +138,21 @@ impl<'ctx> PkU32TwoNUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &u32) -> Option<PkU32Two> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkU32Two`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_u32_twoQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkU32Two`.
+    fn pk_u32_two(&self) -> __query_builder::Table<PkU32Two>;
+}
+
+impl pk_u32_twoQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u32_two(&self) -> __query_builder::Table<PkU32Two> {
+        __query_builder::Table::new("pk_u32_two")
     }
 }

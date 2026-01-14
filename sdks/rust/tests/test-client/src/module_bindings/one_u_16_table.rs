@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_u_16_type::OneU16;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_u16`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneU16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_u16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneU16`.
+    fn one_u16(&self) -> __query_builder::Table<OneU16>;
+}
+
+impl one_u16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_u16(&self) -> __query_builder::Table<OneU16> {
+        __query_builder::Table::new("one_u16")
+    }
 }

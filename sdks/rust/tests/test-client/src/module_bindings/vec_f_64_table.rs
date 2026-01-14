@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_f_64_type::VecF64;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `vec_f64`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecF64`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_f64QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecF64`.
+    fn vec_f64(&self) -> __query_builder::Table<VecF64>;
+}
+
+impl vec_f64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_f64(&self) -> __query_builder::Table<VecF64> {
+        __query_builder::Table::new("vec_f64")
+    }
 }

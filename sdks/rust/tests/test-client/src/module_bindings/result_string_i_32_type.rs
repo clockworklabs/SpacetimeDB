@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,4 +12,32 @@ pub struct ResultStringI32 {
 
 impl __sdk::InModule for ResultStringI32 {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `ResultStringI32`.
+///
+/// Provides typed access to columns for query building.
+pub struct ResultStringI32Cols {
+    pub r: __query_builder::Col<ResultStringI32, Result<String, i32>>,
+}
+
+impl __query_builder::HasCols for ResultStringI32 {
+    type Cols = ResultStringI32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ResultStringI32Cols {
+            r: __query_builder::Col::new(table_name, "r"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `ResultStringI32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ResultStringI32IxCols {}
+
+impl __query_builder::HasIxCols for ResultStringI32 {
+    type IxCols = ResultStringI32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ResultStringI32IxCols {}
+    }
 }

@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 use super::enum_with_payload_type::EnumWithPayload;
 
@@ -14,4 +14,32 @@ pub struct OneEnumWithPayload {
 
 impl __sdk::InModule for OneEnumWithPayload {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `OneEnumWithPayload`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneEnumWithPayloadCols {
+    pub e: __query_builder::Col<OneEnumWithPayload, EnumWithPayload>,
+}
+
+impl __query_builder::HasCols for OneEnumWithPayload {
+    type Cols = OneEnumWithPayloadCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneEnumWithPayloadCols {
+            e: __query_builder::Col::new(table_name, "e"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneEnumWithPayload`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneEnumWithPayloadIxCols {}
+
+impl __query_builder::HasIxCols for OneEnumWithPayload {
+    type IxCols = OneEnumWithPayloadIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneEnumWithPayloadIxCols {}
+    }
 }

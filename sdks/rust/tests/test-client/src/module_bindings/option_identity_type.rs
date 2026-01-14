@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,4 +12,32 @@ pub struct OptionIdentity {
 
 impl __sdk::InModule for OptionIdentity {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `OptionIdentity`.
+///
+/// Provides typed access to columns for query building.
+pub struct OptionIdentityCols {
+    pub i: __query_builder::Col<OptionIdentity, Option<__sdk::Identity>>,
+}
+
+impl __query_builder::HasCols for OptionIdentity {
+    type Cols = OptionIdentityCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OptionIdentityCols {
+            i: __query_builder::Col::new(table_name, "i"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OptionIdentity`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OptionIdentityIxCols {}
+
+impl __query_builder::HasIxCols for OptionIdentity {
+    type IxCols = OptionIdentityIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OptionIdentityIxCols {}
+    }
 }

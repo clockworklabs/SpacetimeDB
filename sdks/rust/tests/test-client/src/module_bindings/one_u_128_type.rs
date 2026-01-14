@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,4 +12,32 @@ pub struct OneU128 {
 
 impl __sdk::InModule for OneU128 {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `OneU128`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneU128Cols {
+    pub n: __query_builder::Col<OneU128, u128>,
+}
+
+impl __query_builder::HasCols for OneU128 {
+    type Cols = OneU128Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneU128Cols {
+            n: __query_builder::Col::new(table_name, "n"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneU128`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneU128IxCols {}
+
+impl __query_builder::HasIxCols for OneU128 {
+    type IxCols = OneU128IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneU128IxCols {}
+    }
 }

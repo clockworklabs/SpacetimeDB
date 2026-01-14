@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::option_vec_option_i_32_type::OptionVecOptionI32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `option_vec_option_i32`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionVecOptionI32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_vec_option_i32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionVecOptionI32`.
+    fn option_vec_option_i32(&self) -> __query_builder::Table<OptionVecOptionI32>;
+}
+
+impl option_vec_option_i32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_vec_option_i32(&self) -> __query_builder::Table<OptionVecOptionI32> {
+        __query_builder::Table::new("option_vec_option_i32")
+    }
 }

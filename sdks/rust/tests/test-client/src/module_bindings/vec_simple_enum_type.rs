@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -14,4 +14,32 @@ pub struct VecSimpleEnum {
 
 impl __sdk::InModule for VecSimpleEnum {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `VecSimpleEnum`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecSimpleEnumCols {
+    pub e: __query_builder::Col<VecSimpleEnum, Vec<SimpleEnum>>,
+}
+
+impl __query_builder::HasCols for VecSimpleEnum {
+    type Cols = VecSimpleEnumCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecSimpleEnumCols {
+            e: __query_builder::Col::new(table_name, "e"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecSimpleEnum`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecSimpleEnumIxCols {}
+
+impl __query_builder::HasIxCols for VecSimpleEnum {
+    type IxCols = VecSimpleEnumIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecSimpleEnumIxCols {}
+    }
 }

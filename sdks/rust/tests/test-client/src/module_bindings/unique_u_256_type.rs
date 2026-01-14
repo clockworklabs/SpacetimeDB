@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -13,4 +13,38 @@ pub struct UniqueU256 {
 
 impl __sdk::InModule for UniqueU256 {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `UniqueU256`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueU256Cols {
+    pub n: __query_builder::Col<UniqueU256, __sats::u256>,
+    pub data: __query_builder::Col<UniqueU256, i32>,
+}
+
+impl __query_builder::HasCols for UniqueU256 {
+    type Cols = UniqueU256Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueU256Cols {
+            n: __query_builder::Col::new(table_name, "n"),
+            data: __query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueU256`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueU256IxCols {
+    pub n: __query_builder::IxCol<UniqueU256, __sats::u256>,
+}
+
+impl __query_builder::HasIxCols for UniqueU256 {
+    type IxCols = UniqueU256IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueU256IxCols {
+            n: __query_builder::IxCol::new(table_name, "n"),
+        }
+    }
 }

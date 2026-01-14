@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -14,4 +14,32 @@ pub struct OptionSimpleEnum {
 
 impl __sdk::InModule for OptionSimpleEnum {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `OptionSimpleEnum`.
+///
+/// Provides typed access to columns for query building.
+pub struct OptionSimpleEnumCols {
+    pub e: __query_builder::Col<OptionSimpleEnum, Option<SimpleEnum>>,
+}
+
+impl __query_builder::HasCols for OptionSimpleEnum {
+    type Cols = OptionSimpleEnumCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OptionSimpleEnumCols {
+            e: __query_builder::Col::new(table_name, "e"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OptionSimpleEnum`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OptionSimpleEnumIxCols {}
+
+impl __query_builder::HasIxCols for OptionSimpleEnum {
+    type IxCols = OptionSimpleEnumIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OptionSimpleEnumIxCols {}
+    }
 }

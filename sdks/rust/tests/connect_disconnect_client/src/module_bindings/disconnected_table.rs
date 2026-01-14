@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::disconnected_type::Disconnected;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `disconnected`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Disconnected`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait disconnectedQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Disconnected`.
+    fn disconnected(&self) -> __query_builder::Table<Disconnected>;
+}
+
+impl disconnectedQueryTableAccess for __sdk::QueryTableAccessor {
+    fn disconnected(&self) -> __query_builder::Table<Disconnected> {
+        __query_builder::Table::new("disconnected")
+    }
 }

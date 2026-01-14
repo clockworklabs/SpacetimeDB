@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_identity_type::OneIdentity;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_identity`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneIdentity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_identityQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneIdentity`.
+    fn one_identity(&self) -> __query_builder::Table<OneIdentity>;
+}
+
+impl one_identityQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_identity(&self) -> __query_builder::Table<OneIdentity> {
+        __query_builder::Table::new("one_identity")
+    }
 }

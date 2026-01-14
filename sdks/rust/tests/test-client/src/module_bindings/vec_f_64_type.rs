@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -12,4 +12,32 @@ pub struct VecF64 {
 
 impl __sdk::InModule for VecF64 {
     type Module = super::RemoteModule;
+}
+
+/// Column accessor struct for the table `VecF64`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecF64Cols {
+    pub f: __query_builder::Col<VecF64, Vec<f64>>,
+}
+
+impl __query_builder::HasCols for VecF64 {
+    type Cols = VecF64Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecF64Cols {
+            f: __query_builder::Col::new(table_name, "f"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecF64`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecF64IxCols {}
+
+impl __query_builder::HasIxCols for VecF64 {
+    type IxCols = VecF64IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecF64IxCols {}
+    }
 }

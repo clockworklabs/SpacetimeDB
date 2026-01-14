@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_i_8_type::UniqueI8;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `unique_i8`.
 ///
@@ -122,5 +122,21 @@ impl<'ctx> UniqueI8NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i8) -> Option<UniqueI8> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueI8`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_i8QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueI8`.
+    fn unique_i8(&self) -> __query_builder::Table<UniqueI8>;
+}
+
+impl unique_i8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i8(&self) -> __query_builder::Table<UniqueI8> {
+        __query_builder::Table::new("unique_i8")
     }
 }

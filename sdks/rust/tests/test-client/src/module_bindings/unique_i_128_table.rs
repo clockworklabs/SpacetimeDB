@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_i_128_type::UniqueI128;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `unique_i128`.
 ///
@@ -122,5 +122,21 @@ impl<'ctx> UniqueI128NUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &i128) -> Option<UniqueI128> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueI128`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_i128QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueI128`.
+    fn unique_i128(&self) -> __query_builder::Table<UniqueI128>;
+}
+
+impl unique_i128QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i128(&self) -> __query_builder::Table<UniqueI128> {
+        __query_builder::Table::new("unique_i128")
     }
 }

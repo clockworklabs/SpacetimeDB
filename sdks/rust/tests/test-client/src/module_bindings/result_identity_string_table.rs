@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::result_identity_string_type::ResultIdentityString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `result_identity_string`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `ResultIdentityString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait result_identity_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `ResultIdentityString`.
+    fn result_identity_string(&self) -> __query_builder::Table<ResultIdentityString>;
+}
+
+impl result_identity_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn result_identity_string(&self) -> __query_builder::Table<ResultIdentityString> {
+        __query_builder::Table::new("result_identity_string")
+    }
 }

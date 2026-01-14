@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_i_8_type::OneI8;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `one_i8`.
 ///
@@ -92,4 +92,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneI8`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_i8QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneI8`.
+    fn one_i8(&self) -> __query_builder::Table<OneI8>;
+}
+
+impl one_i8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_i8(&self) -> __query_builder::Table<OneI8> {
+        __query_builder::Table::new("one_i8")
+    }
 }

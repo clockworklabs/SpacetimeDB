@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_string_type::UniqueString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `unique_string`.
 ///
@@ -122,5 +122,21 @@ impl<'ctx> UniqueStringSUnique<'ctx> {
     /// if such a row is present in the client cache.
     pub fn find(&self, col_val: &String) -> Option<UniqueString> {
         self.imp.find(col_val)
+    }
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueString`.
+    fn unique_string(&self) -> __query_builder::Table<UniqueString>;
+}
+
+impl unique_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_string(&self) -> __query_builder::Table<UniqueString> {
+        __query_builder::Table::new("unique_string")
     }
 }

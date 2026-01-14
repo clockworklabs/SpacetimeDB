@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::simple_enum_type::SimpleEnum;
 use super::vec_simple_enum_type::VecSimpleEnum;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
 
 /// Table handle for the table `vec_simple_enum`.
 ///
@@ -93,4 +93,20 @@ pub(super) fn parse_table_update(
             .with_cause(e)
             .into()
     })
+}
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecSimpleEnum`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_simple_enumQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecSimpleEnum`.
+    fn vec_simple_enum(&self) -> __query_builder::Table<VecSimpleEnum>;
+}
+
+impl vec_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_simple_enum(&self) -> __query_builder::Table<VecSimpleEnum> {
+        __query_builder::Table::new("vec_simple_enum")
+    }
 }
