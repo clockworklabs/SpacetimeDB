@@ -13,7 +13,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -124,7 +123,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -235,7 +233,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -350,7 +347,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -456,7 +452,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -482,7 +477,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -588,7 +582,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -699,7 +692,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -810,7 +802,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 use super::baz_type::Baz;
@@ -843,7 +834,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -898,7 +888,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::has_special_stuff_type::HasSpecialStuff;
 
@@ -996,12 +985,12 @@ pub(super) fn parse_table_update(
         pub trait has_special_stuffQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `HasSpecialStuff`.
-            fn has_special_stuff(&self) -> __query_builder::Table<HasSpecialStuff>;
+            fn has_special_stuff(&self) -> __sdk::__query_builder::Table<HasSpecialStuff>;
         }
 
         impl has_special_stuffQueryTableAccess for __sdk::QueryTableAccessor {
-            fn has_special_stuff(&self) -> __query_builder::Table<HasSpecialStuff> {
-                __query_builder::Table::new("has_special_stuff")
+            fn has_special_stuff(&self) -> __sdk::__query_builder::Table<HasSpecialStuff> {
+                __sdk::__query_builder::Table::new("has_special_stuff")
             }
         }
 
@@ -1016,7 +1005,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -1037,16 +1025,16 @@ impl __sdk::InModule for HasSpecialStuff {
 ///
 /// Provides typed access to columns for query building.
 pub struct HasSpecialStuffCols {
-    pub identity: __query_builder::Col<HasSpecialStuff, __sdk::Identity>,
-    pub connection_id: __query_builder::Col<HasSpecialStuff, __sdk::ConnectionId>,
+    pub identity: __sdk::__query_builder::Col<HasSpecialStuff, __sdk::Identity>,
+    pub connection_id: __sdk::__query_builder::Col<HasSpecialStuff, __sdk::ConnectionId>,
 }
 
-impl __query_builder::HasCols for HasSpecialStuff {
+impl __sdk::__query_builder::HasCols for HasSpecialStuff {
     type Cols = HasSpecialStuffCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         HasSpecialStuffCols {
-            identity: __query_builder::Col::new(table_name, "identity"),
-            connection_id: __query_builder::Col::new(table_name, "connection_id"),
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+            connection_id: __sdk::__query_builder::Col::new(table_name, "connection_id"),
 
         }
     }
@@ -1058,7 +1046,7 @@ impl __query_builder::HasCols for HasSpecialStuff {
 pub struct HasSpecialStuffIxCols {
 }
 
-impl __query_builder::HasIxCols for HasSpecialStuff {
+impl __sdk::__query_builder::HasIxCols for HasSpecialStuff {
     type IxCols = HasSpecialStuffIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         HasSpecialStuffIxCols {
@@ -1078,7 +1066,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -1189,7 +1176,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -1295,7 +1281,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::player_type::Player;
 
@@ -1503,12 +1488,12 @@ pub(super) fn parse_table_update(
         pub trait logged_out_playerQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `Player`.
-            fn logged_out_player(&self) -> __query_builder::Table<Player>;
+            fn logged_out_player(&self) -> __sdk::__query_builder::Table<Player>;
         }
 
         impl logged_out_playerQueryTableAccess for __sdk::QueryTableAccessor {
-            fn logged_out_player(&self) -> __query_builder::Table<Player> {
-                __query_builder::Table::new("logged_out_player")
+            fn logged_out_player(&self) -> __sdk::__query_builder::Table<Player> {
+                __sdk::__query_builder::Table::new("logged_out_player")
             }
         }
 
@@ -1525,7 +1510,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 pub mod baz_type;
@@ -2590,7 +2574,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::player_type::Player;
 
@@ -2688,12 +2671,12 @@ pub(super) fn parse_table_update(
         pub trait my_playerQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `Player`.
-            fn my_player(&self) -> __query_builder::Table<Player>;
+            fn my_player(&self) -> __sdk::__query_builder::Table<Player>;
         }
 
         impl my_playerQueryTableAccess for __sdk::QueryTableAccessor {
-            fn my_player(&self) -> __query_builder::Table<Player> {
-                __query_builder::Table::new("my_player")
+            fn my_player(&self) -> __sdk::__query_builder::Table<Player> {
+                __sdk::__query_builder::Table::new("my_player")
             }
         }
 
@@ -2708,7 +2691,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
@@ -2738,7 +2720,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -2770,7 +2751,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::person_type::Person;
 
@@ -2916,12 +2896,12 @@ pub(super) fn parse_table_update(
         pub trait personQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `Person`.
-            fn person(&self) -> __query_builder::Table<Person>;
+            fn person(&self) -> __sdk::__query_builder::Table<Person>;
         }
 
         impl personQueryTableAccess for __sdk::QueryTableAccessor {
-            fn person(&self) -> __query_builder::Table<Person> {
-                __query_builder::Table::new("person")
+            fn person(&self) -> __sdk::__query_builder::Table<Person> {
+                __sdk::__query_builder::Table::new("person")
             }
         }
 
@@ -2936,7 +2916,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -2958,18 +2937,18 @@ impl __sdk::InModule for Person {
 ///
 /// Provides typed access to columns for query building.
 pub struct PersonCols {
-    pub id: __query_builder::Col<Person, u32>,
-    pub name: __query_builder::Col<Person, String>,
-    pub age: __query_builder::Col<Person, u8>,
+    pub id: __sdk::__query_builder::Col<Person, u32>,
+    pub name: __sdk::__query_builder::Col<Person, String>,
+    pub age: __sdk::__query_builder::Col<Person, u8>,
 }
 
-impl __query_builder::HasCols for Person {
+impl __sdk::__query_builder::HasCols for Person {
     type Cols = PersonCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PersonCols {
-            id: __query_builder::Col::new(table_name, "id"),
-            name: __query_builder::Col::new(table_name, "name"),
-            age: __query_builder::Col::new(table_name, "age"),
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
+            age: __sdk::__query_builder::Col::new(table_name, "age"),
 
         }
     }
@@ -2979,16 +2958,16 @@ impl __query_builder::HasCols for Person {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PersonIxCols {
-    pub age: __query_builder::IxCol<Person, u8>,
-    pub id: __query_builder::IxCol<Person, u32>,
+    pub age: __sdk::__query_builder::IxCol<Person, u8>,
+    pub id: __sdk::__query_builder::IxCol<Person, u32>,
 }
 
-impl __query_builder::HasIxCols for Person {
+impl __sdk::__query_builder::HasIxCols for Person {
     type IxCols = PersonIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PersonIxCols {
-            age: __query_builder::IxCol::new(table_name, "age"),
-            id: __query_builder::IxCol::new(table_name, "id"),
+            age: __sdk::__query_builder::IxCol::new(table_name, "age"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
 
         }
     }
@@ -3005,7 +2984,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::pk_multi_identity_type::PkMultiIdentity;
 
@@ -3182,12 +3160,12 @@ pub(super) fn parse_table_update(
         pub trait pk_multi_identityQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `PkMultiIdentity`.
-            fn pk_multi_identity(&self) -> __query_builder::Table<PkMultiIdentity>;
+            fn pk_multi_identity(&self) -> __sdk::__query_builder::Table<PkMultiIdentity>;
         }
 
         impl pk_multi_identityQueryTableAccess for __sdk::QueryTableAccessor {
-            fn pk_multi_identity(&self) -> __query_builder::Table<PkMultiIdentity> {
-                __query_builder::Table::new("pk_multi_identity")
+            fn pk_multi_identity(&self) -> __sdk::__query_builder::Table<PkMultiIdentity> {
+                __sdk::__query_builder::Table::new("pk_multi_identity")
             }
         }
 
@@ -3202,7 +3180,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -3223,16 +3200,16 @@ impl __sdk::InModule for PkMultiIdentity {
 ///
 /// Provides typed access to columns for query building.
 pub struct PkMultiIdentityCols {
-    pub id: __query_builder::Col<PkMultiIdentity, u32>,
-    pub other: __query_builder::Col<PkMultiIdentity, u32>,
+    pub id: __sdk::__query_builder::Col<PkMultiIdentity, u32>,
+    pub other: __sdk::__query_builder::Col<PkMultiIdentity, u32>,
 }
 
-impl __query_builder::HasCols for PkMultiIdentity {
+impl __sdk::__query_builder::HasCols for PkMultiIdentity {
     type Cols = PkMultiIdentityCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PkMultiIdentityCols {
-            id: __query_builder::Col::new(table_name, "id"),
-            other: __query_builder::Col::new(table_name, "other"),
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            other: __sdk::__query_builder::Col::new(table_name, "other"),
 
         }
     }
@@ -3242,16 +3219,16 @@ impl __query_builder::HasCols for PkMultiIdentity {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PkMultiIdentityIxCols {
-    pub id: __query_builder::IxCol<PkMultiIdentity, u32>,
-    pub other: __query_builder::IxCol<PkMultiIdentity, u32>,
+    pub id: __sdk::__query_builder::IxCol<PkMultiIdentity, u32>,
+    pub other: __sdk::__query_builder::IxCol<PkMultiIdentity, u32>,
 }
 
-impl __query_builder::HasIxCols for PkMultiIdentity {
+impl __sdk::__query_builder::HasIxCols for PkMultiIdentity {
     type IxCols = PkMultiIdentityIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PkMultiIdentityIxCols {
-            id: __query_builder::IxCol::new(table_name, "id"),
-            other: __query_builder::IxCol::new(table_name, "other"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            other: __sdk::__query_builder::IxCol::new(table_name, "other"),
 
         }
     }
@@ -3268,7 +3245,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::player_type::Player;
 
@@ -3476,12 +3452,12 @@ pub(super) fn parse_table_update(
         pub trait playerQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `Player`.
-            fn player(&self) -> __query_builder::Table<Player>;
+            fn player(&self) -> __sdk::__query_builder::Table<Player>;
         }
 
         impl playerQueryTableAccess for __sdk::QueryTableAccessor {
-            fn player(&self) -> __query_builder::Table<Player> {
-                __query_builder::Table::new("player")
+            fn player(&self) -> __sdk::__query_builder::Table<Player> {
+                __sdk::__query_builder::Table::new("player")
             }
         }
 
@@ -3496,7 +3472,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -3518,18 +3493,18 @@ impl __sdk::InModule for Player {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerCols {
-    pub identity: __query_builder::Col<Player, __sdk::Identity>,
-    pub player_id: __query_builder::Col<Player, u64>,
-    pub name: __query_builder::Col<Player, String>,
+    pub identity: __sdk::__query_builder::Col<Player, __sdk::Identity>,
+    pub player_id: __sdk::__query_builder::Col<Player, u64>,
+    pub name: __sdk::__query_builder::Col<Player, String>,
 }
 
-impl __query_builder::HasCols for Player {
+impl __sdk::__query_builder::HasCols for Player {
     type Cols = PlayerCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PlayerCols {
-            identity: __query_builder::Col::new(table_name, "identity"),
-            player_id: __query_builder::Col::new(table_name, "player_id"),
-            name: __query_builder::Col::new(table_name, "name"),
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+            player_id: __sdk::__query_builder::Col::new(table_name, "player_id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
 
         }
     }
@@ -3539,18 +3514,18 @@ impl __query_builder::HasCols for Player {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PlayerIxCols {
-    pub identity: __query_builder::IxCol<Player, __sdk::Identity>,
-    pub name: __query_builder::IxCol<Player, String>,
-    pub player_id: __query_builder::IxCol<Player, u64>,
+    pub identity: __sdk::__query_builder::IxCol<Player, __sdk::Identity>,
+    pub name: __sdk::__query_builder::IxCol<Player, String>,
+    pub player_id: __sdk::__query_builder::IxCol<Player, u64>,
 }
 
-impl __query_builder::HasIxCols for Player {
+impl __sdk::__query_builder::HasIxCols for Player {
     type IxCols = PlayerIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PlayerIxCols {
-            identity: __query_builder::IxCol::new(table_name, "identity"),
-            name: __query_builder::IxCol::new(table_name, "name"),
-            player_id: __query_builder::IxCol::new(table_name, "player_id"),
+            identity: __sdk::__query_builder::IxCol::new(table_name, "identity"),
+            name: __sdk::__query_builder::IxCol::new(table_name, "name"),
+            player_id: __sdk::__query_builder::IxCol::new(table_name, "player_id"),
 
         }
     }
@@ -3567,7 +3542,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -3588,16 +3562,16 @@ impl __sdk::InModule for Point {
 ///
 /// Provides typed access to columns for query building.
 pub struct PointCols {
-    pub x: __query_builder::Col<Point, i64>,
-    pub y: __query_builder::Col<Point, i64>,
+    pub x: __sdk::__query_builder::Col<Point, i64>,
+    pub y: __sdk::__query_builder::Col<Point, i64>,
 }
 
-impl __query_builder::HasCols for Point {
+impl __sdk::__query_builder::HasCols for Point {
     type Cols = PointCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PointCols {
-            x: __query_builder::Col::new(table_name, "x"),
-            y: __query_builder::Col::new(table_name, "y"),
+            x: __sdk::__query_builder::Col::new(table_name, "x"),
+            y: __sdk::__query_builder::Col::new(table_name, "y"),
 
         }
     }
@@ -3609,7 +3583,7 @@ impl __query_builder::HasCols for Point {
 pub struct PointIxCols {
 }
 
-impl __query_builder::HasIxCols for Point {
+impl __sdk::__query_builder::HasIxCols for Point {
     type IxCols = PointIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PointIxCols {
@@ -3629,7 +3603,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::point_type::Point;
 
@@ -3727,12 +3700,12 @@ pub(super) fn parse_table_update(
         pub trait pointsQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `Point`.
-            fn points(&self) -> __query_builder::Table<Point>;
+            fn points(&self) -> __sdk::__query_builder::Table<Point>;
         }
 
         impl pointsQueryTableAccess for __sdk::QueryTableAccessor {
-            fn points(&self) -> __query_builder::Table<Point> {
-                __query_builder::Table::new("points")
+            fn points(&self) -> __sdk::__query_builder::Table<Point> {
+                __sdk::__query_builder::Table::new("points")
             }
         }
 
@@ -3747,7 +3720,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::private_table_type::PrivateTable;
 
@@ -3845,12 +3817,12 @@ pub(super) fn parse_table_update(
         pub trait private_tableQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `PrivateTable`.
-            fn private_table(&self) -> __query_builder::Table<PrivateTable>;
+            fn private_table(&self) -> __sdk::__query_builder::Table<PrivateTable>;
         }
 
         impl private_tableQueryTableAccess for __sdk::QueryTableAccessor {
-            fn private_table(&self) -> __query_builder::Table<PrivateTable> {
-                __query_builder::Table::new("private_table")
+            fn private_table(&self) -> __sdk::__query_builder::Table<PrivateTable> {
+                __sdk::__query_builder::Table::new("private_table")
             }
         }
 
@@ -3865,7 +3837,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -3885,14 +3856,14 @@ impl __sdk::InModule for PrivateTable {
 ///
 /// Provides typed access to columns for query building.
 pub struct PrivateTableCols {
-    pub name: __query_builder::Col<PrivateTable, String>,
+    pub name: __sdk::__query_builder::Col<PrivateTable, String>,
 }
 
-impl __query_builder::HasCols for PrivateTable {
+impl __sdk::__query_builder::HasCols for PrivateTable {
     type Cols = PrivateTableCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PrivateTableCols {
-            name: __query_builder::Col::new(table_name, "name"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
 
         }
     }
@@ -3904,7 +3875,7 @@ impl __query_builder::HasCols for PrivateTable {
 pub struct PrivateTableIxCols {
 }
 
-impl __query_builder::HasIxCols for PrivateTable {
+impl __sdk::__query_builder::HasIxCols for PrivateTable {
     type IxCols = PrivateTableIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PrivateTableIxCols {
@@ -3924,7 +3895,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4030,7 +4000,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4050,14 +4019,14 @@ impl __sdk::InModule for RemoveTable {
 ///
 /// Provides typed access to columns for query building.
 pub struct RemoveTableCols {
-    pub id: __query_builder::Col<RemoveTable, u32>,
+    pub id: __sdk::__query_builder::Col<RemoveTable, u32>,
 }
 
-impl __query_builder::HasCols for RemoveTable {
+impl __sdk::__query_builder::HasCols for RemoveTable {
     type Cols = RemoveTableCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         RemoveTableCols {
-            id: __query_builder::Col::new(table_name, "id"),
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
 
         }
     }
@@ -4069,7 +4038,7 @@ impl __query_builder::HasCols for RemoveTable {
 pub struct RemoveTableIxCols {
 }
 
-impl __query_builder::HasIxCols for RemoveTable {
+impl __sdk::__query_builder::HasIxCols for RemoveTable {
     type IxCols = RemoveTableIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         RemoveTableIxCols {
@@ -4089,7 +4058,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::repeating_test_arg_type::RepeatingTestArg;
 
@@ -4235,12 +4203,12 @@ pub(super) fn parse_table_update(
         pub trait repeating_test_argQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `RepeatingTestArg`.
-            fn repeating_test_arg(&self) -> __query_builder::Table<RepeatingTestArg>;
+            fn repeating_test_arg(&self) -> __sdk::__query_builder::Table<RepeatingTestArg>;
         }
 
         impl repeating_test_argQueryTableAccess for __sdk::QueryTableAccessor {
-            fn repeating_test_arg(&self) -> __query_builder::Table<RepeatingTestArg> {
-                __query_builder::Table::new("repeating_test_arg")
+            fn repeating_test_arg(&self) -> __sdk::__query_builder::Table<RepeatingTestArg> {
+                __sdk::__query_builder::Table::new("repeating_test_arg")
             }
         }
 
@@ -4255,7 +4223,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4277,18 +4244,18 @@ impl __sdk::InModule for RepeatingTestArg {
 ///
 /// Provides typed access to columns for query building.
 pub struct RepeatingTestArgCols {
-    pub scheduled_id: __query_builder::Col<RepeatingTestArg, u64>,
-    pub scheduled_at: __query_builder::Col<RepeatingTestArg, __sdk::ScheduleAt>,
-    pub prev_time: __query_builder::Col<RepeatingTestArg, __sdk::Timestamp>,
+    pub scheduled_id: __sdk::__query_builder::Col<RepeatingTestArg, u64>,
+    pub scheduled_at: __sdk::__query_builder::Col<RepeatingTestArg, __sdk::ScheduleAt>,
+    pub prev_time: __sdk::__query_builder::Col<RepeatingTestArg, __sdk::Timestamp>,
 }
 
-impl __query_builder::HasCols for RepeatingTestArg {
+impl __sdk::__query_builder::HasCols for RepeatingTestArg {
     type Cols = RepeatingTestArgCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         RepeatingTestArgCols {
-            scheduled_id: __query_builder::Col::new(table_name, "scheduled_id"),
-            scheduled_at: __query_builder::Col::new(table_name, "scheduled_at"),
-            prev_time: __query_builder::Col::new(table_name, "prev_time"),
+            scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
+            scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            prev_time: __sdk::__query_builder::Col::new(table_name, "prev_time"),
 
         }
     }
@@ -4298,14 +4265,14 @@ impl __query_builder::HasCols for RepeatingTestArg {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct RepeatingTestArgIxCols {
-    pub scheduled_id: __query_builder::IxCol<RepeatingTestArg, u64>,
+    pub scheduled_id: __sdk::__query_builder::IxCol<RepeatingTestArg, u64>,
 }
 
-impl __query_builder::HasIxCols for RepeatingTestArg {
+impl __sdk::__query_builder::HasIxCols for RepeatingTestArg {
     type IxCols = RepeatingTestArgIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         RepeatingTestArgIxCols {
-            scheduled_id: __query_builder::IxCol::new(table_name, "scheduled_id"),
+            scheduled_id: __sdk::__query_builder::IxCol::new(table_name, "scheduled_id"),
 
         }
     }
@@ -4322,7 +4289,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 use super::repeating_test_arg_type::RepeatingTestArg;
@@ -4434,7 +4400,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 use super::baz_type::Baz;
@@ -4494,7 +4459,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4600,7 +4564,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4655,7 +4618,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::remove_table_type::RemoveTable;
 
@@ -4753,12 +4715,12 @@ pub(super) fn parse_table_update(
         pub trait table_to_removeQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `RemoveTable`.
-            fn table_to_remove(&self) -> __query_builder::Table<RemoveTable>;
+            fn table_to_remove(&self) -> __sdk::__query_builder::Table<RemoveTable>;
         }
 
         impl table_to_removeQueryTableAccess for __sdk::QueryTableAccessor {
-            fn table_to_remove(&self) -> __query_builder::Table<RemoveTable> {
-                __query_builder::Table::new("table_to_remove")
+            fn table_to_remove(&self) -> __sdk::__query_builder::Table<RemoveTable> {
+                __sdk::__query_builder::Table::new("table_to_remove")
             }
         }
 
@@ -4773,7 +4735,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::test_a_type::TestA;
 
@@ -4871,12 +4832,12 @@ pub(super) fn parse_table_update(
         pub trait test_aQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `TestA`.
-            fn test_a(&self) -> __query_builder::Table<TestA>;
+            fn test_a(&self) -> __sdk::__query_builder::Table<TestA>;
         }
 
         impl test_aQueryTableAccess for __sdk::QueryTableAccessor {
-            fn test_a(&self) -> __query_builder::Table<TestA> {
-                __query_builder::Table::new("test_a")
+            fn test_a(&self) -> __sdk::__query_builder::Table<TestA> {
+                __sdk::__query_builder::Table::new("test_a")
             }
         }
 
@@ -4891,7 +4852,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4913,18 +4873,18 @@ impl __sdk::InModule for TestA {
 ///
 /// Provides typed access to columns for query building.
 pub struct TestACols {
-    pub x: __query_builder::Col<TestA, u32>,
-    pub y: __query_builder::Col<TestA, u32>,
-    pub z: __query_builder::Col<TestA, String>,
+    pub x: __sdk::__query_builder::Col<TestA, u32>,
+    pub y: __sdk::__query_builder::Col<TestA, u32>,
+    pub z: __sdk::__query_builder::Col<TestA, String>,
 }
 
-impl __query_builder::HasCols for TestA {
+impl __sdk::__query_builder::HasCols for TestA {
     type Cols = TestACols;
     fn cols(table_name: &'static str) -> Self::Cols {
         TestACols {
-            x: __query_builder::Col::new(table_name, "x"),
-            y: __query_builder::Col::new(table_name, "y"),
-            z: __query_builder::Col::new(table_name, "z"),
+            x: __sdk::__query_builder::Col::new(table_name, "x"),
+            y: __sdk::__query_builder::Col::new(table_name, "y"),
+            z: __sdk::__query_builder::Col::new(table_name, "z"),
 
         }
     }
@@ -4934,14 +4894,14 @@ impl __query_builder::HasCols for TestA {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct TestAIxCols {
-    pub x: __query_builder::IxCol<TestA, u32>,
+    pub x: __sdk::__query_builder::IxCol<TestA, u32>,
 }
 
-impl __query_builder::HasIxCols for TestA {
+impl __sdk::__query_builder::HasIxCols for TestA {
     type IxCols = TestAIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TestAIxCols {
-            x: __query_builder::IxCol::new(table_name, "x"),
+            x: __sdk::__query_builder::IxCol::new(table_name, "x"),
 
         }
     }
@@ -4958,7 +4918,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -4984,7 +4943,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -5090,7 +5048,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::test_d_type::TestD;
 use super::namespace_test_c_type::NamespaceTestC;
@@ -5189,12 +5146,12 @@ pub(super) fn parse_table_update(
         pub trait test_dQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `TestD`.
-            fn test_d(&self) -> __query_builder::Table<TestD>;
+            fn test_d(&self) -> __sdk::__query_builder::Table<TestD>;
         }
 
         impl test_dQueryTableAccess for __sdk::QueryTableAccessor {
-            fn test_d(&self) -> __query_builder::Table<TestD> {
-                __query_builder::Table::new("test_d")
+            fn test_d(&self) -> __sdk::__query_builder::Table<TestD> {
+                __sdk::__query_builder::Table::new("test_d")
             }
         }
 
@@ -5209,7 +5166,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 use super::namespace_test_c_type::NamespaceTestC;
@@ -5230,14 +5186,14 @@ impl __sdk::InModule for TestD {
 ///
 /// Provides typed access to columns for query building.
 pub struct TestDCols {
-    pub test_c: __query_builder::Col<TestD, Option::<NamespaceTestC>>,
+    pub test_c: __sdk::__query_builder::Col<TestD, Option::<NamespaceTestC>>,
 }
 
-impl __query_builder::HasCols for TestD {
+impl __sdk::__query_builder::HasCols for TestD {
     type Cols = TestDCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         TestDCols {
-            test_c: __query_builder::Col::new(table_name, "test_c"),
+            test_c: __sdk::__query_builder::Col::new(table_name, "test_c"),
 
         }
     }
@@ -5249,7 +5205,7 @@ impl __query_builder::HasCols for TestD {
 pub struct TestDIxCols {
 }
 
-impl __query_builder::HasIxCols for TestD {
+impl __sdk::__query_builder::HasIxCols for TestD {
     type IxCols = TestDIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TestDIxCols {
@@ -5269,7 +5225,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::test_e_type::TestE;
 
@@ -5415,12 +5370,12 @@ pub(super) fn parse_table_update(
         pub trait test_eQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `TestE`.
-            fn test_e(&self) -> __query_builder::Table<TestE>;
+            fn test_e(&self) -> __sdk::__query_builder::Table<TestE>;
         }
 
         impl test_eQueryTableAccess for __sdk::QueryTableAccessor {
-            fn test_e(&self) -> __query_builder::Table<TestE> {
-                __query_builder::Table::new("test_e")
+            fn test_e(&self) -> __sdk::__query_builder::Table<TestE> {
+                __sdk::__query_builder::Table::new("test_e")
             }
         }
 
@@ -5435,7 +5390,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
@@ -5456,16 +5410,16 @@ impl __sdk::InModule for TestE {
 ///
 /// Provides typed access to columns for query building.
 pub struct TestECols {
-    pub id: __query_builder::Col<TestE, u64>,
-    pub name: __query_builder::Col<TestE, String>,
+    pub id: __sdk::__query_builder::Col<TestE, u64>,
+    pub name: __sdk::__query_builder::Col<TestE, String>,
 }
 
-impl __query_builder::HasCols for TestE {
+impl __sdk::__query_builder::HasCols for TestE {
     type Cols = TestECols;
     fn cols(table_name: &'static str) -> Self::Cols {
         TestECols {
-            id: __query_builder::Col::new(table_name, "id"),
-            name: __query_builder::Col::new(table_name, "name"),
+            id: __sdk::__query_builder::Col::new(table_name, "id"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
 
         }
     }
@@ -5475,16 +5429,16 @@ impl __query_builder::HasCols for TestE {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct TestEIxCols {
-    pub id: __query_builder::IxCol<TestE, u64>,
-    pub name: __query_builder::IxCol<TestE, String>,
+    pub id: __sdk::__query_builder::IxCol<TestE, u64>,
+    pub name: __sdk::__query_builder::IxCol<TestE, String>,
 }
 
-impl __query_builder::HasIxCols for TestE {
+impl __sdk::__query_builder::HasIxCols for TestE {
     type IxCols = TestEIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TestEIxCols {
-            id: __query_builder::IxCol::new(table_name, "id"),
-            name: __query_builder::IxCol::new(table_name, "name"),
+            id: __sdk::__query_builder::IxCol::new(table_name, "id"),
+            name: __sdk::__query_builder::IxCol::new(table_name, "name"),
 
         }
     }
@@ -5501,7 +5455,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 use super::test_foobar_type::TestFoobar;
 use super::foobar_type::Foobar;
@@ -5600,12 +5553,12 @@ pub(super) fn parse_table_update(
         pub trait test_fQueryTableAccess {
             #[allow(non_snake_case)]
             /// Get a query builder for the table `TestFoobar`.
-            fn test_f(&self) -> __query_builder::Table<TestFoobar>;
+            fn test_f(&self) -> __sdk::__query_builder::Table<TestFoobar>;
         }
 
         impl test_fQueryTableAccess for __sdk::QueryTableAccessor {
-            fn test_f(&self) -> __query_builder::Table<TestFoobar> {
-                __query_builder::Table::new("test_f")
+            fn test_f(&self) -> __sdk::__query_builder::Table<TestFoobar> {
+                __sdk::__query_builder::Table::new("test_f")
             }
         }
 
@@ -5620,7 +5573,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 use super::foobar_type::Foobar;
@@ -5641,14 +5593,14 @@ impl __sdk::InModule for TestFoobar {
 ///
 /// Provides typed access to columns for query building.
 pub struct TestFoobarCols {
-    pub field: __query_builder::Col<TestFoobar, Foobar>,
+    pub field: __sdk::__query_builder::Col<TestFoobar, Foobar>,
 }
 
-impl __query_builder::HasCols for TestFoobar {
+impl __sdk::__query_builder::HasCols for TestFoobar {
     type Cols = TestFoobarCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         TestFoobarCols {
-            field: __query_builder::Col::new(table_name, "field"),
+            field: __sdk::__query_builder::Col::new(table_name, "field"),
 
         }
     }
@@ -5660,7 +5612,7 @@ impl __query_builder::HasCols for TestFoobar {
 pub struct TestFoobarIxCols {
 }
 
-impl __query_builder::HasIxCols for TestFoobar {
+impl __sdk::__query_builder::HasIxCols for TestFoobar {
     type IxCols = TestFoobarIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         TestFoobarIxCols {
@@ -5680,7 +5632,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 use super::test_a_type::TestA;
@@ -5807,7 +5758,6 @@ use spacetimedb_sdk::__codegen::{
 	__lib,
 	__sats,
 	__ws,
-	__query_builder,
 };
 
 
