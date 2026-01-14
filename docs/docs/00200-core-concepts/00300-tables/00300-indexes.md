@@ -23,7 +23,73 @@ Primary keys and unique constraints automatically create indexes. You do not nee
 
 ## Index Types
 
-SpacetimeDB supports B-tree indexes. B-trees maintain data in sorted order, enabling both equality lookups (`x = 5`) and range queries (`x > 5`, `x BETWEEN 1 AND 10`). The sorted structure also supports prefix matching on multi-column indexes.
+SpacetimeDB supports two index types:
+
+| Type | Use Case | Key Types | Multi-Column |
+|------|----------|-----------|--------------|
+| B-tree | General purpose | Any | Yes |
+| Direct | Dense integer sequences | `u8`, `u16`, `u32`, `u64` | No |
+
+### B-tree Indexes
+
+B-trees maintain data in sorted order, enabling both equality lookups (`x = 5`) and range queries (`x > 5`, `x BETWEEN 1 AND 10`). The sorted structure also supports prefix matching on multi-column indexes. B-tree is the default and most commonly used index type.
+
+### Direct Indexes
+
+Direct indexes use array indexing instead of tree traversal, providing O(1) lookups for unsigned integer keys. SpacetimeDB uses the key value directly as an array offset, eliminating the need to search through a tree structure.
+
+Direct indexes perform well when:
+- Keys are dense (few gaps between values)
+- Keys start near zero
+- Insert patterns are sequential rather than random
+
+Direct indexes perform poorly when:
+- Keys are sparse (large gaps between values)
+- The first key inserted is a large number
+- Insert patterns are highly random
+
+Direct indexes only support single-column indexes on unsigned integer types. Use them for auto-increment primary keys or other dense sequential identifiers where you need maximum lookup performance.
+
+:::note
+Direct indexes are currently available in Rust and TypeScript. C# support is planned.
+:::
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const position = table(
+  { name: 'position', public: true },
+  {
+    id: t.u32().primaryKey().index('direct'),
+    x: t.f32(),
+    y: t.f32(),
+    z: t.f32(),
+  }
+);
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::table(name = position, public)]
+pub struct Position {
+    #[primary_key]
+    #[index(direct)]
+    id: u32,
+    x: f32,
+    y: f32,
+    z: f32,
+}
+```
+
+</TabItem>
+</Tabs>
+
+This example from the SpacetimeDB benchmarks uses direct indexes for a million entities with sequential IDs starting at 0, enabling O(1) lookups when joining position and velocity data by entity ID.
+
+For most use cases, B-tree indexes provide good performance without these restrictions. Consider direct indexes only when profiling reveals that index lookups are a bottleneck and your key distribution matches the ideal pattern.
 
 ## Single-Column Indexes
 
