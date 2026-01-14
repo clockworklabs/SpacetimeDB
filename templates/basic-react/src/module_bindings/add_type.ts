@@ -10,6 +10,6 @@ import {
   type Infer as __Infer,
 } from 'spacetimedb';
 
-export default __t.row({
+export default __t.object('Add', {
   name: __t.string(),
 });

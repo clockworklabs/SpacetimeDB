@@ -4,11 +4,11 @@
   "engines": { "node": ">=18.0.0", "pnpm": ">=9.0.0" },
   "type": "module",
   "scripts": {
-    "format": "pnpm --filter ./crates/bindings-typescript run format && pnpm --filter ./docs run format && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run format && pnpm --filter ./crates/bindings-typescript/test-app run format",
-    "lint": "pnpm --filter ./crates/bindings-typescript run lint && pnpm --filter ./docs run lint && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run lint && pnpm --filter ./crates/bindings-typescript/test-app run lint",
-    "build": "pnpm --filter ./crates/bindings-typescript run build && pnpm --filter ./docs run build && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run build && pnpm --filter ./crates/bindings-typescript/test-app run build",
+    "format": "pnpm --filter ./crates/bindings-typescript run format && pnpm --filter ./docs run format && pnpm --filter ./crates/bindings-typescript/test-app run format && pnpm -r --filter './templates/**' run format",
+    "lint": "pnpm --filter ./crates/bindings-typescript run lint && pnpm --filter ./docs run lint && pnpm --filter ./crates/bindings-typescript/test-app run lint && pnpm -r --filter './templates/**' run lint",
+    "build": "pnpm --filter ./crates/bindings-typescript run build && pnpm --filter ./docs run build && pnpm --filter ./crates/bindings-typescript/test-app run build && pnpm -r --filter './templates/**' run build",
     "test": "pnpm --filter ./crates/bindings-typescript run test && pnpm --filter ./docs run test && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run test && pnpm --filter ./crates/bindings-typescript/test-app run test",
-    "generate": "pnpm --filter ./crates/bindings-typescript run generate && pnpm --filter ./docs run generate && pnpm --filter ./crates/bindings-typescript/examples/quickstart-chat run generate && pnpm --filter ./crates/bindings-typescript/test-app run generate",
+    "generate": "pnpm --filter ./crates/bindings-typescript run generate && pnpm --filter ./docs run generate && pnpm --filter ./crates/bindings-typescript/test-app run generate && pnpm -r --filter './templates/**' run generate",
     "clean": "pnpm -r exec rimraf dist .tsbuildinfo coverage"
   },
   "devDependencies": {
