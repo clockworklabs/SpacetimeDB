@@ -7,7 +7,7 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-Columns define the structure of your tables. SpacetimeDB supports primitive types, structured types for complex data, and special types for database-specific functionality.
+Columns define the structure of your tables. SpacetimeDB supports primitive types, composite types for complex data, and special types for database-specific functionality.
 
 ## Representing Collections
 
@@ -78,11 +78,11 @@ These optimizations apply across all supported languages.
 | Primitive | `t.u128()` | `bigint` | Unsigned 128-bit integer |
 | Primitive | `t.i256()` | `bigint` | Signed 256-bit integer |
 | Primitive | `t.u256()` | `bigint` | Unsigned 256-bit integer |
-| Structured | `t.object(name, obj)` | `{ [K in keyof Obj]: T<Obj[K]> }` | Product/object type for nested data |
-| Structured | `t.enum(name, variants)` | `{ tag: 'variant' } \| { tag: 'variant', value: T }` | Sum/enum type (tagged union) |
-| Structured | `t.array(element)` | `T<Element>[]` | Array of elements |
-| Structured | `t.option(value)` | `Value \| undefined` | Optional value |
-| Structured | `t.unit()` | `{}` | Zero-field product type |
+| Composite | `t.object(name, obj)` | `{ [K in keyof Obj]: T<Obj[K]> }` | Product/object type for nested data |
+| Composite | `t.enum(name, variants)` | `{ tag: 'variant' } \| { tag: 'variant', value: T }` | Sum/enum type (tagged union) |
+| Composite | `t.array(element)` | `T<Element>[]` | Array of elements |
+| Composite | `t.option(value)` | `Value \| undefined` | Optional value |
+| Composite | `t.unit()` | `{}` | Zero-field product type |
 | Special | `t.identity()` | `Identity` | Unique identity for authentication |
 | Special | `t.connectionId()` | `ConnectionId` | Client connection identifier |
 | Special | `t.timestamp()` | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
@@ -102,10 +102,10 @@ These optimizations apply across all supported languages.
 | Primitive | `byte`, `ushort`, `uint`, `ulong` | Unsigned integers (8-bit to 64-bit) |
 | Primitive | `SpacetimeDB.I128`, `SpacetimeDB.I256` | Signed 128-bit and 256-bit integers |
 | Primitive | `SpacetimeDB.U128`, `SpacetimeDB.U256` | Unsigned 128-bit and 256-bit integers |
-| Structured | `struct` with `[SpacetimeDB.Type]` | Product type for nested data |
-| Structured | `TaggedEnum<Variants>` | Sum type (tagged union) |
-| Structured | `List<T>` | List of elements |
-| Structured | `T?` | Nullable/optional value |
+| Composite | `struct` with `[SpacetimeDB.Type]` | Product type for nested data |
+| Composite | `TaggedEnum<Variants>` | Sum type (tagged union) |
+| Composite | `List<T>` | List of elements |
+| Composite | `T?` | Nullable/optional value |
 | Special | `Identity` | Unique identity for authentication |
 | Special | `ConnectionId` | Client connection identifier |
 | Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
@@ -122,15 +122,169 @@ These optimizations apply across all supported languages.
 | Primitive | `f32`, `f64` | Floating point numbers |
 | Primitive | `i8`, `i16`, `i32`, `i64`, `i128` | Signed integers |
 | Primitive | `u8`, `u16`, `u32`, `u64`, `u128` | Unsigned integers |
-| Structured | `struct` with `#[derive(SpacetimeType)]` | Product type for nested data |
-| Structured | `enum` with `#[derive(SpacetimeType)]` | Sum type (tagged union) |
-| Structured | `Vec<T>` | Vector of elements |
-| Structured | `Option<T>` | Optional value |
+| Composite | `struct` with `#[derive(SpacetimeType)]` | Product type for nested data |
+| Composite | `enum` with `#[derive(SpacetimeType)]` | Sum type (tagged union) |
+| Composite | `Vec<T>` | Vector of elements |
+| Composite | `Option<T>` | Optional value |
 | Special | `Identity` | Unique identity for authentication |
 | Special | `ConnectionId` | Client connection identifier |
 | Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
 | Special | `Duration` | Relative duration |
 | Special | `ScheduleAt` | When a scheduled reducer should execute |
+
+</TabItem>
+</Tabs>
+
+## Complete Example
+
+The following example demonstrates a table using primitive, composite, and special types:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { table, t, spacetimedb } from 'spacetimedb/server';
+
+// Define a nested object type for coordinates
+const Coordinates = t.object('Coordinates', {
+  x: t.f64(),
+  y: t.f64(),
+  z: t.f64(),
+});
+
+// Define an enum for status
+const Status = t.enum('Status', {
+  Active: t.unit(),
+  Inactive: t.unit(),
+  Suspended: { reason: t.string() },
+});
+
+const player = table(
+  { name: 'player', public: true },
+  {
+    // Primitive types
+    id: t.u64().primaryKey().autoInc(),
+    name: t.string(),
+    level: t.u8(),
+    experience: t.u32(),
+    health: t.f32(),
+    score: t.i64(),
+    is_online: t.bool(),
+
+    // Composite types
+    position: Coordinates,
+    status: Status,
+    inventory: t.array(t.u32()),
+    guild_id: t.option(t.u64()),
+
+    // Special types
+    owner: t.identity(),
+    connection: t.option(t.connectionId()),
+    created_at: t.timestamp(),
+    play_time: t.timeDuration(),
+  }
+);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+using SpacetimeDB;
+
+// Define a nested struct type for coordinates
+[SpacetimeDB.Type]
+public partial struct Coordinates
+{
+    public double X;
+    public double Y;
+    public double Z;
+}
+
+// Define an enum for status
+[SpacetimeDB.Type]
+public partial struct Status : TaggedEnum<(
+    Unit Active,
+    Unit Inactive,
+    string Suspended
+)> { }
+
+[SpacetimeDB.Table(Name = "player", Public = true)]
+public partial struct Player
+{
+    // Primitive types
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong Id;
+    public string Name;
+    public byte Level;
+    public uint Experience;
+    public float Health;
+    public long Score;
+    public bool IsOnline;
+
+    // Composite types
+    public Coordinates Position;
+    public Status Status;
+    public List<uint> Inventory;
+    public ulong? GuildId;
+
+    // Special types
+    public Identity Owner;
+    public ConnectionId? Connection;
+    public Timestamp CreatedAt;
+    public TimeDuration PlayTime;
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::{table, SpacetimeType, Identity, ConnectionId, Timestamp, Duration};
+
+// Define a nested struct type for coordinates
+#[derive(SpacetimeType)]
+pub struct Coordinates {
+    x: f64,
+    y: f64,
+    z: f64,
+}
+
+// Define an enum for status
+#[derive(SpacetimeType)]
+pub enum Status {
+    Active,
+    Inactive,
+    Suspended { reason: String },
+}
+
+#[spacetimedb::table(name = player, public)]
+pub struct Player {
+    // Primitive types
+    #[primary_key]
+    #[auto_inc]
+    id: u64,
+    name: String,
+    level: u8,
+    experience: u32,
+    health: f32,
+    score: i64,
+    is_online: bool,
+
+    // Composite types
+    position: Coordinates,
+    status: Status,
+    inventory: Vec<u32>,
+    guild_id: Option<u64>,
+
+    // Special types
+    owner: Identity,
+    connection: Option<ConnectionId>,
+    created_at: Timestamp,
+    play_time: Duration,
+}
+```
 
 </TabItem>
 </Tabs>
