@@ -63,6 +63,26 @@ pub struct InstanceEnv {
 /// such as:
 /// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
 /// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+/// `InstanceEnv` needs to be `Send` because it is created on the host thread
+/// and moved to module threads for execution (see [`ModuleHost::with_instance`]).
+///
+/// `TxSlot` must be `None` whenever `InstanceEnv` is moved across threads, which is
+/// not enforced at compile time but seems to be upheld in practice.
+///
+/// In the future, we may push to use `InstanceEnv` only within a module thread,
+/// but this still helps prevent a set of bugs that occurred due to `MutTxId` being `Send`,
+/// such as:
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3938 and
+/// https://github.com/clockworklabs/SpacetimeDB/pull/3968.
+///
+/// # Safety
+///
+/// `InstanceEnv` doesn't auto-derive `Send` because it may hold a `MutTxId`,
+/// which we've manually made `!Send` to preserve logical invariants.
+/// As described above, sending an `InstanceEnv` while it holds a `MutTxId` will violate logical invariants,
+/// but this is not a safety concern.
+/// Transferring a `MutTxId` between threads will never cause Undefined Behavior,
+/// though it is likely to lead to deadlocks.
 unsafe impl Send for InstanceEnv {}
 
 #[derive(Clone, Default)]
