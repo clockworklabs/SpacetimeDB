@@ -882,6 +882,7 @@ dependencies = [
  "env_logger 0.10.2",
  "log",
  "regex",
+ "semver",
  "tempfile",
 ]
 
