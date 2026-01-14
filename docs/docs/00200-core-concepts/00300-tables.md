@@ -225,7 +225,7 @@ See [Schedule Tables](/tables/schedule-tables) for details.
 
 ## Next Steps
 
-- [Column Types and Constraints](/tables/columns) - Define table structure with types, unique columns, primary keys, and auto-increment
+- [Column Types](/tables/column-types) - Define table structure with types, unique columns, primary keys, and auto-increment
 - [Indexes](/tables/indexes) - Speed up queries with single and multi-column indexes
 - [Access Permissions](/tables/access-permissions) - Query and modify tables from reducers, views, and clients
 - Learn about [Schedule Tables](/tables/schedule-tables)
