@@ -1613,10 +1613,7 @@ fn procedure_http_request<'scope>(
 fn procedure_start_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<u64> {
     let env = get_env(scope)?;
 
-    let fut = env.instance_env.start_mutable_tx()?;
-
-    let rt = tokio::runtime::Handle::current();
-    rt.block_on(fut);
+    env.instance_env.start_mutable_tx()?;
 
     let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
 
@@ -1633,10 +1630,7 @@ fn procedure_abort_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackA
 fn procedure_commit_mut_tx(scope: &mut PinScope<'_, '_>, _args: FunctionCallbackArguments<'_>) -> SysCallResult<()> {
     let env = get_env(scope)?;
 
-    let fut = env.instance_env.commit_mutable_tx()?;
-
-    let rt = tokio::runtime::Handle::current();
-    rt.block_on(fut);
+    env.instance_env.commit_mutable_tx()?;
 
     Ok(())
 }
