@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::enum_with_payload_type::EnumWithPayload;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for VecEnumWithPayload {
 ///
 /// Provides typed access to columns for query building.
 pub struct VecEnumWithPayloadCols {
-    pub e: __query_builder::Col<VecEnumWithPayload, Vec<EnumWithPayload>>,
+    pub e: __sdk::__query_builder::Col<VecEnumWithPayload, Vec<EnumWithPayload>>,
 }
 
-impl __query_builder::HasCols for VecEnumWithPayload {
+impl __sdk::__query_builder::HasCols for VecEnumWithPayload {
     type Cols = VecEnumWithPayloadCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         VecEnumWithPayloadCols {
-            e: __query_builder::Col::new(table_name, "e"),
+            e: __sdk::__query_builder::Col::new(table_name, "e"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for VecEnumWithPayload {
 /// Provides typed access to indexed columns for query building.
 pub struct VecEnumWithPayloadIxCols {}
 
-impl __query_builder::HasIxCols for VecEnumWithPayload {
+impl __sdk::__query_builder::HasIxCols for VecEnumWithPayload {
     type IxCols = VecEnumWithPayloadIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         VecEnumWithPayloadIxCols {}

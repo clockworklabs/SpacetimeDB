@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for OneEveryPrimitiveStruct {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneEveryPrimitiveStructCols {
-    pub s: __query_builder::Col<OneEveryPrimitiveStruct, EveryPrimitiveStruct>,
+    pub s: __sdk::__query_builder::Col<OneEveryPrimitiveStruct, EveryPrimitiveStruct>,
 }
 
-impl __query_builder::HasCols for OneEveryPrimitiveStruct {
+impl __sdk::__query_builder::HasCols for OneEveryPrimitiveStruct {
     type Cols = OneEveryPrimitiveStructCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneEveryPrimitiveStructCols {
-            s: __query_builder::Col::new(table_name, "s"),
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for OneEveryPrimitiveStruct {
 /// Provides typed access to indexed columns for query building.
 pub struct OneEveryPrimitiveStructIxCols {}
 
-impl __query_builder::HasIxCols for OneEveryPrimitiveStruct {
+impl __sdk::__query_builder::HasIxCols for OneEveryPrimitiveStruct {
     type IxCols = OneEveryPrimitiveStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneEveryPrimitiveStructIxCols {}

@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for OneSimpleEnum {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneSimpleEnumCols {
-    pub e: __query_builder::Col<OneSimpleEnum, SimpleEnum>,
+    pub e: __sdk::__query_builder::Col<OneSimpleEnum, SimpleEnum>,
 }
 
-impl __query_builder::HasCols for OneSimpleEnum {
+impl __sdk::__query_builder::HasCols for OneSimpleEnum {
     type Cols = OneSimpleEnumCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneSimpleEnumCols {
-            e: __query_builder::Col::new(table_name, "e"),
+            e: __sdk::__query_builder::Col::new(table_name, "e"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for OneSimpleEnum {
 /// Provides typed access to indexed columns for query building.
 pub struct OneSimpleEnumIxCols {}
 
-impl __query_builder::HasIxCols for OneSimpleEnum {
+impl __sdk::__query_builder::HasIxCols for OneSimpleEnum {
     type IxCols = OneSimpleEnumIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneSimpleEnumIxCols {}

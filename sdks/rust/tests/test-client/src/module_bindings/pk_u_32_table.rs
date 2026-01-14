@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_u_32_type::PkU32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_u32`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> PkU32NUnique<'ctx> {
 pub trait pk_u32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkU32`.
-    fn pk_u32(&self) -> __query_builder::Table<PkU32>;
+    fn pk_u32(&self) -> __sdk::__query_builder::Table<PkU32>;
 }
 
 impl pk_u32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_u32(&self) -> __query_builder::Table<PkU32> {
-        __query_builder::Table::new("pk_u32")
+    fn pk_u32(&self) -> __sdk::__query_builder::Table<PkU32> {
+        __sdk::__query_builder::Table::new("pk_u32")
     }
 }

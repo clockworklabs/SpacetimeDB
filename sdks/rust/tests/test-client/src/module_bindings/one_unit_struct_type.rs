@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::unit_struct_type::UnitStruct;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for OneUnitStruct {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneUnitStructCols {
-    pub s: __query_builder::Col<OneUnitStruct, UnitStruct>,
+    pub s: __sdk::__query_builder::Col<OneUnitStruct, UnitStruct>,
 }
 
-impl __query_builder::HasCols for OneUnitStruct {
+impl __sdk::__query_builder::HasCols for OneUnitStruct {
     type Cols = OneUnitStructCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneUnitStructCols {
-            s: __query_builder::Col::new(table_name, "s"),
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for OneUnitStruct {
 /// Provides typed access to indexed columns for query building.
 pub struct OneUnitStructIxCols {}
 
-impl __query_builder::HasIxCols for OneUnitStruct {
+impl __sdk::__query_builder::HasIxCols for OneUnitStruct {
     type IxCols = OneUnitStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneUnitStructIxCols {}

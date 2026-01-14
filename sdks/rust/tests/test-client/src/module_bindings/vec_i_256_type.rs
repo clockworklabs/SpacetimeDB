@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for VecI256 {
 ///
 /// Provides typed access to columns for query building.
 pub struct VecI256Cols {
-    pub n: __query_builder::Col<VecI256, Vec<__sats::i256>>,
+    pub n: __sdk::__query_builder::Col<VecI256, Vec<__sats::i256>>,
 }
 
-impl __query_builder::HasCols for VecI256 {
+impl __sdk::__query_builder::HasCols for VecI256 {
     type Cols = VecI256Cols;
     fn cols(table_name: &'static str) -> Self::Cols {
         VecI256Cols {
-            n: __query_builder::Col::new(table_name, "n"),
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for VecI256 {
 /// Provides typed access to indexed columns for query building.
 pub struct VecI256IxCols {}
 
-impl __query_builder::HasIxCols for VecI256 {
+impl __sdk::__query_builder::HasIxCols for VecI256 {
     type IxCols = VecI256IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         VecI256IxCols {}

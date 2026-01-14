@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_u_8_type::OneU8;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_u8`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait one_u8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneU8`.
-    fn one_u8(&self) -> __query_builder::Table<OneU8>;
+    fn one_u8(&self) -> __sdk::__query_builder::Table<OneU8>;
 }
 
 impl one_u8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_u8(&self) -> __query_builder::Table<OneU8> {
-        __query_builder::Table::new("one_u8")
+    fn one_u8(&self) -> __sdk::__query_builder::Table<OneU8> {
+        __sdk::__query_builder::Table::new("one_u8")
     }
 }

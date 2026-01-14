@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_u_128_type::PkU128;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_u128`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> PkU128NUnique<'ctx> {
 pub trait pk_u128QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkU128`.
-    fn pk_u128(&self) -> __query_builder::Table<PkU128>;
+    fn pk_u128(&self) -> __sdk::__query_builder::Table<PkU128>;
 }
 
 impl pk_u128QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_u128(&self) -> __query_builder::Table<PkU128> {
-        __query_builder::Table::new("pk_u128")
+    fn pk_u128(&self) -> __sdk::__query_builder::Table<PkU128> {
+        __sdk::__query_builder::Table::new("pk_u128")
     }
 }

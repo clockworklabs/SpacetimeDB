@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::byte_struct_type::ByteStruct;
 use super::one_byte_struct_type::OneByteStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_byte_struct`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait one_byte_structQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneByteStruct`.
-    fn one_byte_struct(&self) -> __query_builder::Table<OneByteStruct>;
+    fn one_byte_struct(&self) -> __sdk::__query_builder::Table<OneByteStruct>;
 }
 
 impl one_byte_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_byte_struct(&self) -> __query_builder::Table<OneByteStruct> {
-        __query_builder::Table::new("one_byte_struct")
+    fn one_byte_struct(&self) -> __sdk::__query_builder::Table<OneByteStruct> {
+        __sdk::__query_builder::Table::new("one_byte_struct")
     }
 }

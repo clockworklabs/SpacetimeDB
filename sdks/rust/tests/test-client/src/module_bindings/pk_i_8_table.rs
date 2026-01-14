@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_i_8_type::PkI8;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_i8`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> PkI8NUnique<'ctx> {
 pub trait pk_i8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkI8`.
-    fn pk_i8(&self) -> __query_builder::Table<PkI8>;
+    fn pk_i8(&self) -> __sdk::__query_builder::Table<PkI8>;
 }
 
 impl pk_i8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_i8(&self) -> __query_builder::Table<PkI8> {
-        __query_builder::Table::new("pk_i8")
+    fn pk_i8(&self) -> __sdk::__query_builder::Table<PkI8> {
+        __sdk::__query_builder::Table::new("pk_i8")
     }
 }

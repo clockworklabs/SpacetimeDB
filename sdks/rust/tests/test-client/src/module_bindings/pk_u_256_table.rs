@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_u_256_type::PkU256;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_u256`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> PkU256NUnique<'ctx> {
 pub trait pk_u256QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkU256`.
-    fn pk_u256(&self) -> __query_builder::Table<PkU256>;
+    fn pk_u256(&self) -> __sdk::__query_builder::Table<PkU256>;
 }
 
 impl pk_u256QueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_u256(&self) -> __query_builder::Table<PkU256> {
-        __query_builder::Table::new("pk_u256")
+    fn pk_u256(&self) -> __sdk::__query_builder::Table<PkU256> {
+        __sdk::__query_builder::Table::new("pk_u256")
     }
 }

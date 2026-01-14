@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_f_64_type::OneF64;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_f64`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait one_f64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneF64`.
-    fn one_f64(&self) -> __query_builder::Table<OneF64>;
+    fn one_f64(&self) -> __sdk::__query_builder::Table<OneF64>;
 }
 
 impl one_f64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_f64(&self) -> __query_builder::Table<OneF64> {
-        __query_builder::Table::new("one_f64")
+    fn one_f64(&self) -> __sdk::__query_builder::Table<OneF64> {
+        __sdk::__query_builder::Table::new("one_f64")
     }
 }

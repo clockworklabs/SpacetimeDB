@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::byte_struct_type::ByteStruct;
 use super::vec_byte_struct_type::VecByteStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_byte_struct`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait vec_byte_structQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecByteStruct`.
-    fn vec_byte_struct(&self) -> __query_builder::Table<VecByteStruct>;
+    fn vec_byte_struct(&self) -> __sdk::__query_builder::Table<VecByteStruct>;
 }
 
 impl vec_byte_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_byte_struct(&self) -> __query_builder::Table<VecByteStruct> {
-        __query_builder::Table::new("vec_byte_struct")
+    fn vec_byte_struct(&self) -> __sdk::__query_builder::Table<VecByteStruct> {
+        __sdk::__query_builder::Table::new("vec_byte_struct")
     }
 }

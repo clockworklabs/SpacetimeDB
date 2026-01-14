@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::scheduled_table_type::ScheduledTable;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `scheduled_table`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> ScheduledTableScheduledIdUnique<'ctx> {
 pub trait scheduled_tableQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ScheduledTable`.
-    fn scheduled_table(&self) -> __query_builder::Table<ScheduledTable>;
+    fn scheduled_table(&self) -> __sdk::__query_builder::Table<ScheduledTable>;
 }
 
 impl scheduled_tableQueryTableAccess for __sdk::QueryTableAccessor {
-    fn scheduled_table(&self) -> __query_builder::Table<ScheduledTable> {
-        __query_builder::Table::new("scheduled_table")
+    fn scheduled_table(&self) -> __sdk::__query_builder::Table<ScheduledTable> {
+        __sdk::__query_builder::Table::new("scheduled_table")
     }
 }

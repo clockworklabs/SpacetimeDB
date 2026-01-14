@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::one_string_type::OneString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_string`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait one_stringQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneString`.
-    fn one_string(&self) -> __query_builder::Table<OneString>;
+    fn one_string(&self) -> __sdk::__query_builder::Table<OneString>;
 }
 
 impl one_stringQueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_string(&self) -> __query_builder::Table<OneString> {
-        __query_builder::Table::new("one_string")
+    fn one_string(&self) -> __sdk::__query_builder::Table<OneString> {
+        __sdk::__query_builder::Table::new("one_string")
     }
 }

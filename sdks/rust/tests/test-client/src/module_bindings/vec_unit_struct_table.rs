@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::unit_struct_type::UnitStruct;
 use super::vec_unit_struct_type::VecUnitStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_unit_struct`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait vec_unit_structQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecUnitStruct`.
-    fn vec_unit_struct(&self) -> __query_builder::Table<VecUnitStruct>;
+    fn vec_unit_struct(&self) -> __sdk::__query_builder::Table<VecUnitStruct>;
 }
 
 impl vec_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_unit_struct(&self) -> __query_builder::Table<VecUnitStruct> {
-        __query_builder::Table::new("vec_unit_struct")
+    fn vec_unit_struct(&self) -> __sdk::__query_builder::Table<VecUnitStruct> {
+        __sdk::__query_builder::Table::new("vec_unit_struct")
     }
 }

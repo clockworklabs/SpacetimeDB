@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for ResultSimpleEnumI32 {
 ///
 /// Provides typed access to columns for query building.
 pub struct ResultSimpleEnumI32Cols {
-    pub r: __query_builder::Col<ResultSimpleEnumI32, Result<SimpleEnum, i32>>,
+    pub r: __sdk::__query_builder::Col<ResultSimpleEnumI32, Result<SimpleEnum, i32>>,
 }
 
-impl __query_builder::HasCols for ResultSimpleEnumI32 {
+impl __sdk::__query_builder::HasCols for ResultSimpleEnumI32 {
     type Cols = ResultSimpleEnumI32Cols;
     fn cols(table_name: &'static str) -> Self::Cols {
         ResultSimpleEnumI32Cols {
-            r: __query_builder::Col::new(table_name, "r"),
+            r: __sdk::__query_builder::Col::new(table_name, "r"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for ResultSimpleEnumI32 {
 /// Provides typed access to indexed columns for query building.
 pub struct ResultSimpleEnumI32IxCols {}
 
-impl __query_builder::HasIxCols for ResultSimpleEnumI32 {
+impl __sdk::__query_builder::HasIxCols for ResultSimpleEnumI32 {
     type IxCols = ResultSimpleEnumI32IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ResultSimpleEnumI32IxCols {}

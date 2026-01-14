@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,18 +20,18 @@ impl __sdk::InModule for PlayerAndLevel {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerAndLevelCols {
-    pub entity_id: __query_builder::Col<PlayerAndLevel, u64>,
-    pub identity: __query_builder::Col<PlayerAndLevel, __sdk::Identity>,
-    pub level: __query_builder::Col<PlayerAndLevel, u64>,
+    pub entity_id: __sdk::__query_builder::Col<PlayerAndLevel, u64>,
+    pub identity: __sdk::__query_builder::Col<PlayerAndLevel, __sdk::Identity>,
+    pub level: __sdk::__query_builder::Col<PlayerAndLevel, u64>,
 }
 
-impl __query_builder::HasCols for PlayerAndLevel {
+impl __sdk::__query_builder::HasCols for PlayerAndLevel {
     type Cols = PlayerAndLevelCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PlayerAndLevelCols {
-            entity_id: __query_builder::Col::new(table_name, "entity_id"),
-            identity: __query_builder::Col::new(table_name, "identity"),
-            level: __query_builder::Col::new(table_name, "level"),
+            entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+            level: __sdk::__query_builder::Col::new(table_name, "level"),
         }
     }
 }

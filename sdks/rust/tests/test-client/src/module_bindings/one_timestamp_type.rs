@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for OneTimestamp {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneTimestampCols {
-    pub t: __query_builder::Col<OneTimestamp, __sdk::Timestamp>,
+    pub t: __sdk::__query_builder::Col<OneTimestamp, __sdk::Timestamp>,
 }
 
-impl __query_builder::HasCols for OneTimestamp {
+impl __sdk::__query_builder::HasCols for OneTimestamp {
     type Cols = OneTimestampCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneTimestampCols {
-            t: __query_builder::Col::new(table_name, "t"),
+            t: __sdk::__query_builder::Col::new(table_name, "t"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for OneTimestamp {
 /// Provides typed access to indexed columns for query building.
 pub struct OneTimestampIxCols {}
 
-impl __query_builder::HasIxCols for OneTimestamp {
+impl __sdk::__query_builder::HasIxCols for OneTimestamp {
     type IxCols = OneTimestampIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneTimestampIxCols {}

@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -20,18 +20,18 @@ impl __sdk::InModule for ScheduledTable {
 ///
 /// Provides typed access to columns for query building.
 pub struct ScheduledTableCols {
-    pub scheduled_id: __query_builder::Col<ScheduledTable, u64>,
-    pub scheduled_at: __query_builder::Col<ScheduledTable, __sdk::ScheduleAt>,
-    pub text: __query_builder::Col<ScheduledTable, String>,
+    pub scheduled_id: __sdk::__query_builder::Col<ScheduledTable, u64>,
+    pub scheduled_at: __sdk::__query_builder::Col<ScheduledTable, __sdk::ScheduleAt>,
+    pub text: __sdk::__query_builder::Col<ScheduledTable, String>,
 }
 
-impl __query_builder::HasCols for ScheduledTable {
+impl __sdk::__query_builder::HasCols for ScheduledTable {
     type Cols = ScheduledTableCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         ScheduledTableCols {
-            scheduled_id: __query_builder::Col::new(table_name, "scheduled_id"),
-            scheduled_at: __query_builder::Col::new(table_name, "scheduled_at"),
-            text: __query_builder::Col::new(table_name, "text"),
+            scheduled_id: __sdk::__query_builder::Col::new(table_name, "scheduled_id"),
+            scheduled_at: __sdk::__query_builder::Col::new(table_name, "scheduled_at"),
+            text: __sdk::__query_builder::Col::new(table_name, "text"),
         }
     }
 }
@@ -40,14 +40,14 @@ impl __query_builder::HasCols for ScheduledTable {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct ScheduledTableIxCols {
-    pub scheduled_id: __query_builder::IxCol<ScheduledTable, u64>,
+    pub scheduled_id: __sdk::__query_builder::IxCol<ScheduledTable, u64>,
 }
 
-impl __query_builder::HasIxCols for ScheduledTable {
+impl __sdk::__query_builder::HasIxCols for ScheduledTable {
     type IxCols = ScheduledTableIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         ScheduledTableIxCols {
-            scheduled_id: __query_builder::IxCol::new(table_name, "scheduled_id"),
+            scheduled_id: __sdk::__query_builder::IxCol::new(table_name, "scheduled_id"),
         }
     }
 }

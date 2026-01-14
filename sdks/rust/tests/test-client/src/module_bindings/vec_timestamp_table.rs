@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_timestamp_type::VecTimestamp;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_timestamp`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait vec_timestampQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecTimestamp`.
-    fn vec_timestamp(&self) -> __query_builder::Table<VecTimestamp>;
+    fn vec_timestamp(&self) -> __sdk::__query_builder::Table<VecTimestamp>;
 }
 
 impl vec_timestampQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_timestamp(&self) -> __query_builder::Table<VecTimestamp> {
-        __query_builder::Table::new("vec_timestamp")
+    fn vec_timestamp(&self) -> __sdk::__query_builder::Table<VecTimestamp> {
+        __sdk::__query_builder::Table::new("vec_timestamp")
     }
 }

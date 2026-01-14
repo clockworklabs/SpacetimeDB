@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_identity_type::PkIdentity;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_identity`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> PkIdentityIUnique<'ctx> {
 pub trait pk_identityQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkIdentity`.
-    fn pk_identity(&self) -> __query_builder::Table<PkIdentity>;
+    fn pk_identity(&self) -> __sdk::__query_builder::Table<PkIdentity>;
 }
 
 impl pk_identityQueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_identity(&self) -> __query_builder::Table<PkIdentity> {
-        __query_builder::Table::new("pk_identity")
+    fn pk_identity(&self) -> __sdk::__query_builder::Table<PkIdentity> {
+        __sdk::__query_builder::Table::new("pk_identity")
     }
 }

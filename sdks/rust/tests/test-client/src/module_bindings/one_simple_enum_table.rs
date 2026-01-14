@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::one_simple_enum_type::OneSimpleEnum;
 use super::simple_enum_type::SimpleEnum;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_simple_enum`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait one_simple_enumQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneSimpleEnum`.
-    fn one_simple_enum(&self) -> __query_builder::Table<OneSimpleEnum>;
+    fn one_simple_enum(&self) -> __sdk::__query_builder::Table<OneSimpleEnum>;
 }
 
 impl one_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_simple_enum(&self) -> __query_builder::Table<OneSimpleEnum> {
-        __query_builder::Table::new("one_simple_enum")
+    fn one_simple_enum(&self) -> __sdk::__query_builder::Table<OneSimpleEnum> {
+        __sdk::__query_builder::Table::new("one_simple_enum")
     }
 }

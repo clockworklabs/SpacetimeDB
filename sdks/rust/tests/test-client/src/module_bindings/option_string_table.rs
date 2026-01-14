@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::option_string_type::OptionString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `option_string`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait option_stringQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OptionString`.
-    fn option_string(&self) -> __query_builder::Table<OptionString>;
+    fn option_string(&self) -> __sdk::__query_builder::Table<OptionString>;
 }
 
 impl option_stringQueryTableAccess for __sdk::QueryTableAccessor {
-    fn option_string(&self) -> __query_builder::Table<OptionString> {
-        __query_builder::Table::new("option_string")
+    fn option_string(&self) -> __sdk::__query_builder::Table<OptionString> {
+        __sdk::__query_builder::Table::new("option_string")
     }
 }

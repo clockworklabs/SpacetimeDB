@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for OptionVecOptionI32 {
 ///
 /// Provides typed access to columns for query building.
 pub struct OptionVecOptionI32Cols {
-    pub v: __query_builder::Col<OptionVecOptionI32, Option<Vec<Option<i32>>>>,
+    pub v: __sdk::__query_builder::Col<OptionVecOptionI32, Option<Vec<Option<i32>>>>,
 }
 
-impl __query_builder::HasCols for OptionVecOptionI32 {
+impl __sdk::__query_builder::HasCols for OptionVecOptionI32 {
     type Cols = OptionVecOptionI32Cols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OptionVecOptionI32Cols {
-            v: __query_builder::Col::new(table_name, "v"),
+            v: __sdk::__query_builder::Col::new(table_name, "v"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for OptionVecOptionI32 {
 /// Provides typed access to indexed columns for query building.
 pub struct OptionVecOptionI32IxCols {}
 
-impl __query_builder::HasIxCols for OptionVecOptionI32 {
+impl __sdk::__query_builder::HasIxCols for OptionVecOptionI32 {
     type IxCols = OptionVecOptionI32IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OptionVecOptionI32IxCols {}

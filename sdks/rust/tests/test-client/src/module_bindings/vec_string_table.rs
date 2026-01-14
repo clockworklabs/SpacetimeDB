@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_string_type::VecString;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_string`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait vec_stringQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecString`.
-    fn vec_string(&self) -> __query_builder::Table<VecString>;
+    fn vec_string(&self) -> __sdk::__query_builder::Table<VecString>;
 }
 
 impl vec_stringQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_string(&self) -> __query_builder::Table<VecString> {
-        __query_builder::Table::new("vec_string")
+    fn vec_string(&self) -> __sdk::__query_builder::Table<VecString> {
+        __sdk::__query_builder::Table::new("vec_string")
     }
 }

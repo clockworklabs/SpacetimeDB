@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +19,16 @@ impl __sdk::InModule for Users {
 ///
 /// Provides typed access to columns for query building.
 pub struct UsersCols {
-    pub identity: __query_builder::Col<Users, __sdk::Identity>,
-    pub name: __query_builder::Col<Users, String>,
+    pub identity: __sdk::__query_builder::Col<Users, __sdk::Identity>,
+    pub name: __sdk::__query_builder::Col<Users, String>,
 }
 
-impl __query_builder::HasCols for Users {
+impl __sdk::__query_builder::HasCols for Users {
     type Cols = UsersCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         UsersCols {
-            identity: __query_builder::Col::new(table_name, "identity"),
-            name: __query_builder::Col::new(table_name, "name"),
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+            name: __sdk::__query_builder::Col::new(table_name, "name"),
         }
     }
 }
@@ -37,14 +37,14 @@ impl __query_builder::HasCols for Users {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct UsersIxCols {
-    pub identity: __query_builder::IxCol<Users, __sdk::Identity>,
+    pub identity: __sdk::__query_builder::IxCol<Users, __sdk::Identity>,
 }
 
-impl __query_builder::HasIxCols for Users {
+impl __sdk::__query_builder::HasIxCols for Users {
     type IxCols = UsersIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         UsersIxCols {
-            identity: __query_builder::IxCol::new(table_name, "identity"),
+            identity: __sdk::__query_builder::IxCol::new(table_name, "identity"),
         }
     }
 }

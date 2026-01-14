@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::every_primitive_struct_type::EveryPrimitiveStruct;
 use super::option_every_primitive_struct_type::OptionEveryPrimitiveStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `option_every_primitive_struct`.
 ///
@@ -104,11 +104,11 @@ pub(super) fn parse_table_update(
 pub trait option_every_primitive_structQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OptionEveryPrimitiveStruct`.
-    fn option_every_primitive_struct(&self) -> __query_builder::Table<OptionEveryPrimitiveStruct>;
+    fn option_every_primitive_struct(&self) -> __sdk::__query_builder::Table<OptionEveryPrimitiveStruct>;
 }
 
 impl option_every_primitive_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn option_every_primitive_struct(&self) -> __query_builder::Table<OptionEveryPrimitiveStruct> {
-        __query_builder::Table::new("option_every_primitive_struct")
+    fn option_every_primitive_struct(&self) -> __sdk::__query_builder::Table<OptionEveryPrimitiveStruct> {
+        __sdk::__query_builder::Table::new("option_every_primitive_struct")
     }
 }

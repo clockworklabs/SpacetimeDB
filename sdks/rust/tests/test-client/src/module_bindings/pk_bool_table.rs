@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_bool_type::PkBool;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_bool`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> PkBoolBUnique<'ctx> {
 pub trait pk_boolQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkBool`.
-    fn pk_bool(&self) -> __query_builder::Table<PkBool>;
+    fn pk_bool(&self) -> __sdk::__query_builder::Table<PkBool>;
 }
 
 impl pk_boolQueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_bool(&self) -> __query_builder::Table<PkBool> {
-        __query_builder::Table::new("pk_bool")
+    fn pk_bool(&self) -> __sdk::__query_builder::Table<PkBool> {
+        __sdk::__query_builder::Table::new("pk_bool")
     }
 }

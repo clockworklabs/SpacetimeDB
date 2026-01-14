@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::every_vec_struct_type::EveryVecStruct;
 use super::vec_every_vec_struct_type::VecEveryVecStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_every_vec_struct`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait vec_every_vec_structQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecEveryVecStruct`.
-    fn vec_every_vec_struct(&self) -> __query_builder::Table<VecEveryVecStruct>;
+    fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct>;
 }
 
 impl vec_every_vec_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_every_vec_struct(&self) -> __query_builder::Table<VecEveryVecStruct> {
-        __query_builder::Table::new("vec_every_vec_struct")
+    fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct> {
+        __sdk::__query_builder::Table::new("vec_every_vec_struct")
     }
 }

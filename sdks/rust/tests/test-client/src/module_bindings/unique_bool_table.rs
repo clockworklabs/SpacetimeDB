@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_bool_type::UniqueBool;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_bool`.
 ///
@@ -132,11 +132,11 @@ impl<'ctx> UniqueBoolBUnique<'ctx> {
 pub trait unique_boolQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueBool`.
-    fn unique_bool(&self) -> __query_builder::Table<UniqueBool>;
+    fn unique_bool(&self) -> __sdk::__query_builder::Table<UniqueBool>;
 }
 
 impl unique_boolQueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_bool(&self) -> __query_builder::Table<UniqueBool> {
-        __query_builder::Table::new("unique_bool")
+    fn unique_bool(&self) -> __sdk::__query_builder::Table<UniqueBool> {
+        __sdk::__query_builder::Table::new("unique_bool")
     }
 }

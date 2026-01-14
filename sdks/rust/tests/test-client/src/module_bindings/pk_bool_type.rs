@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +19,16 @@ impl __sdk::InModule for PkBool {
 ///
 /// Provides typed access to columns for query building.
 pub struct PkBoolCols {
-    pub b: __query_builder::Col<PkBool, bool>,
-    pub data: __query_builder::Col<PkBool, i32>,
+    pub b: __sdk::__query_builder::Col<PkBool, bool>,
+    pub data: __sdk::__query_builder::Col<PkBool, i32>,
 }
 
-impl __query_builder::HasCols for PkBool {
+impl __sdk::__query_builder::HasCols for PkBool {
     type Cols = PkBoolCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PkBoolCols {
-            b: __query_builder::Col::new(table_name, "b"),
-            data: __query_builder::Col::new(table_name, "data"),
+            b: __sdk::__query_builder::Col::new(table_name, "b"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
         }
     }
 }
@@ -37,14 +37,14 @@ impl __query_builder::HasCols for PkBool {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PkBoolIxCols {
-    pub b: __query_builder::IxCol<PkBool, bool>,
+    pub b: __sdk::__query_builder::IxCol<PkBool, bool>,
 }
 
-impl __query_builder::HasIxCols for PkBool {
+impl __sdk::__query_builder::HasIxCols for PkBool {
     type IxCols = PkBoolIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PkBoolIxCols {
-            b: __query_builder::IxCol::new(table_name, "b"),
+            b: __sdk::__query_builder::IxCol::new(table_name, "b"),
         }
     }
 }

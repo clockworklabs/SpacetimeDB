@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for VecUuid {
 ///
 /// Provides typed access to columns for query building.
 pub struct VecUuidCols {
-    pub u: __query_builder::Col<VecUuid, Vec<__sdk::Uuid>>,
+    pub u: __sdk::__query_builder::Col<VecUuid, Vec<__sdk::Uuid>>,
 }
 
-impl __query_builder::HasCols for VecUuid {
+impl __sdk::__query_builder::HasCols for VecUuid {
     type Cols = VecUuidCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         VecUuidCols {
-            u: __query_builder::Col::new(table_name, "u"),
+            u: __sdk::__query_builder::Col::new(table_name, "u"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for VecUuid {
 /// Provides typed access to indexed columns for query building.
 pub struct VecUuidIxCols {}
 
-impl __query_builder::HasIxCols for VecUuid {
+impl __sdk::__query_builder::HasIxCols for VecUuid {
     type IxCols = VecUuidIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         VecUuidIxCols {}

@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::result_simple_enum_i_32_type::ResultSimpleEnumI32;
 use super::simple_enum_type::SimpleEnum;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `result_simple_enum_i32`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait result_simple_enum_i32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ResultSimpleEnumI32`.
-    fn result_simple_enum_i32(&self) -> __query_builder::Table<ResultSimpleEnumI32>;
+    fn result_simple_enum_i32(&self) -> __sdk::__query_builder::Table<ResultSimpleEnumI32>;
 }
 
 impl result_simple_enum_i32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn result_simple_enum_i32(&self) -> __query_builder::Table<ResultSimpleEnumI32> {
-        __query_builder::Table::new("result_simple_enum_i32")
+    fn result_simple_enum_i32(&self) -> __sdk::__query_builder::Table<ResultSimpleEnumI32> {
+        __sdk::__query_builder::Table::new("result_simple_enum_i32")
     }
 }

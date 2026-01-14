@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::player_type::Player;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `my_player`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait my_playerQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `Player`.
-    fn my_player(&self) -> __query_builder::Table<Player>;
+    fn my_player(&self) -> __sdk::__query_builder::Table<Player>;
 }
 
 impl my_playerQueryTableAccess for __sdk::QueryTableAccessor {
-    fn my_player(&self) -> __query_builder::Table<Player> {
-        __query_builder::Table::new("my_player")
+    fn my_player(&self) -> __sdk::__query_builder::Table<Player> {
+        __sdk::__query_builder::Table::new("my_player")
     }
 }

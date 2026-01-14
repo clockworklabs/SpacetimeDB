@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for OneI64 {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneI64Cols {
-    pub n: __query_builder::Col<OneI64, i64>,
+    pub n: __sdk::__query_builder::Col<OneI64, i64>,
 }
 
-impl __query_builder::HasCols for OneI64 {
+impl __sdk::__query_builder::HasCols for OneI64 {
     type Cols = OneI64Cols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneI64Cols {
-            n: __query_builder::Col::new(table_name, "n"),
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for OneI64 {
 /// Provides typed access to indexed columns for query building.
 pub struct OneI64IxCols {}
 
-impl __query_builder::HasIxCols for OneI64 {
+impl __sdk::__query_builder::HasIxCols for OneI64 {
     type IxCols = OneI64IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneI64IxCols {}

@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_identity_type::UniqueIdentity;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_identity`.
 ///
@@ -132,11 +132,11 @@ impl<'ctx> UniqueIdentityIUnique<'ctx> {
 pub trait unique_identityQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueIdentity`.
-    fn unique_identity(&self) -> __query_builder::Table<UniqueIdentity>;
+    fn unique_identity(&self) -> __sdk::__query_builder::Table<UniqueIdentity>;
 }
 
 impl unique_identityQueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_identity(&self) -> __query_builder::Table<UniqueIdentity> {
-        __query_builder::Table::new("unique_identity")
+    fn unique_identity(&self) -> __sdk::__query_builder::Table<UniqueIdentity> {
+        __sdk::__query_builder::Table::new("unique_identity")
     }
 }

@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_i_32_type::UniqueI32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_i32`.
 ///
@@ -132,11 +132,11 @@ impl<'ctx> UniqueI32NUnique<'ctx> {
 pub trait unique_i32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueI32`.
-    fn unique_i32(&self) -> __query_builder::Table<UniqueI32>;
+    fn unique_i32(&self) -> __sdk::__query_builder::Table<UniqueI32>;
 }
 
 impl unique_i32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_i32(&self) -> __query_builder::Table<UniqueI32> {
-        __query_builder::Table::new("unique_i32")
+    fn unique_i32(&self) -> __sdk::__query_builder::Table<UniqueI32> {
+        __sdk::__query_builder::Table::new("unique_i32")
     }
 }

@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_uuid_type::UniqueUuid;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_uuid`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait unique_uuidQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueUuid`.
-    fn unique_uuid(&self) -> __query_builder::Table<UniqueUuid>;
+    fn unique_uuid(&self) -> __sdk::__query_builder::Table<UniqueUuid>;
 }
 
 impl unique_uuidQueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_uuid(&self) -> __query_builder::Table<UniqueUuid> {
-        __query_builder::Table::new("unique_uuid")
+    fn unique_uuid(&self) -> __sdk::__query_builder::Table<UniqueUuid> {
+        __sdk::__query_builder::Table::new("unique_uuid")
     }
 }

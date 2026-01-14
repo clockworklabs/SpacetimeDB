@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::simple_enum_type::SimpleEnum;
 
@@ -21,16 +21,16 @@ impl __sdk::InModule for PkSimpleEnum {
 ///
 /// Provides typed access to columns for query building.
 pub struct PkSimpleEnumCols {
-    pub a: __query_builder::Col<PkSimpleEnum, SimpleEnum>,
-    pub data: __query_builder::Col<PkSimpleEnum, i32>,
+    pub a: __sdk::__query_builder::Col<PkSimpleEnum, SimpleEnum>,
+    pub data: __sdk::__query_builder::Col<PkSimpleEnum, i32>,
 }
 
-impl __query_builder::HasCols for PkSimpleEnum {
+impl __sdk::__query_builder::HasCols for PkSimpleEnum {
     type Cols = PkSimpleEnumCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PkSimpleEnumCols {
-            a: __query_builder::Col::new(table_name, "a"),
-            data: __query_builder::Col::new(table_name, "data"),
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
         }
     }
 }
@@ -39,14 +39,14 @@ impl __query_builder::HasCols for PkSimpleEnum {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PkSimpleEnumIxCols {
-    pub a: __query_builder::IxCol<PkSimpleEnum, SimpleEnum>,
+    pub a: __sdk::__query_builder::IxCol<PkSimpleEnum, SimpleEnum>,
 }
 
-impl __query_builder::HasIxCols for PkSimpleEnum {
+impl __sdk::__query_builder::HasIxCols for PkSimpleEnum {
     type IxCols = PkSimpleEnumIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PkSimpleEnumIxCols {
-            a: __query_builder::IxCol::new(table_name, "a"),
+            a: __sdk::__query_builder::IxCol::new(table_name, "a"),
         }
     }
 }

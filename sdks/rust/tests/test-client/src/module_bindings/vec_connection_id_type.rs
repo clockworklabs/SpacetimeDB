@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for VecConnectionId {
 ///
 /// Provides typed access to columns for query building.
 pub struct VecConnectionIdCols {
-    pub a: __query_builder::Col<VecConnectionId, Vec<__sdk::ConnectionId>>,
+    pub a: __sdk::__query_builder::Col<VecConnectionId, Vec<__sdk::ConnectionId>>,
 }
 
-impl __query_builder::HasCols for VecConnectionId {
+impl __sdk::__query_builder::HasCols for VecConnectionId {
     type Cols = VecConnectionIdCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         VecConnectionIdCols {
-            a: __query_builder::Col::new(table_name, "a"),
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for VecConnectionId {
 /// Provides typed access to indexed columns for query building.
 pub struct VecConnectionIdIxCols {}
 
-impl __query_builder::HasIxCols for VecConnectionId {
+impl __sdk::__query_builder::HasIxCols for VecConnectionId {
     type IxCols = VecConnectionIdIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         VecConnectionIdIxCols {}

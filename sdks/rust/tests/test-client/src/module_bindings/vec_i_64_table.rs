@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_i_64_type::VecI64;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_i64`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait vec_i64QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecI64`.
-    fn vec_i64(&self) -> __query_builder::Table<VecI64>;
+    fn vec_i64(&self) -> __sdk::__query_builder::Table<VecI64>;
 }
 
 impl vec_i64QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_i64(&self) -> __query_builder::Table<VecI64> {
-        __query_builder::Table::new("vec_i64")
+    fn vec_i64(&self) -> __sdk::__query_builder::Table<VecI64> {
+        __sdk::__query_builder::Table::new("vec_i64")
     }
 }

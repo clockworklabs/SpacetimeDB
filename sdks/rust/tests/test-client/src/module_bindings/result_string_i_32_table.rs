@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::result_string_i_32_type::ResultStringI32;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `result_string_i32`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait result_string_i32QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `ResultStringI32`.
-    fn result_string_i32(&self) -> __query_builder::Table<ResultStringI32>;
+    fn result_string_i32(&self) -> __sdk::__query_builder::Table<ResultStringI32>;
 }
 
 impl result_string_i32QueryTableAccess for __sdk::QueryTableAccessor {
-    fn result_string_i32(&self) -> __query_builder::Table<ResultStringI32> {
-        __query_builder::Table::new("result_string_i32")
+    fn result_string_i32(&self) -> __sdk::__query_builder::Table<ResultStringI32> {
+        __sdk::__query_builder::Table::new("result_string_i32")
     }
 }

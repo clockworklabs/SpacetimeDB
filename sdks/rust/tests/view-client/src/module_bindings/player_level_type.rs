@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +19,16 @@ impl __sdk::InModule for PlayerLevel {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerLevelCols {
-    pub entity_id: __query_builder::Col<PlayerLevel, u64>,
-    pub level: __query_builder::Col<PlayerLevel, u64>,
+    pub entity_id: __sdk::__query_builder::Col<PlayerLevel, u64>,
+    pub level: __sdk::__query_builder::Col<PlayerLevel, u64>,
 }
 
-impl __query_builder::HasCols for PlayerLevel {
+impl __sdk::__query_builder::HasCols for PlayerLevel {
     type Cols = PlayerLevelCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PlayerLevelCols {
-            entity_id: __query_builder::Col::new(table_name, "entity_id"),
-            level: __query_builder::Col::new(table_name, "level"),
+            entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            level: __sdk::__query_builder::Col::new(table_name, "level"),
         }
     }
 }
@@ -37,16 +37,16 @@ impl __query_builder::HasCols for PlayerLevel {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PlayerLevelIxCols {
-    pub entity_id: __query_builder::IxCol<PlayerLevel, u64>,
-    pub level: __query_builder::IxCol<PlayerLevel, u64>,
+    pub entity_id: __sdk::__query_builder::IxCol<PlayerLevel, u64>,
+    pub level: __sdk::__query_builder::IxCol<PlayerLevel, u64>,
 }
 
-impl __query_builder::HasIxCols for PlayerLevel {
+impl __sdk::__query_builder::HasIxCols for PlayerLevel {
     type IxCols = PlayerLevelIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PlayerLevelIxCols {
-            entity_id: __query_builder::IxCol::new(table_name, "entity_id"),
-            level: __query_builder::IxCol::new(table_name, "level"),
+            entity_id: __sdk::__query_builder::IxCol::new(table_name, "entity_id"),
+            level: __sdk::__query_builder::IxCol::new(table_name, "level"),
         }
     }
 }

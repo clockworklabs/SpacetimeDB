@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::unique_u_8_type::UniqueU8;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `unique_u8`.
 ///
@@ -132,11 +132,11 @@ impl<'ctx> UniqueU8NUnique<'ctx> {
 pub trait unique_u8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `UniqueU8`.
-    fn unique_u8(&self) -> __query_builder::Table<UniqueU8>;
+    fn unique_u8(&self) -> __sdk::__query_builder::Table<UniqueU8>;
 }
 
 impl unique_u8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn unique_u8(&self) -> __query_builder::Table<UniqueU8> {
-        __query_builder::Table::new("unique_u8")
+    fn unique_u8(&self) -> __sdk::__query_builder::Table<UniqueU8> {
+        __sdk::__query_builder::Table::new("unique_u8")
     }
 }

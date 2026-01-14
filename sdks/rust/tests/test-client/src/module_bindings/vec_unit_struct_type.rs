@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::unit_struct_type::UnitStruct;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for VecUnitStruct {
 ///
 /// Provides typed access to columns for query building.
 pub struct VecUnitStructCols {
-    pub s: __query_builder::Col<VecUnitStruct, Vec<UnitStruct>>,
+    pub s: __sdk::__query_builder::Col<VecUnitStruct, Vec<UnitStruct>>,
 }
 
-impl __query_builder::HasCols for VecUnitStruct {
+impl __sdk::__query_builder::HasCols for VecUnitStruct {
     type Cols = VecUnitStructCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         VecUnitStructCols {
-            s: __query_builder::Col::new(table_name, "s"),
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for VecUnitStruct {
 /// Provides typed access to indexed columns for query building.
 pub struct VecUnitStructIxCols {}
 
-impl __query_builder::HasIxCols for VecUnitStruct {
+impl __sdk::__query_builder::HasIxCols for VecUnitStruct {
     type IxCols = VecUnitStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         VecUnitStructIxCols {}

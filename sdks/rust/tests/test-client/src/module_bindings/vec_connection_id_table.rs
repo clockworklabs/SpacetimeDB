@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_connection_id_type::VecConnectionId;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_connection_id`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait vec_connection_idQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecConnectionId`.
-    fn vec_connection_id(&self) -> __query_builder::Table<VecConnectionId>;
+    fn vec_connection_id(&self) -> __sdk::__query_builder::Table<VecConnectionId>;
 }
 
 impl vec_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_connection_id(&self) -> __query_builder::Table<VecConnectionId> {
-        __query_builder::Table::new("vec_connection_id")
+    fn vec_connection_id(&self) -> __sdk::__query_builder::Table<VecConnectionId> {
+        __sdk::__query_builder::Table::new("vec_connection_id")
     }
 }

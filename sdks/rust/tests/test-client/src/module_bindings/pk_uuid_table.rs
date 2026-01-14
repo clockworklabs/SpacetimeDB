@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::pk_uuid_type::PkUuid;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `pk_uuid`.
 ///
@@ -117,11 +117,11 @@ pub(super) fn parse_table_update(
 pub trait pk_uuidQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `PkUuid`.
-    fn pk_uuid(&self) -> __query_builder::Table<PkUuid>;
+    fn pk_uuid(&self) -> __sdk::__query_builder::Table<PkUuid>;
 }
 
 impl pk_uuidQueryTableAccess for __sdk::QueryTableAccessor {
-    fn pk_uuid(&self) -> __query_builder::Table<PkUuid> {
-        __query_builder::Table::new("pk_uuid")
+    fn pk_uuid(&self) -> __sdk::__query_builder::Table<PkUuid> {
+        __sdk::__query_builder::Table::new("pk_uuid")
     }
 }

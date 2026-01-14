@@ -4,7 +4,7 @@
 #![allow(unused, clippy::all)]
 use super::one_unit_struct_type::OneUnitStruct;
 use super::unit_struct_type::UnitStruct;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `one_unit_struct`.
 ///
@@ -102,11 +102,11 @@ pub(super) fn parse_table_update(
 pub trait one_unit_structQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `OneUnitStruct`.
-    fn one_unit_struct(&self) -> __query_builder::Table<OneUnitStruct>;
+    fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct>;
 }
 
 impl one_unit_structQueryTableAccess for __sdk::QueryTableAccessor {
-    fn one_unit_struct(&self) -> __query_builder::Table<OneUnitStruct> {
-        __query_builder::Table::new("one_unit_struct")
+    fn one_unit_struct(&self) -> __sdk::__query_builder::Table<OneUnitStruct> {
+        __sdk::__query_builder::Table::new("one_unit_struct")
     }
 }

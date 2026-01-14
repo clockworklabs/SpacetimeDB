@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +19,16 @@ impl __sdk::InModule for PkUuid {
 ///
 /// Provides typed access to columns for query building.
 pub struct PkUuidCols {
-    pub u: __query_builder::Col<PkUuid, __sdk::Uuid>,
-    pub data: __query_builder::Col<PkUuid, i32>,
+    pub u: __sdk::__query_builder::Col<PkUuid, __sdk::Uuid>,
+    pub data: __sdk::__query_builder::Col<PkUuid, i32>,
 }
 
-impl __query_builder::HasCols for PkUuid {
+impl __sdk::__query_builder::HasCols for PkUuid {
     type Cols = PkUuidCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PkUuidCols {
-            u: __query_builder::Col::new(table_name, "u"),
-            data: __query_builder::Col::new(table_name, "data"),
+            u: __sdk::__query_builder::Col::new(table_name, "u"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
         }
     }
 }
@@ -37,14 +37,14 @@ impl __query_builder::HasCols for PkUuid {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PkUuidIxCols {
-    pub u: __query_builder::IxCol<PkUuid, __sdk::Uuid>,
+    pub u: __sdk::__query_builder::IxCol<PkUuid, __sdk::Uuid>,
 }
 
-impl __query_builder::HasIxCols for PkUuid {
+impl __sdk::__query_builder::HasIxCols for PkUuid {
     type IxCols = PkUuidIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PkUuidIxCols {
-            u: __query_builder::IxCol::new(table_name, "u"),
+            u: __sdk::__query_builder::IxCol::new(table_name, "u"),
         }
     }
 }

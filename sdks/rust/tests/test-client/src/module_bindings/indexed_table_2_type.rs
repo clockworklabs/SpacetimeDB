@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +19,16 @@ impl __sdk::InModule for IndexedTable2 {
 ///
 /// Provides typed access to columns for query building.
 pub struct IndexedTable2Cols {
-    pub player_id: __query_builder::Col<IndexedTable2, u32>,
-    pub player_snazz: __query_builder::Col<IndexedTable2, f32>,
+    pub player_id: __sdk::__query_builder::Col<IndexedTable2, u32>,
+    pub player_snazz: __sdk::__query_builder::Col<IndexedTable2, f32>,
 }
 
-impl __query_builder::HasCols for IndexedTable2 {
+impl __sdk::__query_builder::HasCols for IndexedTable2 {
     type Cols = IndexedTable2Cols;
     fn cols(table_name: &'static str) -> Self::Cols {
         IndexedTable2Cols {
-            player_id: __query_builder::Col::new(table_name, "player_id"),
-            player_snazz: __query_builder::Col::new(table_name, "player_snazz"),
+            player_id: __sdk::__query_builder::Col::new(table_name, "player_id"),
+            player_snazz: __sdk::__query_builder::Col::new(table_name, "player_snazz"),
         }
     }
 }
@@ -38,7 +38,7 @@ impl __query_builder::HasCols for IndexedTable2 {
 /// Provides typed access to indexed columns for query building.
 pub struct IndexedTable2IxCols {}
 
-impl __query_builder::HasIxCols for IndexedTable2 {
+impl __sdk::__query_builder::HasIxCols for IndexedTable2 {
     type IxCols = IndexedTable2IxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         IndexedTable2IxCols {}

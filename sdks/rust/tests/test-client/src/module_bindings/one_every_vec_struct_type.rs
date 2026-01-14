@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 use super::every_vec_struct_type::EveryVecStruct;
 
@@ -20,14 +20,14 @@ impl __sdk::InModule for OneEveryVecStruct {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneEveryVecStructCols {
-    pub s: __query_builder::Col<OneEveryVecStruct, EveryVecStruct>,
+    pub s: __sdk::__query_builder::Col<OneEveryVecStruct, EveryVecStruct>,
 }
 
-impl __query_builder::HasCols for OneEveryVecStruct {
+impl __sdk::__query_builder::HasCols for OneEveryVecStruct {
     type Cols = OneEveryVecStructCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneEveryVecStructCols {
-            s: __query_builder::Col::new(table_name, "s"),
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
         }
     }
 }
@@ -37,7 +37,7 @@ impl __query_builder::HasCols for OneEveryVecStruct {
 /// Provides typed access to indexed columns for query building.
 pub struct OneEveryVecStructIxCols {}
 
-impl __query_builder::HasIxCols for OneEveryVecStruct {
+impl __sdk::__query_builder::HasIxCols for OneEveryVecStruct {
     type IxCols = OneEveryVecStructIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneEveryVecStructIxCols {}

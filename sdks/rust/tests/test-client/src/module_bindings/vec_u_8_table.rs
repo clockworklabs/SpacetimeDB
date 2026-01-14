@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_u_8_type::VecU8;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_u8`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait vec_u8QueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecU8`.
-    fn vec_u8(&self) -> __query_builder::Table<VecU8>;
+    fn vec_u8(&self) -> __sdk::__query_builder::Table<VecU8>;
 }
 
 impl vec_u8QueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_u8(&self) -> __query_builder::Table<VecU8> {
-        __query_builder::Table::new("vec_u8")
+    fn vec_u8(&self) -> __sdk::__query_builder::Table<VecU8> {
+        __sdk::__query_builder::Table::new("vec_u8")
     }
 }

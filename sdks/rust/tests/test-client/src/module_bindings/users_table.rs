@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::users_type::Users;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `users`.
 ///
@@ -148,11 +148,11 @@ impl<'ctx> UsersIdentityUnique<'ctx> {
 pub trait usersQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `Users`.
-    fn users(&self) -> __query_builder::Table<Users>;
+    fn users(&self) -> __sdk::__query_builder::Table<Users>;
 }
 
 impl usersQueryTableAccess for __sdk::QueryTableAccessor {
-    fn users(&self) -> __query_builder::Table<Users> {
-        __query_builder::Table::new("users")
+    fn users(&self) -> __sdk::__query_builder::Table<Users> {
+        __sdk::__query_builder::Table::new("users")
     }
 }

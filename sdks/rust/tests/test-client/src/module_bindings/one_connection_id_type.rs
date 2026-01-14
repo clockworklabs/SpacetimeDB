@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -18,14 +18,14 @@ impl __sdk::InModule for OneConnectionId {
 ///
 /// Provides typed access to columns for query building.
 pub struct OneConnectionIdCols {
-    pub a: __query_builder::Col<OneConnectionId, __sdk::ConnectionId>,
+    pub a: __sdk::__query_builder::Col<OneConnectionId, __sdk::ConnectionId>,
 }
 
-impl __query_builder::HasCols for OneConnectionId {
+impl __sdk::__query_builder::HasCols for OneConnectionId {
     type Cols = OneConnectionIdCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         OneConnectionIdCols {
-            a: __query_builder::Col::new(table_name, "a"),
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl __query_builder::HasCols for OneConnectionId {
 /// Provides typed access to indexed columns for query building.
 pub struct OneConnectionIdIxCols {}
 
-impl __query_builder::HasIxCols for OneConnectionId {
+impl __sdk::__query_builder::HasIxCols for OneConnectionId {
     type IxCols = OneConnectionIdIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         OneConnectionIdIxCols {}

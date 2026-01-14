@@ -3,7 +3,7 @@
 
 #![allow(unused, clippy::all)]
 use super::vec_bool_type::VecBool;
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 /// Table handle for the table `vec_bool`.
 ///
@@ -101,11 +101,11 @@ pub(super) fn parse_table_update(
 pub trait vec_boolQueryTableAccess {
     #[allow(non_snake_case)]
     /// Get a query builder for the table `VecBool`.
-    fn vec_bool(&self) -> __query_builder::Table<VecBool>;
+    fn vec_bool(&self) -> __sdk::__query_builder::Table<VecBool>;
 }
 
 impl vec_boolQueryTableAccess for __sdk::QueryTableAccessor {
-    fn vec_bool(&self) -> __query_builder::Table<VecBool> {
-        __query_builder::Table::new("vec_bool")
+    fn vec_bool(&self) -> __sdk::__query_builder::Table<VecBool> {
+        __sdk::__query_builder::Table::new("vec_bool")
     }
 }

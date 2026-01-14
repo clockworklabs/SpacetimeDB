@@ -2,7 +2,7 @@
 // WILL NOT BE SAVED. MODIFY TABLES IN YOUR MODULE SOURCE CODE INSTEAD.
 
 #![allow(unused, clippy::all)]
-use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __query_builder, __sats, __ws};
+use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
 #[derive(__lib::ser::Serialize, __lib::de::Deserialize, Clone, PartialEq, Debug)]
 #[sats(crate = __lib)]
@@ -19,16 +19,16 @@ impl __sdk::InModule for Player {
 ///
 /// Provides typed access to columns for query building.
 pub struct PlayerCols {
-    pub entity_id: __query_builder::Col<Player, u64>,
-    pub identity: __query_builder::Col<Player, __sdk::Identity>,
+    pub entity_id: __sdk::__query_builder::Col<Player, u64>,
+    pub identity: __sdk::__query_builder::Col<Player, __sdk::Identity>,
 }
 
-impl __query_builder::HasCols for Player {
+impl __sdk::__query_builder::HasCols for Player {
     type Cols = PlayerCols;
     fn cols(table_name: &'static str) -> Self::Cols {
         PlayerCols {
-            entity_id: __query_builder::Col::new(table_name, "entity_id"),
-            identity: __query_builder::Col::new(table_name, "identity"),
+            entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
         }
     }
 }
@@ -37,16 +37,16 @@ impl __query_builder::HasCols for Player {
 ///
 /// Provides typed access to indexed columns for query building.
 pub struct PlayerIxCols {
-    pub entity_id: __query_builder::IxCol<Player, u64>,
-    pub identity: __query_builder::IxCol<Player, __sdk::Identity>,
+    pub entity_id: __sdk::__query_builder::IxCol<Player, u64>,
+    pub identity: __sdk::__query_builder::IxCol<Player, __sdk::Identity>,
 }
 
-impl __query_builder::HasIxCols for Player {
+impl __sdk::__query_builder::HasIxCols for Player {
     type IxCols = PlayerIxCols;
     fn ix_cols(table_name: &'static str) -> Self::IxCols {
         PlayerIxCols {
-            entity_id: __query_builder::IxCol::new(table_name, "entity_id"),
-            identity: __query_builder::IxCol::new(table_name, "identity"),
+            entity_id: __sdk::__query_builder::IxCol::new(table_name, "entity_id"),
+            identity: __sdk::__query_builder::IxCol::new(table_name, "identity"),
         }
     }
 }
