@@ -14,10 +14,10 @@ struct TESTCLIENT_API FUpdatePkU8Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    uint8 N;
+    uint8 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdatePkU8Args() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UUpdatePkU8Reducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    uint8 N;
+    uint8 N = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

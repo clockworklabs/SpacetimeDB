@@ -123,6 +123,21 @@ bool URemoteReducers::InvokeScheduleProc(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeScheduleProcWithArgs(const FReducerEventContext& Context, const FScheduleProcArgs& Args)
+{
+    if (!OnScheduleProc.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ScheduleProc"));
+        }
+        return false;
+    }
+
+    OnScheduleProc.Broadcast(Context);
+    return true;
+}
+
 void URemoteProcedures::InsertWithTxCommit(FOnInsertWithTxCommitComplete Callback)
 {
     if (!Conn)
@@ -499,8 +514,7 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     if (ReducerName == TEXT("schedule_proc"))
     {
         FScheduleProcArgs Args = ReducerEvent.Reducer.GetAsScheduleProc();
-        UScheduleProcReducer* Reducer = NewObject<UScheduleProcReducer>();
-        Reducers->InvokeScheduleProc(Context, Reducer);
+        Reducers->InvokeScheduleProcWithArgs(Context, Args);
         return;
     }
 
