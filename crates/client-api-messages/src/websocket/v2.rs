@@ -1,6 +1,6 @@
 pub use super::common::{CallProcedureFlags, CallReducerFlags, QuerySetId};
 use bytes::Bytes;
-use spacetimedb_lib::{ConnectionId, Identity, Timestamp};
+use spacetimedb_lib::{ConnectionId, Identity, TimeDuration, Timestamp};
 pub use spacetimedb_sats::SpacetimeType;
 
 pub const BIN_PROTOCOL: &str = "v2.bsatn.spacetimedb";
@@ -261,11 +261,11 @@ pub struct SubscriptionOk {
 /// Sent in response to a [`CallProcedure`] message.
 #[derive(SpacetimeType, Debug)]
 #[sats(crate = spacetimedb_lib)]
-pub struct ProcedureResult<F: WebsocketFormat> {
+pub struct ProcedureResult {
     /// The status of the procedure run.
     ///
     /// Contains the return value if successful, or the error message if not.
-    pub status: ProcedureStatus<F>,
+    pub status: ProcedureStatus,
     /// The time when the reducer started.
     ///
     /// Note that [`Timestamp`] serializes as `i64` nanoseconds since the Unix epoch.
