@@ -69,10 +69,7 @@ impl SpacetimeDbGuard {
         // Parse the actual bound address from logs.
         let listen_addr = wait_for_listen_addr(&logs, Duration::from_secs(10))
             .unwrap_or_else(|| panic!("Timed out waiting for SpacetimeDB to report listen address"));
-
-        let connect_addr = connectable_addr(listen_addr);
-        let host_url = format!("http://{}", connect_addr);
-
+        let host_url = format!("http://{}", listen_addr);
         let guard = SpacetimeDbGuard { child, host_url, logs };
         guard.wait_until_http_ready(Duration::from_secs(10));
         guard
@@ -194,17 +191,6 @@ fn parse_listen_addr_from_line(line: &str) -> Option<SocketAddr> {
     // Next token should be the socket address (e.g. "0.0.0.0:24326" or "[::]:24326")
     let token = rest.split_whitespace().next()?;
     token.parse::<SocketAddr>().ok()
-}
-
-/// If SpacetimeDB reports a wildcard bind (0.0.0.0 / ::), rewrite to loopback for clients.
-fn connectable_addr(listen: SocketAddr) -> SocketAddr {
-    let port = listen.port();
-    let ip = match listen.ip() {
-        IpAddr::V4(v4) if v4.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
-        IpAddr::V6(v6) if v6.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
-        other => other,
-    };
-    SocketAddr::new(ip, port)
 }
 
 impl Drop for SpacetimeDbGuard {
