@@ -394,81 +394,60 @@ pub(super) async fn call_scheduled_function(
         })
     };
 
-    enum Function {
-        Reducer(CallScheduledFunctionResult, bool),
-        Procedure {
-            params: CallProcedureParams,
-            reschedule: Option<Reschedule>,
-        },
-    }
+    let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
 
-    let next_step = {
-        let tx = db.begin_mut_tx(IsolationLevel::Serializable, Workload::Internal);
-
-        // Determine the call params.
-        // This also lets us know whether to call a reducer or procedure.
-        let params = call_params_for_queued_item(module_info, db, &tx, item);
-        let (timestamp, instant, params) = match params {
-            // If the function was already deleted, leave the `ScheduledFunction`
-            // in the database for when the module restarts.
-            Ok(None) => return (CallScheduledFunctionResult { reschedule: None }, false),
-            Ok(Some(params)) => params,
-            Err(err) => {
-                // All we can do here is log an error.
-                log::error!("could not determine scheduled function or its parameters: {err:#}");
-                let reschedule = delete_scheduled_function_row(Some(tx), None);
-                return (CallScheduledFunctionResult { reschedule }, false);
-            }
-        };
-
-        // We've determined whether we have a reducer or procedure.
-        // The logic between them will now split,
-        // as for scheduled procedures, it's incorrect to retry them if execution aborts midway,
-        // so we must remove the schedule row before executing.
-        match params {
-            CallParams::Reducer(params) => {
-                // We don't want a panic in the module host to affect the scheduler, as unlikely
-                // as it might be, so catch it so we can handle it "gracefully". Panics will
-                // print their message and backtrace when they occur, so we don't need to do
-                // anything with the error payload.
-                let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                    inst_common.call_reducer_with_tx(Some(tx), params, inst)
-                }));
-                let reschedule = delete_scheduled_function_row(None, None);
-                // Currently, we drop the return value from the function call. In the future,
-                // we might want to handle it somehow.
-                let trapped = match result {
-                    Ok((_res, trapped)) => trapped,
-                    Err(_err) => true,
-                };
-                Function::Reducer(CallScheduledFunctionResult { reschedule }, trapped)
-            }
-            CallParams::Procedure(params) => {
-                // Delete scheduled row.
-                let reschedule = delete_scheduled_function_row(Some(tx), Some((timestamp, instant)));
-                Function::Procedure { params, reschedule }
-            }
+    // Determine the call params.
+    // This also lets us know whether to call a reducer or procedure.
+    let params = call_params_for_queued_item(module_info, db, &tx, item);
+    let (timestamp, instant, params) = match params {
+        // If the function was already deleted, leave the `ScheduledFunction`
+        // in the database for when the module restarts.
+        Ok(None) => return (CallScheduledFunctionResult { reschedule: None }, false),
+        Ok(Some(params)) => params,
+        Err(err) => {
+            // All we can do here is log an error.
+            log::error!("could not determine scheduled function or its parameters: {err:#}");
+            let reschedule = delete_scheduled_function_row(Some(tx), None);
+            return (CallScheduledFunctionResult { reschedule }, false);
         }
     };
 
-    // Below code is outside of the DB transaction scope because the
-    // compiler complains about holding mutable borrow across await point while calling a procedure,
-    // even though it has been already moved during `delete_scheduled_function_row` call.
-    match next_step {
-        Function::Reducer(result, trapped) => (result, trapped),
-        Function::Procedure { params, reschedule } => {
-            // Execute the procedure. See above for commentary on `catch_unwind()`.
-            let result = panic::AssertUnwindSafe(inst_common.call_procedure(params, inst))
-                .catch_unwind()
-                .await;
-
+    // We've determined whether we have a reducer or procedure.
+    // The logic between them will now split,
+    // as for scheduled procedures, it's incorrect to retry them if execution aborts midway,
+    // so we must remove the schedule row before executing.
+    match params {
+        CallParams::Reducer(params) => {
+            // We don't want a panic in the module host to affect the scheduler, as unlikely
+            // as it might be, so catch it so we can handle it "gracefully". Panics will
+            // print their message and backtrace when they occur, so we don't need to do
+            // anything with the error payload.
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                inst_common.call_reducer_with_tx(Some(tx), params, inst)
+            }));
+            let reschedule = delete_scheduled_function_row(None, None);
             // Currently, we drop the return value from the function call. In the future,
             // we might want to handle it somehow.
             let trapped = match result {
                 Ok((_res, trapped)) => trapped,
                 Err(_err) => true,
             };
+            (CallScheduledFunctionResult { reschedule }, trapped)
+        }
+        CallParams::Procedure(params) => {
+            // Delete scheduled row.
+            let reschedule = delete_scheduled_function_row(Some(tx), Some((timestamp, instant)));
 
+            // Execute the procedure. See above for commentary on `catch_unwind()`.
+            let result = panic::AssertUnwindSafe(inst_common.call_procedure(params, inst))
+                .catch_unwind()
+                .await;
+            // Currently, we drop the return value from the function call. In the future,
+            // we might want to handle it somehow.
+            let trapped = match result {
+                Ok((_res, trapped)) => trapped,
+                Err(_err) => true,
+            };
             (CallScheduledFunctionResult { reschedule }, trapped)
         }
     }
