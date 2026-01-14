@@ -10,6 +10,7 @@ import { type EventContextInterface } from '../sdk/db_connection_impl';
 import type { ConnectionState } from './connection_state';
 import type { UntypedRemoteModule } from '../sdk/spacetime_module';
 import type { RowType, UntypedTableDef } from '../lib/table';
+import { Uuid } from '../lib/uuid';
 import type { Prettify } from '../lib/type_util';
 
 export interface UseTableCallbacks<RowType> {
@@ -18,7 +19,7 @@ export interface UseTableCallbacks<RowType> {
   onUpdate?: (oldRow: RowType, newRow: RowType) => void;
 }
 
-export type Value = string | number | boolean;
+export type Value = string | number | boolean | Uuid;
 
 export type Expr<Column extends string> =
   | { type: 'eq'; key: Column; value: Value }
@@ -76,6 +77,7 @@ export function evaluate<Column extends string>(
 ): boolean {
   switch (expr.type) {
     case 'eq': {
+      // The actual value of the Column
       const v = row[expr.key];
       if (
         typeof v === 'string' ||
@@ -83,6 +85,16 @@ export function evaluate<Column extends string>(
         typeof v === 'boolean'
       ) {
         return v === expr.value;
+      }
+      if (typeof v === 'object') {
+        // Value of the Column and passed Value are both a Uuid so do an integer comparison. 
+        if (v instanceof Uuid && expr.value instanceof Uuid) {
+          return v.asBigInt() === expr.value.asBigInt();
+        }
+        // Value of the Column is a Uuid but passed Value is a String so compare them via string. 
+        if (v instanceof Uuid && typeof expr.value === 'string') {
+          return v.toString() === expr.value;
+        }
       }
       return false;
     }
@@ -105,6 +117,13 @@ function formatValue(v: Value): string {
       return Number.isFinite(v) ? String(v) : `'${String(v)}'`;
     case 'boolean':
       return v ? 'TRUE' : 'FALSE';
+    case 'object': {
+      if (v instanceof Uuid) {
+        return `'${v.toString()}'`;
+      }
+
+      return '';
+    }
   }
 }
 
@@ -290,8 +309,8 @@ export function useTable<TableDef extends UntypedTableDef>(
   } catch {
     throw new Error(
       'Could not find SpacetimeDB client! Did you forget to add a ' +
-        '`SpacetimeDBProvider`? `useTable` must be used in the React component tree ' +
-        'under a `SpacetimeDBProvider` component.'
+      '`SpacetimeDBProvider`? `useTable` must be used in the React component tree ' +
+      'under a `SpacetimeDBProvider` component.'
     );
   }
 
@@ -317,8 +336,8 @@ export function useTable<TableDef extends UntypedTableDef>(
     const table = connection.db[accessorName];
     const result: readonly Prettify<UseTableRowType>[] = whereClause
       ? (Array.from(table.iter()).filter(row =>
-          evaluate(whereClause, row as UseTableRowType)
-        ) as Prettify<UseTableRowType>[])
+        evaluate(whereClause, row as UseTableRowType)
+      ) as Prettify<UseTableRowType>[])
       : (Array.from(table.iter()) as Prettify<UseTableRowType>[]);
     return [result, subscribeApplied];
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -410,7 +429,7 @@ export function useTable<TableDef extends UntypedTableDef>(
 
       const connection = connectionState.getConnection();
       if (!connection) {
-        return () => {};
+        return () => { };
       }
 
       const table = connection.db[accessorName];
