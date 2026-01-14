@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
+#include "Containers/Ticker.h"  // For FTSTicker - thread-safe ticker for manual tick registration
 #include "Types/Builtins.h"
 #include "Websocket.h"
 #include "Subscription.h"
@@ -10,6 +11,7 @@
 #include "HAL/CriticalSection.h"
 #include "Containers/Queue.h"
 #include "HAL/ThreadSafeBool.h"
+#include <atomic>
 #include "BSATN/UEBSATNHelpers.h"
 #include "Connection/SetReducerFlags.h"
 #include "Connection/Callback.h"
@@ -69,15 +71,28 @@ FORCEINLINE uint32 GetTypeHash(const FPreprocessedTableKey& Key)
 	return HashCombine(GetTypeHash(Key.TableId), GetTypeHash(Key.TableName));
 }
 
+/**
+ * ROOT CAUSE FIX: Removed FTickableGameObject inheritance entirely.
+ *
+ * FTickableGameObject registers itself in its constructor BEFORE our constructor body runs.
+ * Even with ETickableTickType::Never, UE's GENERATED_BODY() macro may interfere with
+ * base class initialization order, causing the default constructor to be called instead.
+ *
+ * Instead, we use FTSTicker (Thread-Safe Ticker) for manual tick registration.
+ * This gives us complete control over when ticking is enabled/disabled.
+ */
 UCLASS()
-class SPACETIMEDBSDK_API UDbConnectionBase : public UObject, public FTickableGameObject
+class SPACETIMEDBSDK_API UDbConnectionBase : public UObject
 {
 	GENERATED_BODY()
 
 public:
 
-	/** The default constructor is private to prevent instantiation without using the builder. */
+	/** Default constructor. Ticking is NOT enabled by default - call SetAutoTicking(true) to enable. */
 	explicit UDbConnectionBase(const FObjectInitializer& ObjectInitializer = FObjectInitializer::Get());
+
+	/** Destructor - ensures ticker delegate is unbound. */
+	virtual ~UDbConnectionBase();
 
 	/** Disconnect from the server. */
 	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
@@ -90,8 +105,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
 	void FrameTick();
 
+	/**
+	 * Enables or disables automatic ticking for this connection.
+	 * When enabled, FrameTick() will be called automatically each frame.
+	 * This uses SetTickableTickType() to properly register/unregister with the tick system.
+	 */
 	UFUNCTION(BlueprintCallable, Category="SpacetimeDB")
-	void SetAutoTicking(bool bAutoTick) { bIsAutoTicking = bAutoTick; }
+	void SetAutoTicking(bool bAutoTick);
 
 	/** Send a raw JSON message to the server. */
 	bool SendRawMessage(const FString& Message);
@@ -109,6 +129,41 @@ public:
 	/** Get the current connection id. This is used to identify the connection. */
 	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
 	FSpacetimeDBConnectionId GetConnectionId() const;
+
+	// ============ Diagnostic Methods (for memory debugging) ============
+
+	/** Get count of active subscriptions (for diagnostics) */
+	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+	int32 GetActiveSubscriptionCount() const;
+
+	/** Get count of pending messages in queue (for diagnostics) */
+	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+	int32 GetPendingMessageCount() const;
+
+	/** Get count of preprocessed messages waiting (for diagnostics) */
+	UFUNCTION(BlueprintPure, Category = "SpacetimeDB")
+	int32 GetPreprocessedMessageCount() const;
+
+	/** Get size of incomplete compressed buffer (for diagnostics) */
+	int32 GetIncompleteCompressedBufferSize() const { return IncompleteCompressedBuffer.Num(); }
+
+	/** Get size of preprocessed table data map (for diagnostics) */
+	int32 GetPreprocessedTableDataCount() const;
+
+	/** Get the next expected release ID (for diagnosing stuck reorder buffer) */
+	int32 GetNextReleaseId() const { return NextReleaseId; }
+
+	/** Get the next preprocess ID (for diagnosing stuck reorder buffer) */
+	int32 GetNextPreprocessId() const { return NextPreprocessId.GetValue(); }
+
+	/** Get the underlying WebSocket manager (for diagnostics) */
+	UWebsocketManager* GetWebSocket() const { return WebSocket; }
+
+	/** Get total bytes received since connection (for diagnostics) */
+	int64 GetTotalBytesReceived() const { return TotalBytesReceived.load(); }
+
+	/** Get total messages received since connection (for diagnostics) */
+	int64 GetTotalMessagesReceived() const { return TotalMessagesReceived.load(); }
 
 	// Typed reducer call helper: hides BSATN bytes from callers.
 	template<typename ArgsStruct>
@@ -231,13 +286,8 @@ protected:
 	UFUNCTION()
 	void HandleWSBinaryMessage(const TArray<uint8>& Message);
 
-	virtual void Tick(float DeltaTime) override;
-
-	virtual TStatId GetStatId() const override;
-
-	virtual bool IsTickable() const override;
-
-	virtual bool IsTickableInEditor() const override;
+	/** Called by FTSTicker each frame when auto-ticking is enabled. */
+	bool OnTickerTick(float DeltaTime);
 
 	/** Internal handler that processes a single server message. */
 	void ProcessServerMessage(const FServerMessageType& Message);
@@ -247,6 +297,18 @@ protected:
 	bool DecompressPayload(ECompressableQueryUpdateTag Variant, const TArray<uint8>& In, TArray<uint8>& Out);
 	bool DecompressGzip(const TArray<uint8>& InData, TArray<uint8>& OutData);
 	bool DecompressBrotli(const TArray<uint8>& InData, TArray<uint8>& OutData);
+
+	/** Mutex protecting the compressed message accumulation buffer. */
+	FCriticalSection CompressedBufferMutex;
+
+	/** Buffer for incomplete compressed messages that span multiple WebSocket frames. */
+	TArray<uint8> IncompleteCompressedBuffer;
+
+	/** The compression type of the buffered incomplete message. */
+	ECompressableQueryUpdateTag BufferedCompressionType = ECompressableQueryUpdateTag::Uncompressed;
+
+	/** Whether we're currently accumulating a fragmented compressed message. */
+	bool bAccumulatingCompressedMessage = false;
 
 	/** Pending messages awaiting processing on the game thread. */
 	TArray<FServerMessageType> PendingMessages;
@@ -265,6 +327,10 @@ protected:
 
 	/** Id of the next message expected to be released. */
 	int32 NextReleaseId = 0;
+
+	/** Diagnostic counters for memory leak tracking */
+	std::atomic<int64> TotalBytesReceived{0};
+	std::atomic<int64> TotalMessagesReceived{0};
 
 	// Map of table name to row deserializer
 	TMap<FString, TSharedPtr<UE::SpacetimeDB::ITableRowDeserializer>> TableDeserializers;
@@ -356,6 +422,9 @@ protected:
 
 	UPROPERTY()
 	bool bIsAutoTicking = false;
+
+	/** Handle for the FTSTicker delegate - used to unregister when ticking is disabled or object destroyed. */
+	FTSTicker::FDelegateHandle TickerHandle;
 
 	UPROPERTY()
 	FOnConnectErrorDelegate OnConnectErrorDelegate;
