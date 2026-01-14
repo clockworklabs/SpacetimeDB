@@ -566,7 +566,7 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     where
         P: WithPointArg<K>,
     {
-        filter_point::<Tbl, Idx, P, K>(point)
+        filter_point::<Tbl, Idx, K>(point)
     }
 
     /// Deletes all rows in the database state
@@ -616,14 +616,17 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx>
     }
 }
 
-fn filter_point<Tbl, Idx, P, K>(p: P) -> impl Iterator<Item = Tbl::Row>
+/// Scans `Tbl` for `point` using the index `Idx`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+fn filter_point<Tbl, Idx, K>(point: impl WithPointArg<K>) -> impl Iterator<Item = Tbl::Row>
 where
     Tbl: Table,
     Idx: IndexIsPointed,
-    P: WithPointArg<K>,
 {
     let index_id = Idx::index_id();
-    let iter = p.with_point_arg(|point| {
+    let iter = point.with_point_arg(|point| {
         sys::datastore_index_scan_point_bsatn(index_id, point)
             .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
     });
@@ -651,11 +654,14 @@ impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexTy
     where
         P: WithPointArg<K>,
     {
-        filter_point::<Tbl, Idx, P, K>(point)
+        filter_point::<Tbl, Idx, K>(point)
     }
 }
 
 /// Trait used for running point index scans.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 pub trait WithPointArg<K = ()> {
     /// Runs `run` with the BSATN-serialized point to pass to the index scan.
     // TODO(perf, centril): once we have stable specialization,
@@ -933,6 +939,10 @@ impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx>
     }
 }
 
+/// Performs a ranged scan using the range arguments `B` in `Tbl` using `Idx`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 fn filter<Tbl, Idx, IndexType, B, K>(b: B) -> impl Iterator<Item = Tbl::Row>
 where
     Tbl: Table,
@@ -982,12 +992,18 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx>
 }
 
 /// Returns whether `B` is a point scan on `I`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 const fn is_point_scan<I: Index, B: IndexScanRangeBounds<T, K>, T, K>() -> bool {
     B::POINT && B::COLS_PROVIDED == I::NUM_COLS_INDEXED
 }
 
 /// Trait used for overloading methods on [`RangedIndex`].
 /// See [`RangedIndex`] for more information.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 pub trait IndexScanRangeBounds<T, K = ()> {
     /// True if no range occurs in this range bounds.
     #[doc(hidden)]
