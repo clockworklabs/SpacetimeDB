@@ -3,6 +3,9 @@
 !/*/*/
 /*/*/*
 
+!/spacetimedb.bsatn.runtime/unversioned/**
+!/spacetimedb.runtime/unversioned/**
+
 !/*/*/analyzers
 !/*/*/analyzers.meta
 !/*/*/analyzers/**
