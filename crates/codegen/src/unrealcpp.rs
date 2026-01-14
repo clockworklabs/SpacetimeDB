@@ -9,7 +9,6 @@ use crate::Lang;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
-use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -70,210 +69,211 @@ impl Lang for UnrealCpp<'_> {
                 continue;
             };
 
-            if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &idx.algorithm {
-                if schema.is_unique(columns) {
-                    if let Some(col) = columns.as_singleton() {
-                        let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                        let field_name = f_name.deref().to_case(Case::Pascal);
-                        let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
-                        let index_name = accessor_name.deref().to_case(Case::Pascal);
-                        let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
-                        let key_type = field_type.clone();
-                        let field_name_lowercase = field_name.to_lowercase();
-
-                        writeln!(output, "UCLASS(Blueprintable)");
-                        writeln!(
-                            output,
-                            "class {} {index_class_name} : public UObject",
-                            self.get_api_macro()
-                        );
-                        writeln!(output, "{{");
-                        writeln!(output, "    GENERATED_BODY()");
-                        writeln!(output);
-                        writeln!(output, "private:");
-                        writeln!(output, "    // Declare an instance of your templated helper.");
-                        writeln!(
-                            output,
-                            "    // It's private because the UObject wrapper will expose its functionality."
-                        );
-                        writeln!(
-                            output,
-                            "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
-                        );
-                        writeln!(output);
-                        writeln!(output, "public:");
-                        writeln!(output, "    {index_class_name}()");
-                        writeln!(
-                            output,
-                            "        // Initialize the helper with the specific unique index name"
-                        );
-                        writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
-                        writeln!(output, "    }}");
-                        writeln!(output);
-                        writeln!(output, "    /**");
-                        writeln!(
-                            output,
-                            "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
-                        );
-                        writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
-                        writeln!(
-                            output,
-                            "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
-                        );
-                        writeln!(output, "     */");
-
-                        // Only mark as BlueprintCallable if the key type is Blueprint-compatible
-                        if is_blueprintable(module, f_ty) {
-                            writeln!(
-                                output,
-                                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
-                            );
-                        } else {
-                            writeln!(
-                                output,
-                                "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"                                
-                            );
-                        }
-
-                        writeln!(output, "    {row_struct} Find({key_type} Key)");
-                        writeln!(output, "    {{");
-                        writeln!(output, "        // Simply delegate the call to the internal helper");
-                        writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
-                        writeln!(output, "    }}");
-                        writeln!(output);
-                        writeln!(
-                            output,
-                            "    // A public setter to provide the cache to the helper after construction"
-                        );
-                        writeln!(output, "    // This is a common pattern when the cache might be created or provided by another system.");
-                        writeln!(
-                            output,
-                            "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
-                        );
-                        writeln!(output, "    {{");
-                        writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
-                        writeln!(output, "    }}");
-                        writeln!(output, "}};");
-                        writeln!(output, "/***/");
-                        writeln!(output);
-
-                        unique_indexes.push((index_name, index_class_name, field_type, f_name.deref().to_string()));
-                    }
-                }
-                // Handle non-unique BTree indexes
-                else {
-                    // Generate non-unique BTree index class
-                    let _index_name = accessor_name.deref().to_case(Case::Pascal);
-                    let index_class_name = format!("U{table_pascal}{_index_name}Index");
-
-                    // Get column information
-                    let column_info: Vec<_> = columns
-                        .iter()
-                        .map(|col| {
-                            let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                            let field_name = f_name.deref().to_case(Case::Pascal);
-                            let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
-                            let param_type = format!("const {field_type}&");
-
-                            (field_name, field_type, param_type, f_ty, f_name.deref().to_string())
-                        })
-                        .collect();
-
-                    // Create filter method name by concatenating column names
-                    let filter_method_name = format!(
-                        "Filter{}",
-                        column_info
-                            .iter()
-                            .map(|(name, _, _, _, _)| name.as_str())
-                            .collect::<Vec<_>>()
-                            .join("")
-                    );
-
-                    // Create parameter list for methods
-                    let method_params = column_info
-                        .iter()
-                        .map(|(field_name, _, param_type, _, _)| format!("{param_type} {field_name}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Create parameter names for internal call
-                    let param_names = column_info
-                        .iter()
-                        .map(|(field_name, _, _, _, _)| field_name.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Create TTuple type for FindByMultiKeyBTreeIndex
-                    let tuple_types = column_info
-                        .iter()
-                        .map(|(_, field_type, _, _, _)| field_type.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // This is a potential bug in the original code, but keeping it as is for now
-                    // Originally Arvikasoft had if column_info.len() == 1 { format!("TTuple<{tuple_types}>"); } else { format!("TTuple<{tuple_types}>"); }
-                    // This makes no sense since both branches are the same
-                    let tuple_type = format!("TTuple<{tuple_types}>");
+            // Whatever the index algorithm on the host,
+            // the client can still use btrees.
+            let columns = idx.algorithm.columns();
+            if schema.is_unique(&columns) {
+                if let Some(col) = columns.as_singleton() {
+                    let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                    let field_name = f_name.deref().to_case(Case::Pascal);
+                    let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
+                    let index_name = accessor_name.deref().to_case(Case::Pascal);
+                    let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
+                    let key_type = field_type.clone();
+                    let field_name_lowercase = field_name.to_lowercase();
 
                     writeln!(output, "UCLASS(Blueprintable)");
-                    writeln!(output, "class {index_class_name} : public UObject");
+                    writeln!(
+                        output,
+                        "class {} {index_class_name} : public UObject",
+                        self.get_api_macro()
+                    );
                     writeln!(output, "{{");
                     writeln!(output, "    GENERATED_BODY()");
                     writeln!(output);
-                    writeln!(output, "public:");
-
-                    writeln!(output, "    TArray<{row_struct}> Filter({method_params}) const");
-                    writeln!(output, "    {{");
-                    writeln!(output, "        TArray<{row_struct}> OutResults;");
-                    writeln!(output);
-                    writeln!(output, "        LocalCache->FindByMultiKeyBTreeIndex<{tuple_type}>(");
-                    writeln!(output, "            OutResults,");
-                    writeln!(output, "            TEXT(\"{}\"),", accessor_name.deref());
-                    writeln!(output, "            MakeTuple({param_names})");
-                    writeln!(output, "        );");
-                    writeln!(output);
-                    writeln!(output, "        return OutResults;");
-                    writeln!(output, "    }}");
-                    writeln!(output);
-
+                    writeln!(output, "private:");
+                    writeln!(output, "    // Declare an instance of your templated helper.");
                     writeln!(
                         output,
-                        "    void SetCache(TSharedPtr<FTableCache<{row_struct}>> InCache)"
+                        "    // It's private because the UObject wrapper will expose its functionality."
                     );
-                    writeln!(output, "    {{");
-                    writeln!(output, "        LocalCache = InCache;");
+                    writeln!(
+                            output,
+                            "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
+                        );
+                    writeln!(output);
+                    writeln!(output, "public:");
+                    writeln!(output, "    {index_class_name}()");
+                    writeln!(
+                        output,
+                        "        // Initialize the helper with the specific unique index name"
+                    );
+                    writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
                     writeln!(output, "    }}");
                     writeln!(output);
-                    writeln!(output, "private:");
+                    writeln!(output, "    /**");
+                    writeln!(
+                        output,
+                        "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
+                    );
+                    writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
+                    writeln!(
+                        output,
+                        "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
+                    );
+                    writeln!(output, "     */");
 
-                    // Check if all parameter types are Blueprint-compatible
-                    let all_blueprintable = column_info
-                        .iter()
-                        .all(|(_, _, _, f_ty, _)| is_blueprintable(module, f_ty));
-
-                    if all_blueprintable {
-                        writeln!(output, "    UFUNCTION(BlueprintCallable)");
+                    // Only mark as BlueprintCallable if the key type is Blueprint-compatible
+                    if is_blueprintable(module, f_ty) {
+                        writeln!(
+                            output,
+                            "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
+                        );
                     } else {
-                        writeln!(output, "    // NOTE: Not exposed to Blueprint because some parameter types are not Blueprint-compatible");
+                        writeln!(
+                                output,
+                                "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"
+                            );
                     }
 
-                    writeln!(
-                        output,
-                        "    void {filter_method_name}(TArray<{row_struct}>& OutResults, {method_params})"
-                    );
+                    writeln!(output, "    {row_struct} Find({key_type} Key)");
                     writeln!(output, "    {{");
-                    writeln!(output, "        OutResults = Filter({param_names});");
+                    writeln!(output, "        // Simply delegate the call to the internal helper");
+                    writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
                     writeln!(output, "    }}");
                     writeln!(output);
-
-                    writeln!(output, "    TSharedPtr<FTableCache<{row_struct}>> LocalCache;");
+                    writeln!(
+                        output,
+                        "    // A public setter to provide the cache to the helper after construction"
+                    );
+                    writeln!(output, "    // This is a common pattern when the cache might be created or provided by another system.");
+                    writeln!(
+                        output,
+                        "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
+                    );
+                    writeln!(output, "    {{");
+                    writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
+                    writeln!(output, "    }}");
                     writeln!(output, "}};");
+                    writeln!(output, "/***/");
                     writeln!(output);
 
-                    // Store information for PostInitialize generation
-                    let property_name = accessor_name.deref().to_case(Case::Pascal);
-                    multi_key_indexes.push((property_name, index_class_name));
+                    unique_indexes.push((index_name, index_class_name, field_type, f_name.deref().to_string()));
                 }
+            }
+            // Handle non-unique BTree indexes
+            else {
+                // Generate non-unique BTree index class
+                let _index_name = accessor_name.deref().to_case(Case::Pascal);
+                let index_class_name = format!("U{table_pascal}{_index_name}Index");
+
+                // Get column information
+                let column_info: Vec<_> = columns
+                    .iter()
+                    .map(|col| {
+                        let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                        let field_name = f_name.deref().to_case(Case::Pascal);
+                        let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
+                        let param_type = format!("const {field_type}&");
+
+                        (field_name, field_type, param_type, f_ty, f_name.deref().to_string())
+                    })
+                    .collect();
+
+                // Create filter method name by concatenating column names
+                let filter_method_name = format!(
+                    "Filter{}",
+                    column_info
+                        .iter()
+                        .map(|(name, _, _, _, _)| name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("")
+                );
+
+                // Create parameter list for methods
+                let method_params = column_info
+                    .iter()
+                    .map(|(field_name, _, param_type, _, _)| format!("{param_type} {field_name}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Create parameter names for internal call
+                let param_names = column_info
+                    .iter()
+                    .map(|(field_name, _, _, _, _)| field_name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Create TTuple type for FindByMultiKeyBTreeIndex
+                let tuple_types = column_info
+                    .iter()
+                    .map(|(_, field_type, _, _, _)| field_type.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // This is a potential bug in the original code, but keeping it as is for now
+                // Originally Arvikasoft had if column_info.len() == 1 { format!("TTuple<{tuple_types}>"); } else { format!("TTuple<{tuple_types}>"); }
+                // This makes no sense since both branches are the same
+                let tuple_type = format!("TTuple<{tuple_types}>");
+
+                writeln!(output, "UCLASS(Blueprintable)");
+                writeln!(output, "class {index_class_name} : public UObject");
+                writeln!(output, "{{");
+                writeln!(output, "    GENERATED_BODY()");
+                writeln!(output);
+                writeln!(output, "public:");
+
+                writeln!(output, "    TArray<{row_struct}> Filter({method_params}) const");
+                writeln!(output, "    {{");
+                writeln!(output, "        TArray<{row_struct}> OutResults;");
+                writeln!(output);
+                writeln!(output, "        LocalCache->FindByMultiKeyBTreeIndex<{tuple_type}>(");
+                writeln!(output, "            OutResults,");
+                writeln!(output, "            TEXT(\"{}\"),", accessor_name.deref());
+                writeln!(output, "            MakeTuple({param_names})");
+                writeln!(output, "        );");
+                writeln!(output);
+                writeln!(output, "        return OutResults;");
+                writeln!(output, "    }}");
+                writeln!(output);
+
+                writeln!(
+                    output,
+                    "    void SetCache(TSharedPtr<FTableCache<{row_struct}>> InCache)"
+                );
+                writeln!(output, "    {{");
+                writeln!(output, "        LocalCache = InCache;");
+                writeln!(output, "    }}");
+                writeln!(output);
+                writeln!(output, "private:");
+
+                // Check if all parameter types are Blueprint-compatible
+                let all_blueprintable = column_info
+                    .iter()
+                    .all(|(_, _, _, f_ty, _)| is_blueprintable(module, f_ty));
+
+                if all_blueprintable {
+                    writeln!(output, "    UFUNCTION(BlueprintCallable)");
+                } else {
+                    writeln!(output, "    // NOTE: Not exposed to Blueprint because some parameter types are not Blueprint-compatible");
+                }
+
+                writeln!(
+                    output,
+                    "    void {filter_method_name}(TArray<{row_struct}>& OutResults, {method_params})"
+                );
+                writeln!(output, "    {{");
+                writeln!(output, "        OutResults = Filter({param_names});");
+                writeln!(output, "    }}");
+                writeln!(output);
+
+                writeln!(output, "    TSharedPtr<FTableCache<{row_struct}>> LocalCache;");
+                writeln!(output, "}};");
+                writeln!(output);
+
+                // Store information for PostInitialize generation
+                let property_name = accessor_name.deref().to_case(Case::Pascal);
+                multi_key_indexes.push((property_name, index_class_name));
             }
         }
 
@@ -1037,38 +1037,39 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str, s
         let Some(accessor_name) = idx.accessor_name.as_ref() else {
             continue;
         };
-        if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &idx.algorithm {
-            if schema.is_unique(columns) {
-                if let Some(col) = columns.as_singleton() {
-                    let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                    let _field_name = f_name.deref().to_case(Case::Pascal);
-                    let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
-                    let index_name = accessor_name.deref().to_case(Case::Pascal);
-                    unique_indexes.push((index_name, field_type, f_name.deref().to_string()));
-                }
-            } else {
-                // Non-unique BTree index
+        // Whatever the index algorithm on the host,
+        // the client can still use btrees.
+        let columns = idx.algorithm.columns();
+        if schema.is_unique(&columns) {
+            if let Some(col) = columns.as_singleton() {
+                let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                let _field_name = f_name.deref().to_case(Case::Pascal);
+                let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
                 let index_name = accessor_name.deref().to_case(Case::Pascal);
-                let index_class_name = format!("U{table_pascal}{index_name}Index");
-
-                // Collect column information for AddMultiKeyBTreeIndex call
-                let column_info: Vec<_> = columns
-                    .iter()
-                    .map(|col| {
-                        let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                        let field_name = f_name.deref().to_case(Case::Pascal);
-                        let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
-                        (field_name, field_type)
-                    })
-                    .collect();
-
-                multi_key_indexes.push((
-                    index_name,
-                    index_class_name,
-                    accessor_name.deref().to_string(),
-                    column_info,
-                ));
+                unique_indexes.push((index_name, field_type, f_name.deref().to_string()));
             }
+        } else {
+            // Non-unique BTree index
+            let index_name = accessor_name.deref().to_case(Case::Pascal);
+            let index_class_name = format!("U{table_pascal}{index_name}Index");
+
+            // Collect column information for AddMultiKeyBTreeIndex call
+            let column_info: Vec<_> = columns
+                .iter()
+                .map(|col| {
+                    let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                    let field_name = f_name.deref().to_case(Case::Pascal);
+                    let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
+                    (field_name, field_type)
+                })
+                .collect();
+
+            multi_key_indexes.push((
+                index_name,
+                index_class_name,
+                accessor_name.deref().to_string(),
+                column_info,
+            ));
         }
     }
 
@@ -2508,10 +2509,17 @@ fn generate_remote_reducers_class(
         writeln!(output, ");");
         writeln!(output);
 
-        // Generate invoke method
+        // Generate invoke method (UObject version - kept for backwards compatibility)
         write!(
             output,
             "    bool Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args);"
+        );
+        writeln!(output);
+
+        // Generate invoke method (FArgs version - zero allocation, used internally)
+        write!(
+            output,
+            "    bool Invoke{reducer_pascal}WithArgs(const FReducerEventContext& Context, const F{reducer_pascal}Args& Args);"
         );
         writeln!(output);
         writeln!(output);
@@ -3190,18 +3198,13 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
             output,
             "        F{reducer_pascal}Args Args = ReducerEvent.Reducer.GetAs{reducer_pascal}();"
         );
+        // FIX: Pass FArgs directly to InvokeWithArgs instead of creating UReducer UObject.
+        // UObject creation/destruction cannot keep up at 30Hz tick rate, causing memory leak.
+        // Stack-allocated FArgs struct has zero allocation overhead.
         writeln!(
             output,
-            "        U{reducer_pascal}Reducer* Reducer = NewObject<U{reducer_pascal}Reducer>();"
+            "        Reducers->Invoke{reducer_pascal}WithArgs(Context, Args);"
         );
-
-        // Copy fields from Args struct to Reducer object
-        for (param_name, _) in &reducer.params_for_generate.elements {
-            let param_pascal = param_name.deref().to_case(Case::Pascal);
-            writeln!(output, "        Reducer->{param_pascal} = Args.{param_pascal};");
-        }
-
-        writeln!(output, "        Reducers->Invoke{reducer_pascal}(Context, Reducer);");
         writeln!(output, "        return;");
         writeln!(output, "    }}");
     }
@@ -3698,6 +3701,44 @@ fn generate_remote_reducer_calls(output: &mut UnrealCppAutogen, module: &ModuleD
             for (param_name, _) in &reducer.params_for_generate.elements {
                 let param_pascal = param_name.deref().to_case(Case::Pascal);
                 write!(output, ", Args->{param_pascal}");
+            }
+            writeln!(output, ");");
+        }
+
+        writeln!(output, "    return true;");
+        writeln!(output, "}}");
+        writeln!(output);
+
+        // InvokeWithArgs method implementation (zero allocation version)
+        write!(
+            output,
+            "bool URemoteReducers::Invoke{reducer_pascal}WithArgs(const FReducerEventContext& Context, const F{reducer_pascal}Args& Args)"
+        );
+        writeln!(output);
+        writeln!(output, "{{");
+        writeln!(output, "    if (!On{reducer_pascal}.IsBound())");
+        writeln!(output, "    {{");
+        writeln!(output, "        if (InternalOnUnhandledReducerError.IsBound())");
+        writeln!(output, "        {{");
+        writeln!(
+            output,
+            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {reducer_pascal}\"));"
+        );
+        writeln!(output, "        }}");
+        writeln!(output, "        return false;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        // Check if we're using args struct (more than 9 params including context)
+        if use_args_struct {
+            // Pass args struct directly
+            writeln!(output, "    On{reducer_pascal}.Broadcast(Context, Args);");
+        } else {
+            // Use individual parameters from Args struct
+            write!(output, "    On{reducer_pascal}.Broadcast(Context");
+            for (param_name, _) in &reducer.params_for_generate.elements {
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(output, ", Args.{param_pascal}");
             }
             writeln!(output, ");");
         }
