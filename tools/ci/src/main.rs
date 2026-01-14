@@ -106,12 +106,8 @@ fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
         }
     }
 
-    best.map(|(_, p)| p).ok_or_else(|| {
-        anyhow::anyhow!(
-            "Could not find any versioned directories under {}",
-            dir.display()
-        )
-    })
+    best.map(|(_, p)| p)
+        .ok_or_else(|| anyhow::anyhow!("Could not find any versioned directories under {}", dir.display()))
 }
 
 fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
@@ -354,14 +350,7 @@ fn main() -> Result<()> {
                 "Release"
             )
             .run()?;
-            cmd!(
-                "dotnet",
-                "pack",
-                "crates/bindings-csharp/Runtime",
-                "-c",
-                "Release"
-            )
-            .run()?;
+            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
 
             let repo_root = env::current_dir()?;
             let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
