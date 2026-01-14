@@ -1485,7 +1485,6 @@ mod test {
         proptest::{generate_product_value, generate_row_type},
         AlgebraicType, ProductType, ProductValue,
     };
-    use spacetimedb_schema::def::HashAlgorithm;
 
     fn gen_cols(ty_len: usize) -> impl Strategy<Value = ColList> {
         vec((0..ty_len as u16).prop_map_into::<ColId>(), 1..=ty_len)
@@ -1566,8 +1565,7 @@ mod test {
 
         #[test]
         fn hash_index_cannot_seek_range((ty, cols, pv) in gen_row_and_cols(), is_unique: bool) {
-            let algo = HashAlgorithm { columns: cols.clone() }.into();
-            let index = TableIndex::new(&ty, &algo, is_unique).unwrap();
+            let index = TableIndex::new(&ty, cols.clone(), IndexKind::Hash, is_unique).unwrap();
 
             let key = pv.project(&cols).unwrap();
             assert_eq!(index.seek_range(&(key.clone()..=key)).unwrap_err(), IndexCannotSeekRange);
