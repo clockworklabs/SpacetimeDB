@@ -3,7 +3,6 @@ title: React Integration
 slug: /spacetimeauth/react-integration
 ---
 
-# React Integration
 
 :::warning
 

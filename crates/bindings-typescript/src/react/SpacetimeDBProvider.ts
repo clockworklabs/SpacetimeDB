@@ -22,8 +22,12 @@ export function SpacetimeDBProvider<
   connectionBuilder,
   children,
 }: SpacetimeDBProviderProps<DbConnection>): React.JSX.Element {
-  // Holds the imperative connection instance when (and only when) we’re on the client.
+  // Holds the imperative connection instance when (and only when) we're on the client.
   const connRef = React.useRef<DbConnection | null>(null);
+  // Used to detect React StrictMode vs real unmounts (see cleanup comment below)
+  const cleanupTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const getConnection = React.useCallback(() => connRef.current, []);
 
   const [state, setState] = React.useState<ConnectionState>({
@@ -37,6 +41,12 @@ export function SpacetimeDBProvider<
 
   // Build on the client only; useEffect won't run during SSR.
   React.useEffect(() => {
+    // If we're remounting after a StrictMode unmount, cancel the pending disconnect
+    if (cleanupTimeoutRef.current) {
+      clearTimeout(cleanupTimeoutRef.current);
+      cleanupTimeoutRef.current = null;
+    }
+
     if (!connRef.current) {
       connRef.current = connectionBuilder.build();
     }
@@ -85,8 +95,25 @@ export function SpacetimeDBProvider<
       connRef.current?.removeOnConnect(onConnect as any);
       connRef.current?.removeOnDisconnect(onDisconnect as any);
       connRef.current?.removeOnConnectError(onConnectError as any);
-      connRef.current?.disconnect();
-      connRef.current = null;
+
+      // Detect React StrictMode vs real unmounts using a deferred disconnect.
+      //
+      // In StrictMode, React unmounts and remounts components synchronously
+      // (in the same JavaScript task) to help detect side-effect issues.
+      // By deferring disconnect with setTimeout(..., 0), we push it to the
+      // next task in the event loop. This lets us distinguish:
+      //
+      // - StrictMode (fake unmount): cleanup runs → timeout scheduled →
+      //   remount happens immediately (same task) → remount cancels timeout →
+      //   connection survives
+      //
+      // - Real unmount: cleanup runs → timeout scheduled → no remount →
+      //   timeout fires → connection is properly closed
+      cleanupTimeoutRef.current = setTimeout(() => {
+        connRef.current?.disconnect();
+        connRef.current = null;
+        cleanupTimeoutRef.current = null;
+      }, 0);
     };
   }, [connectionBuilder]);
 

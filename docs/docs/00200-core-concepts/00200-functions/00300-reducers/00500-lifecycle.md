@@ -6,7 +6,6 @@ slug: /functions/reducers/lifecycle
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Lifecycle Reducers
 
 Special reducers handle system events during the database lifecycle.
 
@@ -15,23 +14,20 @@ Special reducers handle system events during the database lifecycle.
 Runs once when the module is first published or when the database is cleared.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[reducer(init)]
-pub fn init(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Database initializing...");
-    
-    // Set up default data
-    if ctx.db.settings().count() == 0 {
-        ctx.db.settings().insert(Settings {
-            key: "welcome_message".to_string(),
-            value: "Hello, SpacetimeDB!".to_string(),
-        })?;
-    }
-    
-    Ok(())
-}
+```typescript
+spacetimedb.init((ctx) => {
+  console.log('Database initializing...');
+  
+  // Set up default data
+  if (ctx.db.settings.count === 0) {
+    ctx.db.settings.insert({
+      key: 'welcome_message',
+      value: 'Hello, SpacetimeDB!'
+    });
+  }
+});
 ```
 
 </TabItem>
@@ -56,20 +52,23 @@ public static void Init(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.init((ctx) => {
-  console.log('Database initializing...');
-  
-  // Set up default data
-  if (ctx.db.settings.count === 0) {
-    ctx.db.settings.insert({
-      key: 'welcome_message',
-      value: 'Hello, SpacetimeDB!'
-    });
-  }
-});
+```rust
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Database initializing...");
+    
+    // Set up default data
+    if ctx.db.settings().count() == 0 {
+        ctx.db.settings().try_insert(Settings {
+            key: "welcome_message".to_string(),
+            value: "Hello, SpacetimeDB!".to_string(),
+        })?;
+    }
+    
+    Ok(())
+}
 ```
 
 </TabItem>
@@ -86,25 +85,22 @@ The `init` reducer:
 Runs when a client establishes a connection.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[reducer(client_connected)]
-pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client connected: {}", ctx.sender);
-    
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
-    
-    // Initialize client session
-    ctx.db.sessions().insert(Session {
-        connection_id: conn_id,
-        identity: ctx.sender,
-        connected_at: ctx.timestamp,
-    })?;
-    
-    Ok(())
-}
+```typescript
+spacetimedb.clientConnected((ctx) => {
+  console.log(`Client connected: ${ctx.sender}`);
+  
+  // ctx.connectionId is guaranteed to be defined
+  const connId = ctx.connectionId!;
+  
+  // Initialize client session
+  ctx.db.sessions.insert({
+    connection_id: connId,
+    identity: ctx.sender,
+    connected_at: ctx.timestamp
+  });
+});
 ```
 
 </TabItem>
@@ -130,22 +126,25 @@ public static void OnConnect(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.clientConnected((ctx) => {
-  console.log(`Client connected: ${ctx.sender}`);
-  
-  // ctx.connectionId is guaranteed to be defined
-  const connId = ctx.connectionId!;
-  
-  // Initialize client session
-  ctx.db.sessions.insert({
-    connection_id: connId,
-    identity: ctx.sender,
-    connected_at: ctx.timestamp
-  });
-});
+```rust
+#[reducer(client_connected)]
+pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Client connected: {}", ctx.sender);
+    
+    // ctx.connection_id is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id.unwrap();
+    
+    // Initialize client session
+    ctx.db.sessions().try_insert(Session {
+        connection_id: conn_id,
+        identity: ctx.sender,
+        connected_at: ctx.timestamp,
+    })?;
+    
+    Ok(())
+}
 ```
 
 </TabItem>
@@ -162,21 +161,18 @@ The `client_connected` reducer:
 Runs when a client connection terminates.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
-#[reducer(client_disconnected)]
-pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
-    log::info!("Client disconnected: {}", ctx.sender);
-    
-    // ctx.connection_id is guaranteed to be Some(...)
-    let conn_id = ctx.connection_id.unwrap();
-    
-    // Clean up client session
-    ctx.db.sessions().connection_id().delete(&conn_id);
-    
-    Ok(())
-}
+```typescript
+spacetimedb.clientDisconnected((ctx) => {
+  console.log(`Client disconnected: ${ctx.sender}`);
+  
+  // ctx.connectionId is guaranteed to be defined
+  const connId = ctx.connectionId!;
+  
+  // Clean up client session
+  ctx.db.sessions.connection_id.delete(connId);
+});
 ```
 
 </TabItem>
@@ -197,18 +193,21 @@ public static void OnDisconnect(ReducerContext ctx)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
-spacetimedb.clientDisconnected((ctx) => {
-  console.log(`Client disconnected: ${ctx.sender}`);
-  
-  // ctx.connectionId is guaranteed to be defined
-  const connId = ctx.connectionId!;
-  
-  // Clean up client session
-  ctx.db.sessions.connection_id.delete(connId);
-});
+```rust
+#[reducer(client_disconnected)]
+pub fn on_disconnect(ctx: &ReducerContext) -> Result<(), String> {
+    log::info!("Client disconnected: {}", ctx.sender);
+    
+    // ctx.connection_id is guaranteed to be Some(...)
+    let conn_id = ctx.connection_id.unwrap();
+    
+    // Clean up client session
+    ctx.db.sessions().connection_id().delete(&conn_id);
+    
+    Ok(())
+}
 ```
 
 </TabItem>

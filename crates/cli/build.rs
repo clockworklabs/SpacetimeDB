@@ -56,7 +56,8 @@ fn get_manifest_dir() -> PathBuf {
 //   * `get_templates_json` - returns contents of the JSON file with the list of templates
 //   * `get_template_files` - returns a HashMap with templates contents based on the
 //                            templates list at templates/templates-list.json
-//   * `get_cursorrules` - returns contents of a cursorrules file
+//   * `get_ai_rules_base` - returns base AI rules for all languages
+//   * `get_ai_rules_typescript` - returns TypeScript-specific AI rules
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
     let repo_root = get_repo_root();
@@ -108,17 +109,35 @@ fn generate_template_files() {
     let ts_bindings_version =
         extract_ts_bindings_version(&ts_bindings_package).expect("Failed to read TypeScript bindings version");
 
-    let cursorrules_path = repo_root.join("docs/.cursor/rules/spacetimedb.mdc");
-    if cursorrules_path.exists() {
-        generated_code.push_str("pub fn get_cursorrules() -> &'static str {\n");
-        generated_code.push_str("    include_str!(\"");
-        generated_code.push_str(&cursorrules_path.to_str().unwrap().replace("\\", "\\\\"));
-        generated_code.push_str("\")\n");
-        generated_code.push_str("}\n");
+    // Embed AI rules files from docs/static/ai-rules/
+    let ai_rules_dir = repo_root.join("docs/static/ai-rules");
 
-        println!("cargo:rerun-if-changed={}", cursorrules_path.display());
+    // Base rules (all languages)
+    let base_rules_path = ai_rules_dir.join("spacetimedb.mdc");
+    if base_rules_path.exists() {
+        generated_code.push_str("pub fn get_ai_rules_base() -> &'static str {\n");
+        generated_code.push_str(&format!(
+            "    include_str!(\"{}\")\n",
+            base_rules_path.to_str().unwrap().replace('\\', "\\\\")
+        ));
+        generated_code.push_str("}\n\n");
+        println!("cargo:rerun-if-changed={}", base_rules_path.display());
     } else {
-        panic!("Could not find \"docs/.cursor/rules/spacetimedb.mdc\" file.");
+        panic!("Could not find \"docs/static/ai-rules/spacetimedb.mdc\" file.");
+    }
+
+    // TypeScript-specific rules
+    let ts_rules_path = ai_rules_dir.join("spacetimedb-typescript.mdc");
+    if ts_rules_path.exists() {
+        generated_code.push_str("pub fn get_ai_rules_typescript() -> &'static str {\n");
+        generated_code.push_str(&format!(
+            "    include_str!(\"{}\")\n",
+            ts_rules_path.to_str().unwrap().replace('\\', "\\\\")
+        ));
+        generated_code.push_str("}\n\n");
+        println!("cargo:rerun-if-changed={}", ts_rules_path.display());
+    } else {
+        panic!("Could not find \"docs/static/ai-rules/spacetimedb-typescript.mdc\" file.");
     }
 
     // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.
