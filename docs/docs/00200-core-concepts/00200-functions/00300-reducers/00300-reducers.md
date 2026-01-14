@@ -98,6 +98,16 @@ pub fn create_user(ctx: &ReducerContext, name: String, email: String) -> Result<
 
 Reducers must take `&ReducerContext` as their first parameter. Additional parameters must be serializable types. Reducers can return `()`, `Result<(), String>`, or `Result<(), E>` where `E: Display`.
 
+:::note Rust: Importing the Table Trait
+Table operations like `insert`, `try_insert`, `iter`, and `count` are provided by the `Table` trait. You must import this trait for these methods to be available:
+
+```rust
+use spacetimedb::Table;
+```
+
+If you see errors like "no method named `try_insert` found", add this import.
+:::
+
 </TabItem>
 </Tabs>
 
