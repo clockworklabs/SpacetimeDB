@@ -2121,6 +2121,7 @@ pub mod tests_utils {
             rt: tokio::runtime::Handle,
             want_snapshot_repo: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
+            info!("opening durable test db at {}", root.display());
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)
@@ -2343,6 +2344,7 @@ mod tests {
     use commitlog::payload::txdata;
     use commitlog::Commitlog;
     use pretty_assertions::{assert_eq, assert_matches};
+    use spacetimedb_commitlog::tests::helpers::enable_logging;
     use spacetimedb_data_structures::map::IntMap;
     use spacetimedb_datastore::error::{DatastoreError, IndexError};
     use spacetimedb_datastore::execution_context::ReducerContext;
@@ -2527,6 +2529,8 @@ mod tests {
 
     #[test]
     fn test_view_tables_are_ephemeral_in_commitlog() -> ResultTest<()> {
+        enable_logging();
+
         let stdb = TestDB::durable_without_snapshot_repo()?;
 
         let (view_id, table_id, _, _) = setup_view(&stdb)?;

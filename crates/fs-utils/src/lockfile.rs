@@ -99,6 +99,7 @@ pub mod advisory {
     };
 
     use fs2::FileExt as _;
+    use log::info;
     use thiserror::Error;
 
     use crate::create_parent_dir;
@@ -139,6 +140,7 @@ pub mod advisory {
         /// created.
         pub fn lock(path: impl AsRef<Path>) -> Result<Self, LockError> {
             let path = path.as_ref();
+            info!("attempting advisory lock on {}", path.display());
             Self::lock_inner(path).map_err(|source| LockError {
                 path: path.into(),
                 source,
@@ -159,7 +161,9 @@ pub mod advisory {
 
         /// Release the lock and optionally remove the locked file.
         pub fn release(self, remove: bool) -> io::Result<()> {
+            info!("releasing {self:?}");
             if remove {
+                info!("removing {}", self.path.display());
                 fs::remove_file(&self.path)?;
             }
             Ok(())
@@ -169,6 +173,12 @@ pub mod advisory {
     impl fmt::Debug for LockedFile {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             f.debug_struct("LockedFile").field("path", &self.path).finish()
+        }
+    }
+
+    impl Drop for LockedFile {
+        fn drop(&mut self) {
+            info!("dropping {self:?}");
         }
     }
 }

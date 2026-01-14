@@ -10,6 +10,7 @@ description = "Assorted utilities for filesystem operations used in SpacetimeDB"
 anyhow.workspace = true
 fs2.workspace = true
 hex.workspace = true
+log.workspace = true
 rand.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
