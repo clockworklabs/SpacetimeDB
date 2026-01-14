@@ -12,6 +12,7 @@ using SpacetimeDB.Types;
 
 const string HOST = "http://localhost:3000";
 const string DBNAME = "btree-repro";
+const string THROW_ERROR_MESSAGE = "this is an error";
 
 DbConnection ConnectToDB()
 {
@@ -64,6 +65,9 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
             "SELECT * FROM my_player",
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
+            "SELECT * FROM null_string_nonnullable",
+            "SELECT * FROM null_string_nullable",
+            "SELECT * FROM my_log",
             "SELECT * FROM Admins",
             "SELECT * FROM nullable_vec_view",
         ]);
@@ -83,10 +87,17 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         ValidateBTreeIndexes(ctx);
     };
 
+    conn.Reducers.OnInsertResult += (ReducerEventContext ctx, Result<MyTable, string> msg) =>
+    {
+        Log.Info($"Got InsertResult callback: {msg}");
+        waiting--;
+    };
+
     conn.OnUnhandledReducerError += (ReducerEventContext ctx, Exception exception) =>
     {
         Log.Info($"Got OnUnhandledReducerError: {exception}");
         waiting--;
+        ValidateReducerErrorDoesNotContainStackTrace(exception);
         ValidateBTreeIndexes(ctx);
         ValidateNullableVecView(ctx);
     };
@@ -103,6 +114,56 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         {
             ValidateNullableVecView(ctx);
         }
+    };
+
+    conn.Reducers.OnInsertEmptyStringIntoNonNullable += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertEmptyStringIntoNonNullable callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"InsertEmptyStringIntoNonNullable should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(
+            ctx.Db.NullStringNonnullable.Iter().Any(r => r.Name == ""),
+            "Expected a row inserted into null_string_nonnullable with Name == \"\""
+        );
+    };
+
+    conn.Reducers.OnInsertNullStringIntoNonNullable += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertNullStringIntoNonNullable callback");
+        waiting--;
+
+        if (ctx.Event.Status is Status.Failed(var reason))
+        {
+            Debug.Assert(
+                reason.Contains("Cannot serialize a null string", StringComparison.OrdinalIgnoreCase)
+                    || reason.Contains("BSATN", StringComparison.OrdinalIgnoreCase)
+                    || reason.Contains("nullable string", StringComparison.OrdinalIgnoreCase),
+                $"Expected a serialization-related failure message, got: {reason}"
+            );
+        }
+        else
+        {
+            throw new Exception(
+                $"InsertNullStringIntoNonNullable should fail, got status {ctx.Event.Status}"
+            );
+        }
+    };
+
+    conn.Reducers.OnInsertNullStringIntoNullable += (ReducerEventContext ctx) =>
+    {
+        Log.Info("Got InsertNullStringIntoNullable callback");
+        waiting--;
+        Debug.Assert(
+            ctx.Event.Status is Status.Committed,
+            $"InsertNullStringIntoNullable should commit, got {ctx.Event.Status}"
+        );
+        Debug.Assert(
+            ctx.Db.NullStringNullable.Iter().Any(r => r.Name == null),
+            "Expected a row inserted into null_string_nullable with Name == null"
+        );
     };
 }
 
@@ -167,6 +228,17 @@ void ValidateNullableVecView(
     }
 }
 
+void ValidateReducerErrorDoesNotContainStackTrace(Exception exception)
+{
+    Debug.Assert(
+        exception.Message == THROW_ERROR_MESSAGE,
+        $"Expected reducer error message '{THROW_ERROR_MESSAGE}', got '{exception.Message}'"
+    );
+    Debug.Assert(!exception.Message.Contains("\n"), "Reducer error message should not contain newline");
+    Debug.Assert(!exception.Message.Contains("\r"), "Reducer error message should not contain newline");
+    Debug.Assert(!exception.Message.Contains(" at "), "Reducer error message should not contain stack trace");
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     applied = true;
@@ -187,7 +259,29 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
 
     Log.Debug("Calling ThrowError");
     waiting++;
-    context.Reducers.ThrowError("this is an error");
+    context.Reducers.ThrowError(THROW_ERROR_MESSAGE);
+
+    Log.Debug("Calling InsertResult");
+    waiting++;
+    context.Reducers.InsertResult(Result<MyTable, string>.Ok(new MyTable(new ReturnStruct(42, "magic"))));
+    waiting++;
+    context.Reducers.InsertResult(Result<MyTable, string>.Err("Fail"));
+
+    Log.Debug("Calling RemoteQuery on my_log");
+    var logRows = context.Db.MyLog.RemoteQuery("").Result;
+    Debug.Assert(logRows != null && logRows.Length == 2);
+    var logs = logRows.ToArray();
+    var expected = new[]
+    {
+        new MyLog(Result<MyTable, string>.Ok(
+            new MyTable(new ReturnStruct(42, "magic"))
+        )),
+        new MyLog(Result<MyTable, string>.Err("Fail")),
+    };
+    Debug.Assert(
+        logs.SequenceEqual(expected),
+        "Logs did not match expected results"
+    );
 
     // RemoteQuery test
     Log.Debug("Calling RemoteQuery");
@@ -294,6 +388,18 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     waiting++;
     context.Reducers.SetNullableVec(1, true, 7, 8);
 
+    Log.Debug("Calling InsertEmptyStringIntoNonNullable");
+    waiting++;
+    context.Reducers.InsertEmptyStringIntoNonNullable();
+
+    Log.Debug("Calling InsertNullStringIntoNonNullable (should fail)");
+    waiting++;
+    context.Reducers.InsertNullStringIntoNonNullable();
+
+    Log.Debug("Calling InsertNullStringIntoNullable");
+    waiting++;
+    context.Reducers.InsertNullStringIntoNullable();
+
     // Procedures tests
     Log.Debug("Calling ReadMySchemaViaHttp");
     waiting++;
@@ -343,6 +449,22 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
         else
         {
             throw new Exception("Expected InsertWithTransactionRollback to fail, but it succeeded");
+        }
+        waiting--;
+    });
+
+    Log.Debug("Calling InsertWithTxRollbackResult");
+    waiting++;
+    context.Procedures.InsertWithTxRollbackResult((IProcedureEventContext ctx, ProcedureCallbackResult<Result<ReturnStruct, string>> result) =>
+    {
+        if (result.IsSuccess)
+        {
+            Debug.Assert(context.Db.MyTable.Count == 0, $"MyTable should remain empty after rollback result. Count was {context.Db.MyTable.Count}");
+            Log.Debug("Insert with transaction result rollback succeeded");
+        }
+        else
+        {
+            throw new Exception("Expected InsertWithTxRollbackResult to fail, but it succeeded");
         }
         waiting--;
     });

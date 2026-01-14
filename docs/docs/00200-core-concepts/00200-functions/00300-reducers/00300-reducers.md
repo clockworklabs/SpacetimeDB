@@ -6,7 +6,6 @@ slug: /functions/reducers
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Reducers
 
 Reducers are functions that modify database state in response to client requests or system events. They are the **only** way to mutate tables in SpacetimeDB - all database changes must go through reducers.
 
@@ -15,32 +14,29 @@ Reducers are functions that modify database state in response to client requests
 Reducers are defined in your module code and automatically exposed as callable functions to connected clients.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-Use the `#[spacetimedb::reducer]` macro on a function:
+Use the `spacetimedb.reducer` function:
 
-```rust
-use spacetimedb::{reducer, ReducerContext, Table};
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
 
-#[reducer]
-pub fn create_user(ctx: &ReducerContext, name: String, email: String) -> Result<(), String> {
-    // Validate input
-    if name.is_empty() {
-        return Err("Name cannot be empty".to_string());
-    }
-
-    // Modify tables
-    ctx.db.user().insert(User {
-        id: 0, // auto-increment will assign
-        name,
-        email,
-    });
-
-    Ok(())
-}
+spacetimedb.reducer('create_user', { name: t.string(), email: t.string() }, (ctx, { name, email }) => {
+  // Validate input
+  if (name === '') {
+    throw new Error('Name cannot be empty');
+  }
+  
+  // Modify tables
+  ctx.db.user.insert({
+    id: 0,  // auto-increment will assign
+    name,
+    email
+  });
+});
 ```
 
-Reducers must take `&ReducerContext` as their first parameter. Additional parameters must be serializable types. Reducers can return `()`, `Result<(), String>`, or `Result<(), E>` where `E: Display`.
+The first argument is the reducer name, the second defines argument types, and the third is the handler function taking `(ctx, args)`.
 
 </TabItem>
 <TabItem value="csharp" label="C#">
@@ -75,29 +71,32 @@ public static partial class Module
 Reducers must be static methods with `ReducerContext` as the first parameter. Additional parameters must be types marked with `[SpacetimeDB.Type]`. Reducers should return `void`.
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-Use the `spacetimedb.reducer` function:
+Use the `#[spacetimedb::reducer]` macro on a function:
 
-```typescript
-import { schema, table, t } from 'spacetimedb/server';
+```rust
+use spacetimedb::{reducer, ReducerContext, Table};
 
-spacetimedb.reducer('create_user', { name: t.string(), email: t.string() }, (ctx, { name, email }) => {
-  // Validate input
-  if (name === '') {
-    throw new Error('Name cannot be empty');
-  }
-  
-  // Modify tables
-  ctx.db.user.insert({
-    id: 0,  // auto-increment will assign
-    name,
-    email
-  });
-});
+#[reducer]
+pub fn create_user(ctx: &ReducerContext, name: String, email: String) -> Result<(), String> {
+    // Validate input
+    if name.is_empty() {
+        return Err("Name cannot be empty".to_string());
+    }
+
+    // Modify tables
+    ctx.db.user().insert(User {
+        id: 0, // auto-increment will assign
+        name,
+        email,
+    });
+
+    Ok(())
+}
 ```
 
-The first argument is the reducer name, the second defines argument types, and the third is the handler function taking `(ctx, args)`.
+Reducers must take `&ReducerContext` as their first parameter. Additional parameters must be serializable types. Reducers can return `()`, `Result<(), String>`, or `Result<(), E>` where `E: Display`.
 
 </TabItem>
 </Tabs>

@@ -6,7 +6,6 @@ slug: /how-to/rls
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Row Level Security (RLS)
 
 :::warning Consider Using Views Instead
 Before implementing Row Level Security, consider using [Views](/functions/views) for access control. Views provide a simpler, more flexible approach to controlling data visibility without the complexity and performance overhead of RLS. Views are first-class functions that allow you to define custom, subscribable queries with full control over what data clients can access. RLS is experimental and should only be used for advanced use cases where views are insufficient.
@@ -20,14 +19,6 @@ These access rules are expressed in SQL and evaluated automatically for queries 
 RLS is currently **experimental** and must be explicitly enabled in your module.
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-To enable RLS, activate the `unstable` feature in your project's `Cargo.toml`:
-
-```toml
-spacetimedb = { version = "...", features = ["unstable"] }
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 To enable RLS, include the following preprocessor directive at the top of your module files:
 
@@ -36,25 +27,19 @@ To enable RLS, include the following preprocessor directive at the top of your m
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+To enable RLS, activate the `unstable` feature in your project's `Cargo.toml`:
+
+```toml
+spacetimedb = { version = "...", features = ["unstable"] }
+```
+
+</TabItem>
 </Tabs>
 
 ## How It Works
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-RLS rules are expressed in SQL and declared as constants of type `Filter`.
-
-```rust
-use spacetimedb::{client_visibility_filter, Filter};
-
-/// A client can only see their account
-#[client_visibility_filter]
-const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE account.identity = :sender"
-);
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 RLS rules are expressed in SQL and declared as public static readonly fields of type `Filter`.
 
@@ -73,6 +58,20 @@ public partial class Module
         "SELECT * FROM account WHERE account.identity = :sender"
     );
 }
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+RLS rules are expressed in SQL and declared as constants of type `Filter`.
+
+```rust
+use spacetimedb::{client_visibility_filter, Filter};
+
+/// A client can only see their account
+#[client_visibility_filter]
+const ACCOUNT_FILTER: Filter = Filter::Sql(
+    "SELECT * FROM account WHERE account.identity = :sender"
+);
 ```
 
 </TabItem>
@@ -103,25 +102,6 @@ This means clients will be able to see to any row that matches at least one of t
 #### Example
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-use spacetimedb::{client_visibility_filter, Filter};
-
-/// A client can only see their account
-#[client_visibility_filter]
-const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT * FROM account WHERE account.identity = :sender"
-);
-
-/// An admin can see all accounts
-#[client_visibility_filter]
-const ACCOUNT_FILTER_FOR_ADMINS: Filter = Filter::Sql(
-    "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
-);
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -150,16 +130,6 @@ public partial class Module
 ```
 
 </TabItem>
-</Tabs>
-
-### Recursive Application
-
-RLS rules can reference other tables with RLS rules, and they will be applied recursively.
-This ensures that data is never leaked through indirect access patterns.
-
-#### Example
-
-<Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -176,17 +146,19 @@ const ACCOUNT_FILTER: Filter = Filter::Sql(
 const ACCOUNT_FILTER_FOR_ADMINS: Filter = Filter::Sql(
     "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
 );
-
-/// Explicitly filtering by client identity in this rule is not necessary,
-/// since the above RLS rules on `account` will be applied automatically.
-/// Hence a client can only see their player, but an admin can see all players.
-#[client_visibility_filter]
-const PLAYER_FILTER: Filter = Filter::Sql(
-    "SELECT p.* FROM account a JOIN player p ON a.id = p.id"
-);
 ```
 
 </TabItem>
+</Tabs>
+
+### Recursive Application
+
+RLS rules can reference other tables with RLS rules, and they will be applied recursively.
+This ensures that data is never leaked through indirect access patterns.
+
+#### Example
+
+<Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -223,6 +195,33 @@ public partial class Module
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::{client_visibility_filter, Filter};
+
+/// A client can only see their account
+#[client_visibility_filter]
+const ACCOUNT_FILTER: Filter = Filter::Sql(
+    "SELECT * FROM account WHERE account.identity = :sender"
+);
+
+/// An admin can see all accounts
+#[client_visibility_filter]
+const ACCOUNT_FILTER_FOR_ADMINS: Filter = Filter::Sql(
+    "SELECT account.* FROM account JOIN admin WHERE admin.identity = :sender"
+);
+
+/// Explicitly filtering by client identity in this rule is not necessary,
+/// since the above RLS rules on `account` will be applied automatically.
+/// Hence a client can only see their player, but an admin can see all players.
+#[client_visibility_filter]
+const PLAYER_FILTER: Filter = Filter::Sql(
+    "SELECT p.* FROM account a JOIN player p ON a.id = p.id"
+);
+```
+
+</TabItem>
 </Tabs>
 
 And while self-joins are allowed, in general RLS rules cannot be self-referential,
@@ -231,23 +230,6 @@ as this would result in infinite recursion.
 #### Example: Self-Join
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-use spacetimedb::{client_visibility_filter, Filter};
-
-/// A client can only see players on their same level
-#[client_visibility_filter]
-const PLAYER_FILTER: Filter = Filter::Sql("
-    SELECT q.*
-    FROM account a
-    JOIN player p ON a.id = p.id
-    JOIN player q on p.level = q.level
-    WHERE a.identity = :sender
-");
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -270,6 +252,23 @@ public partial class Module
 ```
 
 </TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::{client_visibility_filter, Filter};
+
+/// A client can only see players on their same level
+#[client_visibility_filter]
+const PLAYER_FILTER: Filter = Filter::Sql("
+    SELECT q.*
+    FROM account a
+    JOIN player p ON a.id = p.id
+    JOIN player q on p.level = q.level
+    WHERE a.identity = :sender
+");
+```
+
+</TabItem>
 </Tabs>
 
 #### Example: Recursive Rules
@@ -277,25 +276,6 @@ public partial class Module
 This module will fail to publish because each rule depends on the other one.
 
 <Tabs groupId="server-language" defaultValue="rust">
-<TabItem value="rust" label="Rust">
-
-```rust
-use spacetimedb::{client_visibility_filter, Filter};
-
-/// An account must have a corresponding player
-#[client_visibility_filter]
-const ACCOUNT_FILTER: Filter = Filter::Sql(
-    "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-);
-
-/// A player must have a corresponding account
-#[client_visibility_filter]
-const PLAYER_FILTER: Filter = Filter::Sql(
-    "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
-);
-```
-
-</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -319,6 +299,25 @@ public partial class Module
         "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
     );
 }
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+use spacetimedb::{client_visibility_filter, Filter};
+
+/// An account must have a corresponding player
+#[client_visibility_filter]
+const ACCOUNT_FILTER: Filter = Filter::Sql(
+    "SELECT a.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
+);
+
+/// A player must have a corresponding account
+#[client_visibility_filter]
+const PLAYER_FILTER: Filter = Filter::Sql(
+    "SELECT p.* FROM account a JOIN player p ON a.id = p.id WHERE a.identity = :sender"
+);
 ```
 
 </TabItem>

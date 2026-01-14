@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SpacetimeDB.ClientSDK", "Sp
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tests", "tests~\tests.csproj", "{5CD31104-4719-4CE3-8D39-8BAE0B75C085}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "client", "examples~\quickstart-chat\client\client.csproj", "{FE261832-1594-DE21-C8C8-2D525680CBD7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "client", "..\..\templates\quickstart-chat-c-sharp\client.csproj", "{FE261832-1594-DE21-C8C8-2D525680CBD7}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "examples~", "examples~", "{E0CADA48-79A1-4490-ACEC-698EC7D2AB43}"
 EndProject
