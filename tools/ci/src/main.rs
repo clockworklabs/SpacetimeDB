@@ -39,21 +39,18 @@ fn ensure_repo_root() -> Result<()> {
     Ok(())
 }
 
-fn overlay_unversioned_skeleton(pkg_id: &str) -> Result<()> {
+fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
     let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
     if !pkg_root.exists() {
-        log::info!(
-            "Skipping skeleton overlay for {pkg_id}: {} does not exist",
-            pkg_root.display()
-        );
+        log::info!("Skipping skeleton overlay for {pkg_id}: {pkg_root:?} does not exist");
         return Ok(());
     }
 
-    let unversioned = pkg_root.join("unversioned");
-    if !unversioned.exists() {
+    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    if !skeleton_root.exists() {
         log::info!(
             "Skipping skeleton overlay for {pkg_id}: {} does not exist",
-            unversioned.display()
+            skeleton_root.display()
         );
         return Ok(());
     }
@@ -69,7 +66,24 @@ fn overlay_unversioned_skeleton(pkg_id: &str) -> Result<()> {
         }
     };
 
-    copy_overlay_dir(&unversioned, &versioned_dir)
+    copy_overlay_dir(&skeleton_root, &versioned_dir)
+}
+
+fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    for entry in fs::read_dir(&pkg_root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+        fs::remove_dir_all(entry.path())?;
+    }
+
+    Ok(())
 }
 
 fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
@@ -81,9 +95,6 @@ fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
         }
 
         let name = entry.file_name().to_string_lossy().to_string();
-        if name == "unversioned" {
-            continue;
-        }
         let Ok(version) = Version::parse(&name) else {
             continue;
         };
@@ -116,11 +127,25 @@ fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
         if entry.file_type()?.is_dir() {
-            if !dst_path.exists() {
-                fs::create_dir_all(&dst_path)?;
+            if dst_path.exists() {
+                copy_overlay_dir(&src_path, &dst_path)?;
             }
-            copy_overlay_dir(&src_path, &dst_path)?;
         } else {
+            if let Some(file_name) = dst_path.file_name().and_then(|n| n.to_str()) {
+                if let Some(asset_name) = file_name.strip_suffix(".meta") {
+                    let asset_path = dst_path
+                        .parent()
+                        .expect("dst_path should have a parent")
+                        .join(asset_name);
+                    if asset_path.exists() {
+                        fs::copy(&src_path, &dst_path)?;
+                    } else if dst_path.exists() {
+                        let _ = fs::remove_file(&dst_path);
+                    }
+                    continue;
+                }
+            }
+
             if let Some(parent) = dst_path.parent() {
                 fs::create_dir_all(parent)?;
             }
@@ -338,31 +363,47 @@ fn main() -> Result<()> {
             )
             .run()?;
 
-            cmd!("dotnet", "pack", "-c", "Release")
-                .dir("sdks/csharp")
-                .run()?;
+            let repo_root = env::current_dir()?;
+            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
 
-            let bsatn_source = Path::new("crates/bindings-csharp/BSATN.Runtime/bin/Release")
-                .canonicalize()
-                .unwrap_or_else(|_| PathBuf::from("crates/bindings-csharp/BSATN.Runtime/bin/Release"));
-            let runtime_source = Path::new("crates/bindings-csharp/Runtime/bin/Release")
-                .canonicalize()
-                .unwrap_or_else(|_| PathBuf::from("crates/bindings-csharp/Runtime/bin/Release"));
+            let nuget_config_dir = tempfile::tempdir()?;
+            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
+            let nuget_config_contents = format!(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key=\"Local SpacetimeDB.BSATN.Runtime\" value=\"{}\" />\n    <add key=\"Local SpacetimeDB.Runtime\" value=\"{}\" />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n  </packageSources>\n  <packageSourceMapping>\n    <packageSource key=\"Local SpacetimeDB.BSATN.Runtime\">\n      <package pattern=\"SpacetimeDB.BSATN.Runtime\" />\n    </packageSource>\n    <packageSource key=\"Local SpacetimeDB.Runtime\">\n      <package pattern=\"SpacetimeDB.Runtime\" />\n    </packageSource>\n    <packageSource key=\"nuget.org\">\n      <package pattern=\"*\" />\n    </packageSource>\n  </packageSourceMapping>\n</configuration>\n",
+                bsatn_source.to_string_lossy(),
+                runtime_source.to_string_lossy(),
+            );
+            fs::write(&nuget_config_path, nuget_config_contents)?;
 
-            let restore_args = vec![
-                "restore".to_string(),
-                "SpacetimeDB.ClientSDK.csproj".to_string(),
-                "--source".to_string(),
-                bsatn_source.to_string_lossy().to_string(),
-                "--source".to_string(),
-                runtime_source.to_string_lossy().to_string(),
-                "--source".to_string(),
-                "https://api.nuget.org/v3/index.json".to_string(),
-            ];
-            cmd("dotnet", restore_args).dir("sdks/csharp").run()?;
+            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
 
-            overlay_unversioned_skeleton("spacetimedb.bsatn.runtime")?;
-            overlay_unversioned_skeleton("spacetimedb.runtime")?;
+            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
+            clear_restored_package_dirs("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "restore",
+                "SpacetimeDB.ClientSDK.csproj",
+                "--configfile",
+                &nuget_config_path_str,
+            )
+            .dir("sdks/csharp")
+            .run()?;
+
+            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
+            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "pack",
+                "SpacetimeDB.ClientSDK.csproj",
+                "-c",
+                "Release",
+                "--no-restore"
+            )
+            .dir("sdks/csharp")
+            .run()?;
         }
 
         Some(CiCmd::Smoketests { args: smoketest_args }) => {
