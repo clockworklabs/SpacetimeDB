@@ -29,7 +29,7 @@ Get a SpacetimeDB TypeScript app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-typescript my-spacetime-app
+spacetime dev --template basic-ts my-spacetime-app
 ```
     </StepCode>
   </Step>

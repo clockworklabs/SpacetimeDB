@@ -1484,11 +1484,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-rust/spacetimedb/Cargo.toml"),
+            include_str!("../../../../templates/basic-rs/spacetimedb/Cargo.toml"),
             "Cargo.toml",
         ),
         (
-            include_str!("../../../../templates/basic-rust/spacetimedb/src/lib.rs"),
+            include_str!("../../../../templates/basic-rs/spacetimedb/src/lib.rs"),
             "src/lib.rs",
         ),
     ];
@@ -1508,15 +1508,15 @@ pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-c-sharp/spacetimedb/StdbModule.csproj"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/StdbModule.csproj"),
             "StdbModule.csproj",
         ),
         (
-            include_str!("../../../../templates/basic-c-sharp/spacetimedb/Lib.cs"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/Lib.cs"),
             "Lib.cs",
         ),
         (
-            include_str!("../../../../templates/basic-c-sharp/spacetimedb/global.json"),
+            include_str!("../../../../templates/basic-cs/spacetimedb/global.json"),
             "global.json",
         ),
     ];
@@ -1536,15 +1536,15 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-typescript/spacetimedb/package.json"),
+            include_str!("../../../../templates/basic-ts/spacetimedb/package.json"),
             "package.json",
         ),
         (
-            include_str!("../../../../templates/basic-typescript/spacetimedb/tsconfig.json"),
+            include_str!("../../../../templates/basic-ts/spacetimedb/tsconfig.json"),
             "tsconfig.json",
         ),
         (
-            include_str!("../../../../templates/basic-typescript/spacetimedb/src/index.ts"),
+            include_str!("../../../../templates/basic-ts/spacetimedb/src/index.ts"),
             "src/index.ts",
         ),
     ];
