@@ -434,5 +434,5 @@ log::info!("Deleted {} minor(s)", deleted);
 
 ## Next Steps
 
-- Learn about [Primary Keys](/tables/primary-keys) and [Constraints](/tables/constraints) for unique indexes
+- Learn about [Constraints](/tables/constraints) for primary keys and unique indexes
 - See [Access Permissions](/tables/access-permissions) for querying tables from reducers

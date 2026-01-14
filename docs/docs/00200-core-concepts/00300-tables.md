@@ -213,9 +213,14 @@ Tables support several constraints to enforce data integrity:
 
 - **Primary keys** uniquely identify each row and define how updates and deletes work
 - **Unique constraints** ensure no two rows share the same value for a column
-- **Auto-increment** automatically assigns increasing values to integer columns
 
-See [Primary Keys](/tables/primary-keys) and [Constraints](/tables/constraints) for details.
+See [Constraints](/tables/constraints) for details.
+
+## Auto-Increment
+
+Auto-increment columns automatically generate unique integer values for new rows. SpacetimeDB implements auto-increment using sequences, which provide crash-safe value generation with configurable parameters.
+
+See [Auto-Increment](/tables/auto-increment) for details.
 
 ## Schedule Tables
 
@@ -225,8 +230,11 @@ See [Schedule Tables](/tables/schedule-tables) for details.
 
 ## Next Steps
 
-- [Column Types](/tables/column-types) - Define table structure with types, unique columns, primary keys, and auto-increment
+- [Column Types](/tables/column-types) - Supported column types and performance considerations
+- [Constraints](/tables/constraints) - Primary keys and unique constraints
+- [Auto-Increment](/tables/auto-increment) - Automatic ID generation with sequences
+- [Default Values](/tables/default-values) - Schema evolution with column defaults
 - [Indexes](/tables/indexes) - Speed up queries with single and multi-column indexes
-- [Access Permissions](/tables/access-permissions) - Query and modify tables from reducers, views, and clients
-- Learn about [Schedule Tables](/tables/schedule-tables)
-- Learn about [Performance Best Practices](/tables/performance)
+- [Access Permissions](/tables/access-permissions) - Public vs private tables
+- [Schedule Tables](/tables/schedule-tables) - Time-based reducer execution
+- [Performance](/tables/performance) - Best practices for table design
