@@ -14,3 +14,37 @@ pub struct UniqueBool {
 impl __sdk::InModule for UniqueBool {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `UniqueBool`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueBoolCols {
+    pub b: __sdk::__query_builder::Col<UniqueBool, bool>,
+    pub data: __sdk::__query_builder::Col<UniqueBool, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for UniqueBool {
+    type Cols = UniqueBoolCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueBoolCols {
+            b: __sdk::__query_builder::Col::new(table_name, "b"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueBool`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueBoolIxCols {
+    pub b: __sdk::__query_builder::IxCol<UniqueBool, bool>,
+}
+
+impl __sdk::__query_builder::HasIxCols for UniqueBool {
+    type IxCols = UniqueBoolIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueBoolIxCols {
+            b: __sdk::__query_builder::IxCol::new(table_name, "b"),
+        }
+    }
+}

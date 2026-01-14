@@ -396,7 +396,7 @@ error[E0277]: the trait bound `{integer}: RHS<Player, spacetimedb::Identity>` is
               `u128` implements `RHS<T, u128>`
             and $N others
 note: required by a bound in `Col::<T, V>::eq`
-   --> src/query_builder/table.rs
+   --> $WORKSPACE/crates/query-builder/src/table.rs
     |
     |     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
@@ -413,7 +413,7 @@ error[E0277]: the trait bound `u32: RHS<PlayerInfo, u8>` is not satisfied
             but trait `RHS<PlayerInfo, u32>` is implemented for it
     = help: for that trait implementation, expected `u32`, found `u8`
 note: required by a bound in `Col::<T, V>::eq`
-   --> src/query_builder/table.rs
+   --> $WORKSPACE/crates/query-builder/src/table.rs
     |
     |     pub fn eq<R: RHS<T, V>>(self, rhs: R) -> BoolExpr<T> {
     |                  ^^^^^^^^^ required by this bound in `Col::<T, V>::eq`
@@ -429,7 +429,7 @@ error[E0308]: mismatched types
     = note: expected struct `IxCol<Player, u32>`
                found struct `IxCol<Player, spacetimedb::Identity>`
 note: method defined here
-   --> src/query_builder/join.rs
+   --> $WORKSPACE/crates/query-builder/src/join.rs
     |
     |     pub fn eq<R: HasIxCols>(self, rhs: IxCol<R, V>) -> IxJoinEq<T, R, V> {
     |            ^^

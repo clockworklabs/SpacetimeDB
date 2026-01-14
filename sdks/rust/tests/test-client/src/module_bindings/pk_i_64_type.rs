@@ -14,3 +14,37 @@ pub struct PkI64 {
 impl __sdk::InModule for PkI64 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PkI64`.
+///
+/// Provides typed access to columns for query building.
+pub struct PkI64Cols {
+    pub n: __sdk::__query_builder::Col<PkI64, i64>,
+    pub data: __sdk::__query_builder::Col<PkI64, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for PkI64 {
+    type Cols = PkI64Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PkI64Cols {
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PkI64`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PkI64IxCols {
+    pub n: __sdk::__query_builder::IxCol<PkI64, i64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PkI64 {
+    type IxCols = PkI64IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PkI64IxCols {
+            n: __sdk::__query_builder::IxCol::new(table_name, "n"),
+        }
+    }
+}

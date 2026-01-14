@@ -14,3 +14,37 @@ pub struct UniqueString {
 impl __sdk::InModule for UniqueString {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `UniqueString`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueStringCols {
+    pub s: __sdk::__query_builder::Col<UniqueString, String>,
+    pub data: __sdk::__query_builder::Col<UniqueString, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for UniqueString {
+    type Cols = UniqueStringCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueStringCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueString`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueStringIxCols {
+    pub s: __sdk::__query_builder::IxCol<UniqueString, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for UniqueString {
+    type IxCols = UniqueStringIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueStringIxCols {
+            s: __sdk::__query_builder::IxCol::new(table_name, "s"),
+        }
+    }
+}

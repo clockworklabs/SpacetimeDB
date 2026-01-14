@@ -16,3 +16,43 @@ pub struct PlayerLocation {
 impl __sdk::InModule for PlayerLocation {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PlayerLocation`.
+///
+/// Provides typed access to columns for query building.
+pub struct PlayerLocationCols {
+    pub entity_id: __sdk::__query_builder::Col<PlayerLocation, u64>,
+    pub active: __sdk::__query_builder::Col<PlayerLocation, bool>,
+    pub x: __sdk::__query_builder::Col<PlayerLocation, i32>,
+    pub y: __sdk::__query_builder::Col<PlayerLocation, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for PlayerLocation {
+    type Cols = PlayerLocationCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PlayerLocationCols {
+            entity_id: __sdk::__query_builder::Col::new(table_name, "entity_id"),
+            active: __sdk::__query_builder::Col::new(table_name, "active"),
+            x: __sdk::__query_builder::Col::new(table_name, "x"),
+            y: __sdk::__query_builder::Col::new(table_name, "y"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PlayerLocation`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PlayerLocationIxCols {
+    pub active: __sdk::__query_builder::IxCol<PlayerLocation, bool>,
+    pub entity_id: __sdk::__query_builder::IxCol<PlayerLocation, u64>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PlayerLocation {
+    type IxCols = PlayerLocationIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PlayerLocationIxCols {
+            active: __sdk::__query_builder::IxCol::new(table_name, "active"),
+            entity_id: __sdk::__query_builder::IxCol::new(table_name, "entity_id"),
+        }
+    }
+}

@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneIdentity`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_identityQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneIdentity`.
+    fn one_identity(&self) -> __sdk::__query_builder::Table<OneIdentity>;
+}
+
+impl one_identityQueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_identity(&self) -> __sdk::__query_builder::Table<OneIdentity> {
+        __sdk::__query_builder::Table::new("one_identity")
+    }
+}

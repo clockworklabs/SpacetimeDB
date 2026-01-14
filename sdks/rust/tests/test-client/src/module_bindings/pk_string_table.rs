@@ -140,3 +140,19 @@ impl<'ctx> PkStringSUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkString`.
+    fn pk_string(&self) -> __sdk::__query_builder::Table<PkString>;
+}
+
+impl pk_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_string(&self) -> __sdk::__query_builder::Table<PkString> {
+        __sdk::__query_builder::Table::new("pk_string")
+    }
+}

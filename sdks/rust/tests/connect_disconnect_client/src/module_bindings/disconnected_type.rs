@@ -13,3 +13,31 @@ pub struct Disconnected {
 impl __sdk::InModule for Disconnected {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `Disconnected`.
+///
+/// Provides typed access to columns for query building.
+pub struct DisconnectedCols {
+    pub identity: __sdk::__query_builder::Col<Disconnected, __sdk::Identity>,
+}
+
+impl __sdk::__query_builder::HasCols for Disconnected {
+    type Cols = DisconnectedCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        DisconnectedCols {
+            identity: __sdk::__query_builder::Col::new(table_name, "identity"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `Disconnected`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct DisconnectedIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for Disconnected {
+    type IxCols = DisconnectedIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        DisconnectedIxCols {}
+    }
+}

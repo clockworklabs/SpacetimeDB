@@ -14,3 +14,33 @@ pub struct PkUuid {
 impl __sdk::InModule for PkUuid {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PkUuid`.
+///
+/// Provides typed access to columns for query building.
+pub struct PkUuidCols {
+    pub u: __sdk::__query_builder::Col<PkUuid, __sdk::Uuid>,
+    pub data: __sdk::__query_builder::Col<PkUuid, u8>,
+}
+
+impl __sdk::__query_builder::HasCols for PkUuid {
+    type Cols = PkUuidCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PkUuidCols {
+            u: __sdk::__query_builder::Col::new(table_name, "u"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PkUuid`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PkUuidIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for PkUuid {
+    type IxCols = PkUuidIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PkUuidIxCols {}
+    }
+}

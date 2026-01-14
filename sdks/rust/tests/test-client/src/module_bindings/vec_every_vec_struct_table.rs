@@ -94,3 +94,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecEveryVecStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_every_vec_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecEveryVecStruct`.
+    fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct>;
+}
+
+impl vec_every_vec_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_every_vec_struct(&self) -> __sdk::__query_builder::Table<VecEveryVecStruct> {
+        __sdk::__query_builder::Table::new("vec_every_vec_struct")
+    }
+}

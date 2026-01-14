@@ -14,3 +14,37 @@ pub struct UniqueConnectionId {
 impl __sdk::InModule for UniqueConnectionId {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `UniqueConnectionId`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueConnectionIdCols {
+    pub a: __sdk::__query_builder::Col<UniqueConnectionId, __sdk::ConnectionId>,
+    pub data: __sdk::__query_builder::Col<UniqueConnectionId, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for UniqueConnectionId {
+    type Cols = UniqueConnectionIdCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueConnectionIdCols {
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueConnectionId`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueConnectionIdIxCols {
+    pub a: __sdk::__query_builder::IxCol<UniqueConnectionId, __sdk::ConnectionId>,
+}
+
+impl __sdk::__query_builder::HasIxCols for UniqueConnectionId {
+    type IxCols = UniqueConnectionIdIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueConnectionIdIxCols {
+            a: __sdk::__query_builder::IxCol::new(table_name, "a"),
+        }
+    }
+}

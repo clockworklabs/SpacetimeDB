@@ -14,3 +14,37 @@ pub struct UniqueU32 {
 impl __sdk::InModule for UniqueU32 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `UniqueU32`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueU32Cols {
+    pub n: __sdk::__query_builder::Col<UniqueU32, u32>,
+    pub data: __sdk::__query_builder::Col<UniqueU32, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for UniqueU32 {
+    type Cols = UniqueU32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueU32Cols {
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueU32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueU32IxCols {
+    pub n: __sdk::__query_builder::IxCol<UniqueU32, u32>,
+}
+
+impl __sdk::__query_builder::HasIxCols for UniqueU32 {
+    type IxCols = UniqueU32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueU32IxCols {
+            n: __sdk::__query_builder::IxCol::new(table_name, "n"),
+        }
+    }
+}

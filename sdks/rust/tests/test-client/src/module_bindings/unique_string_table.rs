@@ -124,3 +124,19 @@ impl<'ctx> UniqueStringSUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueString`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_stringQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueString`.
+    fn unique_string(&self) -> __sdk::__query_builder::Table<UniqueString>;
+}
+
+impl unique_stringQueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_string(&self) -> __sdk::__query_builder::Table<UniqueString> {
+        __sdk::__query_builder::Table::new("unique_string")
+    }
+}

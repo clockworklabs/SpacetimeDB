@@ -3,7 +3,7 @@ use spacetimedb_lib::{
     ConnectionId, Identity, Timestamp,
 };
 
-use crate::query_builder::{Col, ColumnRef};
+use crate::{Col, ColumnRef};
 
 pub enum Operand<T> {
     Column(ColumnRef<T>),

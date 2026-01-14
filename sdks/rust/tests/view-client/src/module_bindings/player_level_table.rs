@@ -124,3 +124,19 @@ impl<'ctx> PlayerLevelEntityIdUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PlayerLevel`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait player_levelQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PlayerLevel`.
+    fn player_level(&self) -> __sdk::__query_builder::Table<PlayerLevel>;
+}
+
+impl player_levelQueryTableAccess for __sdk::QueryTableAccessor {
+    fn player_level(&self) -> __sdk::__query_builder::Table<PlayerLevel> {
+        __sdk::__query_builder::Table::new("player_level")
+    }
+}

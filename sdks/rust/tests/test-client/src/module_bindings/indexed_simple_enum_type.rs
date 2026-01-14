@@ -15,3 +15,35 @@ pub struct IndexedSimpleEnum {
 impl __sdk::InModule for IndexedSimpleEnum {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `IndexedSimpleEnum`.
+///
+/// Provides typed access to columns for query building.
+pub struct IndexedSimpleEnumCols {
+    pub n: __sdk::__query_builder::Col<IndexedSimpleEnum, SimpleEnum>,
+}
+
+impl __sdk::__query_builder::HasCols for IndexedSimpleEnum {
+    type Cols = IndexedSimpleEnumCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        IndexedSimpleEnumCols {
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `IndexedSimpleEnum`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct IndexedSimpleEnumIxCols {
+    pub n: __sdk::__query_builder::IxCol<IndexedSimpleEnum, SimpleEnum>,
+}
+
+impl __sdk::__query_builder::HasIxCols for IndexedSimpleEnum {
+    type IxCols = IndexedSimpleEnumIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        IndexedSimpleEnumIxCols {
+            n: __sdk::__query_builder::IxCol::new(table_name, "n"),
+        }
+    }
+}

@@ -15,3 +15,31 @@ pub struct OneSimpleEnum {
 impl __sdk::InModule for OneSimpleEnum {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneSimpleEnum`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneSimpleEnumCols {
+    pub e: __sdk::__query_builder::Col<OneSimpleEnum, SimpleEnum>,
+}
+
+impl __sdk::__query_builder::HasCols for OneSimpleEnum {
+    type Cols = OneSimpleEnumCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneSimpleEnumCols {
+            e: __sdk::__query_builder::Col::new(table_name, "e"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneSimpleEnum`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneSimpleEnumIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneSimpleEnum {
+    type IxCols = OneSimpleEnumIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneSimpleEnumIxCols {}
+    }
+}

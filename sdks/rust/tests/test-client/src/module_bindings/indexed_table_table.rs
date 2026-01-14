@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `IndexedTable`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait indexed_tableQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `IndexedTable`.
+    fn indexed_table(&self) -> __sdk::__query_builder::Table<IndexedTable>;
+}
+
+impl indexed_tableQueryTableAccess for __sdk::QueryTableAccessor {
+    fn indexed_table(&self) -> __sdk::__query_builder::Table<IndexedTable> {
+        __sdk::__query_builder::Table::new("indexed_table")
+    }
+}

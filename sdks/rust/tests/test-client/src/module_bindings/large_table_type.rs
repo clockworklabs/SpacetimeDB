@@ -41,3 +41,73 @@ pub struct LargeTable {
 impl __sdk::InModule for LargeTable {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `LargeTable`.
+///
+/// Provides typed access to columns for query building.
+pub struct LargeTableCols {
+    pub a: __sdk::__query_builder::Col<LargeTable, u8>,
+    pub b: __sdk::__query_builder::Col<LargeTable, u16>,
+    pub c: __sdk::__query_builder::Col<LargeTable, u32>,
+    pub d: __sdk::__query_builder::Col<LargeTable, u64>,
+    pub e: __sdk::__query_builder::Col<LargeTable, u128>,
+    pub f: __sdk::__query_builder::Col<LargeTable, __sats::u256>,
+    pub g: __sdk::__query_builder::Col<LargeTable, i8>,
+    pub h: __sdk::__query_builder::Col<LargeTable, i16>,
+    pub i: __sdk::__query_builder::Col<LargeTable, i32>,
+    pub j: __sdk::__query_builder::Col<LargeTable, i64>,
+    pub k: __sdk::__query_builder::Col<LargeTable, i128>,
+    pub l: __sdk::__query_builder::Col<LargeTable, __sats::i256>,
+    pub m: __sdk::__query_builder::Col<LargeTable, bool>,
+    pub n: __sdk::__query_builder::Col<LargeTable, f32>,
+    pub o: __sdk::__query_builder::Col<LargeTable, f64>,
+    pub p: __sdk::__query_builder::Col<LargeTable, String>,
+    pub q: __sdk::__query_builder::Col<LargeTable, SimpleEnum>,
+    pub r: __sdk::__query_builder::Col<LargeTable, EnumWithPayload>,
+    pub s: __sdk::__query_builder::Col<LargeTable, UnitStruct>,
+    pub t: __sdk::__query_builder::Col<LargeTable, ByteStruct>,
+    pub u: __sdk::__query_builder::Col<LargeTable, EveryPrimitiveStruct>,
+    pub v: __sdk::__query_builder::Col<LargeTable, EveryVecStruct>,
+}
+
+impl __sdk::__query_builder::HasCols for LargeTable {
+    type Cols = LargeTableCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        LargeTableCols {
+            a: __sdk::__query_builder::Col::new(table_name, "a"),
+            b: __sdk::__query_builder::Col::new(table_name, "b"),
+            c: __sdk::__query_builder::Col::new(table_name, "c"),
+            d: __sdk::__query_builder::Col::new(table_name, "d"),
+            e: __sdk::__query_builder::Col::new(table_name, "e"),
+            f: __sdk::__query_builder::Col::new(table_name, "f"),
+            g: __sdk::__query_builder::Col::new(table_name, "g"),
+            h: __sdk::__query_builder::Col::new(table_name, "h"),
+            i: __sdk::__query_builder::Col::new(table_name, "i"),
+            j: __sdk::__query_builder::Col::new(table_name, "j"),
+            k: __sdk::__query_builder::Col::new(table_name, "k"),
+            l: __sdk::__query_builder::Col::new(table_name, "l"),
+            m: __sdk::__query_builder::Col::new(table_name, "m"),
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+            o: __sdk::__query_builder::Col::new(table_name, "o"),
+            p: __sdk::__query_builder::Col::new(table_name, "p"),
+            q: __sdk::__query_builder::Col::new(table_name, "q"),
+            r: __sdk::__query_builder::Col::new(table_name, "r"),
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+            t: __sdk::__query_builder::Col::new(table_name, "t"),
+            u: __sdk::__query_builder::Col::new(table_name, "u"),
+            v: __sdk::__query_builder::Col::new(table_name, "v"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `LargeTable`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct LargeTableIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for LargeTable {
+    type IxCols = LargeTableIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        LargeTableIxCols {}
+    }
+}

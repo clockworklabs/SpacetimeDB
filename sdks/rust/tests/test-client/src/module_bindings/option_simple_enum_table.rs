@@ -94,3 +94,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionSimpleEnum`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_simple_enumQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionSimpleEnum`.
+    fn option_simple_enum(&self) -> __sdk::__query_builder::Table<OptionSimpleEnum>;
+}
+
+impl option_simple_enumQueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_simple_enum(&self) -> __sdk::__query_builder::Table<OptionSimpleEnum> {
+        __sdk::__query_builder::Table::new("option_simple_enum")
+    }
+}

@@ -94,3 +94,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecEnumWithPayload`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_enum_with_payloadQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecEnumWithPayload`.
+    fn vec_enum_with_payload(&self) -> __sdk::__query_builder::Table<VecEnumWithPayload>;
+}
+
+impl vec_enum_with_payloadQueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_enum_with_payload(&self) -> __sdk::__query_builder::Table<VecEnumWithPayload> {
+        __sdk::__query_builder::Table::new("vec_enum_with_payload")
+    }
+}

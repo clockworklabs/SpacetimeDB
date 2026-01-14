@@ -13,3 +13,31 @@ pub struct OptionString {
 impl __sdk::InModule for OptionString {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OptionString`.
+///
+/// Provides typed access to columns for query building.
+pub struct OptionStringCols {
+    pub s: __sdk::__query_builder::Col<OptionString, Option<String>>,
+}
+
+impl __sdk::__query_builder::HasCols for OptionString {
+    type Cols = OptionStringCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OptionStringCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OptionString`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OptionStringIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OptionString {
+    type IxCols = OptionStringIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OptionStringIxCols {}
+    }
+}

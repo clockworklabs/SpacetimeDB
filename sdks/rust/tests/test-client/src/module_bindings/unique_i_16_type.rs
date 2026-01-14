@@ -14,3 +14,37 @@ pub struct UniqueI16 {
 impl __sdk::InModule for UniqueI16 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `UniqueI16`.
+///
+/// Provides typed access to columns for query building.
+pub struct UniqueI16Cols {
+    pub n: __sdk::__query_builder::Col<UniqueI16, i16>,
+    pub data: __sdk::__query_builder::Col<UniqueI16, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for UniqueI16 {
+    type Cols = UniqueI16Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        UniqueI16Cols {
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `UniqueI16`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct UniqueI16IxCols {
+    pub n: __sdk::__query_builder::IxCol<UniqueI16, i16>,
+}
+
+impl __sdk::__query_builder::HasIxCols for UniqueI16 {
+    type IxCols = UniqueI16IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        UniqueI16IxCols {
+            n: __sdk::__query_builder::IxCol::new(table_name, "n"),
+        }
+    }
+}

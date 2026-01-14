@@ -327,7 +327,7 @@ impl<T: SpacetimeType + Serialize> ViewReturn for Option<T> {
 
 impl<T: SpacetimeType + Serialize> ViewReturn for Query<T> {
     fn to_writer(self, buf: &mut Vec<u8>) -> Result<(), EncodeError> {
-        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql))
+        bsatn::to_writer(buf, &ViewResultHeader::RawSql(self.sql().to_string()))
     }
 }
 

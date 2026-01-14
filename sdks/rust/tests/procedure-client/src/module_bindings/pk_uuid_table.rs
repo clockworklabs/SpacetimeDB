@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkUuid`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_uuidQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkUuid`.
+    fn pk_uuid(&self) -> __sdk::__query_builder::Table<PkUuid>;
+}
+
+impl pk_uuidQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_uuid(&self) -> __sdk::__query_builder::Table<PkUuid> {
+        __sdk::__query_builder::Table::new("pk_uuid")
+    }
+}

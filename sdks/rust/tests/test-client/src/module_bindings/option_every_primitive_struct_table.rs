@@ -96,3 +96,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionEveryPrimitiveStruct`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_every_primitive_structQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionEveryPrimitiveStruct`.
+    fn option_every_primitive_struct(&self) -> __sdk::__query_builder::Table<OptionEveryPrimitiveStruct>;
+}
+
+impl option_every_primitive_structQueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_every_primitive_struct(&self) -> __sdk::__query_builder::Table<OptionEveryPrimitiveStruct> {
+        __sdk::__query_builder::Table::new("option_every_primitive_struct")
+    }
+}

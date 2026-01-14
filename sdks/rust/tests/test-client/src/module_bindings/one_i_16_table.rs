@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OneI16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait one_i16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OneI16`.
+    fn one_i16(&self) -> __sdk::__query_builder::Table<OneI16>;
+}
+
+impl one_i16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn one_i16(&self) -> __sdk::__query_builder::Table<OneI16> {
+        __sdk::__query_builder::Table::new("one_i16")
+    }
+}

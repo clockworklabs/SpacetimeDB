@@ -13,3 +13,31 @@ pub struct OneString {
 impl __sdk::InModule for OneString {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneString`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneStringCols {
+    pub s: __sdk::__query_builder::Col<OneString, String>,
+}
+
+impl __sdk::__query_builder::HasCols for OneString {
+    type Cols = OneStringCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneStringCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneString`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneStringIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneString {
+    type IxCols = OneStringIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneStringIxCols {}
+    }
+}

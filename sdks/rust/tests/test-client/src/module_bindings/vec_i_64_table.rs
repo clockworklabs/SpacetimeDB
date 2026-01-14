@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecI64`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_i64QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecI64`.
+    fn vec_i64(&self) -> __sdk::__query_builder::Table<VecI64>;
+}
+
+impl vec_i64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_i64(&self) -> __sdk::__query_builder::Table<VecI64> {
+        __sdk::__query_builder::Table::new("vec_i64")
+    }
+}

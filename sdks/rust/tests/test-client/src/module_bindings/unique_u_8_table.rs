@@ -124,3 +124,19 @@ impl<'ctx> UniqueU8NUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueU8`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_u8QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueU8`.
+    fn unique_u8(&self) -> __sdk::__query_builder::Table<UniqueU8>;
+}
+
+impl unique_u8QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u8(&self) -> __sdk::__query_builder::Table<UniqueU8> {
+        __sdk::__query_builder::Table::new("unique_u8")
+    }
+}

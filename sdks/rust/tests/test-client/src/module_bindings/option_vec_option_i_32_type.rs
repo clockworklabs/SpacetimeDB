@@ -13,3 +13,31 @@ pub struct OptionVecOptionI32 {
 impl __sdk::InModule for OptionVecOptionI32 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OptionVecOptionI32`.
+///
+/// Provides typed access to columns for query building.
+pub struct OptionVecOptionI32Cols {
+    pub v: __sdk::__query_builder::Col<OptionVecOptionI32, Option<Vec<Option<i32>>>>,
+}
+
+impl __sdk::__query_builder::HasCols for OptionVecOptionI32 {
+    type Cols = OptionVecOptionI32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OptionVecOptionI32Cols {
+            v: __sdk::__query_builder::Col::new(table_name, "v"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OptionVecOptionI32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OptionVecOptionI32IxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OptionVecOptionI32 {
+    type IxCols = OptionVecOptionI32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OptionVecOptionI32IxCols {}
+    }
+}

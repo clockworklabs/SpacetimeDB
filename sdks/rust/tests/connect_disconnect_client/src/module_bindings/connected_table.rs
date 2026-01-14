@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `Connected`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait connectedQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `Connected`.
+    fn connected(&self) -> __sdk::__query_builder::Table<Connected>;
+}
+
+impl connectedQueryTableAccess for __sdk::QueryTableAccessor {
+    fn connected(&self) -> __sdk::__query_builder::Table<Connected> {
+        __sdk::__query_builder::Table::new("connected")
+    }
+}

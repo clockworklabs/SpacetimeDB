@@ -124,3 +124,19 @@ impl<'ctx> UniqueBoolBUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueBool`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_boolQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueBool`.
+    fn unique_bool(&self) -> __sdk::__query_builder::Table<UniqueBool>;
+}
+
+impl unique_boolQueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_bool(&self) -> __sdk::__query_builder::Table<UniqueBool> {
+        __sdk::__query_builder::Table::new("unique_bool")
+    }
+}

@@ -140,3 +140,19 @@ impl<'ctx> PkConnectionIdAUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkConnectionId`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_connection_idQueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkConnectionId`.
+    fn pk_connection_id(&self) -> __sdk::__query_builder::Table<PkConnectionId>;
+}
+
+impl pk_connection_idQueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_connection_id(&self) -> __sdk::__query_builder::Table<PkConnectionId> {
+        __sdk::__query_builder::Table::new("pk_connection_id")
+    }
+}

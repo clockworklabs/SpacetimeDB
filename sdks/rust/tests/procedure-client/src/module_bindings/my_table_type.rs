@@ -15,3 +15,31 @@ pub struct MyTable {
 impl __sdk::InModule for MyTable {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `MyTable`.
+///
+/// Provides typed access to columns for query building.
+pub struct MyTableCols {
+    pub field: __sdk::__query_builder::Col<MyTable, ReturnStruct>,
+}
+
+impl __sdk::__query_builder::HasCols for MyTable {
+    type Cols = MyTableCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        MyTableCols {
+            field: __sdk::__query_builder::Col::new(table_name, "field"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `MyTable`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct MyTableIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for MyTable {
+    type IxCols = MyTableIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        MyTableIxCols {}
+    }
+}
