@@ -388,7 +388,7 @@ pub(crate) mod tests {
     };
     use spacetimedb_lib::bsatn::ToBsatn;
     use spacetimedb_lib::db::auth::{StAccess, StTableType};
-    use spacetimedb_lib::error::{ResultTest, TestError};
+    use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::{AlgebraicValue, Identity};
     use spacetimedb_primitives::{col_list, ColId, TableId};
     use spacetimedb_sats::{product, AlgebraicType, ArrayValue, ProductType};
@@ -1263,9 +1263,9 @@ pub(crate) mod tests {
 
         let db = TestDB::durable()?;
 
-        with_auto_commit::<_, TestError>(&db, |tx| {
-            let i = create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
-            let p = create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
+        with_auto_commit(&db, |tx| -> ResultTest<()> {
+            create_table_with_rows(&db, tx, "Inventory", data.inv_ty, &data.inv.data, StAccess::Public)?;
+            create_table_with_rows(&db, tx, "Player", data.player_ty, &data.player.data, StAccess::Public)?;
             create_table_with_rows(
                 &db,
                 tx,
@@ -1274,7 +1274,7 @@ pub(crate) mod tests {
                 &data.location.data,
                 StAccess::Public,
             )?;
-            Ok((p, i))
+            Ok(())
         })?;
 
         let result = run_for_testing(

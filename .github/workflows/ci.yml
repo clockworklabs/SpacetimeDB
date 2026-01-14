@@ -176,7 +176,7 @@ jobs:
         run: pnpm build
 
       - name: Run tests
-        run: cargo ci test
+        run: RUST_BACKTRACE=1 cargo ci test
 
   lints:
     name: Lints
@@ -783,7 +783,7 @@ jobs:
             // Use the ref for pull requests because the head sha is brittle (github does some extra dance where it merges in master).
             const publicRef = (context.eventName === 'pull_request') ? context.payload.pull_request.head.ref : context.sha;
             const preDispatch = new Date().toISOString();
-  
+
             // Dispatch the workflow in the target repository
             await github.rest.actions.createWorkflowDispatch({
               owner: targetOwner,
@@ -792,9 +792,9 @@ jobs:
               ref: targetRef,
               inputs: { public_ref: publicRef }
             });
-  
+
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  
+
             // Find the dispatched run by name
             let runId = null;
             for (let attempt = 0; attempt < 20 && !runId; attempt++) { // up to ~10 minutes to locate the run
@@ -807,28 +807,28 @@ jobs:
                 branch: targetRef,
                 per_page: 50,
               });
-  
+
               const expectedName = `CI [public_ref=${publicRef}]`;
               const candidates = runsResp.data.workflow_runs
                 .filter(r => r.name === expectedName && new Date(r.created_at) >= new Date(preDispatch))
                 .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  
+
               if (candidates.length > 0) {
                 runId = candidates[0].id;
                 break;
               }
             }
-  
+
             if (!runId) {
               core.setFailed('Failed to locate dispatched run in the private repository.');
               return;
             }
-  
+
             const runUrl = `https://github.com/${targetOwner}/${targetRepo}/actions/runs/${runId}`;
             core.info(`View run: ${runUrl}`);
             core.setOutput('run_id', String(runId));
             core.setOutput('run_url', runUrl);
-  
+
       - name: Wait for Internal Tests to complete
         uses: actions/github-script@v7
         with:
@@ -839,9 +839,9 @@ jobs:
             const runId = Number(`${{ steps.dispatch.outputs.run_id }}`);
             const runUrl = `${{ steps.dispatch.outputs.run_url }}`;
             const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-  
+
             core.info(`Waiting for workflow result... ${runUrl}`);
-  
+
             let conclusion = null;
             for (let attempt = 0; attempt < 240; attempt++) { // up to ~2 hours
               const runResp = await github.rest.actions.getWorkflowRun({
@@ -856,16 +856,16 @@ jobs:
               }
               await sleep(30000);
             }
-  
+
             if (!conclusion) {
               core.setFailed('Timed out waiting for private workflow to complete.');
               return;
             }
-  
+
             if (conclusion !== 'success') {
               core.setFailed(`Private workflow failed with conclusion: ${conclusion}`);
             }
-  
+
       - name: Cancel invoked run if workflow cancelled
         if: ${{ cancelled() }}
         uses: actions/github-script@v7

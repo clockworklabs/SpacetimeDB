@@ -231,7 +231,7 @@ mod tests {
     use super::*;
     use crate::db::relational_db::tests_utils::{begin_mut_tx, begin_tx, insert, with_auto_commit, TestDB};
     use crate::sql::execute::tests::run_for_testing;
-    use spacetimedb_lib::error::{ResultTest, TestError};
+    use spacetimedb_lib::error::ResultTest;
     use spacetimedb_lib::{ConnectionId, Identity};
     use spacetimedb_primitives::{col_list, ColList, TableId};
     use spacetimedb_sats::{product, AlgebraicType, AlgebraicValue, GroundSpacetimeType as _};
@@ -354,9 +354,9 @@ mod tests {
             ConnectionId::ZERO,
         ];
 
-        with_auto_commit(&db, |tx| {
+        with_auto_commit(&db, |tx| -> ResultTest<()> {
             insert(&db, tx, table_id, &row.clone())?;
-            Ok::<(), TestError>(())
+            Ok(())
         })?;
 
         // Check can be used by CRUD ops:
