@@ -1545,10 +1545,9 @@ impl WasmInstanceEnv {
     }
 
     /// Starts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// a mutable transaction lock is aquired.
+    /// blocking until a mutable transaction lock is acquired.
     ///
-    /// Upon resuming, returns `0` on success,
+    /// Returns `0` on success,
     /// enabling further calls that require a pending transaction,
     /// or an error code otherwise.
     ///
@@ -1562,38 +1561,23 @@ impl WasmInstanceEnv {
     /// Returns an error:
     ///
     /// - `WOULD_BLOCK_TRANSACTION`, if there's already an ongoing transaction.
-    pub fn procedure_start_mut_tx<'caller>(
-        caller: Caller<'caller, Self>,
-        (out,): (WasmPtr<u64>,),
-    ) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(
-            caller,
-            AbiCall::ProcedureStartMutTransaction,
-            move |mut caller| async move {
-                let (mem, env) = Self::mem_env(&mut caller);
-                let res = async {
-                    env.instance_env.start_mutable_tx()?.await;
-                    Ok(())
-                }
-                .await;
-                let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
-                let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
+    pub fn procedure_start_mut_tx<'caller>(caller: Caller<'caller, Self>, out: WasmPtr<u64>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureStartMutTransaction, |mut caller| {
+            let (mem, env) = Self::mem_env(&mut caller);
+            let res = env.instance_env.start_mutable_tx().map_err(WasmError::from);
+            let timestamp = Timestamp::now().to_micros_since_unix_epoch() as u64;
+            let res = res.and_then(|()| Ok(timestamp.write_to(mem, out)?));
 
-                let result = res
-                    .map(|()| 0u16.into())
-                    .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err));
-
-                (caller, result)
-            },
-        )
+            res.map(|()| 0u16.into())
+                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureStartMutTransaction, err))
+        })
     }
 
     /// Commits a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been committed
+    /// blocking until the transaction has been committed
     /// and subscription queries have been run and broadcast.
     ///
-    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    /// Once complete, it returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
@@ -1611,30 +1595,22 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(
-            caller,
-            AbiCall::ProcedureCommitMutTransaction,
-            |mut caller| async move {
-                let (_, env) = Self::mem_env(&mut caller);
+    pub fn procedure_commit_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureCommitMutTransaction, |mut caller| {
+            let (_, env) = Self::mem_env(&mut caller);
 
-                let res = async {
-                    env.instance_env.commit_mutable_tx()?.await;
-                    Ok(0u16.into())
-                }
-                .await
-                .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err));
-
-                (caller, res)
-            },
-        )
+            {
+                env.instance_env.commit_mutable_tx()?;
+                Ok(0u16.into())
+            }
+            .or_else(|err| Self::convert_wasm_result(AbiCall::ProcedureCommitMutTransaction, err))
+        })
     }
 
     /// Aborts a mutable transaction,
-    /// suspending execution of this WASM instance until
-    /// the transaction has been rolled back.
+    /// blocking until the transaction has been aborted.
     ///
-    /// Upon resuming, returns `0` on success, or an error code otherwise.
+    /// Returns `0` on success, or an error code otherwise.
     ///
     /// # Traps
     ///
@@ -1652,11 +1628,10 @@ impl WasmInstanceEnv {
     /// - `TRANSACTION_IS_READ_ONLY`, if the pending transaction is read-only.
     ///   This currently does not happen as anonymous read transactions
     ///   are not exposed to modules.
-    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>, (): ()) -> Fut<'caller, RtResult<u32>> {
-        Self::async_with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| async move {
+    pub fn procedure_abort_mut_tx<'caller>(caller: Caller<'caller, Self>) -> RtResult<u32> {
+        Self::with_span(caller, AbiCall::ProcedureAbortMutTransaction, |mut caller| {
             let (_, env) = Self::mem_env(&mut caller);
-            let ret = env.procedure_abort_mut_tx_inner();
-            (caller, ret)
+            env.procedure_abort_mut_tx_inner()
         })
     }
 

@@ -25,6 +25,8 @@
 /// Additionally, beyond our btree indices,
 /// we support direct unique indices, where key are indices into `Vec`s.
 use self::same_key_entry::SameKeyEntryIter;
+use self::unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
+use self::unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
 use super::indexes::RowPointer;
 use super::table::RowRef;
 use crate::{read_column::ReadColumn, static_assert_size};
@@ -35,7 +37,9 @@ use spacetimedb_sats::{
     algebraic_value::Packed, i256, product_value::InvalidFieldError, sum_value::SumTag, u256, AlgebraicType,
     AlgebraicValue, ProductType, F32, F64,
 };
+use spacetimedb_schema::def::IndexAlgorithm;
 
+mod index;
 mod key_size;
 mod multimap;
 mod same_key_entry;
@@ -43,17 +47,15 @@ pub mod unique_direct_fixed_cap_index;
 pub mod unique_direct_index;
 pub mod uniquemap;
 
-pub use key_size::KeySize;
-use spacetimedb_schema::def::IndexAlgorithm;
-use unique_direct_fixed_cap_index::{UniqueDirectFixedCapIndex, UniqueDirectFixedCapIndexRangeIter};
-use unique_direct_index::{UniqueDirectIndex, UniqueDirectIndexPointIter, UniqueDirectIndexRangeIter};
+pub use self::index::{Index, IndexCannotSeekRange, IndexSeekRangeResult, RangedIndex};
+pub use self::key_size::KeySize;
 
-type BtreeIndex<K> = multimap::MultiMap<K, RowPointer>;
-type BtreeIndexPointIter<'a> = SameKeyEntryIter<'a, RowPointer>;
-type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K, RowPointer>;
-type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K, RowPointer>;
-type BtreeUniqueIndexPointIter<'a> = uniquemap::UniqueMapPointIter<'a, RowPointer>;
-type BtreeUniqueIndexRangeIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K, RowPointer>;
+type BtreeIndex<K> = multimap::MultiMap<K>;
+type BtreeIndexPointIter<'a> = SameKeyEntryIter<'a>;
+type BtreeIndexRangeIter<'a, K> = multimap::MultiMapRangeIter<'a, K>;
+type BtreeUniqueIndex<K> = uniquemap::UniqueMap<K>;
+type BtreeUniqueIndexPointIter<'a> = uniquemap::UniqueMapPointIter<'a>;
+type BtreeUniqueIndexRangeIter<'a, K> = uniquemap::UniqueMapRangeIter<'a, K>;
 
 /// A point iterator over a [`TypedIndex`], with a specialized key type.
 ///
@@ -68,8 +70,8 @@ impl Iterator for TypedIndexPointIter<'_> {
     type Item = RowPointer;
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::BTree(this) => this.next().copied(),
-            Self::UniqueBTree(this) => this.next().copied(),
+            Self::BTree(this) => this.next(),
+            Self::UniqueBTree(this) => this.next(),
             Self::UniqueDirect(this) => this.next(),
         }
     }
@@ -144,41 +146,41 @@ impl Iterator for TypedIndexRangeIter<'_> {
         match self {
             Self::RangeEmpty => None,
 
-            Self::BtreeBool(this) => this.next().copied(),
-            Self::BtreeU8(this) => this.next().copied(),
-            Self::BtreeI8(this) => this.next().copied(),
-            Self::BtreeU16(this) => this.next().copied(),
-            Self::BtreeI16(this) => this.next().copied(),
-            Self::BtreeU32(this) => this.next().copied(),
-            Self::BtreeI32(this) => this.next().copied(),
-            Self::BtreeU64(this) => this.next().copied(),
-            Self::BtreeI64(this) => this.next().copied(),
-            Self::BtreeU128(this) => this.next().copied(),
-            Self::BtreeI128(this) => this.next().copied(),
-            Self::BtreeU256(this) => this.next().copied(),
-            Self::BtreeI256(this) => this.next().copied(),
-            Self::BtreeF32(this) => this.next().copied(),
-            Self::BtreeF64(this) => this.next().copied(),
-            Self::BtreeString(this) => this.next().copied(),
-            Self::BtreeAV(this) => this.next().copied(),
+            Self::BtreeBool(this) => this.next(),
+            Self::BtreeU8(this) => this.next(),
+            Self::BtreeI8(this) => this.next(),
+            Self::BtreeU16(this) => this.next(),
+            Self::BtreeI16(this) => this.next(),
+            Self::BtreeU32(this) => this.next(),
+            Self::BtreeI32(this) => this.next(),
+            Self::BtreeU64(this) => this.next(),
+            Self::BtreeI64(this) => this.next(),
+            Self::BtreeU128(this) => this.next(),
+            Self::BtreeI128(this) => this.next(),
+            Self::BtreeU256(this) => this.next(),
+            Self::BtreeI256(this) => this.next(),
+            Self::BtreeF32(this) => this.next(),
+            Self::BtreeF64(this) => this.next(),
+            Self::BtreeString(this) => this.next(),
+            Self::BtreeAV(this) => this.next(),
 
-            Self::UniqueBtreeBool(this) => this.next().copied(),
-            Self::UniqueBtreeU8(this) => this.next().copied(),
-            Self::UniqueBtreeI8(this) => this.next().copied(),
-            Self::UniqueBtreeU16(this) => this.next().copied(),
-            Self::UniqueBtreeI16(this) => this.next().copied(),
-            Self::UniqueBtreeU32(this) => this.next().copied(),
-            Self::UniqueBtreeI32(this) => this.next().copied(),
-            Self::UniqueBtreeU64(this) => this.next().copied(),
-            Self::UniqueBtreeI64(this) => this.next().copied(),
-            Self::UniqueBtreeU128(this) => this.next().copied(),
-            Self::UniqueBtreeI128(this) => this.next().copied(),
-            Self::UniqueBtreeU256(this) => this.next().copied(),
-            Self::UniqueBtreeI256(this) => this.next().copied(),
-            Self::UniqueBtreeF32(this) => this.next().copied(),
-            Self::UniqueBtreeF64(this) => this.next().copied(),
-            Self::UniqueBtreeString(this) => this.next().copied(),
-            Self::UniqueBtreeAV(this) => this.next().copied(),
+            Self::UniqueBtreeBool(this) => this.next(),
+            Self::UniqueBtreeU8(this) => this.next(),
+            Self::UniqueBtreeI8(this) => this.next(),
+            Self::UniqueBtreeU16(this) => this.next(),
+            Self::UniqueBtreeI16(this) => this.next(),
+            Self::UniqueBtreeU32(this) => this.next(),
+            Self::UniqueBtreeI32(this) => this.next(),
+            Self::UniqueBtreeU64(this) => this.next(),
+            Self::UniqueBtreeI64(this) => this.next(),
+            Self::UniqueBtreeU128(this) => this.next(),
+            Self::UniqueBtreeI128(this) => this.next(),
+            Self::UniqueBtreeU256(this) => this.next(),
+            Self::UniqueBtreeI256(this) => this.next(),
+            Self::UniqueBtreeF32(this) => this.next(),
+            Self::UniqueBtreeF64(this) => this.next(),
+            Self::UniqueBtreeString(this) => this.next(),
+            Self::UniqueBtreeAV(this) => this.next(),
 
             Self::UniqueDirect(this) => this.next(),
             Self::UniqueDirectU8(this) => this.next(),
@@ -253,51 +255,57 @@ enum TypedIndex {
     UniqueDirectU64(UniqueDirectIndex),
 }
 
+macro_rules! same_for_all_types {
+    ($scrutinee:expr, $this:ident => $body:expr) => {
+        match $scrutinee {
+            Self::BtreeBool($this) => $body,
+            Self::BtreeU8($this) | Self::BtreeSumTag($this) => $body,
+            Self::BtreeI8($this) => $body,
+            Self::BtreeU16($this) => $body,
+            Self::BtreeI16($this) => $body,
+            Self::BtreeU32($this) => $body,
+            Self::BtreeI32($this) => $body,
+            Self::BtreeU64($this) => $body,
+            Self::BtreeI64($this) => $body,
+            Self::BtreeU128($this) => $body,
+            Self::BtreeI128($this) => $body,
+            Self::BtreeU256($this) => $body,
+            Self::BtreeI256($this) => $body,
+            Self::BtreeF32($this) => $body,
+            Self::BtreeF64($this) => $body,
+            Self::BtreeString($this) => $body,
+            Self::BtreeAV($this) => $body,
+
+            Self::UniqueBtreeBool($this) => $body,
+            Self::UniqueBtreeU8($this) | Self::UniqueBtreeSumTag($this) => $body,
+            Self::UniqueBtreeI8($this) => $body,
+            Self::UniqueBtreeU16($this) => $body,
+            Self::UniqueBtreeI16($this) => $body,
+            Self::UniqueBtreeU32($this) => $body,
+            Self::UniqueBtreeI32($this) => $body,
+            Self::UniqueBtreeU64($this) => $body,
+            Self::UniqueBtreeI64($this) => $body,
+            Self::UniqueBtreeU128($this) => $body,
+            Self::UniqueBtreeI128($this) => $body,
+            Self::UniqueBtreeU256($this) => $body,
+            Self::UniqueBtreeI256($this) => $body,
+            Self::UniqueBtreeF32($this) => $body,
+            Self::UniqueBtreeF64($this) => $body,
+            Self::UniqueBtreeString($this) => $body,
+            Self::UniqueBtreeAV($this) => $body,
+
+            Self::UniqueDirectSumTag($this) => $body,
+            Self::UniqueDirectU8($this)
+            | Self::UniqueDirectU16($this)
+            | Self::UniqueDirectU32($this)
+            | Self::UniqueDirectU64($this) => $body,
+        }
+    };
+}
+
 impl MemoryUsage for TypedIndex {
     fn heap_usage(&self) -> usize {
-        match self {
-            TypedIndex::BtreeBool(this) => this.heap_usage(),
-            TypedIndex::BtreeU8(this) | TypedIndex::BtreeSumTag(this) => this.heap_usage(),
-            TypedIndex::BtreeI8(this) => this.heap_usage(),
-            TypedIndex::BtreeU16(this) => this.heap_usage(),
-            TypedIndex::BtreeI16(this) => this.heap_usage(),
-            TypedIndex::BtreeU32(this) => this.heap_usage(),
-            TypedIndex::BtreeI32(this) => this.heap_usage(),
-            TypedIndex::BtreeU64(this) => this.heap_usage(),
-            TypedIndex::BtreeI64(this) => this.heap_usage(),
-            TypedIndex::BtreeU128(this) => this.heap_usage(),
-            TypedIndex::BtreeI128(this) => this.heap_usage(),
-            TypedIndex::BtreeU256(this) => this.heap_usage(),
-            TypedIndex::BtreeI256(this) => this.heap_usage(),
-            TypedIndex::BtreeF32(this) => this.heap_usage(),
-            TypedIndex::BtreeF64(this) => this.heap_usage(),
-            TypedIndex::BtreeString(this) => this.heap_usage(),
-            TypedIndex::BtreeAV(this) => this.heap_usage(),
-
-            TypedIndex::UniqueBtreeBool(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU8(this) | TypedIndex::UniqueBtreeSumTag(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI8(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU16(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI16(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU128(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI128(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeU256(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeI256(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeF32(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeF64(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeString(this) => this.heap_usage(),
-            TypedIndex::UniqueBtreeAV(this) => this.heap_usage(),
-
-            TypedIndex::UniqueDirectSumTag(this) => this.heap_usage(),
-            TypedIndex::UniqueDirectU8(this)
-            | TypedIndex::UniqueDirectU16(this)
-            | TypedIndex::UniqueDirectU32(this)
-            | TypedIndex::UniqueDirectU64(this) => this.heap_usage(),
-        }
+        same_for_all_types!(self, this => this.heap_usage())
     }
 }
 
@@ -389,47 +397,47 @@ impl TypedIndex {
     fn clone_structure(&self) -> Self {
         use TypedIndex::*;
         match self {
-            BtreeBool(_) => BtreeBool(<_>::default()),
-            BtreeU8(_) => BtreeU8(<_>::default()),
-            BtreeSumTag(_) => BtreeSumTag(<_>::default()),
-            BtreeI8(_) => BtreeI8(<_>::default()),
-            BtreeU16(_) => BtreeU16(<_>::default()),
-            BtreeI16(_) => BtreeI16(<_>::default()),
-            BtreeU32(_) => BtreeU32(<_>::default()),
-            BtreeI32(_) => BtreeI32(<_>::default()),
-            BtreeU64(_) => BtreeU64(<_>::default()),
-            BtreeI64(_) => BtreeI64(<_>::default()),
-            BtreeU128(_) => BtreeU128(<_>::default()),
-            BtreeI128(_) => BtreeI128(<_>::default()),
-            BtreeU256(_) => BtreeU256(<_>::default()),
-            BtreeI256(_) => BtreeI256(<_>::default()),
-            BtreeF32(_) => BtreeF32(<_>::default()),
-            BtreeF64(_) => BtreeF64(<_>::default()),
-            BtreeString(_) => BtreeString(<_>::default()),
-            BtreeAV(_) => BtreeAV(<_>::default()),
-            UniqueBtreeBool(_) => UniqueBtreeBool(<_>::default()),
-            UniqueBtreeU8(_) => UniqueBtreeU8(<_>::default()),
-            UniqueBtreeSumTag(_) => UniqueBtreeSumTag(<_>::default()),
-            UniqueBtreeI8(_) => UniqueBtreeI8(<_>::default()),
-            UniqueBtreeU16(_) => UniqueBtreeU16(<_>::default()),
-            UniqueBtreeI16(_) => UniqueBtreeI16(<_>::default()),
-            UniqueBtreeU32(_) => UniqueBtreeU32(<_>::default()),
-            UniqueBtreeI32(_) => UniqueBtreeI32(<_>::default()),
-            UniqueBtreeU64(_) => UniqueBtreeU64(<_>::default()),
-            UniqueBtreeI64(_) => UniqueBtreeI64(<_>::default()),
-            UniqueBtreeU128(_) => UniqueBtreeU128(<_>::default()),
-            UniqueBtreeI128(_) => UniqueBtreeI128(<_>::default()),
-            UniqueBtreeU256(_) => UniqueBtreeU256(<_>::default()),
-            UniqueBtreeI256(_) => UniqueBtreeI256(<_>::default()),
-            UniqueBtreeF32(_) => UniqueBtreeF32(<_>::default()),
-            UniqueBtreeF64(_) => UniqueBtreeF64(<_>::default()),
-            UniqueBtreeString(_) => UniqueBtreeString(<_>::default()),
-            UniqueBtreeAV(_) => UniqueBtreeAV(<_>::default()),
-            UniqueDirectU8(_) => UniqueDirectU8(<_>::default()),
-            UniqueDirectSumTag(idx) => UniqueDirectSumTag(idx.clone_structure()),
-            UniqueDirectU16(_) => UniqueDirectU16(<_>::default()),
-            UniqueDirectU32(_) => UniqueDirectU32(<_>::default()),
-            UniqueDirectU64(_) => UniqueDirectU64(<_>::default()),
+            BtreeBool(i) => BtreeBool(i.clone_structure()),
+            BtreeU8(i) => BtreeU8(i.clone_structure()),
+            BtreeSumTag(i) => BtreeSumTag(i.clone_structure()),
+            BtreeI8(i) => BtreeI8(i.clone_structure()),
+            BtreeU16(i) => BtreeU16(i.clone_structure()),
+            BtreeI16(i) => BtreeI16(i.clone_structure()),
+            BtreeU32(i) => BtreeU32(i.clone_structure()),
+            BtreeI32(i) => BtreeI32(i.clone_structure()),
+            BtreeU64(i) => BtreeU64(i.clone_structure()),
+            BtreeI64(i) => BtreeI64(i.clone_structure()),
+            BtreeU128(i) => BtreeU128(i.clone_structure()),
+            BtreeI128(i) => BtreeI128(i.clone_structure()),
+            BtreeU256(i) => BtreeU256(i.clone_structure()),
+            BtreeI256(i) => BtreeI256(i.clone_structure()),
+            BtreeF32(i) => BtreeF32(i.clone_structure()),
+            BtreeF64(i) => BtreeF64(i.clone_structure()),
+            BtreeString(i) => BtreeString(i.clone_structure()),
+            BtreeAV(i) => BtreeAV(i.clone_structure()),
+            UniqueBtreeBool(i) => UniqueBtreeBool(i.clone_structure()),
+            UniqueBtreeU8(i) => UniqueBtreeU8(i.clone_structure()),
+            UniqueBtreeSumTag(i) => UniqueBtreeSumTag(i.clone_structure()),
+            UniqueBtreeI8(i) => UniqueBtreeI8(i.clone_structure()),
+            UniqueBtreeU16(i) => UniqueBtreeU16(i.clone_structure()),
+            UniqueBtreeI16(i) => UniqueBtreeI16(i.clone_structure()),
+            UniqueBtreeU32(i) => UniqueBtreeU32(i.clone_structure()),
+            UniqueBtreeI32(i) => UniqueBtreeI32(i.clone_structure()),
+            UniqueBtreeU64(i) => UniqueBtreeU64(i.clone_structure()),
+            UniqueBtreeI64(i) => UniqueBtreeI64(i.clone_structure()),
+            UniqueBtreeU128(i) => UniqueBtreeU128(i.clone_structure()),
+            UniqueBtreeI128(i) => UniqueBtreeI128(i.clone_structure()),
+            UniqueBtreeU256(i) => UniqueBtreeU256(i.clone_structure()),
+            UniqueBtreeI256(i) => UniqueBtreeI256(i.clone_structure()),
+            UniqueBtreeF32(i) => UniqueBtreeF32(i.clone_structure()),
+            UniqueBtreeF64(i) => UniqueBtreeF64(i.clone_structure()),
+            UniqueBtreeString(i) => UniqueBtreeString(i.clone_structure()),
+            UniqueBtreeAV(i) => UniqueBtreeAV(i.clone_structure()),
+            UniqueDirectU8(i) => UniqueDirectU8(i.clone_structure()),
+            UniqueDirectSumTag(i) => UniqueDirectSumTag(i.clone_structure()),
+            UniqueDirectU16(i) => UniqueDirectU16(i.clone_structure()),
+            UniqueDirectU32(i) => UniqueDirectU32(i.clone_structure()),
+            UniqueDirectU64(i) => UniqueDirectU64(i.clone_structure()),
         }
     }
 
@@ -469,13 +477,6 @@ impl TypedIndex {
     /// Add the row referred to by `row_ref` to the index `self`,
     /// which must be keyed at `cols`.
     ///
-    /// The returned `usize` is the number of bytes used by the key.
-    /// [`TableIndex::check_and_insert`] will use this
-    /// to update the counter for [`TableIndex::num_key_bytes`].
-    /// We want to store said counter outside of the [`TypedIndex`] enum,
-    /// but we can only compute the size using type info within the [`TypedIndex`],
-    /// so we have to return the size across this boundary.
-    ///
     /// Returns `Errs(existing_row)` if this index was a unique index that was violated.
     /// The index is not inserted to in that case.
     ///
@@ -483,7 +484,7 @@ impl TypedIndex {
     ///
     /// 1. Caller promises that `cols` matches what was given at construction (`Self::new`).
     /// 2. Caller promises that the projection of `row_ref`'s type's equals the index's key type.
-    unsafe fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<usize, RowPointer> {
+    unsafe fn insert(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<(), RowPointer> {
         fn project_to_singleton_key<T: ReadColumn>(cols: &ColList, row_ref: RowRef<'_>) -> T {
             // Extract the column.
             let col_pos = cols.as_singleton();
@@ -512,113 +513,70 @@ impl TypedIndex {
             unsafe { T::unchecked_read_column(row_ref, col_layout) }
         }
 
-        fn mm_insert_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeIndex<T>,
+        fn insert_at_type<T: ReadColumn, I: Index>(
+            this: &mut I,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer());
-            Ok(key_size)
+            convert: impl FnOnce(T) -> I::Key,
+        ) -> Result<(), RowPointer> {
+            let key = project_to_singleton_key(cols, row_ref);
+            this.insert(convert(key), row_ref.pointer())
         }
-        fn um_insert_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeUniqueIndex<T>,
+
+        fn insert_av(
+            this: &mut impl Index<Key = AlgebraicValue>,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key_size = key.key_size_in_bytes();
+        ) -> Result<(), RowPointer> {
+            // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
+            let key = unsafe { row_ref.project_unchecked(cols) };
             this.insert(key, row_ref.pointer())
-                .map_err(|ptr| *ptr)
-                .map(|_| key_size)
         }
-        fn direct_insert_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_usize: impl FnOnce(T) -> usize,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key = to_usize(key);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer()).map(|_| key_size)
-        }
-        fn direct_u8_insert_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectFixedCapIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_u8: impl FnOnce(T) -> usize,
-        ) -> Result<usize, RowPointer> {
-            let key: T = project_to_singleton_key(cols, row_ref);
-            let key = to_u8(key);
-            let key_size = key.key_size_in_bytes();
-            this.insert(key, row_ref.pointer()).map(|_| key_size)
-        }
+
+        use core::convert::identity as id;
+
         match self {
-            Self::BtreeBool(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU8(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeSumTag(idx) => {
-                let SumTag(key) = project_to_singleton_key(cols, row_ref);
-                let key_size = key.key_size_in_bytes();
-                idx.insert(key, row_ref.pointer());
-                Ok(key_size)
-            }
-            Self::BtreeI8(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU16(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI16(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU32(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI32(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU64(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI64(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU128(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI128(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeU256(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeI256(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeF32(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeF64(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeString(idx) => mm_insert_at_type(idx, cols, row_ref),
-            Self::BtreeAV(this) => {
-                // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
-                let key = unsafe { row_ref.project_unchecked(cols) };
-                let key_size = key.key_size_in_bytes();
-                this.insert(key, row_ref.pointer());
-                Ok(key_size)
-            }
-            Self::UniqueBtreeBool(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU8(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeSumTag(idx) => {
-                let SumTag(key) = project_to_singleton_key(cols, row_ref);
-                let key_size = key.key_size_in_bytes();
-                idx.insert(key, row_ref.pointer()).map_err(|ptr| *ptr).map(|_| key_size)
-            }
-            Self::UniqueBtreeI8(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU16(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI16(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU32(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI32(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU64(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI64(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU128(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI128(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeU256(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeI256(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeF32(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeF64(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeString(idx) => um_insert_at_type(idx, cols, row_ref),
-            Self::UniqueBtreeAV(this) => {
-                // SAFETY: Caller promised that any `col` in `cols` is in-bounds of `row_ref`'s layout.
-                let key = unsafe { row_ref.project_unchecked(cols) };
-                let key_size = key.key_size_in_bytes();
-                this.insert(key, row_ref.pointer())
-                    .map_err(|ptr| *ptr)
-                    .map(|_| key_size)
-            }
-            Self::UniqueDirectSumTag(idx) => direct_u8_insert_at_type(idx, cols, row_ref, |SumTag(tag)| tag as usize),
-            Self::UniqueDirectU8(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u8| k as usize),
-            Self::UniqueDirectU16(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u16| k as usize),
-            Self::UniqueDirectU32(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u32| k as usize),
-            Self::UniqueDirectU64(idx) => direct_insert_at_type(idx, cols, row_ref, |k: u64| k as usize),
+            Self::BtreeBool(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeU8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(k)| k),
+            Self::BtreeI8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeU16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeI16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeU32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeI32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeU64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeI64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeU128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeI128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeU256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeI256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeF32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeF64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeString(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::BtreeAV(idx) => insert_av(idx, cols, row_ref),
+            Self::UniqueBtreeBool(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeU8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(k)| k),
+            Self::UniqueBtreeI8(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeU16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeI16(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeU32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeI32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeU64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeI64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeU128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeI128(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeU256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeI256(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeF32(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeF64(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeString(idx) => insert_at_type(idx, cols, row_ref, id),
+            Self::UniqueBtreeAV(idx) => insert_av(idx, cols, row_ref),
+            Self::UniqueDirectSumTag(idx) => insert_at_type(idx, cols, row_ref, |SumTag(tag)| tag),
+            Self::UniqueDirectU8(idx) => insert_at_type(idx, cols, row_ref, |k: u8| k as usize),
+            Self::UniqueDirectU16(idx) => insert_at_type(idx, cols, row_ref, |k: u16| k as usize),
+            Self::UniqueDirectU32(idx) => insert_at_type(idx, cols, row_ref, |k: u32| k as usize),
+            Self::UniqueDirectU64(idx) => insert_at_type(idx, cols, row_ref, |k: u64| k as usize),
         }
     }
 
@@ -631,209 +589,153 @@ impl TypedIndex {
     /// or remove the wrong value from the index.
     /// Note, however, that it will not invoke undefined behavior.
     ///
-    /// If the row was present and has been deleted, returns `Ok(Some(key_size_in_bytes))`,
-    /// where `key_size_in_bytes` is the size of the key.
-    /// [`TableIndex::delete`] will use this
-    /// to update the counter for [`TableIndex::num_key_bytes`].
-    /// We want to store said counter outside of the [`TypedIndex`] enum,
-    /// but we can only compute the size using type info within the [`TypedIndex`],
-    /// so we have to return the size across this boundary.
+    /// If the row was present and has been deleted, returns `Ok(true)`.
     // TODO(centril): make this unsafe and use unchecked conversions.
-    fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<Option<usize>, InvalidFieldError> {
-        fn mm_delete_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeIndex<T>,
+    fn delete(&mut self, cols: &ColList, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
+        fn delete_at_type<T: ReadColumn, I: Index>(
+            this: &mut I,
             cols: &ColList,
             row_ref: RowRef<'_>,
-        ) -> Result<Option<usize>, InvalidFieldError> {
+            convert: impl FnOnce(T) -> I::Key,
+        ) -> Result<bool, InvalidFieldError> {
             let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
-        }
-        fn um_delete_at_type<T: Ord + ReadColumn + KeySize>(
-            this: &mut BtreeUniqueIndex<T>,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(&key).then_some(key_size))
-        }
-        fn direct_delete_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_usize: impl FnOnce(T) -> usize,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key = to_usize(key);
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(key).then_some(key_size))
-        }
-        fn direct_u8_delete_at_type<T: ReadColumn>(
-            this: &mut UniqueDirectFixedCapIndex,
-            cols: &ColList,
-            row_ref: RowRef<'_>,
-            to_u8: impl FnOnce(T) -> usize,
-        ) -> Result<Option<usize>, InvalidFieldError> {
-            let col_pos = cols.as_singleton().unwrap();
-            let key: T = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-            let key = to_u8(key);
-            let key_size = key.key_size_in_bytes();
-            Ok(this.delete(key).then_some(key_size))
+            let key = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
+            let key = convert(key);
+            Ok(this.delete(&key, row_ref.pointer()))
         }
 
+        fn delete_av(
+            this: &mut impl Index<Key = AlgebraicValue>,
+            cols: &ColList,
+            row_ref: RowRef<'_>,
+        ) -> Result<bool, InvalidFieldError> {
+            let key = row_ref.project(cols)?;
+            Ok(this.delete(&key, row_ref.pointer()))
+        }
+
+        use core::convert::identity as id;
+
         match self {
-            Self::BtreeBool(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU8(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeSumTag(this) => {
-                let col_pos = cols.as_singleton().unwrap();
-                let SumTag(key) = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
-            }
-            Self::BtreeI8(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU16(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI16(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU32(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI32(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU64(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI64(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU128(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI128(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeU256(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeI256(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeF32(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeF64(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeString(this) => mm_delete_at_type(this, cols, row_ref),
-            Self::BtreeAV(this) => {
-                let key = row_ref.project(cols)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key, &row_ref.pointer()).then_some(key_size))
-            }
-            Self::UniqueBtreeBool(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU8(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeSumTag(this) => {
-                let col_pos = cols.as_singleton().unwrap();
-                let SumTag(key) = row_ref.read_col(col_pos).map_err(|_| col_pos)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key).then_some(key_size))
-            }
-            Self::UniqueBtreeI8(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU16(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI16(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU32(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI32(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU64(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI64(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU128(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI128(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeU256(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeI256(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeF32(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeF64(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeString(this) => um_delete_at_type(this, cols, row_ref),
-            Self::UniqueBtreeAV(this) => {
-                let key = row_ref.project(cols)?;
-                let key_size = key.key_size_in_bytes();
-                Ok(this.delete(&key).then_some(key_size))
-            }
-            Self::UniqueDirectSumTag(this) => direct_u8_delete_at_type(this, cols, row_ref, |SumTag(k)| k as usize),
-            Self::UniqueDirectU8(this) => direct_delete_at_type(this, cols, row_ref, |k: u8| k as usize),
-            Self::UniqueDirectU16(this) => direct_delete_at_type(this, cols, row_ref, |k: u16| k as usize),
-            Self::UniqueDirectU32(this) => direct_delete_at_type(this, cols, row_ref, |k: u32| k as usize),
-            Self::UniqueDirectU64(this) => direct_delete_at_type(this, cols, row_ref, |k: u64| k as usize),
+            Self::BtreeBool(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeU8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
+            Self::BtreeI8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeU16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeI16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeU32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeI32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeU64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeI64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeU128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeI128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeU256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeI256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeF32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeF64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeString(this) => delete_at_type(this, cols, row_ref, id),
+            Self::BtreeAV(this) => delete_av(this, cols, row_ref),
+            Self::UniqueBtreeBool(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeU8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
+            Self::UniqueBtreeI8(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeU16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeI16(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeU32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeI32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeU64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeI64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeU128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeI128(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeU256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeI256(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeF32(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeF64(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeString(this) => delete_at_type(this, cols, row_ref, id),
+            Self::UniqueBtreeAV(this) => delete_av(this, cols, row_ref),
+            Self::UniqueDirectSumTag(this) => delete_at_type(this, cols, row_ref, |SumTag(k)| k),
+            Self::UniqueDirectU8(this) => delete_at_type(this, cols, row_ref, |k: u8| k as usize),
+            Self::UniqueDirectU16(this) => delete_at_type(this, cols, row_ref, |k: u16| k as usize),
+            Self::UniqueDirectU32(this) => delete_at_type(this, cols, row_ref, |k: u32| k as usize),
+            Self::UniqueDirectU64(this) => delete_at_type(this, cols, row_ref, |k: u64| k as usize),
         }
     }
 
     fn seek_point(&self, key: &AlgebraicValue) -> TypedIndexPointIter<'_> {
-        fn mm_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeIndex<T>,
+        fn iter_at_type<'a, I: Index>(
+            this: &'a I,
             key: &AlgebraicValue,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeIndexPointIter<'a> {
-            this.values_in_point(av_as_t(key).expect("key does not conform to key type of index"))
+            av_as_t: impl Fn(&AlgebraicValue) -> Option<&I::Key>,
+        ) -> I::PointIter<'a> {
+            this.seek_point(av_as_t(key).expect("key does not conform to key type of index"))
         }
-        fn um_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeUniqueIndex<T>,
+        fn convert_iter_at_type<'a, T, I: Index>(
+            this: &'a I,
             key: &AlgebraicValue,
             av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeUniqueIndexPointIter<'a> {
-            this.values_in_point(av_as_t(key).expect("key does not conform to key type of index"))
-        }
-        fn direct_iter_at_type<T>(
-            this: &UniqueDirectIndex,
-            key: &AlgebraicValue,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-            to_usize: impl Copy + FnOnce(&T) -> usize,
-        ) -> UniqueDirectIndexPointIter {
+            convert: impl Copy + FnOnce(&T) -> I::Key,
+        ) -> I::PointIter<'a> {
             let av_as_t = |v| av_as_t(v).expect("key does not conform to key type of index");
-            this.seek_point(to_usize(av_as_t(key)))
+            this.seek_point(&convert(av_as_t(key)))
         }
 
         use TypedIndex::*;
         use TypedIndexPointIter::*;
         match self {
-            BtreeBool(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_bool)),
-            BtreeU8(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u8)),
-            BtreeSumTag(this) => BTree(mm_iter_at_type(this, key, as_tag)),
-            BtreeI8(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i8)),
-            BtreeU16(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u16)),
-            BtreeI16(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i16)),
-            BtreeU32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u32)),
-            BtreeI32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i32)),
-            BtreeU64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u64)),
-            BtreeI64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i64)),
-            BtreeU128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_u128)),
-            BtreeI128(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_i128)),
-            BtreeU256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            BtreeI256(this) => BTree(mm_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            BtreeF32(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_f32)),
-            BtreeF64(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_f64)),
-            BtreeString(this) => BTree(mm_iter_at_type(this, key, AlgebraicValue::as_string)),
-            BtreeAV(this) => BTree(this.values_in_point(key)),
+            BtreeBool(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            BtreeU8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            BtreeSumTag(this) => BTree(iter_at_type(this, key, as_tag)),
+            BtreeI8(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            BtreeU16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            BtreeI16(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            BtreeU32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            BtreeI32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            BtreeU64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            BtreeI64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            BtreeU128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            BtreeI128(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            BtreeU256(this) => BTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            BtreeI256(this) => BTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            BtreeF32(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            BtreeF64(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            BtreeString(this) => BTree(iter_at_type(this, key, AlgebraicValue::as_string)),
+            BtreeAV(this) => BTree(this.seek_point(key)),
 
-            UniqueBtreeBool(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_bool)),
-            UniqueBtreeU8(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u8)),
-            UniqueBtreeSumTag(this) => UniqueBTree(um_iter_at_type(this, key, as_tag)),
-            UniqueBtreeI8(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i8)),
-            UniqueBtreeU16(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u16)),
-            UniqueBtreeI16(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i16)),
-            UniqueBtreeU32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u32)),
-            UniqueBtreeI32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i32)),
-            UniqueBtreeU64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u64)),
-            UniqueBtreeI64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i64)),
-            UniqueBtreeU128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_u128)),
-            UniqueBtreeI128(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_i128)),
-            UniqueBtreeU256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
-            UniqueBtreeI256(this) => UniqueBTree(um_iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
-            UniqueBtreeF32(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_f32)),
-            UniqueBtreeF64(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_f64)),
-            UniqueBtreeString(this) => UniqueBTree(um_iter_at_type(this, key, AlgebraicValue::as_string)),
-            UniqueBtreeAV(this) => UniqueBTree(this.values_in_point(key)),
+            UniqueBtreeBool(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_bool)),
+            UniqueBtreeU8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u8)),
+            UniqueBtreeSumTag(this) => UniqueBTree(iter_at_type(this, key, as_tag)),
+            UniqueBtreeI8(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i8)),
+            UniqueBtreeU16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u16)),
+            UniqueBtreeI16(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i16)),
+            UniqueBtreeU32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u32)),
+            UniqueBtreeI32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i32)),
+            UniqueBtreeU64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u64)),
+            UniqueBtreeI64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i64)),
+            UniqueBtreeU128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_u128)),
+            UniqueBtreeI128(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_i128)),
+            UniqueBtreeU256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_u256().map(|x| &**x))),
+            UniqueBtreeI256(this) => UniqueBTree(iter_at_type(this, key, |av| av.as_i256().map(|x| &**x))),
+            UniqueBtreeF32(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f32)),
+            UniqueBtreeF64(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_f64)),
+            UniqueBtreeString(this) => UniqueBTree(iter_at_type(this, key, AlgebraicValue::as_string)),
+            UniqueBtreeAV(this) => UniqueBTree(this.seek_point(key)),
 
-            UniqueDirectSumTag(this) => {
-                let key = as_tag(key).expect("key does not conform to key type of index");
-                UniqueDirect(this.seek_point(*key as usize))
-            }
+            UniqueDirectSumTag(this) => UniqueDirect(iter_at_type(this, key, as_tag)),
             UniqueDirectU8(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u8, |k| *k as usize))
+                UniqueDirect(convert_iter_at_type(this, key, AlgebraicValue::as_u8, |k| *k as usize))
             }
             UniqueDirectU16(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u16, |k| *k as usize))
+                UniqueDirect(convert_iter_at_type(this, key, AlgebraicValue::as_u16, |k| *k as usize))
             }
             UniqueDirectU32(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u32, |k| *k as usize))
+                UniqueDirect(convert_iter_at_type(this, key, AlgebraicValue::as_u32, |k| *k as usize))
             }
             UniqueDirectU64(this) => {
-                UniqueDirect(direct_iter_at_type(this, key, AlgebraicValue::as_u64, |k| *k as usize))
+                UniqueDirect(convert_iter_at_type(this, key, AlgebraicValue::as_u64, |k| *k as usize))
             }
         }
     }
 
-    fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TypedIndexRangeIter<'_> {
+    fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> IndexSeekRangeResult<TypedIndexRangeIter<'_>> {
         // Copied from `RangeBounds::is_empty` as it's unstable.
         // TODO(centril): replace once stable.
         fn is_empty<T: PartialOrd>(bounds: &impl RangeBounds<T>) -> bool {
@@ -847,257 +749,125 @@ impl TypedIndex {
             }
         }
 
-        // Ensure we don't panic inside `BTreeMap::seek_range`.
-        if is_empty(range) {
-            return RangeEmpty;
-        }
-
-        fn mm_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeIndex<T>,
+        fn iter_at_type<'a, I: RangedIndex>(
+            this: &'a I,
             range: &impl RangeBounds<AlgebraicValue>,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeIndexRangeIter<'a, T> {
+            av_as_t: impl Fn(&AlgebraicValue) -> Option<&I::Key>,
+        ) -> I::RangeIter<'a> {
             let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
             let start = range.start_bound().map(av_as_t);
             let end = range.end_bound().map(av_as_t);
-            this.values_in_range(&(start, end))
+            this.seek_range(&(start, end))
         }
-        fn um_iter_at_type<'a, T: Ord>(
-            this: &'a BtreeUniqueIndex<T>,
+        fn convert_iter_at_type<'a, T, I: RangedIndex>(
+            this: &'a I,
             range: &impl RangeBounds<AlgebraicValue>,
             av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-        ) -> BtreeUniqueIndexRangeIter<'a, T> {
+            convert: impl Copy + FnOnce(&T) -> I::Key,
+        ) -> I::RangeIter<'a> {
             let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
-            let start = range.start_bound().map(av_as_t);
-            let end = range.end_bound().map(av_as_t);
-            this.values_in_range(&(start, end))
-        }
-        fn direct_iter_at_type<'a, T>(
-            this: &'a UniqueDirectIndex,
-            range: &impl RangeBounds<AlgebraicValue>,
-            av_as_t: impl Fn(&AlgebraicValue) -> Option<&T>,
-            to_usize: impl Copy + FnOnce(&T) -> usize,
-        ) -> UniqueDirectIndexRangeIter<'a> {
-            let av_as_t = |v| av_as_t(v).expect("bound does not conform to key type of index");
-            let start = range.start_bound().map(av_as_t).map(to_usize);
-            let end = range.end_bound().map(av_as_t).map(to_usize);
+            let start = range.start_bound().map(av_as_t).map(convert);
+            let end = range.end_bound().map(av_as_t).map(convert);
             this.seek_range(&(start, end))
         }
 
         use TypedIndexRangeIter::*;
-        match self {
-            Self::BtreeBool(this) => BtreeBool(mm_iter_at_type(this, range, AlgebraicValue::as_bool)),
-            Self::BtreeU8(this) => BtreeU8(mm_iter_at_type(this, range, AlgebraicValue::as_u8)),
-            Self::BtreeSumTag(this) => BtreeU8(mm_iter_at_type(this, range, as_tag)),
-            Self::BtreeI8(this) => BtreeI8(mm_iter_at_type(this, range, AlgebraicValue::as_i8)),
-            Self::BtreeU16(this) => BtreeU16(mm_iter_at_type(this, range, AlgebraicValue::as_u16)),
-            Self::BtreeI16(this) => BtreeI16(mm_iter_at_type(this, range, AlgebraicValue::as_i16)),
-            Self::BtreeU32(this) => BtreeU32(mm_iter_at_type(this, range, AlgebraicValue::as_u32)),
-            Self::BtreeI32(this) => BtreeI32(mm_iter_at_type(this, range, AlgebraicValue::as_i32)),
-            Self::BtreeU64(this) => BtreeU64(mm_iter_at_type(this, range, AlgebraicValue::as_u64)),
-            Self::BtreeI64(this) => BtreeI64(mm_iter_at_type(this, range, AlgebraicValue::as_i64)),
-            Self::BtreeU128(this) => BtreeU128(mm_iter_at_type(this, range, AlgebraicValue::as_u128)),
-            Self::BtreeI128(this) => BtreeI128(mm_iter_at_type(this, range, AlgebraicValue::as_i128)),
-            Self::BtreeU256(this) => BtreeU256(mm_iter_at_type(this, range, |av| av.as_u256().map(|x| &**x))),
-            Self::BtreeI256(this) => BtreeI256(mm_iter_at_type(this, range, |av| av.as_i256().map(|x| &**x))),
-            Self::BtreeF32(this) => BtreeF32(mm_iter_at_type(this, range, AlgebraicValue::as_f32)),
-            Self::BtreeF64(this) => BtreeF64(mm_iter_at_type(this, range, AlgebraicValue::as_f64)),
-            Self::BtreeString(this) => BtreeString(mm_iter_at_type(this, range, AlgebraicValue::as_string)),
-            Self::BtreeAV(this) => BtreeAV(this.values_in_range(range)),
+        Ok(match self {
+            // Ensure we don't panic inside `BTreeMap::seek_range`.
+            _ if is_empty(range) => RangeEmpty,
 
-            Self::UniqueBtreeBool(this) => UniqueBtreeBool(um_iter_at_type(this, range, AlgebraicValue::as_bool)),
-            Self::UniqueBtreeU8(this) => UniqueBtreeU8(um_iter_at_type(this, range, AlgebraicValue::as_u8)),
-            Self::UniqueBtreeSumTag(this) => UniqueBtreeU8(um_iter_at_type(this, range, as_tag)),
-            Self::UniqueBtreeI8(this) => UniqueBtreeI8(um_iter_at_type(this, range, AlgebraicValue::as_i8)),
-            Self::UniqueBtreeU16(this) => UniqueBtreeU16(um_iter_at_type(this, range, AlgebraicValue::as_u16)),
-            Self::UniqueBtreeI16(this) => UniqueBtreeI16(um_iter_at_type(this, range, AlgebraicValue::as_i16)),
-            Self::UniqueBtreeU32(this) => UniqueBtreeU32(um_iter_at_type(this, range, AlgebraicValue::as_u32)),
-            Self::UniqueBtreeI32(this) => UniqueBtreeI32(um_iter_at_type(this, range, AlgebraicValue::as_i32)),
-            Self::UniqueBtreeU64(this) => UniqueBtreeU64(um_iter_at_type(this, range, AlgebraicValue::as_u64)),
-            Self::UniqueBtreeI64(this) => UniqueBtreeI64(um_iter_at_type(this, range, AlgebraicValue::as_i64)),
-            Self::UniqueBtreeU128(this) => UniqueBtreeU128(um_iter_at_type(this, range, AlgebraicValue::as_u128)),
-            Self::UniqueBtreeI128(this) => UniqueBtreeI128(um_iter_at_type(this, range, AlgebraicValue::as_i128)),
-            Self::UniqueBtreeF32(this) => UniqueBtreeF32(um_iter_at_type(this, range, AlgebraicValue::as_f32)),
-            Self::UniqueBtreeF64(this) => UniqueBtreeF64(um_iter_at_type(this, range, AlgebraicValue::as_f64)),
-            Self::UniqueBtreeU256(this) => {
-                UniqueBtreeU256(um_iter_at_type(this, range, |av| av.as_u256().map(|x| &**x)))
-            }
-            Self::UniqueBtreeI256(this) => {
-                UniqueBtreeI256(um_iter_at_type(this, range, |av| av.as_i256().map(|x| &**x)))
-            }
-            Self::UniqueBtreeString(this) => UniqueBtreeString(um_iter_at_type(this, range, AlgebraicValue::as_string)),
-            Self::UniqueBtreeAV(this) => UniqueBtreeAV(this.values_in_range(range)),
+            Self::BtreeBool(this) => BtreeBool(iter_at_type(this, range, AlgebraicValue::as_bool)),
+            Self::BtreeU8(this) => BtreeU8(iter_at_type(this, range, AlgebraicValue::as_u8)),
+            Self::BtreeSumTag(this) => BtreeU8(iter_at_type(this, range, as_tag)),
+            Self::BtreeI8(this) => BtreeI8(iter_at_type(this, range, AlgebraicValue::as_i8)),
+            Self::BtreeU16(this) => BtreeU16(iter_at_type(this, range, AlgebraicValue::as_u16)),
+            Self::BtreeI16(this) => BtreeI16(iter_at_type(this, range, AlgebraicValue::as_i16)),
+            Self::BtreeU32(this) => BtreeU32(iter_at_type(this, range, AlgebraicValue::as_u32)),
+            Self::BtreeI32(this) => BtreeI32(iter_at_type(this, range, AlgebraicValue::as_i32)),
+            Self::BtreeU64(this) => BtreeU64(iter_at_type(this, range, AlgebraicValue::as_u64)),
+            Self::BtreeI64(this) => BtreeI64(iter_at_type(this, range, AlgebraicValue::as_i64)),
+            Self::BtreeU128(this) => BtreeU128(iter_at_type(this, range, AlgebraicValue::as_u128)),
+            Self::BtreeI128(this) => BtreeI128(iter_at_type(this, range, AlgebraicValue::as_i128)),
+            Self::BtreeU256(this) => BtreeU256(iter_at_type(this, range, |av| av.as_u256().map(|x| &**x))),
+            Self::BtreeI256(this) => BtreeI256(iter_at_type(this, range, |av| av.as_i256().map(|x| &**x))),
+            Self::BtreeF32(this) => BtreeF32(iter_at_type(this, range, AlgebraicValue::as_f32)),
+            Self::BtreeF64(this) => BtreeF64(iter_at_type(this, range, AlgebraicValue::as_f64)),
+            Self::BtreeString(this) => BtreeString(iter_at_type(this, range, AlgebraicValue::as_string)),
+            Self::BtreeAV(this) => BtreeAV(this.seek_range(range)),
 
-            Self::UniqueDirectSumTag(this) => {
-                let av_as_t = |v| as_tag(v).copied().expect("bound does not conform to key type of index") as usize;
-                let start = range.start_bound().map(av_as_t);
-                let end = range.end_bound().map(av_as_t);
-                let iter = this.seek_range(&(start, end));
-                UniqueDirectU8(iter)
-            }
-            Self::UniqueDirectU8(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u8, |k| *k as usize))
-            }
+            Self::UniqueBtreeBool(this) => UniqueBtreeBool(iter_at_type(this, range, AlgebraicValue::as_bool)),
+            Self::UniqueBtreeU8(this) => UniqueBtreeU8(iter_at_type(this, range, AlgebraicValue::as_u8)),
+            Self::UniqueBtreeSumTag(this) => UniqueBtreeU8(iter_at_type(this, range, as_tag)),
+            Self::UniqueBtreeI8(this) => UniqueBtreeI8(iter_at_type(this, range, AlgebraicValue::as_i8)),
+            Self::UniqueBtreeU16(this) => UniqueBtreeU16(iter_at_type(this, range, AlgebraicValue::as_u16)),
+            Self::UniqueBtreeI16(this) => UniqueBtreeI16(iter_at_type(this, range, AlgebraicValue::as_i16)),
+            Self::UniqueBtreeU32(this) => UniqueBtreeU32(iter_at_type(this, range, AlgebraicValue::as_u32)),
+            Self::UniqueBtreeI32(this) => UniqueBtreeI32(iter_at_type(this, range, AlgebraicValue::as_i32)),
+            Self::UniqueBtreeU64(this) => UniqueBtreeU64(iter_at_type(this, range, AlgebraicValue::as_u64)),
+            Self::UniqueBtreeI64(this) => UniqueBtreeI64(iter_at_type(this, range, AlgebraicValue::as_i64)),
+            Self::UniqueBtreeU128(this) => UniqueBtreeU128(iter_at_type(this, range, AlgebraicValue::as_u128)),
+            Self::UniqueBtreeI128(this) => UniqueBtreeI128(iter_at_type(this, range, AlgebraicValue::as_i128)),
+            Self::UniqueBtreeF32(this) => UniqueBtreeF32(iter_at_type(this, range, AlgebraicValue::as_f32)),
+            Self::UniqueBtreeF64(this) => UniqueBtreeF64(iter_at_type(this, range, AlgebraicValue::as_f64)),
+            Self::UniqueBtreeU256(this) => UniqueBtreeU256(iter_at_type(this, range, |av| av.as_u256().map(|x| &**x))),
+            Self::UniqueBtreeI256(this) => UniqueBtreeI256(iter_at_type(this, range, |av| av.as_i256().map(|x| &**x))),
+            Self::UniqueBtreeString(this) => UniqueBtreeString(iter_at_type(this, range, AlgebraicValue::as_string)),
+            Self::UniqueBtreeAV(this) => UniqueBtreeAV(this.seek_range(range)),
+
+            Self::UniqueDirectSumTag(this) => UniqueDirectU8(iter_at_type(this, range, as_tag)),
+            Self::UniqueDirectU8(this) => UniqueDirect(convert_iter_at_type(this, range, AlgebraicValue::as_u8, |k| {
+                *k as usize
+            })),
             Self::UniqueDirectU16(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u16, |k| {
+                UniqueDirect(convert_iter_at_type(this, range, AlgebraicValue::as_u16, |k| {
                     *k as usize
                 }))
             }
             Self::UniqueDirectU32(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u32, |k| {
+                UniqueDirect(convert_iter_at_type(this, range, AlgebraicValue::as_u32, |k| {
                     *k as usize
                 }))
             }
             Self::UniqueDirectU64(this) => {
-                UniqueDirect(direct_iter_at_type(this, range, AlgebraicValue::as_u64, |k| {
+                UniqueDirect(convert_iter_at_type(this, range, AlgebraicValue::as_u64, |k| {
                     *k as usize
                 }))
             }
-        }
+        })
     }
 
     fn clear(&mut self) {
-        match self {
-            Self::BtreeBool(this) => this.clear(),
-            Self::BtreeU8(this) | Self::BtreeSumTag(this) => this.clear(),
-            Self::BtreeI8(this) => this.clear(),
-            Self::BtreeU16(this) => this.clear(),
-            Self::BtreeI16(this) => this.clear(),
-            Self::BtreeU32(this) => this.clear(),
-            Self::BtreeI32(this) => this.clear(),
-            Self::BtreeU64(this) => this.clear(),
-            Self::BtreeI64(this) => this.clear(),
-            Self::BtreeU128(this) => this.clear(),
-            Self::BtreeI128(this) => this.clear(),
-            Self::BtreeU256(this) => this.clear(),
-            Self::BtreeI256(this) => this.clear(),
-            Self::BtreeF32(this) => this.clear(),
-            Self::BtreeF64(this) => this.clear(),
-            Self::BtreeString(this) => this.clear(),
-            Self::BtreeAV(this) => this.clear(),
-
-            Self::UniqueBtreeBool(this) => this.clear(),
-            Self::UniqueBtreeU8(this) | Self::UniqueBtreeSumTag(this) => this.clear(),
-            Self::UniqueBtreeI8(this) => this.clear(),
-            Self::UniqueBtreeU16(this) => this.clear(),
-            Self::UniqueBtreeI16(this) => this.clear(),
-            Self::UniqueBtreeU32(this) => this.clear(),
-            Self::UniqueBtreeI32(this) => this.clear(),
-            Self::UniqueBtreeU64(this) => this.clear(),
-            Self::UniqueBtreeI64(this) => this.clear(),
-            Self::UniqueBtreeU128(this) => this.clear(),
-            Self::UniqueBtreeI128(this) => this.clear(),
-            Self::UniqueBtreeU256(this) => this.clear(),
-            Self::UniqueBtreeI256(this) => this.clear(),
-            Self::UniqueBtreeF32(this) => this.clear(),
-            Self::UniqueBtreeF64(this) => this.clear(),
-            Self::UniqueBtreeString(this) => this.clear(),
-            Self::UniqueBtreeAV(this) => this.clear(),
-
-            Self::UniqueDirectSumTag(this) => this.clear(),
-            Self::UniqueDirectU8(this)
-            | Self::UniqueDirectU16(this)
-            | Self::UniqueDirectU32(this)
-            | Self::UniqueDirectU64(this) => this.clear(),
-        }
+        same_for_all_types!(self, this => this.clear())
     }
 
     #[allow(unused)] // used only by tests
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.num_rows() == 0
     }
 
-    #[allow(unused)] // used only by tests
-    fn len(&self) -> usize {
-        match self {
-            Self::BtreeBool(this) => this.len(),
-            Self::BtreeU8(this) | Self::BtreeSumTag(this) => this.len(),
-            Self::BtreeI8(this) => this.len(),
-            Self::BtreeU16(this) => this.len(),
-            Self::BtreeI16(this) => this.len(),
-            Self::BtreeU32(this) => this.len(),
-            Self::BtreeI32(this) => this.len(),
-            Self::BtreeU64(this) => this.len(),
-            Self::BtreeI64(this) => this.len(),
-            Self::BtreeU128(this) => this.len(),
-            Self::BtreeI128(this) => this.len(),
-            Self::BtreeU256(this) => this.len(),
-            Self::BtreeI256(this) => this.len(),
-            Self::BtreeF32(this) => this.len(),
-            Self::BtreeF64(this) => this.len(),
-            Self::BtreeString(this) => this.len(),
-            Self::BtreeAV(this) => this.len(),
-
-            Self::UniqueBtreeBool(this) => this.len(),
-            Self::UniqueBtreeU8(this) | Self::UniqueBtreeSumTag(this) => this.len(),
-            Self::UniqueBtreeI8(this) => this.len(),
-            Self::UniqueBtreeU16(this) => this.len(),
-            Self::UniqueBtreeI16(this) => this.len(),
-            Self::UniqueBtreeU32(this) => this.len(),
-            Self::UniqueBtreeI32(this) => this.len(),
-            Self::UniqueBtreeU64(this) => this.len(),
-            Self::UniqueBtreeI64(this) => this.len(),
-            Self::UniqueBtreeU128(this) => this.len(),
-            Self::UniqueBtreeI128(this) => this.len(),
-            Self::UniqueBtreeU256(this) => this.len(),
-            Self::UniqueBtreeI256(this) => this.len(),
-            Self::UniqueBtreeF32(this) => this.len(),
-            Self::UniqueBtreeF64(this) => this.len(),
-            Self::UniqueBtreeString(this) => this.len(),
-            Self::UniqueBtreeAV(this) => this.len(),
-
-            Self::UniqueDirectSumTag(this) => this.len(),
-            Self::UniqueDirectU8(this)
-            | Self::UniqueDirectU16(this)
-            | Self::UniqueDirectU32(this)
-            | Self::UniqueDirectU64(this) => this.len(),
-        }
+    /// The number of rows stored in this index.
+    ///
+    /// Note that, for non-unique indexes, this may be larger than [`Self::num_keys`].
+    ///
+    /// This method runs in constant time.
+    fn num_rows(&self) -> usize {
+        same_for_all_types!(self, this => this.num_rows())
     }
 
     fn num_keys(&self) -> usize {
-        match self {
-            Self::BtreeBool(this) => this.num_keys(),
-            Self::BtreeU8(this) | Self::BtreeSumTag(this) => this.num_keys(),
-            Self::BtreeI8(this) => this.num_keys(),
-            Self::BtreeU16(this) => this.num_keys(),
-            Self::BtreeI16(this) => this.num_keys(),
-            Self::BtreeU32(this) => this.num_keys(),
-            Self::BtreeI32(this) => this.num_keys(),
-            Self::BtreeU64(this) => this.num_keys(),
-            Self::BtreeI64(this) => this.num_keys(),
-            Self::BtreeU128(this) => this.num_keys(),
-            Self::BtreeI128(this) => this.num_keys(),
-            Self::BtreeU256(this) => this.num_keys(),
-            Self::BtreeI256(this) => this.num_keys(),
-            Self::BtreeF32(this) => this.num_keys(),
-            Self::BtreeF64(this) => this.num_keys(),
-            Self::BtreeString(this) => this.num_keys(),
-            Self::BtreeAV(this) => this.num_keys(),
+        same_for_all_types!(self, this => this.num_keys())
+    }
 
-            Self::UniqueBtreeBool(this) => this.num_keys(),
-            Self::UniqueBtreeU8(this) | Self::UniqueBtreeSumTag(this) => this.num_keys(),
-            Self::UniqueBtreeI8(this) => this.num_keys(),
-            Self::UniqueBtreeU16(this) => this.num_keys(),
-            Self::UniqueBtreeI16(this) => this.num_keys(),
-            Self::UniqueBtreeU32(this) => this.num_keys(),
-            Self::UniqueBtreeI32(this) => this.num_keys(),
-            Self::UniqueBtreeU64(this) => this.num_keys(),
-            Self::UniqueBtreeI64(this) => this.num_keys(),
-            Self::UniqueBtreeU128(this) => this.num_keys(),
-            Self::UniqueBtreeI128(this) => this.num_keys(),
-            Self::UniqueBtreeU256(this) => this.num_keys(),
-            Self::UniqueBtreeI256(this) => this.num_keys(),
-            Self::UniqueBtreeF32(this) => this.num_keys(),
-            Self::UniqueBtreeF64(this) => this.num_keys(),
-            Self::UniqueBtreeString(this) => this.num_keys(),
-            Self::UniqueBtreeAV(this) => this.num_keys(),
-
-            Self::UniqueDirectSumTag(this) => this.num_keys(),
-            Self::UniqueDirectU8(this)
-            | Self::UniqueDirectU16(this)
-            | Self::UniqueDirectU32(this)
-            | Self::UniqueDirectU64(this) => this.num_keys(),
-        }
+    /// The number of bytes stored in keys in this index.
+    ///
+    /// For non-unique indexes, duplicate keys are counted once for each row that refers to them,
+    /// even though the internal storage may deduplicate them as an optimization.
+    ///
+    /// This method runs in constant time.
+    ///
+    /// See the [`KeySize`] trait for more details on how this method computes its result.
+    pub fn num_key_bytes(&self) -> u64 {
+        same_for_all_types!(self, this => this.num_key_bytes())
     }
 }
 
@@ -1111,17 +881,6 @@ pub struct TableIndex {
     // NOTE(centril): This is accessed in index scan ABIs for decoding, so don't `Box<_>` it.
     pub key_type: AlgebraicType,
 
-    /// The number of rows in this index.
-    ///
-    /// Memoized counter for [`Self::num_rows`].
-    num_rows: u64,
-
-    /// The number of key bytes in this index.
-    ///
-    /// Memoized counter for [`Self::num_key_bytes`].
-    /// See that method for more detailed documentation.
-    num_key_bytes: u64,
-
     /// Given a full row, typed at some `ty: ProductType`,
     /// these columns are the ones that this index indexes.
     /// Projecting the `ty` to `self.indexed_columns` yields the index's type `self.key_type`.
@@ -1133,19 +892,13 @@ impl MemoryUsage for TableIndex {
         let Self {
             idx,
             key_type,
-            num_rows,
-            num_key_bytes,
             indexed_columns,
         } = self;
-        idx.heap_usage()
-            + key_type.heap_usage()
-            + num_rows.heap_usage()
-            + num_key_bytes.heap_usage()
-            + indexed_columns.heap_usage()
+        idx.heap_usage() + key_type.heap_usage() + indexed_columns.heap_usage()
     }
 }
 
-static_assert_size!(TableIndex, 88);
+static_assert_size!(TableIndex, 80);
 
 impl TableIndex {
     /// Returns a new possibly unique index, with `index_id` for a choice of indexing algorithm.
@@ -1160,8 +913,6 @@ impl TableIndex {
         Ok(Self {
             idx: typed_index,
             key_type,
-            num_rows: 0,
-            num_key_bytes: 0,
             indexed_columns,
         })
     }
@@ -1175,8 +926,6 @@ impl TableIndex {
         Self {
             idx,
             key_type,
-            num_rows: 0,
-            num_key_bytes: 0,
             indexed_columns,
         }
     }
@@ -1202,33 +951,14 @@ impl TableIndex {
         // SAFETY:
         // 1. We're passing the same `ColList` that was provided during construction.
         // 2. Forward the caller's proof obligation.
-        let res = unsafe { self.idx.insert(&self.indexed_columns, row_ref) };
-        match res {
-            Ok(key_size) => {
-                // No existing row; the new row was inserted.
-                // Update the `num_rows` and `num_key_bytes` counters
-                // to account for the new insertion.
-                self.num_rows += 1;
-                self.num_key_bytes += key_size as u64;
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        unsafe { self.idx.insert(&self.indexed_columns, row_ref) }
     }
 
     /// Deletes `row_ref` with its indexed value `row_ref.project(&self.indexed_columns)` from this index.
     ///
     /// Returns whether `ptr` was present.
     pub fn delete(&mut self, row_ref: RowRef<'_>) -> Result<bool, InvalidFieldError> {
-        if let Some(size_in_bytes) = self.idx.delete(&self.indexed_columns, row_ref)? {
-            // Was present, and deleted: update the `num_rows` and `num_key_bytes` counters.
-            self.num_rows -= 1;
-            self.num_key_bytes -= size_in_bytes as u64;
-            Ok(true)
-        } else {
-            // Was not present: don't update counters.
-            Ok(false)
-        }
+        self.idx.delete(&self.indexed_columns, row_ref)
     }
 
     /// Returns whether `value` is in this index.
@@ -1253,12 +983,17 @@ impl TableIndex {
         }
     }
 
-    /// Returns an iterator over the [TableIndex] that yields all the `RowPointer`s
-    /// that fall within the specified `range`.
-    pub fn seek_range(&self, range: &impl RangeBounds<AlgebraicValue>) -> TableIndexRangeIter<'_> {
-        TableIndexRangeIter {
-            iter: self.idx.seek_range(range),
-        }
+    /// Returns an iterator over the [TableIndex],
+    /// that yields all the `RowPointer`s,
+    /// that fall within the specified `range`,
+    /// if the index is [`RangedIndex`].
+    pub fn seek_range(
+        &self,
+        range: &impl RangeBounds<AlgebraicValue>,
+    ) -> IndexSeekRangeResult<TableIndexRangeIter<'_>> {
+        Ok(TableIndexRangeIter {
+            iter: self.idx.seek_range(range)?,
+        })
     }
 
     /// Extends [`TableIndex`] with `rows`.
@@ -1308,24 +1043,24 @@ impl TableIndex {
             | (BtreeString(_), BtreeString(_))
             | (BtreeAV(_), BtreeAV(_)) => Ok(()),
             // For unique indices, we'll need to see if everything in `other` can be added to `idx`.
-            (UniqueBtreeBool(idx), UniqueBtreeBool(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU8(idx), UniqueBtreeU8(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeSumTag(idx), UniqueBtreeSumTag(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI8(idx), UniqueBtreeI8(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU16(idx), UniqueBtreeU16(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI16(idx), UniqueBtreeI16(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU32(idx), UniqueBtreeU32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI32(idx), UniqueBtreeI32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU64(idx), UniqueBtreeU64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI64(idx), UniqueBtreeI64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU128(idx), UniqueBtreeU128(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI128(idx), UniqueBtreeI128(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeU256(idx), UniqueBtreeU256(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeI256(idx), UniqueBtreeI256(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeF32(idx), UniqueBtreeF32(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeF64(idx), UniqueBtreeF64(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeString(idx), UniqueBtreeString(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
-            (UniqueBtreeAV(idx), UniqueBtreeAV(other)) => idx.can_merge(other, ignore).map_err(|ptr| *ptr),
+            (UniqueBtreeBool(idx), UniqueBtreeBool(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeU8(idx), UniqueBtreeU8(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeSumTag(idx), UniqueBtreeSumTag(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeI8(idx), UniqueBtreeI8(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeU16(idx), UniqueBtreeU16(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeI16(idx), UniqueBtreeI16(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeU32(idx), UniqueBtreeU32(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeI32(idx), UniqueBtreeI32(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeU64(idx), UniqueBtreeU64(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeI64(idx), UniqueBtreeI64(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeU128(idx), UniqueBtreeU128(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeI128(idx), UniqueBtreeI128(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeU256(idx), UniqueBtreeU256(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeI256(idx), UniqueBtreeI256(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeF32(idx), UniqueBtreeF32(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeF64(idx), UniqueBtreeF64(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeString(idx), UniqueBtreeString(other)) => idx.can_merge(other, ignore),
+            (UniqueBtreeAV(idx), UniqueBtreeAV(other)) => idx.can_merge(other, ignore),
             (UniqueDirectU8(idx), UniqueDirectU8(other)) => idx.can_merge(other, ignore),
             (UniqueDirectSumTag(idx), UniqueDirectSumTag(other)) => idx.can_merge(other, ignore),
             (UniqueDirectU16(idx), UniqueDirectU16(other)) => idx.can_merge(other, ignore),
@@ -1343,8 +1078,6 @@ impl TableIndex {
     /// rather than constructing a new `TableIndex`.
     pub fn clear(&mut self) {
         self.idx.clear();
-        self.num_key_bytes = 0;
-        self.num_rows = 0;
     }
 
     /// The number of unique keys in this index.
@@ -1358,7 +1091,7 @@ impl TableIndex {
     ///
     /// This method runs in constant time.
     pub fn num_rows(&self) -> u64 {
-        self.num_rows
+        self.idx.num_rows() as u64
     }
 
     /// The number of bytes stored in keys in this index.
@@ -1370,7 +1103,7 @@ impl TableIndex {
     ///
     /// See the [`KeySize`] trait for more details on how this method computes its result.
     pub fn num_key_bytes(&self) -> u64 {
-        self.num_key_bytes
+        self.idx.num_key_bytes()
     }
 }
 
@@ -1483,15 +1216,15 @@ mod test {
             let row_ref = table.insert(&pool, &mut blob_store, &pv).unwrap().1;
             let value = get_fields(&cols, &pv);
 
-            prop_assert_eq!(index.idx.len(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
 
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
-            prop_assert_eq!(index.idx.len(), 1);
+            prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(index.contains_any(&value), true);
 
             prop_assert_eq!(index.delete(row_ref).unwrap(), true);
-            prop_assert_eq!(index.idx.len(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(index.contains_any(&value), false);
         }
 
@@ -1505,7 +1238,7 @@ mod test {
             let value = get_fields(&cols, &pv);
 
             // Nothing in the index yet.
-            prop_assert_eq!(index.idx.len(), 0);
+            prop_assert_eq!(index.num_rows(), 0);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), false);
             prop_assert_eq!(
                 get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
@@ -1517,7 +1250,7 @@ mod test {
             prop_assert_eq!(unsafe { index.check_and_insert(row_ref) }, Ok(()));
 
             // Inserting again would be a problem.
-            prop_assert_eq!(index.idx.len(), 1);
+            prop_assert_eq!(index.num_rows(), 1);
             prop_assert_eq!(violates_unique_constraint(&index, &cols, &pv), true);
             prop_assert_eq!(
                 get_rows_that_violate_unique_constraint(&index, &value).unwrap().collect::<Vec<_>>(),
@@ -1554,7 +1287,7 @@ mod test {
             }
 
             fn test_seek(index: &TableIndex, val_to_ptr: &HashMap<u64, RowPointer>, range: impl RangeBounds<AlgebraicValue>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
-                check_seek(index.seek_range(&range).collect(), val_to_ptr, expect)
+                check_seek(index.seek_range(&range).unwrap().collect(), val_to_ptr, expect)
             }
 
             fn check_seek(mut ptrs_in_index: Vec<RowPointer>, val_to_ptr: &HashMap<u64, RowPointer>, expect: impl IntoIterator<Item = u64>) -> TestCaseResult {
@@ -1641,15 +1374,15 @@ mod test {
             unsafe { index.check_and_insert(row_ref).unwrap(); }
 
             // Seek the empty ranges.
-            let rows = index.seek_range(&(&succ..&val)).collect::<Vec<_>>();
+            let rows = index.seek_range(&(&succ..&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(&succ..=&val)).collect::<Vec<_>>();
+            let rows = index.seek_range(&(&succ..=&val)).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(Excluded(&succ), Included(&val))).collect::<Vec<_>>();
+            let rows = index.seek_range(&(Excluded(&succ), Included(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(Excluded(&succ), Excluded(&val))).collect::<Vec<_>>();
+            let rows = index.seek_range(&(Excluded(&succ), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
-            let rows = index.seek_range(&(Excluded(&val), Excluded(&val))).collect::<Vec<_>>();
+            let rows = index.seek_range(&(Excluded(&val), Excluded(&val))).unwrap().collect::<Vec<_>>();
             assert_eq!(rows, []);
         }
     }
