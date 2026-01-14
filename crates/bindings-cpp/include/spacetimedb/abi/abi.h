@@ -144,6 +144,13 @@ void volatile_nonatomic_schedule_immediate(
 STDB_IMPORT(identity)
 void identity(uint8_t* id_ptr);
 
+// ===== JWT (spacetime_10.2) =====
+#define STDB_IMPORT_10_2(name) \
+    __attribute__((import_module("spacetime_10.2"), import_name(#name))) extern
+
+STDB_IMPORT_10_2(get_jwt)
+Status get_jwt(const uint8_t* connection_id_ptr, BytesSource* out);
+
 // ===== Procedure Transactions (spacetime_10.3) =====
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
 STDB_IMPORT_10_3(procedure_start_mut_tx)

@@ -6,6 +6,7 @@
 #![allow(unused, clippy::all)]
 use spacetimedb_sdk::__codegen::{self as __sdk, __lib, __sats, __ws};
 
+pub mod insert_if_authenticated_procedure;
 pub mod insert_with_tx_commit_procedure;
 pub mod insert_with_tx_rollback_procedure;
 pub mod invalid_request_procedure;
@@ -18,9 +19,11 @@ pub mod return_enum_type;
 pub mod return_primitive_procedure;
 pub mod return_struct_procedure;
 pub mod return_struct_type;
+pub mod test_jwt_in_tx_procedure;
 pub mod test_simple_http_procedure;
 pub mod will_panic_procedure;
 
+pub use insert_if_authenticated_procedure::insert_if_authenticated;
 pub use insert_with_tx_commit_procedure::insert_with_tx_commit;
 pub use insert_with_tx_rollback_procedure::insert_with_tx_rollback;
 pub use invalid_request_procedure::invalid_request;
@@ -33,6 +36,7 @@ pub use return_enum_type::ReturnEnum;
 pub use return_primitive_procedure::return_primitive;
 pub use return_struct_procedure::return_struct;
 pub use return_struct_type::ReturnStruct;
+pub use test_jwt_in_tx_procedure::test_jwt_in_tx;
 pub use test_simple_http_procedure::test_simple_http;
 pub use will_panic_procedure::will_panic;
 

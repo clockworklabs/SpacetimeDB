@@ -1,21 +1,33 @@
 #ifndef SPACETIMEDB_TX_CONTEXT_H
 #define SPACETIMEDB_TX_CONTEXT_H
 
-#include <spacetimedb/database.h>
-#include <spacetimedb/bsatn/timestamp.h>
+#include <spacetimedb/reducer_context.h>
 
 namespace SpacetimeDb {
 
 /**
  * @brief Transaction context for procedures
  * 
- * TxContext provides database access within a procedure transaction.
+ * TxContext wraps a ReducerContext to provide transactional database access.
  * It's analogous to Rust's TxContext which is passed to closures in
  * `ctx.with_tx()` and `ctx.try_with_tx()`.
  * 
- * Key characteristics:
- * - Provides read-write database access via `db` field
- * - All database operations are part of an anonymous transaction
+ * Design: Mimics Rust's Deref trait for consistent API
+ * =====================================================
+ * In Rust, TxContext implements Deref<Target=ReducerContext>, which means:
+ *   - Reducers use: ctx.db.table()
+ *   - Transactions use: tx.db.table()  (Deref auto-dereferences)
+ * 
+ * C++ doesn't support operator. overloading, so we explicitly expose
+ * ReducerContext fields as public references to achieve the same ergonomics:
+ *   - Reducers use: ctx.db[table]
+ *   - Transactions use: tx.db[table]  (same syntax!)
+ * 
+ * Tradeoff: TxContext is 40 bytes instead of 8 bytes (storing 5 references),
+ * but this is negligible as TxContext is stack-allocated and short-lived.
+ * The consistent API is worth the minor memory cost.
+ * 
+ * All database operations are part of an anonymous transaction:
  * - Transaction commits when the callback returns successfully
  * - Transaction rolls back if the callback throws or returns error
  * 
@@ -23,22 +35,42 @@ namespace SpacetimeDb {
  * @code
  * SPACETIMEDB_PROCEDURE(void, insert_user, ProcedureContext ctx, std::string name) {
  *     ctx.with_tx([&](TxContext& tx) {
- *         // Database operations here are transactional
- *         tx.db.users().insert(User{name});
+ *         // Access authentication (same as in reducers)
+ *         if (tx.sender_auth().HasJwt()) {
+ *             auto jwt = tx.sender_auth().GetJwt();
+ *             // ...
+ *         }
+ *         // Database operations here are transactional (same syntax as reducers)
+ *         tx.db[users].insert(User{name});
  *     });
  * }
  * @endcode
  */
 struct TxContext {
-    // Database access - name-based like ReducerContext
-    DatabaseContext db;
+private:
+    ReducerContext& ctx_;
     
-    // Timestamp of the transaction
-    // Note: In procedures, this may be updated if transaction is retried
-    Timestamp timestamp;
+public:
+    // Public references to ReducerContext fields for consistent API with Rust
+    // In Rust, Deref makes tx.db work the same as ctx.db
+    // In C++, we explicitly expose references to achieve the same ergonomics
+    DatabaseContext& db;
+    const Identity& sender;
+    const Timestamp& timestamp;
+    const std::optional<ConnectionId>& connection_id;
     
-    // Constructor
-    TxContext(Timestamp ts) : timestamp(ts) {}
+    // Constructor - initializes all reference members
+    explicit TxContext(ReducerContext& ctx) 
+        : ctx_(ctx), 
+          db(ctx.db),
+          sender(ctx.sender),
+          timestamp(ctx.timestamp),
+          connection_id(ctx.connection_id) {}
+    
+    // Access to ReducerContext methods
+    const AuthCtx& sender_auth() const { return ctx_.sender_auth(); }
+    Identity identity() const { return ctx_.identity(); }
+    StdbRng& rng() const { return ctx_.rng(); }
 };
 
 } // namespace SpacetimeDb

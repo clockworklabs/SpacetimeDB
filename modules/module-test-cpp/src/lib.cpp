@@ -595,3 +595,68 @@ SPACETIMEDB_REDUCER(throw_error, ReducerContext ctx) {
     return Err("Intentional error from throw_error reducer.");
     //return Ok();
 }
+
+// =============================================================================
+// JWT AUTHENTICATION TESTS
+// =============================================================================
+
+// Test reducer that checks JWT authentication
+SPACETIMEDB_REDUCER(test_jwt_auth, ReducerContext ctx) {
+    LOG_INFO("=== Testing JWT Authentication ===");
+    
+    // Get sender_auth via the accessor method (matches Rust pattern)
+    const auto& auth = ctx.sender_auth();
+    
+    // Check if JWT is present
+    if (auth.HasJwt()) {
+        LOG_INFO("JWT is present");
+        
+        // Get the JWT and parse claims (returns optional)
+        auto jwt_opt = auth.GetJwt();
+        if (!jwt_opt.has_value()) {
+            LOG_ERROR("HasJwt() was true but GetJwt() returned empty");
+            return Ok();
+        }
+        
+        auto& jwt = jwt_opt.value();
+        
+        // Test claim accessors
+        auto subject = jwt.Subject();
+        auto issuer = jwt.Issuer();
+        auto audience = jwt.Audience();
+        
+        LOG_INFO("JWT Subject: " + subject);
+        LOG_INFO("JWT Issuer: " + issuer);
+        
+        // Audience is a vector of strings
+        if (!audience.empty()) {
+            LOG_INFO("JWT Audience (first): " + audience[0]);
+        } else {
+            LOG_INFO("JWT Audience: (empty)");
+        }
+        
+        // Test identity access
+        auto identity = jwt.GetIdentity();
+        LOG_INFO("JWT Identity: " + identity.to_string());
+        
+        // Compare with caller identity
+        LOG_INFO("Caller Identity: " + ctx.sender.to_string());
+        
+        // Verify that GetCallerIdentity returns the same as ctx.sender
+        auto caller_identity = auth.GetCallerIdentity();
+        if (caller_identity == ctx.sender) {
+            LOG_INFO("GetCallerIdentity matches ctx.sender");
+        } else {
+            LOG_ERROR("GetCallerIdentity does NOT match ctx.sender");
+        }
+    } else {
+        LOG_INFO("No JWT present (anonymous or scheduled reducer)");
+        
+        // Verify GetCallerIdentity still works
+        auto caller_identity = auth.GetCallerIdentity();
+        LOG_INFO("Caller Identity (no JWT): " + caller_identity.to_string());
+    }
+    
+    LOG_INFO("=== JWT Authentication Test Complete ===");
+    return Ok();
+}

@@ -177,6 +177,86 @@ SPACETIMEDB_PROCEDURE(std::string, test_simple_http, ProcedureContext ctx) {
 #endif // SPACETIMEDB_UNSTABLE_FEATURES
 
 // ============================================================================
+// Procedure Tests - Part 5: JWT Authentication in Transactions
+// ============================================================================
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+
+// Test procedure that accesses JWT auth within a transaction
+SPACETIMEDB_PROCEDURE(std::string, test_jwt_in_tx, ProcedureContext ctx) {
+    LOG_INFO("=== Testing JWT in Transaction ===");
+    
+    std::string result;
+    
+    // Access JWT within a transaction using with_tx
+    ctx.with_tx([&result](TxContext& tx) {
+        // Access sender_auth via the method (matches Rust pattern)
+        const auto& auth = tx.sender_auth();
+        
+        if (auth.HasJwt()) {
+            auto jwt_opt = auth.GetJwt();
+            if (!jwt_opt.has_value()) {
+                result = "Error: HasJwt() true but GetJwt() empty";
+                return;
+            }
+            
+            auto& jwt = jwt_opt.value();
+            auto subject = jwt.Subject();
+            auto issuer = jwt.Issuer();
+            
+            LOG_INFO("JWT in transaction - Subject: " + subject);
+            LOG_INFO("JWT in transaction - Issuer: " + issuer);
+            
+            result = "JWT present - Subject: " + subject + ", Issuer: " + issuer;
+        } else {
+            LOG_INFO("No JWT in transaction");
+            result = "No JWT present";
+        }
+        
+        // Verify caller identity
+        auto caller_identity = auth.GetCallerIdentity();
+        LOG_INFO("Caller identity in tx: " + caller_identity.to_string());
+    });
+    
+    LOG_INFO("=== JWT Transaction Test Complete ===");
+    return result;
+}
+
+// Test procedure that uses JWT claims to conditionally insert data
+SPACETIMEDB_PROCEDURE(std::string, insert_if_authenticated, ProcedureContext ctx) {
+    std::string result;
+    
+    ctx.with_tx([&result](TxContext& tx) {
+        const auto& auth = tx.sender_auth();
+        
+        if (auth.HasJwt()) {
+            auto jwt_opt = auth.GetJwt();
+            if (!jwt_opt.has_value()) {
+                result = "Error: HasJwt() true but GetJwt() empty";
+                return;
+            }
+            
+            auto& jwt = jwt_opt.value();
+            auto subject = jwt.Subject();
+            
+            // Insert data only if JWT is present
+            tx.db[my_table].insert(MyTable{
+                ReturnStruct{100, "Authenticated user: " + subject}
+            });
+            
+            result = "Inserted row for authenticated user: " + subject;
+            LOG_INFO(result);
+        } else {
+            result = "Rejected: No JWT authentication";
+            LOG_INFO(result);
+        }
+    });
+    
+    return result;
+}
+
+#endif // SPACETIMEDB_UNSTABLE_FEATURES
+
+// ============================================================================
 // NOTE: Scheduled Procedure tests are excluded
 // ============================================================================
 //

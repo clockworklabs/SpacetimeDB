@@ -138,8 +138,16 @@ struct ProcedureContext {
             LOG_PANIC("Failed to start transaction");
         }
         
-        // Create transaction context
-        TxContext tx{Timestamp::from_micros_since_epoch(tx_timestamp)};
+        // Create a ReducerContext for this transaction
+        // Note: connection_id converted to std::optional
+        ReducerContext reducer_ctx(
+            sender,
+            std::optional<ConnectionId>(connection_id),
+            Timestamp::from_micros_since_epoch(tx_timestamp)
+        );
+        
+        // Create transaction context wrapping the reducer context
+        TxContext tx{reducer_ctx};
         
         // Execute callback
         if constexpr (std::is_void_v<ResultType>) {
@@ -194,8 +202,15 @@ struct ProcedureContext {
             LOG_PANIC("Failed to start transaction");
         }
         
-        // Create transaction context
-        TxContext tx{Timestamp::from_micros_since_epoch(tx_timestamp)};
+        // Create a ReducerContext for this transaction
+        ReducerContext reducer_ctx(
+            sender,
+            std::optional<ConnectionId>(connection_id),
+            Timestamp::from_micros_since_epoch(tx_timestamp)
+        );
+        
+        // Create transaction context wrapping the reducer context
+        TxContext tx{reducer_ctx};
         
         // Execute callback
         ResultType result = body(tx);
