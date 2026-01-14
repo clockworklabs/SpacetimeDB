@@ -68,6 +68,9 @@ using ::volatile_nonatomic_schedule_immediate;
 // ===== Identity =====
 using ::identity;
 
+// ===== JWT =====
+using ::get_jwt;
+
 // ===== Procedure Transactions =====
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
 using ::procedure_start_mut_tx;
