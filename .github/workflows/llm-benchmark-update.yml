@@ -11,11 +11,14 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write 
+  pull-requests: write
   issues: write
 
 concurrency:
-  group: llm-benchmark-${{ github.event_name == 'issue_comment' && github.event.issue.number || inputs.pr_number }}
+  group: >-
+    llm-benchmark
+    -${{ github.event_name == 'issue_comment' && github.event.issue.number || inputs.pr_number }}
+    ${{ github.event_name == 'issue_comment' && !startsWith(github.event.comment.body, '/update-llm-benchmark') && '-unrelated-comment' }}
   cancel-in-progress: true
 
 jobs:
@@ -300,11 +303,11 @@ jobs:
       # Commit the changes.
       - name: Commit changes
         run: |
-          git config user.name "spacetimedb-bot"
-          git config user.email "spacetimedb-bot@users.noreply.github.com"
+          git config user.name "clockwork-labs-bot"
+          git config user.email "clockwork-labs-bot@users.noreply.github.com"
 
           # Prefer staging only the benchmark output area (adjust as needed)
-          git add docs/llms 
+          git add docs/llms
 
           git diff --cached --quiet && exit 0
           git commit -m "Update LLM benchmark results"

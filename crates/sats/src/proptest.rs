@@ -7,13 +7,14 @@ use crate::{
     AlgebraicType, AlgebraicTypeRef, AlgebraicValue, ArrayValue, ProductType, ProductValue, SumType, SumValue,
     Typespace, F32, F64,
 };
+use core::fmt::Debug;
 use proptest::{
     collection::{vec, SizeRange},
     prelude::*,
     prop_oneof,
 };
 
-const SIZE: usize = 16;
+pub const SIZE: usize = 16;
 
 /// Generates primitive `AlgebraicType`s.
 ///
@@ -213,26 +214,31 @@ fn generate_array_value(ty: AlgebraicType) -> BoxedStrategy<ArrayValue> {
     }
 }
 
+fn gen_with<T: Clone + Debug, US: Strategy>(
+    with: impl Strategy<Value = T>,
+    then: impl Fn(T) -> US,
+) -> impl Strategy<Value = (T, US::Value)> {
+    with.prop_flat_map(move |val| (Just(val.clone()), then(val)))
+}
+
 /// Generates a row type `ty` and a row value typed at `ty`.
 pub fn generate_typed_row() -> impl Strategy<Value = (ProductType, ProductValue)> {
-    generate_row_type(0..=SIZE).prop_flat_map(|ty| (Just(ty.clone()), generate_product_value(ty)))
+    gen_with(generate_row_type(0..=SIZE), generate_product_value)
 }
 
 pub fn generate_typed_row_vec(
+    size: impl Into<SizeRange>,
     num_rows_min: usize,
     num_rows_max: usize,
 ) -> impl Strategy<Value = (ProductType, Vec<ProductValue>)> {
-    generate_row_type(0..=SIZE).prop_flat_map(move |ty| {
-        (
-            Just(ty.clone()),
-            vec(generate_product_value(ty), num_rows_min..num_rows_max),
-        )
+    gen_with(generate_row_type(size), move |ty| {
+        vec(generate_product_value(ty), num_rows_min..num_rows_max)
     })
 }
 
 /// Generates a type `ty` and a value typed at `ty`.
 pub fn generate_typed_value() -> impl Strategy<Value = (AlgebraicType, AlgebraicValue)> {
-    generate_algebraic_type().prop_flat_map(|ty| (Just(ty.clone()), generate_algebraic_value(ty)))
+    gen_with(generate_algebraic_type(), generate_algebraic_value)
 }
 
 /// Generate a `Ref` to something in a `Typespace` of this length.

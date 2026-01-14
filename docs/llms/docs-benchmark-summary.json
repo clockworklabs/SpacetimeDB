@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2026-01-08T17:18:21.086Z",
+  "generated_at": "2026-01-14T10:50:55.061Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "e2ae15b0c07ecc43f76ec3c154f477ea7851632e6f8985dc8f0ab845ac741afa",
+          "hash": "2c474d4cfaa7d4eb9b3ab2e25ec621643985f0258dde661c9c3953e6a1010083",
           "models": {
             "GPT-5": {
               "categories": {
@@ -20,19 +20,19 @@
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 31,
-                  "pass_pct": 91.17647,
-                  "task_pass_equiv": 9.0,
-                  "task_pass_pct": 90.0
+                  "passed_tests": 18,
+                  "pass_pct": 52.941177,
+                  "task_pass_equiv": 6.0,
+                  "task_pass_pct": 60.000004
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 58,
-                "pass_pct": 95.08197,
-                "task_pass_equiv": 21.0,
-                "task_pass_pct": 95.454544
+                "passed_tests": 45,
+                "pass_pct": 73.77049,
+                "task_pass_equiv": 18.0,
+                "task_pass_pct": 81.818184
               }
             }
           }
@@ -42,7 +42,7 @@
     "rust": {
       "modes": {
         "rustdoc_json": {
-          "hash": "9bb229f6cfd63a9477451e127576b9bd378ec1087b9f320e5a8576b415e021b0",
+          "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
           "models": {
             "GPT-5": {
               "categories": {

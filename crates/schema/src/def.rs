@@ -643,6 +643,7 @@ impl From<IndexDef> for RawIndexDefV9 {
             name: Some(val.name),
             algorithm: match val.algorithm {
                 IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => RawIndexAlgorithm::BTree { columns },
+                IndexAlgorithm::Hash(HashAlgorithm { columns }) => RawIndexAlgorithm::Hash { columns },
                 IndexAlgorithm::Direct(DirectAlgorithm { column }) => RawIndexAlgorithm::Direct { column },
             },
             accessor_name: val.accessor_name.map(Into::into),
@@ -656,6 +657,8 @@ impl From<IndexDef> for RawIndexDefV9 {
 pub enum IndexAlgorithm {
     /// Implemented using a rust `std::collections::BTreeMap`.
     BTree(BTreeAlgorithm),
+    /// Implemented using a rust `std::collections::HashMap`.
+    Hash(HashAlgorithm),
     /// Implemented using `DirectUniqueIndex`.
     Direct(DirectAlgorithm),
 }
@@ -665,6 +668,7 @@ impl IndexAlgorithm {
     pub fn columns(&self) -> ColOrCols<'_> {
         match self {
             Self::BTree(btree) => ColOrCols::ColList(&btree.columns),
+            Self::Hash(hash) => ColOrCols::ColList(&hash.columns),
             Self::Direct(direct) => ColOrCols::Col(direct.column),
         }
     }
@@ -680,6 +684,7 @@ impl From<IndexAlgorithm> for RawIndexAlgorithm {
     fn from(val: IndexAlgorithm) -> Self {
         match val {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Hash(HashAlgorithm { columns }) => Self::Hash { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
         }
     }
@@ -702,6 +707,26 @@ impl<CL: Into<ColList>> From<CL> for BTreeAlgorithm {
 impl From<BTreeAlgorithm> for IndexAlgorithm {
     fn from(val: BTreeAlgorithm) -> Self {
         IndexAlgorithm::BTree(val)
+    }
+}
+
+/// Data specifying a Hash index.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HashAlgorithm {
+    /// The columns to index.
+    pub columns: ColList,
+}
+
+impl<CL: Into<ColList>> From<CL> for HashAlgorithm {
+    fn from(columns: CL) -> Self {
+        let columns = columns.into();
+        Self { columns }
+    }
+}
+
+impl From<HashAlgorithm> for IndexAlgorithm {
+    fn from(val: HashAlgorithm) -> Self {
+        IndexAlgorithm::Hash(val)
     }
 }
 

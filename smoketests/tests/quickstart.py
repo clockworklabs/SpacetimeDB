@@ -200,8 +200,8 @@ class BaseQuickstart(Smoketest):
 
 class Rust(BaseQuickstart):
     lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/00100-intro/00200-quickstarts/00300-rust.md"
-    client_doc = STDB_DIR / "docs/docs/00100-intro/00200-quickstarts/00300-rust.md"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
+    client_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
     server_file = "src/lib.rs"
     client_file = "src/main.rs"
     module_bindings = "src/module_bindings"
@@ -249,8 +249,8 @@ fn user_input_direct(ctx: &DbConnection) {
 
 class CSharp(BaseQuickstart):
     lang = "csharp"
-    server_doc = STDB_DIR / "docs/docs/00100-intro/00200-quickstarts/00200-c-sharp.md"
-    client_doc = STDB_DIR / "docs/docs/00100-intro/00200-quickstarts/00200-c-sharp.md"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
+    client_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
     server_file = "Lib.cs"
     client_file = "Program.cs"
     module_bindings = "module_bindings"
@@ -362,7 +362,7 @@ Main();
 class TypeScript(Rust):
     lang = "typescript"
     client_lang = "rust"
-    server_doc = STDB_DIR / "docs/docs/00100-intro/00200-quickstarts/00100-typescript.md"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
     server_file = "src/index.ts"
 
     def server_postprocess(self, server_path: Path):

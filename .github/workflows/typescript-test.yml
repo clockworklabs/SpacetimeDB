@@ -102,6 +102,18 @@ jobs:
           # Clear any existing information
           spacetime server clear -y
 
+      # This step shouldn't be needed, but somehow we end up with caches that are missing librusty_v8.a.
+      # This may be due to reusing CARGO_TARGET_DIR while mixing different build strategies (`cargo install` and `cargo build -p`).
+      # However, this fix seems to work.
+      - name: Check v8 outputs
+        run: |
+          find "${CARGO_TARGET_DIR}"/ -type f | grep '[/_]v8' || true
+          if ! [ -f "${CARGO_TARGET_DIR}"/debug/gn_out/obj/librusty_v8.a ]; then
+            echo "Could not find v8 output file librusty_v8.a; rebuilding manually."
+            cargo clean -p v8 || true
+            cargo build -p v8
+          fi
+
       - name: Generate client bindings
         working-directory: templates/quickstart-chat-typescript/spacetimedb
         run: |

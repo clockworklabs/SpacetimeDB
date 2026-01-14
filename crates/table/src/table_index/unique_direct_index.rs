@@ -1,4 +1,6 @@
+use super::index::Index;
 use crate::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
+use crate::table_index::index::RangedIndex;
 use core::mem;
 use core::ops::{Bound, RangeBounds};
 use core::option::IntoIter;
@@ -92,12 +94,14 @@ impl InnerIndex {
     }
 }
 
-impl UniqueDirectIndex {
-    /// Inserts the relation `key -> val` to this index.
-    ///
-    /// If `key` was already present in the index, does not add an association with `val`.
-    /// Returns the existing associated value instead.
-    pub fn insert(&mut self, key: usize, val: RowPointer) -> Result<(), RowPointer> {
+impl Index for UniqueDirectIndex {
+    type Key = usize;
+
+    fn clone_structure(&self) -> Self {
+        Self::default()
+    }
+
+    fn insert(&mut self, key: Self::Key, val: RowPointer) -> Result<(), RowPointer> {
         let (key_outer, key_inner) = split_key(key);
 
         // Fetch the outer index and ensure it can house `key_outer`.
@@ -122,10 +126,7 @@ impl UniqueDirectIndex {
         }
     }
 
-    /// Deletes `key` from this map.
-    ///
-    /// Returns whether `key` was present.
-    pub fn delete(&mut self, key: usize) -> bool {
+    fn delete(&mut self, &key: &Self::Key, _: RowPointer) -> bool {
         let (key_outer, key_inner) = split_key(key);
         let outer = &mut self.outer;
         if let Some(Some(inner)) = outer.get_mut(key_outer) {
@@ -138,8 +139,12 @@ impl UniqueDirectIndex {
         false
     }
 
-    /// Returns an iterator yielding the potential [`RowPointer`] for `key`.
-    pub fn seek_point(&self, key: usize) -> UniqueDirectIndexPointIter {
+    type PointIter<'a>
+        = UniqueDirectIndexPointIter
+    where
+        Self: 'a;
+
+    fn seek_point(&self, &key: &Self::Key) -> Self::PointIter<'_> {
         let (outer_key, inner_key) = split_key(key);
         let point = self
             .outer
@@ -150,8 +155,45 @@ impl UniqueDirectIndex {
         UniqueDirectIndexPointIter::new(point)
     }
 
+    fn num_keys(&self) -> usize {
+        self.len
+    }
+
+    /// Deletes all entries from the index, leaving it empty.
+    /// This will not deallocate the outer index.
+    fn clear(&mut self) {
+        self.outer.clear();
+        self.len = 0;
+    }
+
+    /// Returns whether `other` can be merged into `self`
+    /// with an error containing the element in `self` that caused the violation.
+    ///
+    /// The closure `ignore` indicates whether a row in `self` should be ignored.
+    fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
+        for (inner_s, inner_o) in self.outer.iter().zip(&other.outer) {
+            let (Some(inner_s), Some(inner_o)) = (inner_s, inner_o) else {
+                continue;
+            };
+
+            for (slot_s, slot_o) in inner_s.inner.iter().zip(inner_o.inner.iter()) {
+                let ptr_s = slot_s.with_reserved_bit(false);
+                if *slot_s != NONE_PTR && *slot_o != NONE_PTR && !ignore(&ptr_s) {
+                    // For the same key, we found both slots occupied, so we cannot merge.
+                    return Err(ptr_s);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+impl RangedIndex for UniqueDirectIndex {
+    type RangeIter<'a> = UniqueDirectIndexRangeIter<'a>;
+
     /// Returns an iterator yielding all the [`RowPointer`] that correspond to the provided `range`.
-    pub fn seek_range(&self, range: &impl RangeBounds<usize>) -> UniqueDirectIndexRangeIter<'_> {
+    fn seek_range(&self, range: &impl RangeBounds<usize>) -> Self::RangeIter<'_> {
         // The upper bound of possible key.
         // This isn't necessarily the real max key actually present in the index,
         // due to possible deletions.
@@ -181,51 +223,6 @@ impl UniqueDirectIndex {
             end,
         }
     }
-
-    /// Returns the number of unique keys in the index.
-    pub fn num_keys(&self) -> usize {
-        self.len
-    }
-
-    /// Returns the total number of entries in the index.
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// Returns whether there are any entries in the index.
-    #[allow(unused)] // No use for this currently.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Deletes all entries from the index, leaving it empty.
-    /// This will not deallocate the outer index.
-    pub fn clear(&mut self) {
-        self.outer.clear();
-        self.len = 0;
-    }
-
-    /// Returns whether `other` can be merged into `self`
-    /// with an error containing the element in `self` that caused the violation.
-    ///
-    /// The closure `ignore` indicates whether a row in `self` should be ignored.
-    pub(crate) fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
-        for (inner_s, inner_o) in self.outer.iter().zip(&other.outer) {
-            let (Some(inner_s), Some(inner_o)) = (inner_s, inner_o) else {
-                continue;
-            };
-
-            for (slot_s, slot_o) in inner_s.inner.iter().zip(inner_o.inner.iter()) {
-                let ptr_s = slot_s.with_reserved_bit(false);
-                if *slot_s != NONE_PTR && *slot_o != NONE_PTR && !ignore(&ptr_s) {
-                    // For the same key, we found both slots occupied, so we cannot merge.
-                    return Err(ptr_s);
-                }
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// An iterator over the potential value in a [`UniqueDirectMap`] for a given key.
@@ -248,7 +245,7 @@ impl Iterator for UniqueDirectIndexPointIter {
 }
 
 /// An iterator over a range of keys in a [`UniqueDirectIndex`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UniqueDirectIndexRangeIter<'a> {
     outer: &'a [Option<InnerIndex>],
     start: usize,
@@ -324,7 +321,7 @@ pub(super) mod test {
         for (key, ptr) in keys.iter().zip(&ptrs) {
             index.insert(*key, *ptr).unwrap();
         }
-        assert_eq!(index.len(), 4);
+        assert_eq!(index.num_rows(), 4);
 
         let ptrs_found = index.seek_range(&range).collect::<Vec<_>>();
         assert_eq!(ptrs, ptrs_found);
@@ -354,15 +351,15 @@ pub(super) mod test {
         for (key, ptr) in keys.iter().zip(&ptrs) {
             index.insert(*key, *ptr).unwrap();
         }
-        assert_eq!(index.len(), 4);
+        assert_eq!(index.num_rows(), 4);
 
         let key = KEYS_PER_INNER + 1;
-        let ptr = index.seek_point(key).next().unwrap();
-        assert!(index.delete(key));
-        assert!(!index.delete(key));
-        assert_eq!(index.len(), 3);
+        let ptr = index.seek_point(&key).next().unwrap();
+        assert!(index.delete(&key, ptr));
+        assert!(!index.delete(&key, ptr));
+        assert_eq!(index.num_rows(), 3);
 
         index.insert(key, ptr).unwrap();
-        assert_eq!(index.len(), 4);
+        assert_eq!(index.num_rows(), 4);
     }
 }

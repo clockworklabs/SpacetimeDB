@@ -6,7 +6,6 @@ slug: /sdks/api
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# SDK API Overview
 
 The SpacetimeDB client SDKs provide a comprehensive API for interacting with your [database](/databases). After [generating client bindings](/sdks/codegen) and [establishing a connection](/sdks/connection), you can query data, invoke server functions, and observe real-time changes.
 
@@ -28,18 +27,19 @@ Subscriptions replicate a subset of the database to your client, maintaining a l
 Subscribe to tables or queries using SQL:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Subscribe with callbacks
-conn.subscription_builder()
-    .on_applied(|ctx| {
-        println!("Subscription ready with {} users", ctx.db().user().count());
-    })
-    .on_error(|ctx, error| {
-        eprintln!("Subscription failed: {}", error);
-    })
-    .subscribe(["SELECT * FROM user"]);
+conn
+  .subscriptionBuilder()
+  .onApplied(ctx => {
+    console.log(`Subscription ready with ${ctx.db.User.count()} users`);
+  })
+  .onError((ctx, error) => {
+    console.error(`Subscription failed: ${error}`);
+  })
+  .subscribe(['SELECT * FROM user']);
 ```
 
 </TabItem>
@@ -60,19 +60,18 @@ conn.SubscriptionBuilder()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Subscribe with callbacks
-conn
-  .subscriptionBuilder()
-  .onApplied(ctx => {
-    console.log(`Subscription ready with ${ctx.db.User.count()} users`);
-  })
-  .onError((ctx, error) => {
-    console.error(`Subscription failed: ${error}`);
-  })
-  .subscribe(['SELECT * FROM user']);
+conn.subscription_builder()
+    .on_applied(|ctx| {
+        println!("Subscription ready with {} users", ctx.db().user().count());
+    })
+    .on_error(|ctx, error| {
+        eprintln!("Subscription failed: {}", error);
+    })
+    .subscribe(["SELECT * FROM user"]);
 ```
 
 </TabItem>
@@ -118,27 +117,25 @@ See the [Subscriptions documentation](/subscriptions) for detailed information o
 Once subscribed, query the local cache without network round-trips:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Iterate all cached rows
-for user in conn.db().user().iter() {
-    println!("{}: {}", user.id, user.name);
+for (const user of conn.db.user.iter()) {
+  console.log(`${user.id}: ${user.name}`);
 }
 
 // Count cached rows
-let user_count = conn.db().user().count();
+const userCount = conn.db.user.count();
 
 // Find by unique column (if indexed)
-if let Some(user) = conn.db().user().name().find("Alice") {
-    println!("Found: {}", user.email);
+const user = conn.db.user.name.find('Alice');
+if (user) {
+  console.log(`Found: ${user.email}`);
 }
 
 // Filter cached rows
-let admin_users: Vec<_> = conn.db().user()
-    .iter()
-    .filter(|u| u.is_admin)
-    .collect();
+const adminUsers = [...conn.db.user.iter()].filter(u => u.isAdmin);
 ```
 
 </TabItem>
@@ -168,25 +165,27 @@ var adminUsers = conn.Db.User.Iter()
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Iterate all cached rows
-for (const user of conn.db.user.iter()) {
-  console.log(`${user.id}: ${user.name}`);
+for user in conn.db().user().iter() {
+    println!("{}: {}", user.id, user.name);
 }
 
 // Count cached rows
-const userCount = conn.db.user.count();
+let user_count = conn.db().user().count();
 
 // Find by unique column (if indexed)
-const user = conn.db.user.name.find('Alice');
-if (user) {
-  console.log(`Found: ${user.email}`);
+if let Some(user) = conn.db().user().name().find("Alice") {
+    println!("Found: {}", user.email);
 }
 
 // Filter cached rows
-const adminUsers = [...conn.db.user.iter()].filter(u => u.isAdmin);
+let admin_users: Vec<_> = conn.db().user()
+    .iter()
+    .filter(|u| u.is_admin)
+    .collect();
 ```
 
 </TabItem>
@@ -230,23 +229,22 @@ for (const FUserType& User : AllUsers)
 Register callbacks to observe insertions, updates, and deletions in the local cache:
 
 <Tabs groupId="client-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-```rust
+```typescript
 // Called when a row is inserted
-conn.db().user().on_insert(|ctx, user| {
-    println!("User inserted: {}", user.name);
+conn.db.User.onInsert((ctx, user) => {
+  console.log(`User inserted: ${user.name}`);
 });
 
 // Called when a row is updated
-conn.db().user().on_update(|ctx, old_user, new_user| {
-    println!("User {} updated: {} -> {}", 
-        new_user.id, old_user.name, new_user.name);
+conn.db.User.onUpdate((ctx, oldUser, newUser) => {
+  console.log(`User ${newUser.id} updated: ${oldUser.name} -> ${newUser.name}`);
 });
 
 // Called when a row is deleted
-conn.db().user().on_delete(|ctx, user| {
-    println!("User deleted: {}", user.name);
+conn.db.User.onDelete((ctx, user) => {
+  console.log(`User deleted: ${user.name}`);
 });
 ```
 
@@ -274,22 +272,23 @@ conn.Db.User.OnDelete += (ctx, user) =>
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-```typescript
+```rust
 // Called when a row is inserted
-conn.db.User.onInsert((ctx, user) => {
-  console.log(`User inserted: ${user.name}`);
+conn.db().user().on_insert(|ctx, user| {
+    println!("User inserted: {}", user.name);
 });
 
 // Called when a row is updated
-conn.db.User.onUpdate((ctx, oldUser, newUser) => {
-  console.log(`User ${newUser.id} updated: ${oldUser.name} -> ${newUser.name}`);
+conn.db().user().on_update(|ctx, old_user, new_user| {
+    println!("User {} updated: {} -> {}", 
+        new_user.id, old_user.name, new_user.name);
 });
 
 // Called when a row is deleted
-conn.db.User.onDelete((ctx, user) => {
-  console.log(`User deleted: ${user.name}`);
+conn.db().user().on_delete(|ctx, user| {
+    println!("User deleted: {}", user.name);
 });
 ```
 
