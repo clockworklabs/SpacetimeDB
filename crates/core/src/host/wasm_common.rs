@@ -10,6 +10,7 @@ use super::{scheduler::ScheduleError, AbiCall};
 use crate::error::{DBError, DatastoreError, IndexError, NodesError};
 use spacetimedb_primitives::errno;
 use spacetimedb_sats::typespace::TypeRefError;
+use spacetimedb_schema::def::RawModuleDefVersion;
 use spacetimedb_table::table::UniqueConstraintViolation;
 
 pub const CALL_REDUCER_DUNDER: &str = "__call_reducer__";
@@ -21,6 +22,8 @@ pub const CALL_VIEW_DUNDER: &str = "__call_view__";
 pub const CALL_VIEW_ANON_DUNDER: &str = "__call_view_anon__";
 
 pub const DESCRIBE_MODULE_DUNDER: &str = "__describe_module__";
+
+pub const DESCRIBE_MODULE_DUNDER_V10: &str = "__describe_module_v10__";
 
 /// functions with this prefix run prior to __setup__, initializing global variables and the like
 pub const PREINIT_DUNDER: &str = "__preinit__";
@@ -229,7 +232,7 @@ impl FuncNames {
         }
         Ok(())
     }
-    pub fn check_required<F, T>(get_export: F) -> Result<(), ValidationError>
+    pub fn check_required<F, T>(raw_def_ver: RawModuleDefVersion, get_export: F) -> Result<(), ValidationError>
     where
         F: Fn(&str) -> Option<T>,
         T: FuncSigLike,
@@ -243,10 +246,35 @@ impl FuncNames {
         let sig = get_func(CALL_REDUCER_DUNDER)?;
         Self::validate_signature("call_reducer", &sig, CALL_REDUCER_DUNDER, CALL_REDUCER_SIG)?;
 
-        let sig = get_func(DESCRIBE_MODULE_DUNDER)?;
-        Self::validate_signature("describe_module", &sig, DESCRIBE_MODULE_DUNDER, DESCRIBE_MODULE_SIG)?;
+        let describe_dunder = describe_dunder(raw_def_ver);
+        let sig = get_func(describe_dunder)?;
+        Self::validate_signature("describe_module", &sig, describe_dunder, DESCRIBE_MODULE_SIG)?;
 
         Ok(())
+    }
+}
+
+pub fn detect_describe_module_abi<M>(module: &M) -> Result<RawModuleDefVersion, module_host_actor::DescribeError>
+where
+    M: module_host_actor::WasmModule,
+{
+    if module.get_export(DESCRIBE_MODULE_DUNDER).is_some() {
+        Ok(RawModuleDefVersion::V9OrEarlier)
+    } else if module.get_export(DESCRIBE_MODULE_DUNDER_V10).is_some() {
+        Ok(RawModuleDefVersion::V10)
+    } else {
+        Err(module_host_actor::DescribeError::Signature(anyhow!(
+            "module does not export a {} or {} function",
+            DESCRIBE_MODULE_DUNDER,
+            DESCRIBE_MODULE_DUNDER_V10
+        )))
+    }
+}
+
+pub fn describe_dunder(version: RawModuleDefVersion) -> &'static str {
+    match version {
+        RawModuleDefVersion::V9OrEarlier => DESCRIBE_MODULE_DUNDER,
+        RawModuleDefVersion::V10 => DESCRIBE_MODULE_DUNDER_V10,
     }
 }
 

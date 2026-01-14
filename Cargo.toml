@@ -121,7 +121,7 @@ spacetimedb-durability = { path = "crates/durability", version = "=1.11.2" }
 spacetimedb-execution = { path = "crates/execution", version = "=1.11.2" }
 spacetimedb-expr = { path = "crates/expr", version = "=1.11.2" }
 spacetimedb-guard = { path = "crates/guard", version = "=1.11.2" }
-spacetimedb-lib = { path = "crates/lib", default-features = false, version = "=1.11.2" }
+spacetimedb-lib = { path = "crates/lib", default-features = true, version = "=1.11.2" }
 spacetimedb-memory-usage = { path = "crates/memory-usage", version = "=1.11.2", default-features = false }
 spacetimedb-metrics = { path = "crates/metrics", version = "=1.11.2" }
 spacetimedb-paths = { path = "crates/paths", version = "=1.11.2" }

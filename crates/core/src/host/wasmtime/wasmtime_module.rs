@@ -19,6 +19,7 @@ use futures_util::FutureExt;
 use spacetimedb_datastore::locking_tx_datastore::FuncCallType;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef};
 use spacetimedb_primitives::errno::HOST_CALL_FAILURE;
+use spacetimedb_schema::def::RawModuleDefVersion;
 use wasmtime::{
     AsContext, AsContextMut, ExternType, Instance, InstancePre, Linker, Store, TypedFunc, WasmBacktrace, WasmParams,
     WasmResults,
@@ -349,19 +350,24 @@ pub struct WasmtimeInstance {
     call_view: Option<CallViewType>,
     call_view_anon: Option<CallViewAnonType>,
 }
-
 impl module_host_actor::WasmInstance for WasmtimeInstance {
     fn extract_descriptions(&mut self) -> Result<RawModuleDef, DescribeError> {
-        let describer_func_name = DESCRIBE_MODULE_DUNDER;
-
-        let describer = self
+        let (describer, describer_func_name) = match self
             .instance
-            .get_typed_func::<u32, ()>(&mut self.store, describer_func_name)
-            .map_err(DescribeError::Signature)?;
+            .get_typed_func::<u32, ()>(&mut self.store, DESCRIBE_MODULE_DUNDER)
+        {
+            Ok(func) => (func, DESCRIBE_MODULE_DUNDER),
+            Err(_) => (
+                self.instance
+                    .get_typed_func::<u32, ()>(&mut self.store, DESCRIBE_MODULE_DUNDER_V10)
+                    .map_err(DescribeError::Signature)?,
+                DESCRIBE_MODULE_DUNDER_V10,
+            ),
+        };
 
         let sink = self.store.data_mut().setup_standard_bytes_sink();
 
-        run_describer(log_traceback, || {
+        run_describer(describer_func_name, log_traceback, || {
             call_sync_typed_func(&describer, &mut self.store, sink)
         })?;
 

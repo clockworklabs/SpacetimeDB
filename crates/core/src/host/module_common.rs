@@ -93,10 +93,9 @@ impl ModuleCommon {
 /// Runs the describer of modules in `run` and does some logging around it.
 pub(crate) fn run_describer<T>(
     log_traceback: impl Copy + FnOnce(&str, &str, &anyhow::Error),
+    describer_func_name: &str,
     run: impl FnOnce() -> anyhow::Result<T>,
 ) -> Result<T, DescribeError> {
-    let describer_func_name = DESCRIBE_MODULE_DUNDER;
-
     let start = std::time::Instant::now();
     log::trace!("Start describer \"{describer_func_name}\"...");
 

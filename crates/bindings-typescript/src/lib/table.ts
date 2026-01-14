@@ -2,7 +2,7 @@ import type RawConstraintDefV9 from './autogen/raw_constraint_def_v_9_type';
 import RawIndexAlgorithm from './autogen/raw_index_algorithm_type';
 import type RawIndexDefV9 from './autogen/raw_index_def_v_9_type';
 import type RawSequenceDefV9 from './autogen/raw_sequence_def_v_9_type';
-import type RawTableDefV9 from './autogen/raw_table_def_v_9_type';
+import type RawTableDefV10 from './autogen/raw_table_def_v_10_type';
 import type { AllUnique, ConstraintOpts } from './constraints';
 import type {
   ColumnIndex,
@@ -39,10 +39,10 @@ type ColList = ColId[];
  */
 type HasInvalidColumn<Row extends RowObj> = {
   [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
-    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
-      ? true
-      : false
-    : false;
+  ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+  ? true
+  : false
+  : false;
 }[keyof Row] extends false
   ? false
   : true;
@@ -52,10 +52,10 @@ type HasInvalidColumn<Row extends RowObj> = {
  */
 type InvalidColumnNames<Row extends RowObj> = {
   [K in keyof Row]: Row[K] extends ColumnBuilder<any, any, infer M>
-    ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
-      ? K & string
-      : never
-    : never;
+  ? ValidateColumnMetadata<M> extends InvalidColumnMetadata<any>
+  ? K & string
+  : never
+  : never;
 }[keyof Row];
 
 /**
@@ -82,8 +82,8 @@ export type CoerceColumn<
   Col extends TypeBuilder<any, any> | ColumnBuilder<any, any, any>,
 > =
   Col extends TypeBuilder<infer T, infer U>
-    ? ColumnBuilder<T, U, ColumnMetadata<any>>
-    : Col;
+  ? ColumnBuilder<T, U, ColumnMetadata<any>>
+  : Col;
 
 /**
  * Coerces a RowObj where TypeBuilders are replaced with ColumnBuilders
@@ -118,10 +118,10 @@ export type TableIndexes<TableDef extends UntypedTableDef> = {
     K,
     TableDef['columns'][K]['columnMetadata']
   > extends never
-    ? never
-    : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
+  ? never
+  : K]: ColumnIndex<K, TableDef['columns'][K]['columnMetadata']>;
 } & {
-  [I in TableDef['indexes'][number] as I['name'] & {}]: TableIndexFromDef<
+  [I in TableDef['indexes'][number]as I['name'] & {}]: TableIndexFromDef<
     TableDef,
     I
   >;
@@ -134,21 +134,21 @@ type TableIndexFromDef<
   NormalizeIndexColumns<TableDef, I> extends infer Cols extends ReadonlyArray<
     keyof TableDef['columns'] & string
   >
-    ? {
-        name: I['name'];
-        unique: AllUnique<TableDef, Cols>;
-        algorithm: Lowercase<I['algorithm']>;
-        columns: Cols;
-      }
-    : never;
+  ? {
+    name: I['name'];
+    unique: AllUnique<TableDef, Cols>;
+    algorithm: Lowercase<I['algorithm']>;
+    columns: Cols;
+  }
+  : never;
 
 type NormalizeIndexColumns<
   TableDef extends UntypedTableDef,
   I extends IndexOpts<keyof TableDef['columns'] & string>,
 > =
   IndexColumns<I> extends ReadonlyArray<keyof TableDef['columns'] & string>
-    ? IndexColumns<I>
-    : never;
+  ? IndexColumns<I>
+  : never;
 
 /**
  * Options for configuring a database table.
@@ -197,7 +197,7 @@ export type Table<TableDef extends UntypedTableDef> = Prettify<
 
 export type ReadonlyTable<TableDef extends UntypedTableDef> = Prettify<
   ReadonlyTableMethods<TableDef> &
-    ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
+  ReadonlyIndexes<TableDef, TableIndexes<TableDef>>
 >;
 
 export interface ReadonlyTableMethods<TableDef extends UntypedTableDef> {
@@ -275,10 +275,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
   // See the JSDoc above for details on how to fix this error.
   ..._: HasInvalidColumn<Row> extends true
     ? [
-        error: ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
-          InvalidColumnNames<Row>
-        >,
-      ]
+      error: ERROR_default_cannot_be_combined_with_primaryKey_unique_or_autoInc<
+        InvalidColumnNames<Row>
+      >,
+    ]
     : []
 ): TableSchema<Opts['name'], CoerceRow<Row>, OptsIndices<Opts>> {
   const {
@@ -429,10 +429,10 @@ export function table<Row extends RowObj, const Opts extends TableOpts<Row>>(
     schedule:
       scheduled && scheduleAtCol !== undefined
         ? {
-            name: undefined,
-            reducerName: scheduled,
-            scheduledAtColumn: scheduleAtCol,
-          }
+          name: undefined,
+          reducerName: scheduled,
+          scheduledAtColumn: scheduleAtCol,
+        }
         : undefined,
     tableType: { tag: 'User' },
     tableAccess: { tag: isPublic ? 'Public' : 'Private' },

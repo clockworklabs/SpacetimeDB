@@ -47,6 +47,7 @@ pub(super) fn set_hook_slots(
 #[derive(enum_map::Enum, Copy, Clone)]
 pub(in super::super) enum ModuleHookKey {
     DescribeModule,
+    DescribeModuleV10,
     CallReducer,
     CallView,
     CallAnonymousView,
@@ -65,6 +66,7 @@ impl ModuleHookKey {
             ModuleHookKey::CallView => 22,
             ModuleHookKey::CallAnonymousView => 23,
             ModuleHookKey::CallProcedure => 24,
+            ModuleHookKey::DescribeModuleV10 => 25,
         }
     }
 }
@@ -104,15 +106,30 @@ impl HooksInfo {
 }
 
 #[derive(Copy, Clone)]
+/// The describe_module hook function for different [`RawModuleDef`]s.
+pub enum DescribeModuleHook<'scope> {
+    Legacy(Local<'scope, Function>),
+    V10(Local<'scope, Function>),
+}
+
+#[derive(Copy, Clone)]
 /// The actual callable module hook functions and their abi version.
 pub(in super::super) struct HookFunctions<'scope> {
     pub abi: AbiVersion,
     /// describe_module and call_reducer existed in v1.0, but everything else is `Option`al
-    pub describe_module: Local<'scope, Function>,
+    pub describe_module: DescribeModuleHook<'scope>,
     pub call_reducer: Local<'scope, Function>,
     pub call_view: Option<Local<'scope, Function>>,
     pub call_view_anon: Option<Local<'scope, Function>>,
     pub call_procedure: Option<Local<'scope, Function>>,
+}
+
+impl HookFunctions<'_> {
+    pub(in super::super) fn describe_module(&self) -> Local<'_, Function> {
+        match self.describe_module {
+            DescribeModuleHook::Legacy(f) | DescribeModuleHook::V10(f) => f,
+        }
+    }
 }
 
 /// Returns the hook function previously registered in [`register_hooks`].
@@ -128,9 +145,16 @@ pub(in super::super) fn get_hooks<'scope>(scope: &mut PinScope<'scope, '_>) -> O
         })
     };
 
+    let describe_module = if let Some(f) = get(ModuleHookKey::DescribeModule) {
+        DescribeModuleHook::Legacy(f)
+    } else if let Some(f) = get(ModuleHookKey::DescribeModuleV10) {
+        DescribeModuleHook::V10(f)
+    } else {
+        return None;
+    };
     Some(HookFunctions {
         abi: hooks.abi,
-        describe_module: get(ModuleHookKey::DescribeModule)?,
+        describe_module,
         call_reducer: get(ModuleHookKey::CallReducer)?,
         call_view: get(ModuleHookKey::CallView),
         call_view_anon: get(ModuleHookKey::CallAnonymousView),
