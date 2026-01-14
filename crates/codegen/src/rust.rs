@@ -663,7 +663,7 @@ pub struct {cols_struct} {{"
         let field_type = type_name(module, &element.1);
         writeln!(
             out,
-            "    pub {field_name}: __query_builder::Col<{struct_name}, {field_type}>,"
+            "    pub {field_name}: __sdk::__query_builder::Col<{struct_name}, {field_type}>,"
         )?;
     }
 
@@ -672,7 +672,7 @@ pub struct {cols_struct} {{"
     writeln!(
         out,
         "
-impl __query_builder::HasCols for {struct_name} {{
+impl __sdk::__query_builder::HasCols for {struct_name} {{
     type Cols = {cols_struct};
     fn cols(table_name: &'static str) -> Self::Cols {{
         {cols_struct} {{"
@@ -681,7 +681,7 @@ impl __query_builder::HasCols for {struct_name} {{
         let field_name = &element.0;
         writeln!(
             out,
-            "            {field_name}: __query_builder::Col::new(table_name, {field_name:?}),"
+            "            {field_name}: __sdk::__query_builder::Col::new(table_name, {field_name:?}),"
         )?;
     }
 
@@ -728,7 +728,7 @@ pub struct {cols_ix} {{"
 
         writeln!(
             out,
-            "    pub {field_name}: __query_builder::IxCol<{struct_name}, {field_type}>,",
+            "    pub {field_name}: __sdk::__query_builder::IxCol<{struct_name}, {field_type}>,",
         )?;
     }
     writeln!(out, "}}")?;
@@ -736,7 +736,7 @@ pub struct {cols_ix} {{"
     writeln!(
         out,
         "
-impl __query_builder::HasIxCols for {struct_name} {{
+impl __sdk::__query_builder::HasIxCols for {struct_name} {{
     type IxCols = {cols_ix};
     fn ix_cols(table_name: &'static str) -> Self::IxCols {{
         {cols_ix} {{"
@@ -755,7 +755,7 @@ impl __query_builder::HasIxCols for {struct_name} {{
 
         writeln!(
             out,
-            "            {field_name}: __query_builder::IxCol::new(table_name, {field_name:?}),",
+            "            {field_name}: __sdk::__query_builder::IxCol::new(table_name, {field_name:?}),",
         )?;
     }
     writeln!(
@@ -782,12 +782,12 @@ pub fn implement_query_table_accessor(table: &TableDef, out: &mut impl Write, st
         pub trait {query_accessor_trait} {{
             #[allow(non_snake_case)]
             /// Get a query builder for the table `{struct_name}`.
-            fn {accessor_method}(&self) -> __query_builder::Table<{struct_name}>;
+            fn {accessor_method}(&self) -> __sdk::__query_builder::Table<{struct_name}>;
         }}
 
         impl {query_accessor_trait} for __sdk::QueryTableAccessor {{
-            fn {accessor_method}(&self) -> __query_builder::Table<{struct_name}> {{
-                __query_builder::Table::new({accessor_method:?})
+            fn {accessor_method}(&self) -> __sdk::__query_builder::Table<{struct_name}> {{
+                __sdk::__query_builder::Table::new({accessor_method:?})
             }}
         }}
 "
@@ -905,7 +905,6 @@ const SPACETIMEDB_IMPORTS: &[&str] = &[
     "\t__lib,",
     "\t__sats,",
     "\t__ws,",
-    "\t__query_builder,",
     "};",
 ];
 
