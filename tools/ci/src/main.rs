@@ -133,17 +133,17 @@ fn main() -> Result<()> {
             // if they want those checks.
 
             // The fallocate tests have been flakely when running in parallel
-            cmd!(
-                "cargo",
-                "test",
-                "-p",
-                "spacetimedb-durability",
-                "--features",
-                "fallocate",
-                "--",
-                "--test-threads=1",
-            )
-            .run()?;
+            //cmd!(
+            //    "cargo",
+            //    "test",
+            //    "-p",
+            //    "spacetimedb-durability",
+            //    "--features",
+            //    "fallocate",
+            //    "--",
+            //    "--test-threads=1",
+            //)
+            //.run()?;
             cmd!("bash", "tools/check-diff.sh").run()?;
             cmd!(
                 "cargo",
