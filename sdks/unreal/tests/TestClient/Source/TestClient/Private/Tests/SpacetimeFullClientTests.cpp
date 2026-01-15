@@ -16,6 +16,12 @@
 #include "Tests/PrimitiveHandlerList.def"
 
 #include "Connection/Credentials.h"
+#include "ModuleBindings/Tables/ResultEveryPrimitiveStructStringTable.g.h"
+#include "ModuleBindings/Tables/ResultI32StringTable.g.h"
+#include "ModuleBindings/Tables/ResultIdentityStringTable.g.h"
+#include "ModuleBindings/Tables/ResultSimpleEnumI32Table.g.h"
+#include "ModuleBindings/Tables/ResultStringI32Table.g.h"
+#include "ModuleBindings/Tables/ResultVecI32StringTable.g.h"
 #include "ModuleBindings/Tables/OneUuidTable.g.h"
 
 // #include "HAL/IPlatformFile.h"
@@ -1078,6 +1084,108 @@ bool FInsertOptionNoneTest::RunTest(const FString &Parameters)
 	return true;
 }
 
+bool FInsertResultOkTest::RunTest(const FString &Parameters)
+{
+    TestName = "InsertResultOk";
+
+    if (!ValidateParameterConfig(this))
+    {
+        return false;
+    }
+
+    // Create and register a test counter to track completion.
+    UResultActionsHandler *Handler = CreateTestHandler<UResultActionsHandler>();
+    Handler->Counter->Register(TEXT("InsertResultI32String"));
+    Handler->Counter->Register(TEXT("InsertResultStringI32"));
+    Handler->Counter->Register(TEXT("InsertResultIdentityString"));
+    Handler->Counter->Register(TEXT("InsertResultSimpleEnumI32"));
+    Handler->Counter->Register(TEXT("InsertResultEveryPrimitiveStructString"));
+    Handler->Counter->Register(TEXT("InsertResultVecI32String"));
+
+    UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
+    {
+        // Subscribe to the insert event for each table.    	
+        Conn->Db->ResultI32String->OnInsert.AddDynamic(Handler, &UResultActionsHandler::OnInsertResultI32String);
+        Conn->Db->ResultStringI32->OnInsert.AddDynamic(Handler, &UResultActionsHandler::OnInsertResultStringI32);
+        Conn->Db->ResultIdentityString->OnInsert.AddDynamic(Handler, &UResultActionsHandler::OnInsertResultIdentityString);
+        Conn->Db->ResultSimpleEnumI32->OnInsert.AddDynamic(Handler, &UResultActionsHandler::OnInsertResultSimpleEnumI32);
+        Conn->Db->ResultEveryPrimitiveStructString->OnInsert.AddDynamic(Handler, &UResultActionsHandler::OnInsertResultEveryPrimitiveStructString);
+        Conn->Db->ResultVecI32String->OnInsert.AddDynamic(Handler, &UResultActionsHandler::OnInsertResultVecI32String);
+
+        SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx)
+        {
+            if (!AssertAllTablesEmpty(this, Conn->Db))
+            {
+                Handler->Counter->Abort();
+                return;
+            }
+
+            // Set expected Ok values
+            Handler->ExpectedResultI32StringType = FTestClientResultInt32String::Ok(42);
+            Handler->ExpectedResultStringI32Type = FTestClientResultStringInt32::Ok(TEXT("Testing String"));
+            
+            FSpacetimeDBIdentity Identity;
+            Ctx.TryGetIdentity(Identity);
+            Handler->ExpectedResultIdentityStringType = FTestClientResultIdentityString::Ok(Identity);
+        	
+            Handler->ExpectedResultSimpleEnumI32Type = FTestClientResultSimpleEnumInt32::Ok(ESimpleEnumType::One);
+        	FSpacetimeDBUInt128 UInt128 = { 0, 4 };
+			FSpacetimeDBUInt256 UInt256 = { FSpacetimeDBUInt128(0, 0), FSpacetimeDBUInt128(0, 5) };
+
+			FSpacetimeDBInt128 Int128 = { 0, static_cast<uint64>(-5) };
+			FSpacetimeDBInt256 Int256 = { FSpacetimeDBUInt128(0, 0), FSpacetimeDBUInt128(0, static_cast<uint64>(-5)) };
+
+			FSpacetimeDBUInt128 UInt128p = { 0x0102030405060708, 0x090a0b0c0d0e0f10 };
+			FSpacetimeDBUInt256 UInt256p = { FSpacetimeDBUInt128(0x0102030405060708, 0x090a0b0c0d0e0f10), FSpacetimeDBUInt128(0x1112131415161718, 0x191a1b1c1d1e1f20)};
+
+			FSpacetimeDBInt128 Int128p = { static_cast<uint64>(-0x0102030405060708), static_cast<uint64>(-0x090a0b0c0d0e0f10)};
+			FSpacetimeDBInt256 Int256p = { FSpacetimeDBUInt128(static_cast<uint64>(-0x0102030405060708), static_cast<uint64>(-0x090a0b0c0d0e0f10)), 
+										   FSpacetimeDBUInt128(static_cast<uint64>(-0x1112131415161718), static_cast<uint64>(-0x191a1b1c1d1e1f20)) };
+        	
+        	FEveryPrimitiveStructType EveryPrimitiveStructType;
+			EveryPrimitiveStructType.A = { 0x01 };
+			EveryPrimitiveStructType.B = { 0x0102 };
+			EveryPrimitiveStructType.C = { 0x01020304 };
+			EveryPrimitiveStructType.D = { 0x0102030405060708 };
+			EveryPrimitiveStructType.E = { UInt128p };
+			EveryPrimitiveStructType.F = { UInt256p };
+			EveryPrimitiveStructType.G = { -0x01 };
+			EveryPrimitiveStructType.H = { -0x0102 };
+			EveryPrimitiveStructType.I = { -0x01020304 };
+			EveryPrimitiveStructType.J = { -0x0102030405060708 };
+			EveryPrimitiveStructType.K = { Int128p };
+			EveryPrimitiveStructType.L = { Int256p };
+			EveryPrimitiveStructType.M = { false };
+			EveryPrimitiveStructType.N = { 1.0 };
+			EveryPrimitiveStructType.O = { -1.0 };
+			EveryPrimitiveStructType.P = { "string" };
+			EveryPrimitiveStructType.Q = { FSpacetimeDBIdentity() };
+			EveryPrimitiveStructType.R = { FSpacetimeDBConnectionId() };
+			EveryPrimitiveStructType.S = { FSpacetimeDBTimestamp(9876543210) };
+			EveryPrimitiveStructType.T = { FSpacetimeDBTimeDuration(-67419000000003LL) };
+            Handler->ExpectedResultEveryPrimitiveStructStringType = FTestClientResultEveryPrimitiveStructString::Ok(EveryPrimitiveStructType);
+            
+            TArray<int32> Vec;
+            Vec.Add(3);
+        	Vec.Add(2);
+        	Vec.Add(1);
+        	Vec.Add(0);
+            Handler->ExpectedResultVecI32StringType = FTestClientResultVecInt32String::Ok(Vec);
+            // Call the reducers with Ok values
+            Ctx.Reducers->InsertResultI32String(Handler->ExpectedResultI32StringType);
+            Ctx.Reducers->InsertResultStringI32(Handler->ExpectedResultStringI32Type);
+            Ctx.Reducers->InsertResultIdentityString(Handler->ExpectedResultIdentityStringType);
+            Ctx.Reducers->InsertResultSimpleEnumI32(Handler->ExpectedResultSimpleEnumI32Type);
+            Ctx.Reducers->InsertResultEveryPrimitiveStructString(Handler->ExpectedResultEveryPrimitiveStructStringType);
+            Ctx.Reducers->InsertResultVecI32String(Handler->ExpectedResultVecI32StringType);
+        });
+    });
+
+    ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
+
+    return true;
+}
+
 bool FInsertStructTest::RunTest(const FString &Parameters)
 {
 	TestName = "InsertStruct";
@@ -1542,10 +1650,9 @@ bool FInsertPrimitivesAsStringTest::RunTest(const FString &Parameters)
 					// Create UUID with bytes: 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10
 					// This should result in the same string: "01020304-0506-0708-090A-0B0C0D0E0F10"
 					PrimitiveStructType.U = FSpacetimeDBUuid(FSpacetimeDBUInt128(0x0102030405060708ULL, 0x090A0B0C0D0E0F10ULL));
-					//PrimitiveStructType.U = FSpacetimeDBUuid(FGuid(TEXT("01020304-0506-0708-090A-0B0C0D0E0F10")));
 
 					TArray<FString> ExpectedStrings;
-					ExpectedStrings.Reserve(20);
+					ExpectedStrings.Reserve(21);
 
 					ExpectedStrings.Add(LexToString(PrimitiveStructType.A));
 					ExpectedStrings.Add(LexToString(PrimitiveStructType.B));
@@ -2321,24 +2428,3 @@ bool FInsertCallUuidV7Test::RunTest(const FString &Parameters)
     ADD_LATENT_AUTOMATION_COMMAND(FWaitForTestCounter(*this, TestName, Handler->Counter, FPlatformTime::Seconds()));
     return true;
 }
-
-/*
-	UDbConnection *Connection = ConnectThen(Handler->Counter, TestName, [this, Handler](UDbConnection *Conn)
-											{
-			Conn->Db->OneTimestamp->OnInsert.AddDynamic(Handler, &UTimestampActionsHandler::OnInsertOneTimestamp);
-
-			SubscribeAllThen(Conn, [this, Handler, Conn](FSubscriptionEventContext Ctx)
-				{
-					if (Ctx.Db->OneTimestamp->Count() != 0)
-					{
-						Handler->Counter->Abort();
-						return;
-					}
-
-					FSpacetimeDBTimestamp TimeStamp;
-					Handler->SetExpectedvalue(TimeStamp);
-
-					// Call the reducer to insert the new Timestamp.
-					Ctx.Reducers->InsertOneTimestamp(TimeStamp);
-				}); });
-*/
