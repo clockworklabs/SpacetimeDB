@@ -2050,6 +2050,7 @@ pub mod tests_utils {
         /// Re-open the database, after ensuring that all data has been flushed
         /// to disk (if the database was created via [`Self::durable`]).
         pub fn reopen(self) -> Result<Self, DBError> {
+            info!("reopen TestDB");
             if let Some(rt) = self.runtime() {
                 rt.block_on(self.db.shutdown());
             }
@@ -2121,7 +2122,7 @@ pub mod tests_utils {
             rt: tokio::runtime::Handle,
             want_snapshot_repo: bool,
         ) -> Result<(RelationalDB, Arc<durability::Local<ProductValue>>), DBError> {
-            info!("opening durable test db at {}", root.display());
+            info!("opening durable TestDB at {}", root.display());
             let snapshots = want_snapshot_repo
                 .then(|| {
                     open_snapshot_repo(root.snapshots(), Identity::ZERO, 0)

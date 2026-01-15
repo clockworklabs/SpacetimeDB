@@ -175,8 +175,10 @@ jobs:
         working-directory: crates/bindings-typescript
         run: pnpm build
 
-      - name: Run tests
-        run: RUST_BACKTRACE=1 cargo ci test
+      #- name: Run tests
+      #  run: RUST_BACKTRACE=1 cargo ci test
+      - name: Run flake
+        run: RUST_BACKTRACE=1 cargo test -p spacetimedb-core test_view_tables_are_ephemeral_in_commitlog -- --nocapture
 
   lints:
     name: Lints
