@@ -13,7 +13,6 @@ use crate::db::relational_db::RelationalDB;
 use crate::error::DBError;
 use crate::host::module_host::ClientConnectedError;
 use crate::host::{CallProcedureReturn, FunctionArgs, ModuleHost, NoSuchModule, ReducerCallError, ReducerCallResult};
-use crate::messages::websocket::Subscribe;
 use crate::subscription::module_subscription_manager::BroadcastError;
 use crate::subscription::row_list_builder_pool::JsonRowListBuilderFakePool;
 use crate::util::asyncify;
@@ -25,10 +24,7 @@ use derive_more::From;
 use futures::prelude::*;
 use prometheus::{Histogram, IntCounter, IntGauge};
 use spacetimedb_auth::identity::{ConnectionAuthCtx, SpacetimeIdentityClaims};
-use spacetimedb_client_api_messages::websocket::{
-    BsatnFormat, CallReducerFlags, Compression, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, Unsubscribe,
-    UnsubscribeMulti,
-};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_durability::{DurableOffset, TxOffset};
 use spacetimedb_lib::identity::{AuthCtx, RequestId};
 use spacetimedb_lib::metrics::ExecutionMetrics;
@@ -52,9 +48,9 @@ impl Protocol {
         }
     }
 
-    pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &FormatSwitch<B, J>) {
+    pub(crate) fn assert_matches_format_switch<B, J>(self, fs: &ws_v1::FormatSwitch<B, J>) {
         match (self, fs) {
-            (Protocol::Text, FormatSwitch::Json(_)) | (Protocol::Binary, FormatSwitch::Bsatn(_)) => {}
+            (Protocol::Text, ws_v1::FormatSwitch::Json(_)) | (Protocol::Binary, ws_v1::FormatSwitch::Bsatn(_)) => {}
             _ => unreachable!("requested protocol does not match output format"),
         }
     }
@@ -65,7 +61,7 @@ pub struct ClientConfig {
     /// The client's desired protocol (format) when the host replies.
     pub protocol: Protocol,
     /// The client's desired (conditional) compression algorithm, if any.
-    pub compression: Compression,
+    pub compression: ws_v1::Compression,
     /// Whether the client prefers full [`TransactionUpdate`]s
     /// rather than  [`TransactionUpdateLight`]s on a successful update.
     // TODO(centril): As more knobs are added, make this into a bitfield (when there's time).
@@ -826,13 +822,13 @@ impl ClientConnection {
         args: FunctionArgs,
         request_id: RequestId,
         timer: Instant,
-        flags: CallReducerFlags,
+        flags: ws_v1::CallReducerFlags,
     ) -> Result<ReducerCallResult, ReducerCallError> {
         let caller = match flags {
-            CallReducerFlags::FullUpdate => Some(self.sender()),
+            ws_v1::CallReducerFlags::FullUpdate => Some(self.sender()),
             // Setting `sender = None` causes `eval_updates` to skip sending to the caller
             // as it has no access to the caller other than by id/connection id.
-            CallReducerFlags::NoSuccessNotify => None,
+            ws_v1::CallReducerFlags::NoSuccessNotify => None,
         };
 
         self.module()
@@ -875,7 +871,7 @@ impl ClientConnection {
 
     pub async fn subscribe_single(
         &self,
-        subscription: SubscribeSingle,
+        subscription: ws_v1::SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
@@ -889,7 +885,11 @@ impl ClientConnection {
             .await?
     }
 
-    pub async fn unsubscribe(&self, request: Unsubscribe, timer: Instant) -> Result<Option<ExecutionMetrics>, DBError> {
+    pub async fn unsubscribe(
+        &self,
+        request: ws_v1::Unsubscribe,
+        timer: Instant,
+    ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
         asyncify(move || {
             me.module()
@@ -901,7 +901,7 @@ impl ClientConnection {
 
     pub async fn subscribe_multi(
         &self,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
@@ -917,7 +917,7 @@ impl ClientConnection {
 
     pub async fn unsubscribe_multi(
         &self,
-        request: UnsubscribeMulti,
+        request: ws_v1::UnsubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let me = self.clone();
@@ -930,7 +930,7 @@ impl ClientConnection {
             .await?
     }
 
-    pub async fn subscribe(&self, subscription: Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
+    pub async fn subscribe(&self, subscription: ws_v1::Subscribe, timer: Instant) -> Result<ExecutionMetrics, DBError> {
         let me = self.clone();
         self.module()
             .on_module_thread_async("subscribe", async move || {
@@ -949,14 +949,14 @@ impl ClientConnection {
         timer: Instant,
     ) -> Result<(), anyhow::Error> {
         self.module()
-            .one_off_query::<JsonFormat>(
+            .one_off_query::<ws_v1::JsonFormat>(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
                 JsonRowListBuilderFakePool,
-                |msg: OneOffQueryResponseMessage<JsonFormat>| msg.into(),
+                |msg: OneOffQueryResponseMessage<ws_v1::JsonFormat>| msg.into(),
             )
             .await
     }
@@ -969,14 +969,14 @@ impl ClientConnection {
     ) -> Result<(), anyhow::Error> {
         let bsatn_rlb_pool = self.module().replica_ctx().subscriptions.bsatn_rlb_pool.clone();
         self.module()
-            .one_off_query::<BsatnFormat>(
+            .one_off_query::<ws_v1::BsatnFormat>(
                 self.auth.clone(),
                 query.to_owned(),
                 self.sender.clone(),
                 message_id.to_owned(),
                 timer,
                 bsatn_rlb_pool,
-                |msg: OneOffQueryResponseMessage<BsatnFormat>| msg.into(),
+                |msg: OneOffQueryResponseMessage<ws_v1::BsatnFormat>| msg.into(),
             )
             .await
     }

@@ -39,9 +39,7 @@ use prometheus::{Histogram, IntGauge};
 use scopeguard::ScopeGuard;
 use spacetimedb_auth::identity::ConnectionAuthCtx;
 use spacetimedb_client_api_messages::energy::FunctionBudget;
-use spacetimedb_client_api_messages::websocket::{
-    ByteListLen, Compression, OneOffTable, QueryUpdate, Subscribe, SubscribeMulti, SubscribeSingle,
-};
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, ByteListLen as _, RowListLen as _};
 use spacetimedb_data_structures::error_stream::ErrorStream;
 use spacetimedb_data_structures::map::{HashCollectionExt as _, IntMap};
 use spacetimedb_datastore::error::DatastoreError;
@@ -164,12 +162,12 @@ impl UpdatesRelValue<'_> {
         let (inserts, nr_ins) = F::encode_list(rlb_pool.take_row_list_builder(), self.inserts.iter());
         let num_rows = nr_del + nr_ins;
         let num_bytes = deletes.num_bytes() + inserts.num_bytes();
-        let qu = QueryUpdate { deletes, inserts };
+        let qu = ws_v1::QueryUpdate { deletes, inserts };
         // We don't compress individual table updates.
         // Previously we were, but the benefits, if any, were unclear.
         // Note, each message is still compressed before being sent to clients,
         // but we no longer have to hold a tx lock when doing so.
-        let cqu = F::into_query_update(qu, Compression::None);
+        let cqu = F::into_query_update(qu, ws_v1::Compression::None);
         (cqu, num_rows, num_bytes)
     }
 }
@@ -651,19 +649,19 @@ pub enum ViewCommand {
     AddSingleSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
+        request: ws_v1::SubscribeSingle,
         timer: Instant,
     },
     AddMultiSubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
     },
     AddLegacySubscription {
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscribe: Subscribe,
+        subscribe: ws_v1::Subscribe,
         timer: Instant,
     },
     Sql {
@@ -1560,7 +1558,7 @@ impl ModuleHost {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
+        request: ws_v1::SubscribeSingle,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddSingleSubscription {
@@ -1593,7 +1591,7 @@ impl ModuleHost {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddMultiSubscription {
@@ -1626,7 +1624,7 @@ impl ModuleHost {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscribe: spacetimedb_client_api_messages::websocket::Subscribe,
+        subscribe: ws_v1::Subscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         let cmd = ViewCommand::AddLegacySubscription {
@@ -2052,7 +2050,7 @@ impl ModuleHost {
 
                 // We wrap the actual query in a closure so we can use ? to handle errors without making
                 // the entire transaction abort with an error.
-                let result: Result<(OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
+                let result: Result<(ws_v1::OneOffTable<F>, ExecutionMetrics), anyhow::Error> = (|| {
                     let tx = SchemaViewer::new(&*tx, &auth);
 
                     let (
@@ -2101,13 +2099,13 @@ impl ModuleHost {
                             .collect::<Vec<_>>();
                         // Execute the union and return the results
                         return execute_plan_for_view::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                            .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                            .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
                             .context("One-off queries are not allowed to modify the database");
                     }
 
                     // Execute the union and return the results
                     execute_plan::<F>(&optimized, &DeltaTx::from(&*tx), &rlb_pool)
-                        .map(|(rows, _, metrics)| (OneOffTable { table_name, rows }, metrics))
+                        .map(|(rows, _, metrics)| (ws_v1::OneOffTable { table_name, rows }, metrics))
                         .context("One-off queries are not allowed to modify the database")
                 })();
 

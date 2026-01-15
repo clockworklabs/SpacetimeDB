@@ -8357,6 +8357,7 @@ dependencies = [
  "serial_test",
  "spacetimedb-cli",
  "spacetimedb-client-api",
+ "spacetimedb-client-api-messages",
  "spacetimedb-core",
  "spacetimedb-data-structures",
  "spacetimedb-lib 1.11.3",

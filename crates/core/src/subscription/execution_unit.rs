@@ -4,11 +4,10 @@ use crate::db::relational_db::{RelationalDB, Tx};
 use crate::error::DBError;
 use crate::estimation;
 use crate::host::module_host::{DatabaseTableUpdate, DatabaseTableUpdateRelValue, UpdatesRelValue};
-use crate::messages::websocket::TableUpdate;
 use crate::subscription::websocket_building::{BuildableWebsocketFormat, RowListBuilderSource};
 use crate::util::slow::SlowQueryLogger;
 use crate::vm::{build_query, TxMode};
-use spacetimedb_client_api_messages::websocket::{Compression, QueryUpdate, RowListLen as _, SingleQueryUpdate};
+use spacetimedb_client_api_messages::websocket::v1::{self as ws_v1, RowListLen as _};
 use spacetimedb_datastore::locking_tx_datastore::TxId;
 use spacetimedb_lib::identity::AuthCtx;
 use spacetimedb_lib::Identity;
@@ -243,8 +242,8 @@ impl ExecutionUnit {
         rlb_pool: &impl RowListBuilderSource<F>,
         sql: &str,
         slow_query_threshold: Option<Duration>,
-        compression: Compression,
-    ) -> Option<TableUpdate<F>> {
+        compression: ws_v1::Compression,
+    ) -> Option<ws_v1::TableUpdate<F>> {
         let _slow_query = SlowQueryLogger::new(sql, slow_query_threshold, tx.ctx.workload()).log_guard();
 
         // Build & execute the query and then encode it to a row list.
@@ -255,12 +254,12 @@ impl ExecutionUnit {
 
         (!inserts.is_empty()).then(|| {
             let deletes = F::List::default();
-            let qu = QueryUpdate { deletes, inserts };
+            let qu = ws_v1::QueryUpdate { deletes, inserts };
             let update = F::into_query_update(qu, compression);
-            TableUpdate::new(
+            ws_v1::TableUpdate::new(
                 self.return_table(),
                 self.return_name(),
-                SingleQueryUpdate { update, num_rows },
+                ws_v1::SingleQueryUpdate { update, num_rows },
             )
         })
     }
