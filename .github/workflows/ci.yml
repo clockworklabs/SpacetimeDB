@@ -498,7 +498,7 @@ jobs:
     permissions:
       contents: read
       checks: write
-    runs-on: spacetimedb-new-runner-2
+    runs-on: spacetimedb-unity-runner
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
