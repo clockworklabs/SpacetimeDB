@@ -1,7 +1,5 @@
-mod util;
-
-use crate::util::SpacetimeDbGuard;
 use assert_cmd::cargo::cargo_bin_cmd;
+use spacetimedb_guard::SpacetimeDbGuard;
 
 #[test]
 fn cli_can_ping_spacetimedb_on_disk() {

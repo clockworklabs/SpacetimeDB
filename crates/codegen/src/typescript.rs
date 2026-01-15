@@ -15,9 +15,7 @@ use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_lib::sats::AlgebraicTypeRef;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintDef, IndexAlgorithm, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef,
-};
+use spacetimedb_schema::def::{ConstraintDef, IndexDef, ModuleDef, ReducerDef, ScopedTypeName, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{AlgebraicTypeDef, AlgebraicTypeUse, ProductTypeDef};
@@ -454,6 +452,7 @@ fn print_index_imports(out: &mut Indenter) {
     let mut types = [
         "TypeBuilder as __TypeBuilder",
         "type AlgebraicTypeType as __AlgebraicTypeType",
+        "Uuid as __Uuid",
         "DbConnectionBuilder as __DbConnectionBuilder",
         "convertToAccessorMap as __convertToAccessorMap",
         "type EventContextInterface as __EventContextInterface",
@@ -583,38 +582,34 @@ fn write_table_opts<'a>(
             // Skip system-defined indexes
             continue;
         }
-        match &index_def.algorithm {
-            IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => {
-                let get_name_and_type = |col_pos: ColId| {
-                    let (field_name, field_type) = &product_def.elements[col_pos.idx()];
-                    let name_camel = field_name.deref().to_case(Case::Camel);
-                    (name_camel, field_type)
-                };
-                // TODO(cloutiertyler):
-                // The name users supply is actually the accessor name which will be used
-                // in TypeScript to access the index. This will be used verbatim.
-                // This is confusing because it is not the index name and there is
-                // no actual way for the user to set the actual index name.
-                // I think we should standardize: name and accessorName as the way to set
-                // the name and accessor name of an index across all SDKs.
-                if let Some(accessor_name) = &index_def.accessor_name {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
-                } else {
-                    writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
-                }
-                out.indent(1);
-                for col_id in columns.iter() {
-                    writeln!(out, "'{}',", get_name_and_type(col_id).0);
-                }
-                out.dedent(1);
-                writeln!(out, "] }},");
-            }
-            IndexAlgorithm::Direct(_) => {
-                // Direct indexes are not implemented yet.
-                continue;
-            }
-            _ => todo!(),
+
+        // We're generating code for the client,
+        // and it does not care what the algorithm on the server is,
+        // as it an use a btree in all cases.
+        let columns = index_def.algorithm.columns();
+        let get_name_and_type = |col_pos: ColId| {
+            let (field_name, field_type) = &product_def.elements[col_pos.idx()];
+            let name_camel = field_name.deref().to_case(Case::Camel);
+            (name_camel, field_type)
         };
+        // TODO(cloutiertyler):
+        // The name users supply is actually the accessor name which will be used
+        // in TypeScript to access the index. This will be used verbatim.
+        // This is confusing because it is not the index name and there is
+        // no actual way for the user to set the actual index name.
+        // I think we should standardize: name and accessorName as the way to set
+        // the name and accessor name of an index across all SDKs.
+        if let Some(accessor_name) = &index_def.accessor_name {
+            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", accessor_name);
+        } else {
+            writeln!(out, "{{ name: '{}', algorithm: 'btree', columns: [", index_def.name);
+        }
+        out.indent(1);
+        for col_id in columns.iter() {
+            writeln!(out, "'{}',", get_name_and_type(col_id).0);
+        }
+        out.dedent(1);
+        writeln!(out, "] }},");
     }
     out.dedent(1);
     writeln!(out, "],");
@@ -729,9 +724,17 @@ fn write_type_builder<W: Write>(module: &ModuleDef, out: &mut W, ty: &AlgebraicT
         AlgebraicTypeUse::Timestamp => write!(out, "__t.timestamp()")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__t.timeDuration()")?,
         AlgebraicTypeUse::ScheduleAt => write!(out, "__t.scheduleAt()")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__t.uuid()")?,
         AlgebraicTypeUse::Option(inner_ty) => {
             write!(out, "__t.option(")?;
             write_type_builder(module, out, inner_ty)?;
+            write!(out, ")")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write!(out, "__t.result(")?;
+            write_type_builder(module, out, ok_ty)?;
+            write!(out, ", ")?;
+            write_type_builder(module, out, err_ty)?;
             write!(out, ")")?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
@@ -840,13 +843,14 @@ fn needs_parens_within_array(ty: &AlgebraicTypeUse) -> bool {
         | AlgebraicTypeUse::ConnectionId
         | AlgebraicTypeUse::Timestamp
         | AlgebraicTypeUse::TimeDuration
+        | AlgebraicTypeUse::Uuid
         | AlgebraicTypeUse::Primitive(_)
         | AlgebraicTypeUse::Array(_)
         | AlgebraicTypeUse::Ref(_) // We use the type name for these.
         | AlgebraicTypeUse::String => {
             false
         }
-        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) => {
+        AlgebraicTypeUse::ScheduleAt | AlgebraicTypeUse::Option(_) | AlgebraicTypeUse::Result { .. } => {
             true
         }
     }
@@ -866,6 +870,7 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::ConnectionId => write!(out, "__Infer<typeof __t.connectionId()>")?,
         AlgebraicTypeUse::Timestamp => write!(out, "__Infer<typeof __t.timestamp()>")?,
         AlgebraicTypeUse::TimeDuration => write!(out, "__Infer<typeof __t.timeDuration()>")?,
+        AlgebraicTypeUse::Uuid => write!(out, "__Uuid")?,
         AlgebraicTypeUse::ScheduleAt => write!(
             out,
             "{{ tag: \"Interval\", value: __Infer<typeof __t.timeDuration()> }} | {{ tag: \"Time\", value: __Infer<typeof __t.timestamp()> }}"
@@ -873,6 +878,11 @@ pub fn write_type<W: Write>(
         AlgebraicTypeUse::Option(inner_ty) => {
             write_type(module, out, inner_ty, ref_prefix, ref_suffix)?;
             write!(out, " | undefined")?;
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            write_type(module, out, ok_ty, ref_prefix, ref_suffix)?;
+            write!(out, " | ")?;
+            write_type(module, out, err_ty, ref_prefix, ref_suffix)?;
         }
         AlgebraicTypeUse::Primitive(prim) => match prim {
             PrimitiveType::Bool => write!(out, "boolean")?,

@@ -69,15 +69,24 @@ pub trait StateView {
         value: &'r AlgebraicValue,
     ) -> Result<Self::IterByColEq<'a, 'r>>;
 
+    /// Look up the `st_table` row which describes `table_id`.
+    ///
+    /// Default method calls `iter_by_col_eq`.
+    /// The implementation for [`super::committed_state::CommittedState`]
+    /// overwrites this method to inspect an additional side table during replay
+    /// to handle replay of schema-altering migrations.
+    fn find_st_table_row(&self, table_id: TableId) -> Result<StTableRow> {
+        let row_ref = self
+            .iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, &table_id.into())?
+            .next()
+            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
+        StTableRow::try_from(row_ref)
+    }
+
     /// Reads the schema information for the specified `table_id` directly from the database.
     fn schema_for_table_raw(&self, table_id: TableId) -> Result<TableSchema> {
         // Look up the table_name for the table in question.
-        let value_eq = &table_id.into();
-        let row = self
-            .iter_by_col_eq(ST_TABLE_ID, StTableFields::TableId, value_eq)?
-            .next()
-            .ok_or_else(|| TableError::IdNotFound(SystemTable::st_table, table_id.into()))?;
-        let row = StTableRow::try_from(row)?;
+        let row = self.find_st_table_row(table_id)?;
         let table_name = row.table_name;
         let table_id: TableId = row.table_id;
         let table_type = row.table_type;
@@ -89,6 +98,8 @@ pub trait StateView {
             .map(|row| Ok(StColumnRow::try_from(row)?.into()))
             .collect::<Result<Vec<_>>>()?;
         columns.sort_by_key(|col| col.col_pos);
+
+        let value_eq = &AlgebraicValue::from(table_id);
 
         // Look up the constraints for the table in question.
         let constraints = self

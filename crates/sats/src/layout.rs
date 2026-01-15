@@ -301,7 +301,7 @@ impl RowTypeLayout {
         if self.layout != new.layout {
             return Err(Box::new(IncompatibleTypeLayoutError::LayoutsNotEqual {
                 old: self.layout,
-                new: self.layout,
+                new: new.layout,
             }));
         }
         self.product().ensure_compatible_with(new.product())
@@ -996,8 +996,8 @@ impl<'de> SumVisitor<'de> for &SumTypeLayout {
         // Find the variant type by `tag`.
         let variant_ty = &self.variants[tag as usize].ty;
 
-        let value = Box::new(data.deserialize_seed(variant_ty)?);
-        Ok(SumValue { tag, value })
+        let value = data.deserialize_seed(variant_ty)?;
+        Ok(SumValue::new(tag, value))
     }
 }
 

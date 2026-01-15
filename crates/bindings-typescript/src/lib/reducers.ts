@@ -3,7 +3,7 @@ import Lifecycle from './autogen/lifecycle_type';
 import type RawReducerDefV9 from './autogen/raw_reducer_def_v_9_type';
 import type { ConnectionId } from './connection_id';
 import type { Identity } from './identity';
-import type { Timestamp } from './timestamp';
+import { type Timestamp } from './timestamp';
 import type { UntypedReducersDef } from '../sdk/reducers';
 import type { DbView } from '../server/db_view';
 import {
@@ -23,6 +23,7 @@ import {
 import type { ReducerSchema } from './reducer_schema';
 import { toCamelCase, toPascalCase } from './util';
 import type { CamelCase } from './type_util';
+import { Uuid } from './uuid.ts';
 
 /**
  * Helper to extract the parameter types from an object type
@@ -120,6 +121,8 @@ export type ReducerCtx<SchemaDef extends UntypedSchemaDef> = Readonly<{
   connectionId: ConnectionId | null;
   db: DbView<SchemaDef>;
   senderAuth: AuthCtx;
+  newUuidV4(): Uuid;
+  newUuidV7(): Uuid;
 }>;
 
 /**

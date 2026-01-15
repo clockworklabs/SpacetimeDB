@@ -169,7 +169,7 @@ fn main() -> anyhow::Result<()> {
             }
         })?;
 
-        edit_toml("crates/cli/templates/basic-rust/server/Cargo.toml", |doc| {
+        edit_toml("templates/basic-rust/spacetimedb/Cargo.toml", |doc| {
             // Only set major.minor.* for the spacetimedb dependency.
             // See https://github.com/clockworklabs/SpacetimeDB/issues/2724.
             //
@@ -178,7 +178,7 @@ fn main() -> anyhow::Result<()> {
             doc["dependencies"]["spacetimedb"] = toml_edit::value(wildcard_patch.clone());
         })?;
 
-        edit_toml("crates/cli/templates/basic-rust/client/Cargo.toml", |doc| {
+        edit_toml("templates/basic-rust/Cargo.toml", |doc| {
             doc["dependencies"]["spacetimedb-sdk"] = toml_edit::value(wildcard_patch.clone());
         })?;
 
@@ -256,7 +256,7 @@ fn main() -> anyhow::Result<()> {
         // 2) StdbModule.csproj files: SpacetimeDB.Runtime dependency -> major.minor
         let stdb_modules: &[&str] = &[
             "demo/Blackholio/server-csharp/StdbModule.csproj",
-            "sdks/csharp/examples~/quickstart-chat/server/StdbModule.csproj",
+            "templates/quickstart-chat-c-sharp/spacetimedb/StdbModule.csproj",
             "sdks/csharp/examples~/regression-tests/server/StdbModule.csproj",
         ];
         for path in stdb_modules {
@@ -287,7 +287,7 @@ fn main() -> anyhow::Result<()> {
 
         // 4) Template StdbModule.csproj: SpacetimeDB.Runtime dependency -> major.minor.*
         rewrite_csproj_package_ref_version(
-            "crates/cli/templates/basic-c-sharp/server/StdbModule.csproj",
+            "templates/basic-c-sharp/spacetimedb/StdbModule.csproj",
             "SpacetimeDB.Runtime",
             &wildcard_patch,
         )?;

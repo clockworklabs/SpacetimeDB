@@ -1,5 +1,5 @@
 use crate::module_bindings::*;
-use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, TableWithPrimaryKey};
+use spacetimedb_sdk::{i256, u256, ConnectionId, Event, Identity, Table, TableWithPrimaryKey, Uuid};
 use std::sync::Arc;
 use test_counter::TestCounter;
 
@@ -375,4 +375,15 @@ impl_pk_test_table! {
         accessor_method = pk_connection_id;
     }
 
+     PkUuid {
+        Key = Uuid;
+        key_field_name = u;
+        insert_reducer = insert_pk_uuid;
+        insert_reducer_event = InsertPkUuid;
+        delete_reducer = delete_pk_uuid;
+        delete_reducer_event = DeletePkUuid;
+        update_reducer = update_pk_uuid;
+        update_reducer_event = UpdatePkUuid;
+        accessor_method = pk_uuid;
+    }
 }

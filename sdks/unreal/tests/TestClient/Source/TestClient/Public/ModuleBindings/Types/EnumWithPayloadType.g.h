@@ -4,9 +4,9 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "BSATN/UESpacetimeDB.h"
-#include "ModuleBindings/Types/SimpleEnumType.g.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "Types/Builtins.h"
+#include "ModuleBindings/Types/SimpleEnumType.g.h"
 #include "EnumWithPayloadType.g.generated.h"
 
 UENUM(BlueprintType)
@@ -31,6 +31,7 @@ enum class EEnumWithPayloadTag : uint8
     Identity,
     ConnectionId,
     Timestamp,
+    Uuid,
     Bytes,
     Ints,
     Strings,
@@ -45,7 +46,7 @@ struct TESTCLIENT_API FEnumWithPayloadType
 public:
     FEnumWithPayloadType() = default;
 
-    TVariant<int16, double, TArray<int32>, uint32, FString, FSpacetimeDBInt128, TArray<uint8>, uint64, FSpacetimeDBConnectionId, TArray<FString>, int64, FSpacetimeDBUInt128, int32, float, int8, uint16, FSpacetimeDBIdentity, FSpacetimeDBUInt256, TArray<ESimpleEnumType>, bool, FSpacetimeDBTimestamp, uint8, FSpacetimeDBInt256> MessageData;
+    TVariant<FSpacetimeDBUuid, FSpacetimeDBUInt128, double, FString, TArray<FString>, FSpacetimeDBTimestamp, FSpacetimeDBUInt256, TArray<ESimpleEnumType>, uint8, int64, int16, uint32, uint64, FSpacetimeDBInt256, int32, uint16, FSpacetimeDBIdentity, TArray<int32>, int8, float, FSpacetimeDBConnectionId, TArray<uint8>, FSpacetimeDBInt128, bool> MessageData;
 
     UPROPERTY(BlueprintReadOnly)
     EEnumWithPayloadTag Tag = static_cast<EEnumWithPayloadTag>(0);
@@ -199,6 +200,14 @@ public:
         FEnumWithPayloadType Obj;
         Obj.Tag = EEnumWithPayloadTag::Timestamp;
         Obj.MessageData.Set<FSpacetimeDBTimestamp>(Value);
+        return Obj;
+    }
+
+    static FEnumWithPayloadType Uuid(const FSpacetimeDBUuid& Value)
+    {
+        FEnumWithPayloadType Obj;
+        Obj.Tag = EEnumWithPayloadTag::Uuid;
+        Obj.MessageData.Set<FSpacetimeDBUuid>(Value);
         return Obj;
     }
 
@@ -386,6 +395,14 @@ public:
         return MessageData.Get<FSpacetimeDBTimestamp>();
     }
 
+    FORCEINLINE bool IsUuid() const { return Tag == EEnumWithPayloadTag::Uuid; }
+
+    FORCEINLINE FSpacetimeDBUuid GetAsUuid() const
+    {
+        ensureMsgf(IsUuid(), TEXT("MessageData does not hold Uuid!"));
+        return MessageData.Get<FSpacetimeDBUuid>();
+    }
+
     FORCEINLINE bool IsBytes() const { return Tag == EEnumWithPayloadTag::Bytes; }
 
     FORCEINLINE TArray<uint8> GetAsBytes() const
@@ -463,6 +480,8 @@ public:
                 return GetAsConnectionId() == Other.GetAsConnectionId();
             case EEnumWithPayloadTag::Timestamp:
                 return GetAsTimestamp() == Other.GetAsTimestamp();
+            case EEnumWithPayloadTag::Uuid:
+                return GetAsUuid() == Other.GetAsUuid();
             case EEnumWithPayloadTag::Bytes:
                 return GetAsBytes() == Other.GetAsBytes();
             case EEnumWithPayloadTag::Ints:
@@ -512,6 +531,7 @@ FORCEINLINE uint32 GetTypeHash(const FEnumWithPayloadType& EnumWithPayload)
         case EEnumWithPayloadTag::Identity: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsIdentity()));
         case EEnumWithPayloadTag::ConnectionId: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsConnectionId()));
         case EEnumWithPayloadTag::Timestamp: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsTimestamp()));
+        case EEnumWithPayloadTag::Uuid: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsUuid()));
         case EEnumWithPayloadTag::Bytes: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsBytes()));
         case EEnumWithPayloadTag::Ints: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsInts()));
         case EEnumWithPayloadTag::Strings: return HashCombine(TagHash, ::GetTypeHash(EnumWithPayload.GetAsStrings()));
@@ -547,6 +567,7 @@ namespace UE::SpacetimeDB
         Identity, FSpacetimeDBIdentity,
         ConnectionId, FSpacetimeDBConnectionId,
         Timestamp, FSpacetimeDBTimestamp,
+        Uuid, FSpacetimeDBUuid,
         Bytes, TArray<uint8>,
         Ints, TArray<int32>,
         Strings, TArray<FString>,
@@ -843,6 +864,21 @@ private:
     static FSpacetimeDBTimestamp GetAsTimestamp(const FEnumWithPayloadType& InValue)
     {
         return InValue.GetAsTimestamp();
+    }
+
+    UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|EnumWithPayload")
+    static FEnumWithPayloadType Uuid(const FSpacetimeDBUuid& InValue)
+    {
+        return FEnumWithPayloadType::Uuid(InValue);
+    }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|EnumWithPayload")
+    static bool IsUuid(const FEnumWithPayloadType& InValue) { return InValue.IsUuid(); }
+
+    UFUNCTION(BlueprintPure, Category = "SpacetimeDB|EnumWithPayload")
+    static FSpacetimeDBUuid GetAsUuid(const FEnumWithPayloadType& InValue)
+    {
+        return InValue.GetAsUuid();
     }
 
     UFUNCTION(BlueprintCallable, Category = "SpacetimeDB|EnumWithPayload")

@@ -1,0 +1,1670 @@
+{
+  "languages": [
+    {
+      "lang": "rust",
+      "modes": [
+        {
+          "mode": "rustdoc_json",
+          "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+          "models": [
+            {
+              "name": "GPT-5",
+              "route_api_model": "gpt-5",
+              "tasks": {
+                "t_000_empty_reducers": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_000_empty_reducers",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084853617Z",
+                  "finished_at": "2026-01-15T08:44:05.084853617Z"
+                },
+                "t_001_basic_tables": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_001_basic_tables",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084882788Z",
+                  "finished_at": "2026-01-15T08:44:05.084882788Z"
+                },
+                "t_002_scheduled_table": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_002_scheduled_table",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084873891Z",
+                  "finished_at": "2026-01-15T08:44:05.084873891Z"
+                },
+                "t_003_struct_in_table": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_003_struct_in_table",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084870202Z",
+                  "finished_at": "2026-01-15T08:44:05.084870202Z"
+                },
+                "t_004_insert": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_004_insert",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084895209Z",
+                  "finished_at": "2026-01-15T08:44:05.084895209Z"
+                },
+                "t_005_update": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_005_update",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084862637Z",
+                  "finished_at": "2026-01-15T08:44:05.084862637Z"
+                },
+                "t_006_delete": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_006_delete",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084830908Z",
+                  "finished_at": "2026-01-15T08:44:05.084830908Z"
+                },
+                "t_007_crud": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_007_crud",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084835177Z",
+                  "finished_at": "2026-01-15T08:44:05.084835177Z"
+                },
+                "t_008_index_lookup": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_008_index_lookup",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084850033Z",
+                  "finished_at": "2026-01-15T08:44:05.084850033Z"
+                },
+                "t_009_init": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_009_init",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084857594Z",
+                  "finished_at": "2026-01-15T08:44:05.084857594Z"
+                },
+                "t_010_connect": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_010_connect",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084888101Z",
+                  "finished_at": "2026-01-15T08:44:05.084888101Z"
+                },
+                "t_011_helper_function": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_011_helper_function",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084879130Z",
+                  "finished_at": "2026-01-15T08:44:05.084879130Z"
+                },
+                "t_012_spacetime_product_type": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_012_spacetime_product_type",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084824707Z",
+                  "finished_at": "2026-01-15T08:44:05.084824707Z"
+                },
+                "t_013_spacetime_sum_type": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_013_spacetime_sum_type",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084827283Z",
+                  "finished_at": "2026-01-15T08:44:05.084827283Z"
+                },
+                "t_014_elementary_columns": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_014_elementary_columns",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084777176Z",
+                  "finished_at": "2026-01-15T08:44:05.084777176Z"
+                },
+                "t_015_product_type_columns": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_015_product_type_columns",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084822119Z",
+                  "finished_at": "2026-01-15T08:44:05.084822119Z"
+                },
+                "t_016_sum_type_columns": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_016_sum_type_columns",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084866461Z",
+                  "finished_at": "2026-01-15T08:44:05.084866461Z"
+                },
+                "t_017_scheduled_columns": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_017_scheduled_columns",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084809104Z",
+                  "finished_at": "2026-01-15T08:44:05.084809104Z"
+                },
+                "t_018_constraints": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_018_constraints",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084805389Z",
+                  "finished_at": "2026-01-15T08:44:05.084805389Z"
+                },
+                "t_019_many_to_many": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_019_many_to_many",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084816252Z",
+                  "finished_at": "2026-01-15T08:44:05.084816252Z"
+                },
+                "t_020_ecs": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_020_ecs",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084812996Z",
+                  "finished_at": "2026-01-15T08:44:05.084812996Z"
+                },
+                "t_021_multi_column_index": {
+                  "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
+                  "task": "t_021_multi_column_index",
+                  "lang": "rust",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:44:05.084891997Z",
+                  "finished_at": "2026-01-15T08:44:05.084891997Z"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "golden_answers": {
+        "basics/t_000_empty_reducers": {
+          "answer": "use spacetimedb::{reducer, ReducerContext};\n\n#[reducer]\npub fn empty_reducer_no_args(ctx: &ReducerContext) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_int(ctx: &ReducerContext, count: i32) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_string(ctx: &ReducerContext, name: String) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_two_args(ctx: &ReducerContext, count: i32, name: String) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_three_args(\n    ctx: &ReducerContext,\n    active: bool,\n    ratio: f32,\n    label: String,\n) -> Result<(), String> {\n    Ok(())\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_001_basic_tables": {
+          "answer": "use spacetimedb::table;\n\n#[table(name = users)]\npub struct Users {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[table(name = products)]\npub struct Products {\n    #[primary_key]\n    pub id: i32,\n    pub title: String,\n    pub price: f32,\n    pub in_stock: bool,\n}\n\n#[table(name = notes)]\npub struct Notes {\n    #[primary_key]\n    pub id: i32,\n    pub body: String,\n    pub rating: i64,\n    pub pinned: bool,\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_002_scheduled_table": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(name = tick_timer, scheduled(tick))]\npub struct TickTimer {\n    #[primary_key]\n    #[auto_inc]\n    scheduled_id: u64,\n    scheduled_at: ScheduleAt,\n}\n\n#[reducer]\npub fn tick(_ctx: &ReducerContext, _row: TickTimer) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) -> Result<(), String> {\n    ctx.db.tick_timer().insert(TickTimer {\n        scheduled_id: 0,\n        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),\n    });\n    Ok(())\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_003_struct_in_table": {
+          "answer": "use spacetimedb::{table, SpacetimeType};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Position {\n    pub x: i32,\n    pub y: i32,\n}\n\n#[table(name = entities)]\npub struct Entity {\n    #[primary_key]\n    pub id: i32,\n    pub pos: Position,\n}\n\n",
+          "syntax": "rust"
+        },
+        "basics/t_004_insert": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct Users {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) -> Result<(), String> {\n    ctx.db.users().insert(Users { id, name, age, active });\n    Ok(())\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_005_update": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn update_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) {\n    ctx.db.users().id().update(User { id, name, age, active });\n}",
+          "syntax": "rust"
+        },
+        "basics/t_006_delete": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn delete_user(ctx: &ReducerContext, id: i32) {\n    ctx.db.users().id().delete(id);\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_007_crud": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn crud(ctx: &ReducerContext) {\n    ctx.db.users().insert(User { id: 1, name: \"Alice\".into(), age: 30, active: true });\n    ctx.db.users().insert(User { id: 2, name: \"Bob\".into(),   age: 22, active: false });\n    ctx.db.users().id().update(User { id: 1, name: \"Alice2\".into(), age: 31, active: false });\n    ctx.db.users().id().delete(2);\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_008_index_lookup": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n}\n\n#[reducer]\npub fn lookup_user_name(ctx: &ReducerContext, id: i32) {\n    if let Some(u) = ctx.db.users().id().find(id) {\n        ctx.db.results().insert(ResultRow { id: u.id, name: u.name });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_009_init": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    ctx.db.users().insert(User { id: 1, name: \"Alice\".into(), age: 30, active: true });\n    ctx.db.users().insert(User { id: 2, name: \"Bob\".into(),   age: 22, active: false });\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_010_connect": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = events)]\npub struct Event {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub kind: String,\n}\n\n#[reducer(client_connected)]\npub fn client_connected(ctx: &ReducerContext) {\n    ctx.db.events().insert(Event { id: 0, kind: \"connected\".into() });\n}\n\n#[reducer(client_disconnected)]\npub fn client_disconnected(ctx: &ReducerContext) {\n    ctx.db.events().insert(Event { id: 0, kind: \"disconnected\".into() });\n}\n",
+          "syntax": "rust"
+        },
+        "basics/t_011_helper_function": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub sum: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 { a + b }\n\n#[reducer]\npub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\n    ctx.db.results().insert(ResultRow { id, sum: add(a, b) });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_012_spacetime_product_type": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Score {\n    pub left: i32,\n    pub right: i32,\n}\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub value: Score,\n}\n\n#[reducer]\npub fn set_score(ctx: &ReducerContext, id: i32, left: i32, right: i32) {\n    ctx.db.results().insert(ResultRow { id, value: Score { left, right } });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_013_spacetime_sum_type": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Rect {\n    pub width: i32,\n    pub height: i32,\n}\n\n#[derive(SpacetimeType, Clone, Debug)]\npub enum Shape {\n    Circle(i32),\n    Rectangle(Rect),\n}\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub value: Shape,\n}\n\n#[reducer]\npub fn set_circle(ctx: &ReducerContext, id: i32, radius: i32) {\n    ctx.db.results().insert(ResultRow { id, value: Shape::Circle(radius) });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_014_elementary_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = primitives)]\npub struct Primitive {\n    #[primary_key]\n    pub id: i32,\n    pub count: i32,\n    pub total: i64,\n    pub price: f32,\n    pub ratio: f64,\n    pub active: bool,\n    pub name: String,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.primitives().insert(Primitive {\n        id: 1,\n        count: 2,\n        total: 3_000_000_000,\n        price: 1.5,\n        ratio: 2.25,\n        active: true,\n        name: \"Alice\".into(),\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_015_product_type_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Address {\n    pub street: String,\n    pub zip: i32,\n}\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Position {\n    pub x: i32,\n    pub y: i32,\n}\n\n#[table(name = profiles)]\npub struct Profile {\n    #[primary_key]\n    pub id: i32,\n    pub home: Address,\n    pub work: Address,\n    pub pos: Position,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.profiles().insert(Profile {\n        id: 1,\n        home: Address { street: \"1 Main\".into(),  zip: 11111 },\n        work: Address { street: \"2 Broad\".into(), zip: 22222 },\n        pos:  Position { x: 7, y: 9 },\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_016_sum_type_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Rect {\n    pub width: i32,\n    pub height: i32,\n}\n\n#[derive(SpacetimeType, Clone, Debug)]\npub enum Shape {\n    Circle(i32),\n    Rectangle(Rect),\n}\n\n#[table(name = drawings)]\npub struct Drawing {\n    #[primary_key]\n    pub id: i32,\n    pub a: Shape,\n    pub b: Shape,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.drawings().insert(Drawing {\n        id: 1,\n        a: Shape::Circle(10),\n        b: Shape::Rectangle(Rect { width: 4, height: 6 }),\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_017_scheduled_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(name = tick_timer, scheduled(tick))]\npub struct TickTimer {\n    #[primary_key]\n    #[auto_inc]\n    pub scheduled_id: u64,\n    pub scheduled_at: ScheduleAt,\n}\n\n#[reducer]\npub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {\n}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    let every_50ms: ScheduleAt = Duration::from_millis(50).into();\n    ctx.db.tick_timer().insert(TickTimer {\n        scheduled_id: 0,\n        scheduled_at: every_50ms,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_018_constraints": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(\n    name = accounts,\n    index(name = by_name, btree(columns = [name]))\n)]\npub struct Account {\n    #[primary_key]\n    pub id: i32,\n    #[unique]\n    pub email: String,\n    pub name: String,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.accounts().insert(Account { id: 1, email: \"a@example.com\".into(), name: \"Alice\".into() });\n    ctx.db.accounts().insert(Account { id: 2, email: \"b@example.com\".into(), name: \"Bob\".into() });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_019_many_to_many": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub user_id: i32,\n    pub name: String,\n}\n\n#[table(name = groups)]\npub struct Group {\n    #[primary_key]\n    pub group_id: i32,\n    pub title: String,\n}\n\n#[table(\n    name = memberships,\n    index(name = by_user,  btree(columns = [user_id])),\n    index(name = by_group, btree(columns = [group_id]))\n)]\npub struct Membership {\n    #[primary_key]\n    pub id: i32,\n    pub user_id: i32,\n    pub group_id: i32,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.users().insert(User  { user_id: 1, name: \"Alice\".into() });\n    ctx.db.users().insert(User  { user_id: 2, name: \"Bob\".into()   });\n\n    ctx.db.groups().insert(Group { group_id: 10, title: \"Admin\".into() });\n    ctx.db.groups().insert(Group { group_id: 20, title: \"Dev\".into()   });\n\n    ctx.db.memberships().insert(Membership { id: 1, user_id: 1, group_id: 10 });\n    ctx.db.memberships().insert(Membership { id: 2, user_id: 1, group_id: 20 });\n    ctx.db.memberships().insert(Membership { id: 3, user_id: 2, group_id: 20 });\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_020_ecs": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = entities)]\npub struct Entity {\n    #[primary_key]\n    pub id: i32,\n}\n\n#[table(name = positions)]\npub struct Position {\n    #[primary_key]\n    pub entity_id: i32,\n    pub x: i32,\n    pub y: i32,\n}\n\n#[table(name = velocities)]\npub struct Velocity {\n    #[primary_key]\n    pub entity_id: i32,\n    pub vx: i32,\n    pub vy: i32,\n}\n\n#[table(name = next_positions)]\npub struct NextPosition {\n    #[primary_key]\n    pub entity_id: i32,\n    pub x: i32,\n    pub y: i32,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.entities().insert(Entity { id: 1 });\n    ctx.db.entities().insert(Entity { id: 2 });\n\n    ctx.db.positions().insert(Position {\n        entity_id: 1,\n        x: 1,\n        y: 0,\n    });\n    ctx.db.positions().insert(Position {\n        entity_id: 2,\n        x: 10,\n        y: 0,\n    });\n\n    ctx.db.velocities().insert(Velocity {\n        entity_id: 1,\n        vx: 1,\n        vy: 0,\n    });\n    ctx.db.velocities().insert(Velocity {\n        entity_id: 2,\n        vx: -2,\n        vy: 3,\n    });\n}\n\n#[spacetimedb::reducer]\npub fn step(ctx: &ReducerContext) {\n    for p in ctx.db.positions().iter() {\n        if let Some(v) = ctx.db.velocities().entity_id().find(p.entity_id) {\n            let np = NextPosition {\n                entity_id: p.entity_id,\n                x: p.x + v.vx,\n                y: p.y + v.vy,\n            };\n\n            if ctx.db.next_positions().entity_id().find(p.entity_id).is_some() {\n                ctx.db.next_positions().entity_id().update(np);\n            } else {\n                ctx.db.next_positions().insert(np);\n            }\n        }\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "schema/t_021_multi_column_index": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(\n    name = logs,\n    index(name = by_user_day, btree(columns = [user_id, day]))\n)]\npub struct Log {\n    #[primary_key]\n    pub id: i32,\n    pub user_id: i32,\n    pub day: i32,\n    pub message: String,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.logs().insert(Log { id: 1, user_id: 7, day: 1, message: \"a\".into() });\n    ctx.db.logs().insert(Log { id: 2, user_id: 7, day: 2, message: \"b\".into() });\n    ctx.db.logs().insert(Log { id: 3, user_id: 9, day: 1, message: \"c\".into() });\n}\n",
+          "syntax": "rust"
+        },
+        "t_000_empty_reducers": {
+          "answer": "use spacetimedb::{reducer, ReducerContext};\n\n#[reducer]\npub fn empty_reducer_no_args(ctx: &ReducerContext) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_int(ctx: &ReducerContext, count: i32) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_string(ctx: &ReducerContext, name: String) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_two_args(ctx: &ReducerContext, count: i32, name: String) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer]\npub fn empty_reducer_with_three_args(\n    ctx: &ReducerContext,\n    active: bool,\n    ratio: f32,\n    label: String,\n) -> Result<(), String> {\n    Ok(())\n}\n",
+          "syntax": "rust"
+        },
+        "t_001_basic_tables": {
+          "answer": "use spacetimedb::table;\n\n#[table(name = users)]\npub struct Users {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[table(name = products)]\npub struct Products {\n    #[primary_key]\n    pub id: i32,\n    pub title: String,\n    pub price: f32,\n    pub in_stock: bool,\n}\n\n#[table(name = notes)]\npub struct Notes {\n    #[primary_key]\n    pub id: i32,\n    pub body: String,\n    pub rating: i64,\n    pub pinned: bool,\n}\n",
+          "syntax": "rust"
+        },
+        "t_002_scheduled_table": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(name = tick_timer, scheduled(tick))]\npub struct TickTimer {\n    #[primary_key]\n    #[auto_inc]\n    scheduled_id: u64,\n    scheduled_at: ScheduleAt,\n}\n\n#[reducer]\npub fn tick(_ctx: &ReducerContext, _row: TickTimer) -> Result<(), String> {\n    Ok(())\n}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) -> Result<(), String> {\n    ctx.db.tick_timer().insert(TickTimer {\n        scheduled_id: 0,\n        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),\n    });\n    Ok(())\n}\n",
+          "syntax": "rust"
+        },
+        "t_003_struct_in_table": {
+          "answer": "use spacetimedb::{table, SpacetimeType};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Position {\n    pub x: i32,\n    pub y: i32,\n}\n\n#[table(name = entities)]\npub struct Entity {\n    #[primary_key]\n    pub id: i32,\n    pub pos: Position,\n}\n\n",
+          "syntax": "rust"
+        },
+        "t_004_insert": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct Users {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) -> Result<(), String> {\n    ctx.db.users().insert(Users { id, name, age, active });\n    Ok(())\n}\n",
+          "syntax": "rust"
+        },
+        "t_005_update": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn update_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) {\n    ctx.db.users().id().update(User { id, name, age, active });\n}",
+          "syntax": "rust"
+        },
+        "t_006_delete": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn delete_user(ctx: &ReducerContext, id: i32) {\n    ctx.db.users().id().delete(id);\n}\n",
+          "syntax": "rust"
+        },
+        "t_007_crud": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer]\npub fn crud(ctx: &ReducerContext) {\n    ctx.db.users().insert(User { id: 1, name: \"Alice\".into(), age: 30, active: true });\n    ctx.db.users().insert(User { id: 2, name: \"Bob\".into(),   age: 22, active: false });\n    ctx.db.users().id().update(User { id: 1, name: \"Alice2\".into(), age: 31, active: false });\n    ctx.db.users().id().delete(2);\n}\n",
+          "syntax": "rust"
+        },
+        "t_008_index_lookup": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n}\n\n#[reducer]\npub fn lookup_user_name(ctx: &ReducerContext, id: i32) {\n    if let Some(u) = ctx.db.users().id().find(id) {\n        ctx.db.results().insert(ResultRow { id: u.id, name: u.name });\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_009_init": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub id: i32,\n    pub name: String,\n    pub age: i32,\n    pub active: bool,\n}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    ctx.db.users().insert(User { id: 1, name: \"Alice\".into(), age: 30, active: true });\n    ctx.db.users().insert(User { id: 2, name: \"Bob\".into(),   age: 22, active: false });\n}\n",
+          "syntax": "rust"
+        },
+        "t_010_connect": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = events)]\npub struct Event {\n    #[primary_key]\n    #[auto_inc]\n    pub id: u64,\n    pub kind: String,\n}\n\n#[reducer(client_connected)]\npub fn client_connected(ctx: &ReducerContext) {\n    ctx.db.events().insert(Event { id: 0, kind: \"connected\".into() });\n}\n\n#[reducer(client_disconnected)]\npub fn client_disconnected(ctx: &ReducerContext) {\n    ctx.db.events().insert(Event { id: 0, kind: \"disconnected\".into() });\n}\n",
+          "syntax": "rust"
+        },
+        "t_011_helper_function": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub sum: i32,\n}\n\nfn add(a: i32, b: i32) -> i32 { a + b }\n\n#[reducer]\npub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {\n    ctx.db.results().insert(ResultRow { id, sum: add(a, b) });\n}\n",
+          "syntax": "rust"
+        },
+        "t_012_spacetime_product_type": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Score {\n    pub left: i32,\n    pub right: i32,\n}\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub value: Score,\n}\n\n#[reducer]\npub fn set_score(ctx: &ReducerContext, id: i32, left: i32, right: i32) {\n    ctx.db.results().insert(ResultRow { id, value: Score { left, right } });\n}\n",
+          "syntax": "rust"
+        },
+        "t_013_spacetime_sum_type": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Rect {\n    pub width: i32,\n    pub height: i32,\n}\n\n#[derive(SpacetimeType, Clone, Debug)]\npub enum Shape {\n    Circle(i32),\n    Rectangle(Rect),\n}\n\n#[table(name = results)]\npub struct ResultRow {\n    #[primary_key]\n    pub id: i32,\n    pub value: Shape,\n}\n\n#[reducer]\npub fn set_circle(ctx: &ReducerContext, id: i32, radius: i32) {\n    ctx.db.results().insert(ResultRow { id, value: Shape::Circle(radius) });\n}\n",
+          "syntax": "rust"
+        },
+        "t_014_elementary_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = primitives)]\npub struct Primitive {\n    #[primary_key]\n    pub id: i32,\n    pub count: i32,\n    pub total: i64,\n    pub price: f32,\n    pub ratio: f64,\n    pub active: bool,\n    pub name: String,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.primitives().insert(Primitive {\n        id: 1,\n        count: 2,\n        total: 3_000_000_000,\n        price: 1.5,\n        ratio: 2.25,\n        active: true,\n        name: \"Alice\".into(),\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_015_product_type_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Address {\n    pub street: String,\n    pub zip: i32,\n}\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Position {\n    pub x: i32,\n    pub y: i32,\n}\n\n#[table(name = profiles)]\npub struct Profile {\n    #[primary_key]\n    pub id: i32,\n    pub home: Address,\n    pub work: Address,\n    pub pos: Position,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.profiles().insert(Profile {\n        id: 1,\n        home: Address { street: \"1 Main\".into(),  zip: 11111 },\n        work: Address { street: \"2 Broad\".into(), zip: 22222 },\n        pos:  Position { x: 7, y: 9 },\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_016_sum_type_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};\n\n#[derive(SpacetimeType, Clone, Debug)]\npub struct Rect {\n    pub width: i32,\n    pub height: i32,\n}\n\n#[derive(SpacetimeType, Clone, Debug)]\npub enum Shape {\n    Circle(i32),\n    Rectangle(Rect),\n}\n\n#[table(name = drawings)]\npub struct Drawing {\n    #[primary_key]\n    pub id: i32,\n    pub a: Shape,\n    pub b: Shape,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.drawings().insert(Drawing {\n        id: 1,\n        a: Shape::Circle(10),\n        b: Shape::Rectangle(Rect { width: 4, height: 6 }),\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_017_scheduled_columns": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};\nuse std::time::Duration;\n\n#[table(name = tick_timer, scheduled(tick))]\npub struct TickTimer {\n    #[primary_key]\n    #[auto_inc]\n    pub scheduled_id: u64,\n    pub scheduled_at: ScheduleAt,\n}\n\n#[reducer]\npub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {\n}\n\n#[reducer(init)]\npub fn init(ctx: &ReducerContext) {\n    let every_50ms: ScheduleAt = Duration::from_millis(50).into();\n    ctx.db.tick_timer().insert(TickTimer {\n        scheduled_id: 0,\n        scheduled_at: every_50ms,\n    });\n}\n",
+          "syntax": "rust"
+        },
+        "t_018_constraints": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(\n    name = accounts,\n    index(name = by_name, btree(columns = [name]))\n)]\npub struct Account {\n    #[primary_key]\n    pub id: i32,\n    #[unique]\n    pub email: String,\n    pub name: String,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.accounts().insert(Account { id: 1, email: \"a@example.com\".into(), name: \"Alice\".into() });\n    ctx.db.accounts().insert(Account { id: 2, email: \"b@example.com\".into(), name: \"Bob\".into() });\n}\n",
+          "syntax": "rust"
+        },
+        "t_019_many_to_many": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = users)]\npub struct User {\n    #[primary_key]\n    pub user_id: i32,\n    pub name: String,\n}\n\n#[table(name = groups)]\npub struct Group {\n    #[primary_key]\n    pub group_id: i32,\n    pub title: String,\n}\n\n#[table(\n    name = memberships,\n    index(name = by_user,  btree(columns = [user_id])),\n    index(name = by_group, btree(columns = [group_id]))\n)]\npub struct Membership {\n    #[primary_key]\n    pub id: i32,\n    pub user_id: i32,\n    pub group_id: i32,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.users().insert(User  { user_id: 1, name: \"Alice\".into() });\n    ctx.db.users().insert(User  { user_id: 2, name: \"Bob\".into()   });\n\n    ctx.db.groups().insert(Group { group_id: 10, title: \"Admin\".into() });\n    ctx.db.groups().insert(Group { group_id: 20, title: \"Dev\".into()   });\n\n    ctx.db.memberships().insert(Membership { id: 1, user_id: 1, group_id: 10 });\n    ctx.db.memberships().insert(Membership { id: 2, user_id: 1, group_id: 20 });\n    ctx.db.memberships().insert(Membership { id: 3, user_id: 2, group_id: 20 });\n}\n",
+          "syntax": "rust"
+        },
+        "t_020_ecs": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(name = entities)]\npub struct Entity {\n    #[primary_key]\n    pub id: i32,\n}\n\n#[table(name = positions)]\npub struct Position {\n    #[primary_key]\n    pub entity_id: i32,\n    pub x: i32,\n    pub y: i32,\n}\n\n#[table(name = velocities)]\npub struct Velocity {\n    #[primary_key]\n    pub entity_id: i32,\n    pub vx: i32,\n    pub vy: i32,\n}\n\n#[table(name = next_positions)]\npub struct NextPosition {\n    #[primary_key]\n    pub entity_id: i32,\n    pub x: i32,\n    pub y: i32,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.entities().insert(Entity { id: 1 });\n    ctx.db.entities().insert(Entity { id: 2 });\n\n    ctx.db.positions().insert(Position {\n        entity_id: 1,\n        x: 1,\n        y: 0,\n    });\n    ctx.db.positions().insert(Position {\n        entity_id: 2,\n        x: 10,\n        y: 0,\n    });\n\n    ctx.db.velocities().insert(Velocity {\n        entity_id: 1,\n        vx: 1,\n        vy: 0,\n    });\n    ctx.db.velocities().insert(Velocity {\n        entity_id: 2,\n        vx: -2,\n        vy: 3,\n    });\n}\n\n#[spacetimedb::reducer]\npub fn step(ctx: &ReducerContext) {\n    for p in ctx.db.positions().iter() {\n        if let Some(v) = ctx.db.velocities().entity_id().find(p.entity_id) {\n            let np = NextPosition {\n                entity_id: p.entity_id,\n                x: p.x + v.vx,\n                y: p.y + v.vy,\n            };\n\n            if ctx.db.next_positions().entity_id().find(p.entity_id).is_some() {\n                ctx.db.next_positions().entity_id().update(np);\n            } else {\n                ctx.db.next_positions().insert(np);\n            }\n        }\n    }\n}\n",
+          "syntax": "rust"
+        },
+        "t_021_multi_column_index": {
+          "answer": "use spacetimedb::{reducer, table, ReducerContext, Table};\n\n#[table(\n    name = logs,\n    index(name = by_user_day, btree(columns = [user_id, day]))\n)]\npub struct Log {\n    #[primary_key]\n    pub id: i32,\n    pub user_id: i32,\n    pub day: i32,\n    pub message: String,\n}\n\n#[reducer]\npub fn seed(ctx: &ReducerContext) {\n    ctx.db.logs().insert(Log { id: 1, user_id: 7, day: 1, message: \"a\".into() });\n    ctx.db.logs().insert(Log { id: 2, user_id: 7, day: 2, message: \"b\".into() });\n    ctx.db.logs().insert(Log { id: 3, user_id: 9, day: 1, message: \"c\".into() });\n}\n",
+          "syntax": "rust"
+        }
+      }
+    },
+    {
+      "lang": "csharp",
+      "modes": [
+        {
+          "mode": "docs",
+          "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+          "models": [
+            {
+              "name": "GPT-5",
+              "route_api_model": "gpt-5",
+              "tasks": {
+                "t_000_empty_reducers": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_000_empty_reducers",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350758519Z",
+                  "finished_at": "2026-01-15T08:48:04.350758519Z"
+                },
+                "t_001_basic_tables": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_001_basic_tables",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350802382Z",
+                  "finished_at": "2026-01-15T08:48:04.350802382Z"
+                },
+                "t_002_scheduled_table": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_002_scheduled_table",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350787405Z",
+                  "finished_at": "2026-01-15T08:48:04.350787405Z"
+                },
+                "t_003_struct_in_table": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_003_struct_in_table",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350798386Z",
+                  "finished_at": "2026-01-15T08:48:04.350798386Z"
+                },
+                "t_004_insert": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_004_insert",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350810397Z",
+                  "finished_at": "2026-01-15T08:48:04.350810397Z"
+                },
+                "t_005_update": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_005_update",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350783269Z",
+                  "finished_at": "2026-01-15T08:48:04.350783269Z"
+                },
+                "t_006_delete": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_006_delete",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350772180Z",
+                  "finished_at": "2026-01-15T08:48:04.350772180Z"
+                },
+                "t_007_crud": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_007_crud",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350768636Z",
+                  "finished_at": "2026-01-15T08:48:04.350768636Z"
+                },
+                "t_008_index_lookup": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_008_index_lookup",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350775111Z",
+                  "finished_at": "2026-01-15T08:48:04.350775111Z"
+                },
+                "t_009_init": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_009_init",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350777872Z",
+                  "finished_at": "2026-01-15T08:48:04.350777872Z"
+                },
+                "t_010_connect": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_010_connect",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350806555Z",
+                  "finished_at": "2026-01-15T08:48:04.350806555Z"
+                },
+                "t_011_helper_function": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_011_helper_function",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "basics",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350794264Z",
+                  "finished_at": "2026-01-15T08:48:04.350794264Z"
+                },
+                "t_012_spacetime_product_type": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_012_spacetime_product_type",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350747625Z",
+                  "finished_at": "2026-01-15T08:48:04.350747625Z"
+                },
+                "t_013_spacetime_sum_type": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_013_spacetime_sum_type",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350765485Z",
+                  "finished_at": "2026-01-15T08:48:04.350765485Z"
+                },
+                "t_014_elementary_columns": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_014_elementary_columns",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350744275Z",
+                  "finished_at": "2026-01-15T08:48:04.350744275Z"
+                },
+                "t_015_product_type_columns": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_015_product_type_columns",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350753908Z",
+                  "finished_at": "2026-01-15T08:48:04.350753908Z"
+                },
+                "t_016_sum_type_columns": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_016_sum_type_columns",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350750774Z",
+                  "finished_at": "2026-01-15T08:48:04.350750774Z"
+                },
+                "t_017_scheduled_columns": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_017_scheduled_columns",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350734182Z",
+                  "finished_at": "2026-01-15T08:48:04.350734182Z"
+                },
+                "t_018_constraints": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_018_constraints",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350737033Z",
+                  "finished_at": "2026-01-15T08:48:04.350737033Z"
+                },
+                "t_019_many_to_many": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_019_many_to_many",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350730826Z",
+                  "finished_at": "2026-01-15T08:48:04.350730826Z"
+                },
+                "t_020_ecs": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_020_ecs",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350721102Z",
+                  "finished_at": "2026-01-15T08:48:04.350721102Z"
+                },
+                "t_021_multi_column_index": {
+                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "task": "t_021_multi_column_index",
+                  "lang": "csharp",
+                  "golden_published": false,
+                  "model_name": "GPT-5",
+                  "total_tests": 1,
+                  "passed_tests": 0,
+                  "llm_output": null,
+                  "category": "schema",
+                  "route_api_model": "gpt-5",
+                  "golden_db": null,
+                  "llm_db": null,
+                  "work_dir_golden": null,
+                  "work_dir_llm": null,
+                  "scorer_details": {
+                    "publish_error": {
+                      "pass": false,
+                      "partial": 0.0,
+                      "notes": {
+                        "error": "POST https://api.openai.com/v1/responses -> 429 Too Many Requests: {\n  \"error\": {\n    \"message\": \"You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.\",\n    \"type\": \"insufficient_quota\",\n    \"param\": null,\n    \"code\": \"insufficient_quota\"\n  }\n}",
+                        "phase": "build_or_publish"
+                      }
+                    }
+                  },
+                  "vendor": "openai",
+                  "started_at": "2026-01-15T08:48:04.350740315Z",
+                  "finished_at": "2026-01-15T08:48:04.350740315Z"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "golden_answers": {
+        "basics/t_000_empty_reducers": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Reducer]\n    public static void EmptyReducer_NoArgs(ReducerContext ctx) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithInt(ReducerContext ctx, int count) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithString(ReducerContext ctx, string name) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithTwoArgs(ReducerContext ctx, int count, string name) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithThreeArgs(ReducerContext ctx, bool active, float ratio, string label) { }\n}",
+          "syntax": "csharp"
+        },
+        "basics/t_001_basic_tables": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct Users\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Table(Name = \"products\")]\n    public partial struct Products\n    {\n        [PrimaryKey] public int Id;\n        public string Title;\n        public float Price;\n        public bool InStock;\n    }\n\n    [Table(Name = \"notes\")]\n    public partial struct Notes\n    {\n        [PrimaryKey] public int Id;\n        public string Body;\n        public long Rating;\n        public bool Pinned;\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_002_scheduled_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"tick_timer\", Scheduled = nameof(Tick), ScheduledAt = nameof(TickTimer.ScheduledAt))]\n    public partial struct TickTimer\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt     ScheduledAt;\n    }\n\n    [Reducer]\n    public static void Tick(ReducerContext ctx, TickTimer timer) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        var interval = new TimeDuration { Microseconds = 50_000 };\n        ctx.Db.tick_timer.Insert(new TickTimer\n        {\n            ScheduledAt = new ScheduleAt.Interval(interval)\n        });\n    }\n}",
+          "syntax": "csharp"
+        },
+        "basics/t_003_struct_in_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Position\n    {\n        public int X;\n        public int Y;\n    }\n\n    [Table(Name = \"entities\")]\n    public partial struct Entity\n    {\n        [PrimaryKey] public int Id;\n        public Position Pos;\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_004_insert": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void InsertUser(ReducerContext ctx, int id, string name, int age, bool active)\n    {\n        ctx.Db.users.Insert(new User { Id = id, Name = name, Age = age, Active = active });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_005_update": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void UpdateUser(ReducerContext ctx, int id, string name, int age, bool active)\n    {\n        ctx.Db.users.Id.Update(new User { Id = id, Name = name, Age = age, Active = active });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_006_delete": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void DeleteUser(ReducerContext ctx, int id)\n    {\n        ctx.Db.users.Id.Delete(id);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_007_crud": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void Crud(ReducerContext ctx)\n    {\n        ctx.Db.users.Insert(new User { Id = 1, Name = \"Alice\", Age = 30, Active = true });\n        ctx.Db.users.Insert(new User { Id = 2, Name = \"Bob\",   Age = 22, Active = false });\n        ctx.Db.users.Id.Update(new User { Id = 1, Name = \"Alice2\", Age = 31, Active = false });\n        ctx.Db.users.Id.Delete(2);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_008_index_lookup": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n    }\n\n    [Reducer]\n    public static void LookupUserName(ReducerContext ctx, int id)\n    {\n        var u = ctx.Db.users.Id.Find(id);\n        if (u.HasValue)\n        {\n            var row = u.Value;\n            ctx.Db.results.Insert(new Result { Id = row.Id, Name = row.Name });\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_009_init": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        ctx.Db.users.Insert(new User { Id = 1, Name = \"Alice\", Age = 30, Active = true });\n        ctx.Db.users.Insert(new User { Id = 2, Name = \"Bob\",   Age = 22, Active = false });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_010_connect": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"events\")]\n    public partial struct Event\n    {\n        [PrimaryKey, AutoInc] public int Id;\n        public string Kind;\n    }\n\n    [Reducer(ReducerKind.ClientConnected)]\n    public static void ClientConnected(ReducerContext ctx)\n    {\n        ctx.Db.events.Insert(new Event { Kind = \"connected\" });\n    }\n\n    [Reducer(ReducerKind.ClientDisconnected)]\n    public static void ClientDisconnected(ReducerContext ctx)\n    {\n        ctx.Db.events.Insert(new Event { Kind = \"disconnected\" });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "basics/t_011_helper_function": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public int Sum;\n    }\n\n    static int Add(int a, int b) => a + b;\n\n    [Reducer]\n    public static void ComputeSum(ReducerContext ctx, int id, int a, int b)\n    {\n        ctx.Db.results.Insert(new Result { Id = id, Sum = Add(a, b) });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_012_spacetime_product_type": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Score\n    {\n        public int Left;\n        public int Right;\n    }\n\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public Score Value;\n    }\n\n    [Reducer]\n    public static void SetScore(ReducerContext ctx, int id, int left, int right)\n    {\n        ctx.Db.results.Insert(new Result { Id = id, Value = new Score { Left = left, Right = right } });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_013_spacetime_sum_type": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Circle { public int Radius; }\n\n    [Type]\n    public partial struct Rectangle { public int Width; public int Height; }\n\n    [Type]\n    public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {}\n\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public Shape Value;\n    }\n\n    [Reducer]\n    public static void SetCircle(ReducerContext ctx, int id, int radius)\n    {\n        ctx.Db.results.Insert(new Result { Id = id, Value = new Shape.Circle(new Circle { Radius = radius }) });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_014_elementary_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"primitives\")]\n    public partial struct Primitive\n    {\n        [PrimaryKey] public int Id;\n        public int Count;\n        public long Total;\n        public float Price;\n        public double Ratio;\n        public bool Active;\n        public string Name;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.primitives.Insert(new Primitive {\n            Id = 1,\n            Count = 2,\n            Total = 3000000000,\n            Price = 1.5f,\n            Ratio = 2.25,\n            Active = true,\n            Name = \"Alice\"\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_015_product_type_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Address\n    {\n        public string Street;\n        public int Zip;\n    }\n\n    [Type]\n    public partial struct Position\n    {\n        public int X;\n        public int Y;\n    }\n\n    [Table(Name = \"profiles\")]\n    public partial struct Profile\n    {\n        [PrimaryKey] public int Id;\n        public Address Home;\n        public Address Work;\n        public Position Pos;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.profiles.Insert(new Profile {\n            Id = 1,\n            Home = new Address { Street = \"1 Main\", Zip = 11111 },\n            Work = new Address { Street = \"2 Broad\", Zip = 22222 },\n            Pos  = new Position { X = 7, Y = 9 }\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_016_sum_type_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Circle { public int Radius; }\n\n    [Type]\n    public partial struct Rectangle { public int Width; public int Height; }\n\n    [Type]\n    public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {}\n\n    [Table(Name = \"drawings\")]\n    public partial struct Drawing\n    {\n        [PrimaryKey] public int Id;\n        public Shape A;\n        public Shape B;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.drawings.Insert(new Drawing {\n            Id = 1,\n            A = new Shape.Circle(new Circle { Radius = 10 }),\n            B = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 })\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_017_scheduled_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"tick_timer\", Scheduled = nameof(Tick), ScheduledAt = nameof(ScheduledAt))]\n    public partial struct TickTimer\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt ScheduledAt;\n    }\n\n    [Reducer]\n    public static void Tick(ReducerContext ctx, TickTimer schedule) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        var interval = new TimeDuration { Microseconds = 50_000 };\n        ctx.Db.tick_timer.Insert(new TickTimer\n        {\n            ScheduledId = 0,\n            ScheduledAt = new ScheduleAt.Interval(interval)\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_018_constraints": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"accounts\", Public = true)]\n    [SpacetimeDB.Index.BTree(Name = \"by_name\", Columns = [nameof(Name)])]\n    public partial struct Account\n    {\n        [SpacetimeDB.PrimaryKey] public int Id;\n        [SpacetimeDB.Unique] public string Email;\n        public string Name;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.accounts.Insert(new Account { Id = 1, Email = \"a@example.com\", Name = \"Alice\" });\n        ctx.Db.accounts.Insert(new Account { Id = 2, Email = \"b@example.com\", Name = \"Bob\" });\n    }\n}",
+          "syntax": "csharp"
+        },
+        "schema/t_019_many_to_many": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int UserId;\n        public string Name;\n    }\n\n    [Table(Name = \"groups\")]\n    public partial struct Group\n    {\n        [PrimaryKey] public int GroupId;\n        public string Title;\n    }\n\n    [Table(Name = \"memberships\")]\n    [SpacetimeDB.Index.BTree(Name = \"by_user\",  Columns = new[] { nameof(UserId) })]\n    [SpacetimeDB.Index.BTree(Name = \"by_group\", Columns = new[] { nameof(GroupId) })]\n    public partial struct Membership\n    {\n        [PrimaryKey] public int Id;\n        public int UserId;\n        public int GroupId;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.users.Insert(new User { UserId = 1, Name = \"Alice\" });\n        ctx.Db.users.Insert(new User { UserId = 2, Name = \"Bob\" });\n\n        ctx.Db.groups.Insert(new Group { GroupId = 10, Title = \"Admin\" });\n        ctx.Db.groups.Insert(new Group { GroupId = 20, Title = \"Dev\" });\n\n        ctx.Db.memberships.Insert(new Membership { Id = 1, UserId = 1, GroupId = 10 });\n        ctx.Db.memberships.Insert(new Membership { Id = 2, UserId = 1, GroupId = 20 });\n        ctx.Db.memberships.Insert(new Membership { Id = 3, UserId = 2, GroupId = 20 });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_020_ecs": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"entities\")]\n    public partial struct Entity { [PrimaryKey] public int Id; }\n\n    [Table(Name = \"positions\")]\n    public partial struct Position\n    {\n        [PrimaryKey] public int EntityId;\n        public int X;\n        public int Y;\n    }\n\n    [Table(Name = \"velocities\")]\n    public partial struct Velocity\n    {\n        [PrimaryKey] public int EntityId;\n        public int VX;\n        public int VY;\n    }\n\n    [Table(Name = \"next_positions\")]\n    public partial struct NextPosition\n    {\n        [PrimaryKey] public int EntityId;\n        public int X;\n        public int Y;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.entities.Insert(new Entity { Id = 1 });\n        ctx.Db.entities.Insert(new Entity { Id = 2 });\n\n        ctx.Db.positions.Insert(new Position { EntityId = 1, X = 0,  Y = 0 });\n        ctx.Db.positions.Insert(new Position { EntityId = 2, X = 10, Y = 0 });\n\n        ctx.Db.velocities.Insert(new Velocity { EntityId = 1, VX = 1,  VY = 0 });\n        ctx.Db.velocities.Insert(new Velocity { EntityId = 2, VX = -2, VY = 3 });\n    }\n\n    [Reducer]\n    public static void Step(ReducerContext ctx)\n    {\n        foreach (var p in ctx.Db.positions.Iter())\n        {\n            var velOpt = ctx.Db.velocities.EntityId.Find(p.EntityId);\n            if (!velOpt.HasValue) continue;\n\n            var np = new NextPosition {\n                EntityId = p.EntityId,\n                X = p.X + velOpt.Value.VX,\n                Y = p.Y + velOpt.Value.VY\n            };\n\n            if (ctx.Db.next_positions.EntityId.Find(p.EntityId).HasValue)\n                ctx.Db.next_positions.EntityId.Update(np);\n            else\n                ctx.Db.next_positions.Insert(np);\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "schema/t_021_multi_column_index": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"logs\")]\n    [SpacetimeDB.Index.BTree(Name = \"by_user_day\", Columns = new[] { nameof(UserId), nameof(Day) })]\n    public partial struct Log\n    {\n        [PrimaryKey] public int Id;\n        public int UserId;\n        public int Day;\n        public string Message;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.logs.Insert(new Log { Id = 1, UserId = 7, Day = 1, Message = \"a\" });\n        ctx.Db.logs.Insert(new Log { Id = 2, UserId = 7, Day = 2, Message = \"b\" });\n        ctx.Db.logs.Insert(new Log { Id = 3, UserId = 9, Day = 1, Message = \"c\" });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_000_empty_reducers": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Reducer]\n    public static void EmptyReducer_NoArgs(ReducerContext ctx) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithInt(ReducerContext ctx, int count) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithString(ReducerContext ctx, string name) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithTwoArgs(ReducerContext ctx, int count, string name) { }\n\n    [Reducer]\n    public static void EmptyReducer_WithThreeArgs(ReducerContext ctx, bool active, float ratio, string label) { }\n}",
+          "syntax": "csharp"
+        },
+        "t_001_basic_tables": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct Users\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Table(Name = \"products\")]\n    public partial struct Products\n    {\n        [PrimaryKey] public int Id;\n        public string Title;\n        public float Price;\n        public bool InStock;\n    }\n\n    [Table(Name = \"notes\")]\n    public partial struct Notes\n    {\n        [PrimaryKey] public int Id;\n        public string Body;\n        public long Rating;\n        public bool Pinned;\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_002_scheduled_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"tick_timer\", Scheduled = nameof(Tick), ScheduledAt = nameof(TickTimer.ScheduledAt))]\n    public partial struct TickTimer\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt     ScheduledAt;\n    }\n\n    [Reducer]\n    public static void Tick(ReducerContext ctx, TickTimer timer) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        var interval = new TimeDuration { Microseconds = 50_000 };\n        ctx.Db.tick_timer.Insert(new TickTimer\n        {\n            ScheduledAt = new ScheduleAt.Interval(interval)\n        });\n    }\n}",
+          "syntax": "csharp"
+        },
+        "t_003_struct_in_table": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Position\n    {\n        public int X;\n        public int Y;\n    }\n\n    [Table(Name = \"entities\")]\n    public partial struct Entity\n    {\n        [PrimaryKey] public int Id;\n        public Position Pos;\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_004_insert": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void InsertUser(ReducerContext ctx, int id, string name, int age, bool active)\n    {\n        ctx.Db.users.Insert(new User { Id = id, Name = name, Age = age, Active = active });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_005_update": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void UpdateUser(ReducerContext ctx, int id, string name, int age, bool active)\n    {\n        ctx.Db.users.Id.Update(new User { Id = id, Name = name, Age = age, Active = active });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_006_delete": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void DeleteUser(ReducerContext ctx, int id)\n    {\n        ctx.Db.users.Id.Delete(id);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_007_crud": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer]\n    public static void Crud(ReducerContext ctx)\n    {\n        ctx.Db.users.Insert(new User { Id = 1, Name = \"Alice\", Age = 30, Active = true });\n        ctx.Db.users.Insert(new User { Id = 2, Name = \"Bob\",   Age = 22, Active = false });\n        ctx.Db.users.Id.Update(new User { Id = 1, Name = \"Alice2\", Age = 31, Active = false });\n        ctx.Db.users.Id.Delete(2);\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_008_index_lookup": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n    }\n\n    [Reducer]\n    public static void LookupUserName(ReducerContext ctx, int id)\n    {\n        var u = ctx.Db.users.Id.Find(id);\n        if (u.HasValue)\n        {\n            var row = u.Value;\n            ctx.Db.results.Insert(new Result { Id = row.Id, Name = row.Name });\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_009_init": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int Id;\n        public string Name;\n        public int Age;\n        public bool Active;\n    }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        ctx.Db.users.Insert(new User { Id = 1, Name = \"Alice\", Age = 30, Active = true });\n        ctx.Db.users.Insert(new User { Id = 2, Name = \"Bob\",   Age = 22, Active = false });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_010_connect": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"events\")]\n    public partial struct Event\n    {\n        [PrimaryKey, AutoInc] public int Id;\n        public string Kind;\n    }\n\n    [Reducer(ReducerKind.ClientConnected)]\n    public static void ClientConnected(ReducerContext ctx)\n    {\n        ctx.Db.events.Insert(new Event { Kind = \"connected\" });\n    }\n\n    [Reducer(ReducerKind.ClientDisconnected)]\n    public static void ClientDisconnected(ReducerContext ctx)\n    {\n        ctx.Db.events.Insert(new Event { Kind = \"disconnected\" });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_011_helper_function": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public int Sum;\n    }\n\n    static int Add(int a, int b) => a + b;\n\n    [Reducer]\n    public static void ComputeSum(ReducerContext ctx, int id, int a, int b)\n    {\n        ctx.Db.results.Insert(new Result { Id = id, Sum = Add(a, b) });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_012_spacetime_product_type": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Score\n    {\n        public int Left;\n        public int Right;\n    }\n\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public Score Value;\n    }\n\n    [Reducer]\n    public static void SetScore(ReducerContext ctx, int id, int left, int right)\n    {\n        ctx.Db.results.Insert(new Result { Id = id, Value = new Score { Left = left, Right = right } });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_013_spacetime_sum_type": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Circle { public int Radius; }\n\n    [Type]\n    public partial struct Rectangle { public int Width; public int Height; }\n\n    [Type]\n    public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {}\n\n    [Table(Name = \"results\")]\n    public partial struct Result\n    {\n        [PrimaryKey] public int Id;\n        public Shape Value;\n    }\n\n    [Reducer]\n    public static void SetCircle(ReducerContext ctx, int id, int radius)\n    {\n        ctx.Db.results.Insert(new Result { Id = id, Value = new Shape.Circle(new Circle { Radius = radius }) });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_014_elementary_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"primitives\")]\n    public partial struct Primitive\n    {\n        [PrimaryKey] public int Id;\n        public int Count;\n        public long Total;\n        public float Price;\n        public double Ratio;\n        public bool Active;\n        public string Name;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.primitives.Insert(new Primitive {\n            Id = 1,\n            Count = 2,\n            Total = 3000000000,\n            Price = 1.5f,\n            Ratio = 2.25,\n            Active = true,\n            Name = \"Alice\"\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_015_product_type_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Address\n    {\n        public string Street;\n        public int Zip;\n    }\n\n    [Type]\n    public partial struct Position\n    {\n        public int X;\n        public int Y;\n    }\n\n    [Table(Name = \"profiles\")]\n    public partial struct Profile\n    {\n        [PrimaryKey] public int Id;\n        public Address Home;\n        public Address Work;\n        public Position Pos;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.profiles.Insert(new Profile {\n            Id = 1,\n            Home = new Address { Street = \"1 Main\", Zip = 11111 },\n            Work = new Address { Street = \"2 Broad\", Zip = 22222 },\n            Pos  = new Position { X = 7, Y = 9 }\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_016_sum_type_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Type]\n    public partial struct Circle { public int Radius; }\n\n    [Type]\n    public partial struct Rectangle { public int Width; public int Height; }\n\n    [Type]\n    public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {}\n\n    [Table(Name = \"drawings\")]\n    public partial struct Drawing\n    {\n        [PrimaryKey] public int Id;\n        public Shape A;\n        public Shape B;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.drawings.Insert(new Drawing {\n            Id = 1,\n            A = new Shape.Circle(new Circle { Radius = 10 }),\n            B = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 })\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_017_scheduled_columns": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"tick_timer\", Scheduled = nameof(Tick), ScheduledAt = nameof(ScheduledAt))]\n    public partial struct TickTimer\n    {\n        [PrimaryKey, AutoInc] public ulong ScheduledId;\n        public ScheduleAt ScheduledAt;\n    }\n\n    [Reducer]\n    public static void Tick(ReducerContext ctx, TickTimer schedule) { }\n\n    [Reducer(ReducerKind.Init)]\n    public static void Init(ReducerContext ctx)\n    {\n        var interval = new TimeDuration { Microseconds = 50_000 };\n        ctx.Db.tick_timer.Insert(new TickTimer\n        {\n            ScheduledId = 0,\n            ScheduledAt = new ScheduleAt.Interval(interval)\n        });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_018_constraints": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [SpacetimeDB.Table(Name = \"accounts\", Public = true)]\n    [SpacetimeDB.Index.BTree(Name = \"by_name\", Columns = [nameof(Name)])]\n    public partial struct Account\n    {\n        [SpacetimeDB.PrimaryKey] public int Id;\n        [SpacetimeDB.Unique] public string Email;\n        public string Name;\n    }\n\n    [SpacetimeDB.Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.accounts.Insert(new Account { Id = 1, Email = \"a@example.com\", Name = \"Alice\" });\n        ctx.Db.accounts.Insert(new Account { Id = 2, Email = \"b@example.com\", Name = \"Bob\" });\n    }\n}",
+          "syntax": "csharp"
+        },
+        "t_019_many_to_many": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"users\")]\n    public partial struct User\n    {\n        [PrimaryKey] public int UserId;\n        public string Name;\n    }\n\n    [Table(Name = \"groups\")]\n    public partial struct Group\n    {\n        [PrimaryKey] public int GroupId;\n        public string Title;\n    }\n\n    [Table(Name = \"memberships\")]\n    [SpacetimeDB.Index.BTree(Name = \"by_user\",  Columns = new[] { nameof(UserId) })]\n    [SpacetimeDB.Index.BTree(Name = \"by_group\", Columns = new[] { nameof(GroupId) })]\n    public partial struct Membership\n    {\n        [PrimaryKey] public int Id;\n        public int UserId;\n        public int GroupId;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.users.Insert(new User { UserId = 1, Name = \"Alice\" });\n        ctx.Db.users.Insert(new User { UserId = 2, Name = \"Bob\" });\n\n        ctx.Db.groups.Insert(new Group { GroupId = 10, Title = \"Admin\" });\n        ctx.Db.groups.Insert(new Group { GroupId = 20, Title = \"Dev\" });\n\n        ctx.Db.memberships.Insert(new Membership { Id = 1, UserId = 1, GroupId = 10 });\n        ctx.Db.memberships.Insert(new Membership { Id = 2, UserId = 1, GroupId = 20 });\n        ctx.Db.memberships.Insert(new Membership { Id = 3, UserId = 2, GroupId = 20 });\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_020_ecs": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"entities\")]\n    public partial struct Entity { [PrimaryKey] public int Id; }\n\n    [Table(Name = \"positions\")]\n    public partial struct Position\n    {\n        [PrimaryKey] public int EntityId;\n        public int X;\n        public int Y;\n    }\n\n    [Table(Name = \"velocities\")]\n    public partial struct Velocity\n    {\n        [PrimaryKey] public int EntityId;\n        public int VX;\n        public int VY;\n    }\n\n    [Table(Name = \"next_positions\")]\n    public partial struct NextPosition\n    {\n        [PrimaryKey] public int EntityId;\n        public int X;\n        public int Y;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.entities.Insert(new Entity { Id = 1 });\n        ctx.Db.entities.Insert(new Entity { Id = 2 });\n\n        ctx.Db.positions.Insert(new Position { EntityId = 1, X = 0,  Y = 0 });\n        ctx.Db.positions.Insert(new Position { EntityId = 2, X = 10, Y = 0 });\n\n        ctx.Db.velocities.Insert(new Velocity { EntityId = 1, VX = 1,  VY = 0 });\n        ctx.Db.velocities.Insert(new Velocity { EntityId = 2, VX = -2, VY = 3 });\n    }\n\n    [Reducer]\n    public static void Step(ReducerContext ctx)\n    {\n        foreach (var p in ctx.Db.positions.Iter())\n        {\n            var velOpt = ctx.Db.velocities.EntityId.Find(p.EntityId);\n            if (!velOpt.HasValue) continue;\n\n            var np = new NextPosition {\n                EntityId = p.EntityId,\n                X = p.X + velOpt.Value.VX,\n                Y = p.Y + velOpt.Value.VY\n            };\n\n            if (ctx.Db.next_positions.EntityId.Find(p.EntityId).HasValue)\n                ctx.Db.next_positions.EntityId.Update(np);\n            else\n                ctx.Db.next_positions.Insert(np);\n        }\n    }\n}\n",
+          "syntax": "csharp"
+        },
+        "t_021_multi_column_index": {
+          "answer": "using SpacetimeDB;\n\npublic static partial class Module\n{\n    [Table(Name = \"logs\")]\n    [SpacetimeDB.Index.BTree(Name = \"by_user_day\", Columns = new[] { nameof(UserId), nameof(Day) })]\n    public partial struct Log\n    {\n        [PrimaryKey] public int Id;\n        public int UserId;\n        public int Day;\n        public string Message;\n    }\n\n    [Reducer]\n    public static void Seed(ReducerContext ctx)\n    {\n        ctx.Db.logs.Insert(new Log { Id = 1, UserId = 7, Day = 1, Message = \"a\" });\n        ctx.Db.logs.Insert(new Log { Id = 2, UserId = 7, Day = 2, Message = \"b\" });\n        ctx.Db.logs.Insert(new Log { Id = 3, UserId = 9, Day = 1, Message = \"c\" });\n    }\n}\n",
+          "syntax": "csharp"
+        }
+      }
+    }
+  ]
+}

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: 'Pull Request Number'
+        description: "Pull Request Number"
         required: false
-        default: ''
+        default: ""
 
 name: CI
 
@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   docker_smoketests:
+    needs: [lints, llm_ci_check]
     name: Smoketests
     strategy:
       fail-fast: false
@@ -116,7 +117,7 @@ jobs:
         if: runner.os == 'Linux'
         run: /usr/local/bin/start-docker.sh
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
+        with: { python-version: "3.12" }
         if: runner.os == 'Windows'
       - name: Install python deps
         run: python -m pip install -r smoketests/requirements.txt

@@ -1,136 +1,161 @@
+use super::same_key_entry::{same_key_iter, SameKeyEntry, SameKeyEntryIter};
+use super::{key_size::KeyBytesStorage, Index, KeySize, RangedIndex};
+use crate::indexes::RowPointer;
 use core::ops::RangeBounds;
-use core::slice;
-use smallvec::SmallVec;
 use spacetimedb_sats::memory_usage::MemoryUsage;
 use std::collections::btree_map::{BTreeMap, Range};
 
-/// A multi map that relates a `K` to a *set* of `V`s.
+/// A multi map that relates a `K` to a *set* of `RowPointer`s.
 #[derive(Debug, PartialEq, Eq)]
-pub struct MultiMap<K, V> {
+pub struct MultiMap<K> {
     /// The map is backed by a `BTreeMap` for relating keys to values.
     ///
     /// A value set is stored as a `SmallVec`.
     /// This is an optimization over a `Vec<_>`
     /// as we allow a single element to be stored inline
     /// to improve performance for the common case of one element.
-    map: BTreeMap<K, SmallVec<[V; 1]>>,
+    map: BTreeMap<K, SameKeyEntry>,
+    /// The memoized number of rows indexed in `self.map`.
+    num_rows: usize,
+    /// Storage for [`Index::num_key_bytes`].
+    num_key_bytes: u64,
 }
 
-impl<K, V> Default for MultiMap<K, V> {
+impl<K> Default for MultiMap<K> {
     fn default() -> Self {
-        Self { map: BTreeMap::new() }
+        Self {
+            map: <_>::default(),
+            num_rows: <_>::default(),
+            num_key_bytes: <_>::default(),
+        }
     }
 }
 
-impl<K: MemoryUsage, V: MemoryUsage> MemoryUsage for MultiMap<K, V> {
+impl<K: MemoryUsage> MemoryUsage for MultiMap<K> {
     fn heap_usage(&self) -> usize {
-        let Self { map } = self;
-        map.heap_usage()
+        let Self {
+            map,
+            num_rows,
+            num_key_bytes,
+        } = self;
+        map.heap_usage() + num_rows.heap_usage() + num_key_bytes.heap_usage()
     }
 }
 
-impl<K: Ord, V: Ord> MultiMap<K, V> {
-    /// Inserts the relation `key -> val` to this multimap.
+impl<K: Ord + KeySize> Index for MultiMap<K> {
+    type Key = K;
+
+    fn clone_structure(&self) -> Self {
+        <_>::default()
+    }
+
+    /// Inserts the relation `key -> ptr` to this multimap.
     ///
-    /// The map does not check whether `key -> val` was already in the map.
-    pub fn insert(&mut self, key: K, val: V) {
-        self.map.entry(key).or_default().push(val);
+    /// The map does not check whether `key -> ptr` was already in the map.
+    /// It's assumed that the same `ptr` is never added twice,
+    /// and multimaps do not bind one `key` to the same `ptr`.
+    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+        self.num_rows += 1;
+        self.num_key_bytes.add_to_key_bytes::<Self>(&key);
+        self.map.entry(key).or_default().push(ptr);
+        Ok(())
     }
 
-    /// Deletes `key -> val` from this multimap.
+    /// Deletes `key -> ptr` from this multimap.
     ///
-    /// Returns whether `key -> val` was present.
-    pub fn delete(&mut self, key: &K, val: &V) -> bool {
-        if let Some(vset) = self.map.get_mut(key) {
-            // The `vset` is not sorted, so we have to do a linear scan first.
-            if let Some(idx) = vset.iter().position(|v| v == val) {
-                vset.swap_remove(idx);
-                return true;
-            }
+    /// Returns whether `key -> ptr` was present.
+    fn delete(&mut self, key: &K, ptr: RowPointer) -> bool {
+        let Some(vset) = self.map.get_mut(key) else {
+            return false;
+        };
+
+        let (deleted, is_empty) = vset.delete(ptr);
+
+        if is_empty {
+            self.map.remove(key);
         }
-        false
-    }
 
-    /// Returns an iterator over the multimap that yields all the `V`s
-    /// of the `K`s that fall within the specified `range`.
-    pub fn values_in_range(&self, range: &impl RangeBounds<K>) -> MultiMapRangeIter<'_, K, V> {
-        MultiMapRangeIter {
-            outer: self.map.range((range.start_bound(), range.end_bound())),
-            inner: None,
+        if deleted {
+            self.num_rows -= 1;
+            self.num_key_bytes.sub_from_key_bytes::<Self>(key);
         }
+
+        deleted
     }
 
-    /// Returns an iterator over the multimap that yields all the `V`s of the `key: &K`.
-    pub fn values_in_point(&self, key: &K) -> MultiMapPointIter<'_, V> {
-        let vals = self.map.get(key).map(|vs| &**vs).unwrap_or_default();
-        let iter = vals.iter();
-        MultiMapPointIter { iter }
+    type PointIter<'a>
+        = SameKeyEntryIter<'a>
+    where
+        Self: 'a;
+
+    fn seek_point(&self, key: &Self::Key) -> Self::PointIter<'_> {
+        same_key_iter(self.map.get(key))
     }
 
-    /// Returns the number of unique keys in the multimap.
-    pub fn num_keys(&self) -> usize {
+    fn num_keys(&self) -> usize {
         self.map.len()
     }
 
-    /// Returns the total number of entries in the multimap.
-    #[allow(unused)] // No use for this currently.
-    pub fn len(&self) -> usize {
-        self.map.values().map(|ptrs| ptrs.len()).sum()
+    fn num_key_bytes(&self) -> u64 {
+        self.num_key_bytes
     }
 
-    /// Returns whether there are any entries in the multimap.
-    #[allow(unused)] // No use for this currently.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    fn num_rows(&self) -> usize {
+        self.num_rows
     }
 
     /// Deletes all entries from the multimap, leaving it empty.
     /// This will not deallocate the outer map.
-    pub fn clear(&mut self) {
+    fn clear(&mut self) {
         self.map.clear();
+        self.num_rows = 0;
+        self.num_key_bytes.reset_to_zero();
+    }
+
+    fn can_merge(&self, _: &Self, _: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
+        // `self.insert` always returns `Ok(_)`.
+        Ok(())
     }
 }
 
-/// An iterator over values in a [`MultiMap`] where the key is a point.
-pub struct MultiMapPointIter<'a, V> {
-    /// The inner iterator for the value set for a found key.
-    iter: slice::Iter<'a, V>,
-}
+impl<K: Ord + KeySize> RangedIndex for MultiMap<K> {
+    type RangeIter<'a>
+        = MultiMapRangeIter<'a, K>
+    where
+        Self: 'a;
 
-impl<'a, V> Iterator for MultiMapPointIter<'a, V> {
-    type Item = &'a V;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next()
+    /// Returns an iterator over the multimap that yields all the `V`s
+    /// of the `K`s that fall within the specified `range`.
+    fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_> {
+        MultiMapRangeIter {
+            outer: self.map.range((range.start_bound(), range.end_bound())),
+            inner: SameKeyEntry::empty_iter(),
+        }
     }
 }
 
 /// An iterator over values in a [`MultiMap`] where the keys are in a certain range.
-pub struct MultiMapRangeIter<'a, K, V> {
+#[derive(Clone)]
+pub struct MultiMapRangeIter<'a, K> {
     /// The outer iterator seeking for matching keys in the range.
-    outer: Range<'a, K, SmallVec<[V; 1]>>,
+    outer: Range<'a, K, SameKeyEntry>,
     /// The inner iterator for the value set for a found key.
-    inner: Option<slice::Iter<'a, V>>,
+    inner: SameKeyEntryIter<'a>,
 }
 
-impl<'a, K, V> Iterator for MultiMapRangeIter<'a, K, V> {
-    type Item = &'a V;
+impl<K> Iterator for MultiMapRangeIter<'_, K> {
+    type Item = RowPointer;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            if let Some(inner) = self.inner.as_mut() {
-                if let Some(val) = inner.next() {
-                    // While the inner iterator has elements, yield them.
-                    return Some(val);
-                }
+            // While the inner iterator has elements, yield them.
+            if let Some(val) = self.inner.next() {
+                return Some(val);
             }
-
-            // This makes the iterator fused.
-            self.inner = None;
             // Advance and get a new inner, if possible, or quit.
             // We'll come back and yield elements from it in the next iteration.
-            let (_, next) = self.outer.next()?;
-            self.inner = Some(next.iter());
+            let inner = self.outer.next().map(|(_, i)| i)?;
+            self.inner = inner.iter();
         }
     }
 }

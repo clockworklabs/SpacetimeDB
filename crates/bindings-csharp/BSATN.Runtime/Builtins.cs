@@ -53,10 +53,13 @@ internal static class Util
     public static T Read<T>(ReadOnlySpan<byte> source, bool littleEndian)
         where T : struct
     {
-        Debug.Assert(
-            source.Length == Marshal.SizeOf<T>(),
-            $"Error while reading ${typeof(T).FullName}: expected source span to be {Marshal.SizeOf<T>()} bytes long, but was {source.Length} bytes."
-        );
+        var expectedSize = Marshal.SizeOf<T>();
+        if (source.Length != expectedSize)
+        {
+            throw new ArgumentException(
+                $"Error while reading {typeof(T).FullName}: expected source span to be {expectedSize} bytes long, but was {source.Length} bytes."
+            );
+        }
 
         var result = MemoryMarshal.Read<T>(source);
 
@@ -166,8 +169,18 @@ public readonly record struct ConnectionId
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static ConnectionId? FromHexString(string hex) =>
-        FromBigEndian(Util.StringToByteArray(hex));
+    public static ConnectionId? FromHexString(string hex)
+    {
+        if (hex.Length != 32)
+        {
+            throw new ArgumentException(
+                $"Expected ConnectionId hex string to be 32 characters long, but was {hex.Length}.",
+                nameof(hex)
+            );
+        }
+
+        return FromBigEndian(Util.StringToByteArray(hex));
+    }
 
     public static ConnectionId Random()
     {
@@ -268,7 +281,18 @@ public readonly record struct Identity : IEquatable<Identity>, IComparable, ICom
     /// </summary>
     /// <param name="hex"></param>
     /// <returns></returns>
-    public static Identity FromHexString(string hex) => FromBigEndian(Util.StringToByteArray(hex));
+    public static Identity FromHexString(string hex)
+    {
+        if (hex.Length != 64)
+        {
+            throw new ArgumentException(
+                $"Expected Identity hex string to be 64 characters long, but was {hex.Length}.",
+                nameof(hex)
+            );
+        }
+
+        return FromBigEndian(Util.StringToByteArray(hex));
+    }
 
     // --- auto-generated ---
     public readonly struct BSATN : IReadWrite<Identity>
@@ -365,7 +389,7 @@ public record struct Timestamp(long MicrosecondsSinceUnixEpoch)
     public static Timestamp operator -(Timestamp point, TimeDuration interval) =>
         new Timestamp(checked(point.MicrosecondsSinceUnixEpoch - interval.Microseconds));
 
-    public int CompareTo(Timestamp that)
+    public readonly int CompareTo(Timestamp that)
     {
         return this.MicrosecondsSinceUnixEpoch.CompareTo(that.MicrosecondsSinceUnixEpoch);
     }
@@ -603,5 +627,111 @@ public partial record ScheduleAt : TaggedEnum<(TimeDuration Interval, Timestamp 
                 ]
             );
         // --- / customized ---
+    }
+}
+
+public partial record Result<T, E> : TaggedEnum<(T Ok, E Err)>
+{
+    public static implicit operator Result<T, E>(T value) => new OkR(value);
+
+    public static implicit operator Result<T, E>(E error) => new ErrR(error);
+
+    public TResult Match<TResult>(Func<T, TResult> onOk, Func<E, TResult> onErr) =>
+        this switch
+        {
+            OkR(var v) => onOk(v),
+            ErrR(var e) => onErr(e),
+            _ => throw new InvalidOperationException("Unknown Result variant."),
+        };
+
+    public static Result<T, E> Ok(T value) => new OkR(value);
+
+    public static Result<T, E> Err(E error) => new ErrR(error);
+
+    public T UnwrapOrThrow()
+    {
+        return this switch
+        {
+            OkR(var v) => v,
+            ErrR(var e) when e is not null => throw new Exception(e.ToString()),
+            ErrR(_) => throw new InvalidOperationException(
+                "Result failed without an error object."
+            ),
+            _ => throw new InvalidOperationException("Unknown Result variant."),
+        };
+    }
+
+    public T UnwrapOr(T defaultValue) =>
+        this switch
+        {
+            OkR(var v) => v,
+            _ => defaultValue,
+        };
+
+    public T UnwrapOrElse(Func<E, T> f) =>
+        this switch
+        {
+            OkR(var v) => v,
+            ErrR(var e) => f(e),
+            _ => throw new InvalidOperationException("Unknown Result variant."),
+        };
+
+    // ----- auto-generated -----
+
+    private Result() { }
+
+    internal enum @enum : byte
+    {
+        Ok,
+        Err,
+    }
+
+    public sealed record OkR(T Value) : Result<T, E>;
+
+    public sealed record ErrR(E Error) : Result<T, E>;
+
+    private enum Variant : byte
+    {
+        Ok = 0,
+        Err = 1,
+    }
+
+    public readonly struct BSATN<OkRW, ErrRW> : IReadWrite<Result<T, E>>
+        where OkRW : struct, IReadWrite<T>
+        where ErrRW : struct, IReadWrite<E>
+    {
+        private static readonly SpacetimeDB.BSATN.Enum<@enum> __enumTag = new();
+        private static readonly OkRW okRW = new();
+        private static readonly ErrRW errRW = new();
+
+        public Result<T, E> Read(BinaryReader reader) =>
+            __enumTag.Read(reader) switch
+            {
+                @enum.Ok => new OkR(okRW.Read(reader)),
+                @enum.Err => new ErrR(errRW.Read(reader)),
+                _ => throw new InvalidOperationException(),
+            };
+
+        public void Write(BinaryWriter writer, Result<T, E> value)
+        {
+            switch (value)
+            {
+                case OkR(var v):
+                    __enumTag.Write(writer, @enum.Ok);
+                    okRW.Write(writer, v);
+                    break;
+
+                case ErrR(var e):
+                    __enumTag.Write(writer, @enum.Err);
+                    errRW.Write(writer, e);
+                    break;
+            }
+        }
+
+        public AlgebraicType GetAlgebraicType(ITypeRegistrar registrar) =>
+            AlgebraicType.MakeResult(
+                okRW.GetAlgebraicType(registrar),
+                errRW.GetAlgebraicType(registrar)
+            );
     }
 }

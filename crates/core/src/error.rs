@@ -8,6 +8,7 @@ use hex::FromHexError;
 use spacetimedb_commitlog::repo::TxOffset;
 use spacetimedb_durability::DurabilityExited;
 use spacetimedb_expr::errors::TypingError;
+use spacetimedb_fs_utils::lockfile::advisory::LockError;
 use spacetimedb_lib::Identity;
 use spacetimedb_schema::error::ValidationErrors;
 use spacetimedb_snapshot::SnapshotError;
@@ -81,8 +82,14 @@ pub enum PlanError {
 pub enum DatabaseError {
     #[error("Replica not found: {0}")]
     NotFound(u64),
-    #[error("Database is already opened. Path:`{0}`. Error:{1}")]
+    #[error("Database is already opened. Path: `{0}`. Error: {1}")]
     DatabasedOpened(PathBuf, anyhow::Error),
+}
+
+impl From<LockError> for DatabaseError {
+    fn from(LockError { path, source }: LockError) -> Self {
+        Self::DatabasedOpened(path, source.into())
+    }
 }
 
 #[derive(Error, Debug, EnumAsInner)]
@@ -194,6 +201,17 @@ impl<'a, T: ?Sized + 'a> From<PoisonError<std::sync::MutexGuard<'a, T>>> for DBE
     }
 }
 
+impl From<spacetimedb_durability::local::OpenError> for DBError {
+    fn from(e: spacetimedb_durability::local::OpenError) -> Self {
+        use spacetimedb_durability::local::OpenError::*;
+
+        match e {
+            Lock(e) => Self::from(DatabaseError::from(e)),
+            Commitlog(e) => Self::Other(e.into()),
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum LogReplayError {
     #[error(
@@ -263,6 +281,8 @@ pub enum NodesError {
     IndexNotUnique,
     #[error("row was not found in index")]
     IndexRowNotFound,
+    #[error("index does not support range scans")]
+    IndexCannotSeekRange,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]
