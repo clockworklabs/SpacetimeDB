@@ -98,8 +98,7 @@ pub mod advisory {
         path::{Path, PathBuf},
     };
 
-    use fs2::FileExt as _;
-    use log::info;
+    use log::{debug, error};
     use thiserror::Error;
 
     use crate::create_parent_dir;
@@ -140,7 +139,7 @@ pub mod advisory {
         /// created.
         pub fn lock(path: impl AsRef<Path>) -> Result<Self, LockError> {
             let path = path.as_ref();
-            info!("attempting advisory lock on {}", path.display());
+            debug!("attempting advisory lock on {}", path.display());
             Self::lock_inner(path).map_err(|source| LockError {
                 path: path.into(),
                 source,
@@ -150,8 +149,7 @@ pub mod advisory {
         fn lock_inner(path: &Path) -> io::Result<Self> {
             create_parent_dir(path)?;
             let lock = File::create(path)?;
-            // TODO: Use `File::lock` (available since rust 1.89) instead?
-            lock.try_lock_exclusive()?;
+            lock.try_lock()?;
 
             Ok(Self {
                 path: path.to_path_buf(),
@@ -161,9 +159,9 @@ pub mod advisory {
 
         /// Release the lock and optionally remove the locked file.
         pub fn release(self, remove: bool) -> io::Result<()> {
-            info!("releasing {self:?}");
+            debug!("releasing {self:?}");
             if remove {
-                info!("removing {}", self.path.display());
+                debug!("removing {}", self.path.display());
                 fs::remove_file(&self.path)?;
             }
             Ok(())
@@ -178,7 +176,10 @@ pub mod advisory {
 
     impl Drop for LockedFile {
         fn drop(&mut self) {
-            info!("dropping {self:?}");
+            debug!("dropping {self:?}");
+            if let Err(e) = self.lock.unlock() {
+                error!("failed to unlock {}: {:#}", self.path.display(), e);
+            }
         }
     }
 }

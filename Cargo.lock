@@ -7808,7 +7808,6 @@ name = "spacetimedb-fs-utils"
 version = "1.11.2"
 dependencies = [
  "anyhow",
- "fs2",
  "hex",
  "log",
  "rand 0.9.2",
