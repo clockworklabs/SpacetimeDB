@@ -1111,6 +1111,78 @@ void UOptionActionsHandler::OnInsertOptionVecOptionI32(const FEventContext& Cont
 	}
 }
 
+void UResultActionsHandler::OnInsertResultI32String(const FEventContext& Context, const FResultI32StringType& Value)
+{
+	static const FString Name(TEXT("InsertResultI32String"));
+	if (ExpectedResultI32StringType == Value.R)
+	{
+		Counter->MarkSuccess(Name);
+	}
+	else {
+		Counter->MarkFailure(Name, TEXT("Unexpected value"));
+	}
+}
+
+void UResultActionsHandler::OnInsertResultStringI32(const FEventContext& Context, const FResultStringI32Type& Value)
+{
+	static const FString Name(TEXT("InsertResultStringI32"));
+	if (ExpectedResultStringI32Type == Value.R)
+	{
+		Counter->MarkSuccess(Name);
+	}
+	else {
+		Counter->MarkFailure(Name, TEXT("Unexpected value"));
+	}
+}
+
+void UResultActionsHandler::OnInsertResultIdentityString(const FEventContext& Context, const FResultIdentityStringType& Value)
+{
+	static const FString Name(TEXT("InsertResultIdentityString"));
+	if (ExpectedResultIdentityStringType == Value.R)
+	{
+		Counter->MarkSuccess(Name);
+	}
+	else {
+		Counter->MarkFailure(Name, TEXT("Unexpected value"));
+	}
+}
+
+void UResultActionsHandler::OnInsertResultSimpleEnumI32(const FEventContext& Context, const FResultSimpleEnumI32Type& Value)
+{
+	static const FString Name(TEXT("InsertResultSimpleEnumI32"));
+	if (ExpectedResultSimpleEnumI32Type == Value.R)
+	{
+		Counter->MarkSuccess(Name);
+	}
+	else {
+		Counter->MarkFailure(Name, TEXT("Unexpected value"));
+	}
+}
+
+void UResultActionsHandler::OnInsertResultEveryPrimitiveStructString(const FEventContext& Context, const FResultEveryPrimitiveStructStringType& Value)
+{
+	static const FString Name(TEXT("InsertResultEveryPrimitiveStructString"));
+	if (ExpectedResultEveryPrimitiveStructStringType == Value.R)
+	{
+		Counter->MarkSuccess(Name);
+	}
+	else {
+		Counter->MarkFailure(Name, TEXT("Unexpected value"));
+	}
+}
+
+void UResultActionsHandler::OnInsertResultVecI32String(const FEventContext& Context, const FResultVecI32StringType& Value)
+{
+	static const FString Name(TEXT("InsertResultVecI32String"));
+	if (ExpectedResultVecI32StringType == Value.R)
+	{
+		Counter->MarkSuccess(Name);
+	}
+	else {
+		Counter->MarkFailure(Name, TEXT("Unexpected value"));
+	}
+}
+
 void UStructActionsHandler::OnInsertOneUnitStruct(const FEventContext& Context, const FOneUnitStructType& Value)
 {
 	static const FString Name(TEXT("InsertOneUnitStruct"));

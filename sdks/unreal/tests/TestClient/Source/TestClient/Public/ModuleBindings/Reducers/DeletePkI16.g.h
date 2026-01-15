@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeletePkI16Args
     GENERATED_BODY()
 
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 N;
+    int16 N = 0;
 
     FDeletePkI16Args() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UDeletePkI16Reducer : public UReducerBase
 
 public:
     // NOTE: int16 field not exposed to Blueprint due to non-blueprintable elements
-    int16 N;
+    int16 N = 0;
 
 };
 
