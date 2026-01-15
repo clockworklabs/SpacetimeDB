@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "generated_at": "2026-01-14T21:51:02.346Z",
+  "generated_at": "2026-01-15T16:25:22.525Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "2c474d4cfaa7d4eb9b3ab2e25ec621643985f0258dde661c9c3953e6a1010083",
+          "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
           "models": {
             "GPT-5": {
               "categories": {
