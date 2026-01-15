@@ -73,6 +73,19 @@ public static partial class Module
         public string Name;
     }
 
+    [SpacetimeDB.Table(Name = "account", Public = true)]
+    public partial class Account
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+
+        [SpacetimeDB.Unique]
+        public Identity Identity;
+
+        public string Name = "";
+    }
+
     [SpacetimeDB.Table(Name = "player_level", Public = true)]
     public partial struct PlayerLevel
     {
@@ -137,7 +150,19 @@ public static partial class Module
     [SpacetimeDB.View(Name = "my_player", Public = true)]
     public static Player? MyPlayer(ViewContext ctx)
     {
-        return ctx.Db.player.Identity.Find(ctx.Sender) as Player?;
+        return ctx.Db.player.Identity.Find(ctx.Sender);
+    }
+
+    [SpacetimeDB.View(Name = "my_account", Public = true)]
+    public static Account? MyAccount(ViewContext ctx)
+    {
+        return ctx.Db.account.Identity.Find(ctx.Sender) as Account;
+    }
+
+    [SpacetimeDB.View(Name = "my_account_missing", Public = true)]
+    public static Account? MyAccountMissing(ViewContext ctx)
+    {
+        return null;
     }
 
     // Multiple rows: return a list
@@ -267,6 +292,11 @@ public static partial class Module
             ctx.Db.player.Insert(new Player { Identity = ctx.Sender, Name = "NewPlayer" });
             var playerId = (ctx.Db.player.Identity.Find(ctx.Sender)!).Value.Id;
             ctx.Db.player_level.Insert(new PlayerLevel { PlayerId = playerId, Level = 1 });
+        }
+
+        if (ctx.Db.account.Identity.Find(ctx.Sender) is null)
+        {
+            ctx.Db.account.Insert(new Account { Identity = ctx.Sender, Name = "Account" });
         }
 
         if (ctx.Db.nullable_vec.Id.Find(1) is null)

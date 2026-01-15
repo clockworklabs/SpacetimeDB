@@ -917,7 +917,7 @@ fn index_seek(c: &mut Criterion) {
                     let mut elapsed = WallTime.zero();
                     for _ in 0..num_iters {
                         let (row, none) = time(&mut elapsed, || {
-                            let mut iter = index.seek_range(&col_to_seek);
+                            let mut iter = index.seek_range(&col_to_seek).unwrap();
                             (iter.next(), iter.next())
                         });
                         assert!(
