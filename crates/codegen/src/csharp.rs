@@ -15,7 +15,7 @@ use crate::{indent_scope, OutputFile};
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
 use spacetimedb_primitives::ColId;
-use spacetimedb_schema::def::{ModuleDef, TableDef, TypeDef};
+use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm, ModuleDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::TableSchema;
 use spacetimedb_schema::type_for_generate::{
