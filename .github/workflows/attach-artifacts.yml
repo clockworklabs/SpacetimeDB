@@ -9,7 +9,7 @@ on:
 
 jobs:
   upload-assets:
-    runs-on: spacetimedb-new-runner-2
+    runs-on: ubuntu-latest
     permissions:
       contents: write  # needed to modify releases
 
