@@ -979,6 +979,7 @@ record ViewDeclaration
         // Validate return type: must be Option<T> or Vec<T>
         if (
             !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption")
             && !ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.List")
         )
         {
@@ -1031,8 +1032,10 @@ record ViewDeclaration
             ? "SpacetimeDB.AnonymousViewContext"
             : "SpacetimeDB.ViewContext";
 
-        var isValueOption = ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption");
-        var writeOutput = isValueOption
+        var isOption =
+            ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.ValueOption")
+            || ReturnType.BSATNName.Contains("SpacetimeDB.BSATN.RefOption");
+        var writeOutput = isOption
             ? $$$"""
                     var listSerializer = {{{ReturnType.BSATNName}}}.GetListSerializer();
                     var listValue = ModuleRegistration.ToListOrEmpty(returnValue);
@@ -1934,6 +1937,9 @@ public class Module : IIncrementalGenerator
 
                         public static List<T> ToListOrEmpty<T>(T? value) where T : struct
                                 => value is null ? new List<T>() : new List<T> { value.Value };
+
+                        public static List<T> ToListOrEmpty<T>(T? value) where T : class
+                                => value is null ? new List<T>() : new List<T> { value };
 
                     #if EXPERIMENTAL_WASM_AOT
                         // In AOT mode we're building a library.
