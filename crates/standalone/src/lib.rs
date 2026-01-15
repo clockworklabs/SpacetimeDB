@@ -31,6 +31,7 @@ use spacetimedb_paths::standalone::StandaloneDataDirExt;
 use spacetimedb_schema::auto_migrate::{MigrationPolicy, PrettyPrintStyle};
 use spacetimedb_table::page_pool::PagePool;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use spacetimedb_client_api::routes::subscribe::{BIN_PROTOCOL, TEXT_PROTOCOL};
 
@@ -538,7 +539,9 @@ impl StandaloneEnv {
         // replicas which have been deleted. This will just drop
         // them from memory, but will not remove them from disk.  We need
         // some kind of database lifecycle manager long term.
-        self.host_controller.exit_module_host(replica_id).await?;
+        self.host_controller
+            .exit_module_host(replica_id, Duration::from_secs(30))
+            .await?;
 
         Ok(())
     }

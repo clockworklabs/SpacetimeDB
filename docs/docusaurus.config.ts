@@ -65,7 +65,10 @@ const config: Config = {
     locales: ['en'],
   },
 
-  clientModules: [require.resolve('./src/client-modules/fonts')],
+  clientModules: [
+    require.resolve('./src/client-modules/fonts'),
+    require.resolve('./src/client-modules/inkeep-font-override'),
+  ],
 
   headTags: [
     {

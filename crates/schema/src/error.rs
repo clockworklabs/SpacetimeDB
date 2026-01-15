@@ -57,8 +57,6 @@ pub enum ValidationError {
     RepeatedPrimaryKey { table: RawIdentifier },
     #[error("Attempt to define {column} with more than 1 auto_inc sequence")]
     OneAutoInc { column: RawColumnName },
-    #[error("Hash indexes are not supported: `{index}` is a hash index")]
-    HashIndexUnsupported { index: RawIdentifier },
     #[error("No index found to support unique constraint `{constraint}` for columns `{columns:?}`")]
     UniqueConstraintWithoutIndex { constraint: Box<str>, columns: ColSet },
     #[error("Direct index does not support type `{ty}` in column `{column}` in index `{index}`")]

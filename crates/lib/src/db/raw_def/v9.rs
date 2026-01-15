@@ -321,7 +321,7 @@ pub enum RawIndexAlgorithm {
         /// The columns to index on. These are ordered.
         columns: ColList,
     },
-    /// Currently forbidden.
+    /// Implemented using a hashmap.
     Hash {
         /// The columns to index on. These are ordered.
         columns: ColList,
@@ -338,6 +338,11 @@ pub enum RawIndexAlgorithm {
 /// Returns a btree index algorithm for the columns `cols`.
 pub fn btree(cols: impl Into<ColList>) -> RawIndexAlgorithm {
     RawIndexAlgorithm::BTree { columns: cols.into() }
+}
+
+/// Returns a hash index algorithm for the columns `cols`.
+pub fn hash(cols: impl Into<ColList>) -> RawIndexAlgorithm {
+    RawIndexAlgorithm::Hash { columns: cols.into() }
 }
 
 /// Returns a direct index algorithm for the column `col`.

@@ -9,7 +9,6 @@ use crate::Lang;
 use crate::OutputFile;
 use convert_case::{Case, Casing};
 use spacetimedb_lib::sats::layout::PrimitiveType;
-use spacetimedb_schema::def::{BTreeAlgorithm, IndexAlgorithm};
 use spacetimedb_schema::def::{ModuleDef, ReducerDef, TableDef, TypeDef};
 use spacetimedb_schema::identifier::Identifier;
 use spacetimedb_schema::schema::{Schema, TableSchema};
@@ -70,210 +69,211 @@ impl Lang for UnrealCpp<'_> {
                 continue;
             };
 
-            if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &idx.algorithm {
-                if schema.is_unique(columns) {
-                    if let Some(col) = columns.as_singleton() {
-                        let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                        let field_name = f_name.deref().to_case(Case::Pascal);
-                        let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
-                        let index_name = accessor_name.deref().to_case(Case::Pascal);
-                        let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
-                        let key_type = field_type.clone();
-                        let field_name_lowercase = field_name.to_lowercase();
-
-                        writeln!(output, "UCLASS(Blueprintable)");
-                        writeln!(
-                            output,
-                            "class {} {index_class_name} : public UObject",
-                            self.get_api_macro()
-                        );
-                        writeln!(output, "{{");
-                        writeln!(output, "    GENERATED_BODY()");
-                        writeln!(output);
-                        writeln!(output, "private:");
-                        writeln!(output, "    // Declare an instance of your templated helper.");
-                        writeln!(
-                            output,
-                            "    // It's private because the UObject wrapper will expose its functionality."
-                        );
-                        writeln!(
-                            output,
-                            "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
-                        );
-                        writeln!(output);
-                        writeln!(output, "public:");
-                        writeln!(output, "    {index_class_name}()");
-                        writeln!(
-                            output,
-                            "        // Initialize the helper with the specific unique index name"
-                        );
-                        writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
-                        writeln!(output, "    }}");
-                        writeln!(output);
-                        writeln!(output, "    /**");
-                        writeln!(
-                            output,
-                            "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
-                        );
-                        writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
-                        writeln!(
-                            output,
-                            "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
-                        );
-                        writeln!(output, "     */");
-
-                        // Only mark as BlueprintCallable if the key type is Blueprint-compatible
-                        if is_blueprintable(module, f_ty) {
-                            writeln!(
-                                output,
-                                "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
-                            );
-                        } else {
-                            writeln!(
-                                output,
-                                "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"                                
-                            );
-                        }
-
-                        writeln!(output, "    {row_struct} Find({key_type} Key)");
-                        writeln!(output, "    {{");
-                        writeln!(output, "        // Simply delegate the call to the internal helper");
-                        writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
-                        writeln!(output, "    }}");
-                        writeln!(output);
-                        writeln!(
-                            output,
-                            "    // A public setter to provide the cache to the helper after construction"
-                        );
-                        writeln!(output, "    // This is a common pattern when the cache might be created or provided by another system.");
-                        writeln!(
-                            output,
-                            "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
-                        );
-                        writeln!(output, "    {{");
-                        writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
-                        writeln!(output, "    }}");
-                        writeln!(output, "}};");
-                        writeln!(output, "/***/");
-                        writeln!(output);
-
-                        unique_indexes.push((index_name, index_class_name, field_type, f_name.deref().to_string()));
-                    }
-                }
-                // Handle non-unique BTree indexes
-                else {
-                    // Generate non-unique BTree index class
-                    let _index_name = accessor_name.deref().to_case(Case::Pascal);
-                    let index_class_name = format!("U{table_pascal}{_index_name}Index");
-
-                    // Get column information
-                    let column_info: Vec<_> = columns
-                        .iter()
-                        .map(|col| {
-                            let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                            let field_name = f_name.deref().to_case(Case::Pascal);
-                            let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
-                            let param_type = format!("const {field_type}&");
-
-                            (field_name, field_type, param_type, f_ty, f_name.deref().to_string())
-                        })
-                        .collect();
-
-                    // Create filter method name by concatenating column names
-                    let filter_method_name = format!(
-                        "Filter{}",
-                        column_info
-                            .iter()
-                            .map(|(name, _, _, _, _)| name.as_str())
-                            .collect::<Vec<_>>()
-                            .join("")
-                    );
-
-                    // Create parameter list for methods
-                    let method_params = column_info
-                        .iter()
-                        .map(|(field_name, _, param_type, _, _)| format!("{param_type} {field_name}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Create parameter names for internal call
-                    let param_names = column_info
-                        .iter()
-                        .map(|(field_name, _, _, _, _)| field_name.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Create TTuple type for FindByMultiKeyBTreeIndex
-                    let tuple_types = column_info
-                        .iter()
-                        .map(|(_, field_type, _, _, _)| field_type.clone())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // This is a potential bug in the original code, but keeping it as is for now
-                    // Originally Arvikasoft had if column_info.len() == 1 { format!("TTuple<{tuple_types}>"); } else { format!("TTuple<{tuple_types}>"); }
-                    // This makes no sense since both branches are the same
-                    let tuple_type = format!("TTuple<{tuple_types}>");
+            // Whatever the index algorithm on the host,
+            // the client can still use btrees.
+            let columns = idx.algorithm.columns();
+            if schema.is_unique(&columns) {
+                if let Some(col) = columns.as_singleton() {
+                    let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                    let field_name = f_name.deref().to_case(Case::Pascal);
+                    let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
+                    let index_name = accessor_name.deref().to_case(Case::Pascal);
+                    let index_class_name = format!("U{table_pascal}{index_name}UniqueIndex");
+                    let key_type = field_type.clone();
+                    let field_name_lowercase = field_name.to_lowercase();
 
                     writeln!(output, "UCLASS(Blueprintable)");
-                    writeln!(output, "class {index_class_name} : public UObject");
+                    writeln!(
+                        output,
+                        "class {} {index_class_name} : public UObject",
+                        self.get_api_macro()
+                    );
                     writeln!(output, "{{");
                     writeln!(output, "    GENERATED_BODY()");
                     writeln!(output);
-                    writeln!(output, "public:");
-
-                    writeln!(output, "    TArray<{row_struct}> Filter({method_params}) const");
-                    writeln!(output, "    {{");
-                    writeln!(output, "        TArray<{row_struct}> OutResults;");
-                    writeln!(output);
-                    writeln!(output, "        LocalCache->FindByMultiKeyBTreeIndex<{tuple_type}>(");
-                    writeln!(output, "            OutResults,");
-                    writeln!(output, "            TEXT(\"{}\"),", accessor_name.deref());
-                    writeln!(output, "            MakeTuple({param_names})");
-                    writeln!(output, "        );");
-                    writeln!(output);
-                    writeln!(output, "        return OutResults;");
-                    writeln!(output, "    }}");
-                    writeln!(output);
-
+                    writeln!(output, "private:");
+                    writeln!(output, "    // Declare an instance of your templated helper.");
                     writeln!(
                         output,
-                        "    void SetCache(TSharedPtr<FTableCache<{row_struct}>> InCache)"
+                        "    // It's private because the UObject wrapper will expose its functionality."
                     );
-                    writeln!(output, "    {{");
-                    writeln!(output, "        LocalCache = InCache;");
+                    writeln!(
+                            output,
+                            "    FUniqueIndexHelper<{row_struct}, {key_type}, FTableCache<{row_struct}>> {index_name}IndexHelper;"
+                        );
+                    writeln!(output);
+                    writeln!(output, "public:");
+                    writeln!(output, "    {index_class_name}()");
+                    writeln!(
+                        output,
+                        "        // Initialize the helper with the specific unique index name"
+                    );
+                    writeln!(output, "        : {index_name}IndexHelper(\"{}\") {{", f_name.deref());
                     writeln!(output, "    }}");
                     writeln!(output);
-                    writeln!(output, "private:");
+                    writeln!(output, "    /**");
+                    writeln!(
+                        output,
+                        "     * Finds a {table_pascal} by their unique {field_name_lowercase}."
+                    );
+                    writeln!(output, "     * @param Key The {field_name_lowercase} to search for.");
+                    writeln!(
+                        output,
+                        "     * @return The found {row_struct}, or a default-constructed {row_struct} if not found."
+                    );
+                    writeln!(output, "     */");
 
-                    // Check if all parameter types are Blueprint-compatible
-                    let all_blueprintable = column_info
-                        .iter()
-                        .all(|(_, _, _, f_ty, _)| is_blueprintable(module, f_ty));
-
-                    if all_blueprintable {
-                        writeln!(output, "    UFUNCTION(BlueprintCallable)");
+                    // Only mark as BlueprintCallable if the key type is Blueprint-compatible
+                    if is_blueprintable(module, f_ty) {
+                        writeln!(
+                            output,
+                            "    UFUNCTION(BlueprintCallable, Category = \"SpacetimeDB|{table_pascal}Index\")"
+                        );
                     } else {
-                        writeln!(output, "    // NOTE: Not exposed to Blueprint because some parameter types are not Blueprint-compatible");
+                        writeln!(
+                                output,
+                                "    // NOTE: Not exposed to Blueprint because {key_type} types are not Blueprint-compatible"
+                            );
                     }
 
-                    writeln!(
-                        output,
-                        "    void {filter_method_name}(TArray<{row_struct}>& OutResults, {method_params})"
-                    );
+                    writeln!(output, "    {row_struct} Find({key_type} Key)");
                     writeln!(output, "    {{");
-                    writeln!(output, "        OutResults = Filter({param_names});");
+                    writeln!(output, "        // Simply delegate the call to the internal helper");
+                    writeln!(output, "        return {index_name}IndexHelper.FindUniqueIndex(Key);");
                     writeln!(output, "    }}");
                     writeln!(output);
-
-                    writeln!(output, "    TSharedPtr<FTableCache<{row_struct}>> LocalCache;");
+                    writeln!(
+                        output,
+                        "    // A public setter to provide the cache to the helper after construction"
+                    );
+                    writeln!(output, "    // This is a common pattern when the cache might be created or provided by another system.");
+                    writeln!(
+                        output,
+                        "    void SetCache(TSharedPtr<const FTableCache<{row_struct}>> In{table_pascal}Cache)"
+                    );
+                    writeln!(output, "    {{");
+                    writeln!(output, "        {index_name}IndexHelper.Cache = In{table_pascal}Cache;");
+                    writeln!(output, "    }}");
                     writeln!(output, "}};");
+                    writeln!(output, "/***/");
                     writeln!(output);
 
-                    // Store information for PostInitialize generation
-                    let property_name = accessor_name.deref().to_case(Case::Pascal);
-                    multi_key_indexes.push((property_name, index_class_name));
+                    unique_indexes.push((index_name, index_class_name, field_type, f_name.deref().to_string()));
                 }
+            }
+            // Handle non-unique BTree indexes
+            else {
+                // Generate non-unique BTree index class
+                let _index_name = accessor_name.deref().to_case(Case::Pascal);
+                let index_class_name = format!("U{table_pascal}{_index_name}Index");
+
+                // Get column information
+                let column_info: Vec<_> = columns
+                    .iter()
+                    .map(|col| {
+                        let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                        let field_name = f_name.deref().to_case(Case::Pascal);
+                        let field_type = cpp_ty_fmt_with_module(module, f_ty, self.module_name).to_string();
+                        let param_type = format!("const {field_type}&");
+
+                        (field_name, field_type, param_type, f_ty, f_name.deref().to_string())
+                    })
+                    .collect();
+
+                // Create filter method name by concatenating column names
+                let filter_method_name = format!(
+                    "Filter{}",
+                    column_info
+                        .iter()
+                        .map(|(name, _, _, _, _)| name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("")
+                );
+
+                // Create parameter list for methods
+                let method_params = column_info
+                    .iter()
+                    .map(|(field_name, _, param_type, _, _)| format!("{param_type} {field_name}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Create parameter names for internal call
+                let param_names = column_info
+                    .iter()
+                    .map(|(field_name, _, _, _, _)| field_name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // Create TTuple type for FindByMultiKeyBTreeIndex
+                let tuple_types = column_info
+                    .iter()
+                    .map(|(_, field_type, _, _, _)| field_type.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                // This is a potential bug in the original code, but keeping it as is for now
+                // Originally Arvikasoft had if column_info.len() == 1 { format!("TTuple<{tuple_types}>"); } else { format!("TTuple<{tuple_types}>"); }
+                // This makes no sense since both branches are the same
+                let tuple_type = format!("TTuple<{tuple_types}>");
+
+                writeln!(output, "UCLASS(Blueprintable)");
+                writeln!(output, "class {index_class_name} : public UObject");
+                writeln!(output, "{{");
+                writeln!(output, "    GENERATED_BODY()");
+                writeln!(output);
+                writeln!(output, "public:");
+
+                writeln!(output, "    TArray<{row_struct}> Filter({method_params}) const");
+                writeln!(output, "    {{");
+                writeln!(output, "        TArray<{row_struct}> OutResults;");
+                writeln!(output);
+                writeln!(output, "        LocalCache->FindByMultiKeyBTreeIndex<{tuple_type}>(");
+                writeln!(output, "            OutResults,");
+                writeln!(output, "            TEXT(\"{}\"),", accessor_name.deref());
+                writeln!(output, "            MakeTuple({param_names})");
+                writeln!(output, "        );");
+                writeln!(output);
+                writeln!(output, "        return OutResults;");
+                writeln!(output, "    }}");
+                writeln!(output);
+
+                writeln!(
+                    output,
+                    "    void SetCache(TSharedPtr<FTableCache<{row_struct}>> InCache)"
+                );
+                writeln!(output, "    {{");
+                writeln!(output, "        LocalCache = InCache;");
+                writeln!(output, "    }}");
+                writeln!(output);
+                writeln!(output, "private:");
+
+                // Check if all parameter types are Blueprint-compatible
+                let all_blueprintable = column_info
+                    .iter()
+                    .all(|(_, _, _, f_ty, _)| is_blueprintable(module, f_ty));
+
+                if all_blueprintable {
+                    writeln!(output, "    UFUNCTION(BlueprintCallable)");
+                } else {
+                    writeln!(output, "    // NOTE: Not exposed to Blueprint because some parameter types are not Blueprint-compatible");
+                }
+
+                writeln!(
+                    output,
+                    "    void {filter_method_name}(TArray<{row_struct}>& OutResults, {method_params})"
+                );
+                writeln!(output, "    {{");
+                writeln!(output, "        OutResults = Filter({param_names});");
+                writeln!(output, "    }}");
+                writeln!(output);
+
+                writeln!(output, "    TSharedPtr<FTableCache<{row_struct}>> LocalCache;");
+                writeln!(output, "}};");
+                writeln!(output);
+
+                // Store information for PostInitialize generation
+                let property_name = accessor_name.deref().to_case(Case::Pascal);
+                multi_key_indexes.push((property_name, index_class_name));
             }
         }
 
@@ -442,7 +442,8 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{type_str} {param_pascal}");
+            let init_str = cpp_ty_init_fmt_impl(module, param_type);
+            let field_decl = format!("{type_str} {param_pascal}{init_str}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -570,7 +571,8 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &reducer.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{type_str} {param_pascal}");
+            let init_str = cpp_ty_init_fmt_impl(module, param_type);
+            let field_decl = format!("{type_str} {param_pascal}{init_str}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -643,7 +645,8 @@ impl Lang for UnrealCpp<'_> {
         for (param_name, param_type) in &procedure.params_for_generate.elements {
             let param_pascal = param_name.deref().to_case(Case::Pascal);
             let type_str = cpp_ty_fmt_with_module(module, param_type, self.module_name).to_string();
-            let field_decl = format!("{type_str} {param_pascal}");
+            let init_str = cpp_ty_init_fmt_impl(module, param_type);
+            let field_decl = format!("{type_str} {param_pascal}{init_str}");
 
             // Check if the type is blueprintable
             if is_blueprintable(module, param_type) {
@@ -766,7 +769,7 @@ impl Lang for UnrealCpp<'_> {
         let mut files: Vec<OutputFile> = vec![];
 
         // First, collect and generate all optional types
-        let optional_types = collect_optional_types(module);
+        let (optional_types, result_types) = collect_wrapper_types(module);
         for optional_name in optional_types {
             let module_name = &self.module_name;
             let module_name_pascal = module_name.to_case(Case::Pascal);
@@ -774,6 +777,20 @@ impl Lang for UnrealCpp<'_> {
                 format!("Source/{module_name}/Public/ModuleBindings/Optionals/{module_name_pascal}{optional_name}.g.h");
 
             let content = generate_optional_type(&optional_name, module, &self.get_api_macro(), self.module_name);
+            files.push(OutputFile {
+                filename,
+                code: content,
+            });
+        }
+
+        for (ok_name, error_name) in result_types {
+            let module_name = &self.module_name;
+            let module_name_pascal = module_name.to_case(Case::Pascal);
+            let filename = format!(
+                "Source/{module_name}/Public/ModuleBindings/Results/{module_name_pascal}Result{ok_name}{error_name}.g.h"
+            );
+
+            let content = generate_result_type(&ok_name, &error_name, module, &self.get_api_macro(), self.module_name);
             files.push(OutputFile {
                 filename,
                 code: content,
@@ -1034,38 +1051,39 @@ fn generate_table_cpp(module: &ModuleDef, table: &TableDef, module_name: &str, s
         let Some(accessor_name) = idx.accessor_name.as_ref() else {
             continue;
         };
-        if let IndexAlgorithm::BTree(BTreeAlgorithm { columns }) = &idx.algorithm {
-            if schema.is_unique(columns) {
-                if let Some(col) = columns.as_singleton() {
-                    let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                    let _field_name = f_name.deref().to_case(Case::Pascal);
-                    let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
-                    let index_name = accessor_name.deref().to_case(Case::Pascal);
-                    unique_indexes.push((index_name, field_type, f_name.deref().to_string()));
-                }
-            } else {
-                // Non-unique BTree index
+        // Whatever the index algorithm on the host,
+        // the client can still use btrees.
+        let columns = idx.algorithm.columns();
+        if schema.is_unique(&columns) {
+            if let Some(col) = columns.as_singleton() {
+                let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                let _field_name = f_name.deref().to_case(Case::Pascal);
+                let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
                 let index_name = accessor_name.deref().to_case(Case::Pascal);
-                let index_class_name = format!("U{table_pascal}{index_name}Index");
-
-                // Collect column information for AddMultiKeyBTreeIndex call
-                let column_info: Vec<_> = columns
-                    .iter()
-                    .map(|col| {
-                        let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
-                        let field_name = f_name.deref().to_case(Case::Pascal);
-                        let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
-                        (field_name, field_type)
-                    })
-                    .collect();
-
-                multi_key_indexes.push((
-                    index_name,
-                    index_class_name,
-                    accessor_name.deref().to_string(),
-                    column_info,
-                ));
+                unique_indexes.push((index_name, field_type, f_name.deref().to_string()));
             }
+        } else {
+            // Non-unique BTree index
+            let index_name = accessor_name.deref().to_case(Case::Pascal);
+            let index_class_name = format!("U{table_pascal}{index_name}Index");
+
+            // Collect column information for AddMultiKeyBTreeIndex call
+            let column_info: Vec<_> = columns
+                .iter()
+                .map(|col| {
+                    let (f_name, f_ty) = &product_type.unwrap().elements[col.idx()];
+                    let field_name = f_name.deref().to_case(Case::Pascal);
+                    let field_type = cpp_ty_fmt_with_module(module, f_ty, module_name).to_string();
+                    (field_name, field_type)
+                })
+                .collect();
+
+            multi_key_indexes.push((
+                index_name,
+                index_class_name,
+                accessor_name.deref().to_string(),
+                column_info,
+            ));
         }
     }
 
@@ -2505,10 +2523,17 @@ fn generate_remote_reducers_class(
         writeln!(output, ");");
         writeln!(output);
 
-        // Generate invoke method
+        // Generate invoke method (UObject version - kept for backwards compatibility)
         write!(
             output,
             "    bool Invoke{reducer_pascal}(const FReducerEventContext& Context, const U{reducer_pascal}Reducer* Args);"
+        );
+        writeln!(output);
+
+        // Generate invoke method (FArgs version - zero allocation, used internally)
+        write!(
+            output,
+            "    bool Invoke{reducer_pascal}WithArgs(const FReducerEventContext& Context, const F{reducer_pascal}Args& Args);"
         );
         writeln!(output);
         writeln!(output);
@@ -3187,18 +3212,13 @@ fn generate_client_implementation(output: &mut UnrealCppAutogen, module: &Module
             output,
             "        F{reducer_pascal}Args Args = ReducerEvent.Reducer.GetAs{reducer_pascal}();"
         );
+        // FIX: Pass FArgs directly to InvokeWithArgs instead of creating UReducer UObject.
+        // UObject creation/destruction cannot keep up at 30Hz tick rate, causing memory leak.
+        // Stack-allocated FArgs struct has zero allocation overhead.
         writeln!(
             output,
-            "        U{reducer_pascal}Reducer* Reducer = NewObject<U{reducer_pascal}Reducer>();"
+            "        Reducers->Invoke{reducer_pascal}WithArgs(Context, Args);"
         );
-
-        // Copy fields from Args struct to Reducer object
-        for (param_name, _) in &reducer.params_for_generate.elements {
-            let param_pascal = param_name.deref().to_case(Case::Pascal);
-            writeln!(output, "        Reducer->{param_pascal} = Args.{param_pascal};");
-        }
-
-        writeln!(output, "        Reducers->Invoke{reducer_pascal}(Context, Reducer);");
         writeln!(output, "        return;");
         writeln!(output, "    }}");
     }
@@ -3702,6 +3722,44 @@ fn generate_remote_reducer_calls(output: &mut UnrealCppAutogen, module: &ModuleD
         writeln!(output, "    return true;");
         writeln!(output, "}}");
         writeln!(output);
+
+        // InvokeWithArgs method implementation (zero allocation version)
+        write!(
+            output,
+            "bool URemoteReducers::Invoke{reducer_pascal}WithArgs(const FReducerEventContext& Context, const F{reducer_pascal}Args& Args)"
+        );
+        writeln!(output);
+        writeln!(output, "{{");
+        writeln!(output, "    if (!On{reducer_pascal}.IsBound())");
+        writeln!(output, "    {{");
+        writeln!(output, "        if (InternalOnUnhandledReducerError.IsBound())");
+        writeln!(output, "        {{");
+        writeln!(
+            output,
+            "            InternalOnUnhandledReducerError.Broadcast(Context, TEXT(\"No handler registered for {reducer_pascal}\"));"
+        );
+        writeln!(output, "        }}");
+        writeln!(output, "        return false;");
+        writeln!(output, "    }}");
+        writeln!(output);
+
+        // Check if we're using args struct (more than 9 params including context)
+        if use_args_struct {
+            // Pass args struct directly
+            writeln!(output, "    On{reducer_pascal}.Broadcast(Context, Args);");
+        } else {
+            // Use individual parameters from Args struct
+            write!(output, "    On{reducer_pascal}.Broadcast(Context");
+            for (param_name, _) in &reducer.params_for_generate.elements {
+                let param_pascal = param_name.deref().to_case(Case::Pascal);
+                write!(output, ", Args.{param_pascal}");
+            }
+            writeln!(output, ");");
+        }
+
+        writeln!(output, "    return true;");
+        writeln!(output, "}}");
+        writeln!(output);
     }
 }
 
@@ -3869,33 +3927,49 @@ impl UnrealCppAutogen {
 //  Helpers
 // ---------------------------------------------------------------------------
 
-fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
+// Unified helper function to collect special wrapper types (optionals and results)
+fn collect_wrapper_types(module: &ModuleDef) -> (HashSet<String>, HashSet<(String, String)>) {
     let mut optional_types = HashSet::new();
+    let mut result_types = HashSet::new();
 
-    // Helper function to collect from a type
-    fn collect_from_type(module: &ModuleDef, ty: &AlgebraicTypeUse, out: &mut HashSet<String>) {
+    // Helper function to recursively collect from a type
+    fn collect_from_type(
+        module: &ModuleDef,
+        ty: &AlgebraicTypeUse,
+        optional_types: &mut HashSet<String>,
+        result_types: &mut HashSet<(String, String)>,
+    ) {
         match ty {
             AlgebraicTypeUse::Option(inner) => {
                 // Generate the optional type name
                 let optional_name = get_optional_type_name(module, inner);
-                out.insert(optional_name);
+                optional_types.insert(optional_name);
                 // Recursively collect from inner type
-                collect_from_type(module, inner, out);
+                collect_from_type(module, inner, optional_types, result_types);
+            }
+            AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+                // Generate the result type name components
+                let ok_name = get_type_name_for_result(module, ok_ty);
+                let err_name = get_type_name_for_result(module, err_ty);
+                result_types.insert((ok_name, err_name));
+                // Recursively collect from both inner types
+                collect_from_type(module, ok_ty, optional_types, result_types);
+                collect_from_type(module, err_ty, optional_types, result_types);
             }
             AlgebraicTypeUse::Array(elem) => {
-                collect_from_type(module, elem, out);
+                collect_from_type(module, elem, optional_types, result_types);
             }
             AlgebraicTypeUse::Ref(r) => {
-                // Check if the referenced type contains optionals
+                // Check if the referenced type contains optionals or results
                 match &module.typespace_for_generate()[*r] {
                     AlgebraicTypeDef::Product(product) => {
                         for (_, field_ty) in &product.elements {
-                            collect_from_type(module, field_ty, out);
+                            collect_from_type(module, field_ty, optional_types, result_types);
                         }
                     }
                     AlgebraicTypeDef::Sum(sum) => {
                         for (_, variant_ty) in &sum.variants {
-                            collect_from_type(module, variant_ty, out);
+                            collect_from_type(module, variant_ty, optional_types, result_types);
                         }
                     }
                     _ => {}
@@ -3909,7 +3983,7 @@ fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
     for (_, product_type_ref) in iter_table_names_and_types(module) {
         let product_type = module.typespace_for_generate()[product_type_ref].as_product().unwrap();
         for (_, field_ty) in &product_type.elements {
-            collect_from_type(module, field_ty, &mut optional_types);
+            collect_from_type(module, field_ty, &mut optional_types, &mut result_types);
         }
     }
 
@@ -3918,12 +3992,12 @@ fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
         match &module.typespace_for_generate()[typ.ty] {
             AlgebraicTypeDef::Product(product) => {
                 for (_, field_ty) in &product.elements {
-                    collect_from_type(module, field_ty, &mut optional_types);
+                    collect_from_type(module, field_ty, &mut optional_types, &mut result_types);
                 }
             }
             AlgebraicTypeDef::Sum(sum) => {
                 for (_, variant_ty) in &sum.variants {
-                    collect_from_type(module, variant_ty, &mut optional_types);
+                    collect_from_type(module, variant_ty, &mut optional_types, &mut result_types);
                 }
             }
             _ => {}
@@ -3933,22 +4007,28 @@ fn collect_optional_types(module: &ModuleDef) -> HashSet<String> {
     // Collect from reducer parameters
     for reducer in iter_reducers(module) {
         for (_, param_ty) in &reducer.params_for_generate.elements {
-            collect_from_type(module, param_ty, &mut optional_types);
+            collect_from_type(module, param_ty, &mut optional_types, &mut result_types);
         }
     }
 
-    // Collect from procedure parameters
+    // Collect from procedure parameters and return types
     for procedure in iter_procedures(module) {
         for (_, param_ty) in &procedure.params_for_generate.elements {
-            collect_from_type(module, param_ty, &mut optional_types);
+            collect_from_type(module, param_ty, &mut optional_types, &mut result_types);
         }
-        collect_from_type(module, &procedure.return_type_for_generate, &mut optional_types);
+        collect_from_type(
+            module,
+            &procedure.return_type_for_generate,
+            &mut optional_types,
+            &mut result_types,
+        );
     }
-    optional_types
+
+    (optional_types, result_types)
 }
 
 // Helper function to get C++ type for array elements in optional arrays
-fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_name: &str) -> String {
+fn get_cpp_type_for_array_element(elem_type_str: &str, module: &ModuleDef, module_name: &str) -> String {
     match elem_type_str {
         "Bool" => "bool".to_string(),
         "I8" | "Int8" => "int8".to_string(),
@@ -3978,7 +4058,25 @@ fn get_cpp_type_for_array_element(elem_type_str: &str, _: &ModuleDef, module_nam
             format!("F{module_name_pascal}OptionalInt32")
         }
         _ => {
-            format!("E{elem_type_str}Type")
+            let is_enum = module.types().any(|type_def| {
+                let type_name = type_def
+                    .name
+                    .name_segments()
+                    .last()
+                    .map(|id| id.deref().to_string())
+                    .unwrap_or_else(|| "Unnamed".to_string());
+                type_name == elem_type_str
+                    && matches!(
+                        module.typespace_for_generate()[type_def.ty],
+                        AlgebraicTypeDef::PlainEnum(_)
+                    )
+            });
+
+            if is_enum {
+                format!("E{elem_type_str}Type")
+            } else {
+                format!("F{elem_type_str}Type")
+            }
         }
     }
 }
@@ -4014,6 +4112,10 @@ fn get_array_element_type_name(module: &ModuleDef, elem: &AlgebraicTypeUse) -> S
         AlgebraicTypeUse::Option(nested_inner) => {
             // Handle optional elements in arrays like Vec<Option<i32>>
             get_optional_type_name(module, nested_inner)
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            // Handle result elements in arrays like Vec<Result<i32, String>>
+            get_result_type_name(module, ok_ty, err_ty)
         }
         _ => "Unknown".to_string(),
     }
@@ -4060,17 +4162,17 @@ fn get_optional_type_name(module: &ModuleDef, inner: &AlgebraicTypeUse) -> Strin
             let inner_optional_name = get_optional_type_name(module, nested_inner);
             format!("Optional{inner_optional_name}")
         }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            let result_name = get_result_type_name(module, ok_ty, err_ty);
+            format!("Optional{result_name}")
+        }
         _ => "OptionalUnknown".to_string(),
     }
 }
 
-// Generate the content for an optional type file
-fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &str, module_name: &str) -> String {
-    // Extract the inner type from the optional name
-    let inner_type_str = optional_name.strip_prefix("Optional").unwrap_or(optional_name);
-
-    // Determine the C++ type for the inner value
-    let cpp_inner_type = match inner_type_str {
+// Helper function to determine C++ type from type name string for result types
+fn determine_cpp_type_for_result(type_name: &str, module: &ModuleDef, module_name: &str) -> String {
+    match type_name {
         "Bool" => "bool".to_string(),
         "Int8" => "int8".to_string(),
         "UInt8" => "uint8".to_string(),
@@ -4091,36 +4193,41 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
         "ConnectionId" => "FSpacetimeDBConnectionId".to_string(),
         "Timestamp" => "FSpacetimeDBTimestamp".to_string(),
         "TimeDuration" => "FSpacetimeDBTimeDuration".to_string(),
-        "ScheduleAt" => "FSpacetimeDBScheduleAt".to_string(),
         "Uuid" => "FSpacetimeDBUuid".to_string(),
-        "Array" => "TArray<uint8>".to_string(), // Fallback for generic array type (should not be used with new system)
-        _ if inner_type_str.starts_with("Optional") => {
-            // Handle nested optionals like OptionalOptionalString
+        "ScheduleAt" => "FSpacetimeDBScheduleAt".to_string(),
+        "Unit" => "FSpacetimeDBUnit".to_string(),
+        _ if type_name.starts_with("Optional") => {
+            // Handle optional types like OptionalString
             let module_name_pascal = module_name.to_case(Case::Pascal);
-            format!("F{module_name_pascal}{inner_type_str}")
+            format!("F{module_name_pascal}{type_name}")
         }
-        _ if inner_type_str.starts_with("VecOptional") => {
+        _ if type_name.starts_with("VecOptional") => {
             // Handle specific optional array types like OptionalVecOptionalI32, OptionalVecOptionalString, etc.
-            let elem_type_str = &inner_type_str[11..]; // Remove "VecOptional" prefix
+            let elem_type_str = &type_name[11..]; // Remove "VecOptional" prefix
             let module_name_pascal = module_name.to_case(Case::Pascal);
             format!("TArray<F{module_name_pascal}Optional{elem_type_str}>")
         }
-        _ if inner_type_str.starts_with("Vec") => {
-            // Handle OptionalVecXxx -> should use TArray<FModuleOptionalXxx>
-            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
+        _ if type_name.starts_with("Vec") => {
+            // Handle array types like VecInt32
+            let elem_type_str = &type_name[3..]; // Remove "Vec" prefix
             let cpp_elem_type = get_cpp_type_for_array_element(elem_type_str, module, module_name);
             format!("TArray<{cpp_elem_type}>")
+        }
+        _ if type_name.starts_with("Result") => {
+            // Handle nested result types
+            let module_name_pascal = module_name.to_case(Case::Pascal);
+            format!("F{module_name_pascal}{type_name}")
         }
         _ => {
             // For custom types, check if it's an enum or struct
             let is_enum = module.types().any(|type_def| {
-                let type_name = type_def
+                let type_name_from_def = type_def
                     .name
                     .name_segments()
                     .last()
                     .map(|id| id.deref().to_string())
                     .unwrap_or_else(|| "Unnamed".to_string());
-                type_name == inner_type_str
+                type_name_from_def == type_name
                     && matches!(
                         module.typespace_for_generate()[type_def.ty],
                         AlgebraicTypeDef::PlainEnum(_)
@@ -4128,45 +4235,98 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
             });
 
             if is_enum {
-                format!("E{inner_type_str}Type")
+                format!("E{type_name}Type")
             } else {
-                format!("F{inner_type_str}Type")
+                format!("F{type_name}Type")
             }
         }
-    };
+    }
+}
 
-    // Determine if we need extra includes
-    let mut extra_includes = vec![];
-    match inner_type_str {
+// Helper function to check if a type name is blueprintable
+fn is_type_name_blueprintable(type_name: &str) -> bool {
+    match type_name {
+        // Non-blueprintable primitive types
+        "Int8" | "Int16" | "UInt16" | "UInt32" | "UInt64" => false,
+
+        // Blueprintable types
+        "Bool" | "Int32" | "Int64" | "Float" | "Double" | "String" | "Identity" | "ConnectionId" | "Timestamp"
+        | "TimeDuration" | "ScheduleAt" | "Int128" | "UInt128" | "Int256" | "UInt256" | "Unit" => true,
+
+        // Optional types - check the inner type
+        _ if type_name.starts_with("Optional") => {
+            let inner_type = &type_name[8..]; // Remove "Optional" prefix
+            is_type_name_blueprintable(inner_type)
+        }
+
+        // Result types - both Ok and Err types must be blueprintable
+        // Parse ResultXXXYYY to extract both type names
+        _ if type_name.starts_with("Result") => {
+            // This is complex - we'd need to parse "ResultInt32String" into "Int32" and "String"
+            // For now, be conservative and return true since Result wrapper itself is a USTRUCT
+            // The individual fields will have their own blueprintable checks
+            true
+        }
+
+        // Vec types - arrays are blueprintable if element is blueprintable
+        _ if type_name.starts_with("Vec") => {
+            let elem_type = &type_name[3..]; // Remove "Vec" prefix
+            is_type_name_blueprintable(elem_type)
+        }
+
+        // Custom types (structs/enums) are always blueprintable
+        _ => true,
+    }
+}
+
+// Helper function to add includes for a type name
+fn add_includes_for_type_name(type_name: &str, includes: &mut Vec<String>, module_name: &str) {
+    match type_name {
         "Identity" | "ConnectionId" | "Timestamp" | "TimeDuration" | "ScheduleAt" | "Uuid" => {
-            extra_includes.push("Types/Builtins.h".to_string());
+            includes.push("Types/Builtins.h".to_string());
         }
         "Int128" | "UInt128" | "Int256" | "UInt256" => {
-            extra_includes.push("Types/LargeIntegers.h".to_string());
+            includes.push("Types/LargeIntegers.h".to_string());
+        }
+        "Unit" => {
+            includes.push("Types/UnitType.h".to_string());
         }
         "String" | "Bool" | "Int8" | "UInt8" | "Int16" | "UInt16" | "Int32" | "UInt32" | "Int64" | "UInt64"
-        | "Float" | "Double" | "Array" => {
+        | "Float" | "Double" => {
             // Basic types, no extra includes needed
         }
-        _ if inner_type_str.starts_with("Vec") => {
-            // Not required
+        _ if type_name.starts_with("Vec") => {
+            // Array types - no extra include needed for TArray itself
         }
-        _ if inner_type_str.starts_with("OptionalVec") => {
-            // Not required
-        }
-        _ if inner_type_str.starts_with("Optional") => {
+        _ if type_name.starts_with("Optional") => {
             // Nested optional, need its header
             let module_name_pascal = module_name.to_case(Case::Pascal);
-            extra_includes.push(format!(
-                "ModuleBindings/Optionals/{module_name_pascal}{inner_type_str}.g.h"
-            ));
+            includes.push(format!("ModuleBindings/Optionals/{module_name_pascal}{type_name}.g.h"));
         }
-        _ if !inner_type_str.starts_with("Int") && !inner_type_str.starts_with("UInt") => {
+        _ if type_name.starts_with("Result") => {
+            // Nested result, need its header
+            let module_name_pascal = module_name.to_case(Case::Pascal);
+            includes.push(format!("ModuleBindings/Results/{module_name_pascal}{type_name}.g.h"));
+        }
+        _ if !type_name.starts_with("Int") && !type_name.starts_with("UInt") => {
             // Custom type, need its header
-            extra_includes.push(format!("ModuleBindings/Types/{inner_type_str}Type.g.h"));
+            includes.push(format!("ModuleBindings/Types/{type_name}Type.g.h"));
         }
         _ => {}
     }
+}
+
+// Generate the content for an optional type file
+fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &str, module_name: &str) -> String {
+    // Extract the inner type from the optional name
+    let inner_type_str = optional_name.strip_prefix("Optional").unwrap_or(optional_name);
+
+    // Determine the C++ type for the inner value
+    let cpp_inner_type = determine_cpp_type_for_result(inner_type_str, module, module_name);
+
+    // Determine if we need extra includes
+    let mut extra_includes = vec![];
+    add_includes_for_type_name(inner_type_str, &mut extra_includes, module_name);
 
     let extra_includes_refs: Vec<&str> = extra_includes.iter().map(|s| s.as_str()).collect();
     let module_name_pascal = module_name.to_case(Case::Pascal);
@@ -4191,26 +4351,7 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
 
     // The actual value
     // Check if the type is blueprintable
-    let is_blueprintable = match inner_type_str {
-        "UInt16" | "UInt32" | "UInt64" => false,
-        _ if inner_type_str.starts_with("Vec") => {
-            // Check blueprintability of array element type for VecXxx types
-            let elem_type_str = &inner_type_str[3..]; // Remove "Vec" prefix
-            match elem_type_str {
-                "UInt16" | "UInt32" | "UInt64" => false, // Unsigned types are not blueprintable
-                _ => true,
-            }
-        }
-        _ if inner_type_str.starts_with("OptionalVec") => {
-            // Check blueprintability of array element type
-            let elem_type_str = &inner_type_str[11..]; // Remove "OptionalVec" prefix
-            match elem_type_str {
-                "U16" | "U32" | "U64" => false, // Unsigned types are not blueprintable
-                _ => true,
-            }
-        }
-        _ => true,
-    };
+    let is_blueprintable = is_type_name_blueprintable(inner_type_str);
 
     if is_blueprintable {
         writeln!(output, "UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"SpacetimeDB\", meta = (EditCondition = \"bHasValue\"))");
@@ -4292,6 +4433,253 @@ fn generate_optional_type(optional_name: &str, module: &ModuleDef, api_macro: &s
     output.into_inner()
 }
 
+// Get the name for a result type (e.g., "ResultStringString", "ResultInt32String")
+fn get_result_type_name(module: &ModuleDef, ok_ty: &AlgebraicTypeUse, err_ty: &AlgebraicTypeUse) -> String {
+    let ok_name = get_type_name_for_result(module, ok_ty);
+    let err_name = get_type_name_for_result(module, err_ty);
+    format!("Result{ok_name}{err_name}")
+}
+
+// Helper function to get the type name component for result types
+fn get_type_name_for_result(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
+    match ty {
+        AlgebraicTypeUse::Primitive(p) => match p {
+            PrimitiveType::Bool => "Bool".to_string(),
+            PrimitiveType::I8 => "Int8".to_string(),
+            PrimitiveType::U8 => "UInt8".to_string(),
+            PrimitiveType::I16 => "Int16".to_string(),
+            PrimitiveType::U16 => "UInt16".to_string(),
+            PrimitiveType::I32 => "Int32".to_string(),
+            PrimitiveType::U32 => "UInt32".to_string(),
+            PrimitiveType::I64 => "Int64".to_string(),
+            PrimitiveType::U64 => "UInt64".to_string(),
+            PrimitiveType::F32 => "Float".to_string(),
+            PrimitiveType::F64 => "Double".to_string(),
+            PrimitiveType::I128 => "Int128".to_string(),
+            PrimitiveType::U128 => "UInt128".to_string(),
+            PrimitiveType::I256 => "Int256".to_string(),
+            PrimitiveType::U256 => "UInt256".to_string(),
+        },
+        AlgebraicTypeUse::String => "String".to_string(),
+        AlgebraicTypeUse::Identity => "Identity".to_string(),
+        AlgebraicTypeUse::ConnectionId => "ConnectionId".to_string(),
+        AlgebraicTypeUse::Timestamp => "Timestamp".to_string(),
+        AlgebraicTypeUse::TimeDuration => "TimeDuration".to_string(),
+        AlgebraicTypeUse::ScheduleAt => "ScheduleAt".to_string(),
+        AlgebraicTypeUse::Uuid => "Uuid".to_string(),
+        AlgebraicTypeUse::Unit => "Unit".to_string(),
+        AlgebraicTypeUse::Array(elem) => {
+            // Generate specific array types based on element type
+            let elem_name = get_array_element_type_name(module, elem);
+            format!("Vec{elem_name}")
+        }
+        AlgebraicTypeUse::Ref(r) => type_ref_name(module, *r),
+        AlgebraicTypeUse::Option(inner) => {
+            // Handle optional types like Option<String>
+            let inner_name = get_type_name_for_result(module, inner);
+            format!("Optional{inner_name}")
+        }
+        AlgebraicTypeUse::Result { ok_ty, err_ty } => {
+            // Handle nested results like Result<Result<i32, String>, bool>
+            get_result_type_name(module, ok_ty, err_ty)
+        }
+        AlgebraicTypeUse::Never => "Never".to_string(),
+    }
+}
+
+// Generate the content for a result type file
+fn generate_result_type(
+    ok_type_name: &str,
+    err_type_name: &str,
+    module: &ModuleDef,
+    api_macro: &str,
+    module_name: &str,
+) -> String {
+    // Determine the C++ type for the ok value
+    let cpp_ok_type = determine_cpp_type_for_result(ok_type_name, module, module_name);
+
+    // Determine the C++ type for the err value
+    let cpp_err_type = determine_cpp_type_for_result(err_type_name, module, module_name);
+
+    // Determine if we need extra includes
+    let mut extra_includes = vec![];
+    add_includes_for_type_name(ok_type_name, &mut extra_includes, module_name);
+    add_includes_for_type_name(err_type_name, &mut extra_includes, module_name);
+
+    let extra_includes_refs: Vec<&str> = extra_includes.iter().map(|s| s.as_str()).collect();
+    let module_name_pascal = module_name.to_case(Case::Pascal);
+    let result_name = format!("Result{ok_type_name}{err_type_name}");
+    let struct_name = format!("F{module_name_pascal}{result_name}");
+    let header_name = format!("{module_name_pascal}{result_name}");
+    let mut output = UnrealCppAutogen::new(&extra_includes_refs, &header_name, false);
+
+    writeln!(output, "USTRUCT(BlueprintType)");
+    writeln!(output, "struct {api_macro} {struct_name}");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "GENERATED_BODY()");
+    writeln!(output);
+
+    // Is ok flag
+    writeln!(
+        output,
+        "UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"SpacetimeDB\")"
+    );
+    writeln!(output, "bool bIsOk = false;");
+    writeln!(output);
+
+    // The ok value
+    let is_ok_blueprintable = is_type_name_blueprintable(ok_type_name);
+    if is_ok_blueprintable {
+        writeln!(output, "UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"SpacetimeDB\", meta = (EditCondition = \"bIsOk\"))");
+    } else {
+        writeln!(
+            output,
+            "// NOTE: {cpp_ok_type} field not exposed to Blueprint due to non-blueprintable type"
+        );
+    }
+    writeln!(output, "{cpp_ok_type} OkValue;");
+    writeln!(output);
+
+    // The err value
+    let is_err_blueprintable = is_type_name_blueprintable(err_type_name);
+    if is_err_blueprintable {
+        writeln!(output, "UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = \"SpacetimeDB\", meta = (EditCondition = \"!bIsOk\"))");
+    } else {
+        writeln!(
+            output,
+            "// NOTE: {cpp_err_type} field not exposed to Blueprint due to non-blueprintable type"
+        );
+    }
+    writeln!(output, "{cpp_err_type} ErrValue;");
+    writeln!(output);
+
+    // Constructors
+    writeln!(output, "{struct_name}() = default;");
+    writeln!(output);
+
+    // Ok constructor
+    writeln!(output, "static {struct_name} Ok(const {cpp_ok_type}& InValue)");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "{struct_name} Result;");
+    writeln!(output, "Result.bIsOk = true;");
+    writeln!(output, "Result.OkValue = InValue;");
+    writeln!(output, "return Result;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output);
+
+    // Err constructor
+    writeln!(output, "static {struct_name} Err(const {cpp_err_type}& InValue)");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "{struct_name} Result;");
+    writeln!(output, "Result.bIsOk = false;");
+    writeln!(output, "Result.ErrValue = InValue;");
+    writeln!(output, "return Result;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output);
+
+    // Helper methods
+    writeln!(output, "bool IsOk() const {{ return bIsOk; }}");
+    writeln!(output, "bool IsErr() const {{ return !bIsOk; }}");
+    writeln!(output);
+
+    writeln!(output, "const {cpp_ok_type}& GetOk() const");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "check(bIsOk);");
+    writeln!(output, "return OkValue;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output);
+
+    writeln!(output, "const {cpp_err_type}& GetErr() const");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "check(!bIsOk);");
+    writeln!(output, "return ErrValue;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output);
+
+    // Operators
+    writeln!(output, "FORCEINLINE bool operator==(const {struct_name}& Other) const");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "if (bIsOk != Other.bIsOk) return false;");
+    writeln!(output, "if (bIsOk)");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "return OkValue == Other.OkValue;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output, "else");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "return ErrValue == Other.ErrValue;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output);
+
+    writeln!(output, "FORCEINLINE bool operator!=(const {struct_name}& Other) const");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "return !(*this == Other);");
+    output.dedent(1);
+    writeln!(output, "}}");
+
+    output.dedent(1);
+    writeln!(output, "}};");
+    writeln!(output);
+
+    // Add GetTypeHash implementation
+    writeln!(output, "/**");
+    writeln!(output, " * Custom hash function for {struct_name}.");
+    writeln!(output, " * Hashes the bIsOk flag and the appropriate value.");
+    writeln!(output, " * @param Result The {struct_name} instance to hash.");
+    writeln!(output, " * @return The combined hash value.");
+    writeln!(output, " */");
+    writeln!(output, "FORCEINLINE uint32 GetTypeHash(const {struct_name}& Result)");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "uint32 Hash = GetTypeHash(Result.bIsOk);");
+    writeln!(output, "if (Result.bIsOk)");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "Hash = HashCombine(Hash, GetTypeHash(Result.OkValue));");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output, "else");
+    writeln!(output, "{{");
+    output.indent(1);
+    writeln!(output, "Hash = HashCombine(Hash, GetTypeHash(Result.ErrValue));");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output, "return Hash;");
+    output.dedent(1);
+    writeln!(output, "}}");
+    writeln!(output);
+
+    // BSATN serialization support
+    writeln!(output, "namespace UE::SpacetimeDB");
+    writeln!(output, "{{");
+
+    writeln!(output, "    UE_SPACETIMEDB_ENABLE_TARRAY({struct_name});");
+    writeln!(output);
+    writeln!(
+        output,
+        "    UE_SPACETIMEDB_RESULT({struct_name}, bIsOk, OkValue, ErrValue);"
+    );
+    writeln!(output, "}}");
+
+    output.into_inner()
+}
+
 fn autogen_cpp_struct(
     module: &ModuleDef,
     name: &str, // Changed to &str
@@ -4323,7 +4711,7 @@ fn autogen_cpp_struct(
     for (orig_name, ty) in product_type.into_iter() {
         let field_name = orig_name.deref().to_case(Case::Pascal);
         let ty_str = cpp_ty_fmt_with_module(module, ty, module_name).to_string();
-        let init_str = cpp_ty_init_fmt_impl(ty);
+        let init_str = cpp_ty_init_fmt_impl(module, ty);
         let field_decl = format!("{ty_str} {field_name}{init_str}");
 
         // Check if the type is blueprintable
@@ -4983,8 +5371,8 @@ fn cpp_ty_fmt_impl<'a>(
         AlgebraicTypeUse::ConnectionId => f.write_str("FSpacetimeDBConnectionId"),
         AlgebraicTypeUse::Timestamp => f.write_str("FSpacetimeDBTimestamp"),
         AlgebraicTypeUse::TimeDuration => f.write_str("FSpacetimeDBTimeDuration"),
-        AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
         AlgebraicTypeUse::Uuid => f.write_str("FSpacetimeDBUuid"),
+        AlgebraicTypeUse::ScheduleAt => f.write_str("FSpacetimeDBScheduleAt"),
         AlgebraicTypeUse::Unit => f.write_str("FSpacetimeDBUnit"),
 
         // --------- references to user-defined types ---------
@@ -5010,54 +5398,75 @@ fn cpp_ty_fmt_impl<'a>(
 
         // Result use the generated result types
         AlgebraicTypeUse::Result { ok_ty, err_ty } => {
-            let ok_type = cpp_ty_fmt_impl(module, ok_ty, module_name).to_string();
-            let err_type = cpp_ty_fmt_impl(module, err_ty, module_name).to_string();
+            let ok_name = get_type_name_for_result(module, ok_ty);
+            let err_name = get_type_name_for_result(module, err_ty);
+            let module_name_pascal = module_name.to_case(Case::Pascal);
 
-            write!(f, "FSpacetimeDBResult<{ok_type}, {err_type}>")
+            write!(f, "F{module_name_pascal}Result{ok_name}{err_name}")
         }
 
         AlgebraicTypeUse::Never => unreachable!("never type"),
     })
 }
 
-// For UPROPERTY() Unreal expects initialization values for certain types
-// (e.g. bools default to true if not explicitly initialized to false).
-fn cpp_ty_init_fmt_impl<'a>(ty: &'a AlgebraicTypeUse) -> impl fmt::Display + 'a {
-    fmt_fn(move |f| match ty {
-        AlgebraicTypeUse::Primitive(p) => f.write_str(match p {
-            PrimitiveType::Bool => " = false",
-            PrimitiveType::I8 => " = 0",
-            PrimitiveType::U8 => " = 0",
-            PrimitiveType::I16 => " = 0",
-            PrimitiveType::U16 => " = 0",
-            PrimitiveType::I32 => " = 0",
-            PrimitiveType::U32 => " = 0",
-            PrimitiveType::I64 => " = 0",
-            PrimitiveType::U64 => " = 0",
-            PrimitiveType::F32 => " = 0.0f",
-            PrimitiveType::F64 => " = 0.0",
-            PrimitiveType::I128 => "",
-            PrimitiveType::U128 => "",
-            PrimitiveType::I256 => "",
-            PrimitiveType::U256 => "",
-        }),
-        AlgebraicTypeUse::Array(_elem) => f.write_str(""),
-        AlgebraicTypeUse::String => f.write_str(""),
-        AlgebraicTypeUse::Identity => f.write_str(""),
-        AlgebraicTypeUse::ConnectionId => f.write_str(""),
-        AlgebraicTypeUse::Timestamp => f.write_str(""),
-        AlgebraicTypeUse::TimeDuration => f.write_str(""),
-        AlgebraicTypeUse::ScheduleAt => f.write_str(""),
-        AlgebraicTypeUse::Uuid => f.write_str(""),
-        AlgebraicTypeUse::Unit => f.write_str(""),
+// For UPROPERTY() Unreal expects initialization values for certain types.
+// UE5 strict mode requires all UPROPERTY fields to be explicitly initialized,
+// otherwise the engine logs "property not initialized properly" errors.
+// This includes primitives (bool defaults to true if not initialized to false),
+// and enum types (must be initialized to a valid enum value).
+fn cpp_ty_init_fmt_impl(module: &ModuleDef, ty: &AlgebraicTypeUse) -> String {
+    match ty {
+        AlgebraicTypeUse::Primitive(p) => match p {
+            PrimitiveType::Bool => " = false".to_string(),
+            PrimitiveType::I8 => " = 0".to_string(),
+            PrimitiveType::U8 => " = 0".to_string(),
+            PrimitiveType::I16 => " = 0".to_string(),
+            PrimitiveType::U16 => " = 0".to_string(),
+            PrimitiveType::I32 => " = 0".to_string(),
+            PrimitiveType::U32 => " = 0".to_string(),
+            PrimitiveType::I64 => " = 0".to_string(),
+            PrimitiveType::U64 => " = 0".to_string(),
+            PrimitiveType::F32 => " = 0.0f".to_string(),
+            PrimitiveType::F64 => " = 0.0".to_string(),
+            PrimitiveType::I128 => String::new(),
+            PrimitiveType::U128 => String::new(),
+            PrimitiveType::I256 => String::new(),
+            PrimitiveType::U256 => String::new(),
+        },
+        AlgebraicTypeUse::Array(_elem) => String::new(),
+        AlgebraicTypeUse::String => String::new(),
+        AlgebraicTypeUse::Identity => String::new(),
+        AlgebraicTypeUse::ConnectionId => String::new(),
+        AlgebraicTypeUse::Timestamp => String::new(),
+        AlgebraicTypeUse::TimeDuration => String::new(),
+        AlgebraicTypeUse::ScheduleAt => String::new(),
+        AlgebraicTypeUse::Uuid => String::new(),
+        AlgebraicTypeUse::Unit => String::new(),
         // --------- references to user-defined types ---------
-        AlgebraicTypeUse::Ref(_r) => f.write_str(""),
+        AlgebraicTypeUse::Ref(r) => {
+            // Enum types must be initialized to a valid enum value in UE5.
+            // Use the first variant as the default value.
+            match &module.typespace_for_generate()[*r] {
+                AlgebraicTypeDef::PlainEnum(plain_enum) => {
+                    let type_name = type_ref_name(module, *r);
+                    if let Some(first_variant) = plain_enum.variants.first() {
+                        let variant_name = first_variant.deref().to_case(Case::Pascal);
+                        format!(" = E{type_name}Type::{variant_name}")
+                    } else {
+                        String::new()
+                    }
+                }
+                // Product and Sum types have proper default constructors
+                AlgebraicTypeDef::Product(_) => String::new(),
+                AlgebraicTypeDef::Sum(_) => String::new(),
+            }
+        }
         // Options use the generated optional types
-        AlgebraicTypeUse::Option(_inner) => f.write_str(""),
+        AlgebraicTypeUse::Option(_inner) => String::new(),
         // Result use the generated result types
-        AlgebraicTypeUse::Result { ok_ty: _, err_ty: _ } => f.write_str(""),
+        AlgebraicTypeUse::Result { ok_ty: _, err_ty: _ } => String::new(),
         AlgebraicTypeUse::Never => unreachable!("never type"),
-    })
+    }
 }
 
 // Given an `AlgebraicTypeUse`, add every referenced type’s generated
@@ -5085,7 +5494,10 @@ fn collect_includes_for_type(
         }
         Result { ok_ty, err_ty } => {
             // Add the result type header
-            out.insert("Types/Result.h".to_string());
+            let result_name = get_result_type_name(module, ok_ty, err_ty);
+            let module_name_pascal = module_name.to_case(Case::Pascal);
+            let header = format!("ModuleBindings/Results/{module_name_pascal}{result_name}.g.h");
+            out.insert(header);
             // Also collect includes for the ok and err types
             collect_includes_for_type(module, ok_ty, out, module_name);
             collect_includes_for_type(module, err_ty, out, module_name);

@@ -6,7 +6,6 @@ slug: /functions/reducers/error-handling
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Error Handling & Context
 
 ## Error Handling
 
@@ -17,54 +16,6 @@ Reducers distinguish between two types of errors:
 Errors caused by invalid client input. These are expected and should be handled gracefully.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
-
-Return an error:
-
-```rust
-#[reducer]
-pub fn transfer_credits(
-    ctx: &ReducerContext,
-    to_user: u64,
-    amount: u32
-) -> Result<(), String> {
-    let from_balance = ctx.db.users().id().find(ctx.sender.identity)
-        .ok_or("User not found");
-    
-    if from_balance.credits < amount {
-        return Err("Insufficient credits".to_string());
-    }
-    
-    // ... perform transfer
-    Ok(())
-}
-```
-
-</TabItem>
-<TabItem value="csharp" label="C#">
-
-Throw an exception:
-
-```csharp
-[SpacetimeDB.Reducer]
-public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
-{
-    var fromUser = ctx.Db.users.Id.Find(ctx.Sender);
-    if (fromUser == null)
-    {
-        throw new InvalidOperationException("User not found");
-    }
-    
-    if (fromUser.Value.Credits < amount)
-    {
-        throw new InvalidOperationException("Insufficient credits");
-    }
-    
-    // ... perform transfer
-}
-```
-
-</TabItem>
 <TabItem value="typescript" label="TypeScript">
 
 Throw a `SenderError`:
@@ -102,6 +53,54 @@ spacetimedb.reducer('transfer_credits',
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+Throw an exception:
+
+```csharp
+[SpacetimeDB.Reducer]
+public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
+{
+    var fromUser = ctx.Db.users.Id.Find(ctx.Sender);
+    if (fromUser == null)
+    {
+        throw new InvalidOperationException("User not found");
+    }
+    
+    if (fromUser.Value.Credits < amount)
+    {
+        throw new InvalidOperationException("Insufficient credits");
+    }
+    
+    // ... perform transfer
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+Return an error:
+
+```rust
+#[reducer]
+pub fn transfer_credits(
+    ctx: &ReducerContext,
+    to_user: u64,
+    amount: u32
+) -> Result<(), String> {
+    let from_balance = ctx.db.users().id().find(ctx.sender.identity)
+        .ok_or("User not found");
+    
+    if from_balance.credits < amount {
+        return Err("Insufficient credits".to_string());
+    }
+    
+    // ... perform transfer
+    Ok(())
+}
+```
+
+</TabItem>
 </Tabs>
 
 ### Programmer Errors
@@ -109,22 +108,22 @@ spacetimedb.reducer('transfer_credits',
 Unexpected errors caused by bugs in module code. These should be fixed by the developer.
 
 <Tabs groupId="server-language" queryString>
-<TabItem value="rust" label="Rust">
+<TabItem value="typescript" label="TypeScript">
 
-Panics or uncaught errors:
+Regular errors (not `SenderError`):
 
-```rust
-#[reducer]
-pub fn process_data(ctx: &ReducerContext, data: Vec<u8>) -> Result<(), String> {
-    // This panic indicates a bug
-    assert!(data.len() > 0, "Unexpected empty data");
-    
-    // Uncaught Result indicates a bug
-    let parsed = parse_data(&data).expect("Failed to parse data");
+```typescript
+spacetimedb.reducer('process_data', 
+  { data: t.array(t.u8()) },
+  (ctx, { data }) => {
+    // Regular Error indicates a bug
+    if (data.length === 0) {
+      throw new Error('Unexpected empty data');
+    }
     
     // ...
-    Ok(())
-}
+  }
+);
 ```
 
 </TabItem>
@@ -147,22 +146,22 @@ public static void ProcessData(ReducerContext ctx, byte[] data)
 ```
 
 </TabItem>
-<TabItem value="typescript" label="TypeScript">
+<TabItem value="rust" label="Rust">
 
-Regular errors (not `SenderError`):
+Panics or uncaught errors:
 
-```typescript
-spacetimedb.reducer('process_data', 
-  { data: t.array(t.u8()) },
-  (ctx, { data }) => {
-    // Regular Error indicates a bug
-    if (data.length === 0) {
-      throw new Error('Unexpected empty data');
-    }
+```rust
+#[reducer]
+pub fn process_data(ctx: &ReducerContext, data: Vec<u8>) -> Result<(), String> {
+    // This panic indicates a bug
+    assert!(data.len() > 0, "Unexpected empty data");
+    
+    // Uncaught Result indicates a bug
+    let parsed = parse_data(&data).expect("Failed to parse data");
     
     // ...
-  }
-);
+    Ok(())
+}
 ```
 
 </TabItem>
