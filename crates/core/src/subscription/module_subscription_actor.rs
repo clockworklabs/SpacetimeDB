@@ -17,7 +17,6 @@ use crate::error::DBError;
 use crate::estimation::estimate_rows_scanned;
 use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, RefInstance, WasmInstance};
 use crate::host::{self, ModuleHost};
-use crate::messages::websocket::Subscribe;
 use crate::subscription::query::is_subscribe_to_all_tables;
 use crate::subscription::row_list_builder_pool::{BsatnRowListBuilderPool, JsonRowListBuilderFakePool};
 use crate::subscription::{collect_table_update_for_view, execute_plans};
@@ -27,10 +26,7 @@ use crate::worker_metrics::WORKER_METRICS;
 use parking_lot::RwLock;
 use prometheus::{Histogram, HistogramTimer, IntCounter, IntGauge};
 use scopeguard::ScopeGuard;
-use spacetimedb_client_api_messages::websocket::{
-    self as ws, BsatnFormat, FormatSwitch, JsonFormat, SubscribeMulti, SubscribeSingle, TableUpdate, Unsubscribe,
-    UnsubscribeMulti,
-};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_datastore::db_metrics::DB_METRICS;
 use spacetimedb_datastore::execution_context::{Workload, WorkloadType};
 use spacetimedb_datastore::locking_tx_datastore::datastore::TxMetrics;
@@ -199,8 +195,10 @@ pub(crate) fn commit_and_broadcast_event(
 }
 
 type AssertTxFn = Arc<dyn Fn(&Tx) + Send + Sync + 'static>;
-type SubscriptionUpdate = FormatSwitch<TableUpdate<BsatnFormat>, TableUpdate<JsonFormat>>;
-type FullSubscriptionUpdate = FormatSwitch<ws::DatabaseUpdate<BsatnFormat>, ws::DatabaseUpdate<JsonFormat>>;
+type SubscriptionUpdate =
+    ws_v1::FormatSwitch<ws_v1::TableUpdate<ws_v1::BsatnFormat>, ws_v1::TableUpdate<ws_v1::JsonFormat>>;
+type FullSubscriptionUpdate =
+    ws_v1::FormatSwitch<ws_v1::DatabaseUpdate<ws_v1::BsatnFormat>, ws_v1::DatabaseUpdate<ws_v1::JsonFormat>>;
 
 /// A utility for sending an error message to a client and returning early
 macro_rules! return_on_err {
@@ -372,7 +370,7 @@ impl ModuleSubscriptions {
                     update_type,
                     &self.bsatn_rlb_pool,
                 )
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                .map(|(table_update, metrics)| (ws_v1::FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Binary, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
@@ -384,7 +382,7 @@ impl ModuleSubscriptions {
                     update_type,
                     &self.bsatn_rlb_pool,
                 )
-                .map(|(table_update, metrics)| (FormatSwitch::Bsatn(table_update), metrics))
+                .map(|(table_update, metrics)| (ws_v1::FormatSwitch::Bsatn(table_update), metrics))
             }
             (Protocol::Text, Some(view_info)) => {
                 let plans = plans
@@ -400,7 +398,7 @@ impl ModuleSubscriptions {
                     update_type,
                     &JsonRowListBuilderFakePool,
                 )
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+                .map(|(table_update, metrics)| (ws_v1::FormatSwitch::Json(table_update), metrics))
             }
             (Protocol::Text, None) => {
                 let plans = plans.into_iter().map(PipelinedProject::from).collect::<Vec<_>>();
@@ -412,7 +410,7 @@ impl ModuleSubscriptions {
                     update_type,
                     &JsonRowListBuilderFakePool,
                 )
-                .map(|(table_update, metrics)| (FormatSwitch::Json(table_update), metrics))
+                .map(|(table_update, metrics)| (ws_v1::FormatSwitch::Json(table_update), metrics))
             }
         }?)
     }
@@ -443,12 +441,12 @@ impl ModuleSubscriptions {
             Protocol::Binary => {
                 let (update, metrics, query_metrics) =
                     execute_plans(auth, queries, &tx, update_type, &self.bsatn_rlb_pool)?;
-                (FormatSwitch::Bsatn(update), metrics, query_metrics)
+                (ws_v1::FormatSwitch::Bsatn(update), metrics, query_metrics)
             }
             Protocol::Text => {
                 let (update, metrics, query_metrics) =
                     execute_plans(auth, queries, &tx, update_type, &JsonRowListBuilderFakePool)?;
-                (FormatSwitch::Json(update), metrics, query_metrics)
+                (ws_v1::FormatSwitch::Json(update), metrics, query_metrics)
             }
         };
 
@@ -470,7 +468,7 @@ impl ModuleSubscriptions {
         host: Option<&ModuleHost>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
+        request: ws_v1::SubscribeSingle,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
@@ -495,7 +493,7 @@ impl ModuleSubscriptions {
         instance: &mut RefInstance<I>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
+        request: ws_v1::SubscribeSingle,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
@@ -507,7 +505,7 @@ impl ModuleSubscriptions {
         instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeSingle,
+        request: ws_v1::SubscribeSingle,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
@@ -603,7 +601,7 @@ impl ModuleSubscriptions {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: Unsubscribe,
+        request: ws_v1::Unsubscribe,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
@@ -677,7 +675,7 @@ impl ModuleSubscriptions {
         &self,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: UnsubscribeMulti,
+        request: ws_v1::UnsubscribeMulti,
         timer: Instant,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
         // Send an error message to the client
@@ -879,7 +877,7 @@ impl ModuleSubscriptions {
         host: Option<&ModuleHost>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<Option<ExecutionMetrics>, DBError> {
@@ -903,7 +901,7 @@ impl ModuleSubscriptions {
         instance: &mut RefInstance<I>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
@@ -915,7 +913,7 @@ impl ModuleSubscriptions {
         instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        request: SubscribeMulti,
+        request: ws_v1::SubscribeMulti,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(Option<ExecutionMetrics>, bool), DBError> {
@@ -1033,7 +1031,7 @@ impl ModuleSubscriptions {
         host: Option<&ModuleHost>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscription: Subscribe,
+        subscription: ws_v1::Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<ExecutionMetrics, DBError> {
@@ -1062,7 +1060,7 @@ impl ModuleSubscriptions {
         instance: &mut RefInstance<I>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscription: Subscribe,
+        subscription: ws_v1::Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(ExecutionMetrics, bool), DBError> {
@@ -1074,7 +1072,7 @@ impl ModuleSubscriptions {
         instance: Option<&mut RefInstance<I>>,
         sender: Arc<ClientConnectionSender>,
         auth: AuthCtx,
-        subscription: Subscribe,
+        subscription: ws_v1::Subscribe,
         timer: Instant,
         _assert: Option<AssertTxFn>,
     ) -> Result<(ExecutionMetrics, bool), DBError> {
@@ -1113,7 +1111,7 @@ impl ModuleSubscriptions {
         let (database_update, metrics, query_metrics) = match sender.config.protocol {
             Protocol::Binary => execute_plans(&auth, &queries, &tx, TableUpdateType::Subscribe, &self.bsatn_rlb_pool)
                 .map(|(table_update, metrics, query_metrics)| {
-                (FormatSwitch::Bsatn(table_update), metrics, query_metrics)
+                (ws_v1::FormatSwitch::Bsatn(table_update), metrics, query_metrics)
             })?,
             Protocol::Text => execute_plans(
                 &auth,
@@ -1122,7 +1120,9 @@ impl ModuleSubscriptions {
                 TableUpdateType::Subscribe,
                 &JsonRowListBuilderFakePool,
             )
-            .map(|(table_update, metrics, query_metrics)| (FormatSwitch::Json(table_update), metrics, query_metrics))?,
+            .map(|(table_update, metrics, query_metrics)| {
+                (ws_v1::FormatSwitch::Json(table_update), metrics, query_metrics)
+            })?,
         };
 
         record_query_metrics(&self.relational_db.database_identity(), query_metrics);
@@ -1447,7 +1447,6 @@ mod tests {
     use crate::db::relational_db::{Persistence, RelationalDB, Txdata};
     use crate::error::DBError;
     use crate::host::module_host::{DatabaseUpdate, EventStatus, ModuleEvent, ModuleFunctionCall};
-    use crate::messages::websocket as ws;
     use crate::sql::execute::run;
     use crate::subscription::module_subscription_actor::commit_and_broadcast_event;
     use crate::subscription::module_subscription_manager::{spawn_send_worker, SubscriptionManager};
@@ -1459,10 +1458,7 @@ mod tests {
     use itertools::Itertools;
     use pretty_assertions::assert_matches;
     use spacetimedb_client_api_messages::energy::EnergyQuanta;
-    use spacetimedb_client_api_messages::websocket::{
-        CompressableQueryUpdate, Compression, FormatSwitch, QueryId, Subscribe, SubscribeMulti, SubscribeSingle,
-        TableUpdate, Unsubscribe, UnsubscribeMulti,
-    };
+    use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
     use spacetimedb_commitlog::{commitlog, repo};
     use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap};
     use spacetimedb_datastore::system_tables::{StRowLevelSecurityRow, ST_ROW_LEVEL_SECURITY_ID};
@@ -1502,7 +1498,7 @@ mod tests {
         );
         let auth = AuthCtx::new(owner, sender.auth.claims.identity);
 
-        let subscribe = Subscribe {
+        let subscribe = ws_v1::Subscribe {
             query_strings: [sql.into()].into(),
             request_id: 0,
         };
@@ -1622,39 +1618,39 @@ mod tests {
     }
 
     /// A [SubscribeSingle] message for testing
-    fn single_subscribe(sql: &str, query_id: u32) -> SubscribeSingle {
-        SubscribeSingle {
+    fn single_subscribe(sql: &str, query_id: u32) -> ws_v1::SubscribeSingle {
+        ws_v1::SubscribeSingle {
             query: sql.into(),
             request_id: 0,
-            query_id: QueryId::new(query_id),
+            query_id: ws_v1::QueryId::new(query_id),
         }
     }
 
     /// A [SubscribeMulti] message for testing
-    fn multi_subscribe(query_strings: &[&'static str], query_id: u32) -> SubscribeMulti {
-        SubscribeMulti {
+    fn multi_subscribe(query_strings: &[&'static str], query_id: u32) -> ws_v1::SubscribeMulti {
+        ws_v1::SubscribeMulti {
             query_strings: query_strings
                 .iter()
                 .map(|sql| String::from(*sql).into_boxed_str())
                 .collect(),
             request_id: 0,
-            query_id: QueryId::new(query_id),
+            query_id: ws_v1::QueryId::new(query_id),
         }
     }
 
     /// A [SubscribeMulti] message for testing
-    fn multi_unsubscribe(query_id: u32) -> UnsubscribeMulti {
-        UnsubscribeMulti {
+    fn multi_unsubscribe(query_id: u32) -> ws_v1::UnsubscribeMulti {
+        ws_v1::UnsubscribeMulti {
             request_id: 0,
-            query_id: QueryId::new(query_id),
+            query_id: ws_v1::QueryId::new(query_id),
         }
     }
 
     /// An [Unsubscribe] message for testing
-    fn single_unsubscribe(query_id: u32) -> Unsubscribe {
-        Unsubscribe {
+    fn single_unsubscribe(query_id: u32) -> ws_v1::Unsubscribe {
+        ws_v1::Unsubscribe {
             request_id: 0,
-            query_id: QueryId::new(query_id),
+            query_id: ws_v1::QueryId::new(query_id),
         }
     }
 
@@ -1706,7 +1702,7 @@ mod tests {
     fn client_connection_with_compression(
         client_id: ClientActorId,
         db: &Arc<RelationalDB>,
-        compression: Compression,
+        compression: ws_v1::Compression,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
         client_connection_with_config(
             client_id,
@@ -1725,7 +1721,7 @@ mod tests {
         client_id: ClientActorId,
         db: &Arc<RelationalDB>,
     ) -> (Arc<ClientConnectionSender>, ClientConnectionReceiver) {
-        client_connection_with_compression(client_id, db, Compression::None)
+        client_connection_with_compression(client_id, db, ws_v1::Compression::None)
     }
 
     /// Instantiate a client connection with confirmed reads turned on or off.
@@ -1739,7 +1735,7 @@ mod tests {
             db,
             ClientConfig {
                 protocol: Protocol::Binary,
-                compression: Compression::None,
+                compression: ws_v1::Compression::None,
                 tx_update_full: true,
                 confirmed_reads,
             },
@@ -1846,7 +1842,7 @@ mod tests {
             Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
                 database_update:
                     SubscriptionUpdateMessage {
-                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { mut tables }),
+                        database_update: ws_v1::FormatSwitch::Bsatn(ws_v1::DatabaseUpdate { mut tables }),
                         ..
                     },
                 ..
@@ -1865,7 +1861,7 @@ mod tests {
                 let mut rows_received: HashMap<ProductValue, i32> = HashMap::new();
 
                 for uncompressed in table_update.updates {
-                    let CompressableQueryUpdate::Uncompressed(table_update) = uncompressed else {
+                    let ws_v1::CompressableQueryUpdate::Uncompressed(table_update) = uncompressed else {
                         panic!("expected an uncompressed table update")
                     };
 
@@ -2511,7 +2507,7 @@ mod tests {
 
         let client_id = client_id_from_u8(1);
         // Establish a client connection with compression
-        let (tx, mut rx) = client_connection_with_compression(client_id, &db, Compression::Brotli);
+        let (tx, mut rx) = client_connection_with_compression(client_id, &db, ws_v1::Compression::Brotli);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
@@ -2536,13 +2532,13 @@ mod tests {
             Some(SerializableMessage::Subscription(SubscriptionMessage {
                 result:
                     SubscriptionResult::SubscribeMulti(SubscriptionData {
-                        data: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
+                        data: ws_v1::FormatSwitch::Bsatn(ws_v1::DatabaseUpdate { tables }),
                     }),
                 ..
             })) => {
-                assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
+                assert!(tables.iter().all(|ws_v1::TableUpdate { updates, .. }| updates
                     .iter()
-                    .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
+                    .all(|query_update| matches!(query_update, ws_v1::CompressableQueryUpdate::Uncompressed(_)))));
             }
             Some(_) => panic!("unexpected message from subscription"),
             None => panic!("channel unexpectedly closed"),
@@ -2626,7 +2622,7 @@ mod tests {
 
         // Establish a client connection with compression
         let client_id = client_id_from_u8(1);
-        let (tx, mut rx) = client_connection_with_compression(client_id, &db, Compression::Brotli);
+        let (tx, mut rx) = client_connection_with_compression(client_id, &db, ws_v1::Compression::Brotli);
 
         let auth = AuthCtx::new(db.owner_identity(), client_id.identity);
         let subs = ModuleSubscriptions::for_test_enclosing_runtime(db.clone());
@@ -2654,14 +2650,14 @@ mod tests {
             Some(SerializableMessage::TxUpdate(TransactionUpdateMessage {
                 database_update:
                     SubscriptionUpdateMessage {
-                        database_update: FormatSwitch::Bsatn(ws::DatabaseUpdate { tables }),
+                        database_update: ws_v1::FormatSwitch::Bsatn(ws_v1::DatabaseUpdate { tables }),
                         ..
                     },
                 ..
             })) => {
-                assert!(tables.iter().all(|TableUpdate { updates, .. }| updates
+                assert!(tables.iter().all(|ws_v1::TableUpdate { updates, .. }| updates
                     .iter()
-                    .all(|query_update| matches!(query_update, CompressableQueryUpdate::Uncompressed(_)))));
+                    .all(|query_update| matches!(query_update, ws_v1::CompressableQueryUpdate::Uncompressed(_)))));
             }
             Some(_) => panic!("unexpected message from subscription"),
             None => panic!("channel unexpectedly closed"),

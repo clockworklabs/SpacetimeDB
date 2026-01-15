@@ -4,9 +4,8 @@ use crate::energy::EnergyQuanta;
 use crate::host::module_host::{EventStatus, ModuleEvent, ModuleFunctionCall};
 use crate::host::{FunctionArgs, ReducerId};
 use crate::identity::Identity;
-use crate::messages::websocket::{CallReducer, ClientMessage, OneOffQuery};
 use crate::worker_metrics::WORKER_METRICS;
-use spacetimedb_client_api_messages::websocket::CallProcedure;
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::de::serde::DeserializeWrapper;
 use spacetimedb_lib::identity::RequestId;
@@ -35,7 +34,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
         DataMessage::Text(text) => {
             // TODO(breaking): this should ideally be &serde_json::RawValue, not json-nested-in-string
             let DeserializeWrapper(message) =
-                serde_json::from_str::<DeserializeWrapper<ClientMessage<Cow<str>>>>(&text)?;
+                serde_json::from_str::<DeserializeWrapper<ws_v1::ClientMessage<Cow<str>>>>(&text)?;
             message.map_args(|s| {
                 FunctionArgs::Json(match s {
                     Cow::Borrowed(s) => text.slice_ref(s),
@@ -43,7 +42,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 })
             })
         }
-        DataMessage::Binary(message_buf) => bsatn::from_slice::<ClientMessage<&[u8]>>(&message_buf)?
+        DataMessage::Binary(message_buf) => bsatn::from_slice::<ws_v1::ClientMessage<&[u8]>>(&message_buf)?
             .map_args(|b| FunctionArgs::Bsatn(message_buf.slice_ref(b))),
     };
 
@@ -63,7 +62,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
     let unsub_metrics = record_metrics(WorkloadType::Unsubscribe);
 
     let res = match message {
-        ClientMessage::CallReducer(CallReducer {
+        ws_v1::ClientMessage::CallReducer(ws_v1::CallReducer {
             ref reducer,
             args,
             request_id,
@@ -82,42 +81,42 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 )
             })
         }
-        ClientMessage::SubscribeMulti(subscription) => {
+        ws_v1::ClientMessage::SubscribeMulti(subscription) => {
             let res = client.subscribe_multi(subscription, timer).await.map(sub_metrics);
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::UnsubscribeMulti(request) => {
+        ws_v1::ClientMessage::UnsubscribeMulti(request) => {
             let res = client.unsubscribe_multi(request, timer).await.map(unsub_metrics);
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::SubscribeSingle(subscription) => {
+        ws_v1::ClientMessage::SubscribeSingle(subscription) => {
             let res = client.subscribe_single(subscription, timer).await.map(sub_metrics);
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::Unsubscribe(request) => {
+        ws_v1::ClientMessage::Unsubscribe(request) => {
             let res = client.unsubscribe(request, timer).await.map(unsub_metrics);
             mod_metrics
                 .request_round_trip_unsubscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::Subscribe(subscription) => {
+        ws_v1::ClientMessage::Subscribe(subscription) => {
             let res = client.subscribe(subscription, timer).await.map(Some).map(sub_metrics);
             mod_metrics
                 .request_round_trip_subscribe
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|e| (None, None, e.into()))
         }
-        ClientMessage::OneOffQuery(OneOffQuery {
+        ws_v1::ClientMessage::OneOffQuery(ws_v1::OneOffQuery {
             query_string: query,
             message_id,
         }) => {
@@ -130,7 +129,7 @@ pub async fn handle(client: &ClientConnection, message: DataMessage, timer: Inst
                 .observe(timer.elapsed().as_secs_f64());
             res.map_err(|err| (None, None, err))
         }
-        ClientMessage::CallProcedure(CallProcedure {
+        ws_v1::ClientMessage::CallProcedure(ws_v1::CallProcedure {
             ref procedure,
             args,
             request_id,

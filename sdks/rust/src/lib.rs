@@ -32,7 +32,7 @@ pub use event::{Event, ReducerEvent, Status};
 pub use table::{Table, TableWithPrimaryKey};
 
 pub use spacetime_module::SubscriptionHandle;
-pub use spacetimedb_client_api_messages::websocket::Compression;
+pub use spacetimedb_client_api_messages::websocket::v1::Compression;
 pub use spacetimedb_lib::{ConnectionId, Identity, ScheduleAt, TimeDuration, Timestamp, Uuid};
 pub use spacetimedb_sats::{i256, u256};
 
@@ -44,7 +44,7 @@ pub mod __codegen {
     //! These may change incompatibly without a major version bump.
     pub use http;
     pub use log;
-    pub use spacetimedb_client_api_messages::websocket as __ws;
+    pub use spacetimedb_client_api_messages::websocket::v1 as __ws;
     pub use spacetimedb_lib as __lib;
     pub use spacetimedb_sats as __sats;
 
@@ -71,5 +71,5 @@ pub mod unstable {
     //! These may change incompatibly without a major version bump.
     pub use crate::db_connection::set_connection_id;
     pub use crate::metrics::{ClientMetrics, CLIENT_METRICS};
-    pub use spacetimedb_client_api_messages::websocket::CallReducerFlags;
+    pub use spacetimedb_client_api_messages::websocket::v1::CallReducerFlags;
 }

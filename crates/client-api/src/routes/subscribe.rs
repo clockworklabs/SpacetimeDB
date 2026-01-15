@@ -36,7 +36,7 @@ use spacetimedb::subscription::row_list_builder_pool::BsatnRowListBuilderPool;
 use spacetimedb::util::spawn_rayon;
 use spacetimedb::worker_metrics::WORKER_METRICS;
 use spacetimedb::Identity;
-use spacetimedb_client_api_messages::websocket::{self as ws_api, Compression};
+use spacetimedb_client_api_messages::websocket::v1 as ws_v1;
 use spacetimedb_datastore::execution_context::WorkloadType;
 use spacetimedb_lib::connection_id::{ConnectionId, ConnectionIdForUrl};
 use tokio::sync::{mpsc, watch};
@@ -56,9 +56,9 @@ use crate::util::{NameOrIdentity, XForwardedFor};
 use crate::{log_and_500, Authorization, ControlStateDelegate, NodeDelegate};
 
 #[allow(clippy::declare_interior_mutable_const)]
-pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::TEXT_PROTOCOL);
+pub const TEXT_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::TEXT_PROTOCOL);
 #[allow(clippy::declare_interior_mutable_const)]
-pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_api::BIN_PROTOCOL);
+pub const BIN_PROTOCOL: HeaderValue = HeaderValue::from_static(ws_v1::BIN_PROTOCOL);
 
 pub trait HasWebSocketOptions {
     fn websocket_options(&self) -> WebSocketOptions;
@@ -79,7 +79,7 @@ pub struct SubscribeParams {
 pub struct SubscribeQueryParams {
     pub connection_id: Option<ConnectionIdForUrl>,
     #[serde(default)]
-    pub compression: Compression,
+    pub compression: ws_v1::Compression,
     /// Whether we want "light" responses, tailored to network bandwidth constrained clients.
     /// This knob works by setting other, more specific, knobs to the value.
     #[serde(default)]
