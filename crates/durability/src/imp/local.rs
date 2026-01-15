@@ -11,7 +11,7 @@ use std::{
 
 use futures::{FutureExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
@@ -207,7 +207,10 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
         info!("starting durability actor");
 
         // Always notify waiters (i.e. [Close] futures) when the actor exits.
-        let done = scopeguard::guard(Arc::new(Notify::new()), |done| done.notify_waiters());
+        let done = scopeguard::guard(Arc::new(Notify::new()), |done| {
+            debug!("notify durability close waiters");
+            done.notify_waiters()
+        });
 
         let mut sync_interval = interval(self.sync_interval);
         sync_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -362,10 +365,12 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
                 .map_err(drop)
                 .and_then(|()| done_rx.map_err(drop))
                 .and_then(|done| async move {
+                    debug!("wait on actor close notification");
                     done.await;
                     Ok(())
                 })
                 .await;
+            debug!("shutdown wait done");
             // Don't abort if we completed normally.
             let _ = ScopeGuard::into_inner(abort);
 

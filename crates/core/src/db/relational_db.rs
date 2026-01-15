@@ -2052,9 +2052,11 @@ pub mod tests_utils {
         pub fn reopen(self) -> Result<Self, DBError> {
             info!("reopen TestDB");
             if let Some(rt) = self.runtime() {
+                info!("shutting down db");
                 rt.block_on(self.db.shutdown());
             }
             drop(self.db);
+            info!("TestDB shut down, re-opening");
 
             if let Some(DurableState {
                 durability: _,
