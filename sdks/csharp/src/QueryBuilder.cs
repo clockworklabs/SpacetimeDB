@@ -14,6 +14,8 @@ namespace SpacetimeDB
             Sql = sql;
         }
 
+        public string ToSql() => Sql;
+
         public override string ToString() => Sql;
     }
 
@@ -127,12 +129,13 @@ namespace SpacetimeDB
             IxCols = ixCols;
         }
 
-        public Query<TRow> All() => new($"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}");
+        public string ToSql() => $"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}";
+
+        public Query<TRow> Build() => new(ToSql());
 
         public Query<TRow> Where(Func<TCols, BoolExpr<TRow>> predicate) => Where(predicate(Cols));
 
-        public Query<TRow> Where(BoolExpr<TRow> predicate) =>
-            new($"SELECT * FROM {SqlFormat.QuoteIdent(tableName)} WHERE {predicate.Sql}");
+        public Query<TRow> Where(BoolExpr<TRow> predicate) => new($"{ToSql()} WHERE {predicate.Sql}");
     }
 
     internal static class SqlFormat

@@ -1113,7 +1113,7 @@ impl Lang for Csharp<'_> {
             writeln!(output, "public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)");
             indented_block(output, |output| {
                 writeln!(output, "var qb = new QueryBuilder();");
-                writeln!(output, "querySqls.Add(build(qb).Sql);");
+                writeln!(output, "querySqls.Add(build(qb).ToSql());");
                 writeln!(output, "return this;");
             });
             writeln!(output);

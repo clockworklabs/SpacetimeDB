@@ -47,7 +47,7 @@ public sealed class QueryBuilderTests
     public void All_QuotesTableName()
     {
         var table = MakeTable("My\"Table");
-        Assert.Equal("SELECT * FROM \"My\"\"Table\"", table.All().Sql);
+        Assert.Equal("SELECT * FROM \"My\"\"Table\"", table.Build().Sql);
     }
 
     [Fact]
