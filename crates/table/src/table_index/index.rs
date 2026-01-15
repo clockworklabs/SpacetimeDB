@@ -22,7 +22,27 @@ pub trait Index {
     /// If `key` was already present in the index,
     /// does not add an association with val.
     /// Returns the existing associated pointer instead.
-    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer>;
+    ///
+    /// Returns [`Despecialize`]
+    /// if inserting `key` is not compatible with the index
+    /// or if it would be profitable to replace the index with a B-Tree.
+    /// The provided default implementation does not return `Despecialize`.
+    fn insert_maybe_despecialize(
+        &mut self,
+        key: Self::Key,
+        ptr: RowPointer,
+    ) -> Result<Result<(), RowPointer>, Despecialize> {
+        Ok(self.insert(key, ptr))
+    }
+
+    /// Inserts the relation `key -> ptr` to this map.
+    ///
+    /// If `key` was already present in the index,
+    /// does not add an association with val.
+    /// Returns the existing associated pointer instead.
+    fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
+        self.insert_maybe_despecialize(key, ptr).unwrap()
+    }
 
     /// Deletes `key -> ptr` from this index.
     ///
@@ -119,6 +139,10 @@ pub trait RangedIndex: Index {
     /// as it will be faster.
     fn seek_range(&self, range: &impl RangeBounds<Self::Key>) -> Self::RangeIter<'_>;
 }
+
+/// An error indicating that the index should be despecialized to a B-Tree.
+#[derive(Debug)]
+pub struct Despecialize;
 
 /// An error indicating that the [`Index`] is not a [`RangedIndex`].
 #[derive(Debug, PartialEq)]

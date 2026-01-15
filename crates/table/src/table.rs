@@ -1,4 +1,7 @@
-use crate::{blob_store::NullBlobStore, table_index::IndexCannotSeekRange};
+use crate::{
+    blob_store::NullBlobStore,
+    table_index::{IndexCannotSeekRange, IndexKind},
+};
 
 use super::{
     bflatn_from::serialize_row_from_page,
@@ -1389,7 +1392,12 @@ impl Table {
 
     /// Returns a new [`TableIndex`] for `table`.
     pub fn new_index(&self, algo: &IndexAlgorithm, is_unique: bool) -> Result<TableIndex, InvalidFieldError> {
-        TableIndex::new(self.get_schema().get_row_type(), algo, is_unique)
+        TableIndex::new(
+            self.get_schema().get_row_type(),
+            algo.columns().to_owned(),
+            IndexKind::from_algo(algo),
+            is_unique,
+        )
     }
 
     /// Inserts a new `index` into the table.
@@ -2520,11 +2528,7 @@ pub(crate) mod test {
 
         let index_id = IndexId(0);
 
-        let algo = BTreeAlgorithm {
-            columns: indexed_columns.clone(),
-        }
-        .into();
-        let index = TableIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns.clone(), IndexKind::BTree, false).unwrap();
         // Add an index on column 0.
         // Safety:
         // We're using `ty` as the row type for both `table` and the new index.
@@ -2555,11 +2559,7 @@ pub(crate) mod test {
             .sum();
         prop_assert_eq!(index.num_key_bytes(), key_size_in_pvs);
 
-        let algo = BTreeAlgorithm {
-            columns: indexed_columns,
-        }
-        .into();
-        let index = TableIndex::new(&ty, &algo, false).unwrap();
+        let index = TableIndex::new(&ty, indexed_columns, IndexKind::BTree, false).unwrap();
         // Add a duplicate of the same index, so we can check that all above quantities double.
         // Safety:
         // As above, we're using `ty` as the row type for both `table` and the new index.
