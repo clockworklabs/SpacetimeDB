@@ -12,6 +12,23 @@ This document explains how to configure the environment, run the LLM benchmark t
 4. [Troubleshooting](#troubleshooting)
 ---
 
+## Quick Checks & Fixes
+
+Use this single command to quickly unblock CI by regenerating hashes and running only GPT-5 for the minimal Rust + C# passes. This is not the full benchmark suite.
+
+**Note: You will need OpenAI API keys to run this locally**. Alternatively, any SpacetimeDB member can comment `/update-llm-benchmark` on a PR to start a CI job to do this.
+
+`cargo llm ci-quickfix`
+What this does:
+1. Runs Rust rustdoc_json pass for GPT-5 only.
+2. Runs C# docs pass for GPT-5 only.
+3. Writes updated results & summary.
+
+---
+
+> Model IDs passed to `--models` must match configured routes (see `model_routes.rs`), e.g. `"openai:gpt-5"`.
+
+
 ### Spacetime CLI
 Publishing is performed via the `spacetime` CLI (`spacetime publish -c -y --server <name> <db>`). Ensure:
 - `spacetime` is on PATH
