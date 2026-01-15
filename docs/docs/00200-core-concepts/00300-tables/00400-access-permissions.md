@@ -424,6 +424,8 @@ spacetimedb.view(
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{SpacetimeType, ViewContext, Timestamp, Identity};
+
 // Private table with sensitive data
 #[spacetimedb::table(name = user_account)]  // Private by default
 pub struct UserAccount {
@@ -471,6 +473,8 @@ Clients can query `my_profile` to see their username and creation date, but neve
 Views can combine row filtering and column projection. This example returns team members who report to the caller, with salary information hidden:
 
 ```rust
+use spacetimedb::{SpacetimeType, Identity, ViewContext};
+
 // Private table with all employee data
 #[spacetimedb::table(name = employee)]
 pub struct Employee {

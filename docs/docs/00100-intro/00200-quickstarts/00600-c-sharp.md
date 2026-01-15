@@ -84,13 +84,13 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Reducer(Name = "add")]
+    [SpacetimeDB.Reducer]
     public static void Add(ReducerContext ctx, string name)
     {
         ctx.Db.Person.Insert(new Person { Name = name });
     }
 
-    [SpacetimeDB.Reducer(Name = "say_hello")]
+    [SpacetimeDB.Reducer]
     public static void SayHello(ReducerContext ctx)
     {
         foreach (var person in ctx.Db.Person.Iter())
@@ -111,7 +111,7 @@ public static partial class Module
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call my-spacetime-app add Alice
+spacetime call my-spacetime-app Add Alice
 
 # Query the person table
 spacetime sql my-spacetime-app "SELECT * FROM person"
@@ -120,7 +120,7 @@ spacetime sql my-spacetime-app "SELECT * FROM person"
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call my-spacetime-app say_hello
+spacetime call my-spacetime-app SayHello
 
 # View the module logs
 spacetime logs my-spacetime-app

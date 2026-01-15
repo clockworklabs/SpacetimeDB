@@ -8,13 +8,13 @@ public static partial class Module
         public string Name;
     }
 
-    [SpacetimeDB.Reducer(Name = "add")]
+    [SpacetimeDB.Reducer]
     public static void Add(ReducerContext ctx, string name)
     {
         ctx.Db.Person.Insert(new Person { Name = name });
     }
 
-    [SpacetimeDB.Reducer(Name = "say_hello")]
+    [SpacetimeDB.Reducer]
     public static void SayHello(ReducerContext ctx)
     {
         foreach (var person in ctx.Db.Person.Iter())

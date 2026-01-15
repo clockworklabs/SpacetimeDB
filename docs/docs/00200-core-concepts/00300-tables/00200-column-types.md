@@ -241,7 +241,8 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{table, SpacetimeType, Identity, ConnectionId, Timestamp, Duration};
+use spacetimedb::{table, SpacetimeType, Identity, ConnectionId, Timestamp};
+use std::time::Duration;
 
 // Define a nested struct type for coordinates
 #[derive(SpacetimeType)]
