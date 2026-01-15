@@ -18,7 +18,7 @@ struct TESTCLIENT_API FInsertPkU128Args
     FSpacetimeDBUInt128 N;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertPkU128Args() = default;
 
@@ -52,7 +52,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FSpacetimeDBUInt128 N;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

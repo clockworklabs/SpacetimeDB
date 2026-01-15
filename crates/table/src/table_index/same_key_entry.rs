@@ -135,6 +135,7 @@ pub(super) fn same_key_iter(ske: Option<&SameKeyEntry>) -> SameKeyEntryIter<'_> 
 }
 
 /// An iterator over values in a [`SameKeyEntry`].
+#[derive(Clone)]
 pub enum SameKeyEntryIter<'a> {
     Small(slice::Iter<'a, RowPointer>),
     /// This variant doesn't occur so much

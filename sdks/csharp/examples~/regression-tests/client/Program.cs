@@ -63,6 +63,8 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .Subscribe([
             "SELECT * FROM example_data",
             "SELECT * FROM my_player",
+            "SELECT * FROM my_account",
+            "SELECT * FROM my_account_missing",
             "SELECT * FROM players_at_level_one",
             "SELECT * FROM my_table",
             "SELECT * FROM null_string_nonnullable",
@@ -296,10 +298,20 @@ void OnSubscriptionApplied(SubscriptionEventContext context)
     // Views test
     Log.Debug("Checking Views are populated");
     Debug.Assert(context.Db.MyPlayer != null, "context.Db.MyPlayer != null");
+    Debug.Assert(context.Db.MyAccount != null, "context.Db.MyAccount != null");
+    Debug.Assert(context.Db.MyAccountMissing != null, "context.Db.MyAccountMissing != null");
     Debug.Assert(context.Db.PlayersAtLevelOne != null, "context.Db.PlayersAtLevelOne != null");
     Debug.Assert(
         context.Db.MyPlayer.Count > 0,
         $"context.Db.MyPlayer.Count = {context.Db.MyPlayer.Count}"
+    );
+    Debug.Assert(
+        context.Db.MyAccount.Count == 1,
+        $"context.Db.MyAccount.Count = {context.Db.MyAccount.Count}"
+    );
+    Debug.Assert(
+        context.Db.MyAccountMissing.Count == 0,
+        $"context.Db.MyAccountMissing.Count = {context.Db.MyAccountMissing.Count}"
     );
     Debug.Assert(
         context.Db.PlayersAtLevelOne.Count > 0,
