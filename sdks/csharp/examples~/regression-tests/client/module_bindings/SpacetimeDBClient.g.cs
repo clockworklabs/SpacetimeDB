@@ -45,6 +45,7 @@ namespace SpacetimeDB.Types
             AddTable(PlayerLevel = new(conn));
             AddTable(PlayersAtLevelOne = new(conn));
             AddTable(RetryLog = new(conn));
+            AddTable(WhereTest = new(conn));
         }
     }
 
@@ -611,6 +612,7 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Table<PlayerLevel, PlayerLevelCols, PlayerLevelIxCols> PlayerLevel() => new("player_level", new PlayerLevelCols("player_level"), new PlayerLevelIxCols("player_level"));
         public global::SpacetimeDB.Table<PlayerAndLevel, PlayersAtLevelOneCols, PlayersAtLevelOneIxCols> PlayersAtLevelOne() => new("players_at_level_one", new PlayersAtLevelOneCols("players_at_level_one"), new PlayersAtLevelOneIxCols("players_at_level_one"));
         public global::SpacetimeDB.Table<RetryLog, RetryLogCols, RetryLogIxCols> RetryLog() => new("retry_log", new RetryLogCols("retry_log"), new RetryLogIxCols("retry_log"));
+        public global::SpacetimeDB.Table<WhereTest, WhereTestCols, WhereTestIxCols> WhereTest() => new("where_test", new WhereTestCols("where_test"), new WhereTestIxCols("where_test"));
     }
 
     public sealed class TypedSubscriptionBuilder
@@ -685,6 +687,7 @@ namespace SpacetimeDB.Types
                 "InsertNullStringIntoNonNullable" => BSATNHelpers.Decode<Reducer.InsertNullStringIntoNonNullable>(encodedArgs),
                 "InsertNullStringIntoNullable" => BSATNHelpers.Decode<Reducer.InsertNullStringIntoNullable>(encodedArgs),
                 "InsertResult" => BSATNHelpers.Decode<Reducer.InsertResult>(encodedArgs),
+                "InsertWhereTest" => BSATNHelpers.Decode<Reducer.InsertWhereTest>(encodedArgs),
                 "SetNullableVec" => BSATNHelpers.Decode<Reducer.SetNullableVec>(encodedArgs),
                 "ThrowError" => BSATNHelpers.Decode<Reducer.ThrowError>(encodedArgs),
                 "" => throw new SpacetimeDBEmptyReducerNameException("Reducer name is empty"),
@@ -719,6 +722,7 @@ namespace SpacetimeDB.Types
                 Reducer.InsertNullStringIntoNonNullable args => Reducers.InvokeInsertNullStringIntoNonNullable(eventContext, args),
                 Reducer.InsertNullStringIntoNullable args => Reducers.InvokeInsertNullStringIntoNullable(eventContext, args),
                 Reducer.InsertResult args => Reducers.InvokeInsertResult(eventContext, args),
+                Reducer.InsertWhereTest args => Reducers.InvokeInsertWhereTest(eventContext, args),
                 Reducer.SetNullableVec args => Reducers.InvokeSetNullableVec(eventContext, args),
                 Reducer.ThrowError args => Reducers.InvokeThrowError(eventContext, args),
                 _ => throw new ArgumentOutOfRangeException("Reducer", $"Unknown reducer {reducer}")

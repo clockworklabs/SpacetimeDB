@@ -60,19 +60,17 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
                 throw err;
             }
         )
-        .Subscribe([
-            "SELECT * FROM example_data",
-            "SELECT * FROM my_player",
-            "SELECT * FROM my_account",
-            "SELECT * FROM my_account_missing",
-            "SELECT * FROM players_at_level_one",
-            "SELECT * FROM my_table",
-            "SELECT * FROM null_string_nonnullable",
-            "SELECT * FROM null_string_nullable",
-            "SELECT * FROM my_log",
-            "SELECT * FROM Admins",
-            "SELECT * FROM nullable_vec_view",
-        ]);
+        .AddQuery(qb => qb.From.ExampleData().All())
+        .AddQuery(qb => qb.From.MyPlayer().All())
+        .AddQuery(qb => qb.From.PlayersAtLevelOne().All())
+        .AddQuery(qb => qb.From.MyTable().All())
+        .AddQuery(qb => qb.From.NullStringNonnullable().All())
+        .AddQuery(qb => qb.From.NullStringNullable().All())
+        .AddQuery(qb => qb.From.MyLog().All())
+        .AddQuery(qb => qb.From.Admins().All())
+        .AddQuery(qb => qb.From.NullableVecView().All())
+        .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)))
+        .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed
     conn.Reducers.OnAdd += (ReducerEventContext ctx, uint id, uint indexed) =>
@@ -241,9 +239,23 @@ void ValidateReducerErrorDoesNotContainStackTrace(Exception exception)
     Debug.Assert(!exception.Message.Contains(" at "), "Reducer error message should not contain stack trace");
 }
 
+void ValidateWhereSubscription(IRemoteDbContext conn)
+{
+    Log.Debug("Checking typed WHERE subscription...");
+    Debug.Assert(conn.Db.WhereTest != null, "conn.Db.WhereTest != null");
+
+    var rows = conn.Db.WhereTest.Iter().ToList();
+    Debug.Assert(rows.Count == 2, $"Expected 2 where_test rows, got {rows.Count}");
+    Debug.Assert(rows.All(r => r.Value > 10), "Expected all where_test.Value > 10");
+    Debug.Assert(rows.Any(r => r.Id == 2 && r.Name == "high"), "Expected where_test row id=2 name=high");
+    Debug.Assert(rows.Any(r => r.Id == 3 && r.Name == "alsohigh"), "Expected where_test row id=3 name=alsohigh");
+}
+
 void OnSubscriptionApplied(SubscriptionEventContext context)
 {
     applied = true;
+
+    ValidateWhereSubscription(context);
 
     // Do some operations that alter row state;
     // we will check that everything is in sync in the callbacks for these reducer calls.
