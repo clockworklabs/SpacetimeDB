@@ -54,7 +54,7 @@ fn cli_init_with_template_creates_project() {
         .args([
             "init",
             "--template",
-            "basic-rust",
+            "basic-rs",
             "--local",
             "--non-interactive",
             "test-project",

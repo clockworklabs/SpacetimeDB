@@ -411,4 +411,4 @@ If the tutorial involved writing code, add a link to the complete code. This sho
 
 At the end of the tutorial that builds the `quickstart-chat` module in Rust, you might write:
 
-> You can find the full code for this module in [the SpacetimeDB module examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/quickstart-chat-rust/spacetimedb).
+> You can find the full code for this module in [the SpacetimeDB module examples](https://github.com/clockworklabs/SpacetimeDB/tree/master/templates/chat-console-rs/spacetimedb).

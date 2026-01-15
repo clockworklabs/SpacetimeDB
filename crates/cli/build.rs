@@ -314,8 +314,8 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     // Example: crates/cli
     let manifest_rel = manifest_canonical.strip_prefix(&repo_root_canonical).unwrap();
 
-    // Example for inside crate: /Users/user/SpacetimeDB/crates/cli/templates/basic-rust/server
-    // Example for outside crate: /Users/user/SpacetimeDB/modules/quickstart-chat
+    // Example for inside crate: /Users/user/SpacetimeDB/crates/cli/templates/basic-rs/server
+    // Example for outside crate: /Users/user/SpacetimeDB/modules/chat-console-rs
     let resolved_canonical = repo_root.join(&resolved_base).canonicalize().unwrap();
 
     // If the files are outside of the cli crate we need to copy them to the crate directory,
@@ -337,8 +337,8 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
     code.push_str("        let mut files = HashMap::new();\n");
 
     for file_path in git_files {
-        // Example file_path: modules/quickstart-chat/src/lib.rs (relative to repo root)
-        // Example resolved_base: modules/quickstart-chat
+        // Example file_path: modules/chat-console-rs/src/lib.rs (relative to repo root)
+        // Example resolved_base: modules/chat-console-rs
         // Example relative_path: src/lib.rs
         let relative_path = match file_path.strip_prefix(&resolved_base) {
             Ok(p) => p,
@@ -360,33 +360,33 @@ fn generate_template_entry(code: &mut String, template_path: &Path, source: &str
         if full_path.exists() && full_path.is_file() {
             let include_path = if let Some(ref copy_dir) = local_copy_dir {
                 // Outside crate: copy to .templates
-                // Example dest_file: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_quickstart-chat/src/lib.rs
+                // Example dest_file: /Users/user/SpacetimeDB/crates/cli/.templates/parent_parent_modules_chat-console-rs/src/lib.rs
                 let dest_file = copy_dir.join(relative_path);
                 fs::create_dir_all(dest_file.parent().unwrap()).expect("Failed to create parent directory");
                 copy_if_changed(&full_path, &dest_file)
                     .unwrap_or_else(|_| panic!("Failed to copy file {:?} to {:?}", full_path, dest_file));
 
-                // Example relative_to_manifest: .templates/parent_parent_modules_quickstart-chat/src/lib.rs
+                // Example relative_to_manifest: .templates/parent_parent_modules_chat-console-rs/src/lib.rs
                 let relative_to_manifest = dest_file.strip_prefix(manifest_dir).unwrap();
                 let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
                 // Watch the original file for changes
-                // Example: modules/quickstart-chat/src/lib.rs
+                // Example: modules/chat-console-rs/src/lib.rs
                 println!("cargo:rerun-if-changed={}", full_path.display());
                 path_str
             } else {
                 // Inside crate: use path relative to CARGO_MANIFEST_DIR
-                // Example file_path: crates/cli/templates/basic-rust/server/src/lib.rs
+                // Example file_path: crates/cli/templates/basic-rs/server/src/lib.rs
                 // Example manifest_rel: crates/cli
-                // Result: templates/basic-rust/server/src/lib.rs
+                // Result: templates/basic-rs/server/src/lib.rs
                 let relative_to_manifest = file_path.strip_prefix(manifest_rel).unwrap();
                 let path_str = relative_to_manifest.to_str().unwrap().replace("\\", "/");
-                // Example: crates/cli/templates/basic-rust/server/src/lib.rs
+                // Example: crates/cli/templates/basic-rs/server/src/lib.rs
                 println!("cargo:rerun-if-changed={}", full_path.display());
                 path_str
             };
 
-            // Example include_path (inside crate): "templates/basic-rust/server/src/lib.rs"
-            // Example include_path (outside crate): ".templates/parent_parent_modules_quickstart-chat/src/lib.rs"
+            // Example include_path (inside crate): "templates/basic-rs/server/src/lib.rs"
+            // Example include_path (outside crate): ".templates/parent_parent_modules_chat-console-rs/src/lib.rs"
             // Example relative_str: "src/lib.rs"
             code.push_str(&format!(
                 "        files.insert(\"{}\", include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/{}\")));\n",

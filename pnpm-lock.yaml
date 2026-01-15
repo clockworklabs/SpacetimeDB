@@ -258,35 +258,7 @@ importers:
         specifier: workspace:^
         version: link:../../crates/bindings-typescript
 
-  templates/basic-react:
-    dependencies:
-      react:
-        specifier: ^18.3.1
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.3.1
-        version: 18.3.1(react@18.3.1)
-      spacetimedb:
-        specifier: workspace:*
-        version: link:../../crates/bindings-typescript
-    devDependencies:
-      '@types/react':
-        specifier: ^18.3.18
-        version: 18.3.23
-      '@types/react-dom':
-        specifier: ^18.3.5
-        version: 18.3.7(@types/react@18.3.23)
-      '@vitejs/plugin-react':
-        specifier: ^5.0.2
-        version: 5.0.2(vite@7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4))
-      typescript:
-        specifier: ~5.6.2
-        version: 5.6.3
-      vite:
-        specifier: ^7.1.5
-        version: 7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4)
-
-  templates/basic-typescript:
+  templates/basic-ts:
     dependencies:
       spacetimedb:
         specifier: workspace:*
@@ -299,7 +271,7 @@ importers:
         specifier: ^7.1.5
         version: 7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4)
 
-  templates/quickstart-chat-typescript:
+  templates/chat-react-ts:
     dependencies:
       react:
         specifier: ^18.3.1
@@ -363,11 +335,39 @@ importers:
         specifier: 3.2.4
         version: 3.2.4(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.5.1)(jsdom@26.1.0)(terser@5.43.1)(tsx@4.20.4)
 
-  templates/quickstart-chat-typescript/spacetimedb:
+  templates/chat-react-ts/spacetimedb:
     dependencies:
       spacetimedb:
         specifier: workspace:^
         version: link:../../../crates/bindings-typescript
+
+  templates/react-ts:
+    dependencies:
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      spacetimedb:
+        specifier: workspace:*
+        version: link:../../crates/bindings-typescript
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.18
+        version: 18.3.23
+      '@types/react-dom':
+        specifier: ^18.3.5
+        version: 18.3.7(@types/react@18.3.23)
+      '@vitejs/plugin-react':
+        specifier: ^5.0.2
+        version: 5.0.2(vite@7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4))
+      typescript:
+        specifier: ~5.6.2
+        version: 5.6.3
+      vite:
+        specifier: ^7.1.5
+        version: 7.1.5(@types/node@24.3.0)(jiti@2.5.1)(terser@5.43.1)(tsx@4.20.4)
 
 packages:
 

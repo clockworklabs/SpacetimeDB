@@ -37,8 +37,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084853617Z",
-                  "finished_at": "2026-01-15T08:44:05.084853617Z"
+                  "started_at": "2026-01-15T16:46:48.433030661Z",
+                  "finished_at": "2026-01-15T16:46:48.433030661Z"
                 },
                 "t_001_basic_tables": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -66,8 +66,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084882788Z",
-                  "finished_at": "2026-01-15T08:44:05.084882788Z"
+                  "started_at": "2026-01-15T16:46:48.433070288Z",
+                  "finished_at": "2026-01-15T16:46:48.433070288Z"
                 },
                 "t_002_scheduled_table": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -95,8 +95,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084873891Z",
-                  "finished_at": "2026-01-15T08:44:05.084873891Z"
+                  "started_at": "2026-01-15T16:46:48.433054387Z",
+                  "finished_at": "2026-01-15T16:46:48.433054387Z"
                 },
                 "t_003_struct_in_table": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -124,8 +124,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084870202Z",
-                  "finished_at": "2026-01-15T08:44:05.084870202Z"
+                  "started_at": "2026-01-15T16:46:48.433066404Z",
+                  "finished_at": "2026-01-15T16:46:48.433066404Z"
                 },
                 "t_004_insert": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -153,8 +153,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084895209Z",
-                  "finished_at": "2026-01-15T08:44:05.084895209Z"
+                  "started_at": "2026-01-15T16:46:48.433074686Z",
+                  "finished_at": "2026-01-15T16:46:48.433074686Z"
                 },
                 "t_005_update": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -182,8 +182,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084862637Z",
-                  "finished_at": "2026-01-15T08:44:05.084862637Z"
+                  "started_at": "2026-01-15T16:46:48.433044798Z",
+                  "finished_at": "2026-01-15T16:46:48.433044798Z"
                 },
                 "t_006_delete": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -211,8 +211,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084830908Z",
-                  "finished_at": "2026-01-15T08:44:05.084830908Z"
+                  "started_at": "2026-01-15T16:46:48.433049053Z",
+                  "finished_at": "2026-01-15T16:46:48.433049053Z"
                 },
                 "t_007_crud": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -240,8 +240,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084835177Z",
-                  "finished_at": "2026-01-15T08:44:05.084835177Z"
+                  "started_at": "2026-01-15T16:46:48.433037586Z",
+                  "finished_at": "2026-01-15T16:46:48.433037586Z"
                 },
                 "t_008_index_lookup": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -269,8 +269,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084850033Z",
-                  "finished_at": "2026-01-15T08:44:05.084850033Z"
+                  "started_at": "2026-01-15T16:46:48.433041506Z",
+                  "finished_at": "2026-01-15T16:46:48.433041506Z"
                 },
                 "t_009_init": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -298,8 +298,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084857594Z",
-                  "finished_at": "2026-01-15T08:44:05.084857594Z"
+                  "started_at": "2026-01-15T16:46:48.433034152Z",
+                  "finished_at": "2026-01-15T16:46:48.433034152Z"
                 },
                 "t_010_connect": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -327,8 +327,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084888101Z",
-                  "finished_at": "2026-01-15T08:44:05.084888101Z"
+                  "started_at": "2026-01-15T16:46:48.433079333Z",
+                  "finished_at": "2026-01-15T16:46:48.433079333Z"
                 },
                 "t_011_helper_function": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -356,8 +356,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084879130Z",
-                  "finished_at": "2026-01-15T08:44:05.084879130Z"
+                  "started_at": "2026-01-15T16:46:48.433061116Z",
+                  "finished_at": "2026-01-15T16:46:48.433061116Z"
                 },
                 "t_012_spacetime_product_type": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -385,8 +385,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084824707Z",
-                  "finished_at": "2026-01-15T08:44:05.084824707Z"
+                  "started_at": "2026-01-15T16:46:48.433001538Z",
+                  "finished_at": "2026-01-15T16:46:48.433001538Z"
                 },
                 "t_013_spacetime_sum_type": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -414,8 +414,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084827283Z",
-                  "finished_at": "2026-01-15T08:44:05.084827283Z"
+                  "started_at": "2026-01-15T16:46:48.433006753Z",
+                  "finished_at": "2026-01-15T16:46:48.433006753Z"
                 },
                 "t_014_elementary_columns": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -443,8 +443,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084777176Z",
-                  "finished_at": "2026-01-15T08:44:05.084777176Z"
+                  "started_at": "2026-01-15T16:46:48.432996914Z",
+                  "finished_at": "2026-01-15T16:46:48.432996914Z"
                 },
                 "t_015_product_type_columns": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -472,8 +472,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084822119Z",
-                  "finished_at": "2026-01-15T08:44:05.084822119Z"
+                  "started_at": "2026-01-15T16:46:48.432982566Z",
+                  "finished_at": "2026-01-15T16:46:48.432982566Z"
                 },
                 "t_016_sum_type_columns": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -501,8 +501,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084866461Z",
-                  "finished_at": "2026-01-15T08:44:05.084866461Z"
+                  "started_at": "2026-01-15T16:46:48.433013325Z",
+                  "finished_at": "2026-01-15T16:46:48.433013325Z"
                 },
                 "t_017_scheduled_columns": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -530,8 +530,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084809104Z",
-                  "finished_at": "2026-01-15T08:44:05.084809104Z"
+                  "started_at": "2026-01-15T16:46:48.432972320Z",
+                  "finished_at": "2026-01-15T16:46:48.432972320Z"
                 },
                 "t_018_constraints": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -559,8 +559,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084805389Z",
-                  "finished_at": "2026-01-15T08:44:05.084805389Z"
+                  "started_at": "2026-01-15T16:46:48.432986004Z",
+                  "finished_at": "2026-01-15T16:46:48.432986004Z"
                 },
                 "t_019_many_to_many": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -588,8 +588,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084816252Z",
-                  "finished_at": "2026-01-15T08:44:05.084816252Z"
+                  "started_at": "2026-01-15T16:46:48.432992876Z",
+                  "finished_at": "2026-01-15T16:46:48.432992876Z"
                 },
                 "t_020_ecs": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -617,8 +617,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084812996Z",
-                  "finished_at": "2026-01-15T08:44:05.084812996Z"
+                  "started_at": "2026-01-15T16:46:48.432978563Z",
+                  "finished_at": "2026-01-15T16:46:48.432978563Z"
                 },
                 "t_021_multi_column_index": {
                   "hash": "40baf0d53a9de9eab21250fad1d96f530213fd7dd09cb9a3d97f40ff548f0d8a",
@@ -646,8 +646,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:44:05.084891997Z",
-                  "finished_at": "2026-01-15T08:44:05.084891997Z"
+                  "started_at": "2026-01-15T16:46:48.432934320Z",
+                  "finished_at": "2026-01-15T16:46:48.432934320Z"
                 }
               }
             }
@@ -838,14 +838,14 @@
       "modes": [
         {
           "mode": "docs",
-          "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+          "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
           "models": [
             {
               "name": "GPT-5",
               "route_api_model": "gpt-5",
               "tasks": {
                 "t_000_empty_reducers": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_000_empty_reducers",
                   "lang": "csharp",
                   "golden_published": false,
@@ -870,11 +870,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350758519Z",
-                  "finished_at": "2026-01-15T08:48:04.350758519Z"
+                  "started_at": "2026-01-15T16:50:45.732646459Z",
+                  "finished_at": "2026-01-15T16:50:45.732646459Z"
                 },
                 "t_001_basic_tables": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_001_basic_tables",
                   "lang": "csharp",
                   "golden_published": false,
@@ -899,11 +899,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350802382Z",
-                  "finished_at": "2026-01-15T08:48:04.350802382Z"
+                  "started_at": "2026-01-15T16:50:45.732688280Z",
+                  "finished_at": "2026-01-15T16:50:45.732688280Z"
                 },
                 "t_002_scheduled_table": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_002_scheduled_table",
                   "lang": "csharp",
                   "golden_published": false,
@@ -928,11 +928,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350787405Z",
-                  "finished_at": "2026-01-15T08:48:04.350787405Z"
+                  "started_at": "2026-01-15T16:50:45.732672473Z",
+                  "finished_at": "2026-01-15T16:50:45.732672473Z"
                 },
                 "t_003_struct_in_table": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_003_struct_in_table",
                   "lang": "csharp",
                   "golden_published": false,
@@ -957,11 +957,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350798386Z",
-                  "finished_at": "2026-01-15T08:48:04.350798386Z"
+                  "started_at": "2026-01-15T16:50:45.732682491Z",
+                  "finished_at": "2026-01-15T16:50:45.732682491Z"
                 },
                 "t_004_insert": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_004_insert",
                   "lang": "csharp",
                   "golden_published": false,
@@ -986,11 +986,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350810397Z",
-                  "finished_at": "2026-01-15T08:48:04.350810397Z"
+                  "started_at": "2026-01-15T16:50:45.732697587Z",
+                  "finished_at": "2026-01-15T16:50:45.732697587Z"
                 },
                 "t_005_update": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_005_update",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1015,11 +1015,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350783269Z",
-                  "finished_at": "2026-01-15T08:48:04.350783269Z"
+                  "started_at": "2026-01-15T16:50:45.732667959Z",
+                  "finished_at": "2026-01-15T16:50:45.732667959Z"
                 },
                 "t_006_delete": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_006_delete",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1044,11 +1044,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350772180Z",
-                  "finished_at": "2026-01-15T08:48:04.350772180Z"
+                  "started_at": "2026-01-15T16:50:45.732654414Z",
+                  "finished_at": "2026-01-15T16:50:45.732654414Z"
                 },
                 "t_007_crud": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_007_crud",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1073,11 +1073,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350768636Z",
-                  "finished_at": "2026-01-15T08:48:04.350768636Z"
+                  "started_at": "2026-01-15T16:50:45.732650276Z",
+                  "finished_at": "2026-01-15T16:50:45.732650276Z"
                 },
                 "t_008_index_lookup": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_008_index_lookup",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1102,11 +1102,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350775111Z",
-                  "finished_at": "2026-01-15T08:48:04.350775111Z"
+                  "started_at": "2026-01-15T16:50:45.732659550Z",
+                  "finished_at": "2026-01-15T16:50:45.732659550Z"
                 },
                 "t_009_init": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_009_init",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1131,11 +1131,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350777872Z",
-                  "finished_at": "2026-01-15T08:48:04.350777872Z"
+                  "started_at": "2026-01-15T16:50:45.732664024Z",
+                  "finished_at": "2026-01-15T16:50:45.732664024Z"
                 },
                 "t_010_connect": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_010_connect",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1160,11 +1160,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350806555Z",
-                  "finished_at": "2026-01-15T08:48:04.350806555Z"
+                  "started_at": "2026-01-15T16:50:45.732692881Z",
+                  "finished_at": "2026-01-15T16:50:45.732692881Z"
                 },
                 "t_011_helper_function": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_011_helper_function",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1189,11 +1189,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350794264Z",
-                  "finished_at": "2026-01-15T08:48:04.350794264Z"
+                  "started_at": "2026-01-15T16:50:45.732678445Z",
+                  "finished_at": "2026-01-15T16:50:45.732678445Z"
                 },
                 "t_012_spacetime_product_type": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_012_spacetime_product_type",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1218,11 +1218,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350747625Z",
-                  "finished_at": "2026-01-15T08:48:04.350747625Z"
+                  "started_at": "2026-01-15T16:50:45.732621435Z",
+                  "finished_at": "2026-01-15T16:50:45.732621435Z"
                 },
                 "t_013_spacetime_sum_type": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_013_spacetime_sum_type",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1247,11 +1247,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350765485Z",
-                  "finished_at": "2026-01-15T08:48:04.350765485Z"
+                  "started_at": "2026-01-15T16:50:45.732632944Z",
+                  "finished_at": "2026-01-15T16:50:45.732632944Z"
                 },
                 "t_014_elementary_columns": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_014_elementary_columns",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1276,11 +1276,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350744275Z",
-                  "finished_at": "2026-01-15T08:48:04.350744275Z"
+                  "started_at": "2026-01-15T16:50:45.732611546Z",
+                  "finished_at": "2026-01-15T16:50:45.732611546Z"
                 },
                 "t_015_product_type_columns": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_015_product_type_columns",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1305,11 +1305,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350753908Z",
-                  "finished_at": "2026-01-15T08:48:04.350753908Z"
+                  "started_at": "2026-01-15T16:50:45.732624412Z",
+                  "finished_at": "2026-01-15T16:50:45.732624412Z"
                 },
                 "t_016_sum_type_columns": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_016_sum_type_columns",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1334,11 +1334,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350750774Z",
-                  "finished_at": "2026-01-15T08:48:04.350750774Z"
+                  "started_at": "2026-01-15T16:50:45.732628181Z",
+                  "finished_at": "2026-01-15T16:50:45.732628181Z"
                 },
                 "t_017_scheduled_columns": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_017_scheduled_columns",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1363,11 +1363,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350734182Z",
-                  "finished_at": "2026-01-15T08:48:04.350734182Z"
+                  "started_at": "2026-01-15T16:50:45.732608425Z",
+                  "finished_at": "2026-01-15T16:50:45.732608425Z"
                 },
                 "t_018_constraints": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_018_constraints",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1392,11 +1392,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350737033Z",
-                  "finished_at": "2026-01-15T08:48:04.350737033Z"
+                  "started_at": "2026-01-15T16:50:45.732604922Z",
+                  "finished_at": "2026-01-15T16:50:45.732604922Z"
                 },
                 "t_019_many_to_many": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_019_many_to_many",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1421,11 +1421,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350730826Z",
-                  "finished_at": "2026-01-15T08:48:04.350730826Z"
+                  "started_at": "2026-01-15T16:50:45.732587805Z",
+                  "finished_at": "2026-01-15T16:50:45.732587805Z"
                 },
                 "t_020_ecs": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_020_ecs",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1450,11 +1450,11 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350721102Z",
-                  "finished_at": "2026-01-15T08:48:04.350721102Z"
+                  "started_at": "2026-01-15T16:50:45.732601560Z",
+                  "finished_at": "2026-01-15T16:50:45.732601560Z"
                 },
                 "t_021_multi_column_index": {
-                  "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+                  "hash": "0bc27c86923ba033c5501217b0ff7911dfdd51ca622ae77ac06a679cbe0fa78a",
                   "task": "t_021_multi_column_index",
                   "lang": "csharp",
                   "golden_published": false,
@@ -1479,8 +1479,8 @@
                     }
                   },
                   "vendor": "openai",
-                  "started_at": "2026-01-15T08:48:04.350740315Z",
-                  "finished_at": "2026-01-15T08:48:04.350740315Z"
+                  "started_at": "2026-01-15T16:50:45.732617054Z",
+                  "finished_at": "2026-01-15T16:50:45.732617054Z"
                 }
               }
             }

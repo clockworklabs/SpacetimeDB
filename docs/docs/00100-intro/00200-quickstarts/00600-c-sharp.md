@@ -40,7 +40,7 @@ dotnet workload install wasi-experimental
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-c-sharp my-spacetime-app
+spacetime dev --template basic-cs my-spacetime-app
 ```
     </StepCode>
   </Step>
