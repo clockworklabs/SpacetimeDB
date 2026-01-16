@@ -22,15 +22,16 @@ use crate::host::wasm_common::module_host_actor::{
     AnonymousViewOp, ProcedureOp, ReducerOp, ReducerResult, ViewOp, ViewReturnData,
 };
 use crate::host::wasm_common::{err_to_errno_and_log, RowIterIdx, TimingSpan, TimingSpanIdx};
-use crate::host::AbiCall;
+use crate::host::{AbiCall, ArgsTuple};
 use anyhow::Context;
 use bytes::Bytes;
+use core::ptr::NonNull;
 use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::u256;
 use v8::{
-    callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
-    PinCallbackScope, PinScope,
+    callback_scope, ArrayBuffer, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module,
+    Object, PinCallbackScope, PinScope, Value,
 };
 
 macro_rules! create_synthetic_module {
@@ -384,10 +385,11 @@ fn register_hooks_v2_0<'scope>(scope: &mut PinScope<'scope, '_>, args: FunctionC
 }
 
 /// Calls the `__call_reducer__` function `fun`.
-pub(super) fn call_call_reducer(
-    scope: &mut PinScope<'_, '_>,
-    hooks: &HookFunctions<'_>,
+pub(super) fn call_call_reducer<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
+    reducer_args_array_buffer: &Local<'scope, ArrayBuffer>,
 ) -> ExcResult<ReducerResult> {
     let ReducerOp {
         id: ReducerId(reducer_id),
@@ -402,7 +404,8 @@ pub(super) fn call_call_reducer(
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
     let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
-    let reducer_args = make_dataview(scope, <Box<[u8]>>::from(&**reducer_args.get_bsatn())).into();
+    let reducer_args = reducer_args_to_value(scope, reducer_args, reducer_args_array_buffer);
+
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
     // Call the function.
@@ -416,6 +419,45 @@ pub(super) fn call_call_reducer(
     };
 
     Ok(user_res)
+}
+
+/// Converts `args` into a `Value`.
+fn reducer_args_to_value<'scope>(
+    scope: &mut PinScope<'scope, '_>,
+    args: &ArgsTuple,
+    buffer: &Local<'scope, ArrayBuffer>,
+) -> Local<'scope, Value> {
+    let reducer_args = &**args.get_bsatn();
+
+    let len = reducer_args.len();
+    let dv = if len <= buffer.byte_length() {
+        // We can use the buffer.
+        let dst_ptr = buffer
+            .data()
+            .expect("backing store byte length should be > 0")
+            .cast::<u8>();
+
+        // Copy `reducer_args` into `buffer`.
+        let mut dst_ptr = NonNull::slice_from_raw_parts(dst_ptr, len);
+        // SAFETY: We know `dst_ptr` to be:
+        // - trivially properly aligned due to `u8`s alignment being 1.
+        // - non-null as it was derived from `NonNull`.
+        // - the range is within the allocation of `buffer`
+        //   as `len <= buffer.byte_length()`,
+        //   so `buffer` is dereferenceable.
+        // - `dst` will point to a valid `[u8]` as it was zero-initialized.
+        // - nothing is aliasing the pointer.
+        let dst = unsafe { dst_ptr.as_mut() };
+        dst.copy_from_slice(reducer_args);
+
+        // Convert into `DataView`.
+        v8::DataView::new(scope, *buffer, 0, len)
+    } else {
+        // Fall back to allocating new buffers.
+        make_dataview(scope, <Box<[u8]>>::from(reducer_args))
+    };
+
+    dv.into()
 }
 
 /// Calls the `__call_view__` function `fun`.
