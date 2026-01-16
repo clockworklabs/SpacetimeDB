@@ -27,10 +27,10 @@ private:
     mutable std::optional<std::vector<std::string>> audience_;
 
     // Helper to extract a string claim from JSON
-    static std::optional<std::string> ExtractStringClaim(const std::string& json, const std::string& key);
+    static std::optional<std::string> extract_string_claim(const std::string& json, const std::string& key);
     
     // Helper to extract the audience claim (can be string or array)
-    static std::vector<std::string> ExtractAudienceClaim(const std::string& json);
+    static std::vector<std::string> extract_audience_claim(const std::string& json);
 
 public:
     /**
@@ -49,14 +49,14 @@ public:
      * 
      * @return The subject string, or empty string if missing/invalid
      */
-    const std::string& Subject() const;
+    const std::string& subject() const;
 
     /**
      * @brief Returns the issuer for these credentials from the 'iss' claim.
      * 
      * @return The issuer string, or empty string if missing/invalid
      */
-    const std::string& Issuer() const;
+    const std::string& issuer() const;
 
     /**
      * @brief Returns the audience for these credentials from the 'aud' claim.
@@ -66,7 +66,7 @@ public:
      * 
      * @return A vector of audience strings
      */
-    const std::vector<std::string>& Audience() const;
+    const std::vector<std::string>& audience() const;
 
     /**
      * @brief Returns the identity for these credentials.
@@ -76,14 +76,14 @@ public:
      * 
      * @return The identity
      */
-    const Identity& GetIdentity() const { return identity_; }
+    const Identity& get_identity() const { return identity_; }
 
     /**
      * @brief Returns the whole JWT payload as a JSON string.
      * 
      * @return The raw JWT payload
      */
-    const std::string& RawPayload() const { return payload_; }
+    const std::string& raw_payload() const { return payload_; }
 };
 
 // ============================================================================
@@ -92,7 +92,7 @@ public:
 
 // Simple JSON string extraction helper
 // Finds "key":"value" and returns the value
-inline std::optional<std::string> JwtClaims::ExtractStringClaim(const std::string& json, const std::string& key) {
+inline std::optional<std::string> JwtClaims::extract_string_claim(const std::string& json, const std::string& key) {
     // Look for "key":
     std::string search = "\"" + key + "\":";
     size_t pos = json.find(search);
@@ -131,7 +131,7 @@ inline std::optional<std::string> JwtClaims::ExtractStringClaim(const std::strin
 }
 
 // Extract audience claim - can be string or array
-inline std::vector<std::string> JwtClaims::ExtractAudienceClaim(const std::string& json) {
+inline std::vector<std::string> JwtClaims::extract_audience_claim(const std::string& json) {
     std::vector<std::string> result;
     
     // Look for "aud":
@@ -210,9 +210,9 @@ inline std::vector<std::string> JwtClaims::ExtractAudienceClaim(const std::strin
 inline JwtClaims::JwtClaims(std::string jwt_payload, Identity identity)
     : payload_(std::move(jwt_payload)), identity_(std::move(identity)) {}
 
-inline const std::string& JwtClaims::Subject() const {
+inline const std::string& JwtClaims::subject() const {
     if (!subject_.has_value()) {
-        subject_ = ExtractStringClaim(payload_, "sub");
+        subject_ = extract_string_claim(payload_, "sub");
         if (!subject_.has_value()) {
             // Return empty string on error instead of throwing
             static const std::string empty;
@@ -222,9 +222,9 @@ inline const std::string& JwtClaims::Subject() const {
     return *subject_;
 }
 
-inline const std::string& JwtClaims::Issuer() const {
+inline const std::string& JwtClaims::issuer() const {
     if (!issuer_.has_value()) {
-        issuer_ = ExtractStringClaim(payload_, "iss");
+        issuer_ = extract_string_claim(payload_, "iss");
         if (!issuer_.has_value()) {
             // Return empty string on error instead of throwing
             static const std::string empty;
@@ -234,9 +234,9 @@ inline const std::string& JwtClaims::Issuer() const {
     return *issuer_;
 }
 
-inline const std::vector<std::string>& JwtClaims::Audience() const {
+inline const std::vector<std::string>& JwtClaims::audience() const {
     if (!audience_.has_value()) {
-        audience_ = ExtractAudienceClaim(payload_);
+        audience_ = extract_audience_claim(payload_);
     }
     return *audience_;
 }

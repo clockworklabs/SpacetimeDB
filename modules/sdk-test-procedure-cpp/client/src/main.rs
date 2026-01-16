@@ -92,7 +92,7 @@ fn subscribe_to_tables(ctx: &DbConnection) {
     ctx.subscription_builder()
         .on_applied(on_sub_applied)
         .on_error(on_sub_error)
-        .subscribe("SELECT * FROM my_table");
+        .subscribe(["SELECT * FROM my_table", "SELECT * FROM pk_uuid"]);
 }
 
 fn on_sub_applied(_ctx: &SubscriptionEventContext) {
@@ -298,6 +298,91 @@ fn run_tests(ctx: &DbConnection) {
         }
         Err(err) => {
             eprintln!("  ✗ insert_if_authenticated failed: {}", err);
+        }
+    });
+
+    // UUID Tests
+    println!("\n=== UUID Tests ===\n");
+
+    // Test sorted UUIDs insert
+    println!("Testing sorted_uuids_insert (1000 UUIDs)...");
+    ctx.procedures.sorted_uuids_insert_then(|ctx, res| match res {
+        Ok(_) => {
+            let count = ctx.db.pk_uuid().count();
+            if count == 1000 {
+                println!("  ✓ sorted_uuids_insert inserted and verified 1000 sorted UUIDs");
+            } else {
+                eprintln!("  ✗ Expected 1000 UUIDs but found {}", count);
+            }
+        }
+        Err(err) => {
+            eprintln!("  ✗ sorted_uuids_insert failed: {}", err);
+        }
+    });
+
+    // Test UUID v4 generation
+    println!("Testing test_uuid_v4...");
+    ctx.procedures.test_uuid_v_4_then(|_, res| match res {
+        Ok(uuid_str) => {
+            println!("  ✓ test_uuid_v4 generated: {}", uuid_str);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_uuid_v4 failed: {}", err);
+        }
+    });
+
+    // Test UUID v7 generation
+    println!("Testing test_uuid_v7...");
+    ctx.procedures.test_uuid_v_7_then(|_, res| match res {
+        Ok(uuid_str) => {
+            println!("  ✓ test_uuid_v7 generated: {}", uuid_str);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_uuid_v7 failed: {}", err);
+        }
+    });
+
+    // Test UUID round-trip
+    println!("Testing test_uuid_round_trip...");
+    ctx.procedures.test_uuid_round_trip_then(|_, res| match res {
+        Ok(result) => {
+            println!("  ✓ test_uuid_round_trip: {}", result);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_uuid_round_trip failed: {}", err);
+        }
+    });
+
+    // Test UUID versions
+    println!("Testing test_uuid_versions...");
+    ctx.procedures.test_uuid_versions_then(|_, res| match res {
+        Ok(result) => {
+            println!("  ✓ test_uuid_versions: {}", result);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_uuid_versions failed: {}", err);
+        }
+    });
+
+    // Test UUID ordering
+    println!("Testing test_uuid_ordering...");
+    ctx.procedures.test_uuid_ordering_then(|_, res| match res {
+        Ok(result) => {
+            println!("  ✓ test_uuid_ordering: {}", result);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_uuid_ordering failed: {}", err);
+        }
+    });
+
+    // Test UUID counter
+    println!("Testing test_uuid_counter...");
+    ctx.procedures.test_uuid_counter_then(|_, res| match res {
+        Ok(result) => {
+            println!("  ✓ test_uuid_counter: {}", result);
+        }
+        Err(err) => {
+            eprintln!("  ✗ test_uuid_counter failed: {}", err);
         }
     });
 }

@@ -360,6 +360,34 @@ SPACETIMEDB_STRUCT(OptionVecOptionI32, v)
 SPACETIMEDB_TABLE(OptionVecOptionI32, option_vec_option_i32, Public)
 
 // =============================================================================
+// RESULT TABLES - Using Result<T, E> type
+// =============================================================================
+
+struct ResultI32String { Result<int32_t, std::string> r; };
+SPACETIMEDB_STRUCT(ResultI32String, r)
+SPACETIMEDB_TABLE(ResultI32String, result_i32_string, Public)
+
+struct ResultStringI32 { Result<std::string, int32_t> r; };
+SPACETIMEDB_STRUCT(ResultStringI32, r)
+SPACETIMEDB_TABLE(ResultStringI32, result_string_i32, Public)
+
+struct ResultIdentityString { Result<Identity, std::string> r; };
+SPACETIMEDB_STRUCT(ResultIdentityString, r)
+SPACETIMEDB_TABLE(ResultIdentityString, result_identity_string, Public)
+
+struct ResultSimpleEnumI32 { Result<SimpleEnum, int32_t> r; };
+SPACETIMEDB_STRUCT(ResultSimpleEnumI32, r)
+SPACETIMEDB_TABLE(ResultSimpleEnumI32, result_simple_enum_i32, Public)
+
+struct ResultEveryPrimitiveStructString { Result<EveryPrimitiveStruct, std::string> r; };
+SPACETIMEDB_STRUCT(ResultEveryPrimitiveStructString, r)
+SPACETIMEDB_TABLE(ResultEveryPrimitiveStructString, result_every_primitive_struct_string, Public)
+
+struct ResultVecI32String { Result<std::vector<int32_t>, std::string> r; };
+SPACETIMEDB_STRUCT(ResultVecI32String, r)
+SPACETIMEDB_TABLE(ResultVecI32String, result_vec_i32_string, Public)
+
+// =============================================================================
 // UNIQUE CONSTRAINT TABLES - Matching Rust's UniqueXXX pattern
 // =============================================================================
 
@@ -978,6 +1006,46 @@ SPACETIMEDB_REDUCER(insert_option_every_primitive_struct, ReducerContext ctx, st
  SPACETIMEDB_REDUCER(insert_option_vec_option_i32, ReducerContext ctx, std::optional<std::vector<std::optional<int32_t>>> v)
 {
     ctx.db[option_vec_option_i32].insert(OptionVecOptionI32{v});
+    return Ok();
+}
+
+// =============================================================================
+// RESULT TABLE REDUCERS - INSERT OPERATIONS
+// =============================================================================
+
+SPACETIMEDB_REDUCER(insert_result_i32_string, ReducerContext ctx, Result<int32_t, std::string> r)
+{
+    ctx.db[result_i32_string].insert(ResultI32String{r});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_result_string_i32, ReducerContext ctx, Result<std::string, int32_t> r)
+{
+    ctx.db[result_string_i32].insert(ResultStringI32{r});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_result_identity_string, ReducerContext ctx, Result<Identity, std::string> r)
+{
+    ctx.db[result_identity_string].insert(ResultIdentityString{r});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_result_simple_enum_i32, ReducerContext ctx, Result<SimpleEnum, int32_t> r)
+{
+    ctx.db[result_simple_enum_i32].insert(ResultSimpleEnumI32{r});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_result_every_primitive_struct_string, ReducerContext ctx, Result<EveryPrimitiveStruct, std::string> r)
+{
+    ctx.db[result_every_primitive_struct_string].insert(ResultEveryPrimitiveStructString{r});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_result_vec_i32_string, ReducerContext ctx, Result<std::vector<int32_t>, std::string> r)
+{
+    ctx.db[result_vec_i32_string].insert(ResultVecI32String{r});
     return Ok();
 }
 
@@ -1903,5 +1971,18 @@ SPACETIMEDB_CLIENT_VISIBILITY_FILTER(
 SPACETIMEDB_REDUCER(no_op_succeeds, ReducerContext ctx)
 {
     LOG_INFO("No-op reducer executed successfully");
+    return Ok();
+}
+// =============================================================================
+// TEST RESULT TYPE AS REDUCER PARAMETER
+// =============================================================================
+
+SPACETIMEDB_REDUCER(test_result_param, ReducerContext ctx, Result<int32_t, std::string> r)
+{
+    if (r.is_ok()) {
+        LOG_INFO("Received ok: " + std::to_string(*r.ok_value()));
+    } else {
+        LOG_INFO("Received err: " + *r.err_value());
+    }
     return Ok();
 }

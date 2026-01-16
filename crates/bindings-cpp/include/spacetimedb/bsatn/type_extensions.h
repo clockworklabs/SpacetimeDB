@@ -23,6 +23,7 @@ constexpr const char* IDENTITY_TAG = "__identity__";
 constexpr const char* CONNECTION_ID_TAG = "__connection_id__";
 constexpr const char* TIMESTAMP_TAG = "__timestamp_micros_since_unix_epoch__";
 constexpr const char* TIME_DURATION_TAG = "__time_duration_micros__";
+constexpr const char* UUID_TAG = "__uuid__";
 
 } // namespace SpacetimeDb::bsatn
 
@@ -31,6 +32,7 @@ constexpr const char* TIME_DURATION_TAG = "__time_duration_micros__";
 #include "types.h"
 #include "timestamp.h"
 #include "time_duration.h"
+#include "uuid.h"
 #include <string_view>
 #include <algorithm>
 #include <optional>
@@ -109,7 +111,9 @@ enum class SpecialTypeKind {
     Unit,        // Empty Product type
     Never,       // Empty Sum type
     ScheduleAt,  // Sum with Interval and Time variants
-    Option       // Sum with some and none variants
+    Option,      // Sum with some and none variants
+    Uuid,        // UUID type
+    Result       // Sum with ok and err variants
 };
 
 /**
@@ -127,6 +131,7 @@ inline bool is_special_product_type(const ProductType& product) {
         const std::string& tag = *product.elements[0].name;
         return tag == IDENTITY_TAG ||
                tag == CONNECTION_ID_TAG ||
+               tag == UUID_TAG ||
                tag == TIMESTAMP_TAG ||
                tag == TIME_DURATION_TAG;
     }
@@ -143,16 +148,19 @@ inline bool is_special_sum_type(const SumTypeSchema& sum) {
         return true;
     }
     
-    // Two-variant sum types: ScheduleAt and Option
+    // Two-variant sum types: ScheduleAt, Option, and Result
     if (sum.variants.size() == 2) {
         bool has_interval = false, has_time = false;
         bool has_some = false, has_none = false;
+        bool has_ok = false, has_err = false;
         
         for (const auto& variant : sum.variants) {
             if (variant.name == "Interval") has_interval = true;
             else if (variant.name == "Time") has_time = true;
             else if (variant.name == "some") has_some = true;
             else if (variant.name == "none") has_none = true;
+            else if (variant.name == "ok") has_ok = true;
+            else if (variant.name == "err") has_err = true;
         }
         
         // ScheduleAt type: sum with Interval and Time variants
@@ -162,6 +170,11 @@ inline bool is_special_sum_type(const SumTypeSchema& sum) {
         
         // Option type: sum with some and none variants
         if (has_some && has_none) {
+            return true;
+        }
+        
+        // Result type: sum with ok and err variants
+        if (has_ok && has_err) {
             return true;
         }
     }
@@ -197,17 +210,11 @@ inline SpecialTypeKind get_special_type_kind(const AlgebraicType& type) {
         // Field-tagged types
         if (product.elements.size() == 1 && product.elements[0].name.has_value()) {
             const std::string& tag = *product.elements[0].name;
-            // Use string_view comparison for more robust matching
             if (tag == IDENTITY_TAG) return SpecialTypeKind::Identity;
             if (tag == CONNECTION_ID_TAG) return SpecialTypeKind::ConnectionId;
             if (tag == TIMESTAMP_TAG) return SpecialTypeKind::Timestamp;
             if (tag == TIME_DURATION_TAG) return SpecialTypeKind::TimeDuration;
-            
-            // Fallback: Check for exact field name matches in case of string issues
-            if (tag == "__identity__") return SpecialTypeKind::Identity;
-            if (tag == "__connection_id__") return SpecialTypeKind::ConnectionId;
-            if (tag == "__timestamp_micros_since_unix_epoch__") return SpecialTypeKind::Timestamp;
-            if (tag == "__time_duration_micros__") return SpecialTypeKind::TimeDuration;
+            if (tag == UUID_TAG) return SpecialTypeKind::Uuid;
         }
     } else if (type.tag() == AlgebraicTypeTag::Sum) {
         const auto& sum = type.as_sum();
@@ -315,6 +322,19 @@ namespace special_types {
         return AlgebraicType::make_product(std::move(product));
     }
     
+    /**
+     * @brief Create a Uuid type (128-bit universally unique identifier).
+     * 
+     * @return AlgebraicType representing a Uuid
+     * @todo Integrate with type registry for proper type indexing
+     */
+    inline AlgebraicType uuid() {
+        // Uuid uses U128 as inner type (matches Rust implementation)
+        // CRITICAL: Pass the actual U128 type, not a Ref to it - special types are inlined!
+        auto product = make_special_type(UUID_TAG, AlgebraicType::U128());
+        return AlgebraicType::make_product(std::move(product));
+    }
+    
 } // namespace special_types
 
 // =============================================================================
@@ -408,7 +428,7 @@ struct bsatn_traits<::SpacetimeDb::i256> {
 };
 
 // =============================================================================
-// SPACETIMEDB CORE TYPES (Identity, ConnectionId, Timestamp, TimeDuration)
+// SPACETIMEDB CORE TYPES (Identity, ConnectionId, Timestamp, TimeDuration, Uuid)
 // =============================================================================
 
 /**
@@ -470,6 +490,24 @@ struct bsatn_traits<::SpacetimeDb::Timestamp> {
 };
 
 /**
+ * BSATN serialization for Uuid
+ */
+template<>
+struct bsatn_traits<::SpacetimeDb::Uuid> {
+    static void serialize(Writer& writer, const ::SpacetimeDb::Uuid& value) {
+        value.bsatn_serialize(writer);
+    }
+    
+    static ::SpacetimeDb::Uuid deserialize(Reader& reader) {
+        return ::SpacetimeDb::Uuid::bsatn_deserialize(reader);
+    }
+    
+    static AlgebraicType algebraic_type() {
+        return special_types::uuid();
+    }
+};
+
+/**
  * BSATN serialization for TimeDuration
  */
 template<>
@@ -489,6 +527,30 @@ struct bsatn_traits<::SpacetimeDb::TimeDuration> {
 
 // =============================================================================
 // CONTAINER TYPES
+// =============================================================================
+
+// BSATN serialization for Result<T, E>
+template<typename T, typename E>
+struct bsatn_traits<::SpacetimeDb::Result<T, E>> {
+    static void serialize(Writer& writer, const ::SpacetimeDb::Result<T, E>& result) {
+        result.bsatn_serialize(writer);
+    }
+    
+    static ::SpacetimeDb::Result<T, E> deserialize(Reader& reader) {
+        return ::SpacetimeDb::Result<T, E>::bsatn_deserialize(reader);
+    }
+    
+    static AlgebraicType algebraic_type() {
+        // Return sum type with "ok" and "err" variants
+        std::vector<SumTypeVariant> variants;
+        variants.emplace_back("ok", bsatn_traits<T>::algebraic_type());
+        variants.emplace_back("err", bsatn_traits<E>::algebraic_type());
+        return AlgebraicType::make_sum(std::make_unique<SumTypeSchema>(std::move(variants)));
+    }
+};
+
+// =============================================================================
+// STANDARD LIBRARY CONTAINER TYPES
 // =============================================================================
 
 // Note: bsatn_traits specializations for std::optional<T> and std::vector<T>

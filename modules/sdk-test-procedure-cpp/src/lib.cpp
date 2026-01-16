@@ -25,6 +25,14 @@ struct MyTable {
 SPACETIMEDB_STRUCT(MyTable, field)
 SPACETIMEDB_TABLE(MyTable, my_table, Public)
 
+// Table for UUID ordering tests
+struct PkUuid {
+    Uuid u;
+    uint8_t data;
+};
+SPACETIMEDB_STRUCT(PkUuid, u, data)
+SPACETIMEDB_TABLE(PkUuid, pk_uuid, Public)
+
 // ============================================================================
 // Procedure Tests - Part 1: Return Values
 // ============================================================================
@@ -192,16 +200,16 @@ SPACETIMEDB_PROCEDURE(std::string, test_jwt_in_tx, ProcedureContext ctx) {
         // Access sender_auth via the method (matches Rust pattern)
         const auto& auth = tx.sender_auth();
         
-        if (auth.HasJwt()) {
-            auto jwt_opt = auth.GetJwt();
+        if (auth.has_jwt()) {
+            auto jwt_opt = auth.get_jwt();
             if (!jwt_opt.has_value()) {
-                result = "Error: HasJwt() true but GetJwt() empty";
+                result = "Error: has_jwt() true but get_jwt() empty";
                 return;
             }
             
             auto& jwt = jwt_opt.value();
-            auto subject = jwt.Subject();
-            auto issuer = jwt.Issuer();
+            auto subject = jwt.subject();
+            auto issuer = jwt.issuer();
             
             LOG_INFO("JWT in transaction - Subject: " + subject);
             LOG_INFO("JWT in transaction - Issuer: " + issuer);
@@ -213,7 +221,7 @@ SPACETIMEDB_PROCEDURE(std::string, test_jwt_in_tx, ProcedureContext ctx) {
         }
         
         // Verify caller identity
-        auto caller_identity = auth.GetCallerIdentity();
+        auto caller_identity = auth.get_caller_identity();
         LOG_INFO("Caller identity in tx: " + caller_identity.to_string());
     });
     
@@ -228,15 +236,15 @@ SPACETIMEDB_PROCEDURE(std::string, insert_if_authenticated, ProcedureContext ctx
     ctx.with_tx([&result](TxContext& tx) {
         const auto& auth = tx.sender_auth();
         
-        if (auth.HasJwt()) {
-            auto jwt_opt = auth.GetJwt();
+        if (auth.has_jwt()) {
+            auto jwt_opt = auth.get_jwt();
             if (!jwt_opt.has_value()) {
-                result = "Error: HasJwt() true but GetJwt() empty";
+                result = "Error: has_jwt() true but get_jwt() empty";
                 return;
             }
             
             auto& jwt = jwt_opt.value();
-            auto subject = jwt.Subject();
+            auto subject = jwt.subject();
             
             // Insert data only if JWT is present
             tx.db[my_table].insert(MyTable{
@@ -257,13 +265,178 @@ SPACETIMEDB_PROCEDURE(std::string, insert_if_authenticated, ProcedureContext ctx
 #endif // SPACETIMEDB_UNSTABLE_FEATURES
 
 // ============================================================================
-// NOTE: Scheduled Procedure tests are excluded
+// UUID Tests
 // ============================================================================
-//
-// The following tests from the Rust version are NOT included yet:
-//
-// - schedule_proc (requires scheduled procedures - Part 3)
-// - scheduled_proc (requires scheduled procedures - Part 3)
-//
-// These will be added in Part 3 as the feature is implemented.
-// ============================================================================
+
+// Test UUID v7 generation and ordering
+SPACETIMEDB_PROCEDURE(Unit, sorted_uuids_insert, ProcedureContext ctx) {
+    ctx.with_tx([](TxContext& tx) {
+        // Generate and insert 1000 UUIDs
+        for (int i = 0; i < 1000; i++) {
+            Uuid uuid = tx.new_uuid_v7();
+            tx.db[pk_uuid].insert(PkUuid{uuid, 0});
+        }
+        
+        // Verify UUIDs are sorted
+        std::optional<Uuid> last_uuid;
+        for (const auto& row : tx.db[pk_uuid]) {
+            if (last_uuid.has_value()) {
+                if (last_uuid.value() >= row.u) {
+                    LOG_PANIC("UUIDs are not sorted correctly");
+                }
+            }
+            last_uuid = row.u;
+        }
+        
+        LOG_INFO("Successfully inserted and verified 1000 sorted UUIDs");
+    });
+    
+    return Unit{};
+}
+
+// Test UUID v4 generation
+SPACETIMEDB_PROCEDURE(std::string, test_uuid_v4, ProcedureContext ctx) {
+    Uuid uuid = ctx.new_uuid_v4();
+    
+    // Verify it's a valid v4 UUID
+    auto version = uuid.get_version();
+    if (!version.has_value() || version.value() != Uuid::Version::V4) {
+        LOG_PANIC("Generated UUID is not v4");
+    }
+    
+    std::string uuid_str = uuid.to_string();
+    LOG_INFO("Generated UUID v4: " + uuid_str);
+    return uuid_str;
+}
+
+// Test UUID v7 generation
+SPACETIMEDB_PROCEDURE(std::string, test_uuid_v7, ProcedureContext ctx) {
+    Uuid uuid = ctx.new_uuid_v7();
+    
+    // Verify it's a valid v7 UUID
+    auto version = uuid.get_version();
+    if (!version.has_value() || version.value() != Uuid::Version::V7) {
+        LOG_PANIC("Generated UUID is not v7");
+    }
+    
+    std::string uuid_str = uuid.to_string();
+    LOG_INFO("Generated UUID v7: " + uuid_str);
+    return uuid_str;
+}
+
+// Test UUID string round-trip
+SPACETIMEDB_PROCEDURE(std::string, test_uuid_round_trip, ProcedureContext ctx) {
+    // Test with NIL
+    std::string nil_str = Uuid::nil().to_string();
+    auto nil_parsed = Uuid::parse_str(nil_str);
+    if (!nil_parsed.has_value() || nil_parsed.value() != Uuid::nil()) {
+        LOG_PANIC("NIL UUID round-trip failed");
+    }
+    
+    // Test with MAX
+    std::string max_str = Uuid::max().to_string();
+    auto max_parsed = Uuid::parse_str(max_str);
+    if (!max_parsed.has_value() || max_parsed.value() != Uuid::max()) {
+        LOG_PANIC("MAX UUID round-trip failed");
+    }
+    
+    // Test with generated UUID
+    Uuid uuid = ctx.new_uuid_v7();
+    std::string uuid_str = uuid.to_string();
+    auto uuid_parsed = Uuid::parse_str(uuid_str);
+    if (!uuid_parsed.has_value() || uuid_parsed.value() != uuid) {
+        LOG_PANIC("Generated UUID round-trip failed");
+    }
+    
+    LOG_INFO("All UUID round-trips passed");
+    return "NIL: " + nil_str + ", MAX: " + max_str + ", V7: " + uuid_str;
+}
+
+// Test UUID version detection
+SPACETIMEDB_PROCEDURE(std::string, test_uuid_versions, ProcedureContext ctx) {
+    // Debug: Check what MAX actually is
+    LOG_INFO("MAX as u128: high=" + std::to_string(Uuid::max().as_u128().high) + ", low=" + std::to_string(Uuid::max().as_u128().low));
+    LOG_INFO("MAX.to_string(): " + Uuid::max().to_string());
+    
+    // Test NIL
+    auto nil_version = Uuid::nil().get_version();
+    if (!nil_version.has_value() || nil_version.value() != Uuid::Version::Nil) {
+        LOG_PANIC("NIL version check failed");
+    }
+    
+    // Test MAX
+    auto max_version = Uuid::max().get_version();
+    if (!max_version.has_value() || max_version.value() != Uuid::Version::Max) {
+        LOG_PANIC("MAX version check failed");
+    }
+    
+    // Test V4
+    Uuid uuid_v4 = ctx.new_uuid_v4();
+    auto v4_version = uuid_v4.get_version();
+    if (!v4_version.has_value() || v4_version.value() != Uuid::Version::V4) {
+        LOG_PANIC("V4 version check failed");
+    }
+    
+    // Test V7
+    Uuid uuid_v7 = ctx.new_uuid_v7();
+    auto v7_version = uuid_v7.get_version();
+    if (!v7_version.has_value() || v7_version.value() != Uuid::Version::V7) {
+        LOG_PANIC("V7 version check failed");
+    }
+    
+    LOG_INFO("All UUID version checks passed");
+    return "NIL, MAX, V4, and V7 versions detected correctly";
+}
+
+// Test UUID ordering
+SPACETIMEDB_PROCEDURE(std::string, test_uuid_ordering, ProcedureContext ctx) {
+    Uuid u1 = Uuid::from_u128(u128(0, 1));
+    Uuid u2 = Uuid::from_u128(u128(0, 2));
+    
+    if (!(u1 < u2)) {
+        LOG_PANIC("UUID ordering failed: u1 < u2");
+    }
+    if (!(u2 > u1)) {
+        LOG_PANIC("UUID ordering failed: u2 > u1");
+    }
+    if (!(u1 <= u1)) {
+        LOG_PANIC("UUID ordering failed: u1 <= u1");
+    }
+    if (!(u1 == u1)) {
+        LOG_PANIC("UUID ordering failed: u1 == u1");
+    }
+    if (!(u1 != u2)) {
+        LOG_PANIC("UUID ordering failed: u1 != u2");
+    }
+    
+    LOG_INFO("All UUID ordering checks passed");
+    return "UUID comparison operators work correctly";
+}
+
+// Test UUID counter extraction
+SPACETIMEDB_PROCEDURE(std::string, test_uuid_counter, ProcedureContext ctx) {
+    // Generate multiple UUIDs and verify counter increments
+    std::vector<int32_t> counters;
+    
+    for (int i = 0; i < 10; i++) {
+        Uuid uuid = ctx.new_uuid_v7();
+        int32_t counter = uuid.get_counter();
+        counters.push_back(counter);
+    }
+    
+    // Verify counters are increasing
+    for (size_t i = 1; i < counters.size(); i++) {
+        if (counters[i] <= counters[i-1]) {
+            LOG_PANIC("Counter not incrementing: " + std::to_string(counters[i-1]) + " >= " + std::to_string(counters[i]));
+        }
+    }
+    
+    std::string result = "Counters: ";
+    for (size_t i = 0; i < counters.size(); i++) {
+        result += std::to_string(counters[i]);
+        if (i < counters.size() - 1) result += ", ";
+    }
+    
+    LOG_INFO("Counter extraction test passed: " + result);
+    return result;
+}
