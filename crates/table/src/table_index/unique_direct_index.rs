@@ -161,6 +161,11 @@ impl InnerIndex {
         // SAFETY: `self.inner.len() = KEYS_PER_INNER` and `key.0 < KEYS_PER_INNER`.
         unsafe { self.inner.get_unchecked_mut(key.0) }
     }
+
+    /// Clears the inner index.
+    fn clear(&mut self) {
+        self.inner.fill(NONE_PTR);
+    }
 }
 
 impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
@@ -249,8 +254,11 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectIndex<K> {
     /// Deletes all entries from the index, leaving it empty.
     /// This will not deallocate the outer index.
     fn clear(&mut self) {
-        self.outer.clear();
         self.len = 0;
+        self.outer
+            .iter_mut()
+            .filter_map(|i| i.as_mut())
+            .for_each(InnerIndex::clear);
     }
 
     /// Returns whether `other` can be merged into `self`

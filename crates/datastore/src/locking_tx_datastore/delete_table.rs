@@ -137,6 +137,16 @@ impl DeleteTable {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    /// Clears this deletion table,
+    /// enabling it for reuse for the same `fixed_row_size`.
+    pub fn clear(&mut self) {
+        self.len = 0;
+
+        for set in self.deleted.iter_mut().filter_map(|set| set.as_mut()) {
+            set.clear();
+        }
+    }
 }
 
 #[cfg(test)]
