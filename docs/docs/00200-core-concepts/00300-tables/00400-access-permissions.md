@@ -350,31 +350,35 @@ spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-// Private table containing all messages
-[SpacetimeDB.Table(Name = "Message")]  // Private by default
-public partial struct Message
+public partial class Module 
 {
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-    [SpacetimeDB.Index.BTree]
-    public Identity Sender;
-    [SpacetimeDB.Index.BTree]
-    public Identity Recipient;
-    public string Content;
-    public Timestamp Timestamp;
-}
+    // Private table containing all messages
+    [SpacetimeDB.Table(Name = "Message")]  // Private by default
+    public partial struct Message
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        [SpacetimeDB.Index.BTree]
+        public Identity Sender;
+        [SpacetimeDB.Index.BTree]
+        public Identity Recipient;
+        public string Content;
+        public Timestamp Timestamp;
+    }
 
-// Public view that only returns messages the caller can see
-[SpacetimeDB.View(Name = "MyMessages", Public = true)]
-public static List<Message> MyMessages(ViewContext ctx)
-{
-    // Look up messages by index where caller is sender or recipient
-    var sent = ctx.Db.Message.Sender.Filter(ctx.Sender).ToList();
-    var received = ctx.Db.Message.Recipient.Filter(ctx.Sender).ToList();
-    sent.AddRange(received);
-    return sent;
-}
+    // Public view that only returns messages the caller can see
+    [SpacetimeDB.View(Name = "MyMessages", Public = true)]
+    public static List<Message> MyMessages(ViewContext ctx)
+    {
+        // Look up messages by index where caller is sender or recipient
+        var sent = ctx.Db.Message.Sender.Filter(ctx.Sender).ToList();
+        var received = ctx.Db.Message.Recipient.Filter(ctx.Sender).ToList();
+        sent.AddRange(received);
+        return sent;
+    }
+
+
 ```
 
 </TabItem>
@@ -420,6 +424,8 @@ Use views to return a custom type that omits sensitive columns. The view reads f
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
+import {schema, t, table} from 'spacetimedb/server';
+
 // Private table with sensitive data
 const userAccount = table(
   { name: 'user_account' },  // Private by default
@@ -467,47 +473,50 @@ spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-// Private table with sensitive data
-[SpacetimeDB.Table(Name = "UserAccount")]  // Private by default
-public partial struct UserAccount
+public partial class Module
 {
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-    [SpacetimeDB.Unique]
-    public Identity Identity;
-    public string Username;
-    public string Email;
-    public string PasswordHash;  // Sensitive
-    public string ApiKey;        // Sensitive
-    public Timestamp CreatedAt;
-}
-
-// Public type without sensitive columns
-[SpacetimeDB.Type]
-public partial struct PublicUserProfile
-{
-    public ulong Id;
-    public string Username;
-    public Timestamp CreatedAt;
-}
-
-// Public view that returns the caller's profile without sensitive data
-[SpacetimeDB.View(Name = "MyProfile", Public = true)]
-public static PublicUserProfile? MyProfile(ViewContext ctx)
-{
-    // Look up the caller's account by their identity (unique index)
-    if (ctx.Db.UserAccount.Identity.Find(ctx.Sender) is not UserAccount user)
+    // Private table with sensitive data
+    [SpacetimeDB.Table(Name = "UserAccount")]  // Private by default
+    public partial struct UserAccount
     {
-        return null;
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        [SpacetimeDB.Unique]
+        public Identity Identity;
+        public string Username;
+        public string Email;
+        public string PasswordHash;  // Sensitive
+        public string ApiKey;        // Sensitive
+        public Timestamp CreatedAt;
     }
-    return new PublicUserProfile
+
+    // Public type without sensitive columns
+    [SpacetimeDB.Type]
+        public partial struct PublicUserProfile
     {
-        Id = user.Id,
-        Username = user.Username,
-        CreatedAt = user.CreatedAt,
-        // Email, PasswordHash, and ApiKey are not included
-    };
+        public ulong Id;
+        public string Username;
+        public Timestamp CreatedAt;
+    }
+
+    // Public view that returns the caller's profile without sensitive data
+    [SpacetimeDB.View(Name = "MyProfile", Public = true)]
+    public static PublicUserProfile? MyProfile(ViewContext ctx)
+    {
+        // Look up the caller's account by their identity (unique index)
+        if (ctx.Db.UserAccount.Identity.Find(ctx.Sender) is not UserAccount user)
+        {
+            return null;
+        }
+        return new PublicUserProfile
+        {
+            Id = user.Id,
+            Username = user.Username,
+            CreatedAt = user.CreatedAt,
+            // Email, PasswordHash, and ApiKey are not included
+        };
+    }
 }
 ```
 
@@ -617,50 +626,53 @@ spacetimedb.view(
 ```csharp
 using SpacetimeDB;
 
-// Private table with all employee data
-[SpacetimeDB.Table(Name = "Employee")]
-public partial struct Employee
+public partial class Module
 {
-    [SpacetimeDB.PrimaryKey]
-    public ulong Id;
-    [SpacetimeDB.Unique]
-    public Identity Identity;
-    public string Name;
-    public string Department;
-    public ulong Salary;           // Sensitive
-    [SpacetimeDB.Index.BTree]
-    public ulong? ManagerId;
-}
-
-// Public type for team members (no salary)
-[SpacetimeDB.Type]
-public partial struct TeamMember
-{
-    public ulong Id;
-    public string Name;
-    public string Department;
-}
-
-// View that returns only the caller's team members, without salary info
-[SpacetimeDB.View(Name = "MyTeam", Public = true)]
-public static List<TeamMember> MyTeam(ViewContext ctx)
-{
-    // Find the caller's employee record by identity (unique index)
-    if (ctx.Db.Employee.Identity.Find(ctx.Sender) is not Employee me)
+    // Private table with all employee data
+    [SpacetimeDB.Table(Name = "Employee")]
+    public partial struct Employee
     {
-        return new List<TeamMember>();
+        [SpacetimeDB.PrimaryKey]
+        public ulong Id;
+        [SpacetimeDB.Unique]
+        public Identity Identity;
+        public string Name;
+        public string Department;
+        public ulong Salary;           // Sensitive
+        [SpacetimeDB.Index.BTree]
+        public ulong? ManagerId;
     }
 
-    // Look up employees who report to the caller by ManagerId index
-    return ctx.Db.Employee.ManagerId.Filter(me.Id)
-        .Select(emp => new TeamMember
+    // Public type for team members (no salary)
+    [SpacetimeDB.Type]
+    public partial struct TeamMember
+    {
+        public ulong Id;
+        public string Name;
+        public string Department;
+    }
+
+    // View that returns only the caller's team members, without salary info
+    [SpacetimeDB.View(Name = "MyTeam", Public = true)]
+    public static List<TeamMember> MyTeam(ViewContext ctx)
+    {
+        // Find the caller's employee record by identity (unique index)
+        if (ctx.Db.Employee.Identity.Find(ctx.Sender) is not Employee me)
         {
-            Id = emp.Id,
-            Name = emp.Name,
-            Department = emp.Department,
-            // Salary is not included
-        })
-        .ToList();
+            return new List<TeamMember>();
+        }
+
+        // Look up employees who report to the caller by ManagerId index
+        return ctx.Db.Employee.ManagerId.Filter(me.Id)
+            .Select(emp => new TeamMember
+            {
+                Id = emp.Id,
+                Name = emp.Name,
+                Department = emp.Department,
+                // Salary is not included
+            })
+            .ToList();
+    }
 }
 ```
 
