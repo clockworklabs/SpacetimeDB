@@ -28,7 +28,11 @@ jobs:
     if: |
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/update-llm-benchmark')) ||
       (github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       # Here we install the spacetime CLI for faster execution of the tests
       # SpacetimeDB itself is not under test here, rather it's the docs.
@@ -259,38 +263,16 @@ jobs:
 
             const issue_number = Number(process.env.PR_NUMBER);
 
-            // Find and update existing comment or create new one
-            console.log(`Looking for existing comment on PR #${issue_number}...`);
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number,
-            });
-            console.log(`Found ${comments.data.length} comments`);
-
-            const marker = '## LLM Benchmark Results (ci-quickfix)';
-            const existingComment = comments.data.find(c => c.body && c.body.startsWith(marker));
-
+            // Always post a new comment
+            console.log(`Posting new comment on PR #${issue_number}...`);
             try {
-              if (existingComment) {
-                console.log(`Updating existing comment ${existingComment.id}...`);
-                await github.rest.issues.updateComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  comment_id: existingComment.id,
-                  body,
-                });
-                console.log('Comment updated successfully');
-              } else {
-                console.log('Creating new comment...');
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number,
-                  body,
-                });
-                console.log('Comment created successfully');
-              }
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body,
+              });
+              console.log('Comment created successfully');
             } catch (err) {
               console.error('Failed to post comment:', err.message);
               console.error('Full error:', JSON.stringify(err, null, 2));
