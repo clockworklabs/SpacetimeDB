@@ -36,8 +36,8 @@ namespace SpacetimeDb {
  * SPACETIMEDB_PROCEDURE(void, insert_user, ProcedureContext ctx, std::string name) {
  *     ctx.with_tx([&](TxContext& tx) {
  *         // Access authentication (same as in reducers)
- *         if (tx.sender_auth().HasJwt()) {
- *             auto jwt = tx.sender_auth().GetJwt();
+ *         if (tx.sender_auth().has_jwt()) {
+ *             auto jwt = tx.sender_auth().get_jwt();
  *             // ...
  *         }
  *         // Database operations here are transactional (same syntax as reducers)
@@ -71,6 +71,45 @@ public:
     const AuthCtx& sender_auth() const { return ctx_.sender_auth(); }
     Identity identity() const { return ctx_.identity(); }
     StdbRng& rng() const { return ctx_.rng(); }
+    
+    /**
+     * Generate a new random UUID v4.
+     * 
+     * Creates a random UUID using the transaction's deterministic RNG.
+     * 
+     * Example:
+     * @code
+     * SPACETIMEDB_PROCEDURE(void, create_session, ProcedureContext ctx) {
+     *     ctx.with_tx([&](TxContext& tx) {
+     *         Uuid session_id = tx.new_uuid_v4();
+     *         tx.db[sessions].insert(Session{session_id});
+     *     });
+     * }
+     * @endcode
+     * 
+     * @return A new UUID v4
+     */
+    Uuid new_uuid_v4() const { return ctx_.new_uuid_v4(); }
+    
+    /**
+     * Generate a new UUID v7.
+     * 
+     * Creates a time-ordered UUID with the transaction's timestamp, a monotonic counter,
+     * and random bytes from the transaction's deterministic RNG.
+     * 
+     * Example:
+     * @code
+     * SPACETIMEDB_PROCEDURE(void, create_user, ProcedureContext ctx, std::string name) {
+     *     ctx.with_tx([&](TxContext& tx) {
+     *         Uuid user_id = tx.new_uuid_v7();
+     *         tx.db[users].insert(User{user_id, name});
+     *     });
+     * }
+     * @endcode
+     * 
+     * @return A new UUID v7
+     */
+    Uuid new_uuid_v7() const { return ctx_.new_uuid_v7(); }
 };
 
 } // namespace SpacetimeDb

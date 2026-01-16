@@ -62,6 +62,8 @@
 #include "spacetimedb/bsatn/types.h"
 #include "spacetimedb/bsatn/timestamp.h"
 #include "spacetimedb/bsatn/time_duration.h"
+#include "spacetimedb/bsatn/uuid.h"
+#include "spacetimedb/bsatn/result.h"
 #include "spacetimedb/bsatn/writer.h"
 #include "spacetimedb/bsatn/reader.h"
 #include "spacetimedb/bsatn/algebraic_type.h"

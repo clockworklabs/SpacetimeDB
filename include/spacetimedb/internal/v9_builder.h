@@ -398,7 +398,12 @@ void V9Builder::RegisterTable(const std::string& table_name,
                                   sum.variants[0].name == "Interval" && 
                                   sum.variants[1].name == "Time");
             
-            if (!is_option && !is_schedule_at) {
+            // Check if it's a Result type (which should be inlined)
+            bool is_result = (sum.variants.size() == 2 && 
+                             sum.variants[0].name == "ok" && 
+                             sum.variants[1].name == "err");
+            
+            if (!is_option && !is_schedule_at && !is_result) {
                 // This is a user-defined enum, register it by name
                 // Strip namespace from type name if present
                 size_t last_colon = field_type_name.rfind("::");

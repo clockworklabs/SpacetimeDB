@@ -165,6 +165,11 @@ private:
     bool isOptionType(const bsatn::AlgebraicType& type) const;
     
     /**
+     * Check if a type is Result (Sum with "ok" and "err" variants)
+     */
+    bool isResultType(const bsatn::AlgebraicType& type) const;
+    
+    /**
      * Check if a type is ScheduleAt (Sum with "Interval" and "Time" variants)
      */
     bool isScheduleAtType(const bsatn::AlgebraicType& type) const;

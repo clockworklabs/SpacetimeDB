@@ -160,22 +160,6 @@ SumType<Ts...> deserialize(Reader& reader, std::type_identity<SumType<Ts...>>) {
 }
 
 } // namespace bsatn
-
-// Result type helper (like Rust's Result<T, E>)
-template<typename T, typename E>
-using Result = bsatn::SumType<T, E>;
-
-// Factory functions for Result
-template<typename T, typename E>
-Result<T, E> Ok(T&& value) {
-    return Result<T, E>(std::forward<T>(value));
-}
-
-template<typename T, typename E>
-Result<T, E> Err(E&& error) {
-    return Result<T, E>(std::forward<E>(error));
-}
-
 } // namespace SpacetimeDb
 
 #endif // SPACETIMEDB_BSATN_SUM_TYPE_H

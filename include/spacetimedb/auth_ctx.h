@@ -45,7 +45,7 @@ public:
      * @param sender The identity of the caller (already derived from JWT claims by the host)
      * @return An AuthCtx based on the connection_id
      */
-    static AuthCtx FromConnectionIdOpt(std::optional<ConnectionId> connection_id, Identity sender);
+    static AuthCtx from_connection_id_opt(std::optional<ConnectionId> connection_id, Identity sender);
 
     /**
      * @brief Creates an AuthCtx for an internal (non-connection-based) reducer call.
@@ -55,7 +55,7 @@ public:
      * 
      * @return An AuthCtx representing an internal call
      */
-    static AuthCtx Internal();
+    static AuthCtx internal();
 
     /**
      * @brief Creates an AuthCtx from a JWT payload string.
@@ -70,7 +70,7 @@ public:
      * @param identity The identity derived from the JWT's issuer and subject
      * @return An AuthCtx with the provided JWT
      */
-    static AuthCtx FromJwtPayload(std::string jwt_payload, Identity identity);
+    static AuthCtx from_jwt_payload(std::string jwt_payload, Identity identity);
 
     /**
      * @brief Creates an AuthCtx that reads the JWT for the given connection ID.
@@ -83,23 +83,23 @@ public:
      * @param sender The identity of the caller (already derived from JWT claims by the host)
      * @return An AuthCtx that will load the JWT on demand
      */
-    static AuthCtx FromConnectionId(ConnectionId connection_id, Identity sender);
+    static AuthCtx from_connection_id(ConnectionId connection_id, Identity sender);
 
     /**
      * @brief Returns whether this reducer was spawned from inside the database.
      * 
      * @return true if this is an internal call (scheduled, init, etc.)
      */
-    bool IsInternal() const { return is_internal_; }
+    bool is_internal() const { return is_internal_; }
 
     /**
      * @brief Checks if there is a JWT without loading it.
      * 
-     * If IsInternal() returns true, this will return false.
+     * If is_internal() returns true, this will return false.
      * 
      * @return true if a JWT is available
      */
-    bool HasJwt() const;
+    bool has_jwt() const;
 
     /**
      * @brief Gets the JWT claims, loading them if necessary.
@@ -108,7 +108,7 @@ public:
      * 
      * @return An optional containing the JwtClaims if available
      */
-    const std::optional<JwtClaims>& GetJwt() const;
+    const std::optional<JwtClaims>& get_jwt() const;
 
     /**
      * @brief Gets the caller's identity.
@@ -119,7 +119,7 @@ public:
      * 
      * @return The caller's Identity
      */
-    Identity GetCallerIdentity() const;
+    Identity get_caller_identity() const;
 };
 
 // ============================================================================
@@ -131,25 +131,25 @@ constexpr uint16_t ERROR_BUFFER_TOO_SMALL = 11;
 inline AuthCtx::AuthCtx(bool is_internal, std::function<std::optional<JwtClaims>()> loader)
     : is_internal_(is_internal), jwt_loader_(std::move(loader)) {}
 
-inline AuthCtx AuthCtx::FromConnectionIdOpt(std::optional<ConnectionId> connection_id, Identity sender) {
+inline AuthCtx AuthCtx::from_connection_id_opt(std::optional<ConnectionId> connection_id, Identity sender) {
     if (connection_id.has_value()) {
-        return FromConnectionId(*connection_id, std::move(sender));
+        return from_connection_id(*connection_id, std::move(sender));
     } else {
-        return Internal();
+        return internal();
     }
 }
 
-inline AuthCtx AuthCtx::Internal() {
+inline AuthCtx AuthCtx::internal() {
     return AuthCtx(true, []() -> std::optional<JwtClaims> { return std::nullopt; });
 }
 
-inline AuthCtx AuthCtx::FromJwtPayload(std::string jwt_payload, Identity identity) {
+inline AuthCtx AuthCtx::from_jwt_payload(std::string jwt_payload, Identity identity) {
     return AuthCtx(false, [payload = std::move(jwt_payload), id = std::move(identity)]() mutable -> std::optional<JwtClaims> {
         return JwtClaims(std::move(payload), std::move(id));
     });
 }
 
-inline AuthCtx AuthCtx::FromConnectionId(ConnectionId connection_id, Identity sender) {
+inline AuthCtx AuthCtx::from_connection_id(ConnectionId connection_id, Identity sender) {
     return AuthCtx(false, [connection_id, sender]() -> std::optional<JwtClaims> {
         // Call the host FFI to get the JWT
         BytesSource jwt_source;
@@ -193,24 +193,24 @@ inline AuthCtx AuthCtx::FromConnectionId(ConnectionId connection_id, Identity se
     });
 }
 
-inline bool AuthCtx::HasJwt() const {
+inline bool AuthCtx::has_jwt() const {
     if (is_internal_) {
         return false;
     }
     
     // Load the JWT if not already loaded, then check if it has a value
-    // This ensures HasJwt() and GetJwt() are consistent
-    return GetJwt().has_value();
+    // This ensures has_jwt() and get_jwt() are consistent
+    return get_jwt().has_value();
 }
 
-inline const std::optional<JwtClaims>& AuthCtx::GetJwt() const {
+inline const std::optional<JwtClaims>& AuthCtx::get_jwt() const {
     if (!jwt_) {
         jwt_ = std::make_shared<std::optional<JwtClaims>>(jwt_loader_());
     }
     return *jwt_;
 }
 
-inline Identity AuthCtx::GetCallerIdentity() const {
+inline Identity AuthCtx::get_caller_identity() const {
     if (is_internal_) {
         // Return database identity for internal calls
         std::array<uint8_t, 32> identity_bytes;
@@ -218,9 +218,9 @@ inline Identity AuthCtx::GetCallerIdentity() const {
         return Identity(identity_bytes);
     }
     
-    const auto& jwt = GetJwt();
+    const auto& jwt = get_jwt();
     if (jwt.has_value()) {
-        return jwt->GetIdentity();
+        return jwt->get_identity();
     }
     
     // No JWT, return database identity as fallback

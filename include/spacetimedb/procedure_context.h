@@ -3,8 +3,10 @@
 
 #include <spacetimedb/bsatn/types.h> // For Identity
 #include <spacetimedb/bsatn/timestamp.h> // For Timestamp
+#include <spacetimedb/bsatn/uuid.h> // For Uuid
 #include <spacetimedb/tx_context.h> // For TxContext
 #include <spacetimedb/abi/FFI.h> // For transaction syscalls
+#include <spacetimedb/random.h> // For StdbRng
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES
 #include <spacetimedb/http.h> // For HttpClient
 #endif
@@ -12,6 +14,7 @@
 #include <functional>
 #include <stdexcept>
 #include <type_traits>
+#include <memory>
 
 namespace SpacetimeDb {
 
@@ -75,12 +78,15 @@ struct ProcedureContext {
     // Always call HTTP before with_tx() or try_with_tx()
     HttpClient http;
 #endif
+
+private:
+    // Lazily initialized RNG for UUID generation
+    mutable std::shared_ptr<StdbRng> rng_instance;
     
-    // NOTE: NO db field!
-    // Part 1 procedures are pure functions - no database access
-    // Part 2 will add WithTx() and TryWithTx() methods for transactions
-    
-    // Constructors
+    // Monotonic counter for UUID v7 generation (31 bits, wraps around)
+    mutable uint32_t counter_uuid_ = 0;
+
+public:
     ProcedureContext() = default;
     
     ProcedureContext(Identity s, Timestamp t, ConnectionId conn_id)
@@ -103,6 +109,65 @@ struct ProcedureContext {
         std::array<uint8_t, 32> id_bytes;
         ::identity(id_bytes.data());
         return Identity(id_bytes);
+    }
+
+    /**
+     * @brief Get the random number generator for this procedure call
+     * 
+     * Lazily initialized and seeded with the timestamp.
+     */
+    StdbRng& rng() const {
+        if (!rng_instance) {
+            rng_instance = std::make_shared<StdbRng>(timestamp);
+        }
+        return *rng_instance;
+    }
+
+    /**
+     * Generate a new random UUID v4.
+     * 
+     * Creates a random UUID using the procedure's RNG.
+     * 
+     * Example:
+     * @code
+     * SPACETIMEDB_PROCEDURE(Uuid, generate_uuid_v4, ProcedureContext ctx) {
+     *     return ctx.new_uuid_v4();
+     * }
+     * @endcode
+     * 
+     * @return A new UUID v4
+     */
+    Uuid new_uuid_v4() const {
+        // Get 16 random bytes from the context RNG
+        std::array<uint8_t, 16> random_bytes;
+        rng().fill_bytes(random_bytes.data(), 16);
+        
+        // Generate UUID v4
+        return Uuid::from_random_bytes_v4(random_bytes);
+    }
+
+    /**
+     * Generate a new UUID v7.
+     * 
+     * Creates a time-ordered UUID with the procedure's timestamp, a monotonic counter,
+     * and random bytes from the procedure's RNG.
+     * 
+     * Example:
+     * @code
+     * SPACETIMEDB_PROCEDURE(Uuid, generate_uuid_v7, ProcedureContext ctx) {
+     *     return ctx.new_uuid_v7();
+     * }
+     * @endcode
+     * 
+     * @return A new UUID v7
+     */
+    Uuid new_uuid_v7() const {
+        // Get 4 random bytes from the context RNG
+        std::array<uint8_t, 4> random_bytes;
+        rng().fill_bytes(random_bytes.data(), 4);
+        
+        // Generate UUID v7 with timestamp and counter
+        return Uuid::from_counter_v7(counter_uuid_, timestamp, random_bytes);
     }
 
 #ifdef SPACETIMEDB_UNSTABLE_FEATURES

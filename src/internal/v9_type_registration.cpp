@@ -51,23 +51,6 @@ AlgebraicType V9TypeRegistration::registerType(const bsatn::AlgebraicType& bsatn
                                                const std::string& explicit_name,
                                                const std::type_info* cpp_type) {
     
-    // Debug: Log when we get a type with a namespace
-    if (!explicit_name.empty() && explicit_name.find("::") != std::string::npos) {
-        fprintf(stdout, "DEBUG: registerType called with namespaced name: '%s'\n", explicit_name.c_str());
-        // Check if this is ScheduleAt being registered incorrectly
-        if (explicit_name.find("ScheduleAt") != std::string::npos) {
-            fprintf(stdout, "DEBUG: ScheduleAt being registered with namespace! Should be inlined!\n");
-            fprintf(stdout, "  Type tag: %d\n", static_cast<int>(bsatn_type.tag()));
-            if (bsatn_type.tag() == bsatn::AlgebraicTypeTag::Sum) {
-                const auto& sum = bsatn_type.as_sum();
-                fprintf(stdout, "  Sum variants: %zu\n", sum.variants.size());
-                for (size_t i = 0; i < sum.variants.size(); ++i) {
-                    fprintf(stdout, "    Variant %zu: %s\n", i, sum.variants[i].name.c_str());
-                }
-            }
-        }
-    }
-    
     // 1. PRIMITIVES - always inline, never registered
     if (isPrimitive(bsatn_type)) {
         return convertPrimitive(bsatn_type);
@@ -90,8 +73,6 @@ AlgebraicType V9TypeRegistration::registerType(const bsatn::AlgebraicType& bsatn
     if (isUnitType(bsatn_type)) {
         if (!explicit_name.empty()) {
             // This is a named unit struct like UnitStruct - do NOT inline
-            fprintf(stdout, "DEBUG: Named unit struct '%s' detected - will register as named type\n", 
-                    explicit_name.c_str());
             // Fall through to register as named type
         } else {
             // Unnamed unit type - inline it
@@ -123,9 +104,13 @@ AlgebraicType V9TypeRegistration::registerType(const bsatn::AlgebraicType& bsatn
         return convertInlineSum(bsatn_type);
     }
     
-    // 7. SCHEDULE_AT - always inline
+    // 7. RESULTS - always inline
+    if (isResultType(bsatn_type)) {
+        return convertInlineSum(bsatn_type);
+    }
+    
+    // 8. SCHEDULE_AT - always inline
     if (isScheduleAtType(bsatn_type)) {
-        fprintf(stdout, "DEBUG: ScheduleAt type detected and will be inlined\n");
         return convertInlineSum(bsatn_type);
     }
     
@@ -357,7 +342,8 @@ bool V9TypeRegistration::isSpecialType(const bsatn::AlgebraicType& type) const {
     return field_name == "__identity__" ||
            field_name == "__connection_id__" ||
            field_name == "__timestamp_micros_since_unix_epoch__" ||
-           field_name == "__time_duration_micros__";
+           field_name == "__time_duration_micros__" ||
+           field_name == "__uuid__";
 }
 
 bool V9TypeRegistration::isOptionType(const bsatn::AlgebraicType& type) const {
@@ -369,6 +355,17 @@ bool V9TypeRegistration::isOptionType(const bsatn::AlgebraicType& type) const {
     return sum.variants.size() == 2 &&
            sum.variants[0].name == "some" &&
            sum.variants[1].name == "none";
+}
+
+bool V9TypeRegistration::isResultType(const bsatn::AlgebraicType& type) const {
+    if (type.tag() != bsatn::AlgebraicTypeTag::Sum) {
+        return false;
+    }
+    
+    const auto& sum = type.as_sum();
+    return sum.variants.size() == 2 &&
+           sum.variants[0].name == "ok" &&
+           sum.variants[1].name == "err";
 }
 
 bool V9TypeRegistration::isScheduleAtType(const bsatn::AlgebraicType& type) const {
