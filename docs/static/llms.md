@@ -57,21 +57,64 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 2. SpacetimeDB Maincloud: a hosted, managed-service, serverless cluster
 3. SpacetimeDB Enterprise: a closed-source, clusterized version of SpacetimeDB which can be licensed for on-prem hosting or dedicated hosting
 
-## AI Assistant Rules
+## Documentation Directory
 
-**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files in `docs/static/ai-rules/`. These contain critical information about:
-- **Hallucinated APIs** that LLMs commonly generate but DO NOT EXIST
-- **Common mistakes** and how to avoid them
-- **Correct patterns** for tables, reducers, and client code
+### Getting Started
+- [What is SpacetimeDB](/intro/what-is-spacetimedb) - Overview and core concepts
+- [Key Architecture](/intro/key-architecture) - How SpacetimeDB works
+- [Language Support](/intro/language-support) - Supported languages and SDKs
+- [FAQ](/intro/faq) - Frequently asked questions
 
-| Language | Rules File |
-|----------|------------|
-| All Languages | `ai-rules/spacetimedb.mdc` |
-| TypeScript | `ai-rules/spacetimedb-typescript.mdc` |
-| Rust | `ai-rules/spacetimedb-rust.mdc` |
-| C# | `ai-rules/spacetimedb-csharp.mdc` |
+### Quickstarts
+- [React Quickstart](/quickstarts/react) - Get started with React + TypeScript
+- [TypeScript Quickstart](/quickstarts/typescript) - TypeScript server module
+- [Rust Quickstart](/quickstarts/rust) - Rust server module
+- [C# Quickstart](/quickstarts/c-sharp) - C# server module
 
-When using `spacetime dev` to create a new project, these rules are automatically installed to `.cursor/rules/`, `CLAUDE.md`, `.windsurfrules`, and `.github/copilot-instructions.md`.
+### Core Concepts
+- [Databases](/databases) - Database modules overview
+- [Tables](/tables) - Defining and working with tables
+  - [Columns](/tables/columns) - Column types and definitions
+  - [Indexes](/tables/indexes) - Creating and using indexes
+  - [Scheduled Tables](/tables/scheduled-tables) - Time-based scheduling
+  - [Access Permissions](/tables/access-permissions) - Table visibility (public/private)
+- [Functions](/functions) - Server-side logic
+  - [Reducers](/functions/reducers) - Transactional RPC functions
+  - [Reducer Context](/functions/reducers/reducer-context) - ctx.db, ctx.sender, etc.
+  - [Lifecycle Reducers](/functions/reducers/lifecycle) - init, client_connected, client_disconnected
+  - [Error Handling](/functions/reducers/error-handling) - Handling errors in reducers
+  - [Procedures](/functions/procedures) - Non-transactional functions with side effects
+  - [Views](/functions/views) - Computed data views
+- [Subscriptions](/subscriptions) - Real-time data synchronization
+  - [Subscription Semantics](/subscriptions/semantics) - How subscriptions work
+- [Client SDKs](/sdks) - Client-side integration
+  - [Code Generation](/sdks/codegen) - Generating type-safe bindings
+
+### Development
+- [spacetime dev](/databases/developing) - Interactive development mode
+- [Building & Publishing](/databases/building-publishing) - Deploying modules
+- [Cheat Sheet](/databases/cheat-sheet) - Quick reference for common operations
+- [Automatic Migrations](/databases/automatic-migrations) - Schema migration handling
+
+### Deployment
+- [Deploy to Maincloud](/how-to/deploy/maincloud) - Hosted deployment
+- [Self-Hosting](/how-to/deploy/self-hosting) - Run your own server
+
+### Reference
+- [CLI Reference](/cli-reference) - Command-line tool documentation
+- [SQL Reference](/reference/sql) - SQL query syntax
+- [HTTP API](/http/database) - REST API reference
+
+### AI Assistant Rules
+
+**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files. These contain critical information about hallucinated APIs, common mistakes, and correct patterns:
+
+| Language | Rules |
+|----------|-------|
+| All Languages | [spacetimedb.mdc](https://spacetimedb.com/ai-rules/spacetimedb.mdc) |
+| TypeScript | [spacetimedb-typescript.mdc](https://spacetimedb.com/ai-rules/spacetimedb-typescript.mdc) |
+| Rust | [spacetimedb-rust.mdc](https://spacetimedb.com/ai-rules/spacetimedb-rust.mdc) |
+| C# | [spacetimedb-csharp.mdc](https://spacetimedb.com/ai-rules/spacetimedb-csharp.mdc) |
 
 ## Basic Project Workflow
 
