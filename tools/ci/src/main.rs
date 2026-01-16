@@ -135,11 +135,7 @@ fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
                 let asset_path = dst_path
                     .parent()
                     .expect("dst_path should have a parent")
-                    .join(
-                        dst_path
-                            .file_stem()
-                            .expect(".meta file should have a file stem"),
-                    );
+                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
 
                 if asset_path.exists() {
                     fs::copy(&src_path, &dst_path)?;
@@ -149,9 +145,6 @@ fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
                 continue;
             }
 
-            if let Some(parent) = dst_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
             fs::copy(&src_path, &dst_path)?;
         }
     }
