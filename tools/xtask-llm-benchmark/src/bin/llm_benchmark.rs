@@ -283,7 +283,7 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     };
 
     // Debug hint for how to (re)generate entries
-    let hint_for = |_lang: Lang| -> &'static str { "cargo llm ci-quickfix" };
+    let hint_for = |_lang: Lang| -> &'static str { "Check DEVELOP.md for instructions on how to proceed." };
 
     // Load docs-benchmark summary to compare hashes against
     let summary_path = docs_benchmark_summary();
@@ -298,13 +298,13 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
         match xtask_llm_benchmark::context::resolve_mode_paths(mode) {
             Ok(paths) if !paths.is_empty() => {}
             Ok(_) => bail!(
-                "CI check FAILED: {}/{} resolved to 0 paths.\n→ Try: {}",
+                "CI check FAILED: {}/{} resolved to 0 paths.\n→ {}",
                 mode,
                 lang_str,
                 hint_for(lang)
             ),
             Err(e) => bail!(
-                "CI check FAILED: {}/{} not available: {}.\n→ Try: {}",
+                "CI check FAILED: {}/{} not available: {}.\n→ {}",
                 mode,
                 lang_str,
                 e,
