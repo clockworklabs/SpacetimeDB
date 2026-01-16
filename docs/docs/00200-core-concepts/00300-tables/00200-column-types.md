@@ -244,8 +244,7 @@ public static partial class Module
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{SpacetimeType, Identity, ConnectionId, Timestamp};
-use std::time::Duration;
+use spacetimedb::{SpacetimeType, Identity, ConnectionId, Timestamp, TimeDuration};
 
 // Define a nested struct type for coordinates
 #[derive(SpacetimeType)]
@@ -286,7 +285,7 @@ pub struct Player {
     owner: Identity,
     connection: Option<ConnectionId>,
     created_at: Timestamp,
-    play_time: Duration,
+    play_time: TimeDuration,
 }
 ```
 
