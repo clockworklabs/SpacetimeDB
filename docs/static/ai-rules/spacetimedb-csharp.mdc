@@ -21,6 +21,7 @@ alwaysApply: true
 ctx.db.tableName                    // Wrong casing, should be PascalCase
 ctx.Db.tableName.Get(id)            // Use Find, not Get
 ctx.Db.TableName.FindById(id)       // Use index accessor: ctx.Db.TableName.Id.Find(id)
+ctx.Db.table.field_name.Find(x)     // Wrong! Use PascalCase: ctx.Db.Table.FieldName.Find(x)
 Optional<string> field;             // Use C# nullable: string? field
 
 // WRONG — missing partial keyword
@@ -30,6 +31,15 @@ public class Module { }             // Must be "static partial class"
 // WRONG — non-partial types
 [SpacetimeDB.Table(Name = "player")]
 public struct Player { }            // WRONG — missing partial!
+
+// WRONG — sum type syntax (VERY COMMON MISTAKE)
+public partial struct Shape : TaggedEnum<(Circle, Rectangle)> { }     // WRONG: struct, missing names
+public partial record Shape : TaggedEnum<(Circle, Rectangle)> { }     // WRONG: missing variant names
+public partial class Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }  // WRONG: class
+
+// WRONG — Index attribute without full qualification
+[Index.BTree(Name = "idx", Columns = new[] { "Col" })]    // Ambiguous with System.Index!
+[Index.BTree(Name = "idx", Columns = ["Col"])]            // Collection expressions don't work in attributes!
 ```
 
 ### CORRECT PATTERNS:
@@ -90,6 +100,10 @@ var player = ctx.Db.Player.OwnerId.Find(ctx.Sender);
 | Missing `Public = true` | Add to `[Table]` attribute | Clients can't subscribe |
 | Using `Random` | Avoid non-deterministic code | Sandbox violation |
 | async/await in reducers | Synchronous only | Not supported |
+| `[Index.BTree(...)]` | `[SpacetimeDB.Index.BTree(...)]` | Ambiguous with System.Index |
+| `Columns = ["A", "B"]` | `Columns = new[] { "A", "B" }` | Collection expressions invalid in attributes |
+| `partial struct : TaggedEnum` | `partial record : TaggedEnum` | Sum types must be record |
+| `TaggedEnum<(A, B)>` | `TaggedEnum<(A A, B B)>` | Tuple must include variant names |
 
 ### Client-side errors
 
@@ -375,7 +389,58 @@ public partial struct Player
 
 ---
 
-## 6) Scheduled Tables
+## 6) Sum Types / Tagged Enums (CRITICAL)
+
+**Sum types MUST use `partial record` and inherit from `TaggedEnum<T>`.**
+
+```csharp
+using SpacetimeDB;
+
+// Step 1: Define variant types as partial structs with [Type]
+[SpacetimeDB.Type]
+public partial struct Circle { public int Radius; }
+
+[SpacetimeDB.Type]
+public partial struct Rectangle { public int Width; public int Height; }
+
+// Step 2: Define sum type as partial RECORD (not struct!) inheriting TaggedEnum
+// The tuple MUST include both the type AND a name for each variant
+[SpacetimeDB.Type]
+public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> { }
+
+// Step 3: Use in a table
+[SpacetimeDB.Table(Name = "drawings", Public = true)]
+public partial struct Drawing
+{
+    [SpacetimeDB.PrimaryKey]
+    public int Id;
+    public Shape ShapeA;
+    public Shape ShapeB;
+}
+```
+
+### Creating sum type values
+
+```csharp
+// Create variant instances using the generated nested types
+var circle = new Shape.Circle(new Circle { Radius = 10 });
+var rect = new Shape.Rectangle(new Rectangle { Width = 4, Height = 6 });
+
+// Insert into table
+ctx.Db.Drawing.Insert(new Drawing { Id = 1, ShapeA = circle, ShapeB = rect });
+```
+
+### COMMON SUM TYPE MISTAKES
+
+| Wrong | Right | Why |
+|-------|-------|-----|
+| `partial struct Shape : TaggedEnum<...>` | `partial record Shape : TaggedEnum<...>` | Must be `record`, not `struct` |
+| `TaggedEnum<(Circle, Rectangle)>` | `TaggedEnum<(Circle Circle, Rectangle Rectangle)>` | Tuple must have names |
+| `new Shape { ... }` | `new Shape.Circle(new Circle { ... })` | Use nested variant constructor |
+
+---
+
+## 8) Scheduled Tables
 
 ```csharp
 using SpacetimeDB;
@@ -423,7 +488,7 @@ public static partial class Module
 
 ---
 
-## 7) Logging
+## 9) Logging
 
 ```csharp
 using SpacetimeDB;
@@ -437,7 +502,7 @@ Log.Panic("Critical failure");  // Terminates execution
 
 ---
 
-## 8) Data Visibility
+## 10) Data Visibility
 
 **`Public = true` exposes ALL rows to ALL clients.**
 
@@ -448,7 +513,7 @@ Log.Panic("Critical failure");  // Terminates execution
 
 ---
 
-## 9) Project Setup
+## 11) Project Setup
 
 ### Required .csproj (MUST be named `StdbModule.csproj`)
 
@@ -479,7 +544,7 @@ dotnet workload install wasi-experimental
 
 ---
 
-## 10) Commands
+## 12) Commands
 
 ```bash
 # Start local server
@@ -500,7 +565,7 @@ spacetime logs <module-name>
 
 ---
 
-## 11) Hard Requirements
+## 13) Hard Requirements
 
 1. **Tables and Module MUST be `partial`** — required for code generation
 2. **Use PascalCase for table access** — `ctx.Db.TableName`, not `ctx.Db.tableName`
