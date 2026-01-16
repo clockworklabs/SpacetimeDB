@@ -192,48 +192,51 @@ const player = table(
 ```csharp
 using SpacetimeDB;
 
-// Define a nested struct type for coordinates
-[SpacetimeDB.Type]
-public partial struct Coordinates
+public static partial class Module
 {
-    public double X;
-    public double Y;
-    public double Z;
-}
+    // Define a nested struct type for coordinates
+    [SpacetimeDB.Type]
+    public partial struct Coordinates
+    {
+        public double X;
+        public double Y;
+        public double Z;
+    }
 
-// Define an enum for status
-[SpacetimeDB.Type]
-public partial record Status : TaggedEnum<(
-    Unit Active,
-    Unit Inactive,
-    string Suspended
-)> { }
+    // Define an enum for status
+    [SpacetimeDB.Type]
+    public partial record Status : TaggedEnum<(
+        Unit Active,
+        Unit Inactive,
+        string Suspended
+    )> { }
 
-[SpacetimeDB.Table(Name = "Player", Public = true)]
-public partial struct Player
-{
-    // Primitive types
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-    public string Name;
-    public byte Level;
-    public uint Experience;
-    public float Health;
-    public long Score;
-    public bool IsOnline;
+    [SpacetimeDB.Table(Name = "Player", Public = true)]
+    public partial struct Player
+    {
+        // Primitive types
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        public string Name;
+        public byte Level;
+        public uint Experience;
+        public float Health;
+        public long Score;
+        public bool IsOnline;
 
-    // Composite types
-    public Coordinates Position;
-    public Status Status;
-    public List<uint> Inventory;
-    public ulong? GuildId;
+        // Composite types
+        public Coordinates Position;
+        public Status Status;
+        public List<uint> Inventory;
+        public ulong? GuildId;
 
-    // Special types
-    public Identity Owner;
-    public ConnectionId? Connection;
-    public Timestamp CreatedAt;
-    public TimeDuration PlayTime;
+        // Special types
+        public Identity Owner;
+        public ConnectionId? Connection;
+        public Timestamp CreatedAt;
+        public TimeDuration PlayTime;
+    }
 }
 ```
 
