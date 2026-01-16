@@ -163,6 +163,93 @@ pub struct Person {
 </TabItem>
 </Tabs>
 
+## Table Naming and Accessors
+
+The table name you specify determines how you access the table in your code. Understanding this relationship is essential for writing correct SpacetimeDB modules.
+
+### How Accessor Names Are Derived
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+The accessor name is converted from snake_case to camelCase:
+
+```typescript
+// Table definition
+const player_scores = table(
+  { name: 'player_scores', public: true },
+  { /* columns */ }
+);
+
+// Accessor uses camelCase
+ctx.db.playerScores.insert({ /* ... */ });
+```
+
+| Table Name | Accessor |
+|------------|----------|
+| `'user'` | `ctx.db.user` |
+| `'player_scores'` | `ctx.db.playerScores` |
+| `'game_session'` | `ctx.db.gameSession` |
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+The accessor name **exactly matches** the `Name` attribute value:
+
+```csharp
+// Table definition
+[SpacetimeDB.Table(Name = "Player", Public = true)]
+public partial struct Player { /* columns */ }
+
+// Accessor matches Name exactly
+ctx.Db.Player.Insert(new Player { /* ... */ });
+```
+
+| Name Attribute | Accessor |
+|----------------|----------|
+| `Name = "User"` | `ctx.Db.User` |
+| `Name = "Player"` | `ctx.Db.Player` |
+| `Name = "GameSession"` | `ctx.Db.GameSession` |
+
+:::warning Case Sensitivity
+The accessor is case-sensitive and must match the `Name` value exactly. `Name = "user"` produces `ctx.Db.user`, not `ctx.Db.User`.
+:::
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+The accessor name **exactly matches** the `name` attribute value:
+
+```rust
+// Table definition
+#[spacetimedb::table(name = player, public)]
+pub struct Player { /* columns */ }
+
+// Accessor matches name exactly
+ctx.db.player().insert(Player { /* ... */ });
+```
+
+| name Attribute | Accessor |
+|----------------|----------|
+| `name = user` | `ctx.db.user()` |
+| `name = player` | `ctx.db.player()` |
+| `name = game_session` | `ctx.db.game_session()` |
+
+</TabItem>
+</Tabs>
+
+### Recommended Naming Conventions
+
+Use idiomatic naming conventions for each language:
+
+| Language | Convention | Example Table | Example Accessor |
+|----------|------------|---------------|------------------|
+| **TypeScript** | snake_case | `'player_score'` | `ctx.db.playerScore` |
+| **C#** | PascalCase | `Name = "PlayerScore"` | `ctx.Db.PlayerScore` |
+| **Rust** | lower_snake_case | `name = player_score` | `ctx.db.player_score()` |
+
+These conventions align with each language's standard style guides and make your code feel natural within its ecosystem.
+
 ## Table Visibility
 
 Tables can be **private** (default) or **public**:
