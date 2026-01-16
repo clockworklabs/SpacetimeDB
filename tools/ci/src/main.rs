@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
 use semver::Version;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::{env, fs};
@@ -75,19 +76,14 @@ fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
         return Ok(());
     }
 
-    for entry in fs::read_dir(&pkg_root)? {
-        let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
-        }
-        fs::remove_dir_all(entry.path())?;
-    }
+    fs::remove_dir_all(&pkg_root)?;
 
     Ok(())
 }
 
 fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
-    let mut best: Option<(Version, PathBuf)> = None;
+    let mut versioned_dirs: Vec<(Version, PathBuf)> = vec![];
+
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         if !entry.file_type()?.is_dir() {
@@ -99,15 +95,23 @@ fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
             continue;
         };
 
-        match best.as_ref() {
-            None => best = Some((version, entry.path())),
-            Some((best_v, _)) if version > *best_v => best = Some((version, entry.path())),
-            _ => {}
-        }
+        versioned_dirs.push((version, entry.path()));
     }
 
-    best.map(|(_, p)| p)
-        .ok_or_else(|| anyhow::anyhow!("Could not find any versioned directories under {}", dir.display()))
+    versioned_dirs.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+    match versioned_dirs.as_slice() {
+        [] => Err(anyhow::anyhow!(
+            "Could not find any versioned directories under {}",
+            dir.display()
+        )),
+        [(_, only)] => Ok(only.clone()),
+        _ => Err(anyhow::anyhow!(
+            "Expected at most one restored versioned directory under {}, found {}",
+            dir.display(),
+            versioned_dirs.len()
+        )),
+    }
 }
 
 fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
@@ -127,19 +131,22 @@ fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
                 copy_overlay_dir(&src_path, &dst_path)?;
             }
         } else {
-            if let Some(file_name) = dst_path.file_name().and_then(|n| n.to_str()) {
-                if let Some(asset_name) = file_name.strip_suffix(".meta") {
-                    let asset_path = dst_path
-                        .parent()
-                        .expect("dst_path should have a parent")
-                        .join(asset_name);
-                    if asset_path.exists() {
-                        fs::copy(&src_path, &dst_path)?;
-                    } else if dst_path.exists() {
-                        let _ = fs::remove_file(&dst_path);
-                    }
-                    continue;
+            if src_path.extension() == Some(OsStr::new("meta")) {
+                let asset_path = dst_path
+                    .parent()
+                    .expect("dst_path should have a parent")
+                    .join(
+                        dst_path
+                            .file_stem()
+                            .expect(".meta file should have a file stem"),
+                    );
+
+                if asset_path.exists() {
+                    fs::copy(&src_path, &dst_path)?;
+                } else if dst_path.exists() {
+                    fs::remove_file(&dst_path)?;
                 }
+                continue;
             }
 
             if let Some(parent) = dst_path.parent() {
@@ -171,8 +178,8 @@ enum CiCmd {
     /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
     ///
     /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
-    /// Then overlays Unity `.meta` skeleton files from an unversioned directory onto the restored versioned
-    /// package directory, so Unity can associate stable meta files with the most recently built package.
+    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
+    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
     Dlls,
     /// Runs smoketests
     ///
