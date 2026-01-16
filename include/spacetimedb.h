@@ -115,7 +115,6 @@
 
 // Client visibility filters
 #include "spacetimedb/client_visibility_filter.h"
-#include "spacetimedb/rls.h"
 
 // =============================================================================
 // VIEW SYSTEM

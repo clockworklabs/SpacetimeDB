@@ -24,40 +24,31 @@ namespace SpacetimeDb {
  * ProcedureContext provides access to call metadata (sender, timestamp, connection)
  * but does NOT have direct database access. This is a key difference from ReducerContext.
  * 
- * Part 1 Implementation: Pure Functions
- * - Procedures can perform computations and return results
- * - NO database access (no db field)
- * - Stateless operations only
- * 
- * Future Parts (documented for reference):
- * - Part 2: Transactions via ctx.WithTx() and ctx.TryWithTx()
- * - Part 3: Scheduled execution via table attributes
- * - Part 4: HTTP requests via ctx.http
+ * Features:
+ * - Pure computations with return values
+ * - Database access via explicit transactions (ctx.WithTx() or ctx.TryWithTx())
+ * - HTTP requests via ctx.http (when SPACETIMEDB_UNSTABLE_FEATURES enabled)
+ * - UUID generation (ctx.new_uuid_v4(), ctx.new_uuid_v7())
  * 
  * Key differences from ReducerContext:
- * - NO db field (database operations require explicit transactions in Part 2)
+ * - NO db field (database operations require explicit transactions)
  * - Has connection_id (procedures track which connection called them)
- * - NO rng() method (procedures should be deterministic)
+ * - Has rng() method for UUID generation
  * 
- * Example usage (Part 1 - pure function):
+ * Example usage (pure function):
  * @code
  * SPACETIMEDB_PROCEDURE(uint32_t, add_numbers, ProcedureContext ctx, uint32_t a, uint32_t b) {
- *     // Part 1: Can only do computation, no database access
- *     if (a == 0 && b == 0) {
- *         return Err("Cannot add two zeros");
- *     }
- *     return Ok(a + b);
+ *     return a + b;
  * }
  * @endcode
  * 
- * Future example (Part 2 - with transactions):
+ * Example with transactions:
  * @code
  * SPACETIMEDB_PROCEDURE(Unit, insert_item, ProcedureContext ctx, Item item) {
- *     // Part 2: Database operations require explicit transaction
  *     ctx.WithTx([&item](TxContext& tx) {
  *         tx.db[items].insert(item);
  *     });
- *     return Ok();
+ *     return Unit{};
  * }
  * @endcode
  */

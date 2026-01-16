@@ -1,5 +1,10 @@
 #pragma once
 
+// DEAD CODE - Commented out for testing before deletion
+// This was an old RLS implementation that was replaced by SPACETIMEDB_CLIENT_VISIBILITY_FILTER
+// None of the symbols in this file are used anywhere in the codebase
+
+/*
 #include <string>
 #include <vector>
 #include <optional>
@@ -194,3 +199,4 @@ inline std::string or_conditions(const std::vector<std::string>& conditions) {
 } // namespace rls
 
 } // namespace SpacetimeDb
+*/

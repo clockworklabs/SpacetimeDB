@@ -11,15 +11,14 @@ This library provides a production-ready C++ SDK for SpacetimeDB with complete t
 - All lifecycle reducers (init, client_connected, client_disconnected)
 - User-defined reducers with unlimited parameters
 - Table registration with constraints (PrimaryKey, Unique, AutoInc)
-- Insert and delete operations
+- Insert, update and delete operations
 - All primitive types (u8-u256, i8-i256, bool, f32, f64, string)
-- All special types (Identity, ConnectionId, Timestamp, TimeDuration)
+- All special types (Identity, ConnectionId, Timestamp, TimeDuration, Uuid, Result<>)
 - Vector types for all primitives and special types
 - Optional types (std::optional<T>)
 - Custom struct serialization via BSATN
 - Complex enum support with proper variant names
 - Enhanced logging system with file/line info
-- Mixed type combinations - handle any complexity level
 
 ### 🏗️ Architecture
 - **Hybrid Compile-Time/Runtime System**: C++20 concepts for compile-time validation with __preinit__ runtime registration
@@ -34,15 +33,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 - **Range queries**: Complete range query system with `range_from()`, `range_to()`, `range_inclusive()`, etc.
 - **Client visibility filters**: Row-level security with `SPACETIMEDB_CLIENT_VISIBILITY_FILTER` macro
 - **Scheduled reducers**: `SPACETIMEDB_SCHEDULE` macro for time-based execution
+- **Procedures**: Pure functions with return values using `SPACETIMEDB_PROCEDURE` macro
+- **Views**: Read-only query functions with `SPACETIMEDB_VIEW` macro
 - **Field accessor patterns**: Efficient indexed operations with `ctx.db[table_field]`
 
-### ❌ Not Yet Implemented  
-- Direct SQL query execution within modules (SQL available via CLI: `spacetime sql`)
-- Automatic migrations (limited - only adding tables supported)
-- Complex table schema changes
-- Transactions (individual reducers are transactional)
-
-See the working examples in `modules/sdk-test-cpp/src/lib.cpp` for comprehensive feature usage.
+See the working examples in `modules/*-cpp/src/lib.cpp` for comprehensive feature usage.
 
 ## Features
 
@@ -54,6 +49,12 @@ See the working examples in `modules/sdk-test-cpp/src/lib.cpp` for comprehensive
 - **Memory Safety**: WASI shims for safe memory operations in WebAssembly environment
 - **Enhanced Logging**: Multiple log levels with file/line information
 - **Namespace Support**: Clean namespace qualification for enums with just 2 lines of code
+
+## Prerequisites
+
+- Emscripten SDK (emsdk)
+- CMake 3.16+
+- C++20 compatible compiler
 
 ## Quick Start
 
@@ -105,22 +106,44 @@ SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name, std::string 
     User user{0, name, email}; // id will be auto-generated
     ctx.db[users].insert(user);
     LOG_INFO("Added user: " + name);
+    return Ok();
 }
 
 // Delete user by id (using primary key)
 SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx, uint32_t id) {
     ctx.db[users_id].delete_by_key(id);
+    return Ok();
+}
+
+// Lifecycle reducers (optional)
+SPACETIMEDB_INIT(init) {
+    LOG_INFO("Module initialized");
+    return Ok();
+}
+
+SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
+    LOG_INFO("Client connected: " + ctx.sender.to_hex());
+    return Ok();
+}
+
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect) {
+    LOG_INFO("Client disconnected: " + ctx.sender.to_hex());
+    return Ok();
+}
+
+// Define a view for querying data (requires indexed field)
+SPACETIMEDB_VIEW(std::optional<User>, find_user_by_id, Public, ViewContext ctx) {
+    // Use indexed field to find user
+    return ctx.db[users_id].find(ctx.sender);
+}
+
+// Define a procedure (pure function with return value)
+SPACETIMEDB_PROCEDURE(uint32_t, add_numbers, ProcedureContext ctx, uint32_t a, uint32_t b) {
+    return a + b;
 }
 ```
 
-**Note:** Lifecycle reducers (`SPACETIMEDB_INIT`, `SPACETIMEDB_CLIENT_CONNECTED`, `SPACETIMEDB_CLIENT_DISCONNECTED`) are available but not shown in working examples. See `reducer_macros.h` for details.
-
 ## Building Modules
-
-### Prerequisites
-- Emscripten SDK (emsdk)
-- CMake 3.16+
-- C++20 compatible compiler
 
 ### Build Steps
 
@@ -166,9 +189,20 @@ cmake --build build
 
 #### Reducers
 - `SPACETIMEDB_REDUCER(name, ReducerContext ctx, ...)` - User-defined reducer
-- `SPACETIMEDB_INIT(name)` - Module initialization reducer
-- `SPACETIMEDB_CLIENT_CONNECTED(name)` - Client connection reducer
-- `SPACETIMEDB_CLIENT_DISCONNECTED(name)` - Client disconnection reducer
+- `SPACETIMEDB_INIT(name)` - Module initialization reducer (optional)
+- `SPACETIMEDB_CLIENT_CONNECTED(name)` - Client connection reducer (optional)
+- `SPACETIMEDB_CLIENT_DISCONNECTED(name)` - Client disconnection reducer (optional)
+
+#### Views
+- `SPACETIMEDB_VIEW(return_type, name, Public/Private, ViewContext ctx)` - Read-only query function
+- `SPACETIMEDB_VIEW(return_type, name, Public/Private, AnonymousViewContext ctx)` - Anonymous view (no sender identity)
+
+#### Procedures
+- `SPACETIMEDB_PROCEDURE(return_type, name, ProcedureContext ctx, ...)` - Pure function that returns a value
+  - Returns the type directly (not wrapped in Outcome)
+  - Can return any SpacetimeType (primitives, structs, enums, Unit, etc.)
+  - Database access requires explicit transactions (use `ctx.WithTx()` or `ctx.TryWithTx()`)
+  - Always public (no access control)
 
 #### Field Constraints (applied after table registration)
 - `FIELD_PrimaryKey(table_name, field)` - Primary key constraint
@@ -199,7 +233,7 @@ LOG_PANIC("Fatal error message");
 
 The library uses a sophisticated hybrid compile-time/runtime architecture:
 
-- **Compile-Time Validation** (`filterable_value_concept.h`, `table_with_constraints.h`): C++20 concepts and static assertions for constraint validation
+- **Compile-Time Validation** (`table_with_constraints.h`): C++20 concepts and static assertions for constraint validation
 - **V9 Type Registration System** (`internal/v9_type_registration.h`): Unified type registration with error detection and circular reference prevention
 - **Priority-Ordered Initialization** (`internal/Module.cpp`): __preinit__ functions with numbered priorities ensure correct registration order
 - **Error Detection System** (`internal/Module.cpp`): Multi-layer validation with error module replacement for clear diagnostics
@@ -209,6 +243,8 @@ The library uses a sophisticated hybrid compile-time/runtime architecture:
 - **Logging** (`logger.h`): Comprehensive logging with source location tracking
 
 For detailed technical documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+**Note on Architecture Documentation**: ARCHITECTURE.md contains references to some legacy implementation details. The current implementation is streamlined and production-ready.
 
 ## Limitations
 
@@ -230,7 +266,7 @@ For detailed technical documentation, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Examples
 
-See the `modules/sdk-test-cpp/src/` directory for example modules:
+See the `modules/*-cpp/src/` directory for example modules:
 - `lib.cpp` - Comprehensive working module with all primitive types, tables, and reducers
 - Full equivalence with Rust and C# SDK test modules
 - Examples of all constraint types and database operations
