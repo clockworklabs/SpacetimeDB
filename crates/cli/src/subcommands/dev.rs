@@ -333,8 +333,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
 
     // Start the client development server if configured
+    let server_host_url = config.get_host_url(Some(resolved_server))?;
     let _client_handle = if let Some(ref cmd) = client_command {
-        Some(start_client_process(cmd, &project_dir)?)
+        Some(start_client_process(cmd, &project_dir, &database_name, &server_host_url)?)
     } else {
         None
     };
@@ -354,8 +355,15 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         notify::Config::default().with_poll_interval(Duration::from_millis(500)),
     )?;
 
+    // Watch the appropriate directory based on project structure
+    // Rust/TypeScript modules have source in `src/`, C# modules have `*.cs` directly in the module dir
     let src_dir = spacetimedb_dir.join("src");
-    watcher.watch(&src_dir, RecursiveMode::Recursive)?;
+    let watch_dir = if src_dir.exists() && src_dir.is_dir() {
+        src_dir
+    } else {
+        spacetimedb_dir.to_path_buf()
+    };
+    watcher.watch(&watch_dir, RecursiveMode::Recursive)?;
 
     println!("{}", "Watching for file changes...".dimmed());
 
@@ -794,7 +802,13 @@ fn generate_database_name() -> String {
 
 /// Start the client development server as a child process.
 /// The process inherits stdout/stderr so the user can see the output.
-fn start_client_process(command: &str, working_dir: &Path) -> Result<Child, anyhow::Error> {
+/// Sets SPACETIMEDB_DB_NAME and SPACETIMEDB_HOST environment variables for the client.
+fn start_client_process(
+    command: &str,
+    working_dir: &Path,
+    database_name: &str,
+    host_url: &str,
+) -> Result<Child, anyhow::Error> {
     println!("{} {}", "Starting client:".cyan(), command.to_string().dimmed());
 
     let parts: Vec<&str> = command.split_whitespace().collect();
@@ -812,6 +826,8 @@ fn start_client_process(command: &str, working_dir: &Path) -> Result<Child, anyh
         .arg(program)
         .args(args)
         .current_dir(working_dir)
+        .env("SPACETIMEDB_DB_NAME", database_name)
+        .env("SPACETIMEDB_HOST", host_url)
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .stdin(std::process::Stdio::null())
@@ -824,6 +840,8 @@ fn start_client_process(command: &str, working_dir: &Path) -> Result<Child, anyh
     let child = TokioCommand::new(program)
         .args(args)
         .current_dir(working_dir)
+        .env("SPACETIMEDB_DB_NAME", database_name)
+        .env("SPACETIMEDB_HOST", host_url)
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .stdin(std::process::Stdio::null())
