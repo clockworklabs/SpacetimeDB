@@ -14,6 +14,7 @@ pub mod logs;
 pub mod publish;
 pub mod repl;
 pub mod server;
+pub mod spacetime_config;
 pub mod sql;
 pub mod start;
 pub mod subscribe;

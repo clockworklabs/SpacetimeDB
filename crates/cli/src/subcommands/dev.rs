@@ -2,6 +2,7 @@ use crate::common_args::ClearMode;
 use crate::config::Config;
 use crate::generate::Language;
 use crate::subcommands::init;
+use crate::subcommands::spacetime_config::{detect_client_command, SpacetimeConfig};
 use crate::util::{
     add_auth_header_opt, database_identity, detect_module_language, get_auth_header, get_login_token_or_log_in,
     spacetime_reverse_dns, ResponseExt,
@@ -29,6 +30,7 @@ use tabled::{
     Table, Tabled,
 };
 use termcolor::{Color, ColorSpec, WriteColor};
+use tokio::process::{Child, Command as TokioCommand};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
@@ -85,6 +87,18 @@ pub fn cli() -> Command {
                 .long("template")
                 .value_name("TEMPLATE")
                 .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
+        )
+        .arg(
+            Arg::new("client-command")
+                .long("client-command")
+                .value_name("COMMAND")
+                .help("Command to run the client development server (overrides spacetime.toml config)"),
+        )
+        .arg(
+            Arg::new("server-only")
+                .long("server-only")
+                .action(clap::ArgAction::SetTrue)
+                .help("Only run the server (module) without starting the client"),
         )
 }
 
@@ -259,12 +273,44 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         );
     }
 
+    // Determine client command: CLI flag > config file > auto-detect (and save)
+    let server_only = args.get_flag("server-only");
+    let client_command = if server_only {
+        None
+    } else if let Some(cmd) = args.get_one::<String>("client-command") {
+        // Explicit CLI flag takes priority
+        Some(cmd.clone())
+    } else if let Some(cmd) = SpacetimeConfig::load_from_dir(&project_dir)
+        .ok()
+        .flatten()
+        .and_then(|c| c.dev.client_command)
+    {
+        // Config file exists with client_command
+        Some(cmd)
+    } else if let Some(detected) = detect_client_command(&project_dir) {
+        // No config - detect and save for future runs
+        let config = SpacetimeConfig::with_client_command(&detected);
+        if let Ok(path) = config.save_to_dir(&project_dir) {
+            println!(
+                "{} Detected client command and saved to {}",
+                "✓".green(),
+                path.display()
+            );
+        }
+        Some(detected)
+    } else {
+        None
+    };
+
     println!("\n{}", "Starting development mode...".green().bold());
     println!("Database: {}", database_name.cyan());
     println!(
         "Watching for changes in: {}",
         spacetimedb_dir.display().to_string().cyan()
     );
+    if let Some(ref cmd) = client_command {
+        println!("Client command: {}", cmd.cyan());
+    }
     println!("{}", "Press Ctrl+C to stop".dimmed());
     println!();
 
@@ -285,6 +331,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
 
     let db_identity = database_identity(&config, &database_name, Some(resolved_server)).await?;
     let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
+
+    // Start the client development server if configured
+    let _client_handle = if let Some(ref cmd) = client_command {
+        Some(start_client_process(cmd, &project_dir)?)
+    } else {
+        None
+    };
 
     let (tx, rx) = channel();
     let mut watcher: RecommendedWatcher = Watcher::new(
@@ -737,4 +790,46 @@ fn format_log_record<W: WriteColor>(out: &mut W, record: &LogRecord<'_>) -> Resu
 fn generate_database_name() -> String {
     let mut generator = names::Generator::with_naming(names::Name::Numbered);
     generator.next().unwrap()
+}
+
+/// Start the client development server as a child process.
+/// The process inherits stdout/stderr so the user can see the output.
+fn start_client_process(command: &str, working_dir: &Path) -> Result<Child, anyhow::Error> {
+    println!("{} {}", "Starting client:".cyan(), command.to_string().dimmed());
+
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        anyhow::bail!("Empty client command");
+    }
+
+    let program = parts[0];
+    let args = &parts[1..];
+
+    // On Windows, use cmd /C to resolve .cmd/.bat scripts (like npm)
+    #[cfg(windows)]
+    let child = TokioCommand::new("cmd")
+        .arg("/C")
+        .arg(program)
+        .args(args)
+        .current_dir(working_dir)
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("Failed to start client command: {}", command))?;
+
+    // On Unix, run the program directly
+    #[cfg(not(windows))]
+    let child = TokioCommand::new(program)
+        .args(args)
+        .current_dir(working_dir)
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()
+        .with_context(|| format!("Failed to start client command: {}", command))?;
+
+    Ok(child)
 }
