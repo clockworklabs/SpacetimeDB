@@ -57,6 +57,22 @@ Clockwork Labs, the developers of SpacetimeDB, offers three products:
 2. SpacetimeDB Maincloud: a hosted, managed-service, serverless cluster
 3. SpacetimeDB Enterprise: a closed-source, clusterized version of SpacetimeDB which can be licensed for on-prem hosting or dedicated hosting
 
+## AI Assistant Rules
+
+**IMPORTANT:** Before writing SpacetimeDB code, consult the language-specific rules files in `docs/static/ai-rules/`. These contain critical information about:
+- **Hallucinated APIs** that LLMs commonly generate but DO NOT EXIST
+- **Common mistakes** and how to avoid them
+- **Correct patterns** for tables, reducers, and client code
+
+| Language | Rules File |
+|----------|------------|
+| All Languages | `ai-rules/spacetimedb.mdc` |
+| TypeScript | `ai-rules/spacetimedb-typescript.mdc` |
+| Rust | `ai-rules/spacetimedb-rust.mdc` |
+| C# | `ai-rules/spacetimedb-csharp.mdc` |
+
+When using `spacetime dev` to create a new project, these rules are automatically installed to `.cursor/rules/`, `CLAUDE.md`, `.windsurfrules`, and `.github/copilot-instructions.md`.
+
 ## Basic Project Workflow
 
 Getting started with SpacetimeDB involves a few key steps:
