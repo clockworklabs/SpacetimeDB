@@ -1,6 +1,0 @@
-# SpacetimeDB project configuration
-# See https://spacetimedb.com/docs for more information
-
-[dev]
-# Command to run the client development server alongside `spacetime dev`
-client_command = "npm run dev"
