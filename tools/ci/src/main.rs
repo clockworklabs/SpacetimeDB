@@ -329,7 +329,7 @@ impl ServerState {
                     )
                     .read();
                 });
-                wait_until_http_ready(Duration::from_secs(300), &server_url)?;
+                wait_until_http_ready(Duration::from_secs(1200), &server_url)?;
                 Ok(ServerState::Yes { handle, data_dir })
             }
         }
