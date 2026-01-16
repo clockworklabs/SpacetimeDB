@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generated_at": "2026-01-16T04:18:32.920Z",
+  "generated_at": "2026-01-16T13:09:03.697Z",
   "by_language": {
     "csharp": {
       "modes": {
@@ -49,27 +49,27 @@
                 "basics": {
                   "tasks": 12,
                   "total_tests": 27,
-                  "passed_tests": 20,
-                  "pass_pct": 74.07407,
+                  "passed_tests": 24,
+                  "pass_pct": 88.888885,
                   "task_pass_equiv": 9.0,
                   "task_pass_pct": 75.0
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 24,
-                  "pass_pct": 70.588234,
-                  "task_pass_equiv": 6.3333335,
-                  "task_pass_pct": 63.333332
+                  "passed_tests": 29,
+                  "pass_pct": 85.29412,
+                  "task_pass_equiv": 8.0,
+                  "task_pass_pct": 80.0
                 }
               },
               "totals": {
                 "tasks": 22,
                 "total_tests": 61,
-                "passed_tests": 44,
-                "pass_pct": 72.13115,
-                "task_pass_equiv": 15.333334,
-                "task_pass_pct": 69.696976
+                "passed_tests": 53,
+                "pass_pct": 86.88525,
+                "task_pass_equiv": 17.0,
+                "task_pass_pct": 77.27273
               }
             }
           }
