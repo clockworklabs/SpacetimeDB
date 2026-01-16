@@ -29,7 +29,7 @@ Get a SpacetimeDB TypeScript app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-typescript my-spacetime-app
+spacetime dev --template basic-typescript
 ```
     </StepCode>
   </Step>
@@ -95,19 +95,19 @@ spacetimedb.reducer('say_hello', (ctx) => {
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call my-spacetime-app add Alice
+spacetime call <database-name> add Alice
 
 # Query the person table
-spacetime sql my-spacetime-app "SELECT * FROM person"
+spacetime sql <database-name> "SELECT * FROM person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call my-spacetime-app say_hello
+spacetime call <database-name> say_hello
 
 # View the module logs
-spacetime logs my-spacetime-app
+spacetime logs <database-name>
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```

@@ -40,7 +40,7 @@ dotnet workload install wasi-experimental
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-c-sharp my-spacetime-app
+spacetime dev --template basic-c-sharp
 ```
     </StepCode>
   </Step>
@@ -111,19 +111,19 @@ public static partial class Module
     <StepCode>
 ```bash
 # Call the add reducer to insert a person
-spacetime call my-spacetime-app Add Alice
+spacetime call <database-name> Add Alice
 
 # Query the person table
-spacetime sql my-spacetime-app "SELECT * FROM Person"
+spacetime sql <database-name> "SELECT * FROM Person"
  name
 ---------
  "Alice"
 
 # Call say_hello to greet everyone
-spacetime call my-spacetime-app SayHello
+spacetime call <database-name> SayHello
 
 # View the module logs
-spacetime logs my-spacetime-app
+spacetime logs <database-name>
 2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
 2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
