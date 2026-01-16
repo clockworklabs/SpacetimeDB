@@ -4,7 +4,7 @@ use super::{
 };
 use crate::client::messages::{OneOffQueryResponseMessage, SerializableMessage};
 use crate::client::{ClientActorId, ClientConnectionSender};
-use crate::database_logger::{LogLevel, Record};
+use crate::database_logger::{DatabaseLogger, LogLevel, Record};
 use crate::db::relational_db::RelationalDB;
 use crate::energy::EnergyQuanta;
 use crate::error::DBError;
@@ -232,8 +232,6 @@ pub struct ModuleInfo {
     pub database_identity: Identity,
     /// The hash of the module.
     pub module_hash: Hash,
-    /// Allows subscribing to module logs.
-    pub log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
     /// Subscriptions to this module.
     pub subscriptions: ModuleSubscriptions,
     /// Metrics handles for this module.
@@ -296,7 +294,6 @@ impl ModuleInfo {
         owner_identity: Identity,
         database_identity: Identity,
         module_hash: Hash,
-        log_tx: tokio::sync::broadcast::Sender<bytes::Bytes>,
         subscriptions: ModuleSubscriptions,
     ) -> Arc<Self> {
         let metrics = ModuleMetrics::new(&database_identity);
@@ -305,7 +302,6 @@ impl ModuleInfo {
             owner_identity,
             database_identity,
             module_hash,
-            log_tx,
             subscriptions,
             metrics,
         })
@@ -1504,9 +1500,9 @@ impl ModuleHost {
         Ok(self
             .call(
                 &reducer_def.name,
-                (None, call_reducer_params),
-                |(tx, p), inst| inst.call_reducer(tx, p),
-                |(_, p), inst| inst.call_reducer(p),
+                call_reducer_params,
+                |p, inst| inst.call_reducer(p),
+                |p, inst| inst.call_reducer(p),
             )
             .await?)
     }
@@ -1970,10 +1966,6 @@ impl ModuleHost {
         Ok(instance.common.call_view_with_tx(tx, params, instance.instance))
     }
 
-    pub fn subscribe_to_logs(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<bytes::Bytes>> {
-        Ok(self.info().log_tx.subscribe())
-    }
-
     pub async fn init_database(&self, program: Program) -> Result<Option<ReducerCallResult>, InitDatabaseError> {
         self.call(
             "<init_database>",
@@ -2186,6 +2178,10 @@ impl ModuleHost {
 
     pub fn durable_tx_offset(&self) -> Option<DurableOffset> {
         self.replica_ctx().relational_db.durable_tx_offset()
+    }
+
+    pub fn database_logger(&self) -> &Arc<DatabaseLogger> {
+        &self.replica_ctx().logger
     }
 
     pub(crate) fn replica_ctx(&self) -> &ReplicaContext {

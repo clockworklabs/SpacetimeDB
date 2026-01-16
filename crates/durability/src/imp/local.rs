@@ -2,6 +2,7 @@ use std::{
     io,
     num::NonZeroU16,
     panic,
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
         Arc,
@@ -110,8 +111,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
 
         // We could just place a lock on the commitlog directory,
         // yet for backwards-compatibility, we keep using the `db.lock` file.
-        let lock_path = replica_dir.0.join("db.lock");
-        let lockfile = LockedFile::lock(lock_path)?;
+        let lock = Lock::create(replica_dir.0.join("db.lock"))?;
 
         let clog = Arc::new(Commitlog::open(
             replica_dir.commit_log(),
@@ -134,7 +134,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
                     sync_interval: opts.sync_interval,
                     max_records_in_commit: opts.commitlog.max_records_in_commit,
 
-                    lockfile,
+                    lock,
                 }
                 .run(txdata_rx, shutdown_rx),
             )
@@ -194,7 +194,7 @@ struct Actor<T> {
     max_records_in_commit: NonZeroU16,
 
     #[allow(unused)]
-    lockfile: LockedFile,
+    lock: Lock,
 }
 
 impl<T: Encode + Send + Sync + 'static> Actor<T> {
@@ -205,9 +205,6 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
         mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
     ) {
         info!("starting durability actor");
-
-        // Always notify waiters (i.e. [Close] futures) when the actor exits.
-        let done = scopeguard::guard(Arc::new(Notify::new()), |done| done.notify_waiters());
 
         let mut sync_interval = interval(self.sync_interval);
         sync_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -228,7 +225,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
 
                 Some(reply) = shutdown_rx.recv() => {
                     txdata_rx.close();
-                    let _ = reply.send(done.clone().notified_owned());
+                    let _ = reply.send(self.lock.notified());
                 },
 
                 _ = sync_interval.tick() => {
@@ -314,6 +311,34 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 });
             }
         })
+    }
+}
+
+struct Lock {
+    file: Option<LockedFile>,
+    notify_on_drop: Arc<Notify>,
+}
+
+impl Lock {
+    pub fn create(path: PathBuf) -> Result<Self, LockError> {
+        let file = LockedFile::lock(path).map(Some)?;
+        let notify_on_drop = Arc::new(Notify::new());
+
+        Ok(Self { file, notify_on_drop })
+    }
+
+    pub fn notified(&self) -> OwnedNotified {
+        self.notify_on_drop.clone().notified_owned()
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // Ensure the file lock is dropped before notifying.
+        if let Some(file) = self.file.take() {
+            drop(file);
+        }
+        self.notify_on_drop.notify_waiters();
     }
 }
 

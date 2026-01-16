@@ -127,6 +127,60 @@ public static class GeneratorSnapshotTests
             .OrderBy(diag => diag.GetMessage() + diag.Location.ToString());
     }
 
+    static void AssertGeneratedCodeDoesNotUseInternalBound(CSharpCompilation compilation)
+    {
+        var generatedText = string.Join(
+            "\n\n",
+            compilation.SyntaxTrees.Select(tree => tree.GetText().ToString())
+        );
+
+        Assert.DoesNotContain("global::SpacetimeDB.Internal.Bound<", generatedText);
+        Assert.Contains("global::SpacetimeDB.Bound<", generatedText);
+    }
+
+    static void AssertPublicBoundIsAvailableInRuntime(Compilation compilation)
+    {
+        var bound = compilation.GetTypeByMetadataName("SpacetimeDB.Bound`1");
+        Assert.NotNull(bound);
+        Assert.Equal(Accessibility.Public, bound!.DeclaredAccessibility);
+    }
+
+    static void AssertRuntimeDoesNotDefineLocal(Compilation compilation)
+    {
+        var runtimeAssembly = compilation
+            .References.Select(r => compilation.GetAssemblyOrModuleSymbol(r))
+            .OfType<IAssemblySymbol>()
+            .FirstOrDefault(a => a.Name == "SpacetimeDB.Runtime");
+
+        Assert.NotNull(runtimeAssembly);
+
+        // These types are generated per-module by SpacetimeDB.Codegen.Module.
+        // If Runtime defines any of them too, user projects can hit CS0436 warnings.
+        var codegenOwnedTypes = new[]
+        {
+            "SpacetimeDB.Local",
+            "SpacetimeDB.ProcedureContext",
+            "SpacetimeDB.ProcedureTxContext",
+            "SpacetimeDB.ReducerContext",
+            "SpacetimeDB.ViewContext",
+            "SpacetimeDB.AnonymousViewContext",
+        };
+
+        foreach (var name in codegenOwnedTypes)
+        {
+            Assert.Null(runtimeAssembly!.GetTypeByMetadataName(name));
+        }
+    }
+
+    static void AssertNoCs0436Diagnostics(Compilation compilation)
+    {
+        var diagnostics = compilation
+            .Emit(Stream.Null)
+            .Diagnostics.Where(diag => diag.Severity != DiagnosticSeverity.Hidden);
+
+        Assert.DoesNotContain(diagnostics, d => d.Id == "CS0436");
+    }
+
     [Fact]
     public static async Task TypeGeneratorOnClient()
     {
@@ -150,6 +204,21 @@ public static class GeneratorSnapshotTests
         );
 
         Assert.Empty(GetCompilationErrors(compilationAfterGen));
+
+        AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
+        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
+
+        // Regression guard for user-reported warning spam:
+        // make sure a downstream "user" file that references SpacetimeDB.Local doesn't trigger CS0436.
+        var userCode =
+            "namespace User; public sealed class UseLocal { public SpacetimeDB.Local Db; }";
+        var userTree = CSharpSyntaxTree.ParseText(
+            userCode,
+            new CSharpParseOptions(compilationAfterGen.LanguageVersion)
+        );
+        var compilationWithUserCode = compilationAfterGen.AddSyntaxTrees(userTree);
+        AssertNoCs0436Diagnostics(compilationWithUserCode);
     }
 
     [Fact]
@@ -166,5 +235,9 @@ public static class GeneratorSnapshotTests
         // We already reported the useful ones from the generator, but let's snapshot those emitted by the compiler as well.
         // This way we can notice when they get particularly noisy and improve our codegen for the case of a broken code.
         await fixture.Verify("ExtraCompilationErrors", GetCompilationErrors(compilationAfterGen));
+
+        AssertPublicBoundIsAvailableInRuntime(compilationAfterGen);
+        AssertRuntimeDoesNotDefineLocal(compilationAfterGen);
+        AssertGeneratedCodeDoesNotUseInternalBound(compilationAfterGen);
     }
 }
