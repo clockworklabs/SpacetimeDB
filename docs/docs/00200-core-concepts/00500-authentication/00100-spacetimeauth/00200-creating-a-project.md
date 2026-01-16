@@ -3,35 +3,32 @@ title: Creating a project
 slug: /spacetimeauth/creating-a-project
 ---
 
-
 :::warning
 
 SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
 
 :::
 
-## 1. Accessing the SpacetimeAuth Dashboard
+SpacetimeAuth is a service that can be enabled for any module published on
+Maincloud. Check out our [Deploy to Maincloud](../../../00300-resources/00100-how-to/00100-deploy/00100-maincloud.md)
+guide to learn how to publish a module.
 
-To get started with SpacetimeAuth, log in to the website and navigate to the
-SpacetimeAuth dashboard: [https://spacetimedb.com/spacetimeauth](https://spacetimedb.com/spacetimeauth)
+## 1. Enabling SpacetimeAuth for a module
 
-You can also click on your profile icon in the top right corner and select
-"SpacetimeAuth" from the dropdown menu.
+1. Deploy your module to Maincloud if you haven't already.
+2. Navigate to the dashboard of your deployed module on Maincloud:
+   1. Click on your profile picture in the top right corner.
+   2. Select "My profile" from the dropdown menu.
+   3. Click on the desired module from the list of your deployed modules.
+      ![Module dashboard](/images/spacetimeauth/module-dashboard.png)
+3. In the left sidebar, click on "SpacetimeAuth".
 
-![Access the menu](/images/spacetimeauth/menu-access.png)
+   ![Module sidebar](/images/spacetimeauth/module-sidebar.png)
 
-## 2. Creating a New Project
+4. Click on the "Use SpacetimeAuth" button.
+   ![Enable SpacetimeAuth](/images/spacetimeauth/use-spacetimeauth.png)
 
-Once you're in the SpacetimeAuth dashboard, you can create a new project by
-clicking the "New Project" button.
-
-![Create project](/images/spacetimeauth/new-project.png)
-
-## 3. Exploring the Dashboard
-
-After creating a project, you can access the dashboard by clicking on the project
-name in the list of projects.
-![Project list](/images/spacetimeauth/projects-list.png)
+## 2. Exploring the Dashboard
 
 The dashboard provides you with multiple tabs to manage different aspects of
 your project:

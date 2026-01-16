@@ -61,6 +61,7 @@ impl IndexArg {
 
 enum IndexType {
     BTree { columns: Vec<Ident> },
+    Hash { columns: Vec<Ident> },
     Direct { column: Ident },
 }
 
@@ -164,6 +165,10 @@ impl IndexArg {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_btree(meta)?);
                 }
+                sym::hash => {
+                    check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
+                    algo = Some(Self::parse_hash(meta)?);
+                }
                 sym::direct => {
                     check_duplicate_msg(&algo, &meta, "index algorithm specified twice")?;
                     algo = Some(Self::parse_direct(meta)?);
@@ -173,13 +178,16 @@ impl IndexArg {
         })?;
         let name = name.ok_or_else(|| meta.error("missing index name, e.g. name = my_index"))?;
         let kind = algo.ok_or_else(|| {
-            meta.error("missing index algorithm, e.g., `btree(columns = [col1, col2])` or `direct(column = col1)`")
+            meta.error(
+                "missing index algorithm, e.g., `btree(columns = [col1, col2])`, \
+                `hash(columns = [col1, col2])`, or `direct(column = col1)`",
+            )
         })?;
 
         Ok(IndexArg::new(name, kind))
     }
 
-    fn parse_btree(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+    fn parse_columns(meta: &ParseNestedMeta) -> syn::Result<Option<Vec<Ident>>> {
         let mut columns = None;
         meta.parse_nested_meta(|meta| {
             match_meta!(match meta {
@@ -197,9 +205,21 @@ impl IndexArg {
             });
             Ok(())
         })?;
+        Ok(columns)
+    }
+
+    fn parse_btree(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+        let columns = Self::parse_columns(&meta)?;
         let columns = columns
             .ok_or_else(|| meta.error("must specify columns for btree index, e.g. `btree(columns = [col1, col2])`"))?;
         Ok(IndexType::BTree { columns })
+    }
+
+    fn parse_hash(meta: ParseNestedMeta) -> syn::Result<IndexType> {
+        let columns = Self::parse_columns(&meta)?;
+        let columns = columns
+            .ok_or_else(|| meta.error("must specify columns for hash index, e.g. `hash(columns = [col1, col2])`"))?;
+        Ok(IndexType::Hash { columns })
     }
 
     fn parse_direct(meta: ParseNestedMeta) -> syn::Result<IndexType> {
@@ -221,7 +241,7 @@ impl IndexArg {
         Ok(IndexType::Direct { column })
     }
 
-    /// Parses an inline `#[index(btree)]` or `#[index(direct)]` attribute on a field.
+    /// Parses an inline `#[index(btree)]`, `#[index(hash)]`, or `#[index(direct)]` attribute on a field.
     fn parse_index_attr(field: &Ident, attr: &syn::Attribute) -> syn::Result<Self> {
         let mut kind = None;
         attr.parse_nested_meta(|meta| {
@@ -229,6 +249,12 @@ impl IndexArg {
                 sym::btree => {
                     check_duplicate_msg(&kind, &meta, "index type specified twice")?;
                     kind = Some(IndexType::BTree {
+                        columns: vec![field.clone()],
+                    });
+                }
+                sym::hash => {
+                    check_duplicate_msg(&kind, &meta, "index type specified twice")?;
+                    kind = Some(IndexType::Hash {
                         columns: vec![field.clone()],
                     });
                 }
@@ -247,10 +273,14 @@ impl IndexArg {
 
     fn validate<'a>(&'a self, table_name: &str, cols: &'a [Column<'a>]) -> syn::Result<ValidatedIndex<'a>> {
         let find_column = |ident| find_column(cols, ident);
-        let kind = match &self.kind {
+        let (kind, kind_str) = match &self.kind {
             IndexType::BTree { columns } => {
                 let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
-                ValidatedIndexType::BTree { cols }
+                (ValidatedIndexType::BTree { cols }, "btree")
+            }
+            IndexType::Hash { columns } => {
+                let cols = columns.iter().map(find_column).collect::<syn::Result<Vec<_>>>()?;
+                (ValidatedIndexType::Hash { cols }, "hash")
             }
             IndexType::Direct { column } => {
                 let col = find_column(column)?;
@@ -262,16 +292,13 @@ impl IndexArg {
                     ));
                 }
 
-                ValidatedIndexType::Direct { col }
+                (ValidatedIndexType::Direct { col }, "direct")
             }
         };
         // See crates/schema/src/validate/v9.rs for the format of index names.
         // It's slightly unnerving that we just trust that component to generate this format correctly,
         // but what can you do.
-        let (cols, kind_str) = match &kind {
-            ValidatedIndexType::BTree { cols } => (&**cols, "btree"),
-            ValidatedIndexType::Direct { col } => (&[*col] as &[_], "direct"),
-        };
+        let cols = kind.columns();
         let cols = cols.iter().map(|col| col.ident.to_string()).collect::<Vec<_>>();
         let cols = cols.join("_");
         let index_name = format!("{table_name}_{cols}_idx_{kind_str}");
@@ -305,6 +332,13 @@ impl AccessorType {
         }
     }
 
+    fn point(&self) -> proc_macro2::TokenStream {
+        match self {
+            AccessorType::Read => quote!(spacetimedb::PointIndexReadOnly),
+            AccessorType::ReadWrite => quote!(spacetimedb::PointIndex),
+        }
+    }
+
     fn unique_doc_typename(&self) -> &'static str {
         match self {
             AccessorType::Read => "UniqueColumnReadOnly",
@@ -318,6 +352,13 @@ impl AccessorType {
             AccessorType::ReadWrite => "RangedIndex",
         }
     }
+
+    fn point_doc_typename(&self) -> &'static str {
+        match self {
+            AccessorType::Read => "PointIndexReadOnly",
+            AccessorType::ReadWrite => "PointIndex",
+        }
+    }
 }
 
 struct ValidatedIndex<'a> {
@@ -329,7 +370,24 @@ struct ValidatedIndex<'a> {
 
 enum ValidatedIndexType<'a> {
     BTree { cols: Vec<&'a Column<'a>> },
+    Hash { cols: Vec<&'a Column<'a>> },
     Direct { col: &'a Column<'a> },
+}
+
+impl ValidatedIndexType<'_> {
+    fn columns(&self) -> &[&Column<'_>] {
+        match self {
+            Self::BTree { cols } | Self::Hash { cols } => cols,
+            Self::Direct { col } => slice::from_ref(col),
+        }
+    }
+
+    fn one_col(&self) -> Option<&Column<'_>> {
+        match self.columns() {
+            [col] => Some(col),
+            _ => None,
+        }
+    }
 }
 
 impl ValidatedIndex<'_> {
@@ -338,6 +396,12 @@ impl ValidatedIndex<'_> {
             ValidatedIndexType::BTree { cols } => {
                 let col_ids = cols.iter().map(|col| col.index);
                 quote!(spacetimedb::table::IndexAlgo::BTree {
+                    columns: &[#(#col_ids),*]
+                })
+            }
+            ValidatedIndexType::Hash { cols } => {
+                let col_ids = cols.iter().map(|col| col.index);
+                quote!(spacetimedb::table::IndexAlgo::Hash {
                     columns: &[#(#col_ids),*]
                 })
             }
@@ -364,25 +428,15 @@ impl ValidatedIndex<'_> {
         tbl_type_ident: &Ident,
         flavor: AccessorType,
     ) -> TokenStream {
-        let cols = match &self.kind {
-            ValidatedIndexType::BTree { cols } => &**cols,
-            ValidatedIndexType::Direct { col } => slice::from_ref(col),
-        };
         if self.is_unique {
-            assert_eq!(cols.len(), 1);
-            self.unique_accessor(cols[0], row_type_ident, tbl_type_ident, flavor)
+            self.unique_accessor(row_type_ident, tbl_type_ident, flavor)
         } else {
-            self.range_accessor(vis, row_type_ident, tbl_type_ident, cols, flavor)
+            self.non_unique_accessor(vis, row_type_ident, tbl_type_ident, flavor)
         }
     }
 
-    fn unique_accessor(
-        &self,
-        col: &Column<'_>,
-        row_type_ident: &Ident,
-        tbl_type_ident: &Ident,
-        flavor: AccessorType,
-    ) -> TokenStream {
+    fn unique_accessor(&self, row_type_ident: &Ident, tbl_type_ident: &Ident, flavor: AccessorType) -> TokenStream {
+        let col = self.kind.one_col().unwrap();
         let index_ident = self.accessor_name;
         let vis = col.vis;
         let col_ty = col.ty;
@@ -404,24 +458,26 @@ impl ValidatedIndex<'_> {
         }
     }
 
-    fn range_accessor(
+    fn non_unique_accessor(
         &self,
         vis: &syn::Visibility,
         row_type_ident: &Ident,
         tbl_type_ident: &Ident,
-        cols: &[&Column<'_>],
         flavor: AccessorType,
     ) -> TokenStream {
         let index_ident = self.accessor_name;
+        let cols = self.kind.columns();
         let col_tys = cols.iter().map(|c| c.ty);
 
-        let range_ty = flavor.range();
-        let tbl_token = quote!(#tbl_type_ident);
-        let doc_type = flavor.range_doc_typename();
-
+        let (handle_ty, doc_type, kind_doc) = match &self.kind {
+            ValidatedIndexType::BTree { .. } => (flavor.range(), flavor.range_doc_typename(), "B-tree"),
+            // Should be unreachable, but we might as well include this.
+            ValidatedIndexType::Direct { .. } => (flavor.range(), flavor.range_doc_typename(), "Direct"),
+            ValidatedIndexType::Hash { .. } => (flavor.point(), flavor.point_doc_typename(), "Hash"),
+        };
         let mut doc = format!(
             "Gets the `{index_ident}` [`{doc_type}`][spacetimedb::{doc_type}] as defined \
-             on this table.\n\nThis B-tree index is defined on the following columns, in order:\n"
+                    on this table.\n\nThis {kind_doc} index is defined on the following columns, in order:\n"
         );
         for col in cols {
             use std::fmt::Write;
@@ -434,10 +490,11 @@ impl ValidatedIndex<'_> {
             .unwrap();
         }
 
+        let tbl_token = quote!(#tbl_type_ident);
         quote! {
             #[doc = #doc]
-            #vis fn #index_ident(&self) -> #range_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
-                #range_ty::__NEW
+            #vis fn #index_ident(&self) -> #handle_ty<#tbl_token, (#(#col_tys,)*), __indices::#index_ident> {
+                #handle_ty::__NEW
             }
         }
     }
@@ -446,8 +503,8 @@ impl ValidatedIndex<'_> {
         let index_ident = self.accessor_name;
         let index_name = &self.index_name;
 
-        let (cols, typeck_direct_index) = match &self.kind {
-            ValidatedIndexType::BTree { cols } => (&**cols, None),
+        let (typeck_direct_index, is_ranged) = match &self.kind {
+            ValidatedIndexType::BTree { .. } => (None, true),
             ValidatedIndexType::Direct { col } => {
                 let col_ty = col.ty;
                 let typeck = quote_spanned!(col_ty.span()=>
@@ -455,22 +512,29 @@ impl ValidatedIndex<'_> {
                         spacetimedb::spacetimedb_lib::assert_column_type_valid_for_direct_index::<#col_ty>();
                     };
                 );
-                (slice::from_ref(col), Some(typeck))
+                (Some(typeck), true)
             }
+            ValidatedIndexType::Hash { .. } => (None, false),
         };
         let vis = if self.is_unique {
-            assert_eq!(cols.len(), 1);
-            cols[0].vis
+            self.kind.one_col().unwrap().vis
         } else {
             vis
         };
         let vis = superize_vis(vis);
 
+        let cols = self.kind.columns();
         let num_cols = cols.len();
+        let index_kind_trait = if is_ranged {
+            quote!(IndexIsRanged)
+        } else {
+            quote!(IndexIsPointed)
+        };
         let mut decl = quote! {
             #typeck_direct_index
 
             #vis struct #index_ident;
+            impl spacetimedb::table::#index_kind_trait for #index_ident {}
             impl spacetimedb::table::Index for #index_ident {
                 const NUM_COLS_INDEXED: usize = #num_cols;
                 fn index_id() -> spacetimedb::table::IndexId {
@@ -482,7 +546,7 @@ impl ValidatedIndex<'_> {
             }
         };
         if self.is_unique {
-            let col = cols[0];
+            let col = self.kind.one_col().unwrap();
             let col_ty = col.ty;
             let col_name = col.ident.to_string();
             let field_ident = col.ident;
@@ -719,7 +783,9 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     for unique_col in &unique_columns {
         if args.indices.iter_mut().any(|index| {
             let covered_by_index = match &index.kind {
-                IndexType::BTree { columns } => &**columns == slice::from_ref(unique_col.ident),
+                IndexType::BTree { columns } | IndexType::Hash { columns } => {
+                    &**columns == slice::from_ref(unique_col.ident)
+                }
                 IndexType::Direct { column } => column == unique_col.ident,
             };
             index.is_unique |= covered_by_index;
@@ -744,6 +810,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
         .iter()
         .map(|index| index.validate(&table_name, &columns))
         .collect::<syn::Result<Vec<_>>>()?;
+
     // Order unique accessors before index accessors.
     indices.sort_by_key(|index| !index.is_unique);
 
@@ -956,16 +1023,7 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
 
     let ix_cols_struct_fields = indices.iter().filter_map(|index| {
         let ident = index.accessor_name.clone();
-        let ty = match &index.kind {
-            ValidatedIndexType::BTree { cols } => {
-                if cols.len() == 1 {
-                    &cols[0].ty
-                } else {
-                    return None;
-                }
-            }
-            ValidatedIndexType::Direct { col } => &col.ty,
-        };
+        let ty = index.kind.one_col()?.ty;
 
         Some(quote! {
             pub #ident: spacetimedb::query_builder::IxCol<#original_struct_ident, #ty>,
@@ -981,18 +1039,13 @@ pub(crate) fn table_impl(mut args: TableArgs, item: &syn::DeriveInput) -> syn::R
     });
 
     let ix_cols_init = indices.iter().map(|index| {
-        let ident = index.accessor_name;
-        match &index.kind {
-            ValidatedIndexType::BTree { cols } => {
-                if cols.len() != 1 {
-                    return quote! {};
-                }
+        if index.kind.one_col().is_none() {
+            quote! {}
+        } else {
+            let ident = index.accessor_name;
+            quote! {
+                #ident: spacetimedb::query_builder::IxCol::new(_table_name, stringify!(#ident)),
             }
-            ValidatedIndexType::Direct { .. } => {}
-        }
-
-        quote! {
-            #ident: spacetimedb::query_builder::IxCol::new(_table_name, stringify!(#ident)),
         }
     });
 

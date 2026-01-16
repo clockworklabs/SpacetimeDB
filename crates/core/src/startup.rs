@@ -317,9 +317,14 @@ impl Cores {
 
     /// Get the cores of the local host, as reported by the operating system.
     ///
-    /// Returns `None` if `num_cpus` is less than 8.
+    /// Returns `None` if `num_cpus` is less than 8
+    /// or if core pinning is disabled.
     /// If `Some` is returned, the `Vec` is non-empty.
     pub fn get_core_ids() -> Option<Vec<CoreId>> {
+        if cfg!(feature = "no-core-pinning") {
+            return None;
+        }
+
         let cores = core_affinity::get_core_ids()
             .filter(|cores| cores.len() >= 10)?
             .into_iter()

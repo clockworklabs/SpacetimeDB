@@ -8,9 +8,13 @@ use foldhash::{HashSet, HashSetExt};
 use hashbrown::{hash_map::Entry, HashMap};
 use itertools::Itertools as _;
 use spacetimedb_sats::layout::Size;
-use spacetimedb_table::indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset};
 use spacetimedb_table::table_index::unique_direct_index::UniqueDirectIndex;
 use spacetimedb_table::table_index::uniquemap::UniqueMap;
+use spacetimedb_table::table_index::Index as _;
+use spacetimedb_table::{
+    indexes::{PageIndex, PageOffset, RowPointer, SquashedOffset},
+    table_index::RangedIndex,
+};
 
 fn time<R>(body: impl FnOnce() -> R) -> Duration {
     let start = WallTime.start();
@@ -173,20 +177,20 @@ trait Index: Clone {
 }
 
 #[derive(Clone)]
-struct IBTree(UniqueMap<K, RowPointer>);
+struct IBTree(UniqueMap<K>);
 impl Index for IBTree {
     const NAME: &'static str = "IBTree";
     fn new() -> Self {
         Self(<_>::default())
     }
     fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
-        self.0.insert(key, val).map_err(|x| *x)
+        self.0.insert(key, val)
     }
     fn seek(&self, key: K) -> impl Iterator<Item = RowPointer> {
-        self.0.values_in_range(&(key..=key)).copied()
+        self.0.seek_range(&(key..=key))
     }
     fn delete(&mut self, key: K) -> bool {
-        self.0.delete(&key)
+        self.0.delete(&key, RowPointer(0))
     }
 }
 
@@ -239,20 +243,20 @@ impl Index for IFoldHash {
 }
 
 #[derive(Clone)]
-struct IDirectIndex(UniqueDirectIndex);
+struct IDirectIndex(UniqueDirectIndex<K>);
 impl Index for IDirectIndex {
     const NAME: &'static str = "IDirectIndex";
     fn new() -> Self {
         Self(<_>::default())
     }
     fn insert(&mut self, key: K, val: RowPointer) -> Result<(), RowPointer> {
-        self.0.insert(key as usize, val)
+        self.0.insert(key, val)
     }
     fn seek(&self, key: K) -> impl Iterator<Item = RowPointer> {
-        self.0.seek_point(key as usize)
+        self.0.seek_point(&key)
     }
     fn delete(&mut self, key: K) -> bool {
-        self.0.delete(key as usize)
+        self.0.delete(&key, RowPointer(0))
     }
 }
 

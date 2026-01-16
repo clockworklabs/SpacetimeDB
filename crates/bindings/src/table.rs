@@ -145,6 +145,7 @@ pub struct IndexDesc<'a> {
 #[derive(Clone, Copy)]
 pub enum IndexAlgo<'a> {
     BTree { columns: &'a [u16] },
+    Hash { columns: &'a [u16] },
     Direct { column: u16 },
 }
 
@@ -464,7 +465,252 @@ pub trait Index {
     fn index_id() -> IndexId;
 }
 
-/// A handle to a B-Tree index on a table.
+/// Marks an index as only having point query capabilities.
+///
+/// This applies to Hash indices but not BTree and Direct indices.
+pub trait IndexIsPointed: Index {}
+
+/// A handle to a Hash index on a table.
+///
+/// To get one of these from a `ReducerContext`, use:
+/// ```text
+/// ctx.db.{table}().{index}()
+/// ```
+/// for a table *table* and an index *index*.
+///
+/// Example:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
+///
+/// #[table(name = user,
+///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+/// struct User {
+///     id: u32,
+///     name: String,
+///     /// Number of dogs owned by the user.
+///     dogs: u64
+/// }
+///
+/// fn demo(ctx: &ReducerContext) {
+///     let by_dogs_and_name: PointIndex<_, (u64, String), _> = ctx.db.user().dogs_and_name();
+/// }
+/// # }
+/// ```
+///
+/// For single-column indexes, use the name of the column:
+///
+/// ```no_run
+/// # #[cfg(target_arch = "wasm32")] mod demo {
+/// use spacetimedb::{table, PointIndex, ReducerContext, DbContext};
+///
+/// #[table(name = user)]
+/// struct User {
+///     id: u32,
+///     username: String,
+///     #[index(btree)]
+///     dogs: u64
+/// }
+///
+/// fn demo(ctx: &ReducerContext) {
+///     let by_dogs: PointIndex<_, (u64,), _> = ctx.db().user().dogs();
+/// }
+/// # }
+/// ```
+///
+pub struct PointIndex<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndex<Tbl, IndexType, Idx> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    /// Returns an iterator over all rows in the database state
+    /// where the indexed column(s) equal `point`.
+    ///
+    /// Unlike for ranged indices,
+    /// this method only accepts a `point` and not any prefix or range.
+    ///
+    /// For example:
+    ///
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{table, ReducerContext, PointIndex};
+    ///
+    /// #[table(name = user,
+    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// struct User {
+    ///     id: u32,
+    ///     name: String,
+    ///     dogs: u64
+    /// }
+    ///
+    /// fn demo(ctx: &ReducerContext) {
+    ///     let by_dogs_and_name: PointIndex<_, (u64, String), _> = ctx.db.user().dogs_and_name();
+    ///
+    ///     // Find user with exactly 25 dogs and exactly the name "Joseph".
+    ///     for user in by_dogs_and_name.filter((25u64, "Joseph")) {
+    ///         /* ... */
+    ///     }
+    ///
+    ///     // You can also pass arguments by reference if desired.
+    ///     for user in by_dogs_and_name.filter((&25u64, &"Joseph".to_string())) {
+    ///         /* ... */
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    where
+        P: WithPointArg<K>,
+    {
+        filter_point::<Tbl, Idx, K>(point)
+    }
+
+    /// Deletes all rows in the database state
+    /// where the indexed column(s) equal `point`.
+    ///
+    /// Unlike for ranged indices,
+    /// this method only accepts a `point` and not any prefix or range.
+    ///
+    /// For example:
+    ///
+    /// ```no_run
+    /// # #[cfg(target_arch = "wasm32")] mod demo {
+    /// use spacetimedb::{table, ReducerContext, PointIndex};
+    ///
+    /// #[table(name = user,
+    ///     index(name = dogs_and_name, hash(columns = [dogs, name])))]
+    /// struct User {
+    ///     id: u32,
+    ///     name: String,
+    ///     dogs: u64
+    /// }
+    ///
+    /// fn demo(ctx: &ReducerContext) {
+    ///     let by_dogs_and_name: PointIndex<_, (u64, String), _> = ctx.db.user().dogs_and_name();
+    ///
+    ///     // Delete users with exactly 25 dogs, and exactly the name "Joseph".
+    ///     by_dogs_and_name.delete((25u64, "Joseph"));
+    ///
+    ///     // You can also pass arguments by reference if desired.
+    ///     by_dogs_and_name.delete((&25u64, &"Joseph".to_string()));
+    /// }
+    /// # }
+    /// ```
+    ///
+    /// May panic if deleting any one of the rows would violate a constraint,
+    /// though at present no such constraints exist.
+    pub fn delete<P, K>(&self, point: P) -> u64
+    where
+        P: WithPointArg<K>,
+    {
+        let index_id = Idx::index_id();
+        point.with_point_arg(|point| {
+            sys::datastore_delete_by_index_scan_point_bsatn(index_id, point)
+                .unwrap_or_else(|e| panic!("unexpected error from `datastore_delete_by_index_scan_point_bsatn`: {e}"))
+                .into()
+        })
+    }
+}
+
+/// Scans `Tbl` for `point` using the index `Idx`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+fn filter_point<Tbl, Idx, K>(point: impl WithPointArg<K>) -> impl Iterator<Item = Tbl::Row>
+where
+    Tbl: Table,
+    Idx: IndexIsPointed,
+{
+    let index_id = Idx::index_id();
+    let iter = point.with_point_arg(|point| {
+        sys::datastore_index_scan_point_bsatn(index_id, point)
+            .unwrap_or_else(|e| panic!("unexpected error from `datastore_index_scan_point_bsatn`: {e}"))
+    });
+    TableIter::new(iter)
+}
+
+/// A read-only handle to a Hash index.
+///
+/// This is the read-only version of [`PointIndex`].
+/// It mirrors [`PointIndex`] but exposes only `.filter(..)`, not `.delete(..)`.
+/// It is used by `{table}__ViewHandle` to keep view code read-only at compile time.
+///
+/// Note, the `Tbl` generic is the read-write table handle `{table}__TableHandle`.
+/// This is because read-only indexes still need [`Table`] metadata.
+/// The view handle itself deliberately does not implement `Table`.
+pub struct PointIndexReadOnly<Tbl: Table, IndexType, Idx: Index> {
+    _marker: PhantomData<(Tbl, IndexType, Idx)>,
+}
+
+impl<Tbl: Table, IndexType, Idx: IndexIsPointed> PointIndexReadOnly<Tbl, IndexType, Idx> {
+    #[doc(hidden)]
+    pub const __NEW: Self = Self { _marker: PhantomData };
+
+    pub fn filter<P, K>(&self, point: P) -> impl Iterator<Item = Tbl::Row>
+    where
+        P: WithPointArg<K>,
+    {
+        filter_point::<Tbl, Idx, K>(point)
+    }
+}
+
+/// Trait used for running point index scans.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
+pub trait WithPointArg<K = ()> {
+    /// Runs `run` with the BSATN-serialized point to pass to the index scan.
+    // TODO(perf, centril): once we have stable specialization,
+    // just use `to_le_bytes` internally instead.
+    #[doc(hidden)]
+    fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R;
+}
+
+impl<Arg: FilterableValue> WithPointArg<SingleBound> for Arg {
+    fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+        run(&IterBuf::serialize(self).unwrap())
+    }
+}
+
+macro_rules! impl_with_point_arg {
+    ($($arg:ident),+) => {
+        impl<$($arg: FilterableValue),+> WithPointArg for ($($arg,)+) {
+            fn with_point_arg<R>(&self, run: impl FnOnce(&[u8]) -> R) -> R {
+                // We can assume here that we have a point bound.
+                let mut data = IterBuf::take();
+
+                // Destructure the argument tuple into variables with the same names as their types.
+                #[allow(non_snake_case)]
+                let ($($arg,)+) = self;
+
+                // For each part in the tuple queried, serialize it into the `data` buffer.
+                Ok(())
+                    $(.and_then(|()| data.serialize_into($arg)))+
+                    .unwrap();
+
+                run(&*data)
+            }
+        }
+    };
+}
+
+impl_with_point_arg!(A);
+impl_with_point_arg!(A, B);
+impl_with_point_arg!(A, B, C);
+impl_with_point_arg!(A, B, C, D);
+impl_with_point_arg!(A, B, C, D, E);
+impl_with_point_arg!(A, B, C, D, E, F);
+
+/// Marks an index as having range query capabilities.
+///
+/// This applies to BTree and Direct indices but not Hash indices.
+pub trait IndexIsRanged: Index {}
+
+/// A handle to a B-Tree or Direct index on a table.
 ///
 /// To get one of these from a `ReducerContext`, use:
 /// ```text
@@ -513,11 +759,11 @@ pub trait Index {
 /// # }
 /// ```
 ///
-pub struct RangedIndex<Tbl: Table, IndexType, Idx: Index> {
+pub struct RangedIndex<Tbl: Table, IndexType, Idx: IndexIsRanged> {
     _marker: PhantomData<(Tbl, IndexType, Idx)>,
 }
 
-impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
+impl<Tbl: Table, IndexType, Idx: IndexIsRanged> RangedIndex<Tbl, IndexType, Idx> {
     #[doc(hidden)]
     pub const __NEW: Self = Self { _marker: PhantomData };
 
@@ -693,6 +939,10 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndex<Tbl, IndexType, Idx> {
     }
 }
 
+/// Performs a ranged scan using the range arguments `B` in `Tbl` using `Idx`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 fn filter<Tbl, Idx, IndexType, B, K>(b: B) -> impl Iterator<Item = Tbl::Row>
 where
     Tbl: Table,
@@ -716,7 +966,7 @@ where
     TableIter::new(iter)
 }
 
-/// A read-only handle to a B-tree index.
+/// A read-only handle to a B-tree or Direct index.
 ///
 /// This is the read-only version of [`RangedIndex`].
 /// It mirrors [`RangedIndex`] but exposes only `.filter(..)`, not `.delete(..)`.
@@ -742,12 +992,18 @@ impl<Tbl: Table, IndexType, Idx: Index> RangedIndexReadOnly<Tbl, IndexType, Idx>
 }
 
 /// Returns whether `B` is a point scan on `I`.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 const fn is_point_scan<I: Index, B: IndexScanRangeBounds<T, K>, T, K>() -> bool {
     B::POINT && B::COLS_PROVIDED == I::NUM_COLS_INDEXED
 }
 
 /// Trait used for overloading methods on [`RangedIndex`].
 /// See [`RangedIndex`] for more information.
+///
+/// The type parameter `K` is either `()` or [`SingleBound`]
+/// and is used to workaround the orphan rule.
 pub trait IndexScanRangeBounds<T, K = ()> {
     /// True if no range occurs in this range bounds.
     #[doc(hidden)]

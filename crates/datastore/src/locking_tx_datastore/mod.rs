@@ -9,7 +9,7 @@ pub mod state_view;
 pub use state_view::{IterByColEqTx, IterByColRangeTx};
 pub mod delete_table;
 mod tx;
-pub use tx::TxId;
+pub use tx::{NumDistinctValues, TxId};
 mod tx_state;
 #[cfg(any(test, feature = "test"))]
 pub use tx_state::PendingSchemaChange;

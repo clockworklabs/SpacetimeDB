@@ -135,6 +135,11 @@ pub trait Durability: Send + Sync {
     ///
     /// Note that errors are not propagated, as the [Durability] may already be
     /// closed.
+    ///
+    /// # Cancellation
+    ///
+    /// Dropping the [Close] future shall abort the shutdown process,
+    /// and leave the [Durability] in a closed state.
     fn close(&self) -> Close;
 }
 

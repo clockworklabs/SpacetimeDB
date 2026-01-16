@@ -239,31 +239,31 @@ public abstract class ProcedureTxContextBase(Internal.TxContext inner)
 
 public abstract class LocalBase : Internal.Local { }
 
-public sealed partial class RuntimeProcedureContext(
+internal sealed partial class RuntimeProcedureContext(
     Identity sender,
     ConnectionId? connectionId,
     Random random,
     Timestamp timestamp
 ) : ProcedureContextBase(sender, connectionId, random, timestamp)
 {
-    private readonly Local _db = new();
+    private readonly RuntimeLocal _db = new();
 
     protected internal override LocalBase CreateLocal() => _db;
 
     protected override ProcedureTxContextBase CreateTxContext(Internal.TxContext inner) =>
-        _cached ??= new ProcedureTxContext(inner);
+        _cached ??= new RuntimeProcedureTxContext(inner);
 
-    private ProcedureTxContext? _cached;
+    private RuntimeProcedureTxContext? _cached;
 }
 
-public sealed class ProcedureTxContext : ProcedureTxContextBase
+internal sealed class RuntimeProcedureTxContext : ProcedureTxContextBase
 {
-    internal ProcedureTxContext(Internal.TxContext inner)
+    internal RuntimeProcedureTxContext(Internal.TxContext inner)
         : base(inner) { }
 
-    public new Local Db => (Local)base.Db;
+    public new RuntimeLocal Db => (RuntimeLocal)base.Db;
 }
 
-public sealed class Local : LocalBase { }
+internal sealed class RuntimeLocal : LocalBase { }
 
 #pragma warning restore STDB_UNSTABLE

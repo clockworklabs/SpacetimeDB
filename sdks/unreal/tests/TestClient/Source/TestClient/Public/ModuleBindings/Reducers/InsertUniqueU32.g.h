@@ -14,10 +14,10 @@ struct TESTCLIENT_API FInsertUniqueU32Args
     GENERATED_BODY()
 
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 N;
+    uint32 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertUniqueU32Args() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UInsertUniqueU32Reducer : public UReducerBase
 
 public:
     // NOTE: uint32 field not exposed to Blueprint due to non-blueprintable elements
-    uint32 N;
+    uint32 N = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

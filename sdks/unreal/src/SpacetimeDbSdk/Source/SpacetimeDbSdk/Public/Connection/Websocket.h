@@ -106,7 +106,7 @@ private:
 	/** Handler for incoming text messages */
 	void HandleMessageReceived(const FString& Message);
 	/** Handler for incoming binary messages */
-	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, SIZE_T BytesRemaining);
+	void HandleBinaryMessageReceived(const void* Data, SIZE_T Size, bool bIsLastFragment);
 	/** Handler for socket close */
 	void HandleClosed(int32 StatusCode, const FString& Reason, bool bWasClean);
 

@@ -12,7 +12,7 @@ TYPES
 
 TABLE
 - results
-  - Struct: Result
+  - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
     - value: Shape

@@ -1,7 +1,8 @@
+use netstat2::{get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, TcpState};
 use spacetimedb_client_api::routes::identity::IdentityRoutes;
 use spacetimedb_pg::pg_server;
 use std::io::{self, Write};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, TcpListener as StdTcpListener};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use crate::{StandaloneEnv, StandaloneOptions};
@@ -295,28 +296,124 @@ pub async fn exec(args: &ArgMatches, db_cores: JobCores) -> anyhow::Result<()> {
 /// Note: There is a small race condition between this check and the actual bind -
 /// another process could grab the port in between. This is unlikely in practice
 /// and the actual bind will fail with a clear error if it happens.
-fn is_port_available(host: &str, port: u16) -> bool {
-    // Parse the host and determine which addresses to check
-    let ipv4 = host
-        .parse::<Ipv4Addr>()
-        .unwrap_or_else(|e| panic!("Invalid IPv4 address '{}': {}", host, e));
-
-    let ipv6 = if ipv4.is_loopback() {
-        Ipv6Addr::LOCALHOST
-    } else if ipv4.is_unspecified() {
-        Ipv6Addr::UNSPECIFIED
-    } else {
-        // For specific IPs, use the IPv4-mapped IPv6 address
-        ipv4.to_ipv6_mapped()
+pub fn is_port_available(host: &str, port: u16) -> bool {
+    let requested = match parse_host(host) {
+        Some(r) => r,
+        None => return false, // invalid host string => treat as not available
     };
 
-    let ipv4_addr = SocketAddr::from((ipv4, port));
-    let ipv6_addr = SocketAddr::V6(SocketAddrV6::new(ipv6, port, 0, 0));
+    let sockets = match get_sockets_info(AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6, ProtocolFlags::TCP) {
+        Ok(s) => s,
+        Err(_) => return false, // if we can't inspect sockets, fail closed
+    };
 
-    let ipv4_available = StdTcpListener::bind(ipv4_addr).is_ok();
-    let ipv6_available = StdTcpListener::bind(ipv6_addr).is_ok();
+    for si in sockets {
+        let tcp = match si.protocol_socket_info {
+            ProtocolSocketInfo::Tcp(tcp_si) => tcp_si,
+            _ => continue,
+        };
 
-    ipv4_available && ipv6_available
+        if tcp.state != TcpState::Listen {
+            continue;
+        }
+
+        if tcp.local_port != port {
+            continue;
+        }
+
+        if conflicts(requested, tcp.local_addr) {
+            return false;
+        }
+    }
+
+    true
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RequestedHost {
+    Localhost,
+    Ip(IpAddr),
+}
+
+fn parse_host(host: &str) -> Option<RequestedHost> {
+    let host = host.trim();
+
+    // Allow common bracketed IPv6 formats like "[::1]"
+    let host = host.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(host);
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return Some(RequestedHost::Localhost);
+    }
+
+    host.parse::<IpAddr>().ok().map(RequestedHost::Ip)
+}
+
+fn conflicts(requested: RequestedHost, listener_addr: IpAddr) -> bool {
+    match requested {
+        RequestedHost::Localhost => match listener_addr {
+            // localhost should conflict with loopback and wildcards in each family
+            IpAddr::V4(v4) => v4.is_loopback() || v4.is_unspecified(),
+            IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified(),
+        },
+
+        RequestedHost::Ip(IpAddr::V4(req_v4)) => match listener_addr {
+            IpAddr::V4(l_v4) => {
+                if req_v4.is_unspecified() {
+                    // 0.0.0.0 conflicts with any IPv4 listener
+                    true
+                } else if req_v4.is_loopback() {
+                    // 127.0.0.1 conflicts with 127.0.0.1 and 0.0.0.0
+                    l_v4 == req_v4 || l_v4.is_unspecified()
+                } else {
+                    // specific IPv4 conflicts with that IPv4 and 0.0.0.0
+                    l_v4 == req_v4 || l_v4.is_unspecified()
+                }
+            }
+            IpAddr::V6(l_v6) => {
+                if req_v4.is_unspecified() {
+                    // special case: 0.0.0.0 conflicts with :: (and vice versa)
+                    l_v6.is_unspecified()
+                } else if req_v4.is_loopback() {
+                    // special case: 127.0.0.1 conflicts with ::1 (and vice versa)
+                    l_v6.is_loopback()
+                        // and treat IPv6 wildcard as conflicting with IPv4 loopback per your table
+                        || l_v6.is_unspecified()
+                        // also consider rare IPv4-mapped IPv6 listeners
+                        || l_v6.to_ipv4_mapped() == Some(req_v4)
+                } else {
+                    // specific IPv4 should conflict with IPv6 wildcard (::) per your table
+                    l_v6.is_unspecified() || l_v6.to_ipv4_mapped() == Some(req_v4)
+                }
+            }
+        },
+
+        RequestedHost::Ip(IpAddr::V6(req_v6)) => match listener_addr {
+            IpAddr::V6(l_v6) => {
+                if req_v6.is_unspecified() {
+                    // :: conflicts with any IPv6 listener
+                    true
+                } else if req_v6.is_loopback() {
+                    // ::1 conflicts with ::1 and :: (and also with 127.0.0.1 via IPv4 branch below)
+                    l_v6 == req_v6 || l_v6.is_unspecified()
+                } else {
+                    // specific IPv6 conflicts with itself and ::
+                    l_v6 == req_v6 || l_v6.is_unspecified()
+                }
+            }
+            IpAddr::V4(l_v4) => {
+                if req_v6.is_unspecified() {
+                    // :: conflicts with any IPv4 listener (matches your table)
+                    true
+                } else if req_v6.is_loopback() {
+                    // special case: ::1 conflicts with 127.0.0.1 (and vice versa)
+                    l_v4.is_loopback()
+                } else {
+                    // Not required by your rules: specific IPv6 does NOT conflict with IPv4 listeners.
+                    false
+                }
+            }
+        },
+    }
 }
 
 /// Find an available port starting from the requested port.

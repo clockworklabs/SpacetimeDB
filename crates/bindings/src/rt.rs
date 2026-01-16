@@ -737,6 +737,9 @@ impl From<IndexAlgo<'_>> for RawIndexAlgorithm {
             IndexAlgo::BTree { columns } => RawIndexAlgorithm::BTree {
                 columns: columns.iter().copied().collect(),
             },
+            IndexAlgo::Hash { columns } => RawIndexAlgorithm::Hash {
+                columns: columns.iter().copied().collect(),
+            },
             IndexAlgo::Direct { column } => RawIndexAlgorithm::Direct { column: column.into() },
         }
     }

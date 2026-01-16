@@ -78,15 +78,16 @@ impl DbConnection {
 
 Construct a `DbConnection` by calling `DbConnection::builder()` and chaining configuration methods, then calling `.build()`. You must at least specify `with_uri`, to supply the URI of the SpacetimeDB to which you published your module, and `with_module_name`, to supply the human-readable SpacetimeDB domain name or the raw `Identity` which identifies the database.
 
-| Name                                                      | Description                                                                          |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`with_uri` method](#method-with_uri)                     | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
-| [`with_module_name` method](#method-with_module_name)     | Set the name or `Identity` of the remote database.                                   |
-| [`on_connect` callback](#callback-on_connect)             | Register a callback to run when the connection is successfully established.          |
-| [`on_connect_error` callback](#callback-on_connect_error) | Register a callback to run if the connection is rejected or the host is unreachable. |
-| [`on_disconnect` callback](#callback-on_disconnect)       | Register a callback to run when the connection ends.                                 |
-| [`with_token` method](#method-with_token)                 | Supply a token to authenticate with the remote database.                             |
-| [`build` method](#method-build)                           | Finalize configuration and connect.                                                  |
+| Name                                                          | Description                                                                          |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [`with_uri` method](#method-with_uri)                         | Set the URI of the SpacetimeDB instance which hosts the remote database.             |
+| [`with_module_name` method](#method-with_module_name)         | Set the name or `Identity` of the remote database.                                   |
+| [`with_confirmed_reads` method](#method-with_confirmed_reads) | Enable or disable confirmed reads.                                                   |
+| [`on_connect` callback](#callback-on_connect)                 | Register a callback to run when the connection is successfully established.          |
+| [`on_connect_error` callback](#callback-on_connect_error)     | Register a callback to run if the connection is rejected or the host is unreachable. |
+| [`on_disconnect` callback](#callback-on_disconnect)           | Register a callback to run when the connection ends.                                 |
+| [`with_token` method](#method-with_token)                     | Supply a token to authenticate with the remote database.                             |
+| [`build` method](#method-build)                               | Finalize configuration and connect.                                                  |
 
 #### Method `with_uri`
 
@@ -107,6 +108,20 @@ impl DbConnectionBuilder {
 ```
 
 Configure the SpacetimeDB domain name or `Identity` of the remote database which identifies it within the SpacetimeDB instance or cluster.
+
+#### Method `with_confirmed_reads`
+
+```rust
+impl DbConnectionBuilder {
+    fn with_confirmed_reads(self, confirmed: bool) -> Self;
+}
+```
+
+Configure the connection to request confirmed reads.
+
+When enabled, the server will send query results only after they are confirmed to be durable, i.e. persisted to disk on one or more replicas depending on the replication settings of the database. When set to `false`, the server will send results as soon as transactions are committed in memory.
+
+If this method is not called, the server chooses the default.
 
 #### Callback `on_connect`
 

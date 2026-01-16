@@ -2,7 +2,7 @@
 
 use std::io;
 
-use super::{AutoMigratePlan, IndexAlgorithm, ModuleDefLookup, TableDef};
+use super::{AutoMigratePlan, ModuleDefLookup, TableDef};
 use crate::{
     auto_migrate::AutoMigrateStep,
     def::{ConstraintData, FunctionKind, ModuleDef, ScheduleDef, ViewDef},
@@ -307,22 +307,15 @@ fn extract_table_info(
         .values()
         .sorted_by_key(|c| c.name.clone())
         .map(|index| {
-            let columns = match &index.algorithm {
-                IndexAlgorithm::BTree(btree) => btree
-                    .columns
-                    .iter()
-                    .map(|col_id| {
-                        let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
-                        Ok(column.name.clone())
-                    })
-                    .collect::<Result<Vec<_>, FormattingErrors>>()?,
-                IndexAlgorithm::Direct(direct) => {
-                    let column = table_def
-                        .get_column(direct.column)
-                        .ok_or(FormattingErrors::ColumnNotFound)?;
-                    vec![column.name.clone()]
-                }
-            };
+            let columns = index
+                .algorithm
+                .columns()
+                .iter()
+                .map(|col_id| {
+                    let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
+                    Ok(column.name.clone())
+                })
+                .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
             Ok(IndexInfo {
                 name: index.name.to_string(),
@@ -422,22 +415,15 @@ fn extract_index_info(
         .ok_or(FormattingErrors::IndexNotFound)?;
     let index_def = table_def.indexes.get(index).ok_or(FormattingErrors::IndexNotFound)?;
 
-    let columns = match &index_def.algorithm {
-        IndexAlgorithm::BTree(btree) => btree
-            .columns
-            .iter()
-            .map(|col_id| {
-                let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
-                Ok(column.name.clone())
-            })
-            .collect::<Result<Vec<_>, FormattingErrors>>()?,
-        IndexAlgorithm::Direct(direct) => {
-            let column = table_def
-                .get_column(direct.column)
-                .ok_or(FormattingErrors::ColumnNotFound)?;
-            vec![column.name.clone()]
-        }
-    };
+    let columns = index_def
+        .algorithm
+        .columns()
+        .iter()
+        .map(|col_id| {
+            let column = table_def.get_column(col_id).ok_or(FormattingErrors::ColumnNotFound)?;
+            Ok(column.name.clone())
+        })
+        .collect::<Result<Vec<_>, FormattingErrors>>()?;
 
     Ok(IndexInfo {
         name: index_def.name.to_string(),

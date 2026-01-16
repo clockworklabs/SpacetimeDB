@@ -14,10 +14,10 @@ struct TESTCLIENT_API FInsertPkI32Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 N;
+    int32 N = 0;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertPkI32Args() = default;
 
@@ -49,9 +49,9 @@ class TESTCLIENT_API UInsertPkI32Reducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 N;
+    int32 N = 0;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

@@ -34,6 +34,17 @@ pub mod util;
 /// surfaced to the API.
 #[async_trait]
 pub trait NodeDelegate: Send + Sync {
+    /// Error returned by [Self::leader].
+    ///
+    /// Must satisfy [MaybeMisdirected] to indicate whether the method would
+    /// never succeed on this node due to the database not being scheduled on it.
+    ///
+    /// The [Into<axum::response::ErrorResponse] shall convert the error into an
+    /// HTTP response, providing an error message suitable for API clients.
+    /// The [fmt::Display] impl is used for logging the error, and may provide
+    /// additional context useful for debugging purposes.
+    type GetLeaderHostError: MaybeMisdirected + Into<axum::response::ErrorResponse> + fmt::Display + Send + Sync;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily>;
     fn client_actor_index(&self) -> &ClientActorIndex;
 
@@ -41,10 +52,36 @@ pub trait NodeDelegate: Send + Sync {
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT;
     /// Return the leader [`Host`] of `database_id`.
     ///
-    /// Returns `None` if the current leader is not hosted by this node.
     /// The [`Host`] is spawned implicitly if not already running.
-    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>>;
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError>;
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir;
+}
+
+/// Predicate on the [NodeDelegate::GetLeaderHostError].
+///
+/// Normally, the routing layer determines the cluster node hosting the current
+/// leader. In between the routing decision and actually executing the API
+/// handler on the node, the database's state can, however, change, so that the
+/// [NodeDelegate::leader] method is unable to provide the current leader [Host].
+///
+/// This trait allows to detect this case.
+//
+// Used in the logs endpoint to allow serving module logs even if
+// the database is not currently running.
+pub trait MaybeMisdirected {
+    /// Return `true` if the current node is not responsible for the leader
+    /// replica of the requested database.
+    ///
+    /// This could be the case if:
+    ///
+    /// - the current or most-recently-known leader is not assigned to the node
+    /// - no leader is currently known
+    /// - the database does not exist
+    ///
+    /// Note that a database may not be running (e.g. due to being in a
+    /// suspended state). If its last leader is known and assigned to the
+    /// current node, this method shall return `true`.
+    fn is_misdirected(&self) -> bool;
 }
 
 /// Client view of a running module.
@@ -391,6 +428,8 @@ impl<T: ControlStateWriteAccess + ?Sized> ControlStateWriteAccess for Arc<T> {
 #[async_trait]
 impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
     type JwtAuthProviderT = T::JwtAuthProviderT;
+    type GetLeaderHostError = T::GetLeaderHostError;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         (**self).gather_metrics()
     }
@@ -403,7 +442,7 @@ impl<T: NodeDelegate + ?Sized> NodeDelegate for Arc<T> {
         (**self).jwt_auth_provider()
     }
 
-    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
         (**self).leader(database_id).await
     }
 
