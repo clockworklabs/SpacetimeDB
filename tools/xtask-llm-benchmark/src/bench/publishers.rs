@@ -78,8 +78,10 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
         }
 
         let code = out.status.code().unwrap_or(-1);
-        let stderr = strip_ansi_codes(&String::from_utf8_lossy(&out.stderr));
-        let stdout = strip_ansi_codes(&String::from_utf8_lossy(&out.stdout));
+        let stderr_raw = String::from_utf8_lossy(&out.stderr);
+        let stdout_raw = String::from_utf8_lossy(&out.stdout);
+        let stderr = strip_ansi_codes(&stderr_raw);
+        let stdout = strip_ansi_codes(&stdout_raw);
 
         // Retry on signal kills (like SIGSEGV) or transient build errors
         let should_retry = was_signal_killed(&out.status) || is_transient_build_error(&stderr, &stdout);

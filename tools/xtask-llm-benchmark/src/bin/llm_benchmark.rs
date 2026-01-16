@@ -87,6 +87,9 @@ enum Commands {
 
     /// Regenerate summary.json from details.json (optionally custom paths).
     Summary(SummaryArgs),
+
+    /// Analyze benchmark failures and generate a human-readable markdown report.
+    Analyze(AnalyzeArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -150,6 +153,21 @@ struct SummaryArgs {
     summary: Option<PathBuf>,
 }
 
+#[derive(Args, Debug, Clone)]
+struct AnalyzeArgs {
+    /// Input details.json file (default: docs-benchmark-details.json)
+    #[arg(long)]
+    details: Option<PathBuf>,
+
+    /// Output markdown file (default: docs-benchmark-analysis.md)
+    #[arg(long, short)]
+    output: Option<PathBuf>,
+
+    /// Only analyze failures for a specific language (rust, csharp)
+    #[arg(long)]
+    lang: Option<Lang>,
+}
+
 /// Local wrapper so we can parse Vendor without orphan-rule issues.
 #[derive(Clone, Debug)]
 struct VendorArg(pub Vendor);
@@ -172,6 +190,7 @@ fn main() -> Result<()> {
         Commands::CiCheck(args) => cmd_ci_check(args),
         Commands::CiQuickfix => cmd_ci_quickfix(),
         Commands::Summary(args) => cmd_summary(args),
+        Commands::Analyze(args) => cmd_analyze(args),
     }
 }
 
@@ -681,4 +700,206 @@ fn cmd_summary(args: SummaryArgs) -> Result<()> {
     write_summary_from_details_file(&in_path, &out_path)?;
     println!("Summary written to: {}", out_path.display());
     Ok(())
+}
+
+fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
+    use xtask_llm_benchmark::results::schema::Results;
+
+    let details_path = args.details.unwrap_or_else(docs_benchmark_details);
+    let output_path = args.output.unwrap_or_else(|| {
+        details_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("docs-benchmark-analysis.md")
+    });
+
+    println!("Analyzing benchmark results from: {}", details_path.display());
+
+    // Load the details file
+    let content =
+        fs::read_to_string(&details_path).with_context(|| format!("Failed to read {}", details_path.display()))?;
+    let results: Results = serde_json::from_str(&content).with_context(|| "Failed to parse details.json")?;
+
+    // Collect failures
+    let mut failures: Vec<FailureInfo> = Vec::new();
+
+    for lang_entry in &results.languages {
+        // Skip if filtering by language
+        if let Some(filter_lang) = &args.lang {
+            if lang_entry.lang != filter_lang.as_str() {
+                continue;
+            }
+        }
+
+        let golden_answers = &lang_entry.golden_answers;
+
+        for mode_entry in &lang_entry.modes {
+            for model_entry in &mode_entry.models {
+                for (task_id, outcome) in &model_entry.tasks {
+                    if outcome.passed_tests < outcome.total_tests {
+                        // This task has failures
+                        let golden = golden_answers
+                            .get(task_id)
+                            .or_else(|| {
+                                // Try with category prefix stripped
+                                task_id.split('/').last().and_then(|t| golden_answers.get(t))
+                            })
+                            .map(|g| g.answer.clone());
+
+                        failures.push(FailureInfo {
+                            lang: lang_entry.lang.clone(),
+                            mode: mode_entry.mode.clone(),
+                            model: model_entry.name.clone(),
+                            task: task_id.clone(),
+                            passed: outcome.passed_tests,
+                            total: outcome.total_tests,
+                            llm_output: outcome.llm_output.clone(),
+                            golden_answer: golden,
+                            scorer_details: outcome.scorer_details.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        println!("No failures found!");
+        fs::write(
+            &output_path,
+            "# Benchmark Analysis\n\nNo failures found. All tests passed!",
+        )?;
+        println!("Analysis written to: {}", output_path.display());
+        return Ok(());
+    }
+
+    println!("Found {} failing test(s). Generating analysis...", failures.len());
+
+    // Build prompt for LLM
+    let prompt = build_analysis_prompt(&failures);
+
+    // Initialize runtime and LLM provider
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let provider = make_provider_from_env()?;
+
+    // Use a fast model for analysis
+    let route = ModelRoute {
+        display_name: "gpt-4o-mini",
+        api_model: "gpt-4o-mini",
+        vendor: Vendor::OpenAi,
+    };
+
+    use xtask_llm_benchmark::llm::prompt::BuiltPrompt;
+
+    let built_prompt = BuiltPrompt {
+        system: Some(
+            "You are an expert at analyzing SpacetimeDB benchmark failures. \
+            Analyze the test failures and provide actionable insights in markdown format."
+                .to_string(),
+        ),
+        static_prefix: None,
+        segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
+    };
+
+    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?;
+
+    // Write markdown output
+    let markdown = format!(
+        "# Benchmark Failure Analysis\n\n\
+        Generated from: `{}`\n\n\
+        ## Summary\n\n\
+        - **Total failures analyzed**: {}\n\n\
+        ## Analysis\n\n\
+        {}\n",
+        details_path.display(),
+        failures.len(),
+        analysis
+    );
+
+    fs::write(&output_path, markdown)?;
+    println!("Analysis written to: {}", output_path.display());
+
+    Ok(())
+}
+
+struct FailureInfo {
+    lang: String,
+    mode: String,
+    model: String,
+    task: String,
+    passed: u32,
+    total: u32,
+    llm_output: Option<String>,
+    golden_answer: Option<String>,
+    scorer_details: Option<HashMap<String, xtask_llm_benchmark::eval::ScoreDetails>>,
+}
+
+fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
+    let mut prompt = String::from(
+        "Analyze the following SpacetimeDB benchmark test failures. \
+        For each failure, identify the root cause and suggest how to fix the documentation \
+        or training data to help LLMs generate correct code.\n\n\
+        Group similar failures together and provide a summary of common issues.\n\n",
+    );
+
+    for (i, f) in failures.iter().enumerate() {
+        prompt.push_str(&format!(
+            "## Failure {}: {}\n\n\
+            - **Language**: {}\n\
+            - **Mode**: {}\n\
+            - **Model**: {}\n\
+            - **Passed**: {}/{}\n\n",
+            i + 1,
+            f.task,
+            f.lang,
+            f.mode,
+            f.model,
+            f.passed,
+            f.total
+        ));
+
+        if let Some(details) = &f.scorer_details {
+            prompt.push_str("### Scorer Details\n\n```json\n");
+            if let Ok(json) = serde_json::to_string_pretty(details) {
+                // Truncate if too long
+                let truncated = if json.len() > 2000 {
+                    format!("{}...(truncated)", &json[..2000])
+                } else {
+                    json
+                };
+                prompt.push_str(&truncated);
+            }
+            prompt.push_str("\n```\n\n");
+        }
+
+        if let Some(llm_out) = &f.llm_output {
+            prompt.push_str("### LLM Generated Code\n\n```\n");
+            // Truncate if too long
+            let truncated = if llm_out.len() > 3000 {
+                format!("{}...(truncated)", &llm_out[..3000])
+            } else {
+                llm_out.clone()
+            };
+            prompt.push_str(&truncated);
+            prompt.push_str("\n```\n\n");
+        }
+
+        if let Some(golden) = &f.golden_answer {
+            prompt.push_str("### Expected (Golden) Code\n\n```\n");
+            prompt.push_str(golden);
+            prompt.push_str("\n```\n\n");
+        }
+
+        prompt.push_str("---\n\n");
+    }
+
+    prompt.push_str(
+        "\nProvide your analysis in the following format:\n\n\
+        1. **Common Issues**: List the most frequent types of errors\n\
+        2. **Root Causes**: What documentation gaps or ambiguities led to these errors?\n\
+        3. **Recommendations**: Specific changes to make to the documentation\n\
+        4. **Per-Task Analysis**: Brief analysis of each unique failure pattern\n",
+    );
+
+    prompt
 }
