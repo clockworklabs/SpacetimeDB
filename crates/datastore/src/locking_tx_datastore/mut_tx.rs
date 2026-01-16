@@ -70,6 +70,7 @@ use spacetimedb_table::{
     table_index::{IndexCannotSeekRange, IndexSeekRangeResult, TableIndex},
 };
 use std::{
+    marker::PhantomData,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -246,6 +247,8 @@ pub struct MutTxId {
     pub timer: Instant,
     pub ctx: ExecutionContext,
     pub metrics: ExecutionMetrics,
+    // Marks `MutTxId` as `!Send` by embedding a non-`Send` type.
+    pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
 static_assert_size!(MutTxId, 432);
