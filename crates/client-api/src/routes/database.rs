@@ -1,8 +1,8 @@
 use std::borrow::Cow;
-use std::env;
 use std::num::NonZeroU8;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{env, io};
 
 use crate::auth::{
     anon_auth_middleware, SpacetimeAuth, SpacetimeEnergyUsed, SpacetimeExecutionDurationMicros, SpacetimeIdentity,
@@ -11,8 +11,8 @@ use crate::auth::{
 use crate::routes::subscribe::generate_random_connection_id;
 pub use crate::util::{ByteStringBody, NameOrIdentity};
 use crate::{
-    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, NodeDelegate,
-    Unauthorized,
+    log_and_500, Action, Authorization, ControlStateDelegate, DatabaseDef, DatabaseResetDef, Host, MaybeMisdirected,
+    NodeDelegate, Unauthorized,
 };
 use axum::body::{Body, Bytes};
 use axum::extract::{Path, Query, State};
@@ -20,9 +20,11 @@ use axum::response::{ErrorResponse, IntoResponse};
 use axum::routing::MethodRouter;
 use axum::Extension;
 use axum_extra::TypedHeader;
+use futures::TryStreamExt;
 use http::StatusCode;
 use log::{info, warn};
 use serde::Deserialize;
+use spacetimedb::database_logger::DatabaseLogger;
 use spacetimedb::host::module_host::ClientConnectedError;
 use spacetimedb::host::{CallResult, UpdateDatabaseResult};
 use spacetimedb::host::{FunctionArgs, MigratePlanResult};
@@ -82,6 +84,7 @@ pub struct CallParams {
 }
 
 pub const NO_SUCH_DATABASE: (StatusCode, &str) = (StatusCode::NOT_FOUND, "No such database.");
+const MISDIRECTED: (StatusCode, &str) = (StatusCode::NOT_FOUND, "Database is not scheduled on this host");
 
 fn map_reducer_error(e: ReducerCallError, reducer: &str) -> (StatusCode, String) {
     let status_code = match e {
@@ -281,11 +284,7 @@ async fn find_leader_and_database<S: ControlStateDelegate + NodeDelegate>(
             NO_SUCH_DATABASE
         })?;
 
-    let leader = worker_ctx
-        .leader(database.id)
-        .await
-        .map_err(log_and_500)?
-        .ok_or(StatusCode::NOT_FOUND)?;
+    let leader = worker_ctx.leader(database.id).await.map_err(log_and_500)?;
 
     Ok((leader, database))
 }
@@ -428,27 +427,48 @@ where
         .authorize_action(auth.claims.identity, database.database_identity, Action::ViewModuleLogs)
         .await?;
 
-    fn response(body: Body) -> impl IntoResponse {
-        (
-            TypedHeader(headers::CacheControl::new().with_no_cache()),
-            TypedHeader(headers::ContentType::from(mime_ndjson())),
-            body,
-        )
+    fn log_err(database: Identity) -> impl Fn(&io::Error) {
+        move |e| warn!("error serving module logs for database {database}: {e:#}")
     }
 
-    // TODO(kim): Need to distinguish more cases here, where the database is
-    // not running (e.g. due to being suspended), but the logs could still be
-    // served from disk.
-    let Some(host) = worker_ctx.leader(database.id).await.map_err(log_and_500)? else {
-        return Err((StatusCode::NOT_FOUND, "Replica not scheduled to this node").into());
+    let body = match worker_ctx.leader(database.id).await {
+        Ok(host) => {
+            let module = host.module().await.map_err(log_and_500)?;
+            let logs = module.database_logger().tail(num_lines, follow).await.map_err(|e| {
+                warn!("database={database_identity} unable to tail logs: {e:#}");
+                (StatusCode::SERVICE_UNAVAILABLE, "Logs are temporarily not available")
+            })?;
+            Body::from_stream(logs.inspect_err(log_err(database_identity)))
+        }
+        Err(e) if e.is_misdirected() => return Err(MISDIRECTED.into()),
+        // If this is the right node for the current or last-known leader,
+        // we may still be able to serve logs from disk,
+        // even if we can't get hold of a running [ModuleHost].
+        Err(e) => {
+            warn!("could not obtain leader host for module logs: {e:#}");
+            let Some(replica) = worker_ctx.get_leader_replica_by_database(database.id).await else {
+                return Err(MISDIRECTED.into());
+            };
+            let logs_dir = worker_ctx.module_logs_dir(replica.id);
+            if !logs_dir.0.try_exists().map_err(log_and_500)? {
+                // Probably an in-memory database.
+                // Logs may become available at a later time.
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Database is not running and doesn't have persistent logs",
+                )
+                    .into());
+            }
+            let logs = DatabaseLogger::read_latest_on_disk(logs_dir, num_lines);
+            Body::from_stream(logs.inspect_err(log_err(database_identity)))
+        }
     };
 
-    let module = host.module().await.map_err(log_and_500)?;
-    let logs = module.database_logger().tail(num_lines, follow).await.map_err(|e| {
-        warn!("database={database_identity} unable to tail logs: {e:#}");
-        (StatusCode::SERVICE_UNAVAILABLE, "Logs are temporarily not available")
-    })?;
-    Ok(response(Body::from_stream(logs)))
+    Ok((
+        TypedHeader(headers::CacheControl::new().with_no_cache()),
+        TypedHeader(headers::ContentType::from(mime_ndjson())),
+        body,
+    ))
 }
 
 fn mime_ndjson() -> mime::Mime {

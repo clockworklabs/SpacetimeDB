@@ -236,11 +236,7 @@ impl CompiledModule {
             name: env.client_actor_index().next_client_name(),
         };
 
-        let host = env
-            .leader(database.id)
-            .await
-            .expect("host should be running")
-            .expect("host should be running");
+        let host = env.leader(database.id).await.expect("host should be running");
         let module_rx = host.module_watcher().await.unwrap();
 
         // TODO: it might be neat to add some functionality to module handle to make
