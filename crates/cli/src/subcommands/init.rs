@@ -1672,10 +1672,16 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
 fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
     let base_rules = embedded::get_ai_rules_base();
     let ts_rules = embedded::get_ai_rules_typescript();
+    let rust_rules = embedded::get_ai_rules_rust();
+    let csharp_rules = embedded::get_ai_rules_csharp();
 
-    // Check if TypeScript is used in either server or client
+    // Check which languages are used in server or client
     let uses_typescript = config.server_lang == Some(ServerLanguage::TypeScript)
         || config.client_lang == Some(ClientLanguage::TypeScript);
+    let uses_rust = config.server_lang == Some(ServerLanguage::Rust)
+        || config.client_lang == Some(ClientLanguage::Rust);
+    let uses_csharp = config.server_lang == Some(ServerLanguage::Csharp)
+        || config.client_lang == Some(ClientLanguage::Csharp);
 
     // 1. Cursor: .cursor/rules/ directory with separate files
     let cursor_dir = project_path.join(".cursor/rules");
@@ -1684,16 +1690,33 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
     if uses_typescript {
         fs::write(cursor_dir.join("spacetimedb-typescript.mdc"), ts_rules)?;
     }
+    if uses_rust {
+        fs::write(cursor_dir.join("spacetimedb-rust.mdc"), rust_rules)?;
+    }
+    if uses_csharp {
+        fs::write(cursor_dir.join("spacetimedb-csharp.mdc"), csharp_rules)?;
+    }
 
     // Build combined content for single-file AI assistants
     // Strip the YAML frontmatter from the .mdc files for non-Cursor tools
     let base_content = strip_mdc_frontmatter(base_rules);
-    let combined_content = if uses_typescript {
+    let mut combined_content = base_content.to_string();
+
+    if uses_typescript {
         let ts_content = strip_mdc_frontmatter(ts_rules);
-        format!("{}\n\n{}", base_content, ts_content)
-    } else {
-        base_content.to_string()
-    };
+        combined_content.push_str("\n\n");
+        combined_content.push_str(ts_content);
+    }
+    if uses_rust {
+        let rust_content = strip_mdc_frontmatter(rust_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(rust_content);
+    }
+    if uses_csharp {
+        let csharp_content = strip_mdc_frontmatter(csharp_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(csharp_content);
+    }
 
     // 2. Claude Code: CLAUDE.md
     fs::write(project_path.join("CLAUDE.md"), &combined_content)?;
