@@ -445,6 +445,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "basic-rust-module"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "spacetimedb 1.11.2",
+]
+
+[[package]]
 name = "benchmarks-module"
 version = "0.1.0"
 dependencies = [

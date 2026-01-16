@@ -24,7 +24,7 @@
     <PackageReference Include="xunit" Version="2.8.1" />
     <ProjectReference Include="../SpacetimeDB.ClientSDK.csproj" />
 
-    <ProjectReference Include="../../../templates/quickstart-chat-c-sharp/client.csproj" />
+    <ProjectReference Include="../../../templates/chat-console-cs/client.csproj" />
   </ItemGroup>
 
 </Project>
