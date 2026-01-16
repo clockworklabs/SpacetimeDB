@@ -315,6 +315,8 @@ Use views with `ViewContext` to return only the rows that belong to the caller. 
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
+import { table, t, schema } from 'spacetimedb/server';
+
 // Private table containing all messages
 const message = table(
   { name: 'message' },  // Private by default
@@ -326,6 +328,8 @@ const message = table(
     timestamp: t.timestamp(),
   }
 );
+
+const spacetimedb = schema(message);
 
 // Public view that only returns messages the caller can see
 spacetimedb.view(
@@ -344,6 +348,8 @@ spacetimedb.view(
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{Identity, Timestamp, ViewContext};
+
 // Private table containing all messages
 #[spacetimedb::table(name = message)]  // Private by default
 pub struct Message {
@@ -394,6 +400,8 @@ const userAccount = table(
     createdAt: t.timestamp(),
   }
 );
+
+const spacetimedb = schema(userAccount);
 
 // Public type without sensitive columns
 const publicUserProfile = t.row('PublicUserProfile', {

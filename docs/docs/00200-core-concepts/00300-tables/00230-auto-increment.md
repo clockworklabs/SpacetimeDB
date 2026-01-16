@@ -64,7 +64,7 @@ Use the `[SpacetimeDB.AutoInc]` attribute.
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{ReducerContext, table, Table};
+use spacetimedb::{ReducerContext, Table};
 
 #[spacetimedb::table(name = post, public)]
 pub struct Post {
@@ -175,7 +175,7 @@ let b = ctx.db.post().insert(Post { id: 0, title: "Second".into() })?;
 If your application requires strictly sequential numbering without gaps, maintain that counter explicitly in a separate table rather than relying on auto-increment:
 
 ```rust
-use spacetimedb::{ReducerContext, table, Table};
+use spacetimedb::{ReducerContext, Table};
 
 #[derive(Clone)]
 #[spacetimedb::table(name = counter, public)]

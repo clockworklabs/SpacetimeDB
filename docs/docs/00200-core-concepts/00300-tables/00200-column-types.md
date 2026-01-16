@@ -143,7 +143,7 @@ The following example demonstrates a table using primitive, composite, and speci
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
-import { table, t, spacetimedb } from 'spacetimedb/server';
+import { table, t } from 'spacetimedb/server';
 
 // Define a nested object type for coordinates
 const Coordinates = t.object('Coordinates', {
@@ -241,7 +241,7 @@ public partial struct Player
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::{table, SpacetimeType, Identity, ConnectionId, Timestamp};
+use spacetimedb::{SpacetimeType, Identity, ConnectionId, Timestamp};
 use std::time::Duration;
 
 // Define a nested struct type for coordinates
