@@ -150,7 +150,7 @@ A client can react to these updates by registering row callbacks for the appropr
 import { DbConnection } from './module_bindings';
 
 const conn = DbConnection.builder()
-  .withUri('ws://localhost:3000')
+  .withUri('https://maincloud.spacetimedb.com')
   .withModuleName('my_module')
   .build();
 
@@ -297,7 +297,7 @@ You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
 
 ```typescript
 const conn = DbConnection.builder()
-  .withUri('ws://localhost:3000')
+  .withUri('https://maincloud.spacetimedb.com')
   .withModuleName('my_module')
   .build();
 
@@ -438,7 +438,7 @@ This will improve throughput by reducing the amount of data transferred from the
 
 ```typescript
 const conn = DbConnection.builder()
-  .withUri('ws://localhost:3000')
+  .withUri('https://maincloud.spacetimedb.com')
   .withModuleName('my_module')
   .build();
 
@@ -528,7 +528,7 @@ unsubscribing from it does not result in any server processing or data serializt
 
 ```typescript
 const conn = DbConnection.builder()
-  .withUri('ws://localhost:3000')
+  .withUri('https://maincloud.spacetimedb.com')
   .withModuleName('my_module')
   .build();
 
