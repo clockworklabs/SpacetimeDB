@@ -478,9 +478,9 @@ fn common_args(
         args.push("-k".to_string());
         args.push(pat);
     }
-    for ex in exclude {
+    if !exclude.is_empty() {
         args.push("-x".to_string());
-        args.push(ex);
+        args.push(exclude.join(" "));
     }
     if no_build_cli {
         args.push("--no-build-cli".to_string());
