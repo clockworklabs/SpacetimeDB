@@ -742,7 +742,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
                             .get(task_id)
                             .or_else(|| {
                                 // Try with category prefix stripped
-                                task_id.split('/').last().and_then(|t| golden_answers.get(t))
+                                task_id.split('/').next_back().and_then(|t| golden_answers.get(t))
                             })
                             .map(|g| g.answer.clone());
 
