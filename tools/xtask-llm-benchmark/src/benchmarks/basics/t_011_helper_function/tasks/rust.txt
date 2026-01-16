@@ -2,7 +2,7 @@
 
 TABLE
 - results
-  - Struct: Result
+  - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
     - sum: i32

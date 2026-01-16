@@ -8349,6 +8349,7 @@ dependencies = [
  "clap 4.5.50",
  "duct",
  "env_logger 0.10.2",
+ "futures",
  "lazy_static",
  "log",
  "rand 0.9.2",
