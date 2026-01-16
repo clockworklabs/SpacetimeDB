@@ -1,6 +1,7 @@
 {
   "highlights": [
-    { "name": "React", "template_id": "basic-react" }
+    { "name": "React", "template_id": "basic-react" },
+    { "name": "Vue", "template_id": "vue-ts" }
   ],
   "templates": [
     {
@@ -56,6 +57,14 @@
       "description": "TypeScript server/client implementing quickstart chat",
       "server_source": "quickstart-chat-ts/spacetimedb",
       "client_source": "quickstart-chat-ts",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "vue-ts",
+      "description": "Vue.js web app with TypeScript server",
+      "server_source": "vue-ts/spacetimedb",
+      "client_source": "vue-ts",
       "server_lang": "typescript",
       "client_lang": "typescript"
     }
