@@ -637,7 +637,7 @@ namespace SpacetimeDB.Types
         public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)
         {
             var qb = new QueryBuilder();
-            querySqls.Add(build(qb).Sql);
+            querySqls.Add(build(qb).ToSql);
             return this;
         }
 

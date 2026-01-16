@@ -1884,7 +1884,7 @@ namespace SpacetimeDB
         public TypedSubscriptionBuilder AddQuery<TRow>(Func<QueryBuilder, global::SpacetimeDB.Query<TRow>> build)
         {
             var qb = new QueryBuilder();
-            querySqls.Add(build(qb).Sql);
+            querySqls.Add(build(qb).ToSql());
             return this;
         }
 
@@ -2729,11 +2729,11 @@ namespace SpacetimeDB
 
     public sealed class TestDCols
     {
-        public global::SpacetimeDB.Col<TestD, NamespaceTestC?> TestC { get; }
+        public global::SpacetimeDB.Col<TestD, NamespaceTestC> TestC { get; }
 
         public TestDCols(string tableName)
         {
-            TestC = new global::SpacetimeDB.Col<TestD, NamespaceTestC?>(tableName, "test_c");
+            TestC = new global::SpacetimeDB.Col<TestD, NamespaceTestC>(tableName, "test_c");
         }
     }
 
