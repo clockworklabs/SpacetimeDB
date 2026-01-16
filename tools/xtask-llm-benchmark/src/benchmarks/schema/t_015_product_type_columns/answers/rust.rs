@@ -12,7 +12,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[table(name = profiles)]
+#[table(name = profiles, public)]
 pub struct Profile {
     #[primary_key]
     pub id: i32,

@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines one table and seeds two rows.
 
 TABLE
-- accounts
+- accounts (public)
   - Struct: Account
   - Fields:
     - Id: int (primary key)
