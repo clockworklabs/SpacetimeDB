@@ -304,10 +304,11 @@ ctx.ConnectionId    // Connection ID (nullable)
 ## 4) Database Access
 
 ### Naming convention
-- **Tables**: PascalCase on `ctx.Db`
-  - `[Table(Name = "my_table")]` → `ctx.Db.MyTable`
+- **Tables**: Use PascalCase singular names in the `Name` attribute
+  - `[Table(Name = "User")]` → `ctx.Db.User`
+  - `[Table(Name = "PlayerStats")]` → `ctx.Db.PlayerStats`
 - **Indexes**: PascalCase, match field name
-  - Field `OwnerId` with `[Index.BTree]` → `ctx.Db.MyTable.OwnerId`
+  - Field `OwnerId` with `[Index.BTree]` → `ctx.Db.User.OwnerId`
 
 ### Primary key operations
 

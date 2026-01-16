@@ -47,7 +47,7 @@ const players = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "players", Public = true)]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]

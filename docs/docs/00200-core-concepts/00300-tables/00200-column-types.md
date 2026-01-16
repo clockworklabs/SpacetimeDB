@@ -209,7 +209,7 @@ public partial struct Status : TaggedEnum<(
     string Suspended
 )> { }
 
-[SpacetimeDB.Table(Name = "player", Public = true)]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
 public partial struct Player
 {
     // Primitive types

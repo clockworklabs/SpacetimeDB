@@ -44,7 +44,7 @@ const player = table(
 
 ```csharp
 // Private table (default) - only accessible from server-side code
-[SpacetimeDB.Table(Name = "internal_config")]
+[SpacetimeDB.Table(Name = "InternalConfig")]
 public partial struct InternalConfig
 {
     [SpacetimeDB.PrimaryKey]
@@ -53,7 +53,7 @@ public partial struct InternalConfig
 }
 
 // Public table - clients can subscribe and query
-[SpacetimeDB.Table(Name = "player", Public = true)]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -276,7 +276,7 @@ public static List<User> FindUsersByName(ViewContext ctx)
     return ctx.Db.User.Name.Filter("Alice").ToList();
 
     // Cannot insert, update, or delete
-    // ctx.Db.user.Insert(...) // ❌ Method not available
+    // ctx.Db.User.Insert(...) // ❌ Method not available
 }
 ```
 

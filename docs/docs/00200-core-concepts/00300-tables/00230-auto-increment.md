@@ -39,7 +39,7 @@ Use the `.autoInc()` method on a column builder.
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "post", Public = true)]
+[SpacetimeDB.Table(Name = "Post", Public = true)]
 public partial struct Post
 {
     [SpacetimeDB.PrimaryKey]
