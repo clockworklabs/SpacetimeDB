@@ -113,21 +113,41 @@ authentication context.
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AuthProvider, useAuth } from 'react-oidc-context';
+import { BrowserRouter, Route, Routes, useNavigate, useLocation } from 'react-router';
 import App from './App';
 import { OidcDebug } from './OidcDebug';
 
 const oidcConfig = {...};
 
-function onSigninCallback() {
-  window.history.replaceState({}, document.title, window.location.pathname);
+function SigninCallback() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (auth.isAuthenticated) {
+      const from = location.state?.from || "/";
+      navigate(from, { replace: true });
+    }
+  }, [auth.isAuthenticated, navigate, location.state?.from]);
+
+  return null;
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 root.render(
-  <AuthProvider {...oidcConfig} onSigninCallback={onSigninCallback}>
-    <OidcDebug />
-    <App />
-  </AuthProvider>
+  <React.StrictMode>
+    <AuthProvider {...oidcConfig}>
+      <OidcDebug />
+      <BrowserRouter>
+        <SigninCallback />
+        <Routes>
+          {/* your app routes */}
+          <Route path="/" element={<App />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
+  </React.StrictMode>
 );
 
 ```
