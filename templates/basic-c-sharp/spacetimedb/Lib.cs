@@ -23,3 +23,4 @@ public static partial class Module
         }
         Log.Info("Hello, World!");
     }
+}
