@@ -201,6 +201,13 @@ jobs:
           llm_benchmark ci-quickfix
           llm_benchmark ci-check
 
+      # Generate failure analysis if there are any failures
+      - name: Generate failure analysis
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          llm_benchmark analyze -o docs/llms/docs-benchmark-analysis.md || true
+
       - name: Ensure only docs/llms changed
         run: |
           set -euo pipefail
@@ -270,6 +277,16 @@ jobs:
             }
 
             table += `\n<sub>Generated at: ${summary.generated_at}</sub>`;
+
+            // Check if failure analysis exists and append it
+            const analysisPath = 'docs/llms/docs-benchmark-analysis.md';
+            if (fs.existsSync(analysisPath)) {
+              const analysis = fs.readFileSync(analysisPath, 'utf8');
+              // Only include if there's meaningful content (not just "no failures")
+              if (!analysis.includes('No failures found')) {
+                table += `\n\n<details>\n<summary>📋 Failure Analysis (click to expand)</summary>\n\n${analysis}\n</details>`;
+              }
+            }
 
             const issue_number = Number(process.env.PR_NUMBER);
 
