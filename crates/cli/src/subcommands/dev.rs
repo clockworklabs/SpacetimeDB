@@ -335,7 +335,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Start the client development server if configured
     let server_host_url = config.get_host_url(Some(resolved_server))?;
     let _client_handle = if let Some(ref cmd) = client_command {
-        Some(start_client_process(cmd, &project_dir, &database_name, &server_host_url)?)
+        Some(start_client_process(
+            cmd,
+            &project_dir,
+            &database_name,
+            &server_host_url,
+        )?)
     } else {
         None
     };

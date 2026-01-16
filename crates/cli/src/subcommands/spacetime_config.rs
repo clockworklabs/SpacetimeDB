@@ -55,8 +55,8 @@ impl SpacetimeConfig {
         let config_path = dir.join(CONFIG_FILENAME);
 
         if config_path.exists() {
-            let content =
-                fs::read_to_string(&config_path).with_context(|| format!("Failed to read {}", config_path.display()))?;
+            let content = fs::read_to_string(&config_path)
+                .with_context(|| format!("Failed to read {}", config_path.display()))?;
             let config: SpacetimeConfig =
                 toml::from_str(&content).with_context(|| format!("Failed to parse {}", config_path.display()))?;
             return Ok(Some(config));
