@@ -419,7 +419,7 @@ public static void SpawnEnemies(ReducerContext ctx, uint count)
 {
     for (uint i = 0; i < count; i++)
     {
-        ctx.Db.enemy.Insert(new Enemy
+        ctx.Db.Enemy.Insert(new Enemy
         {
             Id = 0, // auto_inc
             Health = 100

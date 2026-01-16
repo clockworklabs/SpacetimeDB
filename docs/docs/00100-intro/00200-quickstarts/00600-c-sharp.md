@@ -68,7 +68,7 @@ my-spacetime-app/
 
   <Step title="Understand tables and reducers">
     <StepText>
-      Open `spacetimedb/Lib.cs` to see the module code. The template includes a `person` table and two reducers: `add` to insert a person, and `say_hello` to greet everyone.
+      Open `spacetimedb/Lib.cs` to see the module code. The template includes a `Person` table and two reducers: `Add` to insert a person, and `SayHello` to greet everyone.
 
       Tables store your data. Reducers are functions that modify data — they're the only way to write to the database.
     </StepText>
@@ -78,7 +78,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [SpacetimeDB.Table(Name = "person", Public = true)]
+    [SpacetimeDB.Table(Name = "Person", Public = true)]
     public partial struct Person
     {
         public string Name;
@@ -114,7 +114,7 @@ public static partial class Module
 spacetime call my-spacetime-app Add Alice
 
 # Query the person table
-spacetime sql my-spacetime-app "SELECT * FROM person"
+spacetime sql my-spacetime-app "SELECT * FROM Person"
  name
 ---------
  "Alice"

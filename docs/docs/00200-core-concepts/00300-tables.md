@@ -125,8 +125,8 @@ The first argument defines table options, and the second defines columns.
 Use the `[SpacetimeDB.Table]` attribute on a `partial struct` or `partial class`:
 
 ```csharp
-[SpacetimeDB.Table(Name = "people", Public = true)]
-public partial struct People
+[SpacetimeDB.Table(Name = "Person", Public = true)]
+public partial struct Person
 {
     [SpacetimeDB.PrimaryKey]
     [SpacetimeDB.AutoInc]
@@ -148,8 +148,8 @@ The `partial` modifier is required to allow code generation.
 Use the `#[spacetimedb::table]` macro on a struct:
 
 ```rust
-#[spacetimedb::table(name = people, public)]
-pub struct People {
+#[spacetimedb::table(name = person, public)]
+pub struct Person {
     #[primary_key]
     #[auto_inc]
     id: u32,
@@ -182,10 +182,10 @@ const privateTable = table({ name: 'secret', public: false }, { /* ... */ });
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "user", Public = true)]
+[SpacetimeDB.Table(Name = "User", Public = true)]
 public partial struct User { /* ... */ }
 
-[SpacetimeDB.Table(Name = "secret", Public = false)]
+[SpacetimeDB.Table(Name = "Secret", Public = false)]
 public partial struct Secret { /* ... */ }
 ```
 
