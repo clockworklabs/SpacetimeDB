@@ -16,6 +16,7 @@ use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
+use crate::subcommands::spacetime_config::SpacetimeConfig;
 
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
@@ -523,6 +524,13 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         // i.e. `spacetime dev` is valid on non-templates.
         let server_dir = template_config.project_path.join("spacetimedb");
         install_typescript_dependencies(&server_dir, pm)?;
+    }
+
+    // Configure client dev command if a client is present
+    if !is_server_only {
+        if let Some(client_lang) = &template_config.client_lang {
+            setup_spacetime_config(&project_path, client_lang)?;
+        }
     }
 
     Ok(project_path)
@@ -1721,4 +1729,17 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
         }
     }
     content
+}
+
+/// Set up the spacetime.toml configuration file with the client dev command.
+fn setup_spacetime_config(project_path: &Path, client_lang: &ClientLanguage) -> anyhow::Result<()> {
+    let client_command = match client_lang {
+        ClientLanguage::TypeScript => "npm run dev",
+        ClientLanguage::Rust => "cargo run",
+        ClientLanguage::Csharp => "dotnet run",
+    };
+
+    let config = SpacetimeConfig::with_client_command(client_command);
+    config.save_to_dir(project_path)?;
+    Ok(())
 }
