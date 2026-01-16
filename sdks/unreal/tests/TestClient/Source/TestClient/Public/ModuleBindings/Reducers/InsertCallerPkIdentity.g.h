@@ -14,7 +14,7 @@ struct TESTCLIENT_API FInsertCallerPkIdentityArgs
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FInsertCallerPkIdentityArgs() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UInsertCallerPkIdentityReducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

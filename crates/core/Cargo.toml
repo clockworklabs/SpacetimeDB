@@ -145,6 +145,7 @@ test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
 perfmap = []
 # Disables core pinning
 no-core-pinning = []
+no-job-core-pinning = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }
