@@ -85,37 +85,6 @@ void register_table_type_with_constraints(const char* name, bool is_public,
     SpacetimeDb::Internal::Module::RegisterTableInternalImpl<T>(name, is_public, constraints);
 }
 
-// template<typename T>
-// void register_scheduled_table_type_with_constraints(const char* name, const char* reducer_name, bool is_public,
-//                                                    const std::vector<FieldConstraintInfo>& constraints) {
-//     register_table_type_with_constraints<T>(name, is_public, constraints);
-    
-//     auto& module_def = SpacetimeDb::Internal::Module::GetModuleDef();
-//     auto it = module_def.table_indices.find(&typeid(T));
-//     if (it != module_def.table_indices.end()) {
-//         auto& table = module_def.tables[it->second];
-        
-//         uint16_t scheduled_at_column = UINT16_MAX;
-//         for (size_t i = 0; i < table.fields.size(); ++i) {
-//             if (table.fields[i].name == std::string("scheduled_at")) {
-//                 scheduled_at_column = static_cast<uint16_t>(i);
-//                 break;
-//             }
-//         }
-        
-//         if (scheduled_at_column == UINT16_MAX) {
-//             std::abort(); // Scheduled table must have a 'scheduled_at' field of type ScheduleAt
-//         }
-        
-//         SpacetimeDb::Internal::RawScheduleDefV9 schedule_def;
-//         schedule_def.name = std::nullopt;
-//         schedule_def.reducer_name = reducer_name;
-//         schedule_def.scheduled_at_column = scheduled_at_column;
-        
-//         table.schedule = new SpacetimeDb::Internal::RawScheduleDefV9(std::move(schedule_def));
-//     }
-// }
-
 // =============================================================================
 // Main Table Registration Macro
 // =============================================================================

@@ -99,8 +99,6 @@ namespace Internal {
 /**
  * @brief Fail the current reducer with an error message.
  *
- * @deprecated Prefer using Outcome-based error handling: return Err("message");
- *
  * This function marks the current reducer invocation as failed.
  * The transaction will be rolled back and the error message will be
  * returned to the caller. Failed transactions are NOT committed to the
@@ -112,13 +110,12 @@ namespace Internal {
  * @param message A descriptive error message explaining why the reducer failed
  *
  * @code
- * // Old style (still works):
  * if (amount <= 0) {
  *     SpacetimeDb::fail_reducer("Amount must be positive");
- *     return Ok();
+ *     return Ok();  // Or just return;
  * }
  *
- * // Preferred style:
+ * // Alternative using Outcome pattern:
  * if (amount <= 0) {
  *     return Err("Amount must be positive");
  * }

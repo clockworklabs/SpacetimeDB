@@ -118,39 +118,7 @@ struct RawModuleDef {
     
     // Legacy serialization method (manual BSATN writing)
     std::vector<uint8_t> serialize_legacy() const;
-    
-    // DEPRECATED: Legacy serialization - use V9Builder system instead
-    [[deprecated("Use V9Builder system instead")]]
-    RawModuleDefV9 toAutogenModuleDef() const;
-    
-private:
-    // LEGACY METHODS - All TypeRegistry methods deprecated, use V9Builder system instead
-    /*
-    void collectTableFieldTypes(TypeRegistry& type_registry) const;
-    void registerTableTypes(TypeRegistry& type_registry, 
-                          std::map<const std::type_info*, uint32_t>& type_to_index,
-                          std::vector<uint32_t>& table_type_refs) const;
-    void collectReducerParameterTypes(TypeRegistry& type_registry) const;
-    uint32_t processFieldType(...);
-    uint32_t processProductType(...);
-    uint32_t processSpecialType(...);
-    uint32_t processComplexType(...);
-    void writeTypespace(...);
-    void writeReducers(...);
-    void writeNamedTypes(...);
-    // ... other legacy TypeRegistry methods removed
-    */
-    
-    // Non-TypeRegistry helper methods (still active)
-    void writeTables(bsatn::Writer& writer, const std::vector<uint32_t>& table_type_refs) const;
-    void writeTable(bsatn::Writer& writer, const Table& table, uint32_t table_type_ref) const;
-    void writeTableIndexes(bsatn::Writer& writer, const Table& table) const;
-    void writeTableConstraints(bsatn::Writer& writer, const Table& table) const;
-    void writeTableSequences(bsatn::Writer& writer, const Table& table) const;
-    void writeTableSchedule(bsatn::Writer& writer, const Table& table) const;
-    std::string getFieldName(const Table& table, uint16_t column) const;
-    void writeRLSPolicies(bsatn::Writer& writer) const;
-    std::string sanitizeTypeName(const std::string& type_name) const;
+
 };
 
 // Module class - singleton pattern similar to C# static class

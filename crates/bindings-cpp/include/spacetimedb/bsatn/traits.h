@@ -23,31 +23,174 @@ namespace SpacetimeDb::bsatn {
 // ============================================================================
 
 /**
- * Concepts for types that can be serialized with BSATN
+ * @brief C++20 concept checking if a type has BSATN serialization method
+ * 
+ * **FOR DEVELOPERS:** This concept is satisfied automatically by SPACETIMEDB_STRUCT!
+ * You never implement bsatn_serialize() manually.
+ * 
+ * @section what_devs_write **What You Actually Write:**
+ * ```cpp
+ * struct MyType {
+ *     int value;
+ *     std::string name;
+ * };
+ * SPACETIMEDB_STRUCT(MyType, value, name)  // This generates bsatn_serialize() for you!
+ * ```
+ * 
+ * @section what_macro_generates **What SPACETIMEDB_STRUCT Generates:**
+ * The macro creates a bsatn_traits specialization with serialize() that effectively does:
+ * ```cpp
+ * // Generated code (you don't write this):
+ * static void serialize(Writer& w, const MyType& v) {
+ *     bsatn::serialize(w, v.value);
+ *     bsatn::serialize(w, v.name);
+ * }
+ * ```
+ * 
+ * @section for_contributors **For SDK Contributors:**
+ * This concept enables the default bsatn_traits implementation to detect if a type
+ * has member-based serialization. Used internally by primitive types and special cases.
+ * 
+ * @tparam T The type to check for serialization capability
  */
 template<typename T>
 concept HasMemberSerialize = requires(const T& t, Writer& w) {
     { t.bsatn_serialize(w) } -> std::same_as<void>;
 };
 
+/**
+ * @brief C++20 concept checking if a type has BSATN deserialization method
+ * 
+ * **FOR DEVELOPERS:** This concept is satisfied automatically by SPACETIMEDB_STRUCT!
+ * You never implement bsatn_deserialize() manually.
+ * 
+ * @section what_devs_write **What You Actually Write:**
+ * ```cpp
+ * struct MyType {
+ *     int value;
+ *     std::string name;
+ * };
+ * SPACETIMEDB_STRUCT(MyType, value, name)  // This generates bsatn_deserialize() for you!
+ * ```
+ * 
+ * @section what_macro_generates **What SPACETIMEDB_STRUCT Generates:**
+ * The macro creates a bsatn_traits specialization with deserialize() that effectively does:
+ * ```cpp
+ * // Generated code (you don't write this):
+ * static MyType deserialize(Reader& r) {
+ *     MyType v;
+ *     v.value = bsatn::deserialize<int>(r);
+ *     v.name = bsatn::deserialize<std::string>(r);
+ *     return v;
+ * }
+ * ```
+ * 
+ * @section for_contributors **For SDK Contributors:**
+ * This concept enables the default bsatn_traits implementation to detect if a type
+ * has static deserialization. Used internally by primitive types and special cases.
+ * 
+ * @tparam T The type to check for deserialization capability
+ */
 template<typename T>
 concept HasStaticDeserialize = requires(Reader& r) {
     { T::bsatn_deserialize(r) } -> std::same_as<T>;
 };
 
+/**
+ * @brief C++20 concept checking if a type has SpacetimeDB schema metadata
+ * 
+ * **FOR DEVELOPERS:** This concept is satisfied automatically by SPACETIMEDB_STRUCT!
+ * The macro generates the algebraic_type_of specialization for you.
+ * 
+ * @section what_devs_write **What You Actually Write:**
+ * ```cpp
+ * struct Player {
+ *     uint32_t id;
+ *     std::string name;
+ *     uint32_t score;
+ * };
+ * SPACETIMEDB_STRUCT(Player, id, name, score)  // Generates schema metadata!
+ * SPACETIMEDB_TABLE(Player, players, Public)    // Uses the generated metadata
+ * ```
+ * 
+ * @section what_macro_generates **What SPACETIMEDB_STRUCT Generates:**
+ * The macro creates an algebraic_type_of specialization that registers the type
+ * with field names and types in SpacetimeDB's schema system.
+ * 
+ * @section for_contributors **For SDK Contributors:**
+ * This concept ensures types can provide SpacetimeDB schema information.
+ * The algebraic_type_of template is specialized by SPACETIMEDB_STRUCT and SPACETIMEDB_ENUM.
+ * 
+ * @tparam T The type to check for schema metadata
+ * @note All types in SpacetimeDB tables must satisfy this (automatic with macros)
+ */
 template<typename T>
 concept HasAlgebraicType = requires {
     { algebraic_type_of<T>::get() } -> std::same_as<AlgebraicType>;
 };
 
 /**
- * Primary template for BSATN serialization traits.
- * Specialize this for your types to enable serialization.
+ * @brief Internal template for BSATN serialization traits
  * 
- * The default implementation will:
- * - Call member function bsatn_serialize() if available
- * - Call static function T::bsatn_deserialize() if available
- * - Use algebraic_type_of<T> for type information
+ * **IMPORTANT FOR DEVELOPERS:** You typically do NOT use this template directly!
+ * Instead, use the SPACETIMEDB_STRUCT macro which auto-generates all serialization code.
+ * 
+ * This template is internal infrastructure that:
+ * - Defines how types are serialized/deserialized in BSATN format
+ * - Is automatically specialized by SPACETIMEDB_STRUCT and SPACETIMEDB_ENUM macros
+ * - Already has specializations for primitives and standard containers (vector, optional, variant)
+ * 
+ * @tparam T The type to serialize/deserialize
+ * 
+ * @section user_approach **What Developers Actually Write**
+ * 
+ * ```cpp
+ * // 1. Define your struct
+ * struct User {
+ *     uint32_t id;
+ *     std::string name;
+ *     bool is_active;
+ * };
+ * 
+ * // 2. Use SPACETIMEDB_STRUCT macro - this auto-generates EVERYTHING
+ * SPACETIMEDB_STRUCT(User, id, name, is_active)
+ * ```
+ * 
+ * The macro automatically generates:
+ * - `bsatn_traits<User>::serialize()` method
+ * - `bsatn_traits<User>::deserialize()` method  
+ * - `bsatn_traits<User>::algebraic_type()` for schema registration
+ * - All necessary template specializations
+ * 
+ * You **never** need to write `bsatn_serialize()` or `bsatn_deserialize()` manually!
+ * 
+ * @section internals **How It Works (For SDK Contributors)**
+ * 
+ * The SPACETIMEDB_STRUCT macro expands to a bsatn_traits<T> specialization that:
+ * - Calls `bsatn::serialize(writer, obj.field)` for each field in order
+ * - Calls `bsatn::deserialize<FieldType>(reader)` for each field in order
+ * - Registers the type with LazyTypeRegistrar for circular reference detection
+ * 
+ * @example What SPACETIMEDB_STRUCT(User, id, name) generates:
+ * @code
+ * template<> struct bsatn_traits<User> {
+ *     static void serialize(Writer& w, const User& v) {
+ *         bsatn::serialize(w, v.id);
+ *         bsatn::serialize(w, v.name);
+ *     }
+ *     static User deserialize(Reader& r) {
+ *         User v;
+ *         v.id = bsatn::deserialize<uint32_t>(r);
+ *         v.name = bsatn::deserialize<std::string>(r);
+ *         return v;
+ *     }
+ *     static AlgebraicType algebraic_type() { ...  }
+ * };
+ * @endcode
+ * 
+ * @note For third-party types, manually specialize bsatn_traits if needed (advanced use case)
+ * @see SPACETIMEDB_STRUCT macro for user-facing API
+ * @see SPACETIMEDB_ENUM macro for enum serialization
  */
 template<typename T>
 struct bsatn_traits {
@@ -129,7 +272,38 @@ public:
 // ============================================================================
 
 /**
- * BSATN traits for std::vector<T> (all vectors including bytes)
+ * @brief Internal specialization for std::vector<T> serialization
+ * 
+ * **FOR DEVELOPERS:** You don't call this directly - it's used automatically when
+ * you put `std::vector<T>` in a struct field and use SPACETIMEDB_STRUCT.
+ * 
+ * @section usage **How Developers Use Vectors**
+ * 
+ * ```cpp
+ * struct Player {
+ *     uint32_t id;
+ *     std::vector<std::string> inventory;  // Vector field
+ *     std::vector<uint32_t> scores;        // Another vector field
+ * };
+ * SPACETIMEDB_STRUCT(Player, id, inventory, scores)  // Auto-handles vectors!
+ * 
+ * SPACETIMEDB_TABLE(Player, players, Public)
+ * ```
+ * 
+ * The SPACETIMEDB_STRUCT macro automatically handles vector serialization.
+ * You never need to manually serialize vectors!
+ * 
+ * @section nested **Nested Vectors Work Automatically**
+ * 
+ * ```cpp
+ * struct GameBoard {
+ *     std::vector<std::vector<int>> grid;  // 2D grid
+ * };
+ * SPACETIMEDB_STRUCT(GameBoard, grid)  // Just works!
+ * ```
+ * 
+ * @tparam T The element type (must be BSATN-serializable)
+ * @note This is SDK infrastructure - use SPACETIMEDB_STRUCT in your code
  */
 template<typename T>
 struct bsatn_traits<std::vector<T>> {
@@ -165,11 +339,54 @@ struct bsatn_traits<std::vector<T>> {
 };
 
 /**
- * BSATN traits for std::optional<T>
+ * @brief Internal specialization for std::optional<T> serialization
  * 
- * IMPORTANT: SpacetimeDB uses a non-standard Option serialization:
- * - Some(value) = discriminant 0 (not 1 as in standard Rust enums)
- * - None = discriminant 1 (not 0 as in standard Rust enums)
+ * **FOR DEVELOPERS:** You don't call this directly - it's used automatically when
+ * you put `std::optional<T>` in a struct field and use SPACETIMEDB_STRUCT.
+ * 
+ * @section usage **How Developers Use Optional Fields**
+ * 
+ * ```cpp
+ * struct User {
+ *     uint32_t id;
+ *     std::string name;
+ *     std::optional<std::string> email;  // Optional field
+ *     std::optional<std::string> phone;  // Optional field
+ * };
+ * SPACETIMEDB_STRUCT(User, id, name, email, phone)  // Auto-handles optionals!
+ * 
+ * SPACETIMEDB_TABLE(User, users, Public)
+ * 
+ * // In a reducer:
+ * SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name) {
+ *     User user{0, name, "alice@example.com", std::nullopt};  // email present, phone absent
+ *     ctx.db[users].insert(user);
+ * }
+ * ```
+ * 
+ * The SPACETIMEDB_STRUCT macro automatically handles optional serialization.
+ * 
+ * @section format **Wire Format (For Reference)**
+ * 
+ * Optionals are serialized as:
+ * - 1-byte discriminant: 0 = Some(value), 1 = None
+ * - If Some: followed by the serialized value
+ * - If None: no additional bytes
+ * 
+ * @section examples **Examples**
+ * 
+ * ```cpp
+ * std::optional<uint32_t> has_value = 42;
+ * // Serialized: [00] [2A 00 00 00]
+ * //              ^Some  ^value=42
+ * 
+ * std::optional<uint32_t> empty;
+ * // Serialized: [01]
+ * //              ^None
+ * ```
+ * 
+ * @tparam T The wrapped type (must be BSATN-serializable)
+ * @note This is SDK infrastructure - use SPACETIMEDB_STRUCT in your code
  */
 template<typename T>
 struct bsatn_traits<std::optional<T>> {
@@ -212,7 +429,23 @@ struct bsatn_traits<std::optional<T>> {
 // VARIANT TYPE TRAITS
 // ============================================================================
 
-// Forward declaration for variant index_sequence helper
+/**
+ * @brief Helper template to find the index of a type within a std::variant
+ * 
+ * This compile-time utility recursively searches through variant alternatives
+ * to find the index position of a specific type T.
+ * 
+ * @tparam Variant The std::variant type to search
+ * @tparam T The type to find within the variant
+ * @tparam Index Current search index (defaults to 0)
+ * 
+ * @example
+ * @code
+ * using MyVariant = std::variant<int, std::string, double>;
+ * static_assert(variant_index_of<MyVariant, std::string>::value == 1);
+ * static_assert(variant_index_of<MyVariant, double>::value == 2);
+ * @endcode
+ */
 template<typename Variant, typename T, std::size_t Index = 0>
 struct variant_index_of;
 
@@ -225,7 +458,58 @@ struct variant_index_of<std::variant<T, Rest...>, T, Index>
     : std::integral_constant<std::size_t, Index> {};
 
 /**
- * BSATN traits for std::variant
+ * @brief Internal specialization for std::variant serialization
+ * 
+ * **FOR DEVELOPERS:** You typically should NOT use std::variant directly in SpacetimeDB!
+ * Instead, use **SPACETIMEDB_ENUM** which provides named variants and better ergonomics.
+ * 
+ * @section recommended **Recommended Approach: Use SPACETIMEDB_ENUM**
+ * 
+ * ```cpp
+ * // DON'T: Use raw std::variant
+ * // std::variant<int, std::string> message_data;
+ * 
+ * // DO: Use SPACETIMEDB_ENUM with named variants
+ * SPACETIMEDB_ENUM(MessageData,
+ *     (Number, int),
+ *     (Text, std::string)
+ * )
+ * 
+ * struct Message {
+ *     uint32_t id;
+ *     MessageData content;  // Named variants!
+ * };
+ * SPACETIMEDB_STRUCT(Message, id, content)
+ * 
+ * // Usage:
+ * Message msg{1, std::string("Hello")};
+ * if (msg.content.index() == 1) {
+ *     auto& text = std::get<std::string>(msg.content.value);
+ * }
+ * ```
+ * 
+ * @section fallback **When You Might Use std::variant**
+ * 
+ * Only use std::variant directly if:
+ * - The variant is purely internal (not in table schema)
+ * 
+ * ```cpp
+ * struct InternalState {
+ *     std::variant<int, std::string> temp_data;  // OK for internal use
+ * };
+ * SPACETIMEDB_STRUCT(InternalState, temp_data)  // Auto-handled
+ * ```
+ * 
+ * @section format **Wire Format**
+ * 
+ * Variants are serialized as:
+ * - 1-byte tag (0 = first type, 1 = second type, etc.)
+ * - Followed by the serialized value of the active alternative
+ * 
+ * @tparam Ts... The alternative types (each must be BSATN-serializable)
+ * @warning **Type order matters!** Reordering alternatives breaks wire format compatibility
+ * @note This is SDK infrastructure - use SPACETIMEDB_ENUM for user-facing code
+ * @see SPACETIMEDB_ENUM for the recommended way to define sum types
  */
 template<typename... Ts>
 struct bsatn_traits<std::variant<Ts...>> {

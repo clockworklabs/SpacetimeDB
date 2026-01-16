@@ -27,7 +27,6 @@
 #include "autogen/RawUniqueConstraintDataV9.g.h"
 #include "autogen/RawIndexDefV9.g.h"
 #include "autogen/RawIndexAlgorithm.g.h"
-#include "nested_type_collection.h"
 #include "v9_builder.h"
 #include <cstring>
 #include <cstdio>

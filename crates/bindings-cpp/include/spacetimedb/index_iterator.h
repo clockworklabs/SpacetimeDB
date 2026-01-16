@@ -3,10 +3,51 @@
 
 /**
  * @file index_iterator.h
- * @brief Index-based iteration for SpacetimeDB C++ SDK
+ * @brief Iterator for traversing indexed fields in SpacetimeDB tables
  * 
- * Provides efficient index-based iteration using btree scans,
- * matching the performance of Rust's index-based filtering.
+ * IndexIterator provides efficient access to rows matching specific values or ranges
+ * on indexed fields. Developers use indexed fields through the high-level `filter()` API
+ * on field accessors (created by FIELD_Index macro), which internally returns an IndexIterator.
+ * 
+ * The filter() API provides a clean, intuitive interface for index-based queries without
+ * requiring manual index ID management.
+ * 
+ * @example Basic usage with exact value matching:
+ * @code
+ * // Declare indexed field
+ * FIELD_Index(person, age);
+ * 
+ * // In a view or reducer, query persons with age 25
+ * // The filter() method returns an IndexIterator internally
+ * for (IndexIterator<Person> iter = ctx.db[person_age].filter(25u); 
+ *      iter != IndexIterator<Person>(); ++iter) {
+ *     const Person& person = *iter;
+ *     // Process person aged 25...
+ * }
+ * @endcode
+ * 
+ * @example Range queries for filtering within bounds:
+ * @code
+ * // Query persons between ages 25-30 (inclusive)
+ * auto age_range = range_inclusive(uint8_t(25), uint8_t(30));
+ * for (const auto& person : ctx.db[person_age].filter(age_range)) {
+ *     // Process persons in age range...
+ * }
+ * 
+ * // Query persons 18 and older
+ * auto adult_range = range_from(uint8_t(18));
+ * for (const auto& person : ctx.db[person_age].filter(adult_range)) {
+ *     // Process adult persons...
+ * }
+ * 
+ * // Query persons under 30
+ * auto young_range = range_to(uint8_t(30));
+ * size_t count = ctx.db[person_age].filter(young_range).size();
+ * @endcode
+ * 
+ * @see range_from, range_to, range_inclusive, range_to_inclusive, range_full for range construction
+ * @see FIELD_Index for declaring indexed fields
+ * @note IndexIterator is typically used indirectly through ctx.db[field_accessor].filter()
  */
 
 #include "spacetimedb/bsatn/types.h"
@@ -47,7 +88,32 @@ public:
     // Constructors
     IndexIterator() noexcept : iter_handle_(Invalid::ROW_ITER), is_end_(true) {}
     
-    // Constructor for exact value match
+    /**
+     * @brief Create iterator for exact value match on an index
+     * 
+     * Efficiently finds all rows where the indexed field exactly matches the given value.
+     * Uses btree index scanning for O(log n) lookup + O(k) iteration over k matching rows.
+     * 
+     * @tparam FieldType The type of the indexed field (must match index column type)
+     * @param index_id The index to scan (from table index declaration)
+     * @param value The exact value to match
+     * 
+     * @note This constructor is typically called internally by ctx.db[field_accessor].filter(value).
+     *       Developers should use the filter() API rather than constructing IndexIterator directly.
+     * 
+     * @example How developers use indexed queries (via filter API):
+     * @code
+     * SPACETIMEDB_TABLE(Player, players, Public);
+     * FIELD_Index(players, level);  // Creates level index
+     * 
+     * // In a view - find all level 0 players using filter()
+     * for (IndexIterator<Player> iter = ctx.db[players_level].filter(0u); 
+     *      iter != IndexIterator<Player>(); ++iter) {
+     *     const Player& player = *iter;
+     *     LOG_INFO("Found level 0 player: " + player.name);
+     * }
+     * @endcode
+     */
     template<typename FieldType>
     IndexIterator(IndexId index_id, const FieldType& value) {
         // Serialize the exact value for prefix matching
@@ -71,7 +137,43 @@ public:
         advance();
     }
     
-    // Constructor for range queries
+    /**
+     * @brief Create iterator for range query on an index
+     * 
+     * Efficiently iterates over rows where the indexed field falls within a specified range.
+     * Supports inclusive and exclusive bounds, unbounded ranges, and custom types.
+     * 
+     * @tparam FieldType The type of the indexed field
+     * @param index_id The index to scan
+     * @param range The range specification (start, end, bound type)
+     * 
+     * @note This constructor is typically called internally by ctx.db[field_accessor].filter(range).
+     *       Developers should use the filter() API with range helper functions rather than
+     *       constructing IndexIterator or Range objects directly.
+     * 
+     * @example How developers use range queries (via filter API):
+     * @code
+     * FIELD_Index(person, age);
+     * 
+     * // Find persons aged 25-30 using range_inclusive()
+     * auto age_range = range_inclusive(uint8_t(25), uint8_t(30));
+     * for (const auto& person : ctx.db[person_age].filter(age_range)) {
+     *     LOG_INFO("Person in range: " + person.name);
+     * }
+     * 
+     * // Find persons 18 and older using range_from()
+     * auto adult_range = range_from(uint8_t(18));
+     * size_t adult_count = ctx.db[person_age].filter(adult_range).size();
+     * 
+     * // Find persons under 30 using range_to()
+     * auto young_range = range_to(uint8_t(30));
+     * for (const auto& person : ctx.db[person_age].filter(young_range)) {
+     *     LOG_INFO("Young person: " + person.name);
+     * }
+     * @endcode
+     * 
+     * @see range_from, range_to, range_inclusive, range_to_inclusive for creating ranges
+     */
     template<typename FieldType>
     IndexIterator(IndexId index_id, const Range<FieldType>& range) {
         std::vector<uint8_t> start_buffer;
