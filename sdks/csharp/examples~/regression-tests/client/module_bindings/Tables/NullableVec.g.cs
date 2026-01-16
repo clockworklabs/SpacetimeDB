@@ -40,12 +40,12 @@ namespace SpacetimeDB.Types
     public sealed class NullableVecCols
     {
         public global::SpacetimeDB.Col<NullableVec, uint> Id { get; }
-        public global::SpacetimeDB.Col<NullableVec, DbVector2?> Pos { get; }
+        public global::SpacetimeDB.Col<NullableVec, DbVector2> Pos { get; }
 
         public NullableVecCols(string tableName)
         {
             Id = new global::SpacetimeDB.Col<NullableVec, uint>(tableName, "Id");
-            Pos = new global::SpacetimeDB.Col<NullableVec, DbVector2?>(tableName, "Pos");
+            Pos = new global::SpacetimeDB.Col<NullableVec, DbVector2>(tableName, "Pos");
         }
     }
 

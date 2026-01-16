@@ -1,10 +1,54 @@
-using System;
-using System.Globalization;
-
 #nullable enable
 
 namespace SpacetimeDB
 {
+    using System;
+    using System.Globalization;
+
+    /// <summary>
+    /// A pre-formatted SQL literal for the typed query builder.
+    /// This wrapper exists so callers cannot accidentally generate unsupported subscription SQL,
+    /// such as NULL literals or NULL-specific predicates.
+    /// </summary>
+    public readonly struct SqlLiteral<T>
+    {
+        internal string Sql { get; }
+
+        internal SqlLiteral(string sql)
+        {
+            Sql = sql;
+        }
+
+        public override string ToString() => Sql;
+    }
+
+    /// <summary>
+    /// Factory methods for producing <see cref="SqlLiteral{T}"/> values.
+    /// Centralizing literal formatting keeps the typed query builder safe and consistent
+    /// with the supported subscription SQL subset.
+    /// </summary>
+    public static class SqlLit
+    {
+        public static SqlLiteral<string> String(ReadOnlySpan<char> value) => new(SqlFormat.FormatStringLiteral(value));
+
+        public static SqlLiteral<bool> Bool(bool value) => new(value ? "TRUE" : "FALSE");
+
+        public static SqlLiteral<sbyte> Int(sbyte value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<byte> Int(byte value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<short> Int(short value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<ushort> Int(ushort value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<int> Int(int value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<uint> Int(uint value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<long> Int(long value) => new(value.ToString(CultureInfo.InvariantCulture));
+        public static SqlLiteral<ulong> Int(ulong value) => new(value.ToString(CultureInfo.InvariantCulture));
+
+        public static SqlLiteral<U128> Int(U128 value) => new(value.ToString());
+
+        public static SqlLiteral<Identity> Identity(Identity value) => new(SqlFormat.FormatHexLiteral(value.ToString()));
+        public static SqlLiteral<ConnectionId> ConnectionId(ConnectionId value) => new(SqlFormat.FormatHexLiteral(value.ToString()));
+        public static SqlLiteral<Uuid> Uuid(Uuid value) => new(SqlFormat.FormatHexLiteral(value.ToString()));
+    }
+
     public readonly struct Query<TRow>
     {
         public string Sql { get; }
@@ -29,13 +73,13 @@ namespace SpacetimeDB
         }
 
         public BoolExpr<TRow> And(BoolExpr<TRow> other) => new($"({Sql}) AND ({other.Sql})");
-        public BoolExpr<TRow> Or(BoolExpr<TRow> other) => new($"({Sql}) OR ({other.Sql})");
-        public BoolExpr<TRow> Not() => new($"NOT ({Sql})");
+        public BoolExpr<TRow> Or(BoolExpr<TRow> other) => new($"(({Sql}) OR ({other.Sql}))");
 
         public override string ToString() => Sql;
     }
 
     public readonly struct Col<TRow, TValue>
+        where TValue : notnull
     {
         private readonly string tableName;
         private readonly string columnName;
@@ -48,38 +92,46 @@ namespace SpacetimeDB
 
         internal string RefSql => $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
 
-        public BoolExpr<TRow> Eq(TValue value)
-        {
-            if (value is null)
-            {
-                return IsNull();
-            }
+        public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
 
-            return new BoolExpr<TRow>($"{RefSql} = {SqlFormat.FormatLiteral(value)}");
+        public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
+
+        public BoolExpr<TRow> Lt(SqlLiteral<TValue> value) => new($"{RefSql} < {value.Sql}");
+        public BoolExpr<TRow> Lte(SqlLiteral<TValue> value) => new($"{RefSql} <= {value.Sql}");
+        public BoolExpr<TRow> Gt(SqlLiteral<TValue> value) => new($"{RefSql} > {value.Sql}");
+        public BoolExpr<TRow> Gte(SqlLiteral<TValue> value) => new($"{RefSql} >= {value.Sql}");
+
+        public override string ToString() => RefSql;
+    }
+
+    public readonly struct NullableCol<TRow, TValue>
+        where TValue : notnull
+    {
+        private readonly string tableName;
+        private readonly string columnName;
+
+        public NullableCol(string tableName, string columnName)
+        {
+            this.tableName = tableName;
+            this.columnName = columnName;
         }
 
-        public BoolExpr<TRow> Neq(TValue value)
-        {
-            if (value is null)
-            {
-                return IsNotNull();
-            }
+        internal string RefSql => $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
 
-            return new BoolExpr<TRow>($"{RefSql} <> {SqlFormat.FormatLiteral(value)}");
-        }
+        public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
 
-        public BoolExpr<TRow> Lt(TValue value) => new($"{RefSql} < {SqlFormat.FormatLiteral(value)}");
-        public BoolExpr<TRow> Lte(TValue value) => new($"{RefSql} <= {SqlFormat.FormatLiteral(value)}");
-        public BoolExpr<TRow> Gt(TValue value) => new($"{RefSql} > {SqlFormat.FormatLiteral(value)}");
-        public BoolExpr<TRow> Gte(TValue value) => new($"{RefSql} >= {SqlFormat.FormatLiteral(value)}");
+        public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
 
-        public BoolExpr<TRow> IsNull() => new($"{RefSql} IS NULL");
-        public BoolExpr<TRow> IsNotNull() => new($"{RefSql} IS NOT NULL");
+        public BoolExpr<TRow> Lt(SqlLiteral<TValue> value) => new($"{RefSql} < {value.Sql}");
+        public BoolExpr<TRow> Lte(SqlLiteral<TValue> value) => new($"{RefSql} <= {value.Sql}");
+        public BoolExpr<TRow> Gt(SqlLiteral<TValue> value) => new($"{RefSql} > {value.Sql}");
+        public BoolExpr<TRow> Gte(SqlLiteral<TValue> value) => new($"{RefSql} >= {value.Sql}");
 
         public override string ToString() => RefSql;
     }
 
     public readonly struct IxCol<TRow, TValue>
+        where TValue : notnull
     {
         private readonly string tableName;
         private readonly string columnName;
@@ -92,25 +144,30 @@ namespace SpacetimeDB
 
         internal string RefSql => $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
 
-        public BoolExpr<TRow> Eq(TValue value)
-        {
-            if (value is null)
-            {
-                return new BoolExpr<TRow>($"{RefSql} IS NULL");
-            }
+        public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
 
-            return new BoolExpr<TRow>($"{RefSql} = {SqlFormat.FormatLiteral(value)}");
+        public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
+
+        public override string ToString() => RefSql;
+    }
+
+    public readonly struct NullableIxCol<TRow, TValue>
+        where TValue : notnull
+    {
+        private readonly string tableName;
+        private readonly string columnName;
+
+        public NullableIxCol(string tableName, string columnName)
+        {
+            this.tableName = tableName;
+            this.columnName = columnName;
         }
 
-        public BoolExpr<TRow> Neq(TValue value)
-        {
-            if (value is null)
-            {
-                return new BoolExpr<TRow>($"{RefSql} IS NOT NULL");
-            }
+        internal string RefSql => $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
 
-            return new BoolExpr<TRow>($"{RefSql} <> {SqlFormat.FormatLiteral(value)}");
-        }
+        public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
+
+        public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
 
         public override string ToString() => RefSql;
     }
@@ -138,6 +195,254 @@ namespace SpacetimeDB
         public Query<TRow> Where(BoolExpr<TRow> predicate) => new($"{ToSql()} WHERE {predicate.Sql}");
     }
 
+    /// <summary>
+    /// Ergonomic overloads for comparisons (e.g. <c>col.Eq("x")</c>) that still route through
+    /// <see cref="SqlLit"/> and <see cref="SqlLiteral{T}"/>, preventing raw/NULL literals from
+    /// being embedded into subscription SQL.
+    /// </summary>
+    public static class SqlLitExtensions
+    {
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) => col.Eq(SqlLit.String(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, string> col, ReadOnlySpan<char> value) => col.Neq(SqlLit.String(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, string> col, ReadOnlySpan<char> value) => col.Eq(SqlLit.String(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, string> col, ReadOnlySpan<char> value) => col.Neq(SqlLit.String(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, bool> col, bool value) => col.Eq(SqlLit.Bool(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, bool> col, bool value) => col.Neq(SqlLit.Bool(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, bool> col, bool value) => col.Eq(SqlLit.Bool(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, bool> col, bool value) => col.Neq(SqlLit.Bool(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, sbyte> col, sbyte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, sbyte> col, sbyte value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, sbyte> col, sbyte value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, sbyte> col, sbyte value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, sbyte> col, sbyte value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, sbyte> col, sbyte value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, sbyte> col, sbyte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, sbyte> col, sbyte value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, sbyte> col, sbyte value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, sbyte> col, sbyte value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, sbyte> col, sbyte value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, sbyte> col, sbyte value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, byte> col, byte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, byte> col, byte value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, byte> col, byte value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, byte> col, byte value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, byte> col, byte value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, byte> col, byte value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, byte> col, byte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, byte> col, byte value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, byte> col, byte value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, byte> col, byte value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, byte> col, byte value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, byte> col, byte value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, short> col, short value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, short> col, short value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, short> col, short value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, short> col, short value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, short> col, short value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, short> col, short value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, short> col, short value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, short> col, short value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, short> col, short value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, short> col, short value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, short> col, short value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, short> col, short value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, ushort> col, ushort value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, ushort> col, ushort value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, ushort> col, ushort value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, ushort> col, ushort value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, ushort> col, ushort value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, ushort> col, ushort value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, ushort> col, ushort value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, ushort> col, ushort value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, ushort> col, ushort value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, ushort> col, ushort value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, ushort> col, ushort value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, ushort> col, ushort value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, int> col, int value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, int> col, int value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, int> col, int value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, int> col, int value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, int> col, int value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, int> col, int value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, int> col, int value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, int> col, int value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, int> col, int value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, int> col, int value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, int> col, int value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, int> col, int value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, uint> col, uint value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, uint> col, uint value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, uint> col, uint value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, uint> col, uint value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, uint> col, uint value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, uint> col, uint value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, uint> col, uint value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, uint> col, uint value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, uint> col, uint value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, uint> col, uint value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, uint> col, uint value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, uint> col, uint value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, long> col, long value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, long> col, long value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, long> col, long value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, long> col, long value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, long> col, long value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, long> col, long value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, long> col, long value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, long> col, long value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, long> col, long value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, long> col, long value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, long> col, long value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, long> col, long value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, ulong> col, ulong value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, ulong> col, ulong value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, ulong> col, ulong value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, ulong> col, ulong value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, ulong> col, ulong value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, ulong> col, ulong value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, ulong> col, ulong value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, ulong> col, ulong value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, ulong> col, ulong value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, ulong> col, ulong value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, ulong> col, ulong value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, ulong> col, ulong value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, U128> col, U128 value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, U128> col, U128 value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this Col<TRow, U128> col, U128 value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this Col<TRow, U128> col, U128 value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this Col<TRow, U128> col, U128 value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this Col<TRow, U128> col, U128 value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, U128> col, U128 value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, U128> col, U128 value) => col.Neq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lt<TRow>(this NullableCol<TRow, U128> col, U128 value) => col.Lt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Lte<TRow>(this NullableCol<TRow, U128> col, U128 value) => col.Lte(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gt<TRow>(this NullableCol<TRow, U128> col, U128 value) => col.Gt(SqlLit.Int(value));
+        public static BoolExpr<TRow> Gte<TRow>(this NullableCol<TRow, U128> col, U128 value) => col.Gte(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, Identity> col, Identity value) => col.Eq(SqlLit.Identity(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, Identity> col, Identity value) => col.Neq(SqlLit.Identity(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, Identity> col, Identity value) => col.Eq(SqlLit.Identity(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, Identity> col, Identity value) => col.Neq(SqlLit.Identity(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, ConnectionId> col, ConnectionId value) => col.Eq(SqlLit.ConnectionId(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, ConnectionId> col, ConnectionId value) => col.Neq(SqlLit.ConnectionId(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, ConnectionId> col, ConnectionId value) => col.Eq(SqlLit.ConnectionId(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, ConnectionId> col, ConnectionId value) => col.Neq(SqlLit.ConnectionId(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this Col<TRow, Uuid> col, Uuid value) => col.Eq(SqlLit.Uuid(value));
+        public static BoolExpr<TRow> Neq<TRow>(this Col<TRow, Uuid> col, Uuid value) => col.Neq(SqlLit.Uuid(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableCol<TRow, Uuid> col, Uuid value) => col.Eq(SqlLit.Uuid(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableCol<TRow, Uuid> col, Uuid value) => col.Neq(SqlLit.Uuid(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, string> col, ReadOnlySpan<char> value) => col.Eq(SqlLit.String(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, string> col, ReadOnlySpan<char> value) => col.Neq(SqlLit.String(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, string> col, ReadOnlySpan<char> value) => col.Eq(SqlLit.String(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, string> col, ReadOnlySpan<char> value) => col.Neq(SqlLit.String(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, bool> col, bool value) => col.Eq(SqlLit.Bool(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, bool> col, bool value) => col.Neq(SqlLit.Bool(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, bool> col, bool value) => col.Eq(SqlLit.Bool(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, bool> col, bool value) => col.Neq(SqlLit.Bool(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, sbyte> col, sbyte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, sbyte> col, sbyte value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, sbyte> col, sbyte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, sbyte> col, sbyte value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, byte> col, byte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, byte> col, byte value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, byte> col, byte value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, byte> col, byte value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, short> col, short value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, short> col, short value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, short> col, short value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, short> col, short value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, ushort> col, ushort value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, ushort> col, ushort value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, ushort> col, ushort value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, ushort> col, ushort value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, int> col, int value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, int> col, int value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, int> col, int value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, int> col, int value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, uint> col, uint value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, uint> col, uint value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, uint> col, uint value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, uint> col, uint value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, long> col, long value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, long> col, long value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, long> col, long value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, long> col, long value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, ulong> col, ulong value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, ulong> col, ulong value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, ulong> col, ulong value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, ulong> col, ulong value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, U128> col, U128 value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, U128> col, U128 value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, U128> col, U128 value) => col.Eq(SqlLit.Int(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, U128> col, U128 value) => col.Neq(SqlLit.Int(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, Identity> col, Identity value) => col.Eq(SqlLit.Identity(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Identity> col, Identity value) => col.Neq(SqlLit.Identity(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, Identity> col, Identity value) => col.Eq(SqlLit.Identity(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, Identity> col, Identity value) => col.Neq(SqlLit.Identity(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, ConnectionId> col, ConnectionId value) => col.Eq(SqlLit.ConnectionId(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, ConnectionId> col, ConnectionId value) => col.Neq(SqlLit.ConnectionId(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, ConnectionId> col, ConnectionId value) => col.Eq(SqlLit.ConnectionId(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, ConnectionId> col, ConnectionId value) => col.Neq(SqlLit.ConnectionId(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this IxCol<TRow, Uuid> col, Uuid value) => col.Eq(SqlLit.Uuid(value));
+        public static BoolExpr<TRow> Neq<TRow>(this IxCol<TRow, Uuid> col, Uuid value) => col.Neq(SqlLit.Uuid(value));
+
+        public static BoolExpr<TRow> Eq<TRow>(this NullableIxCol<TRow, Uuid> col, Uuid value) => col.Eq(SqlLit.Uuid(value));
+        public static BoolExpr<TRow> Neq<TRow>(this NullableIxCol<TRow, Uuid> col, Uuid value) => col.Neq(SqlLit.Uuid(value));
+    }
+
     internal static class SqlFormat
     {
         public static string QuoteIdent(string ident)
@@ -148,40 +453,34 @@ namespace SpacetimeDB
 
         private static string EscapeString(string s) => s.Replace("'", "''");
 
-        public static string FormatLiteral(object? value)
+        public static string FormatStringLiteral(ReadOnlySpan<char> value) => $"'{EscapeString(value.ToString())}'";
+
+        public static string FormatHexLiteral(string hex)
         {
-            if (value is null)
+            if (hex is null)
             {
-                return "NULL";
+                throw new ArgumentNullException(nameof(hex));
             }
 
-            if (value is string s)
+            var s = hex;
+            if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
             {
-                return $"'{EscapeString(s)}'";
+                s = s.Substring(2);
             }
 
-            if (value is bool b)
+            s = s.Replace("-", string.Empty);
+
+            for (var i = 0; i < s.Length; i++)
             {
-                return b ? "TRUE" : "FALSE";
+                var c = s[i];
+                var isHex = c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F';
+                if (!isHex)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(hex), $"Invalid hex character '{c}'.");
+                }
             }
 
-            if (value is char c)
-            {
-                return $"'{EscapeString(c.ToString())}'";
-            }
-
-            var t = value.GetType();
-            if (t.IsEnum)
-            {
-                return Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
-            }
-
-            if (value is IFormattable f)
-            {
-                return f.ToString(null, CultureInfo.InvariantCulture) ?? "NULL";
-            }
-
-            return $"'{EscapeString(value.ToString() ?? string.Empty)}'";
+            return $"0x{s}";
         }
     }
 }

@@ -707,10 +707,13 @@ impl Lang for Csharp<'_> {
         indented_block(&mut output, |output| {
             for (field_name, field_type) in &product_type.elements {
                 let prop = field_name.deref().to_case(Case::Pascal);
-                let ty = ty_fmt(module, field_type);
+                let (col_ty, ty) = match field_type {
+                    AlgebraicTypeUse::Option(inner) => ("Col", ty_fmt(module, inner).to_string()),
+                    _ => ("Col", ty_fmt(module, field_type).to_string()),
+                };
                 writeln!(
                     output,
-                    "public global::SpacetimeDB.Col<{row_type}, {ty}> {prop} {{ get; }}"
+                    "public global::SpacetimeDB.{col_ty}<{row_type}, {ty}> {prop} {{ get; }}"
                 );
             }
             writeln!(output);
@@ -718,11 +721,14 @@ impl Lang for Csharp<'_> {
             indented_block(output, |output| {
                 for (field_name, field_type) in &product_type.elements {
                     let prop = field_name.deref().to_case(Case::Pascal);
-                    let ty = ty_fmt(module, field_type);
+                    let (col_ty, ty) = match field_type {
+                        AlgebraicTypeUse::Option(inner) => ("Col", ty_fmt(module, inner).to_string()),
+                        _ => ("Col", ty_fmt(module, field_type).to_string()),
+                    };
                     let col_name = field_name.deref();
                     writeln!(
                         output,
-                        "{prop} = new global::SpacetimeDB.Col<{row_type}, {ty}>(tableName, \"{col_name}\");"
+                        "{prop} = new global::SpacetimeDB.{col_ty}<{row_type}, {ty}>(tableName, \"{col_name}\");"
                     );
                 }
             });
@@ -736,10 +742,13 @@ impl Lang for Csharp<'_> {
                     continue;
                 }
                 let prop = field_name.deref().to_case(Case::Pascal);
-                let ty = ty_fmt(module, field_type);
+                let (col_ty, ty) = match field_type {
+                    AlgebraicTypeUse::Option(inner) => ("IxCol", ty_fmt(module, inner).to_string()),
+                    _ => ("IxCol", ty_fmt(module, field_type).to_string()),
+                };
                 writeln!(
                     output,
-                    "public global::SpacetimeDB.IxCol<{row_type}, {ty}> {prop} {{ get; }}"
+                    "public global::SpacetimeDB.{col_ty}<{row_type}, {ty}> {prop} {{ get; }}"
                 );
             }
             writeln!(output);
@@ -750,11 +759,14 @@ impl Lang for Csharp<'_> {
                         continue;
                     }
                     let prop = field_name.deref().to_case(Case::Pascal);
-                    let ty = ty_fmt(module, field_type);
+                    let (col_ty, ty) = match field_type {
+                        AlgebraicTypeUse::Option(inner) => ("IxCol", ty_fmt(module, inner).to_string()),
+                        _ => ("IxCol", ty_fmt(module, field_type).to_string()),
+                    };
                     let col_name = field_name.deref();
                     writeln!(
                         output,
-                        "{prop} = new global::SpacetimeDB.IxCol<{row_type}, {ty}>(tableName, \"{col_name}\");"
+                        "{prop} = new global::SpacetimeDB.{col_ty}<{row_type}, {ty}>(tableName, \"{col_name}\");"
                     );
                 }
             });
