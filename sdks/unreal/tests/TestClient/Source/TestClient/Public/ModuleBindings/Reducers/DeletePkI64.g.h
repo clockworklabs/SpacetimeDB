@@ -14,7 +14,7 @@ struct TESTCLIENT_API FDeletePkI64Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int64 N;
+    int64 N = 0;
 
     FDeletePkI64Args() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UDeletePkI64Reducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int64 N;
+    int64 N = 0;
 
 };
 

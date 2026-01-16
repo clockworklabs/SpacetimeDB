@@ -394,8 +394,8 @@ impl<T: WasmInstance> WasmModuleInstance<T> {
             .update_database(program, old_module_info, policy, &mut self.instance)
     }
 
-    pub fn call_reducer(&mut self, tx: Option<MutTxId>, params: CallReducerParams) -> ReducerCallResult {
-        let (res, trapped) = self.call_reducer_with_tx(tx, params);
+    pub fn call_reducer(&mut self, params: CallReducerParams) -> ReducerCallResult {
+        let (res, trapped) = self.call_reducer_with_tx(None, params);
         self.trapped = trapped;
         res
     }

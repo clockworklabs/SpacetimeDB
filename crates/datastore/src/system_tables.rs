@@ -25,7 +25,7 @@ use spacetimedb_sats::hash::Hash;
 use spacetimedb_sats::product_value::InvalidFieldError;
 use spacetimedb_sats::{impl_deserialize, impl_serialize, impl_st, u256, AlgebraicType, AlgebraicValue, ArrayValue};
 use spacetimedb_schema::def::{
-    BTreeAlgorithm, ConstraintData, DirectAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
+    BTreeAlgorithm, ConstraintData, DirectAlgorithm, HashAlgorithm, IndexAlgorithm, ModuleDef, UniqueConstraintData,
 };
 use spacetimedb_schema::schema::{
     ColumnSchema, ConstraintSchema, IndexSchema, RowLevelSecuritySchema, ScheduleSchema, Schema, SequenceSchema,
@@ -1059,12 +1059,16 @@ pub enum StIndexAlgorithm {
 
     /// A Direct index.
     Direct { column: ColId },
+
+    /// A Hash index.
+    Hash { columns: ColList },
 }
 
 impl From<IndexAlgorithm> for StIndexAlgorithm {
     fn from(algorithm: IndexAlgorithm) -> Self {
         match algorithm {
             IndexAlgorithm::BTree(BTreeAlgorithm { columns }) => Self::BTree { columns },
+            IndexAlgorithm::Hash(HashAlgorithm { columns }) => Self::Hash { columns },
             IndexAlgorithm::Direct(DirectAlgorithm { column }) => Self::Direct { column },
             algo => unreachable!("unexpected `{algo:?}`, did you add a new one?"),
         }
@@ -1074,8 +1078,9 @@ impl From<IndexAlgorithm> for StIndexAlgorithm {
 impl From<StIndexAlgorithm> for IndexAlgorithm {
     fn from(algorithm: StIndexAlgorithm) -> Self {
         match algorithm {
-            StIndexAlgorithm::BTree { columns } => Self::BTree(BTreeAlgorithm { columns }),
-            StIndexAlgorithm::Direct { column } => Self::Direct(DirectAlgorithm { column }),
+            StIndexAlgorithm::BTree { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Hash { columns } => BTreeAlgorithm { columns }.into(),
+            StIndexAlgorithm::Direct { column } => DirectAlgorithm { column }.into(),
             algo => unreachable!("unexpected `{algo:?}` in system table `st_indexes`"),
         }
     }

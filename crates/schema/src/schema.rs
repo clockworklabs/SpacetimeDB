@@ -436,11 +436,11 @@ impl TableSchema {
     }
 
     /// Is there a unique constraint for this set of columns?
-    pub fn is_unique(&self, cols: &ColList) -> bool {
+    pub fn is_unique(&self, cols: &impl PartialEq<ColList>) -> bool {
         self.constraints
             .iter()
             .filter_map(|cs| cs.data.unique_columns())
-            .any(|unique_cols| **unique_cols == *cols)
+            .any(|unique_cols| *cols == **unique_cols)
     }
 
     /// Project the fields from the supplied `indexes`.
@@ -477,6 +477,7 @@ impl TableSchema {
             })
             .chain(self.indexes.iter().map(|x| match &x.index_algorithm {
                 IndexAlgorithm::BTree(btree) => (btree.columns.clone(), Constraints::indexed()),
+                IndexAlgorithm::Hash(hash) => (hash.columns.clone(), Constraints::indexed()),
                 IndexAlgorithm::Direct(direct) => (direct.column.into(), Constraints::indexed()),
             }))
             .chain(
@@ -537,10 +538,7 @@ impl TableSchema {
             .iter()
             .map(|x| (DefType::Sequence, x.sequence_name.clone(), ColList::new(x.col_pos)))
             .chain(self.indexes.iter().map(|x| {
-                let cols = match &x.index_algorithm {
-                    IndexAlgorithm::BTree(btree) => btree.columns.clone(),
-                    IndexAlgorithm::Direct(direct) => direct.column.into(),
-                };
+                let cols = x.index_algorithm.columns().to_owned();
                 (DefType::Index, x.index_name.clone(), cols)
             }))
             .chain(self.constraints.iter().map(|x| {
@@ -1068,6 +1066,18 @@ pub struct ColumnSchema {
     pub col_type: AlgebraicType,
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for ColumnSchema {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            table_id,
+            col_pos,
+            col_name,
+            col_type,
+        } = self;
+        table_id.heap_usage() + col_pos.heap_usage() + col_name.heap_usage() + col_type.heap_usage()
+    }
+}
+
 impl ColumnSchema {
     pub fn for_test(pos: impl Into<ColId>, name: impl Into<Box<str>>, ty: AlgebraicType) -> Self {
         Self {
@@ -1180,6 +1190,29 @@ pub struct SequenceSchema {
     pub min_value: i128,
     /// The maximum value for the sequence.
     pub max_value: i128,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for SequenceSchema {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            sequence_id,
+            sequence_name,
+            table_id,
+            col_pos,
+            increment,
+            start,
+            min_value,
+            max_value,
+        } = self;
+        sequence_id.heap_usage()
+            + sequence_name.heap_usage()
+            + table_id.heap_usage()
+            + col_pos.heap_usage()
+            + increment.heap_usage()
+            + start.heap_usage()
+            + min_value.heap_usage()
+            + max_value.heap_usage()
+    }
 }
 
 impl Schema for SequenceSchema {
@@ -1296,6 +1329,18 @@ pub struct IndexSchema {
     pub index_algorithm: IndexAlgorithm,
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for IndexSchema {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            index_id,
+            table_id,
+            index_name,
+            index_algorithm,
+        } = self;
+        index_id.heap_usage() + table_id.heap_usage() + index_name.heap_usage() + index_algorithm.heap_usage()
+    }
+}
+
 impl IndexSchema {
     pub fn for_test(name: impl Into<Box<str>>, algo: impl Into<IndexAlgorithm>) -> Self {
         Self {
@@ -1345,6 +1390,18 @@ pub struct ConstraintSchema {
     pub constraint_name: Box<str>,
     /// The data for the constraint.
     pub data: ConstraintData, // this reuses the type from Def, which is fine, neither of `schema` nor `def` are ABI modules.
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for ConstraintSchema {
+    fn heap_usage(&self) -> usize {
+        let Self {
+            table_id,
+            constraint_id,
+            constraint_name,
+            data,
+        } = self;
+        table_id.heap_usage() + constraint_id.heap_usage() + constraint_name.heap_usage() + data.heap_usage()
+    }
 }
 
 impl ConstraintSchema {

@@ -61,7 +61,7 @@ pub fn init(ctx: &ReducerContext) -> Result<(), String> {
     
     // Set up default data
     if ctx.db.settings().count() == 0 {
-        ctx.db.settings().insert(Settings {
+        ctx.db.settings().try_insert(Settings {
             key: "welcome_message".to_string(),
             value: "Hello, SpacetimeDB!".to_string(),
         })?;
@@ -137,7 +137,7 @@ pub fn on_connect(ctx: &ReducerContext) -> Result<(), String> {
     let conn_id = ctx.connection_id.unwrap();
     
     // Initialize client session
-    ctx.db.sessions().insert(Session {
+    ctx.db.sessions().try_insert(Session {
         connection_id: conn_id,
         identity: ctx.sender,
         connected_at: ctx.timestamp,

@@ -61,6 +61,12 @@
 #include "ModuleBindings/Tables/PkU64Table.g.h"
 #include "ModuleBindings/Tables/PkU8Table.g.h"
 #include "ModuleBindings/Tables/PkUuidTable.g.h"
+#include "ModuleBindings/Tables/ResultEveryPrimitiveStructStringTable.g.h"
+#include "ModuleBindings/Tables/ResultI32StringTable.g.h"
+#include "ModuleBindings/Tables/ResultIdentityStringTable.g.h"
+#include "ModuleBindings/Tables/ResultSimpleEnumI32Table.g.h"
+#include "ModuleBindings/Tables/ResultStringI32Table.g.h"
+#include "ModuleBindings/Tables/ResultVecI32StringTable.g.h"
 #include "ModuleBindings/Tables/ScheduledTableTable.g.h"
 #include "ModuleBindings/Tables/TableHoldsTableTable.g.h"
 #include "ModuleBindings/Tables/UniqueBoolTable.g.h"
@@ -748,6 +754,42 @@ static FReducer DecodeReducer(const FReducerEvent& Event)
         return FReducer::InsertPrimitivesAsStrings(Args);
     }
 
+    if (ReducerName == TEXT("insert_result_every_primitive_struct_string"))
+    {
+        FInsertResultEveryPrimitiveStructStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultEveryPrimitiveStructStringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultEveryPrimitiveStructString(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_i32_string"))
+    {
+        FInsertResultI32StringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultI32StringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultI32String(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_identity_string"))
+    {
+        FInsertResultIdentityStringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultIdentityStringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultIdentityString(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_simple_enum_i32"))
+    {
+        FInsertResultSimpleEnumI32Args Args = UE::SpacetimeDB::Deserialize<FInsertResultSimpleEnumI32Args>(Event.ReducerCall.Args);
+        return FReducer::InsertResultSimpleEnumI32(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_string_i32"))
+    {
+        FInsertResultStringI32Args Args = UE::SpacetimeDB::Deserialize<FInsertResultStringI32Args>(Event.ReducerCall.Args);
+        return FReducer::InsertResultStringI32(Args);
+    }
+
+    if (ReducerName == TEXT("insert_result_vec_i32_string"))
+    {
+        FInsertResultVecI32StringArgs Args = UE::SpacetimeDB::Deserialize<FInsertResultVecI32StringArgs>(Event.ReducerCall.Args);
+        return FReducer::InsertResultVecI32String(Args);
+    }
+
     if (ReducerName == TEXT("insert_table_holds_table"))
     {
         FInsertTableHoldsTableArgs Args = UE::SpacetimeDB::Deserialize<FInsertTableHoldsTableArgs>(Event.ReducerCall.Args);
@@ -1338,6 +1380,12 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	RegisterTable<FPkU64Type, UPkU64Table, FEventContext>(TEXT("pk_u64"), Db->PkU64);
 	RegisterTable<FPkU8Type, UPkU8Table, FEventContext>(TEXT("pk_u8"), Db->PkU8);
 	RegisterTable<FPkUuidType, UPkUuidTable, FEventContext>(TEXT("pk_uuid"), Db->PkUuid);
+	RegisterTable<FResultEveryPrimitiveStructStringType, UResultEveryPrimitiveStructStringTable, FEventContext>(TEXT("result_every_primitive_struct_string"), Db->ResultEveryPrimitiveStructString);
+	RegisterTable<FResultI32StringType, UResultI32StringTable, FEventContext>(TEXT("result_i32_string"), Db->ResultI32String);
+	RegisterTable<FResultIdentityStringType, UResultIdentityStringTable, FEventContext>(TEXT("result_identity_string"), Db->ResultIdentityString);
+	RegisterTable<FResultSimpleEnumI32Type, UResultSimpleEnumI32Table, FEventContext>(TEXT("result_simple_enum_i32"), Db->ResultSimpleEnumI32);
+	RegisterTable<FResultStringI32Type, UResultStringI32Table, FEventContext>(TEXT("result_string_i32"), Db->ResultStringI32);
+	RegisterTable<FResultVecI32StringType, UResultVecI32StringTable, FEventContext>(TEXT("result_vec_i32_string"), Db->ResultVecI32String);
 	RegisterTable<FScheduledTableType, UScheduledTableTable, FEventContext>(TEXT("scheduled_table"), Db->ScheduledTable);
 	RegisterTable<FTableHoldsTableType, UTableHoldsTableTable, FEventContext>(TEXT("table_holds_table"), Db->TableHoldsTable);
 	RegisterTable<FUniqueBoolType, UUniqueBoolTable, FEventContext>(TEXT("unique_bool"), Db->UniqueBool);
@@ -1476,6 +1524,12 @@ void URemoteTables::Initialize()
 	PkU64 = NewObject<UPkU64Table>(this);
 	PkU8 = NewObject<UPkU8Table>(this);
 	PkUuid = NewObject<UPkUuidTable>(this);
+	ResultEveryPrimitiveStructString = NewObject<UResultEveryPrimitiveStructStringTable>(this);
+	ResultI32String = NewObject<UResultI32StringTable>(this);
+	ResultIdentityString = NewObject<UResultIdentityStringTable>(this);
+	ResultSimpleEnumI32 = NewObject<UResultSimpleEnumI32Table>(this);
+	ResultStringI32 = NewObject<UResultStringI32Table>(this);
+	ResultVecI32String = NewObject<UResultVecI32StringTable>(this);
 	ScheduledTable = NewObject<UScheduledTableTable>(this);
 	TableHoldsTable = NewObject<UTableHoldsTableTable>(this);
 	UniqueBool = NewObject<UUniqueBoolTable>(this);
@@ -1582,6 +1636,12 @@ void URemoteTables::Initialize()
 	PkU64->PostInitialize();
 	PkU8->PostInitialize();
 	PkUuid->PostInitialize();
+	ResultEveryPrimitiveStructString->PostInitialize();
+	ResultI32String->PostInitialize();
+	ResultIdentityString->PostInitialize();
+	ResultSimpleEnumI32->PostInitialize();
+	ResultStringI32->PostInitialize();
+	ResultVecI32String->PostInitialize();
 	ScheduledTable->PostInitialize();
 	TableHoldsTable->PostInitialize();
 	UniqueBool->PostInitialize();
@@ -2055,6 +2115,30 @@ void USetReducerFlags::InsertPrimitivesAsStrings(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertPrimitivesAsStrings", Flag);
 }
+void USetReducerFlags::InsertResultEveryPrimitiveStructString(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultEveryPrimitiveStructString", Flag);
+}
+void USetReducerFlags::InsertResultI32String(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultI32String", Flag);
+}
+void USetReducerFlags::InsertResultIdentityString(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultIdentityString", Flag);
+}
+void USetReducerFlags::InsertResultSimpleEnumI32(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultSimpleEnumI32", Flag);
+}
+void USetReducerFlags::InsertResultStringI32(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultStringI32", Flag);
+}
+void USetReducerFlags::InsertResultVecI32String(ECallReducerFlags Flag)
+{
+	FlagMap.Add("InsertResultVecI32String", Flag);
+}
 void USetReducerFlags::InsertTableHoldsTable(ECallReducerFlags Flag)
 {
 	FlagMap.Add("InsertTableHoldsTable", Flag);
@@ -2429,6 +2513,21 @@ bool URemoteReducers::InvokeDeleteFromBtreeU32(const FReducerEventContext& Conte
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteFromBtreeU32WithArgs(const FReducerEventContext& Context, const FDeleteFromBtreeU32Args& Args)
+{
+    if (!OnDeleteFromBtreeU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteFromBtreeU32"));
+        }
+        return false;
+    }
+
+    OnDeleteFromBtreeU32.Broadcast(Context, Args.Rows);
+    return true;
+}
+
 void URemoteReducers::DeleteLargeTable(const uint8 A, const uint16 B, const uint32 C, const uint64 D, const FSpacetimeDBUInt128& E, const FSpacetimeDBUInt256& F, const int8 G, const int16 H, const int32 I, const int64 J, const FSpacetimeDBInt128& K, const FSpacetimeDBInt256& L, const bool M, const float N, const double O, const FString& P, const ESimpleEnumType& Q, const FEnumWithPayloadType& R, const FUnitStructType& S, const FByteStructType& T, const FEveryPrimitiveStructType& U, const FEveryVecStructType& V)
 {
     if (!Conn)
@@ -2481,6 +2580,21 @@ bool URemoteReducers::InvokeDeleteLargeTable(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteLargeTableWithArgs(const FReducerEventContext& Context, const FDeleteLargeTableArgs& Args)
+{
+    if (!OnDeleteLargeTable.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteLargeTable"));
+        }
+        return false;
+    }
+
+    OnDeleteLargeTable.Broadcast(Context, Args);
+    return true;
+}
+
 void URemoteReducers::DeletePkBool(const bool B)
 {
     if (!Conn)
@@ -2507,6 +2621,21 @@ bool URemoteReducers::InvokeDeletePkBool(const FReducerEventContext& Context, co
     }
 
     OnDeletePkBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkBoolWithArgs(const FReducerEventContext& Context, const FDeletePkBoolArgs& Args)
+{
+    if (!OnDeletePkBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkBool"));
+        }
+        return false;
+    }
+
+    OnDeletePkBool.Broadcast(Context, Args.B);
     return true;
 }
 
@@ -2539,6 +2668,21 @@ bool URemoteReducers::InvokeDeletePkConnectionId(const FReducerEventContext& Con
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkConnectionIdWithArgs(const FReducerEventContext& Context, const FDeletePkConnectionIdArgs& Args)
+{
+    if (!OnDeletePkConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeletePkConnectionId.Broadcast(Context, Args.A);
+    return true;
+}
+
 void URemoteReducers::DeletePkI128(const FSpacetimeDBInt128& N)
 {
     if (!Conn)
@@ -2565,6 +2709,21 @@ bool URemoteReducers::InvokeDeletePkI128(const FReducerEventContext& Context, co
     }
 
     OnDeletePkI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkI128WithArgs(const FReducerEventContext& Context, const FDeletePkI128Args& Args)
+{
+    if (!OnDeletePkI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkI128"));
+        }
+        return false;
+    }
+
+    OnDeletePkI128.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -2597,6 +2756,21 @@ bool URemoteReducers::InvokeDeletePkI16(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkI16WithArgs(const FReducerEventContext& Context, const FDeletePkI16Args& Args)
+{
+    if (!OnDeletePkI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkI16"));
+        }
+        return false;
+    }
+
+    OnDeletePkI16.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkI256(const FSpacetimeDBInt256& N)
 {
     if (!Conn)
@@ -2623,6 +2797,21 @@ bool URemoteReducers::InvokeDeletePkI256(const FReducerEventContext& Context, co
     }
 
     OnDeletePkI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkI256WithArgs(const FReducerEventContext& Context, const FDeletePkI256Args& Args)
+{
+    if (!OnDeletePkI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkI256"));
+        }
+        return false;
+    }
+
+    OnDeletePkI256.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -2655,6 +2844,21 @@ bool URemoteReducers::InvokeDeletePkI32(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkI32WithArgs(const FReducerEventContext& Context, const FDeletePkI32Args& Args)
+{
+    if (!OnDeletePkI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkI32"));
+        }
+        return false;
+    }
+
+    OnDeletePkI32.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkI64(const int64 N)
 {
     if (!Conn)
@@ -2681,6 +2885,21 @@ bool URemoteReducers::InvokeDeletePkI64(const FReducerEventContext& Context, con
     }
 
     OnDeletePkI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkI64WithArgs(const FReducerEventContext& Context, const FDeletePkI64Args& Args)
+{
+    if (!OnDeletePkI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkI64"));
+        }
+        return false;
+    }
+
+    OnDeletePkI64.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -2713,6 +2932,21 @@ bool URemoteReducers::InvokeDeletePkI8(const FReducerEventContext& Context, cons
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkI8WithArgs(const FReducerEventContext& Context, const FDeletePkI8Args& Args)
+{
+    if (!OnDeletePkI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkI8"));
+        }
+        return false;
+    }
+
+    OnDeletePkI8.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkIdentity(const FSpacetimeDBIdentity& I)
 {
     if (!Conn)
@@ -2739,6 +2973,21 @@ bool URemoteReducers::InvokeDeletePkIdentity(const FReducerEventContext& Context
     }
 
     OnDeletePkIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkIdentityWithArgs(const FReducerEventContext& Context, const FDeletePkIdentityArgs& Args)
+{
+    if (!OnDeletePkIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkIdentity"));
+        }
+        return false;
+    }
+
+    OnDeletePkIdentity.Broadcast(Context, Args.I);
     return true;
 }
 
@@ -2771,6 +3020,21 @@ bool URemoteReducers::InvokeDeletePkString(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkStringWithArgs(const FReducerEventContext& Context, const FDeletePkStringArgs& Args)
+{
+    if (!OnDeletePkString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkString"));
+        }
+        return false;
+    }
+
+    OnDeletePkString.Broadcast(Context, Args.S);
+    return true;
+}
+
 void URemoteReducers::DeletePkU128(const FSpacetimeDBUInt128& N)
 {
     if (!Conn)
@@ -2797,6 +3061,21 @@ bool URemoteReducers::InvokeDeletePkU128(const FReducerEventContext& Context, co
     }
 
     OnDeletePkU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkU128WithArgs(const FReducerEventContext& Context, const FDeletePkU128Args& Args)
+{
+    if (!OnDeletePkU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU128"));
+        }
+        return false;
+    }
+
+    OnDeletePkU128.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -2829,6 +3108,21 @@ bool URemoteReducers::InvokeDeletePkU16(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkU16WithArgs(const FReducerEventContext& Context, const FDeletePkU16Args& Args)
+{
+    if (!OnDeletePkU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU16"));
+        }
+        return false;
+    }
+
+    OnDeletePkU16.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkU256(const FSpacetimeDBUInt256& N)
 {
     if (!Conn)
@@ -2855,6 +3149,21 @@ bool URemoteReducers::InvokeDeletePkU256(const FReducerEventContext& Context, co
     }
 
     OnDeletePkU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkU256WithArgs(const FReducerEventContext& Context, const FDeletePkU256Args& Args)
+{
+    if (!OnDeletePkU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU256"));
+        }
+        return false;
+    }
+
+    OnDeletePkU256.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -2887,6 +3196,21 @@ bool URemoteReducers::InvokeDeletePkU32(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkU32WithArgs(const FReducerEventContext& Context, const FDeletePkU32Args& Args)
+{
+    if (!OnDeletePkU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU32"));
+        }
+        return false;
+    }
+
+    OnDeletePkU32.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkU32InsertPkU32Two(const uint32 N, const int32 Data)
 {
     if (!Conn)
@@ -2913,6 +3237,21 @@ bool URemoteReducers::InvokeDeletePkU32InsertPkU32Two(const FReducerEventContext
     }
 
     OnDeletePkU32InsertPkU32Two.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkU32InsertPkU32TwoWithArgs(const FReducerEventContext& Context, const FDeletePkU32InsertPkU32TwoArgs& Args)
+{
+    if (!OnDeletePkU32InsertPkU32Two.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU32InsertPkU32Two"));
+        }
+        return false;
+    }
+
+    OnDeletePkU32InsertPkU32Two.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -2945,6 +3284,21 @@ bool URemoteReducers::InvokeDeletePkU32Two(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkU32TwoWithArgs(const FReducerEventContext& Context, const FDeletePkU32TwoArgs& Args)
+{
+    if (!OnDeletePkU32Two.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU32Two"));
+        }
+        return false;
+    }
+
+    OnDeletePkU32Two.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkU64(const uint64 N)
 {
     if (!Conn)
@@ -2971,6 +3325,21 @@ bool URemoteReducers::InvokeDeletePkU64(const FReducerEventContext& Context, con
     }
 
     OnDeletePkU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkU64WithArgs(const FReducerEventContext& Context, const FDeletePkU64Args& Args)
+{
+    if (!OnDeletePkU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU64"));
+        }
+        return false;
+    }
+
+    OnDeletePkU64.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3003,6 +3372,21 @@ bool URemoteReducers::InvokeDeletePkU8(const FReducerEventContext& Context, cons
     return true;
 }
 
+bool URemoteReducers::InvokeDeletePkU8WithArgs(const FReducerEventContext& Context, const FDeletePkU8Args& Args)
+{
+    if (!OnDeletePkU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkU8"));
+        }
+        return false;
+    }
+
+    OnDeletePkU8.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeletePkUuid(const FSpacetimeDBUuid& U)
 {
     if (!Conn)
@@ -3029,6 +3413,21 @@ bool URemoteReducers::InvokeDeletePkUuid(const FReducerEventContext& Context, co
     }
 
     OnDeletePkUuid.Broadcast(Context, Args->U);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeletePkUuidWithArgs(const FReducerEventContext& Context, const FDeletePkUuidArgs& Args)
+{
+    if (!OnDeletePkUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeletePkUuid"));
+        }
+        return false;
+    }
+
+    OnDeletePkUuid.Broadcast(Context, Args.U);
     return true;
 }
 
@@ -3061,6 +3460,21 @@ bool URemoteReducers::InvokeDeleteUniqueBool(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueBoolWithArgs(const FReducerEventContext& Context, const FDeleteUniqueBoolArgs& Args)
+{
+    if (!OnDeleteUniqueBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueBool"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueBool.Broadcast(Context, Args.B);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueConnectionId(const FSpacetimeDBConnectionId& A)
 {
     if (!Conn)
@@ -3087,6 +3501,21 @@ bool URemoteReducers::InvokeDeleteUniqueConnectionId(const FReducerEventContext&
     }
 
     OnDeleteUniqueConnectionId.Broadcast(Context, Args->A);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueConnectionIdWithArgs(const FReducerEventContext& Context, const FDeleteUniqueConnectionIdArgs& Args)
+{
+    if (!OnDeleteUniqueConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueConnectionId.Broadcast(Context, Args.A);
     return true;
 }
 
@@ -3119,6 +3548,21 @@ bool URemoteReducers::InvokeDeleteUniqueI128(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueI128WithArgs(const FReducerEventContext& Context, const FDeleteUniqueI128Args& Args)
+{
+    if (!OnDeleteUniqueI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueI128"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueI128.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueI16(const int16 N)
 {
     if (!Conn)
@@ -3145,6 +3589,21 @@ bool URemoteReducers::InvokeDeleteUniqueI16(const FReducerEventContext& Context,
     }
 
     OnDeleteUniqueI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueI16WithArgs(const FReducerEventContext& Context, const FDeleteUniqueI16Args& Args)
+{
+    if (!OnDeleteUniqueI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueI16"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueI16.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3177,6 +3636,21 @@ bool URemoteReducers::InvokeDeleteUniqueI256(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueI256WithArgs(const FReducerEventContext& Context, const FDeleteUniqueI256Args& Args)
+{
+    if (!OnDeleteUniqueI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueI256"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueI256.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueI32(const int32 N)
 {
     if (!Conn)
@@ -3203,6 +3677,21 @@ bool URemoteReducers::InvokeDeleteUniqueI32(const FReducerEventContext& Context,
     }
 
     OnDeleteUniqueI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueI32WithArgs(const FReducerEventContext& Context, const FDeleteUniqueI32Args& Args)
+{
+    if (!OnDeleteUniqueI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueI32"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueI32.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3235,6 +3724,21 @@ bool URemoteReducers::InvokeDeleteUniqueI64(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueI64WithArgs(const FReducerEventContext& Context, const FDeleteUniqueI64Args& Args)
+{
+    if (!OnDeleteUniqueI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueI64"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueI64.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueI8(const int8 N)
 {
     if (!Conn)
@@ -3261,6 +3765,21 @@ bool URemoteReducers::InvokeDeleteUniqueI8(const FReducerEventContext& Context, 
     }
 
     OnDeleteUniqueI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueI8WithArgs(const FReducerEventContext& Context, const FDeleteUniqueI8Args& Args)
+{
+    if (!OnDeleteUniqueI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueI8"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueI8.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3293,6 +3812,21 @@ bool URemoteReducers::InvokeDeleteUniqueIdentity(const FReducerEventContext& Con
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueIdentityWithArgs(const FReducerEventContext& Context, const FDeleteUniqueIdentityArgs& Args)
+{
+    if (!OnDeleteUniqueIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueString(const FString& S)
 {
     if (!Conn)
@@ -3319,6 +3853,21 @@ bool URemoteReducers::InvokeDeleteUniqueString(const FReducerEventContext& Conte
     }
 
     OnDeleteUniqueString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueStringWithArgs(const FReducerEventContext& Context, const FDeleteUniqueStringArgs& Args)
+{
+    if (!OnDeleteUniqueString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueString"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueString.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -3351,6 +3900,21 @@ bool URemoteReducers::InvokeDeleteUniqueU128(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueU128WithArgs(const FReducerEventContext& Context, const FDeleteUniqueU128Args& Args)
+{
+    if (!OnDeleteUniqueU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueU128"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueU128.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueU16(const uint16 N)
 {
     if (!Conn)
@@ -3377,6 +3941,21 @@ bool URemoteReducers::InvokeDeleteUniqueU16(const FReducerEventContext& Context,
     }
 
     OnDeleteUniqueU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueU16WithArgs(const FReducerEventContext& Context, const FDeleteUniqueU16Args& Args)
+{
+    if (!OnDeleteUniqueU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueU16"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueU16.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3409,6 +3988,21 @@ bool URemoteReducers::InvokeDeleteUniqueU256(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueU256WithArgs(const FReducerEventContext& Context, const FDeleteUniqueU256Args& Args)
+{
+    if (!OnDeleteUniqueU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueU256"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueU256.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueU32(const uint32 N)
 {
     if (!Conn)
@@ -3435,6 +4029,21 @@ bool URemoteReducers::InvokeDeleteUniqueU32(const FReducerEventContext& Context,
     }
 
     OnDeleteUniqueU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueU32WithArgs(const FReducerEventContext& Context, const FDeleteUniqueU32Args& Args)
+{
+    if (!OnDeleteUniqueU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueU32"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueU32.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3467,6 +4076,21 @@ bool URemoteReducers::InvokeDeleteUniqueU64(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueU64WithArgs(const FReducerEventContext& Context, const FDeleteUniqueU64Args& Args)
+{
+    if (!OnDeleteUniqueU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueU64"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueU64.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::DeleteUniqueU8(const uint8 N)
 {
     if (!Conn)
@@ -3493,6 +4117,21 @@ bool URemoteReducers::InvokeDeleteUniqueU8(const FReducerEventContext& Context, 
     }
 
     OnDeleteUniqueU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeDeleteUniqueU8WithArgs(const FReducerEventContext& Context, const FDeleteUniqueU8Args& Args)
+{
+    if (!OnDeleteUniqueU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueU8"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueU8.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -3525,6 +4164,21 @@ bool URemoteReducers::InvokeDeleteUniqueUuid(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeDeleteUniqueUuidWithArgs(const FReducerEventContext& Context, const FDeleteUniqueUuidArgs& Args)
+{
+    if (!OnDeleteUniqueUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for DeleteUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnDeleteUniqueUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
 void URemoteReducers::InsertCallTimestamp()
 {
     if (!Conn)
@@ -3545,6 +4199,21 @@ bool URemoteReducers::InvokeInsertCallTimestamp(const FReducerEventContext& Cont
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallTimestamp"));
+        }
+        return false;
+    }
+
+    OnInsertCallTimestamp.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertCallTimestampWithArgs(const FReducerEventContext& Context, const FInsertCallTimestampArgs& Args)
+{
+    if (!OnInsertCallTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallTimestamp"));
         }
         return false;
@@ -3583,6 +4252,21 @@ bool URemoteReducers::InvokeInsertCallUuidV4(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeInsertCallUuidV4WithArgs(const FReducerEventContext& Context, const FInsertCallUuidV4Args& Args)
+{
+    if (!OnInsertCallUuidV4.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallUuidV4"));
+        }
+        return false;
+    }
+
+    OnInsertCallUuidV4.Broadcast(Context);
+    return true;
+}
+
 void URemoteReducers::InsertCallUuidV7()
 {
     if (!Conn)
@@ -3603,6 +4287,21 @@ bool URemoteReducers::InvokeInsertCallUuidV7(const FReducerEventContext& Context
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallUuidV7"));
+        }
+        return false;
+    }
+
+    OnInsertCallUuidV7.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertCallUuidV7WithArgs(const FReducerEventContext& Context, const FInsertCallUuidV7Args& Args)
+{
+    if (!OnInsertCallUuidV7.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallUuidV7"));
         }
         return false;
@@ -3641,6 +4340,21 @@ bool URemoteReducers::InvokeInsertCallerOneConnectionId(const FReducerEventConte
     return true;
 }
 
+bool URemoteReducers::InvokeInsertCallerOneConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertCallerOneConnectionIdArgs& Args)
+{
+    if (!OnInsertCallerOneConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerOneConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertCallerOneConnectionId.Broadcast(Context);
+    return true;
+}
+
 void URemoteReducers::InsertCallerOneIdentity()
 {
     if (!Conn)
@@ -3661,6 +4375,21 @@ bool URemoteReducers::InvokeInsertCallerOneIdentity(const FReducerEventContext& 
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerOneIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertCallerOneIdentity.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertCallerOneIdentityWithArgs(const FReducerEventContext& Context, const FInsertCallerOneIdentityArgs& Args)
+{
+    if (!OnInsertCallerOneIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerOneIdentity"));
         }
         return false;
@@ -3699,6 +4428,21 @@ bool URemoteReducers::InvokeInsertCallerPkConnectionId(const FReducerEventContex
     return true;
 }
 
+bool URemoteReducers::InvokeInsertCallerPkConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertCallerPkConnectionIdArgs& Args)
+{
+    if (!OnInsertCallerPkConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerPkConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertCallerPkConnectionId.Broadcast(Context, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertCallerPkIdentity(const int32 Data)
 {
     if (!Conn)
@@ -3725,6 +4469,21 @@ bool URemoteReducers::InvokeInsertCallerPkIdentity(const FReducerEventContext& C
     }
 
     OnInsertCallerPkIdentity.Broadcast(Context, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertCallerPkIdentityWithArgs(const FReducerEventContext& Context, const FInsertCallerPkIdentityArgs& Args)
+{
+    if (!OnInsertCallerPkIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerPkIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertCallerPkIdentity.Broadcast(Context, Args.Data);
     return true;
 }
 
@@ -3757,6 +4516,21 @@ bool URemoteReducers::InvokeInsertCallerUniqueConnectionId(const FReducerEventCo
     return true;
 }
 
+bool URemoteReducers::InvokeInsertCallerUniqueConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertCallerUniqueConnectionIdArgs& Args)
+{
+    if (!OnInsertCallerUniqueConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertCallerUniqueConnectionId.Broadcast(Context, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertCallerUniqueIdentity(const int32 Data)
 {
     if (!Conn)
@@ -3786,6 +4560,21 @@ bool URemoteReducers::InvokeInsertCallerUniqueIdentity(const FReducerEventContex
     return true;
 }
 
+bool URemoteReducers::InvokeInsertCallerUniqueIdentityWithArgs(const FReducerEventContext& Context, const FInsertCallerUniqueIdentityArgs& Args)
+{
+    if (!OnInsertCallerUniqueIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertCallerUniqueIdentity.Broadcast(Context, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertCallerVecConnectionId()
 {
     if (!Conn)
@@ -3806,6 +4595,21 @@ bool URemoteReducers::InvokeInsertCallerVecConnectionId(const FReducerEventConte
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerVecConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertCallerVecConnectionId.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertCallerVecConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertCallerVecConnectionIdArgs& Args)
+{
+    if (!OnInsertCallerVecConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerVecConnectionId"));
         }
         return false;
@@ -3844,6 +4648,21 @@ bool URemoteReducers::InvokeInsertCallerVecIdentity(const FReducerEventContext& 
     return true;
 }
 
+bool URemoteReducers::InvokeInsertCallerVecIdentityWithArgs(const FReducerEventContext& Context, const FInsertCallerVecIdentityArgs& Args)
+{
+    if (!OnInsertCallerVecIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertCallerVecIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertCallerVecIdentity.Broadcast(Context);
+    return true;
+}
+
 void URemoteReducers::InsertIntoBtreeU32(const TArray<FBTreeU32Type>& Rows)
 {
     if (!Conn)
@@ -3870,6 +4689,21 @@ bool URemoteReducers::InvokeInsertIntoBtreeU32(const FReducerEventContext& Conte
     }
 
     OnInsertIntoBtreeU32.Broadcast(Context, Args->Rows);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertIntoBtreeU32WithArgs(const FReducerEventContext& Context, const FInsertIntoBtreeU32Args& Args)
+{
+    if (!OnInsertIntoBtreeU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertIntoBtreeU32"));
+        }
+        return false;
+    }
+
+    OnInsertIntoBtreeU32.Broadcast(Context, Args.Rows);
     return true;
 }
 
@@ -3902,6 +4736,21 @@ bool URemoteReducers::InvokeInsertIntoIndexedSimpleEnum(const FReducerEventConte
     return true;
 }
 
+bool URemoteReducers::InvokeInsertIntoIndexedSimpleEnumWithArgs(const FReducerEventContext& Context, const FInsertIntoIndexedSimpleEnumArgs& Args)
+{
+    if (!OnInsertIntoIndexedSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertIntoIndexedSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnInsertIntoIndexedSimpleEnum.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertIntoPkBtreeU32(const TArray<FPkU32Type>& PkU32, const TArray<FBTreeU32Type>& BtU32)
 {
     if (!Conn)
@@ -3928,6 +4777,21 @@ bool URemoteReducers::InvokeInsertIntoPkBtreeU32(const FReducerEventContext& Con
     }
 
     OnInsertIntoPkBtreeU32.Broadcast(Context, Args->PkU32, Args->BtU32);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertIntoPkBtreeU32WithArgs(const FReducerEventContext& Context, const FInsertIntoPkBtreeU32Args& Args)
+{
+    if (!OnInsertIntoPkBtreeU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertIntoPkBtreeU32"));
+        }
+        return false;
+    }
+
+    OnInsertIntoPkBtreeU32.Broadcast(Context, Args.PkU32, Args.BtU32);
     return true;
 }
 
@@ -3983,6 +4847,21 @@ bool URemoteReducers::InvokeInsertLargeTable(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeInsertLargeTableWithArgs(const FReducerEventContext& Context, const FInsertLargeTableArgs& Args)
+{
+    if (!OnInsertLargeTable.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertLargeTable"));
+        }
+        return false;
+    }
+
+    OnInsertLargeTable.Broadcast(Context, Args);
+    return true;
+}
+
 void URemoteReducers::InsertOneBool(const bool B)
 {
     if (!Conn)
@@ -4009,6 +4888,21 @@ bool URemoteReducers::InvokeInsertOneBool(const FReducerEventContext& Context, c
     }
 
     OnInsertOneBool.Broadcast(Context, Args->B);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneBoolWithArgs(const FReducerEventContext& Context, const FInsertOneBoolArgs& Args)
+{
+    if (!OnInsertOneBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneBool"));
+        }
+        return false;
+    }
+
+    OnInsertOneBool.Broadcast(Context, Args.B);
     return true;
 }
 
@@ -4041,6 +4935,21 @@ bool URemoteReducers::InvokeInsertOneByteStruct(const FReducerEventContext& Cont
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneByteStructWithArgs(const FReducerEventContext& Context, const FInsertOneByteStructArgs& Args)
+{
+    if (!OnInsertOneByteStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneByteStruct"));
+        }
+        return false;
+    }
+
+    OnInsertOneByteStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
 void URemoteReducers::InsertOneConnectionId(const FSpacetimeDBConnectionId& A)
 {
     if (!Conn)
@@ -4067,6 +4976,21 @@ bool URemoteReducers::InvokeInsertOneConnectionId(const FReducerEventContext& Co
     }
 
     OnInsertOneConnectionId.Broadcast(Context, Args->A);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertOneConnectionIdArgs& Args)
+{
+    if (!OnInsertOneConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertOneConnectionId.Broadcast(Context, Args.A);
     return true;
 }
 
@@ -4099,6 +5023,21 @@ bool URemoteReducers::InvokeInsertOneEnumWithPayload(const FReducerEventContext&
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneEnumWithPayloadWithArgs(const FReducerEventContext& Context, const FInsertOneEnumWithPayloadArgs& Args)
+{
+    if (!OnInsertOneEnumWithPayload.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnInsertOneEnumWithPayload.Broadcast(Context, Args.E);
+    return true;
+}
+
 void URemoteReducers::InsertOneEveryPrimitiveStruct(const FEveryPrimitiveStructType& S)
 {
     if (!Conn)
@@ -4125,6 +5064,21 @@ bool URemoteReducers::InvokeInsertOneEveryPrimitiveStruct(const FReducerEventCon
     }
 
     OnInsertOneEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FInsertOneEveryPrimitiveStructArgs& Args)
+{
+    if (!OnInsertOneEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnInsertOneEveryPrimitiveStruct.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -4157,6 +5111,21 @@ bool URemoteReducers::InvokeInsertOneEveryVecStruct(const FReducerEventContext& 
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneEveryVecStructWithArgs(const FReducerEventContext& Context, const FInsertOneEveryVecStructArgs& Args)
+{
+    if (!OnInsertOneEveryVecStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnInsertOneEveryVecStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
 void URemoteReducers::InsertOneF32(const float F)
 {
     if (!Conn)
@@ -4183,6 +5152,21 @@ bool URemoteReducers::InvokeInsertOneF32(const FReducerEventContext& Context, co
     }
 
     OnInsertOneF32.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneF32WithArgs(const FReducerEventContext& Context, const FInsertOneF32Args& Args)
+{
+    if (!OnInsertOneF32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneF32"));
+        }
+        return false;
+    }
+
+    OnInsertOneF32.Broadcast(Context, Args.F);
     return true;
 }
 
@@ -4215,6 +5199,21 @@ bool URemoteReducers::InvokeInsertOneF64(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneF64WithArgs(const FReducerEventContext& Context, const FInsertOneF64Args& Args)
+{
+    if (!OnInsertOneF64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneF64"));
+        }
+        return false;
+    }
+
+    OnInsertOneF64.Broadcast(Context, Args.F);
+    return true;
+}
+
 void URemoteReducers::InsertOneI128(const FSpacetimeDBInt128& N)
 {
     if (!Conn)
@@ -4241,6 +5240,21 @@ bool URemoteReducers::InvokeInsertOneI128(const FReducerEventContext& Context, c
     }
 
     OnInsertOneI128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneI128WithArgs(const FReducerEventContext& Context, const FInsertOneI128Args& Args)
+{
+    if (!OnInsertOneI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneI128"));
+        }
+        return false;
+    }
+
+    OnInsertOneI128.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -4273,6 +5287,21 @@ bool URemoteReducers::InvokeInsertOneI16(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneI16WithArgs(const FReducerEventContext& Context, const FInsertOneI16Args& Args)
+{
+    if (!OnInsertOneI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneI16"));
+        }
+        return false;
+    }
+
+    OnInsertOneI16.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOneI256(const FSpacetimeDBInt256& N)
 {
     if (!Conn)
@@ -4299,6 +5328,21 @@ bool URemoteReducers::InvokeInsertOneI256(const FReducerEventContext& Context, c
     }
 
     OnInsertOneI256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneI256WithArgs(const FReducerEventContext& Context, const FInsertOneI256Args& Args)
+{
+    if (!OnInsertOneI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneI256"));
+        }
+        return false;
+    }
+
+    OnInsertOneI256.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -4331,6 +5375,21 @@ bool URemoteReducers::InvokeInsertOneI32(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneI32WithArgs(const FReducerEventContext& Context, const FInsertOneI32Args& Args)
+{
+    if (!OnInsertOneI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneI32"));
+        }
+        return false;
+    }
+
+    OnInsertOneI32.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOneI64(const int64 N)
 {
     if (!Conn)
@@ -4357,6 +5416,21 @@ bool URemoteReducers::InvokeInsertOneI64(const FReducerEventContext& Context, co
     }
 
     OnInsertOneI64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneI64WithArgs(const FReducerEventContext& Context, const FInsertOneI64Args& Args)
+{
+    if (!OnInsertOneI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneI64"));
+        }
+        return false;
+    }
+
+    OnInsertOneI64.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -4389,6 +5463,21 @@ bool URemoteReducers::InvokeInsertOneI8(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneI8WithArgs(const FReducerEventContext& Context, const FInsertOneI8Args& Args)
+{
+    if (!OnInsertOneI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneI8"));
+        }
+        return false;
+    }
+
+    OnInsertOneI8.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOneIdentity(const FSpacetimeDBIdentity& I)
 {
     if (!Conn)
@@ -4415,6 +5504,21 @@ bool URemoteReducers::InvokeInsertOneIdentity(const FReducerEventContext& Contex
     }
 
     OnInsertOneIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneIdentityWithArgs(const FReducerEventContext& Context, const FInsertOneIdentityArgs& Args)
+{
+    if (!OnInsertOneIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertOneIdentity.Broadcast(Context, Args.I);
     return true;
 }
 
@@ -4447,6 +5551,21 @@ bool URemoteReducers::InvokeInsertOneSimpleEnum(const FReducerEventContext& Cont
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneSimpleEnumWithArgs(const FReducerEventContext& Context, const FInsertOneSimpleEnumArgs& Args)
+{
+    if (!OnInsertOneSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnInsertOneSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
 void URemoteReducers::InsertOneString(const FString& S)
 {
     if (!Conn)
@@ -4473,6 +5592,21 @@ bool URemoteReducers::InvokeInsertOneString(const FReducerEventContext& Context,
     }
 
     OnInsertOneString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneStringWithArgs(const FReducerEventContext& Context, const FInsertOneStringArgs& Args)
+{
+    if (!OnInsertOneString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneString"));
+        }
+        return false;
+    }
+
+    OnInsertOneString.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -4505,6 +5639,21 @@ bool URemoteReducers::InvokeInsertOneTimestamp(const FReducerEventContext& Conte
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneTimestampWithArgs(const FReducerEventContext& Context, const FInsertOneTimestampArgs& Args)
+{
+    if (!OnInsertOneTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneTimestamp"));
+        }
+        return false;
+    }
+
+    OnInsertOneTimestamp.Broadcast(Context, Args.T);
+    return true;
+}
+
 void URemoteReducers::InsertOneU128(const FSpacetimeDBUInt128& N)
 {
     if (!Conn)
@@ -4531,6 +5680,21 @@ bool URemoteReducers::InvokeInsertOneU128(const FReducerEventContext& Context, c
     }
 
     OnInsertOneU128.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneU128WithArgs(const FReducerEventContext& Context, const FInsertOneU128Args& Args)
+{
+    if (!OnInsertOneU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneU128"));
+        }
+        return false;
+    }
+
+    OnInsertOneU128.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -4563,6 +5727,21 @@ bool URemoteReducers::InvokeInsertOneU16(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneU16WithArgs(const FReducerEventContext& Context, const FInsertOneU16Args& Args)
+{
+    if (!OnInsertOneU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneU16"));
+        }
+        return false;
+    }
+
+    OnInsertOneU16.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOneU256(const FSpacetimeDBUInt256& N)
 {
     if (!Conn)
@@ -4589,6 +5768,21 @@ bool URemoteReducers::InvokeInsertOneU256(const FReducerEventContext& Context, c
     }
 
     OnInsertOneU256.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneU256WithArgs(const FReducerEventContext& Context, const FInsertOneU256Args& Args)
+{
+    if (!OnInsertOneU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneU256"));
+        }
+        return false;
+    }
+
+    OnInsertOneU256.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -4621,6 +5815,21 @@ bool URemoteReducers::InvokeInsertOneU32(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneU32WithArgs(const FReducerEventContext& Context, const FInsertOneU32Args& Args)
+{
+    if (!OnInsertOneU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneU32"));
+        }
+        return false;
+    }
+
+    OnInsertOneU32.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOneU64(const uint64 N)
 {
     if (!Conn)
@@ -4647,6 +5856,21 @@ bool URemoteReducers::InvokeInsertOneU64(const FReducerEventContext& Context, co
     }
 
     OnInsertOneU64.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneU64WithArgs(const FReducerEventContext& Context, const FInsertOneU64Args& Args)
+{
+    if (!OnInsertOneU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneU64"));
+        }
+        return false;
+    }
+
+    OnInsertOneU64.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -4679,6 +5903,21 @@ bool URemoteReducers::InvokeInsertOneU8(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneU8WithArgs(const FReducerEventContext& Context, const FInsertOneU8Args& Args)
+{
+    if (!OnInsertOneU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneU8"));
+        }
+        return false;
+    }
+
+    OnInsertOneU8.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOneUnitStruct(const FUnitStructType& S)
 {
     if (!Conn)
@@ -4705,6 +5944,21 @@ bool URemoteReducers::InvokeInsertOneUnitStruct(const FReducerEventContext& Cont
     }
 
     OnInsertOneUnitStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOneUnitStructWithArgs(const FReducerEventContext& Context, const FInsertOneUnitStructArgs& Args)
+{
+    if (!OnInsertOneUnitStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneUnitStruct"));
+        }
+        return false;
+    }
+
+    OnInsertOneUnitStruct.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -4737,6 +5991,21 @@ bool URemoteReducers::InvokeInsertOneUuid(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOneUuidWithArgs(const FReducerEventContext& Context, const FInsertOneUuidArgs& Args)
+{
+    if (!OnInsertOneUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOneUuid"));
+        }
+        return false;
+    }
+
+    OnInsertOneUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
 void URemoteReducers::InsertOptionEveryPrimitiveStruct(const FTestClientOptionalEveryPrimitiveStruct& S)
 {
     if (!Conn)
@@ -4763,6 +6032,21 @@ bool URemoteReducers::InvokeInsertOptionEveryPrimitiveStruct(const FReducerEvent
     }
 
     OnInsertOptionEveryPrimitiveStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOptionEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FInsertOptionEveryPrimitiveStructArgs& Args)
+{
+    if (!OnInsertOptionEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnInsertOptionEveryPrimitiveStruct.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -4795,6 +6079,21 @@ bool URemoteReducers::InvokeInsertOptionI32(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOptionI32WithArgs(const FReducerEventContext& Context, const FInsertOptionI32Args& Args)
+{
+    if (!OnInsertOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionI32"));
+        }
+        return false;
+    }
+
+    OnInsertOptionI32.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertOptionIdentity(const FTestClientOptionalIdentity& I)
 {
     if (!Conn)
@@ -4821,6 +6120,21 @@ bool URemoteReducers::InvokeInsertOptionIdentity(const FReducerEventContext& Con
     }
 
     OnInsertOptionIdentity.Broadcast(Context, Args->I);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOptionIdentityWithArgs(const FReducerEventContext& Context, const FInsertOptionIdentityArgs& Args)
+{
+    if (!OnInsertOptionIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertOptionIdentity.Broadcast(Context, Args.I);
     return true;
 }
 
@@ -4853,6 +6167,21 @@ bool URemoteReducers::InvokeInsertOptionSimpleEnum(const FReducerEventContext& C
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOptionSimpleEnumWithArgs(const FReducerEventContext& Context, const FInsertOptionSimpleEnumArgs& Args)
+{
+    if (!OnInsertOptionSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnInsertOptionSimpleEnum.Broadcast(Context, Args.E);
+    return true;
+}
+
 void URemoteReducers::InsertOptionString(const FTestClientOptionalString& S)
 {
     if (!Conn)
@@ -4879,6 +6208,21 @@ bool URemoteReducers::InvokeInsertOptionString(const FReducerEventContext& Conte
     }
 
     OnInsertOptionString.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOptionStringWithArgs(const FReducerEventContext& Context, const FInsertOptionStringArgs& Args)
+{
+    if (!OnInsertOptionString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionString"));
+        }
+        return false;
+    }
+
+    OnInsertOptionString.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -4911,6 +6255,21 @@ bool URemoteReducers::InvokeInsertOptionUuid(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeInsertOptionUuidWithArgs(const FReducerEventContext& Context, const FInsertOptionUuidArgs& Args)
+{
+    if (!OnInsertOptionUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionUuid"));
+        }
+        return false;
+    }
+
+    OnInsertOptionUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
 void URemoteReducers::InsertOptionVecOptionI32(const FTestClientOptionalVecOptionalInt32& V)
 {
     if (!Conn)
@@ -4937,6 +6296,21 @@ bool URemoteReducers::InvokeInsertOptionVecOptionI32(const FReducerEventContext&
     }
 
     OnInsertOptionVecOptionI32.Broadcast(Context, Args->V);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertOptionVecOptionI32WithArgs(const FReducerEventContext& Context, const FInsertOptionVecOptionI32Args& Args)
+{
+    if (!OnInsertOptionVecOptionI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertOptionVecOptionI32"));
+        }
+        return false;
+    }
+
+    OnInsertOptionVecOptionI32.Broadcast(Context, Args.V);
     return true;
 }
 
@@ -4969,6 +6343,21 @@ bool URemoteReducers::InvokeInsertPkBool(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkBoolWithArgs(const FReducerEventContext& Context, const FInsertPkBoolArgs& Args)
+{
+    if (!OnInsertPkBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkBool"));
+        }
+        return false;
+    }
+
+    OnInsertPkBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkConnectionId(const FSpacetimeDBConnectionId& A, const int32 Data)
 {
     if (!Conn)
@@ -4995,6 +6384,21 @@ bool URemoteReducers::InvokeInsertPkConnectionId(const FReducerEventContext& Con
     }
 
     OnInsertPkConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertPkConnectionIdArgs& Args)
+{
+    if (!OnInsertPkConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertPkConnectionId.Broadcast(Context, Args.A, Args.Data);
     return true;
 }
 
@@ -5027,6 +6431,21 @@ bool URemoteReducers::InvokeInsertPkI128(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkI128WithArgs(const FReducerEventContext& Context, const FInsertPkI128Args& Args)
+{
+    if (!OnInsertPkI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkI128"));
+        }
+        return false;
+    }
+
+    OnInsertPkI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkI16(const int16 N, const int32 Data)
 {
     if (!Conn)
@@ -5053,6 +6472,21 @@ bool URemoteReducers::InvokeInsertPkI16(const FReducerEventContext& Context, con
     }
 
     OnInsertPkI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkI16WithArgs(const FReducerEventContext& Context, const FInsertPkI16Args& Args)
+{
+    if (!OnInsertPkI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkI16"));
+        }
+        return false;
+    }
+
+    OnInsertPkI16.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5085,6 +6519,21 @@ bool URemoteReducers::InvokeInsertPkI256(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkI256WithArgs(const FReducerEventContext& Context, const FInsertPkI256Args& Args)
+{
+    if (!OnInsertPkI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkI256"));
+        }
+        return false;
+    }
+
+    OnInsertPkI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkI32(const int32 N, const int32 Data)
 {
     if (!Conn)
@@ -5111,6 +6560,21 @@ bool URemoteReducers::InvokeInsertPkI32(const FReducerEventContext& Context, con
     }
 
     OnInsertPkI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkI32WithArgs(const FReducerEventContext& Context, const FInsertPkI32Args& Args)
+{
+    if (!OnInsertPkI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkI32"));
+        }
+        return false;
+    }
+
+    OnInsertPkI32.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5143,6 +6607,21 @@ bool URemoteReducers::InvokeInsertPkI64(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkI64WithArgs(const FReducerEventContext& Context, const FInsertPkI64Args& Args)
+{
+    if (!OnInsertPkI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkI64"));
+        }
+        return false;
+    }
+
+    OnInsertPkI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkI8(const int8 N, const int32 Data)
 {
     if (!Conn)
@@ -5169,6 +6648,21 @@ bool URemoteReducers::InvokeInsertPkI8(const FReducerEventContext& Context, cons
     }
 
     OnInsertPkI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkI8WithArgs(const FReducerEventContext& Context, const FInsertPkI8Args& Args)
+{
+    if (!OnInsertPkI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkI8"));
+        }
+        return false;
+    }
+
+    OnInsertPkI8.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5201,6 +6695,21 @@ bool URemoteReducers::InvokeInsertPkIdentity(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkIdentityWithArgs(const FReducerEventContext& Context, const FInsertPkIdentityArgs& Args)
+{
+    if (!OnInsertPkIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertPkIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkSimpleEnum(const ESimpleEnumType& A, const int32 Data)
 {
     if (!Conn)
@@ -5227,6 +6736,21 @@ bool URemoteReducers::InvokeInsertPkSimpleEnum(const FReducerEventContext& Conte
     }
 
     OnInsertPkSimpleEnum.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkSimpleEnumWithArgs(const FReducerEventContext& Context, const FInsertPkSimpleEnumArgs& Args)
+{
+    if (!OnInsertPkSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnInsertPkSimpleEnum.Broadcast(Context, Args.A, Args.Data);
     return true;
 }
 
@@ -5259,6 +6783,21 @@ bool URemoteReducers::InvokeInsertPkString(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkStringWithArgs(const FReducerEventContext& Context, const FInsertPkStringArgs& Args)
+{
+    if (!OnInsertPkString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkString"));
+        }
+        return false;
+    }
+
+    OnInsertPkString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkU128(const FSpacetimeDBUInt128& N, const int32 Data)
 {
     if (!Conn)
@@ -5285,6 +6824,21 @@ bool URemoteReducers::InvokeInsertPkU128(const FReducerEventContext& Context, co
     }
 
     OnInsertPkU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkU128WithArgs(const FReducerEventContext& Context, const FInsertPkU128Args& Args)
+{
+    if (!OnInsertPkU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU128"));
+        }
+        return false;
+    }
+
+    OnInsertPkU128.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5317,6 +6871,21 @@ bool URemoteReducers::InvokeInsertPkU16(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkU16WithArgs(const FReducerEventContext& Context, const FInsertPkU16Args& Args)
+{
+    if (!OnInsertPkU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU16"));
+        }
+        return false;
+    }
+
+    OnInsertPkU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkU256(const FSpacetimeDBUInt256& N, const int32 Data)
 {
     if (!Conn)
@@ -5343,6 +6912,21 @@ bool URemoteReducers::InvokeInsertPkU256(const FReducerEventContext& Context, co
     }
 
     OnInsertPkU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkU256WithArgs(const FReducerEventContext& Context, const FInsertPkU256Args& Args)
+{
+    if (!OnInsertPkU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU256"));
+        }
+        return false;
+    }
+
+    OnInsertPkU256.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5375,6 +6959,21 @@ bool URemoteReducers::InvokeInsertPkU32(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkU32WithArgs(const FReducerEventContext& Context, const FInsertPkU32Args& Args)
+{
+    if (!OnInsertPkU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU32"));
+        }
+        return false;
+    }
+
+    OnInsertPkU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkU32Two(const uint32 N, const int32 Data)
 {
     if (!Conn)
@@ -5401,6 +7000,21 @@ bool URemoteReducers::InvokeInsertPkU32Two(const FReducerEventContext& Context, 
     }
 
     OnInsertPkU32Two.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkU32TwoWithArgs(const FReducerEventContext& Context, const FInsertPkU32TwoArgs& Args)
+{
+    if (!OnInsertPkU32Two.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU32Two"));
+        }
+        return false;
+    }
+
+    OnInsertPkU32Two.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5433,6 +7047,21 @@ bool URemoteReducers::InvokeInsertPkU64(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkU64WithArgs(const FReducerEventContext& Context, const FInsertPkU64Args& Args)
+{
+    if (!OnInsertPkU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU64"));
+        }
+        return false;
+    }
+
+    OnInsertPkU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPkU8(const uint8 N, const int32 Data)
 {
     if (!Conn)
@@ -5459,6 +7088,21 @@ bool URemoteReducers::InvokeInsertPkU8(const FReducerEventContext& Context, cons
     }
 
     OnInsertPkU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPkU8WithArgs(const FReducerEventContext& Context, const FInsertPkU8Args& Args)
+{
+    if (!OnInsertPkU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkU8"));
+        }
+        return false;
+    }
+
+    OnInsertPkU8.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5491,6 +7135,21 @@ bool URemoteReducers::InvokeInsertPkUuid(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertPkUuidWithArgs(const FReducerEventContext& Context, const FInsertPkUuidArgs& Args)
+{
+    if (!OnInsertPkUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPkUuid"));
+        }
+        return false;
+    }
+
+    OnInsertPkUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertPrimitivesAsStrings(const FEveryPrimitiveStructType& S)
 {
     if (!Conn)
@@ -5517,6 +7176,285 @@ bool URemoteReducers::InvokeInsertPrimitivesAsStrings(const FReducerEventContext
     }
 
     OnInsertPrimitivesAsStrings.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertPrimitivesAsStringsWithArgs(const FReducerEventContext& Context, const FInsertPrimitivesAsStringsArgs& Args)
+{
+    if (!OnInsertPrimitivesAsStrings.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertPrimitivesAsStrings"));
+        }
+        return false;
+    }
+
+    OnInsertPrimitivesAsStrings.Broadcast(Context, Args.S);
+    return true;
+}
+
+void URemoteReducers::InsertResultEveryPrimitiveStructString(const FTestClientResultEveryPrimitiveStructString& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_every_primitive_struct_string"), FInsertResultEveryPrimitiveStructStringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultEveryPrimitiveStructString(const FReducerEventContext& Context, const UInsertResultEveryPrimitiveStructStringReducer* Args)
+{
+    if (!OnInsertResultEveryPrimitiveStructString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultEveryPrimitiveStructString"));
+        }
+        return false;
+    }
+
+    OnInsertResultEveryPrimitiveStructString.Broadcast(Context, Args->R);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertResultEveryPrimitiveStructStringWithArgs(const FReducerEventContext& Context, const FInsertResultEveryPrimitiveStructStringArgs& Args)
+{
+    if (!OnInsertResultEveryPrimitiveStructString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultEveryPrimitiveStructString"));
+        }
+        return false;
+    }
+
+    OnInsertResultEveryPrimitiveStructString.Broadcast(Context, Args.R);
+    return true;
+}
+
+void URemoteReducers::InsertResultI32String(const FTestClientResultInt32String& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_i32_string"), FInsertResultI32StringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultI32String(const FReducerEventContext& Context, const UInsertResultI32StringReducer* Args)
+{
+    if (!OnInsertResultI32String.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultI32String"));
+        }
+        return false;
+    }
+
+    OnInsertResultI32String.Broadcast(Context, Args->R);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertResultI32StringWithArgs(const FReducerEventContext& Context, const FInsertResultI32StringArgs& Args)
+{
+    if (!OnInsertResultI32String.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultI32String"));
+        }
+        return false;
+    }
+
+    OnInsertResultI32String.Broadcast(Context, Args.R);
+    return true;
+}
+
+void URemoteReducers::InsertResultIdentityString(const FTestClientResultIdentityString& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_identity_string"), FInsertResultIdentityStringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultIdentityString(const FReducerEventContext& Context, const UInsertResultIdentityStringReducer* Args)
+{
+    if (!OnInsertResultIdentityString.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultIdentityString"));
+        }
+        return false;
+    }
+
+    OnInsertResultIdentityString.Broadcast(Context, Args->R);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertResultIdentityStringWithArgs(const FReducerEventContext& Context, const FInsertResultIdentityStringArgs& Args)
+{
+    if (!OnInsertResultIdentityString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultIdentityString"));
+        }
+        return false;
+    }
+
+    OnInsertResultIdentityString.Broadcast(Context, Args.R);
+    return true;
+}
+
+void URemoteReducers::InsertResultSimpleEnumI32(const FTestClientResultSimpleEnumInt32& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_simple_enum_i32"), FInsertResultSimpleEnumI32Args(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultSimpleEnumI32(const FReducerEventContext& Context, const UInsertResultSimpleEnumI32Reducer* Args)
+{
+    if (!OnInsertResultSimpleEnumI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultSimpleEnumI32"));
+        }
+        return false;
+    }
+
+    OnInsertResultSimpleEnumI32.Broadcast(Context, Args->R);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertResultSimpleEnumI32WithArgs(const FReducerEventContext& Context, const FInsertResultSimpleEnumI32Args& Args)
+{
+    if (!OnInsertResultSimpleEnumI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultSimpleEnumI32"));
+        }
+        return false;
+    }
+
+    OnInsertResultSimpleEnumI32.Broadcast(Context, Args.R);
+    return true;
+}
+
+void URemoteReducers::InsertResultStringI32(const FTestClientResultStringInt32& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_string_i32"), FInsertResultStringI32Args(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultStringI32(const FReducerEventContext& Context, const UInsertResultStringI32Reducer* Args)
+{
+    if (!OnInsertResultStringI32.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultStringI32"));
+        }
+        return false;
+    }
+
+    OnInsertResultStringI32.Broadcast(Context, Args->R);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertResultStringI32WithArgs(const FReducerEventContext& Context, const FInsertResultStringI32Args& Args)
+{
+    if (!OnInsertResultStringI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultStringI32"));
+        }
+        return false;
+    }
+
+    OnInsertResultStringI32.Broadcast(Context, Args.R);
+    return true;
+}
+
+void URemoteReducers::InsertResultVecI32String(const FTestClientResultVecInt32String& R)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("insert_result_vec_i32_string"), FInsertResultVecI32StringArgs(R), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeInsertResultVecI32String(const FReducerEventContext& Context, const UInsertResultVecI32StringReducer* Args)
+{
+    if (!OnInsertResultVecI32String.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultVecI32String"));
+        }
+        return false;
+    }
+
+    OnInsertResultVecI32String.Broadcast(Context, Args->R);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertResultVecI32StringWithArgs(const FReducerEventContext& Context, const FInsertResultVecI32StringArgs& Args)
+{
+    if (!OnInsertResultVecI32String.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertResultVecI32String"));
+        }
+        return false;
+    }
+
+    OnInsertResultVecI32String.Broadcast(Context, Args.R);
     return true;
 }
 
@@ -5549,6 +7487,21 @@ bool URemoteReducers::InvokeInsertTableHoldsTable(const FReducerEventContext& Co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertTableHoldsTableWithArgs(const FReducerEventContext& Context, const FInsertTableHoldsTableArgs& Args)
+{
+    if (!OnInsertTableHoldsTable.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertTableHoldsTable"));
+        }
+        return false;
+    }
+
+    OnInsertTableHoldsTable.Broadcast(Context, Args.A, Args.B);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueBool(const bool B, const int32 Data)
 {
     if (!Conn)
@@ -5575,6 +7528,21 @@ bool URemoteReducers::InvokeInsertUniqueBool(const FReducerEventContext& Context
     }
 
     OnInsertUniqueBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueBoolWithArgs(const FReducerEventContext& Context, const FInsertUniqueBoolArgs& Args)
+{
+    if (!OnInsertUniqueBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueBool"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueBool.Broadcast(Context, Args.B, Args.Data);
     return true;
 }
 
@@ -5607,6 +7575,21 @@ bool URemoteReducers::InvokeInsertUniqueConnectionId(const FReducerEventContext&
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertUniqueConnectionIdArgs& Args)
+{
+    if (!OnInsertUniqueConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueI128(const FSpacetimeDBInt128& N, const int32 Data)
 {
     if (!Conn)
@@ -5633,6 +7616,21 @@ bool URemoteReducers::InvokeInsertUniqueI128(const FReducerEventContext& Context
     }
 
     OnInsertUniqueI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueI128WithArgs(const FReducerEventContext& Context, const FInsertUniqueI128Args& Args)
+{
+    if (!OnInsertUniqueI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueI128"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueI128.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5665,6 +7663,21 @@ bool URemoteReducers::InvokeInsertUniqueI16(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueI16WithArgs(const FReducerEventContext& Context, const FInsertUniqueI16Args& Args)
+{
+    if (!OnInsertUniqueI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueI16"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueI256(const FSpacetimeDBInt256& N, const int32 Data)
 {
     if (!Conn)
@@ -5691,6 +7704,21 @@ bool URemoteReducers::InvokeInsertUniqueI256(const FReducerEventContext& Context
     }
 
     OnInsertUniqueI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueI256WithArgs(const FReducerEventContext& Context, const FInsertUniqueI256Args& Args)
+{
+    if (!OnInsertUniqueI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueI256"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueI256.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5723,6 +7751,21 @@ bool URemoteReducers::InvokeInsertUniqueI32(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueI32WithArgs(const FReducerEventContext& Context, const FInsertUniqueI32Args& Args)
+{
+    if (!OnInsertUniqueI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueI32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueI64(const int64 N, const int32 Data)
 {
     if (!Conn)
@@ -5749,6 +7792,21 @@ bool URemoteReducers::InvokeInsertUniqueI64(const FReducerEventContext& Context,
     }
 
     OnInsertUniqueI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueI64WithArgs(const FReducerEventContext& Context, const FInsertUniqueI64Args& Args)
+{
+    if (!OnInsertUniqueI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueI64"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueI64.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5781,6 +7839,21 @@ bool URemoteReducers::InvokeInsertUniqueI8(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueI8WithArgs(const FReducerEventContext& Context, const FInsertUniqueI8Args& Args)
+{
+    if (!OnInsertUniqueI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueI8"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueIdentity(const FSpacetimeDBIdentity& I, const int32 Data)
 {
     if (!Conn)
@@ -5807,6 +7880,21 @@ bool URemoteReducers::InvokeInsertUniqueIdentity(const FReducerEventContext& Con
     }
 
     OnInsertUniqueIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueIdentityWithArgs(const FReducerEventContext& Context, const FInsertUniqueIdentityArgs& Args)
+{
+    if (!OnInsertUniqueIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueIdentity.Broadcast(Context, Args.I, Args.Data);
     return true;
 }
 
@@ -5839,6 +7927,21 @@ bool URemoteReducers::InvokeInsertUniqueString(const FReducerEventContext& Conte
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueStringWithArgs(const FReducerEventContext& Context, const FInsertUniqueStringArgs& Args)
+{
+    if (!OnInsertUniqueString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueString"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueString.Broadcast(Context, Args.S, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueU128(const FSpacetimeDBUInt128& N, const int32 Data)
 {
     if (!Conn)
@@ -5865,6 +7968,21 @@ bool URemoteReducers::InvokeInsertUniqueU128(const FReducerEventContext& Context
     }
 
     OnInsertUniqueU128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueU128WithArgs(const FReducerEventContext& Context, const FInsertUniqueU128Args& Args)
+{
+    if (!OnInsertUniqueU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU128"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU128.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5897,6 +8015,21 @@ bool URemoteReducers::InvokeInsertUniqueU16(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueU16WithArgs(const FReducerEventContext& Context, const FInsertUniqueU16Args& Args)
+{
+    if (!OnInsertUniqueU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU16"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueU256(const FSpacetimeDBUInt256& N, const int32 Data)
 {
     if (!Conn)
@@ -5923,6 +8056,21 @@ bool URemoteReducers::InvokeInsertUniqueU256(const FReducerEventContext& Context
     }
 
     OnInsertUniqueU256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueU256WithArgs(const FReducerEventContext& Context, const FInsertUniqueU256Args& Args)
+{
+    if (!OnInsertUniqueU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU256"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU256.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -5955,6 +8103,21 @@ bool URemoteReducers::InvokeInsertUniqueU32(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueU32WithArgs(const FReducerEventContext& Context, const FInsertUniqueU32Args& Args)
+{
+    if (!OnInsertUniqueU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueU32UpdatePkU32(const uint32 N, const int32 DUnique, const int32 DPk)
 {
     if (!Conn)
@@ -5981,6 +8144,21 @@ bool URemoteReducers::InvokeInsertUniqueU32UpdatePkU32(const FReducerEventContex
     }
 
     OnInsertUniqueU32UpdatePkU32.Broadcast(Context, Args->N, Args->DUnique, Args->DPk);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueU32UpdatePkU32WithArgs(const FReducerEventContext& Context, const FInsertUniqueU32UpdatePkU32Args& Args)
+{
+    if (!OnInsertUniqueU32UpdatePkU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU32UpdatePkU32"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU32UpdatePkU32.Broadcast(Context, Args.N, Args.DUnique, Args.DPk);
     return true;
 }
 
@@ -6013,6 +8191,21 @@ bool URemoteReducers::InvokeInsertUniqueU64(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueU64WithArgs(const FReducerEventContext& Context, const FInsertUniqueU64Args& Args)
+{
+    if (!OnInsertUniqueU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU64"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUniqueU8(const uint8 N, const int32 Data)
 {
     if (!Conn)
@@ -6039,6 +8232,21 @@ bool URemoteReducers::InvokeInsertUniqueU8(const FReducerEventContext& Context, 
     }
 
     OnInsertUniqueU8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUniqueU8WithArgs(const FReducerEventContext& Context, const FInsertUniqueU8Args& Args)
+{
+    if (!OnInsertUniqueU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueU8"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueU8.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -6071,6 +8279,21 @@ bool URemoteReducers::InvokeInsertUniqueUuid(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeInsertUniqueUuidWithArgs(const FReducerEventContext& Context, const FInsertUniqueUuidArgs& Args)
+{
+    if (!OnInsertUniqueUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnInsertUniqueUuid.Broadcast(Context, Args.U, Args.Data);
+    return true;
+}
+
 void URemoteReducers::InsertUser(const FString& Name, const FSpacetimeDBIdentity& Identity)
 {
     if (!Conn)
@@ -6097,6 +8320,21 @@ bool URemoteReducers::InvokeInsertUser(const FReducerEventContext& Context, cons
     }
 
     OnInsertUser.Broadcast(Context, Args->Name, Args->Identity);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertUserWithArgs(const FReducerEventContext& Context, const FInsertUserArgs& Args)
+{
+    if (!OnInsertUser.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertUser"));
+        }
+        return false;
+    }
+
+    OnInsertUser.Broadcast(Context, Args.Name, Args.Identity);
     return true;
 }
 
@@ -6129,6 +8367,21 @@ bool URemoteReducers::InvokeInsertVecBool(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecBoolWithArgs(const FReducerEventContext& Context, const FInsertVecBoolArgs& Args)
+{
+    if (!OnInsertVecBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecBool"));
+        }
+        return false;
+    }
+
+    OnInsertVecBool.Broadcast(Context, Args.B);
+    return true;
+}
+
 void URemoteReducers::InsertVecByteStruct(const TArray<FByteStructType>& S)
 {
     if (!Conn)
@@ -6155,6 +8408,21 @@ bool URemoteReducers::InvokeInsertVecByteStruct(const FReducerEventContext& Cont
     }
 
     OnInsertVecByteStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecByteStructWithArgs(const FReducerEventContext& Context, const FInsertVecByteStructArgs& Args)
+{
+    if (!OnInsertVecByteStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecByteStruct"));
+        }
+        return false;
+    }
+
+    OnInsertVecByteStruct.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -6187,6 +8455,21 @@ bool URemoteReducers::InvokeInsertVecConnectionId(const FReducerEventContext& Co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecConnectionIdWithArgs(const FReducerEventContext& Context, const FInsertVecConnectionIdArgs& Args)
+{
+    if (!OnInsertVecConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecConnectionId"));
+        }
+        return false;
+    }
+
+    OnInsertVecConnectionId.Broadcast(Context, Args.A);
+    return true;
+}
+
 void URemoteReducers::InsertVecEnumWithPayload(const TArray<FEnumWithPayloadType>& E)
 {
     if (!Conn)
@@ -6213,6 +8496,21 @@ bool URemoteReducers::InvokeInsertVecEnumWithPayload(const FReducerEventContext&
     }
 
     OnInsertVecEnumWithPayload.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecEnumWithPayloadWithArgs(const FReducerEventContext& Context, const FInsertVecEnumWithPayloadArgs& Args)
+{
+    if (!OnInsertVecEnumWithPayload.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecEnumWithPayload"));
+        }
+        return false;
+    }
+
+    OnInsertVecEnumWithPayload.Broadcast(Context, Args.E);
     return true;
 }
 
@@ -6245,6 +8543,21 @@ bool URemoteReducers::InvokeInsertVecEveryPrimitiveStruct(const FReducerEventCon
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecEveryPrimitiveStructWithArgs(const FReducerEventContext& Context, const FInsertVecEveryPrimitiveStructArgs& Args)
+{
+    if (!OnInsertVecEveryPrimitiveStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecEveryPrimitiveStruct"));
+        }
+        return false;
+    }
+
+    OnInsertVecEveryPrimitiveStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
 void URemoteReducers::InsertVecEveryVecStruct(const TArray<FEveryVecStructType>& S)
 {
     if (!Conn)
@@ -6271,6 +8584,21 @@ bool URemoteReducers::InvokeInsertVecEveryVecStruct(const FReducerEventContext& 
     }
 
     OnInsertVecEveryVecStruct.Broadcast(Context, Args->S);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecEveryVecStructWithArgs(const FReducerEventContext& Context, const FInsertVecEveryVecStructArgs& Args)
+{
+    if (!OnInsertVecEveryVecStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecEveryVecStruct"));
+        }
+        return false;
+    }
+
+    OnInsertVecEveryVecStruct.Broadcast(Context, Args.S);
     return true;
 }
 
@@ -6303,6 +8631,21 @@ bool URemoteReducers::InvokeInsertVecF32(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecF32WithArgs(const FReducerEventContext& Context, const FInsertVecF32Args& Args)
+{
+    if (!OnInsertVecF32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecF32"));
+        }
+        return false;
+    }
+
+    OnInsertVecF32.Broadcast(Context, Args.F);
+    return true;
+}
+
 void URemoteReducers::InsertVecF64(const TArray<double>& F)
 {
     if (!Conn)
@@ -6329,6 +8672,21 @@ bool URemoteReducers::InvokeInsertVecF64(const FReducerEventContext& Context, co
     }
 
     OnInsertVecF64.Broadcast(Context, Args->F);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecF64WithArgs(const FReducerEventContext& Context, const FInsertVecF64Args& Args)
+{
+    if (!OnInsertVecF64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecF64"));
+        }
+        return false;
+    }
+
+    OnInsertVecF64.Broadcast(Context, Args.F);
     return true;
 }
 
@@ -6361,6 +8719,21 @@ bool URemoteReducers::InvokeInsertVecI128(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecI128WithArgs(const FReducerEventContext& Context, const FInsertVecI128Args& Args)
+{
+    if (!OnInsertVecI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecI128"));
+        }
+        return false;
+    }
+
+    OnInsertVecI128.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertVecI16(const TArray<int16>& N)
 {
     if (!Conn)
@@ -6387,6 +8760,21 @@ bool URemoteReducers::InvokeInsertVecI16(const FReducerEventContext& Context, co
     }
 
     OnInsertVecI16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecI16WithArgs(const FReducerEventContext& Context, const FInsertVecI16Args& Args)
+{
+    if (!OnInsertVecI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecI16"));
+        }
+        return false;
+    }
+
+    OnInsertVecI16.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -6419,6 +8807,21 @@ bool URemoteReducers::InvokeInsertVecI256(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecI256WithArgs(const FReducerEventContext& Context, const FInsertVecI256Args& Args)
+{
+    if (!OnInsertVecI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecI256"));
+        }
+        return false;
+    }
+
+    OnInsertVecI256.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertVecI32(const TArray<int32>& N)
 {
     if (!Conn)
@@ -6445,6 +8848,21 @@ bool URemoteReducers::InvokeInsertVecI32(const FReducerEventContext& Context, co
     }
 
     OnInsertVecI32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecI32WithArgs(const FReducerEventContext& Context, const FInsertVecI32Args& Args)
+{
+    if (!OnInsertVecI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecI32"));
+        }
+        return false;
+    }
+
+    OnInsertVecI32.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -6477,6 +8895,21 @@ bool URemoteReducers::InvokeInsertVecI64(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecI64WithArgs(const FReducerEventContext& Context, const FInsertVecI64Args& Args)
+{
+    if (!OnInsertVecI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecI64"));
+        }
+        return false;
+    }
+
+    OnInsertVecI64.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertVecI8(const TArray<int8>& N)
 {
     if (!Conn)
@@ -6503,6 +8936,21 @@ bool URemoteReducers::InvokeInsertVecI8(const FReducerEventContext& Context, con
     }
 
     OnInsertVecI8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecI8WithArgs(const FReducerEventContext& Context, const FInsertVecI8Args& Args)
+{
+    if (!OnInsertVecI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecI8"));
+        }
+        return false;
+    }
+
+    OnInsertVecI8.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -6535,6 +8983,21 @@ bool URemoteReducers::InvokeInsertVecIdentity(const FReducerEventContext& Contex
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecIdentityWithArgs(const FReducerEventContext& Context, const FInsertVecIdentityArgs& Args)
+{
+    if (!OnInsertVecIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecIdentity"));
+        }
+        return false;
+    }
+
+    OnInsertVecIdentity.Broadcast(Context, Args.I);
+    return true;
+}
+
 void URemoteReducers::InsertVecSimpleEnum(const TArray<ESimpleEnumType>& E)
 {
     if (!Conn)
@@ -6561,6 +9024,21 @@ bool URemoteReducers::InvokeInsertVecSimpleEnum(const FReducerEventContext& Cont
     }
 
     OnInsertVecSimpleEnum.Broadcast(Context, Args->E);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecSimpleEnumWithArgs(const FReducerEventContext& Context, const FInsertVecSimpleEnumArgs& Args)
+{
+    if (!OnInsertVecSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnInsertVecSimpleEnum.Broadcast(Context, Args.E);
     return true;
 }
 
@@ -6593,6 +9071,21 @@ bool URemoteReducers::InvokeInsertVecString(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecStringWithArgs(const FReducerEventContext& Context, const FInsertVecStringArgs& Args)
+{
+    if (!OnInsertVecString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecString"));
+        }
+        return false;
+    }
+
+    OnInsertVecString.Broadcast(Context, Args.S);
+    return true;
+}
+
 void URemoteReducers::InsertVecTimestamp(const TArray<FSpacetimeDBTimestamp>& T)
 {
     if (!Conn)
@@ -6619,6 +9112,21 @@ bool URemoteReducers::InvokeInsertVecTimestamp(const FReducerEventContext& Conte
     }
 
     OnInsertVecTimestamp.Broadcast(Context, Args->T);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecTimestampWithArgs(const FReducerEventContext& Context, const FInsertVecTimestampArgs& Args)
+{
+    if (!OnInsertVecTimestamp.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecTimestamp"));
+        }
+        return false;
+    }
+
+    OnInsertVecTimestamp.Broadcast(Context, Args.T);
     return true;
 }
 
@@ -6651,6 +9159,21 @@ bool URemoteReducers::InvokeInsertVecU128(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecU128WithArgs(const FReducerEventContext& Context, const FInsertVecU128Args& Args)
+{
+    if (!OnInsertVecU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecU128"));
+        }
+        return false;
+    }
+
+    OnInsertVecU128.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertVecU16(const TArray<uint16>& N)
 {
     if (!Conn)
@@ -6677,6 +9200,21 @@ bool URemoteReducers::InvokeInsertVecU16(const FReducerEventContext& Context, co
     }
 
     OnInsertVecU16.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecU16WithArgs(const FReducerEventContext& Context, const FInsertVecU16Args& Args)
+{
+    if (!OnInsertVecU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecU16"));
+        }
+        return false;
+    }
+
+    OnInsertVecU16.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -6709,6 +9247,21 @@ bool URemoteReducers::InvokeInsertVecU256(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecU256WithArgs(const FReducerEventContext& Context, const FInsertVecU256Args& Args)
+{
+    if (!OnInsertVecU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecU256"));
+        }
+        return false;
+    }
+
+    OnInsertVecU256.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertVecU32(const TArray<uint32>& N)
 {
     if (!Conn)
@@ -6735,6 +9288,21 @@ bool URemoteReducers::InvokeInsertVecU32(const FReducerEventContext& Context, co
     }
 
     OnInsertVecU32.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecU32WithArgs(const FReducerEventContext& Context, const FInsertVecU32Args& Args)
+{
+    if (!OnInsertVecU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecU32"));
+        }
+        return false;
+    }
+
+    OnInsertVecU32.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -6767,6 +9335,21 @@ bool URemoteReducers::InvokeInsertVecU64(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecU64WithArgs(const FReducerEventContext& Context, const FInsertVecU64Args& Args)
+{
+    if (!OnInsertVecU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecU64"));
+        }
+        return false;
+    }
+
+    OnInsertVecU64.Broadcast(Context, Args.N);
+    return true;
+}
+
 void URemoteReducers::InsertVecU8(const TArray<uint8>& N)
 {
     if (!Conn)
@@ -6793,6 +9376,21 @@ bool URemoteReducers::InvokeInsertVecU8(const FReducerEventContext& Context, con
     }
 
     OnInsertVecU8.Broadcast(Context, Args->N);
+    return true;
+}
+
+bool URemoteReducers::InvokeInsertVecU8WithArgs(const FReducerEventContext& Context, const FInsertVecU8Args& Args)
+{
+    if (!OnInsertVecU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecU8"));
+        }
+        return false;
+    }
+
+    OnInsertVecU8.Broadcast(Context, Args.N);
     return true;
 }
 
@@ -6825,6 +9423,21 @@ bool URemoteReducers::InvokeInsertVecUnitStruct(const FReducerEventContext& Cont
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecUnitStructWithArgs(const FReducerEventContext& Context, const FInsertVecUnitStructArgs& Args)
+{
+    if (!OnInsertVecUnitStruct.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecUnitStruct"));
+        }
+        return false;
+    }
+
+    OnInsertVecUnitStruct.Broadcast(Context, Args.S);
+    return true;
+}
+
 void URemoteReducers::InsertVecUuid(const TArray<FSpacetimeDBUuid>& U)
 {
     if (!Conn)
@@ -6854,6 +9467,21 @@ bool URemoteReducers::InvokeInsertVecUuid(const FReducerEventContext& Context, c
     return true;
 }
 
+bool URemoteReducers::InvokeInsertVecUuidWithArgs(const FReducerEventContext& Context, const FInsertVecUuidArgs& Args)
+{
+    if (!OnInsertVecUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for InsertVecUuid"));
+        }
+        return false;
+    }
+
+    OnInsertVecUuid.Broadcast(Context, Args.U);
+    return true;
+}
+
 void URemoteReducers::NoOpSucceeds()
 {
     if (!Conn)
@@ -6874,6 +9502,21 @@ bool URemoteReducers::InvokeNoOpSucceeds(const FReducerEventContext& Context, co
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for NoOpSucceeds"));
+        }
+        return false;
+    }
+
+    OnNoOpSucceeds.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeNoOpSucceedsWithArgs(const FReducerEventContext& Context, const FNoOpSucceedsArgs& Args)
+{
+    if (!OnNoOpSucceeds.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for NoOpSucceeds"));
         }
         return false;
@@ -6912,6 +9555,21 @@ bool URemoteReducers::InvokeSendScheduledMessage(const FReducerEventContext& Con
     return true;
 }
 
+bool URemoteReducers::InvokeSendScheduledMessageWithArgs(const FReducerEventContext& Context, const FSendScheduledMessageArgs& Args)
+{
+    if (!OnSendScheduledMessage.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SendScheduledMessage"));
+        }
+        return false;
+    }
+
+    OnSendScheduledMessage.Broadcast(Context, Args.Arg);
+    return true;
+}
+
 void URemoteReducers::SortedUuidsInsert()
 {
     if (!Conn)
@@ -6932,6 +9590,21 @@ bool URemoteReducers::InvokeSortedUuidsInsert(const FReducerEventContext& Contex
         {
             // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
             // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SortedUuidsInsert"));
+        }
+        return false;
+    }
+
+    OnSortedUuidsInsert.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeSortedUuidsInsertWithArgs(const FReducerEventContext& Context, const FSortedUuidsInsertArgs& Args)
+{
+    if (!OnSortedUuidsInsert.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
             InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for SortedUuidsInsert"));
         }
         return false;
@@ -6970,6 +9643,21 @@ bool URemoteReducers::InvokeUpdateIndexedSimpleEnum(const FReducerEventContext& 
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateIndexedSimpleEnumWithArgs(const FReducerEventContext& Context, const FUpdateIndexedSimpleEnumArgs& Args)
+{
+    if (!OnUpdateIndexedSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateIndexedSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnUpdateIndexedSimpleEnum.Broadcast(Context, Args.A, Args.B);
+    return true;
+}
+
 void URemoteReducers::UpdatePkBool(const bool B, const int32 Data)
 {
     if (!Conn)
@@ -6996,6 +9684,21 @@ bool URemoteReducers::InvokeUpdatePkBool(const FReducerEventContext& Context, co
     }
 
     OnUpdatePkBool.Broadcast(Context, Args->B, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkBoolWithArgs(const FReducerEventContext& Context, const FUpdatePkBoolArgs& Args)
+{
+    if (!OnUpdatePkBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkBool"));
+        }
+        return false;
+    }
+
+    OnUpdatePkBool.Broadcast(Context, Args.B, Args.Data);
     return true;
 }
 
@@ -7028,6 +9731,21 @@ bool URemoteReducers::InvokeUpdatePkConnectionId(const FReducerEventContext& Con
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkConnectionIdWithArgs(const FReducerEventContext& Context, const FUpdatePkConnectionIdArgs& Args)
+{
+    if (!OnUpdatePkConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkConnectionId"));
+        }
+        return false;
+    }
+
+    OnUpdatePkConnectionId.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkI128(const FSpacetimeDBInt128& N, const int32 Data)
 {
     if (!Conn)
@@ -7054,6 +9772,21 @@ bool URemoteReducers::InvokeUpdatePkI128(const FReducerEventContext& Context, co
     }
 
     OnUpdatePkI128.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkI128WithArgs(const FReducerEventContext& Context, const FUpdatePkI128Args& Args)
+{
+    if (!OnUpdatePkI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkI128"));
+        }
+        return false;
+    }
+
+    OnUpdatePkI128.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7086,6 +9819,21 @@ bool URemoteReducers::InvokeUpdatePkI16(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkI16WithArgs(const FReducerEventContext& Context, const FUpdatePkI16Args& Args)
+{
+    if (!OnUpdatePkI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkI16"));
+        }
+        return false;
+    }
+
+    OnUpdatePkI16.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkI256(const FSpacetimeDBInt256& N, const int32 Data)
 {
     if (!Conn)
@@ -7112,6 +9860,21 @@ bool URemoteReducers::InvokeUpdatePkI256(const FReducerEventContext& Context, co
     }
 
     OnUpdatePkI256.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkI256WithArgs(const FReducerEventContext& Context, const FUpdatePkI256Args& Args)
+{
+    if (!OnUpdatePkI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkI256"));
+        }
+        return false;
+    }
+
+    OnUpdatePkI256.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7144,6 +9907,21 @@ bool URemoteReducers::InvokeUpdatePkI32(const FReducerEventContext& Context, con
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkI32WithArgs(const FReducerEventContext& Context, const FUpdatePkI32Args& Args)
+{
+    if (!OnUpdatePkI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkI32"));
+        }
+        return false;
+    }
+
+    OnUpdatePkI32.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkI64(const int64 N, const int32 Data)
 {
     if (!Conn)
@@ -7170,6 +9948,21 @@ bool URemoteReducers::InvokeUpdatePkI64(const FReducerEventContext& Context, con
     }
 
     OnUpdatePkI64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkI64WithArgs(const FReducerEventContext& Context, const FUpdatePkI64Args& Args)
+{
+    if (!OnUpdatePkI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkI64"));
+        }
+        return false;
+    }
+
+    OnUpdatePkI64.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7202,6 +9995,21 @@ bool URemoteReducers::InvokeUpdatePkI8(const FReducerEventContext& Context, cons
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkI8WithArgs(const FReducerEventContext& Context, const FUpdatePkI8Args& Args)
+{
+    if (!OnUpdatePkI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkI8"));
+        }
+        return false;
+    }
+
+    OnUpdatePkI8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkIdentity(const FSpacetimeDBIdentity& I, const int32 Data)
 {
     if (!Conn)
@@ -7228,6 +10036,21 @@ bool URemoteReducers::InvokeUpdatePkIdentity(const FReducerEventContext& Context
     }
 
     OnUpdatePkIdentity.Broadcast(Context, Args->I, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkIdentityWithArgs(const FReducerEventContext& Context, const FUpdatePkIdentityArgs& Args)
+{
+    if (!OnUpdatePkIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkIdentity"));
+        }
+        return false;
+    }
+
+    OnUpdatePkIdentity.Broadcast(Context, Args.I, Args.Data);
     return true;
 }
 
@@ -7260,6 +10083,21 @@ bool URemoteReducers::InvokeUpdatePkSimpleEnum(const FReducerEventContext& Conte
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkSimpleEnumWithArgs(const FReducerEventContext& Context, const FUpdatePkSimpleEnumArgs& Args)
+{
+    if (!OnUpdatePkSimpleEnum.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkSimpleEnum"));
+        }
+        return false;
+    }
+
+    OnUpdatePkSimpleEnum.Broadcast(Context, Args.A, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkString(const FString& S, const int32 Data)
 {
     if (!Conn)
@@ -7286,6 +10124,21 @@ bool URemoteReducers::InvokeUpdatePkString(const FReducerEventContext& Context, 
     }
 
     OnUpdatePkString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkStringWithArgs(const FReducerEventContext& Context, const FUpdatePkStringArgs& Args)
+{
+    if (!OnUpdatePkString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkString"));
+        }
+        return false;
+    }
+
+    OnUpdatePkString.Broadcast(Context, Args.S, Args.Data);
     return true;
 }
 
@@ -7318,6 +10171,21 @@ bool URemoteReducers::InvokeUpdatePkU128(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkU128WithArgs(const FReducerEventContext& Context, const FUpdatePkU128Args& Args)
+{
+    if (!OnUpdatePkU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU128"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkU16(const uint16 N, const int32 Data)
 {
     if (!Conn)
@@ -7344,6 +10212,21 @@ bool URemoteReducers::InvokeUpdatePkU16(const FReducerEventContext& Context, con
     }
 
     OnUpdatePkU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkU16WithArgs(const FReducerEventContext& Context, const FUpdatePkU16Args& Args)
+{
+    if (!OnUpdatePkU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU16"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU16.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7376,6 +10259,21 @@ bool URemoteReducers::InvokeUpdatePkU256(const FReducerEventContext& Context, co
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkU256WithArgs(const FReducerEventContext& Context, const FUpdatePkU256Args& Args)
+{
+    if (!OnUpdatePkU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU256"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkU32(const uint32 N, const int32 Data)
 {
     if (!Conn)
@@ -7402,6 +10300,21 @@ bool URemoteReducers::InvokeUpdatePkU32(const FReducerEventContext& Context, con
     }
 
     OnUpdatePkU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkU32WithArgs(const FReducerEventContext& Context, const FUpdatePkU32Args& Args)
+{
+    if (!OnUpdatePkU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU32"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU32.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7434,6 +10347,21 @@ bool URemoteReducers::InvokeUpdatePkU32Two(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkU32TwoWithArgs(const FReducerEventContext& Context, const FUpdatePkU32TwoArgs& Args)
+{
+    if (!OnUpdatePkU32Two.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU32Two"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU32Two.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkU64(const uint64 N, const int32 Data)
 {
     if (!Conn)
@@ -7460,6 +10388,21 @@ bool URemoteReducers::InvokeUpdatePkU64(const FReducerEventContext& Context, con
     }
 
     OnUpdatePkU64.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkU64WithArgs(const FReducerEventContext& Context, const FUpdatePkU64Args& Args)
+{
+    if (!OnUpdatePkU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU64"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU64.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7492,6 +10435,21 @@ bool URemoteReducers::InvokeUpdatePkU8(const FReducerEventContext& Context, cons
     return true;
 }
 
+bool URemoteReducers::InvokeUpdatePkU8WithArgs(const FReducerEventContext& Context, const FUpdatePkU8Args& Args)
+{
+    if (!OnUpdatePkU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkU8"));
+        }
+        return false;
+    }
+
+    OnUpdatePkU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdatePkUuid(const FSpacetimeDBUuid& U, const int32 Data)
 {
     if (!Conn)
@@ -7518,6 +10476,21 @@ bool URemoteReducers::InvokeUpdatePkUuid(const FReducerEventContext& Context, co
     }
 
     OnUpdatePkUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdatePkUuidWithArgs(const FReducerEventContext& Context, const FUpdatePkUuidArgs& Args)
+{
+    if (!OnUpdatePkUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdatePkUuid"));
+        }
+        return false;
+    }
+
+    OnUpdatePkUuid.Broadcast(Context, Args.U, Args.Data);
     return true;
 }
 
@@ -7550,6 +10523,21 @@ bool URemoteReducers::InvokeUpdateUniqueBool(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueBoolWithArgs(const FReducerEventContext& Context, const FUpdateUniqueBoolArgs& Args)
+{
+    if (!OnUpdateUniqueBool.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueBool"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueBool.Broadcast(Context, Args.B, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueConnectionId(const FSpacetimeDBConnectionId& A, const int32 Data)
 {
     if (!Conn)
@@ -7576,6 +10564,21 @@ bool URemoteReducers::InvokeUpdateUniqueConnectionId(const FReducerEventContext&
     }
 
     OnUpdateUniqueConnectionId.Broadcast(Context, Args->A, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueConnectionIdWithArgs(const FReducerEventContext& Context, const FUpdateUniqueConnectionIdArgs& Args)
+{
+    if (!OnUpdateUniqueConnectionId.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueConnectionId"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueConnectionId.Broadcast(Context, Args.A, Args.Data);
     return true;
 }
 
@@ -7608,6 +10611,21 @@ bool URemoteReducers::InvokeUpdateUniqueI128(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueI128WithArgs(const FReducerEventContext& Context, const FUpdateUniqueI128Args& Args)
+{
+    if (!OnUpdateUniqueI128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueI128"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueI128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueI16(const int16 N, const int32 Data)
 {
     if (!Conn)
@@ -7634,6 +10652,21 @@ bool URemoteReducers::InvokeUpdateUniqueI16(const FReducerEventContext& Context,
     }
 
     OnUpdateUniqueI16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueI16WithArgs(const FReducerEventContext& Context, const FUpdateUniqueI16Args& Args)
+{
+    if (!OnUpdateUniqueI16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueI16"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueI16.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7666,6 +10699,21 @@ bool URemoteReducers::InvokeUpdateUniqueI256(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueI256WithArgs(const FReducerEventContext& Context, const FUpdateUniqueI256Args& Args)
+{
+    if (!OnUpdateUniqueI256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueI256"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueI256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueI32(const int32 N, const int32 Data)
 {
     if (!Conn)
@@ -7692,6 +10740,21 @@ bool URemoteReducers::InvokeUpdateUniqueI32(const FReducerEventContext& Context,
     }
 
     OnUpdateUniqueI32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueI32WithArgs(const FReducerEventContext& Context, const FUpdateUniqueI32Args& Args)
+{
+    if (!OnUpdateUniqueI32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueI32"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueI32.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7724,6 +10787,21 @@ bool URemoteReducers::InvokeUpdateUniqueI64(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueI64WithArgs(const FReducerEventContext& Context, const FUpdateUniqueI64Args& Args)
+{
+    if (!OnUpdateUniqueI64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueI64"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueI64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueI8(const int8 N, const int32 Data)
 {
     if (!Conn)
@@ -7750,6 +10828,21 @@ bool URemoteReducers::InvokeUpdateUniqueI8(const FReducerEventContext& Context, 
     }
 
     OnUpdateUniqueI8.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueI8WithArgs(const FReducerEventContext& Context, const FUpdateUniqueI8Args& Args)
+{
+    if (!OnUpdateUniqueI8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueI8"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueI8.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7782,6 +10875,21 @@ bool URemoteReducers::InvokeUpdateUniqueIdentity(const FReducerEventContext& Con
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueIdentityWithArgs(const FReducerEventContext& Context, const FUpdateUniqueIdentityArgs& Args)
+{
+    if (!OnUpdateUniqueIdentity.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueIdentity"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueIdentity.Broadcast(Context, Args.I, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueString(const FString& S, const int32 Data)
 {
     if (!Conn)
@@ -7808,6 +10916,21 @@ bool URemoteReducers::InvokeUpdateUniqueString(const FReducerEventContext& Conte
     }
 
     OnUpdateUniqueString.Broadcast(Context, Args->S, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueStringWithArgs(const FReducerEventContext& Context, const FUpdateUniqueStringArgs& Args)
+{
+    if (!OnUpdateUniqueString.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueString"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueString.Broadcast(Context, Args.S, Args.Data);
     return true;
 }
 
@@ -7840,6 +10963,21 @@ bool URemoteReducers::InvokeUpdateUniqueU128(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueU128WithArgs(const FReducerEventContext& Context, const FUpdateUniqueU128Args& Args)
+{
+    if (!OnUpdateUniqueU128.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueU128"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueU128.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueU16(const uint16 N, const int32 Data)
 {
     if (!Conn)
@@ -7866,6 +11004,21 @@ bool URemoteReducers::InvokeUpdateUniqueU16(const FReducerEventContext& Context,
     }
 
     OnUpdateUniqueU16.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueU16WithArgs(const FReducerEventContext& Context, const FUpdateUniqueU16Args& Args)
+{
+    if (!OnUpdateUniqueU16.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueU16"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueU16.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7898,6 +11051,21 @@ bool URemoteReducers::InvokeUpdateUniqueU256(const FReducerEventContext& Context
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueU256WithArgs(const FReducerEventContext& Context, const FUpdateUniqueU256Args& Args)
+{
+    if (!OnUpdateUniqueU256.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueU256"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueU256.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueU32(const uint32 N, const int32 Data)
 {
     if (!Conn)
@@ -7924,6 +11092,21 @@ bool URemoteReducers::InvokeUpdateUniqueU32(const FReducerEventContext& Context,
     }
 
     OnUpdateUniqueU32.Broadcast(Context, Args->N, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueU32WithArgs(const FReducerEventContext& Context, const FUpdateUniqueU32Args& Args)
+{
+    if (!OnUpdateUniqueU32.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueU32"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueU32.Broadcast(Context, Args.N, Args.Data);
     return true;
 }
 
@@ -7956,6 +11139,21 @@ bool URemoteReducers::InvokeUpdateUniqueU64(const FReducerEventContext& Context,
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueU64WithArgs(const FReducerEventContext& Context, const FUpdateUniqueU64Args& Args)
+{
+    if (!OnUpdateUniqueU64.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueU64"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueU64.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueU8(const uint8 N, const int32 Data)
 {
     if (!Conn)
@@ -7985,6 +11183,21 @@ bool URemoteReducers::InvokeUpdateUniqueU8(const FReducerEventContext& Context, 
     return true;
 }
 
+bool URemoteReducers::InvokeUpdateUniqueU8WithArgs(const FReducerEventContext& Context, const FUpdateUniqueU8Args& Args)
+{
+    if (!OnUpdateUniqueU8.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueU8"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueU8.Broadcast(Context, Args.N, Args.Data);
+    return true;
+}
+
 void URemoteReducers::UpdateUniqueUuid(const FSpacetimeDBUuid& U, const int32 Data)
 {
     if (!Conn)
@@ -8011,6 +11224,21 @@ bool URemoteReducers::InvokeUpdateUniqueUuid(const FReducerEventContext& Context
     }
 
     OnUpdateUniqueUuid.Broadcast(Context, Args->U, Args->Data);
+    return true;
+}
+
+bool URemoteReducers::InvokeUpdateUniqueUuidWithArgs(const FReducerEventContext& Context, const FUpdateUniqueUuidArgs& Args)
+{
+    if (!OnUpdateUniqueUuid.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for UpdateUniqueUuid"));
+        }
+        return false;
+    }
+
+    OnUpdateUniqueUuid.Broadcast(Context, Args.U, Args.Data);
     return true;
 }
 
@@ -8071,1649 +11299,1189 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     if (ReducerName == TEXT("delete_from_btree_u32"))
     {
         FDeleteFromBtreeU32Args Args = ReducerEvent.Reducer.GetAsDeleteFromBtreeU32();
-        UDeleteFromBtreeU32Reducer* Reducer = NewObject<UDeleteFromBtreeU32Reducer>();
-        Reducer->Rows = Args.Rows;
-        Reducers->InvokeDeleteFromBtreeU32(Context, Reducer);
+        Reducers->InvokeDeleteFromBtreeU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_large_table"))
     {
         FDeleteLargeTableArgs Args = ReducerEvent.Reducer.GetAsDeleteLargeTable();
-        UDeleteLargeTableReducer* Reducer = NewObject<UDeleteLargeTableReducer>();
-        Reducer->A = Args.A;
-        Reducer->B = Args.B;
-        Reducer->C = Args.C;
-        Reducer->D = Args.D;
-        Reducer->E = Args.E;
-        Reducer->F = Args.F;
-        Reducer->G = Args.G;
-        Reducer->H = Args.H;
-        Reducer->I = Args.I;
-        Reducer->J = Args.J;
-        Reducer->K = Args.K;
-        Reducer->L = Args.L;
-        Reducer->M = Args.M;
-        Reducer->N = Args.N;
-        Reducer->O = Args.O;
-        Reducer->P = Args.P;
-        Reducer->Q = Args.Q;
-        Reducer->R = Args.R;
-        Reducer->S = Args.S;
-        Reducer->T = Args.T;
-        Reducer->U = Args.U;
-        Reducer->V = Args.V;
-        Reducers->InvokeDeleteLargeTable(Context, Reducer);
+        Reducers->InvokeDeleteLargeTableWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_bool"))
     {
         FDeletePkBoolArgs Args = ReducerEvent.Reducer.GetAsDeletePkBool();
-        UDeletePkBoolReducer* Reducer = NewObject<UDeletePkBoolReducer>();
-        Reducer->B = Args.B;
-        Reducers->InvokeDeletePkBool(Context, Reducer);
+        Reducers->InvokeDeletePkBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_connection_id"))
     {
         FDeletePkConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeletePkConnectionId();
-        UDeletePkConnectionIdReducer* Reducer = NewObject<UDeletePkConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducers->InvokeDeletePkConnectionId(Context, Reducer);
+        Reducers->InvokeDeletePkConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_i128"))
     {
         FDeletePkI128Args Args = ReducerEvent.Reducer.GetAsDeletePkI128();
-        UDeletePkI128Reducer* Reducer = NewObject<UDeletePkI128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkI128(Context, Reducer);
+        Reducers->InvokeDeletePkI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_i16"))
     {
         FDeletePkI16Args Args = ReducerEvent.Reducer.GetAsDeletePkI16();
-        UDeletePkI16Reducer* Reducer = NewObject<UDeletePkI16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkI16(Context, Reducer);
+        Reducers->InvokeDeletePkI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_i256"))
     {
         FDeletePkI256Args Args = ReducerEvent.Reducer.GetAsDeletePkI256();
-        UDeletePkI256Reducer* Reducer = NewObject<UDeletePkI256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkI256(Context, Reducer);
+        Reducers->InvokeDeletePkI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_i32"))
     {
         FDeletePkI32Args Args = ReducerEvent.Reducer.GetAsDeletePkI32();
-        UDeletePkI32Reducer* Reducer = NewObject<UDeletePkI32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkI32(Context, Reducer);
+        Reducers->InvokeDeletePkI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_i64"))
     {
         FDeletePkI64Args Args = ReducerEvent.Reducer.GetAsDeletePkI64();
-        UDeletePkI64Reducer* Reducer = NewObject<UDeletePkI64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkI64(Context, Reducer);
+        Reducers->InvokeDeletePkI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_i8"))
     {
         FDeletePkI8Args Args = ReducerEvent.Reducer.GetAsDeletePkI8();
-        UDeletePkI8Reducer* Reducer = NewObject<UDeletePkI8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkI8(Context, Reducer);
+        Reducers->InvokeDeletePkI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_identity"))
     {
         FDeletePkIdentityArgs Args = ReducerEvent.Reducer.GetAsDeletePkIdentity();
-        UDeletePkIdentityReducer* Reducer = NewObject<UDeletePkIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducers->InvokeDeletePkIdentity(Context, Reducer);
+        Reducers->InvokeDeletePkIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_string"))
     {
         FDeletePkStringArgs Args = ReducerEvent.Reducer.GetAsDeletePkString();
-        UDeletePkStringReducer* Reducer = NewObject<UDeletePkStringReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeDeletePkString(Context, Reducer);
+        Reducers->InvokeDeletePkStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u128"))
     {
         FDeletePkU128Args Args = ReducerEvent.Reducer.GetAsDeletePkU128();
-        UDeletePkU128Reducer* Reducer = NewObject<UDeletePkU128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU128(Context, Reducer);
+        Reducers->InvokeDeletePkU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u16"))
     {
         FDeletePkU16Args Args = ReducerEvent.Reducer.GetAsDeletePkU16();
-        UDeletePkU16Reducer* Reducer = NewObject<UDeletePkU16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU16(Context, Reducer);
+        Reducers->InvokeDeletePkU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u256"))
     {
         FDeletePkU256Args Args = ReducerEvent.Reducer.GetAsDeletePkU256();
-        UDeletePkU256Reducer* Reducer = NewObject<UDeletePkU256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU256(Context, Reducer);
+        Reducers->InvokeDeletePkU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u32"))
     {
         FDeletePkU32Args Args = ReducerEvent.Reducer.GetAsDeletePkU32();
-        UDeletePkU32Reducer* Reducer = NewObject<UDeletePkU32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU32(Context, Reducer);
+        Reducers->InvokeDeletePkU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u32_insert_pk_u32_two"))
     {
         FDeletePkU32InsertPkU32TwoArgs Args = ReducerEvent.Reducer.GetAsDeletePkU32InsertPkU32Two();
-        UDeletePkU32InsertPkU32TwoReducer* Reducer = NewObject<UDeletePkU32InsertPkU32TwoReducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeDeletePkU32InsertPkU32Two(Context, Reducer);
+        Reducers->InvokeDeletePkU32InsertPkU32TwoWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u32_two"))
     {
         FDeletePkU32TwoArgs Args = ReducerEvent.Reducer.GetAsDeletePkU32Two();
-        UDeletePkU32TwoReducer* Reducer = NewObject<UDeletePkU32TwoReducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU32Two(Context, Reducer);
+        Reducers->InvokeDeletePkU32TwoWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u64"))
     {
         FDeletePkU64Args Args = ReducerEvent.Reducer.GetAsDeletePkU64();
-        UDeletePkU64Reducer* Reducer = NewObject<UDeletePkU64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU64(Context, Reducer);
+        Reducers->InvokeDeletePkU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_u8"))
     {
         FDeletePkU8Args Args = ReducerEvent.Reducer.GetAsDeletePkU8();
-        UDeletePkU8Reducer* Reducer = NewObject<UDeletePkU8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeletePkU8(Context, Reducer);
+        Reducers->InvokeDeletePkU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_pk_uuid"))
     {
         FDeletePkUuidArgs Args = ReducerEvent.Reducer.GetAsDeletePkUuid();
-        UDeletePkUuidReducer* Reducer = NewObject<UDeletePkUuidReducer>();
-        Reducer->U = Args.U;
-        Reducers->InvokeDeletePkUuid(Context, Reducer);
+        Reducers->InvokeDeletePkUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_bool"))
     {
         FDeleteUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueBool();
-        UDeleteUniqueBoolReducer* Reducer = NewObject<UDeleteUniqueBoolReducer>();
-        Reducer->B = Args.B;
-        Reducers->InvokeDeleteUniqueBool(Context, Reducer);
+        Reducers->InvokeDeleteUniqueBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_connection_id"))
     {
         FDeleteUniqueConnectionIdArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueConnectionId();
-        UDeleteUniqueConnectionIdReducer* Reducer = NewObject<UDeleteUniqueConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducers->InvokeDeleteUniqueConnectionId(Context, Reducer);
+        Reducers->InvokeDeleteUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_i128"))
     {
         FDeleteUniqueI128Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI128();
-        UDeleteUniqueI128Reducer* Reducer = NewObject<UDeleteUniqueI128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueI128(Context, Reducer);
+        Reducers->InvokeDeleteUniqueI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_i16"))
     {
         FDeleteUniqueI16Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI16();
-        UDeleteUniqueI16Reducer* Reducer = NewObject<UDeleteUniqueI16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueI16(Context, Reducer);
+        Reducers->InvokeDeleteUniqueI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_i256"))
     {
         FDeleteUniqueI256Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI256();
-        UDeleteUniqueI256Reducer* Reducer = NewObject<UDeleteUniqueI256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueI256(Context, Reducer);
+        Reducers->InvokeDeleteUniqueI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_i32"))
     {
         FDeleteUniqueI32Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI32();
-        UDeleteUniqueI32Reducer* Reducer = NewObject<UDeleteUniqueI32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueI32(Context, Reducer);
+        Reducers->InvokeDeleteUniqueI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_i64"))
     {
         FDeleteUniqueI64Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI64();
-        UDeleteUniqueI64Reducer* Reducer = NewObject<UDeleteUniqueI64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueI64(Context, Reducer);
+        Reducers->InvokeDeleteUniqueI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_i8"))
     {
         FDeleteUniqueI8Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueI8();
-        UDeleteUniqueI8Reducer* Reducer = NewObject<UDeleteUniqueI8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueI8(Context, Reducer);
+        Reducers->InvokeDeleteUniqueI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_identity"))
     {
         FDeleteUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueIdentity();
-        UDeleteUniqueIdentityReducer* Reducer = NewObject<UDeleteUniqueIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducers->InvokeDeleteUniqueIdentity(Context, Reducer);
+        Reducers->InvokeDeleteUniqueIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_string"))
     {
         FDeleteUniqueStringArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueString();
-        UDeleteUniqueStringReducer* Reducer = NewObject<UDeleteUniqueStringReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeDeleteUniqueString(Context, Reducer);
+        Reducers->InvokeDeleteUniqueStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_u128"))
     {
         FDeleteUniqueU128Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU128();
-        UDeleteUniqueU128Reducer* Reducer = NewObject<UDeleteUniqueU128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueU128(Context, Reducer);
+        Reducers->InvokeDeleteUniqueU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_u16"))
     {
         FDeleteUniqueU16Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU16();
-        UDeleteUniqueU16Reducer* Reducer = NewObject<UDeleteUniqueU16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueU16(Context, Reducer);
+        Reducers->InvokeDeleteUniqueU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_u256"))
     {
         FDeleteUniqueU256Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU256();
-        UDeleteUniqueU256Reducer* Reducer = NewObject<UDeleteUniqueU256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueU256(Context, Reducer);
+        Reducers->InvokeDeleteUniqueU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_u32"))
     {
         FDeleteUniqueU32Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU32();
-        UDeleteUniqueU32Reducer* Reducer = NewObject<UDeleteUniqueU32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueU32(Context, Reducer);
+        Reducers->InvokeDeleteUniqueU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_u64"))
     {
         FDeleteUniqueU64Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU64();
-        UDeleteUniqueU64Reducer* Reducer = NewObject<UDeleteUniqueU64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueU64(Context, Reducer);
+        Reducers->InvokeDeleteUniqueU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_u8"))
     {
         FDeleteUniqueU8Args Args = ReducerEvent.Reducer.GetAsDeleteUniqueU8();
-        UDeleteUniqueU8Reducer* Reducer = NewObject<UDeleteUniqueU8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeDeleteUniqueU8(Context, Reducer);
+        Reducers->InvokeDeleteUniqueU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("delete_unique_uuid"))
     {
         FDeleteUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsDeleteUniqueUuid();
-        UDeleteUniqueUuidReducer* Reducer = NewObject<UDeleteUniqueUuidReducer>();
-        Reducer->U = Args.U;
-        Reducers->InvokeDeleteUniqueUuid(Context, Reducer);
+        Reducers->InvokeDeleteUniqueUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_call_timestamp"))
     {
         FInsertCallTimestampArgs Args = ReducerEvent.Reducer.GetAsInsertCallTimestamp();
-        UInsertCallTimestampReducer* Reducer = NewObject<UInsertCallTimestampReducer>();
-        Reducers->InvokeInsertCallTimestamp(Context, Reducer);
+        Reducers->InvokeInsertCallTimestampWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_call_uuid_v4"))
     {
         FInsertCallUuidV4Args Args = ReducerEvent.Reducer.GetAsInsertCallUuidV4();
-        UInsertCallUuidV4Reducer* Reducer = NewObject<UInsertCallUuidV4Reducer>();
-        Reducers->InvokeInsertCallUuidV4(Context, Reducer);
+        Reducers->InvokeInsertCallUuidV4WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_call_uuid_v7"))
     {
         FInsertCallUuidV7Args Args = ReducerEvent.Reducer.GetAsInsertCallUuidV7();
-        UInsertCallUuidV7Reducer* Reducer = NewObject<UInsertCallUuidV7Reducer>();
-        Reducers->InvokeInsertCallUuidV7(Context, Reducer);
+        Reducers->InvokeInsertCallUuidV7WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_one_connection_id"))
     {
         FInsertCallerOneConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertCallerOneConnectionId();
-        UInsertCallerOneConnectionIdReducer* Reducer = NewObject<UInsertCallerOneConnectionIdReducer>();
-        Reducers->InvokeInsertCallerOneConnectionId(Context, Reducer);
+        Reducers->InvokeInsertCallerOneConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_one_identity"))
     {
         FInsertCallerOneIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertCallerOneIdentity();
-        UInsertCallerOneIdentityReducer* Reducer = NewObject<UInsertCallerOneIdentityReducer>();
-        Reducers->InvokeInsertCallerOneIdentity(Context, Reducer);
+        Reducers->InvokeInsertCallerOneIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_pk_connection_id"))
     {
         FInsertCallerPkConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertCallerPkConnectionId();
-        UInsertCallerPkConnectionIdReducer* Reducer = NewObject<UInsertCallerPkConnectionIdReducer>();
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertCallerPkConnectionId(Context, Reducer);
+        Reducers->InvokeInsertCallerPkConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_pk_identity"))
     {
         FInsertCallerPkIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertCallerPkIdentity();
-        UInsertCallerPkIdentityReducer* Reducer = NewObject<UInsertCallerPkIdentityReducer>();
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertCallerPkIdentity(Context, Reducer);
+        Reducers->InvokeInsertCallerPkIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_unique_connection_id"))
     {
         FInsertCallerUniqueConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertCallerUniqueConnectionId();
-        UInsertCallerUniqueConnectionIdReducer* Reducer = NewObject<UInsertCallerUniqueConnectionIdReducer>();
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertCallerUniqueConnectionId(Context, Reducer);
+        Reducers->InvokeInsertCallerUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_unique_identity"))
     {
         FInsertCallerUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertCallerUniqueIdentity();
-        UInsertCallerUniqueIdentityReducer* Reducer = NewObject<UInsertCallerUniqueIdentityReducer>();
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertCallerUniqueIdentity(Context, Reducer);
+        Reducers->InvokeInsertCallerUniqueIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_vec_connection_id"))
     {
         FInsertCallerVecConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertCallerVecConnectionId();
-        UInsertCallerVecConnectionIdReducer* Reducer = NewObject<UInsertCallerVecConnectionIdReducer>();
-        Reducers->InvokeInsertCallerVecConnectionId(Context, Reducer);
+        Reducers->InvokeInsertCallerVecConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_caller_vec_identity"))
     {
         FInsertCallerVecIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertCallerVecIdentity();
-        UInsertCallerVecIdentityReducer* Reducer = NewObject<UInsertCallerVecIdentityReducer>();
-        Reducers->InvokeInsertCallerVecIdentity(Context, Reducer);
+        Reducers->InvokeInsertCallerVecIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_into_btree_u32"))
     {
         FInsertIntoBtreeU32Args Args = ReducerEvent.Reducer.GetAsInsertIntoBtreeU32();
-        UInsertIntoBtreeU32Reducer* Reducer = NewObject<UInsertIntoBtreeU32Reducer>();
-        Reducer->Rows = Args.Rows;
-        Reducers->InvokeInsertIntoBtreeU32(Context, Reducer);
+        Reducers->InvokeInsertIntoBtreeU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_into_indexed_simple_enum"))
     {
         FInsertIntoIndexedSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsInsertIntoIndexedSimpleEnum();
-        UInsertIntoIndexedSimpleEnumReducer* Reducer = NewObject<UInsertIntoIndexedSimpleEnumReducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertIntoIndexedSimpleEnum(Context, Reducer);
+        Reducers->InvokeInsertIntoIndexedSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_into_pk_btree_u32"))
     {
         FInsertIntoPkBtreeU32Args Args = ReducerEvent.Reducer.GetAsInsertIntoPkBtreeU32();
-        UInsertIntoPkBtreeU32Reducer* Reducer = NewObject<UInsertIntoPkBtreeU32Reducer>();
-        Reducer->PkU32 = Args.PkU32;
-        Reducer->BtU32 = Args.BtU32;
-        Reducers->InvokeInsertIntoPkBtreeU32(Context, Reducer);
+        Reducers->InvokeInsertIntoPkBtreeU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_large_table"))
     {
         FInsertLargeTableArgs Args = ReducerEvent.Reducer.GetAsInsertLargeTable();
-        UInsertLargeTableReducer* Reducer = NewObject<UInsertLargeTableReducer>();
-        Reducer->A = Args.A;
-        Reducer->B = Args.B;
-        Reducer->C = Args.C;
-        Reducer->D = Args.D;
-        Reducer->E = Args.E;
-        Reducer->F = Args.F;
-        Reducer->G = Args.G;
-        Reducer->H = Args.H;
-        Reducer->I = Args.I;
-        Reducer->J = Args.J;
-        Reducer->K = Args.K;
-        Reducer->L = Args.L;
-        Reducer->M = Args.M;
-        Reducer->N = Args.N;
-        Reducer->O = Args.O;
-        Reducer->P = Args.P;
-        Reducer->Q = Args.Q;
-        Reducer->R = Args.R;
-        Reducer->S = Args.S;
-        Reducer->T = Args.T;
-        Reducer->U = Args.U;
-        Reducer->V = Args.V;
-        Reducers->InvokeInsertLargeTable(Context, Reducer);
+        Reducers->InvokeInsertLargeTableWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_bool"))
     {
         FInsertOneBoolArgs Args = ReducerEvent.Reducer.GetAsInsertOneBool();
-        UInsertOneBoolReducer* Reducer = NewObject<UInsertOneBoolReducer>();
-        Reducer->B = Args.B;
-        Reducers->InvokeInsertOneBool(Context, Reducer);
+        Reducers->InvokeInsertOneBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_byte_struct"))
     {
         FInsertOneByteStructArgs Args = ReducerEvent.Reducer.GetAsInsertOneByteStruct();
-        UInsertOneByteStructReducer* Reducer = NewObject<UInsertOneByteStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOneByteStruct(Context, Reducer);
+        Reducers->InvokeInsertOneByteStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_connection_id"))
     {
         FInsertOneConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertOneConnectionId();
-        UInsertOneConnectionIdReducer* Reducer = NewObject<UInsertOneConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducers->InvokeInsertOneConnectionId(Context, Reducer);
+        Reducers->InvokeInsertOneConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_enum_with_payload"))
     {
         FInsertOneEnumWithPayloadArgs Args = ReducerEvent.Reducer.GetAsInsertOneEnumWithPayload();
-        UInsertOneEnumWithPayloadReducer* Reducer = NewObject<UInsertOneEnumWithPayloadReducer>();
-        Reducer->E = Args.E;
-        Reducers->InvokeInsertOneEnumWithPayload(Context, Reducer);
+        Reducers->InvokeInsertOneEnumWithPayloadWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_every_primitive_struct"))
     {
         FInsertOneEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsInsertOneEveryPrimitiveStruct();
-        UInsertOneEveryPrimitiveStructReducer* Reducer = NewObject<UInsertOneEveryPrimitiveStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOneEveryPrimitiveStruct(Context, Reducer);
+        Reducers->InvokeInsertOneEveryPrimitiveStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_every_vec_struct"))
     {
         FInsertOneEveryVecStructArgs Args = ReducerEvent.Reducer.GetAsInsertOneEveryVecStruct();
-        UInsertOneEveryVecStructReducer* Reducer = NewObject<UInsertOneEveryVecStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOneEveryVecStruct(Context, Reducer);
+        Reducers->InvokeInsertOneEveryVecStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_f32"))
     {
         FInsertOneF32Args Args = ReducerEvent.Reducer.GetAsInsertOneF32();
-        UInsertOneF32Reducer* Reducer = NewObject<UInsertOneF32Reducer>();
-        Reducer->F = Args.F;
-        Reducers->InvokeInsertOneF32(Context, Reducer);
+        Reducers->InvokeInsertOneF32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_f64"))
     {
         FInsertOneF64Args Args = ReducerEvent.Reducer.GetAsInsertOneF64();
-        UInsertOneF64Reducer* Reducer = NewObject<UInsertOneF64Reducer>();
-        Reducer->F = Args.F;
-        Reducers->InvokeInsertOneF64(Context, Reducer);
+        Reducers->InvokeInsertOneF64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_i128"))
     {
         FInsertOneI128Args Args = ReducerEvent.Reducer.GetAsInsertOneI128();
-        UInsertOneI128Reducer* Reducer = NewObject<UInsertOneI128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneI128(Context, Reducer);
+        Reducers->InvokeInsertOneI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_i16"))
     {
         FInsertOneI16Args Args = ReducerEvent.Reducer.GetAsInsertOneI16();
-        UInsertOneI16Reducer* Reducer = NewObject<UInsertOneI16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneI16(Context, Reducer);
+        Reducers->InvokeInsertOneI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_i256"))
     {
         FInsertOneI256Args Args = ReducerEvent.Reducer.GetAsInsertOneI256();
-        UInsertOneI256Reducer* Reducer = NewObject<UInsertOneI256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneI256(Context, Reducer);
+        Reducers->InvokeInsertOneI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_i32"))
     {
         FInsertOneI32Args Args = ReducerEvent.Reducer.GetAsInsertOneI32();
-        UInsertOneI32Reducer* Reducer = NewObject<UInsertOneI32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneI32(Context, Reducer);
+        Reducers->InvokeInsertOneI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_i64"))
     {
         FInsertOneI64Args Args = ReducerEvent.Reducer.GetAsInsertOneI64();
-        UInsertOneI64Reducer* Reducer = NewObject<UInsertOneI64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneI64(Context, Reducer);
+        Reducers->InvokeInsertOneI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_i8"))
     {
         FInsertOneI8Args Args = ReducerEvent.Reducer.GetAsInsertOneI8();
-        UInsertOneI8Reducer* Reducer = NewObject<UInsertOneI8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneI8(Context, Reducer);
+        Reducers->InvokeInsertOneI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_identity"))
     {
         FInsertOneIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertOneIdentity();
-        UInsertOneIdentityReducer* Reducer = NewObject<UInsertOneIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducers->InvokeInsertOneIdentity(Context, Reducer);
+        Reducers->InvokeInsertOneIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_simple_enum"))
     {
         FInsertOneSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsInsertOneSimpleEnum();
-        UInsertOneSimpleEnumReducer* Reducer = NewObject<UInsertOneSimpleEnumReducer>();
-        Reducer->E = Args.E;
-        Reducers->InvokeInsertOneSimpleEnum(Context, Reducer);
+        Reducers->InvokeInsertOneSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_string"))
     {
         FInsertOneStringArgs Args = ReducerEvent.Reducer.GetAsInsertOneString();
-        UInsertOneStringReducer* Reducer = NewObject<UInsertOneStringReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOneString(Context, Reducer);
+        Reducers->InvokeInsertOneStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_timestamp"))
     {
         FInsertOneTimestampArgs Args = ReducerEvent.Reducer.GetAsInsertOneTimestamp();
-        UInsertOneTimestampReducer* Reducer = NewObject<UInsertOneTimestampReducer>();
-        Reducer->T = Args.T;
-        Reducers->InvokeInsertOneTimestamp(Context, Reducer);
+        Reducers->InvokeInsertOneTimestampWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_u128"))
     {
         FInsertOneU128Args Args = ReducerEvent.Reducer.GetAsInsertOneU128();
-        UInsertOneU128Reducer* Reducer = NewObject<UInsertOneU128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneU128(Context, Reducer);
+        Reducers->InvokeInsertOneU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_u16"))
     {
         FInsertOneU16Args Args = ReducerEvent.Reducer.GetAsInsertOneU16();
-        UInsertOneU16Reducer* Reducer = NewObject<UInsertOneU16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneU16(Context, Reducer);
+        Reducers->InvokeInsertOneU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_u256"))
     {
         FInsertOneU256Args Args = ReducerEvent.Reducer.GetAsInsertOneU256();
-        UInsertOneU256Reducer* Reducer = NewObject<UInsertOneU256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneU256(Context, Reducer);
+        Reducers->InvokeInsertOneU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_u32"))
     {
         FInsertOneU32Args Args = ReducerEvent.Reducer.GetAsInsertOneU32();
-        UInsertOneU32Reducer* Reducer = NewObject<UInsertOneU32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneU32(Context, Reducer);
+        Reducers->InvokeInsertOneU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_u64"))
     {
         FInsertOneU64Args Args = ReducerEvent.Reducer.GetAsInsertOneU64();
-        UInsertOneU64Reducer* Reducer = NewObject<UInsertOneU64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneU64(Context, Reducer);
+        Reducers->InvokeInsertOneU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_u8"))
     {
         FInsertOneU8Args Args = ReducerEvent.Reducer.GetAsInsertOneU8();
-        UInsertOneU8Reducer* Reducer = NewObject<UInsertOneU8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOneU8(Context, Reducer);
+        Reducers->InvokeInsertOneU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_unit_struct"))
     {
         FInsertOneUnitStructArgs Args = ReducerEvent.Reducer.GetAsInsertOneUnitStruct();
-        UInsertOneUnitStructReducer* Reducer = NewObject<UInsertOneUnitStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOneUnitStruct(Context, Reducer);
+        Reducers->InvokeInsertOneUnitStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_one_uuid"))
     {
         FInsertOneUuidArgs Args = ReducerEvent.Reducer.GetAsInsertOneUuid();
-        UInsertOneUuidReducer* Reducer = NewObject<UInsertOneUuidReducer>();
-        Reducer->U = Args.U;
-        Reducers->InvokeInsertOneUuid(Context, Reducer);
+        Reducers->InvokeInsertOneUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_every_primitive_struct"))
     {
         FInsertOptionEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsInsertOptionEveryPrimitiveStruct();
-        UInsertOptionEveryPrimitiveStructReducer* Reducer = NewObject<UInsertOptionEveryPrimitiveStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOptionEveryPrimitiveStruct(Context, Reducer);
+        Reducers->InvokeInsertOptionEveryPrimitiveStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_i32"))
     {
         FInsertOptionI32Args Args = ReducerEvent.Reducer.GetAsInsertOptionI32();
-        UInsertOptionI32Reducer* Reducer = NewObject<UInsertOptionI32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertOptionI32(Context, Reducer);
+        Reducers->InvokeInsertOptionI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_identity"))
     {
         FInsertOptionIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertOptionIdentity();
-        UInsertOptionIdentityReducer* Reducer = NewObject<UInsertOptionIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducers->InvokeInsertOptionIdentity(Context, Reducer);
+        Reducers->InvokeInsertOptionIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_simple_enum"))
     {
         FInsertOptionSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsInsertOptionSimpleEnum();
-        UInsertOptionSimpleEnumReducer* Reducer = NewObject<UInsertOptionSimpleEnumReducer>();
-        Reducer->E = Args.E;
-        Reducers->InvokeInsertOptionSimpleEnum(Context, Reducer);
+        Reducers->InvokeInsertOptionSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_string"))
     {
         FInsertOptionStringArgs Args = ReducerEvent.Reducer.GetAsInsertOptionString();
-        UInsertOptionStringReducer* Reducer = NewObject<UInsertOptionStringReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertOptionString(Context, Reducer);
+        Reducers->InvokeInsertOptionStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_uuid"))
     {
         FInsertOptionUuidArgs Args = ReducerEvent.Reducer.GetAsInsertOptionUuid();
-        UInsertOptionUuidReducer* Reducer = NewObject<UInsertOptionUuidReducer>();
-        Reducer->U = Args.U;
-        Reducers->InvokeInsertOptionUuid(Context, Reducer);
+        Reducers->InvokeInsertOptionUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_option_vec_option_i32"))
     {
         FInsertOptionVecOptionI32Args Args = ReducerEvent.Reducer.GetAsInsertOptionVecOptionI32();
-        UInsertOptionVecOptionI32Reducer* Reducer = NewObject<UInsertOptionVecOptionI32Reducer>();
-        Reducer->V = Args.V;
-        Reducers->InvokeInsertOptionVecOptionI32(Context, Reducer);
+        Reducers->InvokeInsertOptionVecOptionI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_bool"))
     {
         FInsertPkBoolArgs Args = ReducerEvent.Reducer.GetAsInsertPkBool();
-        UInsertPkBoolReducer* Reducer = NewObject<UInsertPkBoolReducer>();
-        Reducer->B = Args.B;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkBool(Context, Reducer);
+        Reducers->InvokeInsertPkBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_connection_id"))
     {
         FInsertPkConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertPkConnectionId();
-        UInsertPkConnectionIdReducer* Reducer = NewObject<UInsertPkConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkConnectionId(Context, Reducer);
+        Reducers->InvokeInsertPkConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_i128"))
     {
         FInsertPkI128Args Args = ReducerEvent.Reducer.GetAsInsertPkI128();
-        UInsertPkI128Reducer* Reducer = NewObject<UInsertPkI128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkI128(Context, Reducer);
+        Reducers->InvokeInsertPkI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_i16"))
     {
         FInsertPkI16Args Args = ReducerEvent.Reducer.GetAsInsertPkI16();
-        UInsertPkI16Reducer* Reducer = NewObject<UInsertPkI16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkI16(Context, Reducer);
+        Reducers->InvokeInsertPkI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_i256"))
     {
         FInsertPkI256Args Args = ReducerEvent.Reducer.GetAsInsertPkI256();
-        UInsertPkI256Reducer* Reducer = NewObject<UInsertPkI256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkI256(Context, Reducer);
+        Reducers->InvokeInsertPkI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_i32"))
     {
         FInsertPkI32Args Args = ReducerEvent.Reducer.GetAsInsertPkI32();
-        UInsertPkI32Reducer* Reducer = NewObject<UInsertPkI32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkI32(Context, Reducer);
+        Reducers->InvokeInsertPkI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_i64"))
     {
         FInsertPkI64Args Args = ReducerEvent.Reducer.GetAsInsertPkI64();
-        UInsertPkI64Reducer* Reducer = NewObject<UInsertPkI64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkI64(Context, Reducer);
+        Reducers->InvokeInsertPkI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_i8"))
     {
         FInsertPkI8Args Args = ReducerEvent.Reducer.GetAsInsertPkI8();
-        UInsertPkI8Reducer* Reducer = NewObject<UInsertPkI8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkI8(Context, Reducer);
+        Reducers->InvokeInsertPkI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_identity"))
     {
         FInsertPkIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertPkIdentity();
-        UInsertPkIdentityReducer* Reducer = NewObject<UInsertPkIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkIdentity(Context, Reducer);
+        Reducers->InvokeInsertPkIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_simple_enum"))
     {
         FInsertPkSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsInsertPkSimpleEnum();
-        UInsertPkSimpleEnumReducer* Reducer = NewObject<UInsertPkSimpleEnumReducer>();
-        Reducer->A = Args.A;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkSimpleEnum(Context, Reducer);
+        Reducers->InvokeInsertPkSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_string"))
     {
         FInsertPkStringArgs Args = ReducerEvent.Reducer.GetAsInsertPkString();
-        UInsertPkStringReducer* Reducer = NewObject<UInsertPkStringReducer>();
-        Reducer->S = Args.S;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkString(Context, Reducer);
+        Reducers->InvokeInsertPkStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u128"))
     {
         FInsertPkU128Args Args = ReducerEvent.Reducer.GetAsInsertPkU128();
-        UInsertPkU128Reducer* Reducer = NewObject<UInsertPkU128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU128(Context, Reducer);
+        Reducers->InvokeInsertPkU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u16"))
     {
         FInsertPkU16Args Args = ReducerEvent.Reducer.GetAsInsertPkU16();
-        UInsertPkU16Reducer* Reducer = NewObject<UInsertPkU16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU16(Context, Reducer);
+        Reducers->InvokeInsertPkU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u256"))
     {
         FInsertPkU256Args Args = ReducerEvent.Reducer.GetAsInsertPkU256();
-        UInsertPkU256Reducer* Reducer = NewObject<UInsertPkU256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU256(Context, Reducer);
+        Reducers->InvokeInsertPkU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u32"))
     {
         FInsertPkU32Args Args = ReducerEvent.Reducer.GetAsInsertPkU32();
-        UInsertPkU32Reducer* Reducer = NewObject<UInsertPkU32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU32(Context, Reducer);
+        Reducers->InvokeInsertPkU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u32_two"))
     {
         FInsertPkU32TwoArgs Args = ReducerEvent.Reducer.GetAsInsertPkU32Two();
-        UInsertPkU32TwoReducer* Reducer = NewObject<UInsertPkU32TwoReducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU32Two(Context, Reducer);
+        Reducers->InvokeInsertPkU32TwoWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u64"))
     {
         FInsertPkU64Args Args = ReducerEvent.Reducer.GetAsInsertPkU64();
-        UInsertPkU64Reducer* Reducer = NewObject<UInsertPkU64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU64(Context, Reducer);
+        Reducers->InvokeInsertPkU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_u8"))
     {
         FInsertPkU8Args Args = ReducerEvent.Reducer.GetAsInsertPkU8();
-        UInsertPkU8Reducer* Reducer = NewObject<UInsertPkU8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkU8(Context, Reducer);
+        Reducers->InvokeInsertPkU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_pk_uuid"))
     {
         FInsertPkUuidArgs Args = ReducerEvent.Reducer.GetAsInsertPkUuid();
-        UInsertPkUuidReducer* Reducer = NewObject<UInsertPkUuidReducer>();
-        Reducer->U = Args.U;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertPkUuid(Context, Reducer);
+        Reducers->InvokeInsertPkUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_primitives_as_strings"))
     {
         FInsertPrimitivesAsStringsArgs Args = ReducerEvent.Reducer.GetAsInsertPrimitivesAsStrings();
-        UInsertPrimitivesAsStringsReducer* Reducer = NewObject<UInsertPrimitivesAsStringsReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertPrimitivesAsStrings(Context, Reducer);
+        Reducers->InvokeInsertPrimitivesAsStringsWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_every_primitive_struct_string"))
+    {
+        FInsertResultEveryPrimitiveStructStringArgs Args = ReducerEvent.Reducer.GetAsInsertResultEveryPrimitiveStructString();
+        Reducers->InvokeInsertResultEveryPrimitiveStructStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_i32_string"))
+    {
+        FInsertResultI32StringArgs Args = ReducerEvent.Reducer.GetAsInsertResultI32String();
+        Reducers->InvokeInsertResultI32StringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_identity_string"))
+    {
+        FInsertResultIdentityStringArgs Args = ReducerEvent.Reducer.GetAsInsertResultIdentityString();
+        Reducers->InvokeInsertResultIdentityStringWithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_simple_enum_i32"))
+    {
+        FInsertResultSimpleEnumI32Args Args = ReducerEvent.Reducer.GetAsInsertResultSimpleEnumI32();
+        Reducers->InvokeInsertResultSimpleEnumI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_string_i32"))
+    {
+        FInsertResultStringI32Args Args = ReducerEvent.Reducer.GetAsInsertResultStringI32();
+        Reducers->InvokeInsertResultStringI32WithArgs(Context, Args);
+        return;
+    }
+    if (ReducerName == TEXT("insert_result_vec_i32_string"))
+    {
+        FInsertResultVecI32StringArgs Args = ReducerEvent.Reducer.GetAsInsertResultVecI32String();
+        Reducers->InvokeInsertResultVecI32StringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_table_holds_table"))
     {
         FInsertTableHoldsTableArgs Args = ReducerEvent.Reducer.GetAsInsertTableHoldsTable();
-        UInsertTableHoldsTableReducer* Reducer = NewObject<UInsertTableHoldsTableReducer>();
-        Reducer->A = Args.A;
-        Reducer->B = Args.B;
-        Reducers->InvokeInsertTableHoldsTable(Context, Reducer);
+        Reducers->InvokeInsertTableHoldsTableWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_bool"))
     {
         FInsertUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueBool();
-        UInsertUniqueBoolReducer* Reducer = NewObject<UInsertUniqueBoolReducer>();
-        Reducer->B = Args.B;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueBool(Context, Reducer);
+        Reducers->InvokeInsertUniqueBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_connection_id"))
     {
         FInsertUniqueConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueConnectionId();
-        UInsertUniqueConnectionIdReducer* Reducer = NewObject<UInsertUniqueConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueConnectionId(Context, Reducer);
+        Reducers->InvokeInsertUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_i128"))
     {
         FInsertUniqueI128Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI128();
-        UInsertUniqueI128Reducer* Reducer = NewObject<UInsertUniqueI128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueI128(Context, Reducer);
+        Reducers->InvokeInsertUniqueI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_i16"))
     {
         FInsertUniqueI16Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI16();
-        UInsertUniqueI16Reducer* Reducer = NewObject<UInsertUniqueI16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueI16(Context, Reducer);
+        Reducers->InvokeInsertUniqueI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_i256"))
     {
         FInsertUniqueI256Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI256();
-        UInsertUniqueI256Reducer* Reducer = NewObject<UInsertUniqueI256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueI256(Context, Reducer);
+        Reducers->InvokeInsertUniqueI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_i32"))
     {
         FInsertUniqueI32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI32();
-        UInsertUniqueI32Reducer* Reducer = NewObject<UInsertUniqueI32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueI32(Context, Reducer);
+        Reducers->InvokeInsertUniqueI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_i64"))
     {
         FInsertUniqueI64Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI64();
-        UInsertUniqueI64Reducer* Reducer = NewObject<UInsertUniqueI64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueI64(Context, Reducer);
+        Reducers->InvokeInsertUniqueI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_i8"))
     {
         FInsertUniqueI8Args Args = ReducerEvent.Reducer.GetAsInsertUniqueI8();
-        UInsertUniqueI8Reducer* Reducer = NewObject<UInsertUniqueI8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueI8(Context, Reducer);
+        Reducers->InvokeInsertUniqueI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_identity"))
     {
         FInsertUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueIdentity();
-        UInsertUniqueIdentityReducer* Reducer = NewObject<UInsertUniqueIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueIdentity(Context, Reducer);
+        Reducers->InvokeInsertUniqueIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_string"))
     {
         FInsertUniqueStringArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueString();
-        UInsertUniqueStringReducer* Reducer = NewObject<UInsertUniqueStringReducer>();
-        Reducer->S = Args.S;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueString(Context, Reducer);
+        Reducers->InvokeInsertUniqueStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u128"))
     {
         FInsertUniqueU128Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU128();
-        UInsertUniqueU128Reducer* Reducer = NewObject<UInsertUniqueU128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueU128(Context, Reducer);
+        Reducers->InvokeInsertUniqueU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u16"))
     {
         FInsertUniqueU16Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU16();
-        UInsertUniqueU16Reducer* Reducer = NewObject<UInsertUniqueU16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueU16(Context, Reducer);
+        Reducers->InvokeInsertUniqueU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u256"))
     {
         FInsertUniqueU256Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU256();
-        UInsertUniqueU256Reducer* Reducer = NewObject<UInsertUniqueU256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueU256(Context, Reducer);
+        Reducers->InvokeInsertUniqueU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u32"))
     {
         FInsertUniqueU32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU32();
-        UInsertUniqueU32Reducer* Reducer = NewObject<UInsertUniqueU32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueU32(Context, Reducer);
+        Reducers->InvokeInsertUniqueU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u32_update_pk_u32"))
     {
         FInsertUniqueU32UpdatePkU32Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU32UpdatePkU32();
-        UInsertUniqueU32UpdatePkU32Reducer* Reducer = NewObject<UInsertUniqueU32UpdatePkU32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->DUnique = Args.DUnique;
-        Reducer->DPk = Args.DPk;
-        Reducers->InvokeInsertUniqueU32UpdatePkU32(Context, Reducer);
+        Reducers->InvokeInsertUniqueU32UpdatePkU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u64"))
     {
         FInsertUniqueU64Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU64();
-        UInsertUniqueU64Reducer* Reducer = NewObject<UInsertUniqueU64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueU64(Context, Reducer);
+        Reducers->InvokeInsertUniqueU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_u8"))
     {
         FInsertUniqueU8Args Args = ReducerEvent.Reducer.GetAsInsertUniqueU8();
-        UInsertUniqueU8Reducer* Reducer = NewObject<UInsertUniqueU8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueU8(Context, Reducer);
+        Reducers->InvokeInsertUniqueU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_unique_uuid"))
     {
         FInsertUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsInsertUniqueUuid();
-        UInsertUniqueUuidReducer* Reducer = NewObject<UInsertUniqueUuidReducer>();
-        Reducer->U = Args.U;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeInsertUniqueUuid(Context, Reducer);
+        Reducers->InvokeInsertUniqueUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_user"))
     {
         FInsertUserArgs Args = ReducerEvent.Reducer.GetAsInsertUser();
-        UInsertUserReducer* Reducer = NewObject<UInsertUserReducer>();
-        Reducer->Name = Args.Name;
-        Reducer->Identity = Args.Identity;
-        Reducers->InvokeInsertUser(Context, Reducer);
+        Reducers->InvokeInsertUserWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_bool"))
     {
         FInsertVecBoolArgs Args = ReducerEvent.Reducer.GetAsInsertVecBool();
-        UInsertVecBoolReducer* Reducer = NewObject<UInsertVecBoolReducer>();
-        Reducer->B = Args.B;
-        Reducers->InvokeInsertVecBool(Context, Reducer);
+        Reducers->InvokeInsertVecBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_byte_struct"))
     {
         FInsertVecByteStructArgs Args = ReducerEvent.Reducer.GetAsInsertVecByteStruct();
-        UInsertVecByteStructReducer* Reducer = NewObject<UInsertVecByteStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertVecByteStruct(Context, Reducer);
+        Reducers->InvokeInsertVecByteStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_connection_id"))
     {
         FInsertVecConnectionIdArgs Args = ReducerEvent.Reducer.GetAsInsertVecConnectionId();
-        UInsertVecConnectionIdReducer* Reducer = NewObject<UInsertVecConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducers->InvokeInsertVecConnectionId(Context, Reducer);
+        Reducers->InvokeInsertVecConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_enum_with_payload"))
     {
         FInsertVecEnumWithPayloadArgs Args = ReducerEvent.Reducer.GetAsInsertVecEnumWithPayload();
-        UInsertVecEnumWithPayloadReducer* Reducer = NewObject<UInsertVecEnumWithPayloadReducer>();
-        Reducer->E = Args.E;
-        Reducers->InvokeInsertVecEnumWithPayload(Context, Reducer);
+        Reducers->InvokeInsertVecEnumWithPayloadWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_every_primitive_struct"))
     {
         FInsertVecEveryPrimitiveStructArgs Args = ReducerEvent.Reducer.GetAsInsertVecEveryPrimitiveStruct();
-        UInsertVecEveryPrimitiveStructReducer* Reducer = NewObject<UInsertVecEveryPrimitiveStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertVecEveryPrimitiveStruct(Context, Reducer);
+        Reducers->InvokeInsertVecEveryPrimitiveStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_every_vec_struct"))
     {
         FInsertVecEveryVecStructArgs Args = ReducerEvent.Reducer.GetAsInsertVecEveryVecStruct();
-        UInsertVecEveryVecStructReducer* Reducer = NewObject<UInsertVecEveryVecStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertVecEveryVecStruct(Context, Reducer);
+        Reducers->InvokeInsertVecEveryVecStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_f32"))
     {
         FInsertVecF32Args Args = ReducerEvent.Reducer.GetAsInsertVecF32();
-        UInsertVecF32Reducer* Reducer = NewObject<UInsertVecF32Reducer>();
-        Reducer->F = Args.F;
-        Reducers->InvokeInsertVecF32(Context, Reducer);
+        Reducers->InvokeInsertVecF32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_f64"))
     {
         FInsertVecF64Args Args = ReducerEvent.Reducer.GetAsInsertVecF64();
-        UInsertVecF64Reducer* Reducer = NewObject<UInsertVecF64Reducer>();
-        Reducer->F = Args.F;
-        Reducers->InvokeInsertVecF64(Context, Reducer);
+        Reducers->InvokeInsertVecF64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_i128"))
     {
         FInsertVecI128Args Args = ReducerEvent.Reducer.GetAsInsertVecI128();
-        UInsertVecI128Reducer* Reducer = NewObject<UInsertVecI128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecI128(Context, Reducer);
+        Reducers->InvokeInsertVecI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_i16"))
     {
         FInsertVecI16Args Args = ReducerEvent.Reducer.GetAsInsertVecI16();
-        UInsertVecI16Reducer* Reducer = NewObject<UInsertVecI16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecI16(Context, Reducer);
+        Reducers->InvokeInsertVecI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_i256"))
     {
         FInsertVecI256Args Args = ReducerEvent.Reducer.GetAsInsertVecI256();
-        UInsertVecI256Reducer* Reducer = NewObject<UInsertVecI256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecI256(Context, Reducer);
+        Reducers->InvokeInsertVecI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_i32"))
     {
         FInsertVecI32Args Args = ReducerEvent.Reducer.GetAsInsertVecI32();
-        UInsertVecI32Reducer* Reducer = NewObject<UInsertVecI32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecI32(Context, Reducer);
+        Reducers->InvokeInsertVecI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_i64"))
     {
         FInsertVecI64Args Args = ReducerEvent.Reducer.GetAsInsertVecI64();
-        UInsertVecI64Reducer* Reducer = NewObject<UInsertVecI64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecI64(Context, Reducer);
+        Reducers->InvokeInsertVecI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_i8"))
     {
         FInsertVecI8Args Args = ReducerEvent.Reducer.GetAsInsertVecI8();
-        UInsertVecI8Reducer* Reducer = NewObject<UInsertVecI8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecI8(Context, Reducer);
+        Reducers->InvokeInsertVecI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_identity"))
     {
         FInsertVecIdentityArgs Args = ReducerEvent.Reducer.GetAsInsertVecIdentity();
-        UInsertVecIdentityReducer* Reducer = NewObject<UInsertVecIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducers->InvokeInsertVecIdentity(Context, Reducer);
+        Reducers->InvokeInsertVecIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_simple_enum"))
     {
         FInsertVecSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsInsertVecSimpleEnum();
-        UInsertVecSimpleEnumReducer* Reducer = NewObject<UInsertVecSimpleEnumReducer>();
-        Reducer->E = Args.E;
-        Reducers->InvokeInsertVecSimpleEnum(Context, Reducer);
+        Reducers->InvokeInsertVecSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_string"))
     {
         FInsertVecStringArgs Args = ReducerEvent.Reducer.GetAsInsertVecString();
-        UInsertVecStringReducer* Reducer = NewObject<UInsertVecStringReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertVecString(Context, Reducer);
+        Reducers->InvokeInsertVecStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_timestamp"))
     {
         FInsertVecTimestampArgs Args = ReducerEvent.Reducer.GetAsInsertVecTimestamp();
-        UInsertVecTimestampReducer* Reducer = NewObject<UInsertVecTimestampReducer>();
-        Reducer->T = Args.T;
-        Reducers->InvokeInsertVecTimestamp(Context, Reducer);
+        Reducers->InvokeInsertVecTimestampWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_u128"))
     {
         FInsertVecU128Args Args = ReducerEvent.Reducer.GetAsInsertVecU128();
-        UInsertVecU128Reducer* Reducer = NewObject<UInsertVecU128Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecU128(Context, Reducer);
+        Reducers->InvokeInsertVecU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_u16"))
     {
         FInsertVecU16Args Args = ReducerEvent.Reducer.GetAsInsertVecU16();
-        UInsertVecU16Reducer* Reducer = NewObject<UInsertVecU16Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecU16(Context, Reducer);
+        Reducers->InvokeInsertVecU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_u256"))
     {
         FInsertVecU256Args Args = ReducerEvent.Reducer.GetAsInsertVecU256();
-        UInsertVecU256Reducer* Reducer = NewObject<UInsertVecU256Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecU256(Context, Reducer);
+        Reducers->InvokeInsertVecU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_u32"))
     {
         FInsertVecU32Args Args = ReducerEvent.Reducer.GetAsInsertVecU32();
-        UInsertVecU32Reducer* Reducer = NewObject<UInsertVecU32Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecU32(Context, Reducer);
+        Reducers->InvokeInsertVecU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_u64"))
     {
         FInsertVecU64Args Args = ReducerEvent.Reducer.GetAsInsertVecU64();
-        UInsertVecU64Reducer* Reducer = NewObject<UInsertVecU64Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecU64(Context, Reducer);
+        Reducers->InvokeInsertVecU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_u8"))
     {
         FInsertVecU8Args Args = ReducerEvent.Reducer.GetAsInsertVecU8();
-        UInsertVecU8Reducer* Reducer = NewObject<UInsertVecU8Reducer>();
-        Reducer->N = Args.N;
-        Reducers->InvokeInsertVecU8(Context, Reducer);
+        Reducers->InvokeInsertVecU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_unit_struct"))
     {
         FInsertVecUnitStructArgs Args = ReducerEvent.Reducer.GetAsInsertVecUnitStruct();
-        UInsertVecUnitStructReducer* Reducer = NewObject<UInsertVecUnitStructReducer>();
-        Reducer->S = Args.S;
-        Reducers->InvokeInsertVecUnitStruct(Context, Reducer);
+        Reducers->InvokeInsertVecUnitStructWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("insert_vec_uuid"))
     {
         FInsertVecUuidArgs Args = ReducerEvent.Reducer.GetAsInsertVecUuid();
-        UInsertVecUuidReducer* Reducer = NewObject<UInsertVecUuidReducer>();
-        Reducer->U = Args.U;
-        Reducers->InvokeInsertVecUuid(Context, Reducer);
+        Reducers->InvokeInsertVecUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("no_op_succeeds"))
     {
         FNoOpSucceedsArgs Args = ReducerEvent.Reducer.GetAsNoOpSucceeds();
-        UNoOpSucceedsReducer* Reducer = NewObject<UNoOpSucceedsReducer>();
-        Reducers->InvokeNoOpSucceeds(Context, Reducer);
+        Reducers->InvokeNoOpSucceedsWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("send_scheduled_message"))
     {
         FSendScheduledMessageArgs Args = ReducerEvent.Reducer.GetAsSendScheduledMessage();
-        USendScheduledMessageReducer* Reducer = NewObject<USendScheduledMessageReducer>();
-        Reducer->Arg = Args.Arg;
-        Reducers->InvokeSendScheduledMessage(Context, Reducer);
+        Reducers->InvokeSendScheduledMessageWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("sorted_uuids_insert"))
     {
         FSortedUuidsInsertArgs Args = ReducerEvent.Reducer.GetAsSortedUuidsInsert();
-        USortedUuidsInsertReducer* Reducer = NewObject<USortedUuidsInsertReducer>();
-        Reducers->InvokeSortedUuidsInsert(Context, Reducer);
+        Reducers->InvokeSortedUuidsInsertWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_indexed_simple_enum"))
     {
         FUpdateIndexedSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsUpdateIndexedSimpleEnum();
-        UUpdateIndexedSimpleEnumReducer* Reducer = NewObject<UUpdateIndexedSimpleEnumReducer>();
-        Reducer->A = Args.A;
-        Reducer->B = Args.B;
-        Reducers->InvokeUpdateIndexedSimpleEnum(Context, Reducer);
+        Reducers->InvokeUpdateIndexedSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_bool"))
     {
         FUpdatePkBoolArgs Args = ReducerEvent.Reducer.GetAsUpdatePkBool();
-        UUpdatePkBoolReducer* Reducer = NewObject<UUpdatePkBoolReducer>();
-        Reducer->B = Args.B;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkBool(Context, Reducer);
+        Reducers->InvokeUpdatePkBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_connection_id"))
     {
         FUpdatePkConnectionIdArgs Args = ReducerEvent.Reducer.GetAsUpdatePkConnectionId();
-        UUpdatePkConnectionIdReducer* Reducer = NewObject<UUpdatePkConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkConnectionId(Context, Reducer);
+        Reducers->InvokeUpdatePkConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_i128"))
     {
         FUpdatePkI128Args Args = ReducerEvent.Reducer.GetAsUpdatePkI128();
-        UUpdatePkI128Reducer* Reducer = NewObject<UUpdatePkI128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkI128(Context, Reducer);
+        Reducers->InvokeUpdatePkI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_i16"))
     {
         FUpdatePkI16Args Args = ReducerEvent.Reducer.GetAsUpdatePkI16();
-        UUpdatePkI16Reducer* Reducer = NewObject<UUpdatePkI16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkI16(Context, Reducer);
+        Reducers->InvokeUpdatePkI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_i256"))
     {
         FUpdatePkI256Args Args = ReducerEvent.Reducer.GetAsUpdatePkI256();
-        UUpdatePkI256Reducer* Reducer = NewObject<UUpdatePkI256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkI256(Context, Reducer);
+        Reducers->InvokeUpdatePkI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_i32"))
     {
         FUpdatePkI32Args Args = ReducerEvent.Reducer.GetAsUpdatePkI32();
-        UUpdatePkI32Reducer* Reducer = NewObject<UUpdatePkI32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkI32(Context, Reducer);
+        Reducers->InvokeUpdatePkI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_i64"))
     {
         FUpdatePkI64Args Args = ReducerEvent.Reducer.GetAsUpdatePkI64();
-        UUpdatePkI64Reducer* Reducer = NewObject<UUpdatePkI64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkI64(Context, Reducer);
+        Reducers->InvokeUpdatePkI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_i8"))
     {
         FUpdatePkI8Args Args = ReducerEvent.Reducer.GetAsUpdatePkI8();
-        UUpdatePkI8Reducer* Reducer = NewObject<UUpdatePkI8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkI8(Context, Reducer);
+        Reducers->InvokeUpdatePkI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_identity"))
     {
         FUpdatePkIdentityArgs Args = ReducerEvent.Reducer.GetAsUpdatePkIdentity();
-        UUpdatePkIdentityReducer* Reducer = NewObject<UUpdatePkIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkIdentity(Context, Reducer);
+        Reducers->InvokeUpdatePkIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_simple_enum"))
     {
         FUpdatePkSimpleEnumArgs Args = ReducerEvent.Reducer.GetAsUpdatePkSimpleEnum();
-        UUpdatePkSimpleEnumReducer* Reducer = NewObject<UUpdatePkSimpleEnumReducer>();
-        Reducer->A = Args.A;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkSimpleEnum(Context, Reducer);
+        Reducers->InvokeUpdatePkSimpleEnumWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_string"))
     {
         FUpdatePkStringArgs Args = ReducerEvent.Reducer.GetAsUpdatePkString();
-        UUpdatePkStringReducer* Reducer = NewObject<UUpdatePkStringReducer>();
-        Reducer->S = Args.S;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkString(Context, Reducer);
+        Reducers->InvokeUpdatePkStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u128"))
     {
         FUpdatePkU128Args Args = ReducerEvent.Reducer.GetAsUpdatePkU128();
-        UUpdatePkU128Reducer* Reducer = NewObject<UUpdatePkU128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU128(Context, Reducer);
+        Reducers->InvokeUpdatePkU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u16"))
     {
         FUpdatePkU16Args Args = ReducerEvent.Reducer.GetAsUpdatePkU16();
-        UUpdatePkU16Reducer* Reducer = NewObject<UUpdatePkU16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU16(Context, Reducer);
+        Reducers->InvokeUpdatePkU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u256"))
     {
         FUpdatePkU256Args Args = ReducerEvent.Reducer.GetAsUpdatePkU256();
-        UUpdatePkU256Reducer* Reducer = NewObject<UUpdatePkU256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU256(Context, Reducer);
+        Reducers->InvokeUpdatePkU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u32"))
     {
         FUpdatePkU32Args Args = ReducerEvent.Reducer.GetAsUpdatePkU32();
-        UUpdatePkU32Reducer* Reducer = NewObject<UUpdatePkU32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU32(Context, Reducer);
+        Reducers->InvokeUpdatePkU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u32_two"))
     {
         FUpdatePkU32TwoArgs Args = ReducerEvent.Reducer.GetAsUpdatePkU32Two();
-        UUpdatePkU32TwoReducer* Reducer = NewObject<UUpdatePkU32TwoReducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU32Two(Context, Reducer);
+        Reducers->InvokeUpdatePkU32TwoWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u64"))
     {
         FUpdatePkU64Args Args = ReducerEvent.Reducer.GetAsUpdatePkU64();
-        UUpdatePkU64Reducer* Reducer = NewObject<UUpdatePkU64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU64(Context, Reducer);
+        Reducers->InvokeUpdatePkU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_u8"))
     {
         FUpdatePkU8Args Args = ReducerEvent.Reducer.GetAsUpdatePkU8();
-        UUpdatePkU8Reducer* Reducer = NewObject<UUpdatePkU8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkU8(Context, Reducer);
+        Reducers->InvokeUpdatePkU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_pk_uuid"))
     {
         FUpdatePkUuidArgs Args = ReducerEvent.Reducer.GetAsUpdatePkUuid();
-        UUpdatePkUuidReducer* Reducer = NewObject<UUpdatePkUuidReducer>();
-        Reducer->U = Args.U;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdatePkUuid(Context, Reducer);
+        Reducers->InvokeUpdatePkUuidWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_bool"))
     {
         FUpdateUniqueBoolArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueBool();
-        UUpdateUniqueBoolReducer* Reducer = NewObject<UUpdateUniqueBoolReducer>();
-        Reducer->B = Args.B;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueBool(Context, Reducer);
+        Reducers->InvokeUpdateUniqueBoolWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_connection_id"))
     {
         FUpdateUniqueConnectionIdArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueConnectionId();
-        UUpdateUniqueConnectionIdReducer* Reducer = NewObject<UUpdateUniqueConnectionIdReducer>();
-        Reducer->A = Args.A;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueConnectionId(Context, Reducer);
+        Reducers->InvokeUpdateUniqueConnectionIdWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_i128"))
     {
         FUpdateUniqueI128Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI128();
-        UUpdateUniqueI128Reducer* Reducer = NewObject<UUpdateUniqueI128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueI128(Context, Reducer);
+        Reducers->InvokeUpdateUniqueI128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_i16"))
     {
         FUpdateUniqueI16Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI16();
-        UUpdateUniqueI16Reducer* Reducer = NewObject<UUpdateUniqueI16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueI16(Context, Reducer);
+        Reducers->InvokeUpdateUniqueI16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_i256"))
     {
         FUpdateUniqueI256Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI256();
-        UUpdateUniqueI256Reducer* Reducer = NewObject<UUpdateUniqueI256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueI256(Context, Reducer);
+        Reducers->InvokeUpdateUniqueI256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_i32"))
     {
         FUpdateUniqueI32Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI32();
-        UUpdateUniqueI32Reducer* Reducer = NewObject<UUpdateUniqueI32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueI32(Context, Reducer);
+        Reducers->InvokeUpdateUniqueI32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_i64"))
     {
         FUpdateUniqueI64Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI64();
-        UUpdateUniqueI64Reducer* Reducer = NewObject<UUpdateUniqueI64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueI64(Context, Reducer);
+        Reducers->InvokeUpdateUniqueI64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_i8"))
     {
         FUpdateUniqueI8Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueI8();
-        UUpdateUniqueI8Reducer* Reducer = NewObject<UUpdateUniqueI8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueI8(Context, Reducer);
+        Reducers->InvokeUpdateUniqueI8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_identity"))
     {
         FUpdateUniqueIdentityArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueIdentity();
-        UUpdateUniqueIdentityReducer* Reducer = NewObject<UUpdateUniqueIdentityReducer>();
-        Reducer->I = Args.I;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueIdentity(Context, Reducer);
+        Reducers->InvokeUpdateUniqueIdentityWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_string"))
     {
         FUpdateUniqueStringArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueString();
-        UUpdateUniqueStringReducer* Reducer = NewObject<UUpdateUniqueStringReducer>();
-        Reducer->S = Args.S;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueString(Context, Reducer);
+        Reducers->InvokeUpdateUniqueStringWithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_u128"))
     {
         FUpdateUniqueU128Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU128();
-        UUpdateUniqueU128Reducer* Reducer = NewObject<UUpdateUniqueU128Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueU128(Context, Reducer);
+        Reducers->InvokeUpdateUniqueU128WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_u16"))
     {
         FUpdateUniqueU16Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU16();
-        UUpdateUniqueU16Reducer* Reducer = NewObject<UUpdateUniqueU16Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueU16(Context, Reducer);
+        Reducers->InvokeUpdateUniqueU16WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_u256"))
     {
         FUpdateUniqueU256Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU256();
-        UUpdateUniqueU256Reducer* Reducer = NewObject<UUpdateUniqueU256Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueU256(Context, Reducer);
+        Reducers->InvokeUpdateUniqueU256WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_u32"))
     {
         FUpdateUniqueU32Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU32();
-        UUpdateUniqueU32Reducer* Reducer = NewObject<UUpdateUniqueU32Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueU32(Context, Reducer);
+        Reducers->InvokeUpdateUniqueU32WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_u64"))
     {
         FUpdateUniqueU64Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU64();
-        UUpdateUniqueU64Reducer* Reducer = NewObject<UUpdateUniqueU64Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueU64(Context, Reducer);
+        Reducers->InvokeUpdateUniqueU64WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_u8"))
     {
         FUpdateUniqueU8Args Args = ReducerEvent.Reducer.GetAsUpdateUniqueU8();
-        UUpdateUniqueU8Reducer* Reducer = NewObject<UUpdateUniqueU8Reducer>();
-        Reducer->N = Args.N;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueU8(Context, Reducer);
+        Reducers->InvokeUpdateUniqueU8WithArgs(Context, Args);
         return;
     }
     if (ReducerName == TEXT("update_unique_uuid"))
     {
         FUpdateUniqueUuidArgs Args = ReducerEvent.Reducer.GetAsUpdateUniqueUuid();
-        UUpdateUniqueUuidReducer* Reducer = NewObject<UUpdateUniqueUuidReducer>();
-        Reducer->U = Args.U;
-        Reducer->Data = Args.Data;
-        Reducers->InvokeUpdateUniqueUuid(Context, Reducer);
+        Reducers->InvokeUpdateUniqueUuidWithArgs(Context, Args);
         return;
     }
 

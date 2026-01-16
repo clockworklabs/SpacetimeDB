@@ -996,8 +996,8 @@ impl<'de> SumVisitor<'de> for &SumTypeLayout {
         // Find the variant type by `tag`.
         let variant_ty = &self.variants[tag as usize].ty;
 
-        let value = Box::new(data.deserialize_seed(variant_ty)?);
-        Ok(SumValue { tag, value })
+        let value = data.deserialize_seed(variant_ty)?;
+        Ok(SumValue::new(tag, value))
     }
 }
 

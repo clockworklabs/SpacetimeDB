@@ -9,7 +9,7 @@ use thiserror::Error;
 pub enum Unresolved {
     #[error("`{0}` is not in scope")]
     Var(String),
-    #[error("`{0}` is not a valid table")]
+    #[error("no such table: `{0}`. If the table exists, it may be marked private.")]
     Table(String),
     #[error("`{0}` does not have a field `{1}`")]
     Field(String, String),

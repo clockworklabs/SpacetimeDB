@@ -24,7 +24,6 @@ pub fn build_common_module_from_raw(
     let def: ModuleDef = raw_def.try_into()?;
 
     let replica_ctx = mcc.replica_ctx;
-    let log_tx = replica_ctx.logger.tx.clone();
 
     // Note: assigns Reducer IDs based on the alphabetical order of reducer names.
     let info = ModuleInfo::new(
@@ -32,7 +31,6 @@ pub fn build_common_module_from_raw(
         replica_ctx.owner_identity,
         replica_ctx.database_identity,
         mcc.program_hash,
-        log_tx,
         replica_ctx.subscriptions.clone(),
     );
 

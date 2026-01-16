@@ -1,8 +1,8 @@
 use anyhow::{bail, Result};
 use spacetimedb_execution::{
     pipelined::{
-        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScan, PipelinedIxJoin, PipelinedIxScan,
-        PipelinedProject,
+        PipelinedExecutor, PipelinedIxDeltaJoin, PipelinedIxDeltaScanEq, PipelinedIxDeltaScanRange, PipelinedIxJoin,
+        PipelinedIxScanEq, PipelinedIxScanRange, PipelinedProject,
     },
     Datastore, DeltaStore, Row,
 };
@@ -36,8 +36,10 @@ impl Fragments {
         let mut index_ids = HashSet::new();
         for plan in self.insert_plans.iter().chain(self.delete_plans.iter()) {
             plan.visit(&mut |plan| match plan {
-                PipelinedExecutor::IxScan(PipelinedIxScan { table_id, index_id, .. })
-                | PipelinedExecutor::IxDeltaScan(PipelinedIxDeltaScan { table_id, index_id, .. })
+                PipelinedExecutor::IxScanEq(PipelinedIxScanEq { table_id, index_id, .. })
+                | PipelinedExecutor::IxScanRange(PipelinedIxScanRange { table_id, index_id, .. })
+                | PipelinedExecutor::IxDeltaScanEq(PipelinedIxDeltaScanEq { table_id, index_id, .. })
+                | PipelinedExecutor::IxDeltaScanRange(PipelinedIxDeltaScanRange { table_id, index_id, .. })
                 | PipelinedExecutor::IxJoin(PipelinedIxJoin {
                     rhs_table: table_id,
                     rhs_index: index_id,

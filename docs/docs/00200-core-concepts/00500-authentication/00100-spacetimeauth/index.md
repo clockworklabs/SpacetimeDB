@@ -3,18 +3,19 @@ title: Overview
 slug: /spacetimeauth
 ---
 
-
 :::warning
 
-SpacetimeAuth is currently in beta, some features may not be available yet or may change in the future. You might encounter bugs or issues while using the service. Please report any problems you encounter to help us improve SpacetimeAuth.
+SpacetimeAuth is currently in beta, some features may not be available yet or
+may change in the future. You might encounter bugs or issues while using the
+service. Please report any problems you encounter to help us improve SpacetimeAuth.
 
 :::
 
 SpacetimeAuth is a service for managing authentication for your SpacetimeDB
 applications. This allows you to authenticate users without needing
 an external authentication service or even a hosting server.
-SpacetimeAuth is an [OpenID Connect (OIDC)](https://openid.net/developers/how-connect-works/) provider, which means it can be used with
-any OIDC-compatible client library.
+SpacetimeAuth is an [OpenID Connect (OIDC)](https://openid.net/developers/how-connect-works/)
+provider, which means it can be used with any OIDC-compatible client library.
 
 At the end of the authentication flow, your application receives an ID token
 containing identity claims (such as email, username, and roles). Your

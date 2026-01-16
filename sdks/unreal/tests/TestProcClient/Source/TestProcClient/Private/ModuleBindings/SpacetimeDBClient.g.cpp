@@ -5,10 +5,19 @@
 #include "DBCache/WithBsatn.h"
 #include "BSATN/UEBSATNHelpers.h"
 #include "ModuleBindings/Tables/MyTableTable.g.h"
+#include "ModuleBindings/Tables/PkUuidTable.g.h"
+#include "ModuleBindings/Tables/ProcInsertsIntoTable.g.h"
+#include "ModuleBindings/Tables/ScheduledProcTableTable.g.h"
 
 static FReducer DecodeReducer(const FReducerEvent& Event)
 {
     const FString& ReducerName = Event.ReducerCall.ReducerName;
+
+    if (ReducerName == TEXT("schedule_proc"))
+    {
+        FScheduleProcArgs Args = UE::SpacetimeDB::Deserialize<FScheduleProcArgs>(Event.ReducerCall.Args);
+        return FReducer::ScheduleProc(Args);
+    }
 
     return FReducer();
 }
@@ -28,6 +37,9 @@ UDbConnection::UDbConnection(const FObjectInitializer& ObjectInitializer) : Supe
 	Procedures->Conn = this;
 
 	RegisterTable<FMyTableType, UMyTableTable, FEventContext>(TEXT("my_table"), Db->MyTable);
+	RegisterTable<FPkUuidType, UPkUuidTable, FEventContext>(TEXT("pk_uuid"), Db->PkUuid);
+	RegisterTable<FProcInsertsIntoType, UProcInsertsIntoTable, FEventContext>(TEXT("proc_inserts_into"), Db->ProcInsertsInto);
+	RegisterTable<FScheduledProcTableType, UScheduledProcTableTable, FEventContext>(TEXT("scheduled_proc_table"), Db->ScheduledProcTable);
 }
 
 FContextBase::FContextBase(UDbConnection* InConn)
@@ -64,13 +76,67 @@ void URemoteTables::Initialize()
 
 	/** Creating tables */
 	MyTable = NewObject<UMyTableTable>(this);
+	PkUuid = NewObject<UPkUuidTable>(this);
+	ProcInsertsInto = NewObject<UProcInsertsIntoTable>(this);
+	ScheduledProcTable = NewObject<UScheduledProcTableTable>(this);
 	/**/
 
 	/** Initialization */
 	MyTable->PostInitialize();
+	PkUuid->PostInitialize();
+	ProcInsertsInto->PostInitialize();
+	ScheduledProcTable->PostInitialize();
 	/**/
 }
 
+void USetReducerFlags::ScheduleProc(ECallReducerFlags Flag)
+{
+	FlagMap.Add("ScheduleProc", Flag);
+}
+
+void URemoteReducers::ScheduleProc()
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+	Conn->CallReducerTyped(TEXT("schedule_proc"), FScheduleProcArgs(), SetCallReducerFlags);
+}
+
+bool URemoteReducers::InvokeScheduleProc(const FReducerEventContext& Context, const UScheduleProcReducer* Args)
+{
+    if (!OnScheduleProc.IsBound())
+    {
+        // Handle unhandled reducer error
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            // TODO: Check Context.Event.Status for Failed/OutOfEnergy cases
+            // For now, just broadcast any error
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ScheduleProc"));
+        }
+        return false;
+    }
+
+    OnScheduleProc.Broadcast(Context);
+    return true;
+}
+
+bool URemoteReducers::InvokeScheduleProcWithArgs(const FReducerEventContext& Context, const FScheduleProcArgs& Args)
+{
+    if (!OnScheduleProc.IsBound())
+    {
+        if (InternalOnUnhandledReducerError.IsBound())
+        {
+            InternalOnUnhandledReducerError.Broadcast(Context, TEXT("No handler registered for ScheduleProc"));
+        }
+        return false;
+    }
+
+    OnScheduleProc.Broadcast(Context);
+    return true;
+}
 
 void URemoteProcedures::InsertWithTxCommit(FOnInsertWithTxCommitComplete Callback)
 {
@@ -304,6 +370,64 @@ void URemoteProcedures::ReturnStruct(const uint32 A, const FString& B, FOnReturn
 	Conn->CallProcedureTyped(TEXT("return_struct"), FReturnStructArgs(A, B), Wrapper);
 }
 
+void URemoteProcedures::ScheduledProc(const FScheduledProcTableType& Data, FOnScheduledProcComplete Callback)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+    FOnProcedureCompleteDelegate Wrapper;
+    Wrapper.BindLambda(
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
+        (const FSpacetimeDBEvent& Event,
+            const TArray<uint8>& ResultData,
+            bool bSuccess) mutable
+        {
+            FSpacetimeDBUnit ResultValue{};
+
+            if (bSuccess) {
+                ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
+            }
+
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
+            // Fire the user's typed delegate
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
+        });
+	Conn->CallProcedureTyped(TEXT("scheduled_proc"), FScheduledProcArgs(Data), Wrapper);
+}
+
+void URemoteProcedures::SortedUuidsInsert(FOnSortedUuidsInsertComplete Callback)
+{
+    if (!Conn)
+    {
+        UE_LOG(LogTemp, Error, TEXT("SpacetimeDB connection is null"));
+        return;
+    }
+
+    FOnProcedureCompleteDelegate Wrapper;
+    Wrapper.BindLambda(
+        [Callback = MoveTemp(Callback), Conn = this->Conn]
+        (const FSpacetimeDBEvent& Event,
+            const TArray<uint8>& ResultData,
+            bool bSuccess) mutable
+        {
+            FSpacetimeDBUnit ResultValue{};
+
+            if (bSuccess) {
+                ResultValue = UE::SpacetimeDB::Deserialize<FSpacetimeDBUnit>(ResultData);
+            }
+
+            FTestProcClientProcedureEvent ProcedureEvent = FTestProcClientProcedureEvent(Event.GetAsProcedure());
+            FProcedureEventContext Context = FProcedureEventContext(Conn, ProcedureEvent);
+            // Fire the user's typed delegate
+            Callback.ExecuteIfBound(Context, ResultValue, bSuccess);
+        });
+	Conn->CallProcedureTyped(TEXT("sorted_uuids_insert"), FSortedUuidsInsertArgs(), Wrapper);
+}
+
 void URemoteProcedures::WillPanic(FOnWillPanicComplete Callback)
 {
     if (!Conn)
@@ -387,6 +511,12 @@ void UDbConnection::ReducerEvent(const FReducerEvent& Event)
     // Use hardcoded string matching for reducer dispatching
     const FString& ReducerName = Event.ReducerCall.ReducerName;
 
+    if (ReducerName == TEXT("schedule_proc"))
+    {
+        FScheduleProcArgs Args = ReducerEvent.Reducer.GetAsScheduleProc();
+        Reducers->InvokeScheduleProcWithArgs(Context, Args);
+        return;
+    }
 
     UE_LOG(LogTemp, Warning, TEXT("Unknown reducer: %s"), *ReducerName);
 }

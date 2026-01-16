@@ -11,11 +11,14 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write 
+  pull-requests: write
   issues: write
 
 concurrency:
-  group: llm-benchmark-${{ github.event_name == 'issue_comment' && github.event.issue.number || inputs.pr_number }}
+  group: >-
+    llm-benchmark
+    -${{ github.event_name == 'issue_comment' && github.event.issue.number || inputs.pr_number }}
+    ${{ github.event_name == 'issue_comment' && !startsWith(github.event.comment.body, '/update-llm-benchmark') && '-unrelated-comment' }}
   cancel-in-progress: true
 
 jobs:

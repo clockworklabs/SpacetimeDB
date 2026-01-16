@@ -281,6 +281,8 @@ pub enum NodesError {
     IndexNotUnique,
     #[error("row was not found in index")]
     IndexRowNotFound,
+    #[error("index does not support range scans")]
+    IndexCannotSeekRange,
     #[error("column is out of bounds")]
     BadColumn,
     #[error("can't perform operation; not inside transaction")]

@@ -2005,7 +2005,8 @@ export class UuidBuilder
     Indexable<Uuid, UuidAlgebraicType>,
     Uniqueable<Uuid, UuidAlgebraicType>,
     PrimaryKeyable<Uuid, UuidAlgebraicType>,
-    Defaultable<Uuid, UuidAlgebraicType>
+    Defaultable<Uuid, UuidAlgebraicType>,
+    Nameable<Uuid, UuidAlgebraicType>
 {
   constructor() {
     super(Uuid.getAlgebraicType());
@@ -2051,6 +2052,11 @@ export class UuidBuilder
       this,
       set(defaultMetadata, { defaultValue: value })
     );
+  }
+  name<const Name extends string>(
+    name: Name
+  ): UuidColumnBuilder<SetField<DefaultMetadata, 'name', Name>> {
+    return new UuidColumnBuilder(this, set(defaultMetadata, { name }));
   }
 }
 
@@ -3536,7 +3542,8 @@ export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
     Indexable<Uuid, UuidAlgebraicType>,
     Uniqueable<Uuid, UuidAlgebraicType>,
     PrimaryKeyable<Uuid, UuidAlgebraicType>,
-    Defaultable<Uuid, UuidAlgebraicType>
+    Defaultable<Uuid, UuidAlgebraicType>,
+    Nameable<Uuid, UuidAlgebraicType>
 {
   index(): UuidColumnBuilder<SetField<M, 'indexType', 'btree'>>;
   index<N extends NonNullable<IndexTypes>>(
@@ -3566,6 +3573,14 @@ export class UuidColumnBuilder<M extends ColumnMetadata<Uuid> = DefaultMetadata>
     return new UuidColumnBuilder(
       this.typeBuilder,
       set(this.columnMetadata, { defaultValue: value })
+    );
+  }
+  name<const Name extends string>(
+    name: Name
+  ): UuidColumnBuilder<SetField<M, 'name', Name>> {
+    return new UuidColumnBuilder(
+      this.typeBuilder,
+      set(this.columnMetadata, { name })
     );
   }
 }

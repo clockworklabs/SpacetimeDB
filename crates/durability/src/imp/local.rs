@@ -2,6 +2,7 @@ use std::{
     io,
     num::NonZeroU16,
     panic,
+    path::PathBuf,
     sync::{
         atomic::{AtomicU64, Ordering::Relaxed},
         Arc,
@@ -12,13 +13,14 @@ use std::{
 use futures::{FutureExt as _, TryFutureExt as _};
 use itertools::Itertools as _;
 use log::{info, trace, warn};
+use scopeguard::ScopeGuard;
 use spacetimedb_commitlog::{error, payload::Txdata, Commit, Commitlog, Decoder, Encode, Transaction};
 use spacetimedb_fs_utils::lockfile::advisory::{LockError, LockedFile};
 use spacetimedb_paths::server::ReplicaDir;
 use thiserror::Error;
 use tokio::{
     sync::{futures::OwnedNotified, mpsc, oneshot, watch, Notify},
-    task::spawn_blocking,
+    task::{spawn_blocking, AbortHandle},
     time::{interval, MissedTickBehavior},
 };
 use tracing::{instrument, Span};
@@ -86,6 +88,8 @@ pub struct Local<T> {
     queue_depth: Arc<AtomicU64>,
     /// Channel to request the actor to exit.
     shutdown: mpsc::Sender<ShutdownReply>,
+    /// [AbortHandle] to force cancellation of the [Actor].
+    abort: AbortHandle,
 }
 
 impl<T: Encode + Send + Sync + 'static> Local<T> {
@@ -107,8 +111,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
 
         // We could just place a lock on the commitlog directory,
         // yet for backwards-compatibility, we keep using the `db.lock` file.
-        let lock_path = replica_dir.0.join("db.lock");
-        let lockfile = LockedFile::lock(lock_path)?;
+        let lock = Lock::create(replica_dir.0.join("db.lock"))?;
 
         let clog = Arc::new(Commitlog::open(
             replica_dir.commit_log(),
@@ -120,23 +123,22 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
         let (durable_tx, durable_rx) = watch::channel(clog.max_committed_offset());
         let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
 
-        rt.spawn(
-            Actor {
-                clog: clog.clone(),
+        let abort = rt
+            .spawn(
+                Actor {
+                    clog: clog.clone(),
 
-                txdata_rx,
-                shutdown_rx,
+                    durable_offset: durable_tx,
+                    queue_depth: queue_depth.clone(),
 
-                durable_offset: durable_tx,
-                queue_depth: queue_depth.clone(),
+                    sync_interval: opts.sync_interval,
+                    max_records_in_commit: opts.commitlog.max_records_in_commit,
 
-                sync_interval: opts.sync_interval,
-                max_records_in_commit: opts.commitlog.max_records_in_commit,
-
-                lockfile,
-            }
-            .run(),
-        );
+                    lock,
+                }
+                .run(txdata_rx, shutdown_rx),
+            )
+            .abort_handle();
 
         Ok(Self {
             clog,
@@ -144,6 +146,7 @@ impl<T: Encode + Send + Sync + 'static> Local<T> {
             queue,
             shutdown: shutdown_tx,
             queue_depth,
+            abort,
         })
     }
 
@@ -184,9 +187,6 @@ impl<T: Send + Sync + 'static> Local<T> {
 struct Actor<T> {
     clog: Arc<Commitlog<Txdata<T>>>,
 
-    txdata_rx: mpsc::UnboundedReceiver<Txdata<T>>,
-    shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
-
     durable_offset: watch::Sender<Option<TxOffset>>,
     queue_depth: Arc<AtomicU64>,
 
@@ -194,16 +194,17 @@ struct Actor<T> {
     max_records_in_commit: NonZeroU16,
 
     #[allow(unused)]
-    lockfile: LockedFile,
+    lock: Lock,
 }
 
 impl<T: Encode + Send + Sync + 'static> Actor<T> {
     #[instrument(name = "durability::local::actor", skip_all)]
-    async fn run(mut self) {
+    async fn run(
+        self,
+        mut txdata_rx: mpsc::UnboundedReceiver<Txdata<T>>,
+        mut shutdown_rx: mpsc::Receiver<oneshot::Sender<OwnedNotified>>,
+    ) {
         info!("starting durability actor");
-
-        // Always notify waiters (i.e. [Close] futures) when the actor exits.
-        let done = scopeguard::guard(Arc::new(Notify::new()), |done| done.notify_waiters());
 
         let mut sync_interval = interval(self.sync_interval);
         sync_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -222,9 +223,9 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                 // high transaction throughput.
                 biased;
 
-                Some(reply) = self.shutdown_rx.recv() => {
-                    self.txdata_rx.close();
-                    let _ = reply.send(done.clone().notified_owned());
+                Some(reply) = shutdown_rx.recv() => {
+                    txdata_rx.close();
+                    let _ = reply.send(self.lock.notified());
                 },
 
                 _ = sync_interval.tick() => {
@@ -234,7 +235,7 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
                     }
                 },
 
-                data = self.txdata_rx.recv() => {
+                data = txdata_rx.recv() => {
                     let Some(txdata) = data else {
                         break;
                     };
@@ -313,6 +314,34 @@ impl<T: Encode + Send + Sync + 'static> Actor<T> {
     }
 }
 
+struct Lock {
+    file: Option<LockedFile>,
+    notify_on_drop: Arc<Notify>,
+}
+
+impl Lock {
+    pub fn create(path: PathBuf) -> Result<Self, LockError> {
+        let file = LockedFile::lock(path).map(Some)?;
+        let notify_on_drop = Arc::new(Notify::new());
+
+        Ok(Self { file, notify_on_drop })
+    }
+
+    pub fn notified(&self) -> OwnedNotified {
+        self.notify_on_drop.clone().notified_owned()
+    }
+}
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // Ensure the file lock is dropped before notifying.
+        if let Some(file) = self.file.take() {
+            drop(file);
+        }
+        self.notify_on_drop.notify_waiters();
+    }
+}
+
 /// Handle an error flushing the commitlog.
 ///
 /// Panics if the error indicates that the log may be permanently unwritable.
@@ -344,6 +373,11 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
 
         let durable_offset = self.durable_tx_offset();
         let shutdown = self.shutdown.clone();
+        // Abort actor if shutdown future is dropped.
+        let abort = scopeguard::guard(self.abort.clone(), |actor| {
+            warn!("close future dropped, aborting durability actor");
+            actor.abort();
+        });
 
         async move {
             let (done_tx, done_rx) = oneshot::channel();
@@ -357,6 +391,8 @@ impl<T: Send + Sync + 'static> Durability for Local<T> {
                     Ok(())
                 })
                 .await;
+            // Don't abort if we completed normally.
+            let _ = ScopeGuard::into_inner(abort);
 
             durable_offset.last_seen()
         }
