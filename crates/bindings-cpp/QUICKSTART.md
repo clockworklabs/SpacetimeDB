@@ -107,8 +107,9 @@ SPACETIMEDB_REDUCER(set_name, ReducerContext ctx, std::string name) {
         // Update existing user's name
         user_row.name = name;
         auto success = ctx.db[user_identity].update(user_row);
-        return;
+        return Ok();
     }
+    return Ok();
 }
 
 // Called when a user sends a message
@@ -119,6 +120,7 @@ SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, std::string text) {
     // Create and insert new message
     Message new_message{ctx.sender, ctx.timestamp, text};
     ctx.db[message].insert(new_message);
+    return Ok();
 }
 ```
 
@@ -146,6 +148,7 @@ SPACETIMEDB_CLIENT_CONNECTED(client_connected) {
         User new_user{ctx.sender, std::nullopt, true};
         ctx.db[user].insert(new_user);
     }
+    return Ok();
 }
 
 // Called when a client disconnects  
@@ -162,6 +165,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected) {
     if (!found) {
         LOG_WARN("Warning: No user found for disconnected client.");
     }
+    return Ok();
 }
 ```
 
@@ -181,7 +185,7 @@ This compiles your C++ code to WebAssembly, producing `build/lib.wasm`.
 Start your local SpacetimeDB instance:
 
 ```bash
-nohup spacetime start > /tmp/spacetime.log 2>&1 &
+spacetime start
 ```
 
 Publish your module:
@@ -269,6 +273,7 @@ SPACETIMEDB_REDUCER(get_user_messages, ReducerContext ctx, Identity user_identit
     for (const auto& msg : ctx.db[message_sender].filter(user_identity)) {
         LOG_INFO("Message: " + msg.text);
     }
+    return Ok();
 }
 ```
 

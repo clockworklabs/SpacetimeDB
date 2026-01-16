@@ -33,7 +33,7 @@ __preinit__99_ - Type validation and error detection (last)
 **Location**: Template instantiation during compilation
 
 **Components**:
-- **C++20 Concepts** (`filterable_value_concept.h`, `table_with_constraints.h`):
+- **C++20 Concepts** (`table_with_constraints.h`):
   ```cpp
   template<typename T>
   concept FilterableValue = 

@@ -4,7 +4,6 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "spacetimedb/reducer_context.h"
 #include "spacetimedb/table.h"
-#include "spacetimedb/rls.h" // For future Row Level Security functionality
 #include "spacetimedb/bsatn/traits.h"
 
 #include <string>

@@ -33,29 +33,36 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
  * Procedures are functions that can return arbitrary values (unlike reducers which return void).
  * They are always public (no access control like reducers).
  * 
- * Part 1 Implementation: Pure Functions
- * - Procedures can perform computations and return results
- * - NO database access (ProcedureContext has no db field)
- * - Return Outcome<T> where T is any SpacetimeType
+ * Features:
+ * - Pure computations with return values
+ * - Database access via explicit transactions (ctx.WithTx() or ctx.TryWithTx())
+ * - HTTP requests via ctx.http (when SPACETIMEDB_UNSTABLE_FEATURES enabled)
+ * - UUID generation (ctx.new_uuid_v4(), ctx.new_uuid_v7())
+ * - Return type directly (not wrapped in Outcome)
  * 
- * Future Parts (documented for reference):
- * - Part 2: Transactions via ctx.WithTx() and ctx.TryWithTx()
- * - Part 3: Scheduled execution via table attributes
- * - Part 4: HTTP requests via HttpClient
+ * Key differences from reducers:
+ * - NO direct db field (must use ctx.WithTx() for database operations)
+ * - Has connection_id (procedures track which connection called them)
+ * - Can return any SpacetimeType
  * 
  * @param return_type The return type - can be any SpacetimeType (primitive, struct, enum, etc.)
  * @param procedure_name The name of the procedure function
  * @param ctx_param Must be ProcedureContext ctx
  * @param ... Additional parameters (optional) - any SpacetimeType
  * 
- * Example (Part 1 - pure function):
+ * Examples:
  * @code
- * // Return primitive
+ * // Pure computation
  * SPACETIMEDB_PROCEDURE(uint32_t, add_numbers, ProcedureContext ctx, uint32_t a, uint32_t b) {
- *     if (a == 0 && b == 0) {
- *         return Err("Cannot add two zeros");
- *     }
- *     return Ok(a + b);
+ *     return a + b;
+ * }
+ * 
+ * // With database transaction
+ * SPACETIMEDB_PROCEDURE(Unit, insert_item, ProcedureContext ctx, Item item) {
+ *     ctx.WithTx([&item](TxContext& tx) {
+ *         tx.db[items].insert(item);
+ *     });
+ *     return Unit{};
  * }
  * 
  * // Return struct
@@ -66,19 +73,13 @@ struct is_valid_procedure_return_type : std::integral_constant<bool, bsatn::Seri
  * SPACETIMEDB_STRUCT(ReturnStruct, a, b)
  * 
  * SPACETIMEDB_PROCEDURE(ReturnStruct, make_struct, ProcedureContext ctx, uint32_t a, std::string b) {
- *     return Ok(ReturnStruct{a, b});
+ *     return ReturnStruct{a, b};
  * }
  * 
- * // Return Unit (no value)
- * SPACETIMEDB_PROCEDURE(Unit, do_something, ProcedureContext ctx) {
- *     // Part 1: Can only do computation, no database operations
- *     return Ok();  // Explicit Ok() required for Unit
+ * // UUID generation
+ * SPACETIMEDB_PROCEDURE(Uuid, generate_uuid, ProcedureContext ctx) {
+ *     return ctx.new_uuid_v7();
  * }
- * 
- * // With parameters:
- * // SPACETIMEDB_PROCEDURE(uint32_t, calculate, ProcedureContext ctx, uint32_t x, uint32_t y) {
- * //     return Ok(x * y + 42);
- * // }
  * @endcode
  */
 #define SPACETIMEDB_PROCEDURE(return_type, procedure_name, ctx_param, ...) \
