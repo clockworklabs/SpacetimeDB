@@ -128,6 +128,10 @@ pub struct DmlOnView {
     pub view_name: Box<str>,
 }
 
+#[derive(Debug, Error)]
+#[error("Function calls are not supported")]
+pub struct FunctionCall;
+
 #[derive(Error, Debug)]
 pub enum TypingError {
     #[error(transparent)]
@@ -157,4 +161,6 @@ pub enum TypingError {
     DuplicateName(#[from] DuplicateName),
     #[error(transparent)]
     FilterReturnType(#[from] FilterReturnType),
+    #[error(transparent)]
+    FunctionCall(#[from] FunctionCall),
 }
