@@ -1,6 +1,5 @@
 use super::{
     committed_state::CommittedState, mut_tx::MutTxId, sequence::SequencesState, state_view::StateView, tx::TxId,
-    tx_state::TxState,
 };
 use crate::{
     db_metrics::DB_METRICS,
@@ -930,14 +929,16 @@ impl MutTx for Locking {
         let ctx = ExecutionContext::with_workload(self.database_identity, workload);
 
         let timer = Instant::now();
-        let committed_state_write_lock = self.committed_state.write_arc();
+        let mut committed_state_write_lock = self.committed_state.write_arc();
         let sequence_state_lock = self.sequence_state.lock_arc();
         let lock_wait_time = timer.elapsed();
+
+        let tx_state = committed_state_write_lock.take_tx_state();
 
         MutTxId {
             committed_state_write_lock,
             sequence_state_lock,
-            tx_state: TxState::default(),
+            tx_state,
             lock_wait_time,
             read_sets: <_>::default(),
             timer,

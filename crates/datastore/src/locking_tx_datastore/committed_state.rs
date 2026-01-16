@@ -1,6 +1,5 @@
 use super::{
     datastore::Result,
-    delete_table::DeleteTable,
     sequence::{Sequence, SequencesState},
     state_view::StateView,
     tx_state::{IndexIdMap, PendingSchemaChange, TxState},
@@ -34,7 +33,7 @@ use crate::{
     },
 };
 use anyhow::anyhow;
-use core::{convert::Infallible, ops::RangeBounds};
+use core::{convert::Infallible, mem, ops::RangeBounds};
 use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
@@ -52,9 +51,7 @@ use spacetimedb_table::{
     table::{IndexScanPointIter, IndexScanRangeIter, InsertError, RowRef, Table, TableAndIndex, TableScanIter},
     table_index::IndexSeekRangeResult,
 };
-use std::collections::BTreeMap;
 use std::sync::Arc;
-use thin_vec::ThinVec;
 
 /// Contains the live, in-memory snapshot of a database. This structure
 /// is exposed in order to support tools wanting to process the commit
@@ -138,6 +135,12 @@ pub struct CommittedState {
     /// [`RowPointer`]s from this set are passed to the `unsafe` [`Table::get_row_ref_unchecked`],
     /// so it's important to properly maintain only [`RowPointer`]s to valid, extant, non-deleted rows.
     replay_table_updated: IntMap<TableId, RowPointer>,
+
+    /// After a [`CommittedState::merge`],
+    /// the merged [`TxState`] is stored here,
+    /// until it's allocations are needed for the next mutable transaction.
+    /// This is a performance optimization.
+    saved_tx_state: Option<Box<TxState>>,
 }
 
 impl CommittedState {
@@ -169,6 +172,7 @@ impl MemoryUsage for CommittedState {
             replay_table_dropped,
             replay_columns_to_ignore,
             replay_table_updated,
+            saved_tx_state,
         } = self;
         // NOTE(centril): We do not want to include the heap usage of `page_pool` as it's a shared resource.
         next_tx_offset.heap_usage()
@@ -180,6 +184,7 @@ impl MemoryUsage for CommittedState {
             + replay_columns_to_ignore.heap_usage()
             + replay_table_dropped.heap_usage()
             + replay_table_updated.heap_usage()
+            + saved_tx_state.heap_usage()
     }
 }
 
@@ -270,6 +275,7 @@ impl CommittedState {
             replay_table_dropped: <_>::default(),
             replay_columns_to_ignore: <_>::default(),
             replay_table_updated: <_>::default(),
+            saved_tx_state: <_>::default(),
         }
     }
 
@@ -1039,26 +1045,25 @@ impl CommittedState {
         self.read_sets.remove_view(view_id, sender)
     }
 
-    pub(super) fn merge(&mut self, tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
+    /// Returns the saved tx state or creates a new one.
+    /// The tx state is ready for use by a new mutable transaction.
+    pub(super) fn take_tx_state(&mut self) -> TxState {
+        *self.saved_tx_state.take().unwrap_or_default()
+    }
+
+    pub(super) fn merge(&mut self, mut tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
         let mut tx_data = TxData::default();
         let mut truncates = IntSet::default();
 
         // First, apply deletes. This will free up space in the committed tables.
-        self.merge_apply_deletes(
-            &mut tx_data,
-            tx_state.delete_tables,
-            tx_state.pending_schema_changes,
-            &mut truncates,
-        );
+        self.merge_apply_deletes(&mut tx_data, &mut tx_state, &mut truncates);
 
         // Then, apply inserts. This will re-fill the holes freed by deletions
         // before allocating new pages.
-        self.merge_apply_inserts(
-            &mut tx_data,
-            tx_state.insert_tables,
-            tx_state.blob_store,
-            &mut truncates,
-        );
+        self.merge_apply_inserts(&mut tx_data, &mut tx_state, &mut truncates);
+
+        // We're done with `tx_state`. Save it for reuse.
+        self.saved_tx_state = Some(Box::new(tx_state));
 
         // Record any truncated tables in the `TxData`.
         tx_data.add_truncates(truncates);
@@ -1088,13 +1093,7 @@ impl CommittedState {
         self.read_sets.merge(read_sets)
     }
 
-    fn merge_apply_deletes(
-        &mut self,
-        tx_data: &mut TxData,
-        delete_tables: BTreeMap<TableId, DeleteTable>,
-        pending_schema_changes: ThinVec<PendingSchemaChange>,
-        truncates: &mut IntSet<TableId>,
-    ) {
+    fn merge_apply_deletes(&mut self, tx_data: &mut TxData, tx_state: &mut TxState, truncates: &mut IntSet<TableId>) {
         fn delete_rows(
             tx_data: &mut TxData,
             table_id: TableId,
@@ -1130,7 +1129,7 @@ impl CommittedState {
             }
         }
 
-        for (table_id, row_ptrs) in delete_tables {
+        for (&table_id, row_ptrs) in &mut tx_state.delete_tables {
             match self.get_table_and_blob_store_mut(table_id) {
                 Ok((table, blob_store, ..)) => delete_rows(
                     tx_data,
@@ -1144,12 +1143,14 @@ impl CommittedState {
                 Err(_) if !row_ptrs.is_empty() => panic!("Deletion for non-existent table {table_id:?}... huh?"),
                 Err(_) => {}
             }
+
+            row_ptrs.clear();
         }
 
         // Delete all tables marked for deletion.
         // The order here does not matter as once a `table_id` has been dropped
         // it will never be re-created.
-        for change in pending_schema_changes {
+        for change in mem::take(&mut tx_state.pending_schema_changes) {
             if let PendingSchemaChange::TableRemoved(table_id, mut table) = change {
                 let row_ptrs = table.scan_all_row_ptrs();
                 truncates.insert(table_id);
@@ -1166,13 +1167,7 @@ impl CommittedState {
         }
     }
 
-    fn merge_apply_inserts(
-        &mut self,
-        tx_data: &mut TxData,
-        insert_tables: BTreeMap<TableId, Table>,
-        tx_blob_store: impl BlobStore,
-        truncates: &mut IntSet<TableId>,
-    ) {
+    fn merge_apply_inserts(&mut self, tx_data: &mut TxData, tx_state: &mut TxState, truncates: &mut IntSet<TableId>) {
         // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
         //             rather than copying individual rows out of them.
         //             This will require some magic to get the indexes right,
@@ -1181,13 +1176,17 @@ impl CommittedState {
         //             based on the available holes in the committed state
         //             and the fullness of the page.
 
-        for (table_id, tx_table) in insert_tables {
+        for (&table_id, tx_table) in &mut tx_state.insert_tables {
+            // TODO(perf, centril): Optimize the case where there is no commit table.
+            // In that case, all we need to do is transfer the tx table over
+            // and construct `inserts`.
+
             let (commit_table, commit_blob_store, page_pool) =
                 self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
 
             // For each newly-inserted row, insert it into the committed state.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
-            for row_ref in tx_table.scan_rows(&tx_blob_store) {
+            for row_ref in tx_table.scan_rows(&tx_state.blob_store) {
                 let pv = row_ref.to_product_value();
                 commit_table
                     .insert(page_pool, commit_blob_store, &pv)
@@ -1207,7 +1206,8 @@ impl CommittedState {
                 }
             }
 
-            let (schema, _indexes, pages) = tx_table.consume_for_merge();
+            // Cleanup `tx_table` and steals its pages.
+            let (schema, pages) = tx_table.drain_for_merge();
 
             // The schema may have been modified in the transaction.
             // Update this last to placate borrowck and avoid a clone.
@@ -1217,6 +1217,8 @@ impl CommittedState {
             // Put all the pages in the table back into the pool.
             self.page_pool.put_many(pages);
         }
+
+        tx_state.blob_store.clear();
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.
