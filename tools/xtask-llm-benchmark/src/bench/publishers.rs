@@ -143,7 +143,11 @@ impl Publisher for DotnetPublisher {
         cmd.arg("build")
             .current_dir(source)
             .env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
-            .env("DOTNET_NOLOGO", "1");
+            .env("DOTNET_NOLOGO", "1")
+            // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
+            // when running multiple dotnet builds in parallel.
+            .env("MSBUILDDISABLENODEREUSE", "1")
+            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0");
         run(&mut cmd, "spacetime build (csharp)")?;
 
         let mut pubcmd = Command::new("spacetime");

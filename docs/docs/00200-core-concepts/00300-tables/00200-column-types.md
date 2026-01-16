@@ -203,7 +203,7 @@ public partial struct Coordinates
 
 // Define an enum for status
 [SpacetimeDB.Type]
-public partial struct Status : TaggedEnum<(
+public partial record Status : TaggedEnum<(
     Unit Active,
     Unit Inactive,
     string Suspended
