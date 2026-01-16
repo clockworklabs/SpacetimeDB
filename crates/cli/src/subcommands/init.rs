@@ -1667,6 +1667,7 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
 /// Writes rules to:
 /// - .cursor/rules/ (Cursor)
 /// - CLAUDE.md (Claude Code)
+/// - AGENTS.md (Opencode)
 /// - .windsurfrules (Windsurf)
 /// - .github/copilot-instructions.md (VS Code Copilot)
 fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
@@ -1721,10 +1722,13 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
     // 2. Claude Code: CLAUDE.md
     fs::write(project_path.join("CLAUDE.md"), &combined_content)?;
 
-    // 3. Windsurf: .windsurfrules
+    // 3. Opencode: AGENTS.md
+    fs::write(project_path.join("AGENTS.md"), &combined_content)?;
+
+    // 4. Windsurf: .windsurfrules
     fs::write(project_path.join(".windsurfrules"), &combined_content)?;
 
-    // 4. VS Code Copilot: .github/copilot-instructions.md
+    // 5. VS Code Copilot: .github/copilot-instructions.md
     let github_dir = project_path.join(".github");
     fs::create_dir_all(&github_dir)?;
     fs::write(github_dir.join("copilot-instructions.md"), &combined_content)?;
