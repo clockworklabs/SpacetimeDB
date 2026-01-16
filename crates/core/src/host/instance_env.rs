@@ -1056,23 +1056,22 @@ mod test {
     use anyhow::{anyhow, Result};
     use spacetimedb_lib::db::auth::StAccess;
     use spacetimedb_lib::{bsatn::to_vec, AlgebraicType, AlgebraicValue, Hash, Identity, ProductValue};
-    use spacetimedb_paths::{server::ModuleLogsDir, FromPathUnchecked};
     use spacetimedb_primitives::{IndexId, TableId};
     use spacetimedb_sats::product;
-    use tempfile::TempDir;
 
     /// An `InstanceEnv` requires a `DatabaseLogger`
-    fn temp_logger() -> Result<DatabaseLogger> {
-        let temp = TempDir::new()?;
-        let path = ModuleLogsDir::from_path_unchecked(temp.keep());
-        let path = path.today();
-        Ok(DatabaseLogger::open(path))
+    fn temp_logger() -> DatabaseLogger {
+        DatabaseLogger::in_memory(64 * 1024)
     }
 
     /// An `InstanceEnv` requires a `ReplicaContext`.
     /// For our purposes this is just a wrapper for `RelationalDB`.
     fn replica_ctx(relational_db: Arc<RelationalDB>) -> Result<(ReplicaContext, tokio::runtime::Runtime)> {
         let (subs, runtime) = ModuleSubscriptions::for_test_new_runtime(relational_db.clone());
+        let logger = {
+            let _rt = runtime.enter();
+            Arc::new(temp_logger())
+        };
         Ok((
             ReplicaContext {
                 database: Database {
@@ -1083,7 +1082,7 @@ mod test {
                     initial_program: Hash::ZERO,
                 },
                 replica_id: 0,
-                logger: Arc::new(temp_logger()?),
+                logger,
                 subscriptions: subs,
                 relational_db,
             },
