@@ -561,8 +561,7 @@ struct TimeDuration {
         return TimeDuration(micros);
     }
     
-    // BSATN serialization methods (for schedule_reducer.h)
-    // These will be provided as free functions when BSATN is available
+    // BSATN serialization methods are implemented via bsatn_traits in type_extensions.h
     // void bsatn_serialize(SpacetimeDb::bsatn::Writer& writer) const;
     // static TimeDuration bsatn_deserialize(SpacetimeDb::bsatn::Reader& reader);
 };

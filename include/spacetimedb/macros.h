@@ -4,7 +4,6 @@
 #include "spacetimedb/bsatn/bsatn.h"
 #include "spacetimedb/reducer_context.h"
 #include "spacetimedb/table.h"
-#include "spacetimedb/schedule_reducer.h"
 #include "spacetimedb/rls.h" // For future Row Level Security functionality
 #include "spacetimedb/bsatn/traits.h"
 
@@ -478,19 +477,7 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 #define FOR_EACH_VARIANT SPACETIMEDB_FOR_EACH_VARIANT
 
 // =============================================================================
-// INTERNAL UTILITIES
-// =============================================================================
-
-// REMOVED: internal::get_table_id - unused dead code
-
-// =============================================================================
-// TYPE GENERATION AND REGISTRATION
-// =============================================================================
-
-// REMOVED: spacetimedb_generate_type<T>() - 67 lines of unused dead code
-
-// =============================================================================
-// TABLE MACROS - C# [SpacetimeDB.Table] Equivalent
+// TABLE MACROS
 // =============================================================================
 
 // Enhanced table macro with optional scheduling support
@@ -506,16 +493,9 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 //   - SPACETIMEDB_TABLE(Type, table_name, Private)
 //   - Multiple tables using the same struct type
 
-// =============================================================================
-// REDUCER MACROS - MOVED TO reducer_macros.h
-// =============================================================================
-
 // All reducer macros have been moved to reducer_macros.h
 // This includes SPACETIMEDB_REDUCER, SPACETIMEDB_INIT, 
 // SPACETIMEDB_CLIENT_CONNECTED, and SPACETIMEDB_CLIENT_DISCONNECTED
-
-
-
 
 // =============================================================================
 // CONSTRAINT AND FIELD ATTRIBUTES
@@ -592,14 +572,55 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
  * @brief Enable BSATN serialization for struct types with fields
  * 
  * Generates complete serialization support for structs by serializing
- * each field in the order specified.
+ * each field in the order specified. This macro must be called after
+ * struct definition and before SPACETIMEDB_TABLE.
  * 
- * Usage:
- *   struct MyStruct {
- *       int32_t id;
- *       std::string name;
- *   };
- *   SPACETIMEDB_STRUCT(MyStruct, id, name)
+ * @param Type The struct type name
+ * @param ... List of field names (not types) in the order they appear in the struct
+ * 
+ * @example Basic struct with table registration:
+ * @code
+ * struct Player {
+ *     uint32_t id;
+ *     std::string name;
+ *     uint8_t level;
+ * };
+ * SPACETIMEDB_STRUCT(Player, id, name, level)
+ * SPACETIMEDB_TABLE(Player, players, Public)
+ * FIELD_PrimaryKey(players, id)
+ * @endcode
+ * 
+ * @example Struct with enum field:
+ * @code
+ * SPACETIMEDB_ENUM(GameState, Lobby, Playing, Ended)
+ * 
+ * struct Match {
+ *     uint32_t match_id;
+ *     GameState state;
+ *     Timestamp created_at;
+ * };
+ * SPACETIMEDB_STRUCT(Match, match_id, state, created_at)
+ * SPACETIMEDB_TABLE(Match, matches, Public)
+ * @endcode
+ * 
+ * @example Struct used in reducer (no table):
+ * @code
+ * struct Vector2 {
+ *     float x;
+ *     float y;
+ * };
+ * SPACETIMEDB_STRUCT(Vector2, x, y)
+ * 
+ * SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, Vector2 delta) {
+ *     // Use Vector2 as a parameter type
+ *     return Ok();
+ * }
+ * @endcode
+ * 
+ * @note Field order must match struct definition order
+ * @note All fields must support BSATN serialization
+ * @see SPACETIMEDB_TABLE for registering structs as database tables
+ * @see SPACETIMEDB_UNIT_STRUCT for zero-field structs
  */
 #define SPACETIMEDB_STRUCT(Type, ...) \
     template<> \

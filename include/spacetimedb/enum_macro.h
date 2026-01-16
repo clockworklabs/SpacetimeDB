@@ -7,17 +7,92 @@
 
 /**
  * @file enum_macro.h
- * @brief SpacetimeDB Enum Macros - Clean, efficient enum type generation
+ * @brief Unified SpacetimeDB Enum Macros for C++ bindings
  * 
- * Provides unified macros for creating SpacetimeDB-compatible enum types:
+ * Provides SPACETIMEDB_ENUM macro with automatic syntax detection to create
+ * SpacetimeDB-compatible enum types. The macro supports two distinct patterns:
  * 
- * Simple Unit Enums:
- *   SPACETIMEDB_ENUM(SimpleEnum, Zero, One, Two)
- *   → enum class SimpleEnum : uint8_t { Zero = 0, One = 1, Two = 2 };
+ * **1. Simple Unit Enums** (C-style enums with named constants):
+ * ```cpp
+ * SPACETIMEDB_ENUM(Direction, North, South, East, West)
+ * ```
+ * Generated code:
+ * - `enum class Direction : uint8_t { North = 0, South = 1, East = 2, West = 3 }`
+ * - Efficient: 1 byte per value
+ * - Use when: Variants carry no data
  * 
- * Complex Variant Enums:
- *   SPACETIMEDB_ENUM(ComplexEnum, (U8, uint8_t), (Str, std::string))
- *   → struct ComplexEnum with std::variant<uint8_t, std::string>
+ * **2. Variant Enums** (Rust-style enums with associated data):
+ * ```cpp
+ * SPACETIMEDB_ENUM(Result, (Ok, uint32_t), (Err, std::string))
+ * ```
+ * Generated code:
+ * - `struct Result` with `std::variant<uint32_t, std::string>`
+ * - Tagged union with named accessors
+ * - Use when: Variants carry different types of data
+ * 
+ * @section syntax_detection Automatic Syntax Detection
+ * 
+ * The macro automatically detects which pattern you're using:
+ * - Simple enum: `SPACETIMEDB_ENUM(Name, Variant1, Variant2, ...)`
+ * - Variant enum: `SPACETIMEDB_ENUM(Name, (Variant1, Type1), (Variant2, Type2), ...)`
+ * 
+ * The presence of parentheses `(name, type)` triggers variant enum generation.
+ * 
+ * @section simple_examples Simple Enum Examples
+ * 
+ * ```cpp
+ * // Game state enum
+ * SPACETIMEDB_ENUM(GameState, Lobby, Playing, Paused, Ended)
+ * 
+ * // Usage:
+ * GameState state = GameState::Playing;
+ * if (state == GameState::Lobby) { ... }
+ * ```
+ * 
+ * ```cpp
+ * // Boolean-like enum
+ * SPACETIMEDB_ENUM(Status, Active, Inactive)
+ * ```
+ * 
+ * @section variant_examples Variant Enum Examples
+ * 
+ * ```cpp
+ * // Message types with different payloads
+ * SPACETIMEDB_ENUM(Message,
+ *     (Text, std::string),
+ *     (Image, std::vector<uint8_t>),
+ *     (Audio, std::vector<uint8_t>)
+ * )
+ * 
+ * // Usage:
+ * Message msg = std::string("Hello");  // Implicit construction
+ * if (msg.index() == 0) {
+ *     auto& text = std::get<std::string>(msg.value);
+ * }
+ * ```
+ * 
+ * ```cpp
+ * // Result type with success/error variants
+ * SPACETIMEDB_ENUM(ApiResult,
+ *     (Success, UserData),
+ *     (NotFound, Unit),
+ *     (Error, std::string)
+ * )
+ * ```
+ * 
+ * @section namespace_qual Namespace Qualification
+ * 
+ * For type reuse across modules, add namespace prefixes:
+ * 
+ * ```cpp
+ * SPACETIMEDB_ENUM(Status, Active, Inactive)
+ * SPACETIMEDB_NAMESPACE(Status, "MyModule")  // Registers as "MyModule.Status"
+ * ```
+ * 
+ * @note Simple enums are more efficient (1 byte) than variant enums (std::variant overhead)
+ * @warning Variant enum alternative order is part of the wire format - don't reorder!
+ * 
+ * @ingroup sdk_macros
  */
 
 // =============================================================================
@@ -41,15 +116,83 @@
 // =============================================================================
 
 /**
- * @brief SPACETIMEDB_ENUM - Unified enum macro with automatic syntax detection
+ * @brief Unified enum macro with automatic syntax detection
  * 
- * Simple unit enums:
- *   SPACETIMEDB_ENUM(SimpleEnum, Zero, One, Two)
- *   → enum class SimpleEnum : uint8_t { Zero = 0, One = 1, Two = 2 };
+ * These macros automatically detect whether you're defining a simple unit enum
+ * or a variant enum based on the syntax used, then routes to the appropriate
+ * implementation.
  * 
- * Complex variant enums:
- *   SPACETIMEDB_ENUM(ComplexEnum, (U8, uint8_t), (Str, std::string))
- *   → struct ComplexEnum with std::variant<uint8_t, std::string>
+ * @param EnumName The name of the enum type to create
+ * @param ... Either:
+ *   - Simple: List of variant names (e.g., `Red, Green, Blue`)
+ *   - Variant: List of (name, type) pairs (e.g., `(Ok, int), (Err, std::string)`)
+ * 
+ * **Decision Tree:**
+ * 
+ * Q: Do your variants carry data?
+ * - **No** → Use simple syntax: `SPACETIMEDB_ENUM(Name, Var1, Var2, ...)`
+ *   - Generated: `enum class Name : uint8_t`
+ *   - Size: 1 byte
+ *   - Example: `SPACETIMEDB_ENUM(Color, Red, Green, Blue)`
+ * 
+ * - **Yes** → Use variant syntax: `SPACETIMEDB_ENUM(Name, (Var1, Type1), (Var2, Type2), ...)`
+ *   - Generated: `struct Name` with `std::variant<Type1, Type2, ...>`
+ *   - Size: sizeof(largest type) + discriminant
+ *   - Example: `SPACETIMEDB_ENUM(Result, (Ok, uint32_t), (Err, std::string))`
+ * 
+ * @example Simple enum (no data):
+ * @code
+ * // Define direction enum
+ * SPACETIMEDB_ENUM(Direction, North, South, East, West)
+ * 
+ * // Define table struct that uses the enum
+ * struct Player {
+ *     uint32_t id;
+ *     std::string name;
+ *     Direction facing;
+ * };
+ * SPACETIMEDB_STRUCT(Player, id, name, facing)
+ * SPACETIMEDB_TABLE(Player, players, Public)
+ * FIELD_PrimaryKey(players, id)
+ * 
+ * // Usage in reducer
+ * SPACETIMEDB_REDUCER(void, move_player, ReducerContext ctx, Direction dir) {
+ *     if (dir == Direction::North) {
+ *         // Move north
+ *     }
+ * }
+ * @endcode
+ * 
+ * @example Variant enum (with data):
+ * @code
+ * // Define event enum with different payload types
+ * SPACETIMEDB_ENUM(GameEvent,
+ *     (PlayerJoined, uint32_t),      // player_id
+ *     (ChatMessage, std::string),     // message text
+ *     (PlayerLeft, Unit)              // no data
+ * )
+ * 
+ * // Define table struct that uses the enum
+ * struct EventLog {
+ *     uint32_t id;
+ *     Timestamp timestamp;
+ *     GameEvent event;
+ * };
+ * SPACETIMEDB_STRUCT(EventLog, id, timestamp, event)
+ * SPACETIMEDB_TABLE(EventLog, events, Public)
+ * FIELD_PrimaryKeyAutoInc(events, id)
+ * 
+ * // Usage in reducer
+ * SPACETIMEDB_REDUCER(void, log_event, ReducerContext ctx, GameEvent event) {
+ *     if (event.index() == 0) {  // PlayerJoined
+ *         auto player_id = std::get<uint32_t>(event.value);
+ *         LOG_INFO("Player " + std::to_string(player_id) + " joined");
+ *     }
+ * }
+ * @endcode
+ * 
+ * @note The macro uses compile-time detection to determine which implementation to use
+ * @note Simple enums serialize as 1 byte; variant enums serialize as tag + data
  */
 
 // Detect if first argument is parenthesized (name, type) pair
@@ -292,20 +435,49 @@ namespace SpacetimeDb::detail {
 }
 
 /**
- * @brief Add namespace qualification to an existing enum type
+ * @brief Add namespace qualification to an enum type for module reusability
  * 
- * This macro creates a template specialization that stores the namespace
- * information at compile time. When the enum is registered, the LazyTypeRegistrar
- * will check for this namespace information and use it.
+ * This macro registers a namespace prefix with an enum type, allowing the same
+ * enum name to be used across different modules without conflicts. The namespace
+ * is stored at compile-time and applied during type registration.
  * 
- * @param EnumType The C++ enum class type (already defined with SPACETIMEDB_ENUM)
- * @param NamespacePrefix The namespace prefix as a string literal
+ * **Use Cases:**
+ * - Sharing enum definitions across multiple modules
+ * - Avoiding name conflicts in large projects
+ * - Organizing types into logical namespaces
  * 
- * @example
- * SPACETIMEDB_ENUM(TestC, Foo, Bar)           // Define the enum normally
- * SPACETIMEDB_NAMESPACE(TestC, "Namespace")   // Add namespace qualification
+ * @param EnumType The C++ enum type (already defined with SPACETIMEDB_ENUM)
+ * @param NamespacePrefix The namespace prefix as a string literal (e.g., "MyModule")
  * 
- * This stores the namespace info at compile time for use during registration.
+ * @example Basic namespace qualification:
+ * @code
+ * // Module A
+ * SPACETIMEDB_ENUM(Status, Active, Inactive, Banned)
+ * SPACETIMEDB_NAMESPACE(Status, "PlayerSystem")
+ * // Registered as: "PlayerSystem.Status"
+ * 
+ * // Module B (can reuse the same enum name)
+ * SPACETIMEDB_ENUM(Status, Pending, Approved, Rejected)
+ * SPACETIMEDB_NAMESPACE(Status, "OrderSystem")
+ * // Registered as: "OrderSystem.Status"
+ * @endcode
+ * 
+ * @example Nested namespaces:
+ * @code
+ * SPACETIMEDB_ENUM(EventType, Create, Update, Delete)
+ * SPACETIMEDB_NAMESPACE(EventType, "Game.Combat")
+ * // Registered as: "Game.Combat.EventType"
+ * @endcode
+ * 
+ * @example Without namespace (global scope):
+ * @code
+ * SPACETIMEDB_ENUM(GlobalState, Initializing, Running, Shutdown)
+ * // No SPACETIMEDB_NAMESPACE call → registered as just "GlobalState"
+ * @endcode
+ * 
+ * @note The namespace does NOT affect C++ code - it only applies to SpacetimeDB's type registry
+ * @note Call this macro immediately after the SPACETIMEDB_ENUM definition
+ * @warning Changing the namespace after data is stored will break schema compatibility
  */
 #define SPACETIMEDB_NAMESPACE(EnumType, NamespacePrefix) \
     namespace SpacetimeDb::detail { \
