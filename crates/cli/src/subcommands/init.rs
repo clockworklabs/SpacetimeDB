@@ -1679,10 +1679,10 @@ fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Res
     // Check which languages are used in server or client
     let uses_typescript = config.server_lang == Some(ServerLanguage::TypeScript)
         || config.client_lang == Some(ClientLanguage::TypeScript);
-    let uses_rust = config.server_lang == Some(ServerLanguage::Rust)
-        || config.client_lang == Some(ClientLanguage::Rust);
-    let uses_csharp = config.server_lang == Some(ServerLanguage::Csharp)
-        || config.client_lang == Some(ClientLanguage::Csharp);
+    let uses_rust =
+        config.server_lang == Some(ServerLanguage::Rust) || config.client_lang == Some(ClientLanguage::Rust);
+    let uses_csharp =
+        config.server_lang == Some(ServerLanguage::Csharp) || config.client_lang == Some(ClientLanguage::Csharp);
 
     // 1. Cursor: .cursor/rules/ directory with separate files
     let cursor_dir = project_path.join(".cursor/rules");
