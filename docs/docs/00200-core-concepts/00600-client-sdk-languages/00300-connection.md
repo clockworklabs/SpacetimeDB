@@ -6,7 +6,6 @@ slug: /sdks/connection
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-
 After [generating client bindings](/sdks/codegen) for your module, you can establish a connection to your SpacetimeDB [database](/databases) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
 
 ## Prerequisites
@@ -121,7 +120,7 @@ UDbConnection* Conn = UDbConnection::Builder()
 
 ## Authentication with Tokens
 
-To authenticate with a token (for example, from [SpacetimeAuth](/spacetimeauth)), provide it when building the connection:
+To authenticate with a token (for example, from [SpacetimeAuth](../00500-authentication/00100-spacetimeauth/index.md)), provide it when building the connection:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -169,7 +168,7 @@ UDbConnection* Conn = UDbConnection::Builder()
 </TabItem>
 </Tabs>
 
-The token is sent to the server during connection and validates your identity. See the [SpacetimeAuth documentation](/spacetimeauth) for details on obtaining and managing tokens.
+The token is sent to the server during connection and validates your identity. See the [SpacetimeAuth documentation](../00500-authentication/00100-spacetimeauth/index.md) for details on obtaining and managing tokens.
 
 ## Advancing the Connection
 
@@ -205,7 +204,7 @@ while (running)
 void AMyActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-    
+
     if (Conn)
     {
         Conn->FrameTick();
@@ -437,7 +436,7 @@ UFUNCTION()
 void OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const FString& Token)
 {
     FSpacetimeDBConnectionId ConnectionId = Connection->GetConnectionId();
-    UE_LOG(LogTemp, Log, TEXT("Identity: %s, ConnectionId: %s"), 
+    UE_LOG(LogTemp, Log, TEXT("Identity: %s, ConnectionId: %s"),
         *Identity.ToHexString(), *ConnectionId.ToHexString());
 }
 ```
@@ -456,6 +455,7 @@ Now that you have a connection established, you can:
 - Call reducers and procedures on the server
 
 For language-specific details, see:
+
 - [Rust SDK Reference](/sdks/rust)
 - [C# SDK Reference](/sdks/c-sharp)
 - [TypeScript SDK Reference](/sdks/typescript)
