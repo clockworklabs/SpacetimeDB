@@ -294,6 +294,109 @@ For more fine-grained access control, you can use [view functions](/functions/vi
 
 See [Access Permissions](/tables/access-permissions) for complete details on table visibility and access patterns.
 
+## Multiple Tables for the Same Type
+
+You can create multiple tables that share the same row type by applying multiple table attributes to a single struct. Each table stores its own independent set of rows, but all tables share the same schema.
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+In TypeScript, define separate table variables that share the same column schema:
+
+```typescript
+import { table, t } from 'spacetimedb/server';
+
+// Define the shared column schema
+const playerColumns = {
+  identity: t.Identity.primaryKey(),
+  playerId: t.i32().unique().autoInc(),
+  name: t.string(),
+};
+
+// Create two tables with the same schema
+const Player = table({ name: 'Player', public: true }, playerColumns);
+const LoggedOutPlayer = table({ name: 'LoggedOutPlayer' }, playerColumns);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Apply multiple `[Table]` attributes to the same struct:
+
+```csharp
+[SpacetimeDB.Table(Name = "Player", Public = true)]
+[SpacetimeDB.Table(Name = "LoggedOutPlayer")]
+public partial struct Player
+{
+    [PrimaryKey]
+    public Identity Identity;
+    [Unique, AutoInc]
+    public int PlayerId;
+    public string Name;
+}
+```
+
+Each table gets its own accessor:
+
+```csharp
+// Insert into different tables
+ctx.Db.Player.Insert(new Player { /* ... */ });
+ctx.Db.LoggedOutPlayer.Insert(new Player { /* ... */ });
+
+// Move a row between tables
+var player = ctx.Db.LoggedOutPlayer.Identity.Find(ctx.Sender);
+if (player != null)
+{
+    ctx.Db.Player.Insert(player.Value);
+    ctx.Db.LoggedOutPlayer.Identity.Delete(player.Value.Identity);
+}
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+Apply multiple `#[spacetimedb::table]` attributes to the same struct:
+
+```rust
+#[spacetimedb::table(name = player, public)]
+#[spacetimedb::table(name = logged_out_player)]
+pub struct Player {
+    #[primary_key]
+    identity: Identity,
+    #[unique]
+    #[auto_inc]
+    player_id: i32,
+    name: String,
+}
+```
+
+Each table gets its own accessor:
+
+```rust
+// Insert into different tables
+ctx.db.player().insert(Player { /* ... */ });
+ctx.db.logged_out_player().insert(Player { /* ... */ });
+
+// Move a row between tables
+if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+    ctx.db.player().insert(player.clone());
+    ctx.db.logged_out_player().identity().delete(&player.identity);
+}
+```
+
+</TabItem>
+</Tabs>
+
+This pattern is useful for:
+
+- **State management**: Separate active users from inactive users, online players from offline players
+- **Archiving**: Move old records to an archive table while keeping the same schema
+- **Staging**: Hold pending records in one table before moving them to a main table
+
+:::note Shared Constraints
+Column attributes like `[PrimaryKey]`, `[Unique]`, `[AutoInc]`, and `[Index]` apply to **all tables** defined on the type. Each table will have its own independent primary key, unique constraints, and indexes with the same structure.
+:::
+
 ## Constraints
 
 Tables support several constraints to enforce data integrity:
