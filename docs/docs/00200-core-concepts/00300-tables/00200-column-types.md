@@ -156,7 +156,7 @@ const Coordinates = t.object('Coordinates', {
 const Status = t.enum('Status', {
   Active: t.unit(),
   Inactive: t.unit(),
-  Suspended: { reason: t.string() },
+  Suspended: t.object('SuspendedInfo', { reason: t.string() }),
 });
 
 const player = table(
