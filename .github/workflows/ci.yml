@@ -23,13 +23,10 @@ jobs:
     name: Smoketests
     strategy:
       matrix:
-        runner: [spacetimedb-new-runner, windows-latest]
+        runner: [spacetimedb-new-runner-2, windows-latest]
         include:
-          - runner: spacetimedb-new-runner
+          - runner: spacetimedb-new-runner-2
             smoketest_args: --docker
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
           - runner: windows-latest
             smoketest_args: --no-build-cli
             container: null
@@ -86,10 +83,6 @@ jobs:
         shell: powershell
       - name: Build crates
         run: cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
-      - name: Start Docker daemon
-        if: runner.os == 'Linux'
-        run: /usr/local/bin/start-docker.sh
-
       - name: Build and start database (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -123,11 +116,7 @@ jobs:
   test:
     needs: [lints, llm_ci_check]
     name: Test Suite
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -180,11 +169,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -212,11 +197,7 @@ jobs:
 
   wasm_bindings:
     name: Build and test wasm bindings
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -239,11 +220,7 @@ jobs:
 
   publish_checks:
     name: Check that packages are publishable
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: ubuntu-latest
     permissions: read-all
     steps:
       - uses: actions/checkout@v3
@@ -272,11 +249,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: spacetimedb-new-runner
+          - runner: spacetimedb-new-runner-2
             target: x86_64-unknown-linux-gnu
-            container:
-              image: localhost:5000/spacetimedb-ci:latest
-              options: --privileged
           - { target: aarch64-unknown-linux-gnu, runner: arm-runner }
           - { target: aarch64-apple-darwin, runner: macos-latest }
           - { target: x86_64-pc-windows-msvc, runner: windows-latest }
@@ -324,7 +298,7 @@ jobs:
     name: Unreal Engine Tests
     # This can't go on e.g. ubuntu-latest because that runner runs out of disk space. ChatGPT suggested that the general solution tends to be to use
     # a custom runner.
-    runs-on: spacetimedb-new-runner
+    runs-on: spacetimedb-new-runner-2
     # Disable the tests because they are very flaky at the moment.
     # TODO: Remove this line and re-enable the `if` line just below here.
     if: false
@@ -439,11 +413,7 @@ jobs:
   cli_docs:
     name: Check CLI docs
     permissions: read-all
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: spacetimedb-new-runner-2
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
@@ -524,12 +494,7 @@ jobs:
     permissions:
       contents: read
       checks: write
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-        --cgroupns=host
+    runs-on: spacetimedb-unity-runner
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -630,9 +595,6 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
-        # We need this to support "Docker in Docker"
-      - name: Start Docker daemon
-        run: /usr/local/bin/start-docker.sh
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
@@ -649,12 +611,7 @@ jobs:
 
   csharp-testsuite:
     needs: [lints, llm_ci_check]
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-        --cgroupns=host
+    runs-on: spacetimedb-new-runner-2
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
