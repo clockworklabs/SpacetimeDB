@@ -4,22 +4,128 @@ Generated from: `C:\Users\Tyler\Developer\SpacetimeDB\tools\xtask-llm-benchmark\
 
 ## Summary
 
-- **Total failures analyzed**: 23
+- **Total failures analyzed**: 33
 
 ---
 
-# Analysis of SpacetimeDB Benchmark Failures
+# Analysis of SpacetimeDB Benchmark Test Failures
 
 ## Rust / rustdoc_json Failures
 
+### Table Naming Issues
+
+#### t_010_connect
+1. **The generated code**:
+   ```rust
+   #[table(name = events)]
+   pub struct Event {
+       #[primary_key]
+       #[auto_inc]
+       id: i32,
+       kind: String,
+   }
+   ```
+
+2. **The golden example**:
+   ```rust
+   #[table(name = event)]
+   pub struct Event {
+       #[primary_key]
+       #[auto_inc]
+       pub id: u64,
+       pub kind: String,
+   }
+   ```
+
+3. **The error**: `schema_parity: tables differ - expected ["event"], got ["events"]`
+
+4. **Explain the difference**: The generated code incorrectly uses `events` (plural) instead of the expected `event` (singular).
+
+5. **Root cause**: The documentation does not clearly specify naming conventions for tables. There is ambiguity around whether singular or plural forms should be used.
+
+6. **Recommendation**: Update documentation to clearly specify that table names should be singular.
+
+---
+
+#### t_014_elementary_columns
+1. **The generated code**:
+   ```rust
+   #[table(name = primitives)]
+   pub struct Primitive {
+       #[primary_key]
+       id: i32,
+       count: i32,
+       total: i64,
+       price: f32,
+       ratio: f64,
+       active: bool,
+       name: String,
+   }
+   ```
+
+2. **The golden example**:
+   ```rust
+   #[table(name = primitive)]
+   pub struct Primitive {
+       #[primary_key]
+       pub id: i32,
+       pub count: i32,
+       pub total: i64,
+       pub price: f32,
+       pub ratio: f64,
+       pub active: bool,
+       pub name: String,
+   }
+   ```
+
+3. **The error**: `schema_parity: tables differ - expected ["primitive"], got ["primitives"]`
+
+4. **Explain the difference**: Similar to the previous case, this failure arises from using the plural form `primitives` instead of the singular `primitive`.
+
+5. **Root cause**: Lack of clear specification on singular vs. plural for table names in the documentation.
+
+6. **Recommendation**: Strengthen the documentation regarding table naming conventions to specify the use of singular names.
+
+---
+
+#### t_016_sum_type_columns
+1. **The generated code**:
+   ```rust
+   #[table(name = drawings)]
+   pub struct Drawing {
+       #[primary_key]
+       id: i32,
+       a: Shape,
+       b: Shape,
+   }
+   ```
+
+2. **The golden example**:
+   ```rust
+   #[table(name = drawing)]
+   pub struct Drawing {
+       #[primary_key]
+       pub id: i32,
+       pub a: Shape,
+       pub b: Shape,
+   }
+   ```
+
+3. **The error**: `schema_parity: tables differ - expected ["drawing"], got ["drawings"]`
+
+4. **Explain the difference**: The difference is again in the use of the plural `drawings` instead of the singular `drawing`.
+
+5. **Root cause**: The documentation does not differentiate between singular and plural usage in table naming, leading to confusion.
+
+6. **Recommendation**: Clarify in the documentation that all table names must be singular.
+
+---
+
 ### Compile/Publish Errors
 
-#### Failure Group: `t_002_scheduled_table` and `t_017_scheduled_columns`
-
-1. **The generated code:**
+#### t_002_scheduled_table
+1. **The generated code**:
    ```rust
-   use spacetimedb::{table, reducer, ReducerContext, Table, ScheduleAt};
-
    #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
    pub struct TickTimer {
        #[primary_key]
@@ -27,106 +133,78 @@ Generated from: `C:\Users\Tyler\Developer\SpacetimeDB\tools\xtask-llm-benchmark\
        scheduled_id: u64,
        scheduled_at: ScheduleAt,
    }
+   ```
 
-   #[reducer(init)]
-   pub fn init(ctx: &ReducerContext) {
-       if ctx.db.tick_timer().count() == 0 {
-           ctx.db.tick_timer().insert(TickTimer {
-               scheduled_id: 0,
-               scheduled_at: ScheduleAt::from_now_micros(50_000),
-           });
-       }
-   }
-
-   #[reducer]
-   pub fn tick(ctx: &ReducerContext, scheduled_id: u64) {
-       if let Some(mut row) = ctx.db.tick_timer().scheduled_id().find(scheduled_id) {
-           row.scheduled_at = ScheduleAt::from_now_micros(50_000);
-           let _ = ctx.db.tick_timer().scheduled_id().update(row);
-       }
+2. **The golden example**:
+   ```rust
+   #[table(name = tick_timer, scheduled(tick))]
+   pub struct TickTimer {
+       #[primary_key]
+       #[auto_inc]
+       pub scheduled_id: u64,
+       pub scheduled_at: ScheduleAt,
    }
    ```
 
-2. **The golden example:**
-   ```rust
-   use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
-   use std::time::Duration;
+3. **The error**: `publish_error: spacetime publish failed`
 
-   #[table(name = tick_timer, scheduled(tick))]
+4. **Explain the difference**: The generated code defines the schedule incorrectly by including `column = scheduled_at`, whereas the golden example specifies it more succinctly as `scheduled(tick)`.
+
+5. **Root cause**: The documentation might not have clear examples for scheduled table definitions.
+
+6. **Recommendation**: Provide clear documentation for how to properly define scheduled tables in SpacetimeDB.
+
+---
+
+#### t_017_scheduled_columns
+1. **The generated code**:
+   ```rust
+   #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
    pub struct TickTimer {
        #[primary_key]
        #[auto_inc]
        scheduled_id: u64,
        scheduled_at: ScheduleAt,
    }
+   ```
 
-   #[reducer]
-   pub fn tick(_ctx: &ReducerContext, _row: TickTimer) -> Result<(), String> {
-       Ok(())
-   }
-
-   #[reducer(init)]
-   pub fn init(ctx: &ReducerContext) -> Result<(), String> {
-       ctx.db.tick_timer().insert(TickTimer {
-           scheduled_id: 0,
-           scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
-       });
-       Ok(())
+2. **The golden example**:
+   ```rust
+   #[table(name = tick_timer, scheduled(tick))]
+   pub struct TickTimer {
+       #[primary_key]
+       #[auto_inc]
+       pub scheduled_id: u64,
+       pub scheduled_at: ScheduleAt,
    }
    ```
 
-3. **The error:** `publish_error: spacetime publish failed (exit=1)`
+3. **The error**: `publish_error: spacetime publish failed`
 
-4. **Explain the difference:**
-   - The LLM uses `ScheduleAt::from_now_micros(50_000)` whereas the golden example correctly uses `ScheduleAt::Interval(Duration::from_millis(50).into())` which aligns with the expected implementation.
-   - The `tick` reducer's parameters do not match in type and expectation between the LLM output and the golden reference.
+4. **Explain the difference**: The same error as in the previous case arises from the incorrect definition of the scheduled attribute.
 
-5. **Root cause:** Lack of clarity on how to correctly manage scheduled tasks and reduce signatures.
+5. **Root cause**: Misunderstanding from the LLM regarding how to define schedules in tables.
 
-6. **Recommendation:** 
-   - Update documentation to emphasize the importance of parameter types and expected structures in reducers, especially for scheduling. 
-   - Clarify the differences between `ScheduleAt::from_now_micros` and `ScheduleAt::Interval`.
+6. **Recommendation**: Update the documentation to clarify the correct syntax for specifying schedules in table definitions.
 
 ---
 
 ### Other Failures
 
-#### Failure Group: `t_003_struct_in_table`, `t_012_spacetime_product_type`, and `t_015_product_type_columns`
-
-1. **The generated code:**
+#### t_003_struct_in_table
+1. **The generated code**:
    ```rust
-   use spacetimedb::{table, reducer, ReducerContext, Table, SpacetimeType};
-
-   #[derive(SpacetimeType)]
-   pub struct Position {
-       x: i32,
-       y: i32,
-   }
-
-   #[table(name = entities)]
+   #[table(name = entity)]
    pub struct Entity {
        #[primary_key]
        id: i32,
        pos: Position,
    }
-
-   #[reducer]
-   pub fn add_entity(ctx: &ReducerContext, id: i32, x: i32, y: i32) {
-       ctx.db.entities().insert(Entity { id, pos: Position { x, y } });
-   }
    ```
 
-2. **The golden example:**
+2. **The golden example**:
    ```rust
-   use spacetimedb::{table, SpacetimeType};
-
-   #[derive(SpacetimeType, Clone, Debug)]
-   pub struct Position {
-       pub x: i32,
-       pub y: i32,
-   }
-
-   #[table(name = entities)]
+   #[table(name = entity)]
    pub struct Entity {
        #[primary_key]
        pub id: i32,
@@ -134,238 +212,176 @@ Generated from: `C:\Users\Tyler\Developer\SpacetimeDB\tools\xtask-llm-benchmark\
    }
    ```
 
-3. **The error:** Various schema discrepancies and no such table errors.
+3. **The error**: `schema_parity: reducers differ - expected [], got ["add_entity()"]`
 
-4. **Explain the difference:**
-   - The LLM does not use `pub` for fields in both `Position` and `Entity`, resulting in visibility issues.
-   - Missing `Clone`, `Debug` appropriately in structs.
+4. **Explain the difference**: The generated code does not have the `pub` visibility for struct fields.
 
-5. **Root cause:** Insufficient guidance on visibility specifiers in struct definitions.
+5. **Root cause**: Documentation may not sufficiently emphasize the need for visibility modifiers in struct fields for proper API access.
 
-6. **Recommendation:**
-   - Update documentation to include best practices for struct definitions, particularly focusing on access modifiers like `pub`.
-   - Provide examples of correct struct definitions emphasizing `Clone`, `Debug` traits where appropriate.
+6. **Recommendation**: Enhance the docs to specify that all struct fields must be public to ensure compatibility with the API.
 
-### Failure Group: `t_018_constraints`
- 
-1. **The generated code:**
+---
+
+#### t_020_ecs
+1. **The generated code**:
    ```rust
-   use spacetimedb::{table, reducer, ReducerContext, Table};
-
-   #[table(name = accounts, index(name = by_name, btree(columns = [name])))]
-   pub struct Account {
+   #[table(name = position)]
+   pub struct Position {
        #[primary_key]
-       id: i32,
-       #[unique]
-       email: String,
-       name: String,
-   }
-
-   #[reducer]
-   pub fn seed(ctx: &ReducerContext) {
-       let _ = ctx.db.accounts().try_insert(Account {
-           id: 1,
-           email: "a@example.com".to_string(),
-           name: "Alice".to_string(),
-       });
+       entity_id: i32,
+       x: i32,
+       y: i32,
    }
    ```
 
-2. **The golden example:**
+2. **The golden example**:
    ```rust
-   use spacetimedb::{reducer, table, ReducerContext, Table};
-
-   #[table(name = accounts, index(name = by_name, btree(columns = [name])))]
-   pub struct Account {
+   #[table(name = position)]
+   pub struct Position {
        #[primary_key]
-       pub id: i32,
-       #[unique]
-       pub email: String,
-       pub name: String,
-   }
-
-   #[reducer]
-   pub fn seed(ctx: &ReducerContext) {
-       ctx.db.accounts().insert(Account { id: 1, email: "a@example.com".into(), name: "Alice".into() });
+       pub entity_id: i32,
+       pub x: i32,
+       pub y: i32,
    }
    ```
 
-3. **The error:** `no such table: accounts`
+3. **The error**: `spacetime sql failed`
 
-4. **Explain the difference:**
-   - Missing `pub` access modifiers in the LLM, reducing code visibility and functionality.
+4. **Explain the difference**: The struct fields lack `pub` visibility.
 
-5. **Root cause:** Lack of informative structuring around access modifiers in table definitions.
+5. **Root cause**: As with the previous issue, visibility modifiers are crucial but may not be adequately detailed in the documentation.
 
-6. **Recommendation:**
-   - Enhance the documentation to indicate when public access is required for struct fields, emphasizing its importance in database operations.
+6. **Recommendation**: Clarify in the docs that all database struct fields should be public for compatibility.
 
 ---
 
 ## C# / docs Failures
 
-### CRUD Operations
+### Other Failures
 
-#### Failure Group: `t_004_insert`, `t_005_update`, `t_006_delete`, and `t_007_crud`
-
-1. **The generated code:**
+#### t_014_elementary_columns
+1. **The generated code**:
    ```csharp
-   using SpacetimeDB;
-
-   public static partial class Module
-   {
-       [SpacetimeDB.Table(Name = "User", Public = true)]
-       public partial struct User
-       {
-           [SpacetimeDB.PrimaryKey]
-           public int Id;
-           public string Name;
-           public int Age;
-           public bool Active;
-       }
-
-       [SpacetimeDB.Reducer]
-       public static void InsertUser(ReducerContext ctx, int id, string name, int age, bool active)
-       {
-           ctx.Db.User.Insert(new User
-           {
-               Id = id,
-               Name = name,
-               Age = age,
-               Active = active
-           });
-       }
+   [SpacetimeDB.Table(Name = "Primitive")]
+   public partial struct Primitive {
+       [SpacetimeDB.PrimaryKey]
+       public int Id;
+       public int Count;
+       public long Total;
+       public float Price;
+       public double Ratio;
+       public bool Active;
+       public string Name;
    }
    ```
 
-2. **The golden example:**
+2. **The golden example**:
    ```csharp
-   using SpacetimeDB;
-
-   public static partial class Module
-   {
-       [Table(Name = "User")]
-       public partial struct User
-       {
-           [PrimaryKey] public int Id;
-           public string Name;
-           public int Age;
-           public bool Active;
-       }
-
-       [Reducer]
-       public static void InsertUser(ReducerContext ctx, int id, string name, int age, bool active)
-       {
-           ctx.Db.User.Insert(new User { Id = id, Name = name, Age = age, Active = active });
-       }
+   [Table(Name = "Primitive")]
+   public partial struct Primitive {
+       [PrimaryKey] public int Id;
+       public int Count;
+       public long Total;
+       public float Price;
+       public double Ratio;
+       public bool Active;
+       public string Name;
    }
    ```
 
-3. **The error:** `no such table: users`
+3. **The error**: `primitives` is not a valid table
 
-4. **Explain the difference:**
-   - The LLM-generated code uses `Public = true` in the `Table` attribute while the golden example does not since it defaults to `false`.
-   - Initialization of users may not occur due to missing setup code.
+4. **Explain the difference**: The generated code does not use consistent casing for the attributes, such as `SpacetimeDB.Table` and `Table`.
 
-5. **Root cause:** Insufficient understanding of necessary table configurations before CRUD operations.
+5. **Root cause**: Lack of clarity in the documentation about proper casing practices for attributes.
 
-6. **Recommendation:**
-   - Update documentation to explicitly describe table attributes and their effects on visibility and accessibility.
-   - Reinforce the importance of initializing tables before performing operations.
-
-### Index and Lookups
-
-#### Failure Group: `t_008_index_lookup`
-
-1. **The generated code:**
-   ```csharp
-   using SpacetimeDB;
-
-   public static partial class Module
-   {
-       [SpacetimeDB.Table(Name = "User", Public = true)]
-       public partial struct User
-       {
-           [SpacetimeDB.PrimaryKey]
-           public int Id;
-           public string Name;
-           public int Age;
-           public bool Active;
-       }
-
-       [SpacetimeDB.Table(Name = "Result", Public = true)]
-       public partial struct Result
-       {
-           [SpacetimeDB.PrimaryKey]
-           public int Id;
-           public string Name;
-       }
-
-       [SpacetimeDB.Reducer]
-       public static void LookupUserName(ReducerContext ctx, int id)
-       {
-           if (ctx.Db.User.Id.Find(id) is User user)
-           {
-               ctx.Db.Result.Insert(new Result
-               {
-                   Id = user.Id,
-                   Name = user.Name
-               });
-           }
-       }
-   }
-   ```
-
-2. **The golden example:**
-   ```csharp
-   using SpacetimeDB;
-
-   public static partial class Module
-   {
-       [Table(Name = "User")]
-       public partial struct User
-       {
-           [PrimaryKey] public int Id;
-           public string Name;
-           public int Age;
-           public bool Active;
-       }
-
-       [Table(Name = "Result")]
-       public partial struct Result
-       {
-           [PrimaryKey] public int Id;
-           public string Name;
-       }
-
-       [Reducer]
-       public static void LookupUserName(ReducerContext ctx, int id)
-       {
-           var u = ctx.Db.User.Id.Find(id);
-           if (u.HasValue)
-           {
-               var row = u.Value;
-               ctx.Db.Result.Insert(new Result { Id = row.Id, Name = row.Name });
-           }
-       }
-   }
-   ```
-
-3. **The error:** `no such table: results | no such table: users`
-
-4. **Explain the difference:**
-   - The unnecessary `Public = true` in the table attributes isn’t causing a functional error but leads to inconsistent implementations.
-   - Using an unwrapped nullable type may bypass existing nullable handling, causing the lookup to fail if the record isn't found.
-
-5. **Root cause:** Failure to ensure the existence of tables prior to their use and misunderstanding of optional handling in C#.
-
-6. **Recommendation:**
-   - Expand documentation on how to ensure relations and lookups fit within the scope of initialized tables.
-   - Emphasize avoiding unnecessary visibility flags unless explicitly required.
-
+6. **Recommendation**: Standardize attribute naming conventions in documentation to avoid confusion over casing.
 
 ---
 
-### Conclusion
+#### t_016_sum_type_columns
+1. **The generated code**:
+   ```csharp
+   [SpacetimeDB.Table(Name = "Drawing", Public = true)]
+   public partial struct Drawing {
+       [SpacetimeDB.PrimaryKey]
+       public int Id;
+       public Shape A;
+       public Shape B;
+   }
+   ```
 
-The key takeaways from the analysis emphasize the need to enhance clarity in SpacetimeDB's documentation related to struct definitions, visibility modifiers, reducer expectations, and table initialization. Adding specific examples and best practices would help users adhere to the correct patterns and utilize the API effectively, thereby reducing benchmark failures.
+2. **The golden example**:
+   ```csharp
+   [Table(Name = "Drawing")]
+   public partial struct Drawing {
+       [PrimaryKey] public int Id;
+       public Shape A;
+       public Shape B;
+   }
+   ```
+
+3. **The error**: `drawings` is not a valid table
+
+4. **Explain the difference**: Similar to the last case, inconsistent use of `SpacetimeDB` leads to issues.
+
+5. **Root cause**: Inconsistencies in attribute naming conventions.
+
+6. **Recommendation**: Implement strict guidelines for attribute naming in documentation to ensure uniformity.
+
+---
+
+#### t_017_scheduled_columns
+1. **The generated code**:
+   ```csharp
+   [Table(Name = "TickTimer", Scheduled = nameof(Tick), ScheduledAt = nameof(ScheduledAt))]
+   public partial struct TickTimer {
+       [PrimaryKey, AutoInc]
+       public ulong ScheduledId;
+       public ScheduleAt ScheduledAt;
+   }
+   ```
+
+2. **The golden example**:
+   ```csharp
+   [Table(Name = "TickTimer", Scheduled = nameof(Tick), ScheduledAt = nameof(ScheduledAt))]
+   public partial struct TickTimer {
+       [PrimaryKey, AutoInc] public ulong ScheduledId;
+       public ScheduleAt ScheduledAt;
+   }
+   ```
+
+3. **The error**: `tick_timer` is not a valid table
+
+4. **Explain the difference**: The naming conventions in the generated code are incorrect compared to the expected outcome.
+
+5. **Root cause**: Poor documentation on how to correctly declare scheduled columns and their attributes.
+
+6. **Recommendation**: Enhance documentation to clarify how to declare scheduled columns accurately.
+
+---
+
+#### t_020_ecs
+1. **The generated code**:
+   ```csharp
+   [SpacetimeDB.Table(Name = "Entity")]
+   public partial struct Entity { [SpacetimeDB.PrimaryKey] public int Id; }
+   ```
+
+2. **The golden example**:
+   ```csharp
+   [Table(Name = "Entity")] public partial struct Entity { [PrimaryKey] public int Id; }
+   ```
+
+3. **The error**: `next_positions` is not a valid table
+
+4. **Explain the difference**: As with previous cases, inconsistent attribute casing causes issues.
+
+5. **Root cause**: Documentation does not provide clear direction regarding consistent attribute casing.
+
+6. **Recommendation**: Consolidate and standardize attribute naming practices in the documentation to avoid confusion in the code structure.
+
+--- 
+
+## Conclusion
+The majority of failures stem from inconsistencies in naming conventions, visibility modifiers, and attribute casing. It is recommended to enhance the SpacetimeDB documentation to emphasize these aspects clearly to avoid further misunderstandings and mistakes. Strong and specific recommendations are essential for a robust learning experience for developers using SpacetimeDB.
