@@ -1,5 +1,5 @@
 use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_data_parity_scorer};
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use serde_json::Value;
 use std::time;
 
@@ -8,7 +8,7 @@ pub fn spec() -> BenchmarkSpec {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let select = sb.select_by_id("users", &["id","name","age","active"], "id", 1);
+        let select = sb.select_by_id(&table_name("user", lang), &["id","name","age","active"], "id", 1);
         let reducer_name = ident("InsertUser", casing);
 
         v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {

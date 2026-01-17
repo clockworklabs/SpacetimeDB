@@ -11,12 +11,12 @@ TYPES
     - Rectangle(Rect)
 
 TABLE
-- results
+- result
   - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
     - value: Shape
 
 REDUCERS
-- set_circle: given id:i32 and radius:i32, insert exactly one row into results
+- set_circle: given id:i32 and radius:i32, insert exactly one row into result
   - (id=id, value=Shape::Circle(radius))

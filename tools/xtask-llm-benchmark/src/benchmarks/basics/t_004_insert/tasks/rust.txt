@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines one table and a reducer that inserts a row.
 
 TABLE
-- users
+- user
   - Struct: User
   - Fields:
     - id: i32 (primary key)
@@ -10,5 +10,5 @@ TABLE
     - active: bool
 
 REDUCERS
-- insert_user: given id:i32, name:String, age:i32, active:bool, insert exactly one row into users
+- insert_user: given id:i32, name:String, age:i32, active:bool, insert exactly one row into user
   - (id=id, name=name, age=age, active=active)

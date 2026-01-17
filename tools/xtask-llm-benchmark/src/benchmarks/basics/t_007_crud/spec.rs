@@ -1,5 +1,5 @@
 use crate::eval::defaults::{default_schema_parity_scorers, make_reducer_data_parity_scorer, make_sql_count_only_scorer};
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use std::time::Duration;
 
 pub fn spec() -> BenchmarkSpec {
@@ -9,10 +9,11 @@ pub fn spec() -> BenchmarkSpec {
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
         let reducer = ident("Crud", casing);
+        let user_table = table_name("user", lang);
 
-        let select_id1 = sb.select_by_id("users", &["id","name","age","active"], "id", 1);
-        let count_id2  = sb.count_by_id("users", "id", 2);
-        let count_all  = "SELECT COUNT(*) AS n FROM users";
+        let select_id1 = sb.select_by_id(&user_table, &["id","name","age","active"], "id", 1);
+        let count_id2  = sb.count_by_id(&user_table, "id", 2);
+        let count_all  = format!("SELECT COUNT(*) AS n FROM {user_table}");
 
         v.push(make_reducer_data_parity_scorer(host_url, ReducerDataParityConfig {
             src_file: file!(),

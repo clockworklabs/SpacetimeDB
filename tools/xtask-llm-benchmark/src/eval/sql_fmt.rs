@@ -17,6 +17,16 @@ pub fn casing_for_lang(lang: Lang) -> Casing {
     }
 }
 
+/// Convert a singular lowercase table name to the appropriate convention for each language.
+/// - C#: PascalCase singular (e.g., "user" -> "User")
+/// - Rust: snake_case singular (e.g., "user" -> "user")
+pub fn table_name(singular: &str, lang: Lang) -> String {
+    match lang {
+        Lang::CSharp => singular.to_upper_camel_case(),
+        Lang::Rust => singular.to_snake_case(),
+    }
+}
+
 pub fn ident(s: &str, casing: Casing) -> String {
     match casing {
         Casing::Snake => s.to_snake_case(),

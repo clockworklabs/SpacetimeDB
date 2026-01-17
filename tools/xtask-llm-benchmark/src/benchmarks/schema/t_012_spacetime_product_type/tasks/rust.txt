@@ -7,12 +7,12 @@ TYPES
     - right: i32
 
 TABLE
-- results
+- result
   - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
     - value: Score
 
 REDUCERS
-- set_score: given id:i32, left:i32, right:i32, insert exactly this row into results
+- set_score: given id:i32, left:i32, right:i32, insert exactly this row into result
   - (id=id, value=Score{left:left, right:right})
