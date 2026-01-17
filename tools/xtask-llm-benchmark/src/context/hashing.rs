@@ -5,8 +5,10 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use crate::context::combine::build_context;
 use crate::context::constants::docs_dir;
 use crate::context::{resolve_mode_paths_hashing, rustdoc_crate_root};
+use crate::eval::Lang;
 
 // --- compute: stable rel path + normalized file bytes ---
 pub fn compute_context_hash(mode: &str) -> Result<String> {
@@ -30,6 +32,17 @@ pub fn compute_context_hash(mode: &str) -> Result<String> {
         hasher.update(&norm);
     }
 
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+/// Compute hash of the processed context (after language-specific tab filtering).
+/// This ensures each lang/mode combination gets its own unique hash.
+pub fn compute_processed_context_hash(mode: &str, lang: Lang) -> Result<String> {
+    let context = build_context(mode, Some(lang))?;
+    let mut hasher = Hasher::new();
+    // Normalize line endings for deterministic hash across OS/checkouts
+    let normalized = normalize_lf(context.as_bytes());
+    hasher.update(&normalized);
     Ok(hasher.finalize().to_hex().to_string())
 }
 
