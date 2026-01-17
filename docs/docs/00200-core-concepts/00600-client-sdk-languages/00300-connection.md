@@ -28,7 +28,7 @@ Create a connection using the `DbConnection` builder pattern:
 import { DbConnection } from './module_bindings';
 
 const conn = new DbConnection.builder()
-    .withUri("http://localhost:3000")
+    .withUri("https://maincloud.spacetimedb.com")
     .withModuleName("my_database");
 ```
 
@@ -39,7 +39,7 @@ const conn = new DbConnection.builder()
 using SpacetimeDB;
 
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("http://localhost:3000"))
+    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
     .WithModuleName("my_database")
     .Build();
 ```
@@ -51,7 +51,7 @@ var conn = DbConnection.Builder()
 use module_bindings::DbConnection;
 
 let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
+    .with_uri("https://maincloud.spacetimedb.com")
     .with_module_name("my_database")
     .build();
 ```
@@ -63,7 +63,7 @@ let conn = DbConnection::builder()
 #include "ModuleBindings/DbConnection.h"
 
 UDbConnection* Conn = UDbConnection::Builder()
-    ->WithUri(TEXT("http://localhost:3000"))
+    ->WithUri(TEXT("https://maincloud.spacetimedb.com"))
     ->WithModuleName(TEXT("my_database"))
     ->Build();
 ```
@@ -71,7 +71,7 @@ UDbConnection* Conn = UDbConnection::Builder()
 </TabItem>
 </Tabs>
 
-Replace `"http://localhost:3000"` with your SpacetimeDB host URI, and `"my_database"` with your database's name or identity.
+Replace `"https://maincloud.spacetimedb.com"` with your SpacetimeDB host URI, and `"my_database"` with your database's name or identity.
 
 ### Connecting to MainCloud
 
@@ -233,7 +233,7 @@ Register callbacks to observe connection state changes:
 
 ```typescript
 const conn = DbConnection.builder()
-    .withUri("http://localhost:3000")
+    .withUri("https://maincloud.spacetimedb.com")
     .withModuleName("my_database")
     .onConnect((conn, identity, token) => {
         console.log(`Connected! Identity: ${identity.toHexString()}`);
@@ -253,7 +253,7 @@ const conn = DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("http://localhost:3000"))
+    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
     .WithModuleName("my_database")
     .OnConnect((conn, identity, token) =>
     {
@@ -283,7 +283,7 @@ var conn = DbConnection.Builder()
 
 ```rust
 let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
+    .with_uri("https://maincloud.spacetimedb.com")
     .with_module_name("my_database")
     .on_connect(|_ctx, _identity, token| {
         println!("Connected! Saving token...");
@@ -319,7 +319,7 @@ DisconnectDelegate.BindDynamic(this, &AMyActor::OnDisconnected);
 
 // Build connection with callbacks
 UDbConnection* Conn = UDbConnection::Builder()
-    ->WithUri(TEXT("http://localhost:3000"))
+    ->WithUri(TEXT("https://maincloud.spacetimedb.com"))
     ->WithModuleName(TEXT("my_database"))
     ->OnConnect(ConnectDelegate)
     ->OnConnectError(ErrorDelegate)

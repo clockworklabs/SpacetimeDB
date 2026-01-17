@@ -11,7 +11,7 @@ TYPES
     - Y: int
 
 TABLE
-- profiles
+- Profile
   - Struct: Profile
   - Fields:
     - Id: int (primary key)
@@ -20,5 +20,5 @@ TABLE
     - Pos: Position
 
 REDUCERS
-- Seed: insert exactly one row into profiles
+- Seed: insert exactly one row into Profile
   - (Id=1, Home=Address{Street="1 Main", Zip=11111}, Work=Address{Street="2 Broad", Zip=22222}, Pos=Position{X=7, Y=9})
