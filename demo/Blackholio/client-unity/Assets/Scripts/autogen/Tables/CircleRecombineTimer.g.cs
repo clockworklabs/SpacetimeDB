@@ -36,4 +36,28 @@ namespace SpacetimeDB.Types
 
         public readonly CircleRecombineTimerHandle CircleRecombineTimer;
     }
+
+    public sealed class CircleRecombineTimerCols
+    {
+        public global::SpacetimeDB.Col<CircleRecombineTimer, ulong> ScheduledId { get; }
+        public global::SpacetimeDB.Col<CircleRecombineTimer, SpacetimeDB.ScheduleAt> ScheduledAt { get; }
+        public global::SpacetimeDB.Col<CircleRecombineTimer, int> PlayerId { get; }
+
+        public CircleRecombineTimerCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.Col<CircleRecombineTimer, ulong>(tableName, "scheduled_id");
+            ScheduledAt = new global::SpacetimeDB.Col<CircleRecombineTimer, SpacetimeDB.ScheduleAt>(tableName, "scheduled_at");
+            PlayerId = new global::SpacetimeDB.Col<CircleRecombineTimer, int>(tableName, "player_id");
+        }
+    }
+
+    public sealed class CircleRecombineTimerIxCols
+    {
+        public global::SpacetimeDB.IxCol<CircleRecombineTimer, ulong> ScheduledId { get; }
+
+        public CircleRecombineTimerIxCols(string tableName)
+        {
+            ScheduledId = new global::SpacetimeDB.IxCol<CircleRecombineTimer, ulong>(tableName, "scheduled_id");
+        }
+    }
 }

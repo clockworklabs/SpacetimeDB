@@ -24,4 +24,28 @@ namespace SpacetimeDB.Types
 
         public readonly ProcInsertsIntoHandle ProcInsertsInto;
     }
+
+    public sealed class ProcInsertsIntoCols
+    {
+        public global::SpacetimeDB.Col<ProcInsertsInto, SpacetimeDB.Timestamp> ReducerTs { get; }
+        public global::SpacetimeDB.Col<ProcInsertsInto, SpacetimeDB.Timestamp> ProcedureTs { get; }
+        public global::SpacetimeDB.Col<ProcInsertsInto, byte> X { get; }
+        public global::SpacetimeDB.Col<ProcInsertsInto, byte> Y { get; }
+
+        public ProcInsertsIntoCols(string tableName)
+        {
+            ReducerTs = new global::SpacetimeDB.Col<ProcInsertsInto, SpacetimeDB.Timestamp>(tableName, "reducer_ts");
+            ProcedureTs = new global::SpacetimeDB.Col<ProcInsertsInto, SpacetimeDB.Timestamp>(tableName, "procedure_ts");
+            X = new global::SpacetimeDB.Col<ProcInsertsInto, byte>(tableName, "x");
+            Y = new global::SpacetimeDB.Col<ProcInsertsInto, byte>(tableName, "y");
+        }
+    }
+
+    public sealed class ProcInsertsIntoIxCols
+    {
+
+        public ProcInsertsIntoIxCols(string tableName)
+        {
+        }
+    }
 }
