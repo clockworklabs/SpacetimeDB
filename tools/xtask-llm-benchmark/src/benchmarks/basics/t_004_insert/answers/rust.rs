@@ -1,7 +1,7 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(name = users)]
-pub struct Users {
+#[table(name = user)]
+pub struct User {
     #[primary_key]
     pub id: i32,
     pub name: String,
@@ -11,6 +11,6 @@ pub struct Users {
 
 #[reducer]
 pub fn insert_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) -> Result<(), String> {
-    ctx.db.users().insert(Users { id, name, age, active });
+    ctx.db.user().insert(User { id, name, age, active });
     Ok(())
 }
