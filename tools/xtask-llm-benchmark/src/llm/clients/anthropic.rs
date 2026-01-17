@@ -41,14 +41,20 @@ impl AnthropicClient {
         let allowance = ctx_limit.saturating_sub(reserve);
         static_prefix = deterministic_trim_prefix(&static_prefix, allowance);
 
-        // Build messages, putting the context first if you want cache wins
+        // Build messages, putting the context first for cache wins
         let (system_json, mut messages) = build_anthropic_messages(system.as_deref(), &segs);
         if !static_prefix.is_empty() {
+            // Mark static prefix for caching - this content will be cached and reused
+            // across multiple requests, significantly reducing costs for repeated prefixes
             messages.insert(
                 0,
                 serde_json::json!({
                     "role":"user",
-                    "content":[{"type":"text","text": static_prefix}]
+                    "content":[{
+                        "type":"text",
+                        "text": static_prefix,
+                        "cache_control": {"type": "ephemeral"}
+                    }]
                 }),
             );
         }
@@ -80,6 +86,11 @@ impl AnthropicClient {
         hm.insert(
             HeaderName::from_static("anthropic-version"),
             HeaderValue::from_static("2023-06-01"),
+        );
+        // Enable prompt caching - reduces cost by ~90% for repeated prefixes
+        hm.insert(
+            HeaderName::from_static("anthropic-beta"),
+            HeaderValue::from_static("prompt-caching-2024-07-31"),
         );
 
         let url = self.url_messages();

@@ -47,7 +47,7 @@ const players = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "players", Public = true)]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -193,7 +193,7 @@ spacetimedb.reducer('world', (ctx) => {
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -218,7 +218,7 @@ public static void World(ReducerContext ctx)
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>

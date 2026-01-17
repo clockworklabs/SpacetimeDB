@@ -161,11 +161,6 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://spacetimedb.com/maincloud',
-          label: 'Maincloud',
-          position: 'right',
-        },
-        {
           href: 'https://spacetimedb.com/blog',
           label: 'Blog',
           position: 'right',
@@ -173,6 +168,11 @@ const config: Config = {
         {
           href: 'https://spacetimedb.com/community',
           label: 'Community',
+          position: 'right',
+        },
+        {
+          href: 'https://spacetimedb.com/spacerace',
+          label: 'Spacerace',
           position: 'right',
         },
         {
