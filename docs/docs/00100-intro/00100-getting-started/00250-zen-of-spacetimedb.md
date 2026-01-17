@@ -26,7 +26,7 @@ Traditional stack:        SpacetimeDB:
 
 ## Everything is Persistent
 
-You will ask, does everything need to be persistent? Won't that be a lot of data? Won't that be slow. The answers are yes, no, and no. SpacetimeDB persists everything by default, even the full history of everything that has every changed. It should be **your choice** to delete data, not the databases. SpacetimeDB gives you that choice.
+You will ask, does everything need to be persistent? Won't that be a lot of data? Won't that be slow. The answers are yes, no, and no. SpacetimeDB persists everything by default, even the full history of everything that has every changed. It should be **your choice** to delete data, not the database's. SpacetimeDB gives you that choice.
 
 SpacetimeDB holds all your data in memory for blazing-fast access, but automatically persists everything to disk. You get the speed of in-memory computing with the durability of a traditional database.
 
