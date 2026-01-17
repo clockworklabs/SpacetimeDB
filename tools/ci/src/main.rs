@@ -1,7 +1,10 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use semver::Version;
+use std::ffi::OsStr;
 use std::path::Path;
+use std::path::PathBuf;
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -30,6 +33,125 @@ struct Cli {
     skip: Vec<String>,
 }
 
+fn ensure_repo_root() -> Result<()> {
+    if !Path::new("Cargo.toml").exists() {
+        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
+    }
+    Ok(())
+}
+
+fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        log::info!("Skipping skeleton overlay for {pkg_id}: {pkg_root:?} does not exist");
+        return Ok(());
+    }
+
+    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    if !skeleton_root.exists() {
+        log::info!(
+            "Skipping skeleton overlay for {pkg_id}: {} does not exist",
+            skeleton_root.display()
+        );
+        return Ok(());
+    }
+
+    let versioned_dir = match find_latest_semver_subdir(&pkg_root) {
+        Ok(dir) => dir,
+        Err(err) => {
+            log::info!(
+                "Skipping skeleton overlay for {pkg_id}: could not find a versioned directory under {} ({err})",
+                pkg_root.display()
+            );
+            return Ok(());
+        }
+    };
+
+    copy_overlay_dir(&skeleton_root, &versioned_dir)
+}
+
+fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    fs::remove_dir_all(&pkg_root)?;
+
+    Ok(())
+}
+
+fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
+    let mut versioned_dirs: Vec<(Version, PathBuf)> = vec![];
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Ok(version) = Version::parse(&name) else {
+            continue;
+        };
+
+        versioned_dirs.push((version, entry.path()));
+    }
+
+    versioned_dirs.sort_by(|(a, _), (b, _)| a.cmp(b));
+
+    match versioned_dirs.as_slice() {
+        [] => Err(anyhow::anyhow!(
+            "Could not find any versioned directories under {}",
+            dir.display()
+        )),
+        [(_, only)] => Ok(only.clone()),
+        _ => Err(anyhow::anyhow!(
+            "Expected at most one restored versioned directory under {}, found {}",
+            dir.display(),
+            versioned_dirs.len()
+        )),
+    }
+}
+
+fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
+    if !src.exists() {
+        bail!("Skeleton directory does not exist: {}", src.display());
+    }
+    if !dst.exists() {
+        bail!("Destination directory does not exist: {}", dst.display());
+    }
+
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            if dst_path.exists() {
+                copy_overlay_dir(&src_path, &dst_path)?;
+            }
+        } else {
+            if src_path.extension() == Some(OsStr::new("meta")) {
+                let asset_path = dst_path
+                    .parent()
+                    .expect("dst_path should have a parent")
+                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
+
+                if asset_path.exists() {
+                    fs::copy(&src_path, &dst_path)?;
+                } else if dst_path.exists() {
+                    fs::remove_file(&dst_path)?;
+                }
+                continue;
+            }
+
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -46,6 +168,12 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
+    ///
+    /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
+    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
+    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
+    Dlls,
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
@@ -208,6 +336,62 @@ fn main() -> Result<()> {
                 "--project-path",
                 "modules/module-test",
             )
+            .run()?;
+        }
+
+        Some(CiCmd::Dlls) => {
+            ensure_repo_root()?;
+
+            cmd!(
+                "dotnet",
+                "pack",
+                "crates/bindings-csharp/BSATN.Runtime",
+                "-c",
+                "Release"
+            )
+            .run()?;
+            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
+
+            let repo_root = env::current_dir()?;
+            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
+
+            let nuget_config_dir = tempfile::tempdir()?;
+            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
+            let nuget_config_contents = format!(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key=\"Local SpacetimeDB.BSATN.Runtime\" value=\"{}\" />\n    <add key=\"Local SpacetimeDB.Runtime\" value=\"{}\" />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n  </packageSources>\n  <packageSourceMapping>\n    <packageSource key=\"Local SpacetimeDB.BSATN.Runtime\">\n      <package pattern=\"SpacetimeDB.BSATN.Runtime\" />\n    </packageSource>\n    <packageSource key=\"Local SpacetimeDB.Runtime\">\n      <package pattern=\"SpacetimeDB.Runtime\" />\n    </packageSource>\n    <packageSource key=\"nuget.org\">\n      <package pattern=\"*\" />\n    </packageSource>\n  </packageSourceMapping>\n</configuration>\n",
+                bsatn_source.to_string_lossy(),
+                runtime_source.to_string_lossy(),
+            );
+            fs::write(&nuget_config_path, nuget_config_contents)?;
+
+            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
+
+            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
+            clear_restored_package_dirs("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "restore",
+                "SpacetimeDB.ClientSDK.csproj",
+                "--configfile",
+                &nuget_config_path_str,
+            )
+            .dir("sdks/csharp")
+            .run()?;
+
+            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
+            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "pack",
+                "SpacetimeDB.ClientSDK.csproj",
+                "-c",
+                "Release",
+                "--no-restore"
+            )
+            .dir("sdks/csharp")
             .run()?;
         }
 
