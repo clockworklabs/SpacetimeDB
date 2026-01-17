@@ -16,7 +16,7 @@ public static partial class Module
         public int Y;
     }
 
-    [Table(Name = "profiles")]
+    [Table(Name = "profiles", Public = true)]
     public partial struct Profile
     {
         [PrimaryKey] public int Id;

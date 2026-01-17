@@ -7,7 +7,7 @@ TYPES
     - Right: int
 
 TABLE
-- results
+- results (public)
   - Struct: Result
   - Fields:
     - Id: int (primary key)

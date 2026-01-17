@@ -11,7 +11,7 @@ TYPES
     - y: i32
 
 TABLE
-- profiles
+- profiles (public)
   - Struct: Profile
   - Fields:
     - id: i32 (primary key)

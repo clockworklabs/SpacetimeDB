@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines one table and seeds two rows.
 
 TABLE
-- accounts
+- accounts (public)
   - Struct: Account
   - Columns:
     - id: i32 (primary key)
