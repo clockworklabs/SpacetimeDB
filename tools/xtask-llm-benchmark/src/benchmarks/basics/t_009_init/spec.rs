@@ -7,18 +7,44 @@ pub fn spec() -> BenchmarkSpec {
         let mut v = default_schema_parity_scorers(host_url, file!(), route_tag);
 
         let sb = SqlBuilder::new(casing_for_lang(lang));
-        let id   = sb.cols(&["id"])[0].clone();
+        let id = sb.cols(&["id"])[0].clone();
         let name = sb.cols(&["name"])[0].clone();
-        let age  = sb.cols(&["age"])[0].clone();
-        let act  = sb.cols(&["active"])[0].clone();
+        let age = sb.cols(&["age"])[0].clone();
+        let act = sb.cols(&["active"])[0].clone();
 
-        let q_alice = format!("SELECT COUNT(*) AS n FROM users WHERE {id}=1 AND {name}='Alice' AND {age}=30 AND {act}=true");
-        let q_bob   = format!("SELECT COUNT(*) AS n FROM users WHERE {id}=2 AND {name}='Bob'   AND {age}=22 AND {act}=false");
+        let q_alice =
+            format!("SELECT COUNT(*) AS n FROM users WHERE {id}=1 AND {name}='Alice' AND {age}=30 AND {act}=true");
+        let q_bob =
+            format!("SELECT COUNT(*) AS n FROM users WHERE {id}=2 AND {name}='Bob'   AND {age}=22 AND {act}=false");
         let q_total = "SELECT COUNT(*) AS n FROM users";
 
-        v.push(make_sql_count_only_scorer(host_url, file!(), route_tag, q_alice, 1, "init_seed_alice", Duration::from_secs(10)));
-        v.push(make_sql_count_only_scorer(host_url, file!(), route_tag, q_bob,   1, "init_seed_bob",   Duration::from_secs(10)));
-        v.push(make_sql_count_only_scorer(host_url, file!(), route_tag, q_total, 2, "init_total_two",  Duration::from_secs(10)));
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            q_alice,
+            1,
+            "init_seed_alice",
+            Duration::from_secs(10),
+        ));
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            q_bob,
+            1,
+            "init_seed_bob",
+            Duration::from_secs(10),
+        ));
+        v.push(make_sql_count_only_scorer(
+            host_url,
+            file!(),
+            route_tag,
+            q_total,
+            2,
+            "init_total_two",
+            Duration::from_secs(10),
+        ));
 
         v
     })

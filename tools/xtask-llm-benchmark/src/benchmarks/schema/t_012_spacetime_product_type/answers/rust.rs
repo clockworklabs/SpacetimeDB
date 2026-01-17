@@ -15,5 +15,8 @@ pub struct ResultRow {
 
 #[reducer]
 pub fn set_score(ctx: &ReducerContext, id: i32, left: i32, right: i32) {
-    ctx.db.results().insert(ResultRow { id, value: Score { left, right } });
+    ctx.db.results().insert(ResultRow {
+        id,
+        value: Score { left, right },
+    });
 }

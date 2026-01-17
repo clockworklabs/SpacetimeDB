@@ -7,7 +7,9 @@ pub struct ResultRow {
     pub sum: i32,
 }
 
-fn add(a: i32, b: i32) -> i32 { a + b }
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
 
 #[reducer]
 pub fn compute_sum(ctx: &ReducerContext, id: i32, a: i32, b: i32) {

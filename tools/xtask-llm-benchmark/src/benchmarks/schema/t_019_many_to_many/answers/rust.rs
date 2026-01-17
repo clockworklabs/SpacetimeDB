@@ -28,13 +28,37 @@ pub struct Membership {
 
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.users().insert(User  { user_id: 1, name: "Alice".into() });
-    ctx.db.users().insert(User  { user_id: 2, name: "Bob".into()   });
+    ctx.db.users().insert(User {
+        user_id: 1,
+        name: "Alice".into(),
+    });
+    ctx.db.users().insert(User {
+        user_id: 2,
+        name: "Bob".into(),
+    });
 
-    ctx.db.groups().insert(Group { group_id: 10, title: "Admin".into() });
-    ctx.db.groups().insert(Group { group_id: 20, title: "Dev".into()   });
+    ctx.db.groups().insert(Group {
+        group_id: 10,
+        title: "Admin".into(),
+    });
+    ctx.db.groups().insert(Group {
+        group_id: 20,
+        title: "Dev".into(),
+    });
 
-    ctx.db.memberships().insert(Membership { id: 1, user_id: 1, group_id: 10 });
-    ctx.db.memberships().insert(Membership { id: 2, user_id: 1, group_id: 20 });
-    ctx.db.memberships().insert(Membership { id: 3, user_id: 2, group_id: 20 });
+    ctx.db.memberships().insert(Membership {
+        id: 1,
+        user_id: 1,
+        group_id: 10,
+    });
+    ctx.db.memberships().insert(Membership {
+        id: 2,
+        user_id: 1,
+        group_id: 20,
+    });
+    ctx.db.memberships().insert(Membership {
+        id: 3,
+        user_id: 2,
+        group_id: 20,
+    });
 }

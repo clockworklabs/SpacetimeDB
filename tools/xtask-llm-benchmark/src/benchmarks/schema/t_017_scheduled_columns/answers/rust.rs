@@ -10,8 +10,7 @@ pub struct TickTimer {
 }
 
 #[reducer]
-pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {
-}
+pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {}
 
 #[reducer(init)]
 pub fn init(ctx: &ReducerContext) {

@@ -11,8 +11,23 @@ pub struct User {
 
 #[reducer]
 pub fn crud(ctx: &ReducerContext) {
-    ctx.db.users().insert(User { id: 1, name: "Alice".into(), age: 30, active: true });
-    ctx.db.users().insert(User { id: 2, name: "Bob".into(),   age: 22, active: false });
-    ctx.db.users().id().update(User { id: 1, name: "Alice2".into(), age: 31, active: false });
+    ctx.db.users().insert(User {
+        id: 1,
+        name: "Alice".into(),
+        age: 30,
+        active: true,
+    });
+    ctx.db.users().insert(User {
+        id: 2,
+        name: "Bob".into(),
+        age: 22,
+        active: false,
+    });
+    ctx.db.users().id().update(User {
+        id: 1,
+        name: "Alice2".into(),
+        age: 31,
+        active: false,
+    });
     ctx.db.users().id().delete(2);
 }
