@@ -19,7 +19,7 @@ use xtask_llm_benchmark::context::constants::{
     docs_benchmark_comment, docs_benchmark_details, docs_benchmark_summary, llm_comparison_details,
     llm_comparison_summary, ALL_MODES,
 };
-use xtask_llm_benchmark::context::{build_context, compute_context_hash, docs_dir};
+use xtask_llm_benchmark::context::{build_context, compute_processed_context_hash, docs_dir};
 use xtask_llm_benchmark::eval::Lang;
 use xtask_llm_benchmark::llm::types::Vendor;
 use xtask_llm_benchmark::llm::{default_model_routes, make_provider_from_env, LlmProvider, ModelRoute};
@@ -249,14 +249,14 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
         guard,
     } = initialize_runtime_and_provider(config.hash_only, config.goldens_only)?;
 
-    config.host = Some(guard.as_ref().unwrap().host_url.clone());
+    config.host = guard.as_ref().map(|g| g.host_url.clone());
 
     config.selectors = apply_category_filter(&bench_root, config.categories.as_ref(), config.selectors.as_deref())?;
 
     let selectors: Option<Vec<String>> = config.selectors.clone();
     let selectors_ref: Option<&[String]> = selectors.as_deref();
 
-    if !config.goldens_only {
+    if !config.goldens_only && !config.hash_only {
         let rt = runtime.as_ref().expect("failed to initialize runtime for goldens");
         rt.block_on(ensure_goldens_built_once(
             config.host.clone(),
@@ -295,27 +295,34 @@ fn run_benchmarks(args: RunArgs, details_path: &Path, summary_path: &Path) -> Re
 
 fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     // Check-only:
-    //  - Verifies the required mode exists for each language
+    //  - Verifies the required modes exist for each language
     //  - Computes the current context hash and compares against the saved summary hash
     //  - Does NOT run any providers/models or build goldens
     //
-    // Required per language:
+    // Required mode/lang combinations:
     //   Rust   → "rustdoc_json"
+    //   Rust   → "docs"
     //   CSharp → "docs"
 
-    let mut langs = args.lang.unwrap_or_else(|| vec![Lang::Rust, Lang::CSharp]);
+    let langs = args.lang.unwrap_or_else(|| vec![Lang::Rust, Lang::CSharp]);
+
+    // Build the list of (lang, mode) combinations to check
+    let mut checks: Vec<(Lang, &'static str)> = Vec::new();
+    for lang in &langs {
+        match lang {
+            Lang::Rust => {
+                checks.push((Lang::Rust, "rustdoc_json"));
+                checks.push((Lang::Rust, "docs"));
+            }
+            Lang::CSharp => {
+                checks.push((Lang::CSharp, "docs"));
+            }
+        }
+    }
 
     // De-dupe, preserve order
     let mut seen = HashSet::new();
-    langs.retain(|l| seen.insert(l.as_str().to_string()));
-
-    // Required mode per language (use this everywhere)
-    let required_mode = |lang: Lang| -> &'static str {
-        match lang {
-            Lang::Rust => "rustdoc_json",
-            Lang::CSharp => "docs",
-        }
-    };
+    checks.retain(|(lang, mode)| seen.insert((lang.as_str().to_string(), mode.to_string())));
 
     // Debug hint for how to (re)generate entries
     let hint_for = |_lang: Lang| -> &'static str { "Check DEVELOP.md for instructions on how to proceed." };
@@ -325,8 +332,7 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     let summary: Summary =
         load_summary(&summary_path).with_context(|| format!("load summary file at {:?}", summary_path))?;
 
-    for lang in langs {
-        let mode = required_mode(lang);
+    for (lang, mode) in checks {
         let lang_str = lang.as_str();
 
         // Ensure mode exists (non-empty paths)
@@ -347,9 +353,9 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
             ),
         }
 
-        // Compute current context hash
-        let current_hash =
-            compute_context_hash(mode).with_context(|| format!("compute context hash for `{mode}`/{lang_str}"))?;
+        // Compute current context hash (using processed context for lang-specific hash)
+        let current_hash = compute_processed_context_hash(mode, lang)
+            .with_context(|| format!("compute processed context hash for `{mode}`/{lang_str}"))?;
 
         // Find saved hash in summary
         let saved_hash = summary
@@ -402,8 +408,8 @@ fn cmd_ci_quickfix() -> Result<()> {
 
     println!("Running CI quickfix (GPT-5 only) for docs-benchmark...");
 
-    // Run Rust benchmarks
-    let rust_args = RunArgs {
+    // Run Rust benchmarks with rustdoc_json mode
+    let rust_rustdoc_args = RunArgs {
         modes: Some(vec!["rustdoc_json".to_string()]),
         lang: Lang::Rust,
         hash_only: false,
@@ -417,9 +423,26 @@ fn cmd_ci_quickfix() -> Result<()> {
             models: vec!["gpt-5".to_string()],
         }]),
     };
-    run_benchmarks(rust_args, &details_path, &summary_path)?;
+    run_benchmarks(rust_rustdoc_args, &details_path, &summary_path)?;
 
-    // Run C# benchmarks
+    // Run Rust benchmarks with docs mode (markdown documentation)
+    let rust_docs_args = RunArgs {
+        modes: Some(vec!["docs".to_string()]),
+        lang: Lang::Rust,
+        hash_only: false,
+        goldens_only: false,
+        force: true,
+        categories: None,
+        tasks: None,
+        providers: Some(vec![VendorArg(Vendor::OpenAi)]),
+        models: Some(vec![ModelGroup {
+            vendor: Vendor::OpenAi,
+            models: vec!["gpt-5".to_string()],
+        }]),
+    };
+    run_benchmarks(rust_docs_args, &details_path, &summary_path)?;
+
+    // Run C# benchmarks with docs mode
     let csharp_args = RunArgs {
         modes: Some(vec!["docs".to_string()]),
         lang: Lang::CSharp,
@@ -507,20 +530,32 @@ fn cmd_ci_comment(args: CiCommentArgs) -> Result<()> {
 
 /// Generate the markdown comment for GitHub PR.
 fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> String {
-    let rust_results = summary
+    // Rust with rustdoc_json mode
+    let rust_rustdoc_results = summary
         .by_language
         .get("rust")
         .and_then(|l| l.modes.get("rustdoc_json"))
         .and_then(|m| m.models.get("GPT-5"));
+    // Rust with docs mode (markdown documentation)
+    let rust_docs_results = summary
+        .by_language
+        .get("rust")
+        .and_then(|l| l.modes.get("docs"))
+        .and_then(|m| m.models.get("GPT-5"));
+    // C# with docs mode
     let csharp_results = summary
         .by_language
         .get("csharp")
         .and_then(|l| l.modes.get("docs"))
         .and_then(|m| m.models.get("GPT-5"));
 
-    let rust_baseline = baseline
+    let rust_rustdoc_baseline = baseline
         .and_then(|b| b.by_language.get("rust"))
         .and_then(|l| l.modes.get("rustdoc_json"))
+        .and_then(|m| m.models.get("GPT-5"));
+    let rust_docs_baseline = baseline
+        .and_then(|b| b.by_language.get("rust"))
+        .and_then(|l| l.modes.get("docs"))
         .and_then(|m| m.models.get("GPT-5"));
     let csharp_baseline = baseline
         .and_then(|b| b.by_language.get("csharp"))
@@ -552,8 +587,9 @@ fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> S
     md.push_str("| Language | Mode | Category | Tests Passed | Task Pass % |\n");
     md.push_str("|----------|------|----------|--------------|-------------|\n");
 
-    if let Some(results) = rust_results {
-        let base_cats = rust_baseline.map(|b| &b.categories);
+    // Rust with rustdoc_json mode
+    if let Some(results) = rust_rustdoc_results {
+        let base_cats = rust_rustdoc_baseline.map(|b| &b.categories);
 
         if let Some(c) = results.categories.get("basics") {
             let b = base_cats.and_then(|cats| cats.get("basics"));
@@ -579,7 +615,7 @@ fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> S
         }
         let diff = format_diff(
             results.totals.task_pass_pct,
-            rust_baseline.map(|b| b.totals.task_pass_pct),
+            rust_rustdoc_baseline.map(|b| b.totals.task_pass_pct),
         );
         md.push_str(&format!(
             "| Rust | rustdoc_json | **total** | {}/{} | **{}**{} |\n",
@@ -590,6 +626,46 @@ fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> S
         ));
     }
 
+    // Rust with docs mode
+    if let Some(results) = rust_docs_results {
+        let base_cats = rust_docs_baseline.map(|b| &b.categories);
+
+        if let Some(c) = results.categories.get("basics") {
+            let b = base_cats.and_then(|cats| cats.get("basics"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| Rust | docs | basics | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        if let Some(c) = results.categories.get("schema") {
+            let b = base_cats.and_then(|cats| cats.get("schema"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| Rust | docs | schema | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        let diff = format_diff(
+            results.totals.task_pass_pct,
+            rust_docs_baseline.map(|b| b.totals.task_pass_pct),
+        );
+        md.push_str(&format!(
+            "| Rust | docs | **total** | {}/{} | **{}**{} |\n",
+            results.totals.passed_tests,
+            results.totals.total_tests,
+            format_pct(results.totals.task_pass_pct),
+            diff
+        ));
+    }
+
+    // C# with docs mode
     if let Some(results) = csharp_results {
         let base_cats = csharp_baseline.map(|b| &b.categories);
 
@@ -653,7 +729,9 @@ fn run_mode_benchmarks(
 ) -> Result<()> {
     let lang_str = lang.as_str();
     let context = build_context(mode, Some(lang))?;
-    let hash = compute_context_hash(mode).with_context(|| format!("compute docs hash for `{mode}`/{}", lang_str))?;
+    // Use processed context hash so each lang/mode combination has its own unique hash
+    let hash = compute_processed_context_hash(mode, lang)
+        .with_context(|| format!("compute processed context hash for `{mode}`/{}", lang_str))?;
 
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
 
@@ -1018,7 +1096,7 @@ fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
         Generated from: `{}`\n\n\
         ## Summary\n\n\
         - **Total failures analyzed**: {}\n\n\
-        ## Analysis\n\n\
+        ---\n\n\
         {}\n",
         details_path.display(),
         failures.len(),
@@ -1076,15 +1154,18 @@ fn categorize_failure(f: &FailureInfo) -> &'static str {
     }
 }
 
-/// Build the analysis section for failures of a specific language.
-fn build_language_section(lang: &str, failures: &[&FailureInfo], prompt: &mut String) {
+/// Build the analysis section for failures of a specific language/mode combination.
+fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt: &mut String) {
     let lang_display = match lang {
         "rust" => "Rust",
         "csharp" => "C#",
         _ => lang,
     };
 
-    prompt.push_str(&format!("# {} Failures ({} total)\n\n", lang_display, failures.len()));
+    prompt.push_str(&format!(
+        "# {} / {} Failures ({} total)\n\n",
+        lang_display, mode, failures.len()
+    ));
 
     // Group by failure type
     let table_naming: Vec<_> = failures
@@ -1095,26 +1176,40 @@ fn build_language_section(lang: &str, failures: &[&FailureInfo], prompt: &mut St
     let timeout: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "timeout").collect();
     let other: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "other").collect();
 
-    // Table naming issues
+    // Table naming issues - show detailed examples
     if !table_naming.is_empty() {
         prompt.push_str(&format!("## Table Naming Issues ({} failures)\n\n", table_naming.len()));
-        prompt.push_str("The LLM is using incorrect table names:\n\n");
+        prompt.push_str("The LLM is using incorrect table names. Examples:\n\n");
 
-        for f in table_naming.iter().take(5) {
+        // Show up to 3 detailed examples
+        for f in table_naming.iter().take(3) {
             let reasons = f
                 .scorer_details
                 .as_ref()
                 .map(extract_failure_reasons)
                 .unwrap_or_default();
-            prompt.push_str(&format!("- **{}**: {}\n", f.task, reasons.join(", ")));
+            prompt.push_str(&format!("### {}\n", f.task));
+            prompt.push_str(&format!("**Failure**: {}\n\n", reasons.join(", ")));
+
+            if let Some(llm_out) = &f.llm_output {
+                let truncated = truncate_str(llm_out, 1200);
+                prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
+            }
+
+            if let Some(golden) = &f.golden_answer {
+                let truncated = truncate_str(golden, 1200);
+                prompt.push_str(&format!("**Expected**:\n```\n{}\n```\n\n", truncated));
+            }
         }
-        if table_naming.len() > 5 {
-            prompt.push_str(&format!("- ...and {} more similar failures\n", table_naming.len() - 5));
+        if table_naming.len() > 3 {
+            prompt.push_str(&format!(
+                "**Additional similar failures**: {}\n\n",
+                table_naming.iter().skip(3).map(|f| f.task.as_str()).collect::<Vec<_>>().join(", ")
+            ));
         }
-        prompt.push('\n');
     }
 
-    // Compile/publish errors
+    // Compile/publish errors - show detailed examples with full error messages
     if !compile.is_empty() {
         prompt.push_str(&format!("## Compile/Publish Errors ({} failures)\n\n", compile.len()));
 
@@ -1128,85 +1223,121 @@ fn build_language_section(lang: &str, failures: &[&FailureInfo], prompt: &mut St
             prompt.push_str(&format!("**Error**: {}\n\n", reasons.join(", ")));
 
             if let Some(llm_out) = &f.llm_output {
-                let truncated = if llm_out.len() > 600 {
-                    format!("{}...", &llm_out[..600])
-                } else {
-                    llm_out.clone()
-                };
+                let truncated = truncate_str(llm_out, 1500);
                 prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
             }
+
+            if let Some(golden) = &f.golden_answer {
+                let truncated = truncate_str(golden, 1500);
+                prompt.push_str(&format!("**Expected (golden)**:\n```\n{}\n```\n\n", truncated));
+            }
+        }
+        if compile.len() > 3 {
+            prompt.push_str(&format!(
+                "**Additional compile failures**: {}\n\n",
+                compile.iter().skip(3).map(|f| f.task.as_str()).collect::<Vec<_>>().join(", ")
+            ));
         }
     }
 
     // Timeout issues
     if !timeout.is_empty() {
         prompt.push_str(&format!("## Timeout Issues ({} failures)\n\n", timeout.len()));
+        prompt.push_str("These tasks timed out during execution:\n");
         for f in &timeout {
             prompt.push_str(&format!("- {}\n", f.task));
         }
         prompt.push('\n');
     }
 
-    // Other failures
+    // Other failures - show detailed examples
     if !other.is_empty() {
         prompt.push_str(&format!("## Other Failures ({} failures)\n\n", other.len()));
 
-        for f in &other {
+        // Show up to 5 detailed examples for "other" since they're varied
+        for f in other.iter().take(5) {
             let reasons = f
                 .scorer_details
                 .as_ref()
                 .map(extract_failure_reasons)
                 .unwrap_or_default();
-            prompt.push_str(&format!("### {} - {}/{} passed\n", f.task, f.passed, f.total));
-            prompt.push_str(&format!("**Issues**: {}\n\n", reasons.join(", ")));
+            prompt.push_str(&format!("### {} - {}/{} tests passed\n", f.task, f.passed, f.total));
+            prompt.push_str(&format!("**Failure reason**: {}\n\n", reasons.join(", ")));
 
             if let Some(llm_out) = &f.llm_output {
-                let truncated = if llm_out.len() > 600 {
-                    format!("{}...", &llm_out[..600])
-                } else {
-                    llm_out.clone()
-                };
+                let truncated = truncate_str(llm_out, 1200);
                 prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
             }
 
             if let Some(golden) = &f.golden_answer {
-                let truncated = if golden.len() > 600 {
-                    format!("{}...", &golden[..600])
-                } else {
-                    golden.clone()
-                };
-                prompt.push_str(&format!("**Expected**:\n```\n{}\n```\n\n", truncated));
+                let truncated = truncate_str(golden, 1200);
+                prompt.push_str(&format!("**Expected (golden)**:\n```\n{}\n```\n\n", truncated));
             }
         }
+        if other.len() > 5 {
+            prompt.push_str(&format!(
+                "**Additional failures**: {}\n\n",
+                other.iter().skip(5).map(|f| f.task.as_str()).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+}
+
+/// Truncate a string to max_len chars, adding "..." if truncated.
+fn truncate_str(s: &str, max_len: usize) -> String {
+    if s.len() > max_len {
+        format!("{}...", &s[..max_len])
+    } else {
+        s.to_string()
     }
 }
 
 fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
     let mut prompt = String::from(
-        "Analyze the following SpacetimeDB benchmark test failures, organized by language. \
-        For each language, identify the root causes and suggest specific documentation fixes.\n\n\
+        "Analyze the following SpacetimeDB benchmark test failures, organized by language and mode.\n\n\
+        IMPORTANT: For each failure you analyze, you MUST include the actual code examples inline to illustrate the problem.\n\
+        Show what the LLM generated vs what was expected, highlighting the specific differences.\n\n\
         Focus on SPECIFIC, ACTIONABLE documentation changes.\n\n",
     );
 
-    // Group failures by language
-    let rust_failures: Vec<_> = failures.iter().filter(|f| f.lang == "rust").collect();
-    let csharp_failures: Vec<_> = failures.iter().filter(|f| f.lang == "csharp").collect();
+    // Group failures by language AND mode
+    let rust_rustdoc_failures: Vec<_> = failures
+        .iter()
+        .filter(|f| f.lang == "rust" && f.mode == "rustdoc_json")
+        .collect();
+    let rust_docs_failures: Vec<_> = failures
+        .iter()
+        .filter(|f| f.lang == "rust" && f.mode == "docs")
+        .collect();
+    let csharp_failures: Vec<_> = failures
+        .iter()
+        .filter(|f| f.lang == "csharp" && f.mode == "docs")
+        .collect();
 
-    // Build sections for each language
-    if !rust_failures.is_empty() {
-        build_language_section("rust", &rust_failures, &mut prompt);
+    // Build sections for each language/mode combination
+    if !rust_rustdoc_failures.is_empty() {
+        build_mode_section("rust", "rustdoc_json", &rust_rustdoc_failures, &mut prompt);
+    }
+
+    if !rust_docs_failures.is_empty() {
+        build_mode_section("rust", "docs", &rust_docs_failures, &mut prompt);
     }
 
     if !csharp_failures.is_empty() {
-        build_language_section("csharp", &csharp_failures, &mut prompt);
+        build_mode_section("csharp", "docs", &csharp_failures, &mut prompt);
     }
 
     prompt.push_str(
-        "\n---\n\n## Provide your analysis:\n\n\
-        For EACH language (Rust and C#), provide:\n\
-        1. **Root Causes**: What specific documentation issues caused these failures?\n\
-        2. **Recommendations**: List specific documentation files/sections to update and exact changes to make\n\
-        3. **Priority**: Which fixes would have the highest impact for that language?\n",
+        "\n---\n\n## Instructions for your analysis:\n\n\
+        For EACH failure or group of similar failures:\n\n\
+        1. **The generated code**: The actual LLM-generated code\n\
+        2. **The golden example**: The expected golden answer\n\
+        3. **The error**: The error message or failure reason (if provided above)\n\
+        4. **Explain the difference**: What specific API/syntax was wrong and caused the failure?\n\
+        5. **Root cause**: What's missing or unclear in the documentation?\n\
+        6. **Recommendation**: Specific fix\n\n\
+        Group similar failures together (e.g., if multiple tests fail due to the same issue).\n\
+        Use code blocks with syntax highlighting (```rust or ```csharp).\n",
     );
 
     prompt
