@@ -3,17 +3,18 @@ title: Functions
 slug: /functions
 ---
 
+import { Check } from '@site/src/components/Check';
 
-Property / Characteristic | Reducers | Procedures | Views
--- | -- | -- | --
-Read from tables | ✓ | ✓ | ✓
-Write to tables | ✓ | ✓ |  
-Runs in transaction by default | ✓ |   |  
-Atomic | ✓ | (manual) | ✓
-Deterministic | ✓ |   | ✓
-External I/O (HTTP, etc.) |   | ✓ |  
-Side-effecting |   | ✓ |  
-Schedulable | ✓ | ✓ |  
+| Property / Characteristic | Reducers | Procedures | Views |
+|---------------------------|----------|------------|-------|
+| Read from tables | <Check /> | <Check /> | <Check /> |
+| Write to tables | <Check /> | <Check /> | |
+| Runs in transaction by default | <Check /> | | <Check /> |
+| Atomic | <Check /> | (manual) | <Check /> |
+| Deterministic | <Check /> | | <Check /> |
+| External I/O (HTTP, etc.) | | <Check /> | |
+| Side-effecting | | <Check /> | |
+| Schedulable | <Check /> | <Check /> | |
 
 SpacetimeDB modules can export three types of functions that clients can interact with:
 
@@ -32,5 +33,7 @@ Procedures are currently in beta and should only be used when you need their spe
 ## Views
 
 **[Views](/functions/views)** are read-only functions that compute and return results from your tables. Unlike reducers and procedures, views do not modify database state - they only query and return data. Views are useful for computing derived data, aggregations, or joining multiple tables server-side before sending results to clients.
+
+Views run within a transaction to ensure isolation: the database state remains consistent for the entire duration of the view's execution. This means a view will never see partial updates from concurrent reducers.
 
 Views can be subscribed to just like tables and will automatically update clients when underlying data changes, making them ideal for real-time computed data.

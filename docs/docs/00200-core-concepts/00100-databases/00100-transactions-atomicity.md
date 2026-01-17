@@ -156,7 +156,7 @@ pub fn child_reducer(ctx: &ReducerContext) -> Result<(), String> {
 </Tabs>
 
 :::important
-SpacetimeDB does **not** support nested transactions. Nested reducer calls execute in the same transaction as their parent. If you need separate transactions, use [scheduled reducers](/tables/scheduled-tables) instead.
+SpacetimeDB does **not** support nested transactions. Nested reducer calls execute in the same transaction as their parent. If you need separate transactions, use [scheduled reducers](/tables/schedule-tables) instead.
 :::
 
 ### Procedures: Manual Transactions
@@ -187,7 +187,7 @@ See [Procedures](/functions/procedures) for more details on manual transaction m
 
 ### No Nested Transactions
 
-SpacetimeDB does not support nested transactions. When one reducer calls another, they share the same transaction. If you need separate transactions, use [scheduled reducers](/tables/scheduled-tables) to trigger the second reducer asynchronously.
+SpacetimeDB does not support nested transactions. When one reducer calls another, they share the same transaction. If you need separate transactions, use [scheduled reducers](/tables/schedule-tables) to trigger the second reducer asynchronously.
 
 ### Auto-Increment is Not Transactional
 
@@ -200,5 +200,5 @@ The `#[auto_inc]` sequence generator is not transactional:
 
 - **[Reducers](/functions/reducers)** - Functions that modify database state transactionally
 - **[Procedures](/functions/procedures)** - Functions with manual transaction control
-- **[Scheduled Tables](/tables/scheduled-tables)** - Schedule reducers for separate transactions
+- **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers for separate transactions
 - **[Subscriptions](/subscriptions)** - How clients receive transactional updates

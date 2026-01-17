@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(name = primitives)]
+#[table(name = primitive)]
 pub struct Primitive {
     #[primary_key]
     pub id: i32,
@@ -14,7 +14,7 @@ pub struct Primitive {
 
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.primitives().insert(Primitive {
+    ctx.db.primitive().insert(Primitive {
         id: 1,
         count: 2,
         total: 3_000_000_000,

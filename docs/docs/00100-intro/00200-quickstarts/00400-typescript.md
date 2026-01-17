@@ -29,7 +29,7 @@ Get a SpacetimeDB TypeScript app running in under 5 minutes.
     </StepText>
     <StepCode>
 ```bash
-spacetime dev --template basic-typescript my-spacetime-app
+spacetime dev --template basic-typescript
 ```
     </StepCode>
   </Step>
@@ -55,17 +55,61 @@ my-spacetime-app/
     </StepCode>
   </Step>
 
-  <Step title="Test your module">
+  <Step title="Understand tables and reducers">
     <StepText>
-      Use the CLI to interact with your running module. Call reducers and query data directly.
+      Open `spacetimedb/src/index.ts` to see the module code. The template includes a `person` table and two reducers: `add` to insert a person, and `say_hello` to greet everyone.
+
+      Tables store your data. Reducers are functions that modify data — they're the only way to write to the database.
+    </StepText>
+    <StepCode>
+```typescript
+import { schema, table, t } from 'spacetimedb/server';
+
+export const spacetimedb = schema(
+  table(
+    { name: 'person' },
+    {
+      name: t.string(),
+    }
+  )
+);
+
+spacetimedb.reducer('add', { name: t.string() }, (ctx, { name }) => {
+  ctx.db.person.insert({ name });
+});
+
+spacetimedb.reducer('say_hello', (ctx) => {
+  for (const person of ctx.db.person.iter()) {
+    console.info(`Hello, ${person.name}!`);
+  }
+  console.info('Hello, World!');
+});
+```
+    </StepCode>
+  </Step>
+
+  <Step title="Test with the CLI">
+    <StepText>
+      Use the SpacetimeDB CLI to call reducers and query your data directly.
     </StepText>
     <StepCode>
 ```bash
-# Call a reducer
-spacetime call --server local my-spacetime-app your_reducer "arg1"
+# Call the add reducer to insert a person
+spacetime call <database-name> add Alice
 
-# Query your data
-spacetime sql --server local my-spacetime-app "SELECT * FROM your_table"
+# Query the person table
+spacetime sql <database-name> "SELECT * FROM person"
+ name
+---------
+ "Alice"
+
+# Call say_hello to greet everyone
+spacetime call <database-name> say_hello
+
+# View the module logs
+spacetime logs <database-name>
+2025-01-13T12:00:00.000000Z  INFO: Hello, Alice!
+2025-01-13T12:00:00.000000Z  INFO: Hello, World!
 ```
     </StepCode>
   </Step>

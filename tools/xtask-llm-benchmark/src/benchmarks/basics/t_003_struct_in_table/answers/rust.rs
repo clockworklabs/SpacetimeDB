@@ -6,7 +6,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[table(name = entities)]
+#[table(name = entity)]
 pub struct Entity {
     #[primary_key]
     pub id: i32,

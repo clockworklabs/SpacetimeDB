@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines two tables and a reducer that looks up a row by primary-key index and writes a projection to another table.
 
 TABLES
-- users
+- user
   - Struct: User
   - Fields:
     - id: i32 (primary key)
@@ -9,11 +9,11 @@ TABLES
     - age: i32
     - active: bool
 
-- results
+- result
   - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
     - name: String
 
 REDUCERS
-- lookup_user_name: given id:i32, find the users row with that id using the index and insert (id, name) into results.
+- lookup_user_name: given id:i32, find the user row with that id using the index and insert (id, name) into result.

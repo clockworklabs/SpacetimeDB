@@ -11,12 +11,12 @@ TYPES
 - Sum: Shape = Circle | Rectangle
 
 TABLE
-- results
+- Result
   - Struct: Result
   - Fields:
     - Id: int (primary key)
     - Value: Shape
 
 REDUCERS
-- SetCircle: given id:int and radius:int, insert exactly one row into results
+- SetCircle: given id:int and radius:int, insert exactly one row into Result
   - (Id=id, Value=Circle{Radius=radius})

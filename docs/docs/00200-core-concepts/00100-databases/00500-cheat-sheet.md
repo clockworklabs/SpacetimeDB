@@ -293,7 +293,7 @@ pub fn on_disconnect(ctx: &ReducerContext) { /* ... */ }
 </TabItem>
 </Tabs>
 
-## Scheduled Tables
+## Schedule Tables
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">

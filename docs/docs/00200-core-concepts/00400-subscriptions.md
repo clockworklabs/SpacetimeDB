@@ -18,7 +18,30 @@ By using these interfaces, you can create efficient and responsive client applic
 
 ## SubscriptionBuilder
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+interface SubscriptionBuilder {
+  // Register a callback to run when the subscription is applied.
+  onApplied(callback: (ctx: SubscriptionEventContext) => void): SubscriptionBuilder;
+
+  // Register a callback to run when the subscription fails.
+  // This callback may run when attempting to apply the subscription,
+  // or later during the subscription's lifetime if the module's interface changes.
+  onError(callback: (ctx: ErrorContext, error: Error) => void): SubscriptionBuilder;
+
+  // Subscribe to the following SQL queries.
+  // Returns immediately; callbacks are invoked when data arrives from the server.
+  subscribe(querySqls: string[]): SubscriptionHandle;
+
+  // Subscribe to all rows from all tables.
+  // Intended for applications where memory and bandwidth are not concerns.
+  subscribeToAllTables(): void;
+}
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -119,7 +142,27 @@ A client can react to these updates by registering row callbacks for the appropr
 
 ### Example Usage
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Establish a database connection
+import { DbConnection } from './module_bindings';
+
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withModuleName('my_module')
+  .build();
+
+// Register a subscription with the database
+const userSubscription = conn
+  .subscriptionBuilder()
+  .onApplied((ctx) => { /* handle applied state */ })
+  .onError((ctx, error) => { /* handle error */ })
+  .subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -154,7 +197,27 @@ let subscription_handle = conn
 
 ## SubscriptionHandle
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+interface SubscriptionHandle {
+  // Whether the subscription has ended (unsubscribed or terminated due to error).
+  isEnded(): boolean;
+
+  // Whether the subscription is currently active.
+  isActive(): boolean;
+
+  // Unsubscribe from the query controlled by this handle.
+  // Throws if called more than once.
+  unsubscribe(): void;
+
+  // Unsubscribe and call onEnded when rows are removed from the client cache.
+  unsubscribeThen(onEnded?: (ctx: SubscriptionEventContext) => void): void;
+}
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -226,7 +289,49 @@ clients can dynamically subscribe to different subsets of the database as their 
 
 ### Example Usage
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+Consider a game client that displays shop items and discounts based on a player's level.
+You subscribe to `shop_items` and `shop_discounts` when a player is at level 5:
+
+```typescript
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withModuleName('my_module')
+  .build();
+
+const shopItemsSubscription = conn
+  .subscriptionBuilder()
+  .onApplied((ctx) => { /* handle applied state */ })
+  .onError((ctx, error) => { /* handle error */ })
+  .subscribe([
+    'SELECT * FROM shop_items WHERE required_level <= 5',
+    'SELECT * FROM shop_discounts WHERE required_level <= 5',
+  ]);
+```
+
+Later, when the player reaches level 6 and new items become available,
+you can subscribe to the new queries and unsubscribe from the old ones:
+
+```typescript
+const newShopItemsSubscription = conn
+  .subscriptionBuilder()
+  .onApplied((ctx) => { /* handle applied state */ })
+  .onError((ctx, error) => { /* handle error */ })
+  .subscribe([
+    'SELECT * FROM shop_items WHERE required_level <= 6',
+    'SELECT * FROM shop_discounts WHERE required_level <= 6',
+  ]);
+
+if (shopItemsSubscription.isActive()) {
+  shopItemsSubscription.unsubscribe();
+}
+```
+
+All other subscriptions continue to remain in effect.
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 Consider a game client that displays shop items and discounts based on a player's level.
@@ -328,7 +433,34 @@ This will improve throughput by reducing the amount of data transferred from the
 
 #### Example
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withModuleName('my_module')
+  .build();
+
+// Never need to unsubscribe from global subscriptions
+const globalSubscriptions = conn
+  .subscriptionBuilder()
+  .subscribe([
+    // Global messages the client should always display
+    'SELECT * FROM announcements',
+    // A description of rewards for in-game achievements
+    'SELECT * FROM badges',
+  ]);
+
+// May unsubscribe to shop_items as player advances
+const shopSubscription = conn
+  .subscriptionBuilder()
+  .subscribe([
+    'SELECT * FROM shop_items WHERE required_level <= 5',
+  ]);
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs
@@ -391,7 +523,40 @@ unsubscribing from it does not result in any server processing or data serializt
 
 #### Example
 
-<Tabs groupId="server-language" defaultValue="rust">
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+const conn = DbConnection.builder()
+  .withUri('https://maincloud.spacetimedb.com')
+  .withModuleName('my_module')
+  .build();
+
+// Initial subscription: player at level 5.
+const shopSubscription = conn
+  .subscriptionBuilder()
+  .subscribe([
+    // For displaying the price of shop items in the player's currency of choice
+    'SELECT * FROM exchange_rates',
+    'SELECT * FROM shop_items WHERE required_level <= 5',
+  ]);
+
+// New subscription: player now at level 6, which overlaps with the previous query.
+const newShopSubscription = conn
+  .subscriptionBuilder()
+  .subscribe([
+    // For displaying the price of shop items in the player's currency of choice
+    'SELECT * FROM exchange_rates',
+    'SELECT * FROM shop_items WHERE required_level <= 6',
+  ]);
+
+// Unsubscribe from the old subscription once the new one is in place.
+if (shopSubscription.isActive()) {
+  shopSubscription.unsubscribe();
+}
+```
+
+</TabItem>
 <TabItem value="csharp" label="C#">
 
 ```cs

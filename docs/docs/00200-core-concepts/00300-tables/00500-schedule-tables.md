@@ -1,6 +1,6 @@
 ---
-title: Scheduled Tables
-slug: /tables/scheduled-tables
+title: Schedule Tables
+slug: /tables/schedule-tables
 ---
 
 import Tabs from '@theme/Tabs';
@@ -9,7 +9,11 @@ import TabItem from '@theme/TabItem';
 
 Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
-## Defining a Scheduled Table
+## Defining a Schedule Table
+
+:::note Why "scheduled" in the code?
+The table attribute uses `scheduled` (with a "d") because it refers to the **scheduled reducer** - the function that will be scheduled for execution. The table itself is a "schedule table" that stores schedules, while the reducer it triggers is a "scheduled reducer".
+:::
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -79,7 +83,7 @@ fn send_reminder(ctx: &ReducerContext, reminder: Reminder) -> Result<(), String>
 ## How It Works
 
 1. **Insert a row** with a `schedule_at` time
-2. **SpacetimeDB monitors** the scheduled table
+2. **SpacetimeDB monitors** the schedule table
 3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
 4. **The row is typically deleted** or updated by the reducer after processing
 

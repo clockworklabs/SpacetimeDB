@@ -7,12 +7,12 @@ TYPES
     - Right: int
 
 TABLE
-- results
+- Result
   - Struct: Result
   - Fields:
     - Id: int (primary key)
     - Value: Score
 
 REDUCERS
-- SetScore: given id:int, left:int, right:int, insert exactly this row into results
+- SetScore: given id:int, left:int, right:int, insert exactly this row into Result
   - (Id=id, Value=Score{Left=left, Right=right})

@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines a table, a non-reducer helper function, and a reducer that uses the helper.
 
 TABLE
-- results
+- Result
   - Struct: Result
   - Fields:
     - Id: int (primary key)
@@ -11,5 +11,5 @@ HELPERS
 - Add: given a:int and b:int, returns int
 
 REDUCERS
-- ComputeSum: given id:int, a:int, b:int, insert exactly this row into results
+- ComputeSum: given id:int, a:int, b:int, insert exactly this row into Result
   - (Id=id, Sum=Add(a, b))

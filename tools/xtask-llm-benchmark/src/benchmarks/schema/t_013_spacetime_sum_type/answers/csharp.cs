@@ -11,7 +11,7 @@ public static partial class Module
     [Type]
     public partial record Shape : TaggedEnum<(Circle Circle, Rectangle Rectangle)> {}
 
-    [Table(Name = "results")]
+    [Table(Name = "Result")]
     public partial struct Result
     {
         [PrimaryKey] public int Id;
@@ -21,6 +21,6 @@ public static partial class Module
     [Reducer]
     public static void SetCircle(ReducerContext ctx, int id, int radius)
     {
-        ctx.Db.results.Insert(new Result { Id = id, Value = new Shape.Circle(new Circle { Radius = radius }) });
+        ctx.Db.Result.Insert(new Result { Id = id, Value = new Shape.Circle(new Circle { Radius = radius }) });
     }
 }

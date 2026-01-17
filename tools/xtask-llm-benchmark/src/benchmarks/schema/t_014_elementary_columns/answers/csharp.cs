@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "primitives")]
+    [Table(Name = "Primitive")]
     public partial struct Primitive
     {
         [PrimaryKey] public int Id;
@@ -17,7 +17,7 @@ public static partial class Module
     [Reducer]
     public static void Seed(ReducerContext ctx)
     {
-        ctx.Db.primitives.Insert(new Primitive {
+        ctx.Db.Primitive.Insert(new Primitive {
             Id = 1,
             Count = 2,
             Total = 3000000000,

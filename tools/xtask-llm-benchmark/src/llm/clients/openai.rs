@@ -48,6 +48,9 @@ impl OpenAiClient {
         };
 
         // Build input (system + trimmed prefix + untouched segments)
+        // Note: OpenAI's Responses API automatically caches repeated prefixes for
+        // gpt-4o, gpt-4.1, gpt-5, and similar models. No explicit cache_control needed.
+        // The static_prefix (docs) is placed first to maximize cache hits across tasks.
         let input = build_openai_responses_input(system.as_deref(), static_opt, &segs);
 
         if debug_llm_verbose() {

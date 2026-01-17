@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
-#[table(name = users)]
+#[table(name = user)]
 pub struct User {
     #[primary_key]
     pub id: i32,
@@ -9,7 +9,7 @@ pub struct User {
     pub active: bool,
 }
 
-#[table(name = results)]
+#[table(name = result)]
 pub struct ResultRow {
     #[primary_key]
     pub id: i32,
@@ -18,7 +18,7 @@ pub struct ResultRow {
 
 #[reducer]
 pub fn lookup_user_name(ctx: &ReducerContext, id: i32) {
-    if let Some(u) = ctx.db.users().id().find(id) {
-        ctx.db.results().insert(ResultRow { id: u.id, name: u.name });
+    if let Some(u) = ctx.db.user().id().find(id) {
+        ctx.db.result().insert(ResultRow { id: u.id, name: u.name });
     }
 }

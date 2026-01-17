@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines a scheduled table and a scheduled reducer.
 
 TABLE
-- tick_timer
+- TickTimer
   - Struct: TickTimer
   - Fields:
     - ScheduledId: ulong (primary key, auto-increment)
@@ -11,5 +11,5 @@ TABLE
     - Column: ScheduledAt
 
 REDUCERS
-- Tick: scheduled reducer triggered by tick_timer
-- Init: insert exactly one row into tick_timer that schedules a repeating interval of 50_000 microseconds
+- Tick: scheduled reducer triggered by TickTimer
+- Init: insert exactly one row into TickTimer that schedules a repeating interval of 50_000 microseconds

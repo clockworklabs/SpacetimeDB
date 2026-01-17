@@ -419,7 +419,7 @@ public static void SpawnEnemies(ReducerContext ctx, uint count)
 {
     for (uint i = 0; i < count; i++)
     {
-        ctx.Db.enemy.Insert(new Enemy
+        ctx.Db.Enemy.Insert(new Enemy
         {
             Id = 0, // auto_inc
             Health = 100
@@ -493,7 +493,7 @@ Be mindful of unbounded table growth:
 
 - Implement cleanup reducers for temporary data
 - Archive or delete old records
-- Use scheduled tables to automatically expire data
+- Use schedule tables to automatically expire data
 - Consider pagination for large result sets
 
 ## Next Steps

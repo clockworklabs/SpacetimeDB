@@ -177,13 +177,10 @@ impl TaskRunner {
         let prompt = prompt_builder.build_segmented(cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let llm_output = tokio::time::timeout(
-            std::time::Duration::from_secs(200),
-            cfg.llm.generate(cfg.route, &prompt),
-        )
-        .await
-        .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
-        .map_err(RunOneError::Other)?;
+        let llm_output = tokio::time::timeout(std::time::Duration::from_secs(90), cfg.llm.generate(cfg.route, &prompt))
+            .await
+            .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
+            .map_err(RunOneError::Other)?;
 
         if debug_llm() {
             print_llm_output(cfg.route.display_name, &task_id, &llm_output);

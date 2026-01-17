@@ -61,7 +61,7 @@ Throw an exception:
 [SpacetimeDB.Reducer]
 public static void TransferCredits(ReducerContext ctx, ulong toUser, uint amount)
 {
-    var fromUser = ctx.Db.users.Id.Find(ctx.Sender);
+    var fromUser = ctx.Db.User.Id.Find(ctx.Sender);
     if (fromUser == null)
     {
         throw new InvalidOperationException("User not found");
