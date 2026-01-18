@@ -625,9 +625,6 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
-        # We need this to support "Docker in Docker"
-      - name: Start Docker daemon
-        run: /usr/local/bin/start-docker.sh
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:
