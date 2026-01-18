@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines one table and a reducer that deletes a row.
 
 TABLE
-- users
+- User
   - Struct: User
   - Fields:
     - Id: int (primary key)
@@ -10,4 +10,4 @@ TABLE
     - Active: bool
 
 REDUCERS
-- DeleteUser: given id:int, delete the row in users with that Id
+- DeleteUser: given id:int, delete the row in User with that Id

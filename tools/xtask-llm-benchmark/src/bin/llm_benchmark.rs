@@ -16,7 +16,8 @@ use xtask_llm_benchmark::bench::runner::{
 };
 use xtask_llm_benchmark::bench::types::{BenchRunContext, RouteRun, RunConfig};
 use xtask_llm_benchmark::context::constants::{
-    docs_benchmark_details, docs_benchmark_summary, llm_comparison_details, llm_comparison_summary, ALL_MODES,
+    docs_benchmark_comment, docs_benchmark_details, docs_benchmark_summary, llm_comparison_details,
+    llm_comparison_summary, ALL_MODES,
 };
 use xtask_llm_benchmark::context::{build_context, compute_context_hash, docs_dir};
 use xtask_llm_benchmark::eval::Lang;
@@ -85,8 +86,14 @@ enum Commands {
     /// Quickfix CI by running a minimal OpenAI model set.
     CiQuickfix,
 
+    /// Generate markdown comment for GitHub PR (compares against master baseline).
+    CiComment(CiCommentArgs),
+
     /// Regenerate summary.json from details.json (optionally custom paths).
     Summary(SummaryArgs),
+
+    /// Analyze benchmark failures and generate a human-readable markdown report.
+    Analyze(AnalyzeArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -150,6 +157,32 @@ struct SummaryArgs {
     summary: Option<PathBuf>,
 }
 
+#[derive(Args, Debug, Clone)]
+struct AnalyzeArgs {
+    /// Input details.json file (default: docs-benchmark-details.json)
+    #[arg(long)]
+    details: Option<PathBuf>,
+
+    /// Output markdown file (default: docs-benchmark-analysis.md)
+    #[arg(long, short)]
+    output: Option<PathBuf>,
+
+    /// Only analyze failures for a specific language (rust, csharp)
+    #[arg(long)]
+    lang: Option<Lang>,
+}
+
+#[derive(Args, Debug, Clone)]
+struct CiCommentArgs {
+    /// Output markdown file (default: docs-benchmark-comment.md)
+    #[arg(long, short)]
+    output: Option<PathBuf>,
+
+    /// Git ref to compare against for baseline (default: origin/master)
+    #[arg(long, default_value = "origin/master")]
+    baseline_ref: String,
+}
+
 /// Local wrapper so we can parse Vendor without orphan-rule issues.
 #[derive(Clone, Debug)]
 struct VendorArg(pub Vendor);
@@ -171,7 +204,9 @@ fn main() -> Result<()> {
         Commands::Run(args) => cmd_run(args),
         Commands::CiCheck(args) => cmd_ci_check(args),
         Commands::CiQuickfix => cmd_ci_quickfix(),
+        Commands::CiComment(args) => cmd_ci_comment(args),
         Commands::Summary(args) => cmd_summary(args),
+        Commands::Analyze(args) => cmd_analyze(args),
     }
 }
 
@@ -283,7 +318,7 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
     };
 
     // Debug hint for how to (re)generate entries
-    let hint_for = |_lang: Lang| -> &'static str { "cargo llm ci-quickfix" };
+    let hint_for = |_lang: Lang| -> &'static str { "Check DEVELOP.md for instructions on how to proceed." };
 
     // Load docs-benchmark summary to compare hashes against
     let summary_path = docs_benchmark_summary();
@@ -298,13 +333,13 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
         match xtask_llm_benchmark::context::resolve_mode_paths(mode) {
             Ok(paths) if !paths.is_empty() => {}
             Ok(_) => bail!(
-                "CI check FAILED: {}/{} resolved to 0 paths.\n→ Try: {}",
+                "CI check FAILED: {}/{} resolved to 0 paths.\n→ {}",
                 mode,
                 lang_str,
                 hint_for(lang)
             ),
             Err(e) => bail!(
-                "CI check FAILED: {}/{} not available: {}.\n→ Try: {}",
+                "CI check FAILED: {}/{} not available: {}.\n→ {}",
                 mode,
                 lang_str,
                 e,
@@ -408,6 +443,199 @@ fn cmd_ci_quickfix() -> Result<()> {
     Ok(())
 }
 
+/* --------------------------- ci-comment --------------------------- */
+
+fn cmd_ci_comment(args: CiCommentArgs) -> Result<()> {
+    use std::process::Command;
+
+    let summary_path = docs_benchmark_summary();
+    let output_path = args.output.unwrap_or_else(docs_benchmark_comment);
+
+    // Load current summary
+    let summary: Summary =
+        load_summary(&summary_path).with_context(|| format!("load summary file at {:?}", summary_path))?;
+
+    // Try to load baseline from git ref
+    let baseline: Option<Summary> = {
+        let relative_path = "docs/llms/docs-benchmark-summary.json";
+        let output = Command::new("git")
+            .args(["show", &format!("{}:{}", args.baseline_ref, relative_path)])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let json = String::from_utf8_lossy(&out.stdout);
+                match serde_json::from_str(&json) {
+                    Ok(s) => {
+                        println!("Loaded baseline from {}", args.baseline_ref);
+                        Some(s)
+                    }
+                    Err(e) => {
+                        println!("Warning: Could not parse baseline JSON: {}", e);
+                        None
+                    }
+                }
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                println!(
+                    "Note: Could not load baseline from {} (file may not exist yet): {}",
+                    args.baseline_ref,
+                    stderr.trim()
+                );
+                None
+            }
+            Err(e) => {
+                println!("Warning: git command failed: {}", e);
+                None
+            }
+        }
+    };
+
+    // Generate markdown
+    let markdown = generate_comment_markdown(&summary, baseline.as_ref());
+
+    // Write to file
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&output_path, &markdown)?;
+    println!("Comment markdown written to: {}", output_path.display());
+
+    Ok(())
+}
+
+/// Generate the markdown comment for GitHub PR.
+fn generate_comment_markdown(summary: &Summary, baseline: Option<&Summary>) -> String {
+    let rust_results = summary
+        .by_language
+        .get("rust")
+        .and_then(|l| l.modes.get("rustdoc_json"))
+        .and_then(|m| m.models.get("GPT-5"));
+    let csharp_results = summary
+        .by_language
+        .get("csharp")
+        .and_then(|l| l.modes.get("docs"))
+        .and_then(|m| m.models.get("GPT-5"));
+
+    let rust_baseline = baseline
+        .and_then(|b| b.by_language.get("rust"))
+        .and_then(|l| l.modes.get("rustdoc_json"))
+        .and_then(|m| m.models.get("GPT-5"));
+    let csharp_baseline = baseline
+        .and_then(|b| b.by_language.get("csharp"))
+        .and_then(|l| l.modes.get("docs"))
+        .and_then(|m| m.models.get("GPT-5"));
+
+    fn format_pct(val: f32) -> String {
+        format!("{:.1}%", val)
+    }
+
+    fn format_diff(current: f32, baseline: Option<f32>) -> String {
+        match baseline {
+            Some(b) => {
+                let diff = current - b;
+                if diff.abs() < 0.1 {
+                    String::new()
+                } else {
+                    let sign = if diff > 0.0 { "+" } else { "" };
+                    let arrow = if diff > 0.0 { "⬆️" } else { "⬇️" };
+                    format!(" {} {}{:.1}%", arrow, sign, diff)
+                }
+            }
+            None => String::new(),
+        }
+    }
+
+    let mut md = String::new();
+    md.push_str("## LLM Benchmark Results (ci-quickfix)\n\n");
+    md.push_str("| Language | Mode | Category | Tests Passed | Task Pass % |\n");
+    md.push_str("|----------|------|----------|--------------|-------------|\n");
+
+    if let Some(results) = rust_results {
+        let base_cats = rust_baseline.map(|b| &b.categories);
+
+        if let Some(c) = results.categories.get("basics") {
+            let b = base_cats.and_then(|cats| cats.get("basics"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| Rust | rustdoc_json | basics | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        if let Some(c) = results.categories.get("schema") {
+            let b = base_cats.and_then(|cats| cats.get("schema"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| Rust | rustdoc_json | schema | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        let diff = format_diff(
+            results.totals.task_pass_pct,
+            rust_baseline.map(|b| b.totals.task_pass_pct),
+        );
+        md.push_str(&format!(
+            "| Rust | rustdoc_json | **total** | {}/{} | **{}**{} |\n",
+            results.totals.passed_tests,
+            results.totals.total_tests,
+            format_pct(results.totals.task_pass_pct),
+            diff
+        ));
+    }
+
+    if let Some(results) = csharp_results {
+        let base_cats = csharp_baseline.map(|b| &b.categories);
+
+        if let Some(c) = results.categories.get("basics") {
+            let b = base_cats.and_then(|cats| cats.get("basics"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| C# | docs | basics | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        if let Some(c) = results.categories.get("schema") {
+            let b = base_cats.and_then(|cats| cats.get("schema"));
+            let diff = format_diff(c.task_pass_pct, b.map(|x| x.task_pass_pct));
+            md.push_str(&format!(
+                "| C# | docs | schema | {}/{} | {}{} |\n",
+                c.passed_tests,
+                c.total_tests,
+                format_pct(c.task_pass_pct),
+                diff
+            ));
+        }
+        let diff = format_diff(
+            results.totals.task_pass_pct,
+            csharp_baseline.map(|b| b.totals.task_pass_pct),
+        );
+        md.push_str(&format!(
+            "| C# | docs | **total** | {}/{} | **{}**{} |\n",
+            results.totals.passed_tests,
+            results.totals.total_tests,
+            format_pct(results.totals.task_pass_pct),
+            diff
+        ));
+    }
+
+    if baseline.is_some() {
+        md.push_str("\n_Compared against master branch baseline_\n");
+    }
+    md.push_str(&format!("\n<sub>Generated at: {}</sub>\n", summary.generated_at));
+
+    md
+}
+
 /* --------------------------- helpers --------------------------- */
 
 fn short_hash(s: &str) -> &str {
@@ -424,7 +652,7 @@ fn run_mode_benchmarks(
     llm_provider: Option<&Arc<dyn LlmProvider>>,
 ) -> Result<()> {
     let lang_str = lang.as_str();
-    let context = build_context(mode)?;
+    let context = build_context(mode, Some(lang))?;
     let hash = compute_context_hash(mode).with_context(|| format!("compute docs hash for `{mode}`/{}", lang_str))?;
 
     println!("{:<12} [{:<10}] hash: {}", mode, lang_str, short_hash(&hash));
@@ -681,4 +909,305 @@ fn cmd_summary(args: SummaryArgs) -> Result<()> {
     write_summary_from_details_file(&in_path, &out_path)?;
     println!("Summary written to: {}", out_path.display());
     Ok(())
+}
+
+fn cmd_analyze(args: AnalyzeArgs) -> Result<()> {
+    use xtask_llm_benchmark::results::schema::Results;
+
+    let details_path = args.details.unwrap_or_else(docs_benchmark_details);
+    let output_path = args.output.unwrap_or_else(|| {
+        details_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("docs-benchmark-analysis.md")
+    });
+
+    println!("Analyzing benchmark results from: {}", details_path.display());
+
+    // Load the details file
+    let content =
+        fs::read_to_string(&details_path).with_context(|| format!("Failed to read {}", details_path.display()))?;
+    let results: Results = serde_json::from_str(&content).with_context(|| "Failed to parse details.json")?;
+
+    // Collect failures
+    let mut failures: Vec<FailureInfo> = Vec::new();
+
+    for lang_entry in &results.languages {
+        // Skip if filtering by language
+        if let Some(filter_lang) = &args.lang {
+            if lang_entry.lang != filter_lang.as_str() {
+                continue;
+            }
+        }
+
+        let golden_answers = &lang_entry.golden_answers;
+
+        for mode_entry in &lang_entry.modes {
+            for model_entry in &mode_entry.models {
+                for (task_id, outcome) in &model_entry.tasks {
+                    if outcome.passed_tests < outcome.total_tests {
+                        // This task has failures
+                        let golden = golden_answers
+                            .get(task_id)
+                            .or_else(|| {
+                                // Try with category prefix stripped
+                                task_id.split('/').next_back().and_then(|t| golden_answers.get(t))
+                            })
+                            .map(|g| g.answer.clone());
+
+                        failures.push(FailureInfo {
+                            lang: lang_entry.lang.clone(),
+                            mode: mode_entry.mode.clone(),
+                            model: model_entry.name.clone(),
+                            task: task_id.clone(),
+                            passed: outcome.passed_tests,
+                            total: outcome.total_tests,
+                            llm_output: outcome.llm_output.clone(),
+                            golden_answer: golden,
+                            scorer_details: outcome.scorer_details.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if failures.is_empty() {
+        println!("No failures found!");
+        fs::write(
+            &output_path,
+            "# Benchmark Analysis\n\nNo failures found. All tests passed!",
+        )?;
+        println!("Analysis written to: {}", output_path.display());
+        return Ok(());
+    }
+
+    println!("Found {} failing test(s). Generating analysis...", failures.len());
+
+    // Build prompt for LLM
+    let prompt = build_analysis_prompt(&failures);
+
+    // Initialize runtime and LLM provider
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    let provider = make_provider_from_env()?;
+
+    // Use a fast model for analysis
+    let route = ModelRoute {
+        display_name: "gpt-4o-mini",
+        api_model: "gpt-4o-mini",
+        vendor: Vendor::OpenAi,
+    };
+
+    use xtask_llm_benchmark::llm::prompt::BuiltPrompt;
+
+    let built_prompt = BuiltPrompt {
+        system: Some(
+            "You are an expert at analyzing SpacetimeDB benchmark failures. \
+            Analyze the test failures and provide actionable insights in markdown format."
+                .to_string(),
+        ),
+        static_prefix: None,
+        segments: vec![xtask_llm_benchmark::llm::segmentation::Segment::new("user", prompt)],
+    };
+
+    let analysis = runtime.block_on(provider.generate(&route, &built_prompt))?;
+
+    // Write markdown output
+    let markdown = format!(
+        "# Benchmark Failure Analysis\n\n\
+        Generated from: `{}`\n\n\
+        ## Summary\n\n\
+        - **Total failures analyzed**: {}\n\n\
+        ## Analysis\n\n\
+        {}\n",
+        details_path.display(),
+        failures.len(),
+        analysis
+    );
+
+    fs::write(&output_path, markdown)?;
+    println!("Analysis written to: {}", output_path.display());
+
+    Ok(())
+}
+
+#[allow(dead_code)]
+struct FailureInfo {
+    lang: String,
+    mode: String,
+    model: String,
+    task: String,
+    passed: u32,
+    total: u32,
+    llm_output: Option<String>,
+    golden_answer: Option<String>,
+    scorer_details: Option<HashMap<String, xtask_llm_benchmark::eval::ScoreDetails>>,
+}
+
+/// Extract concise failure reasons from scorer_details using typed extraction.
+fn extract_failure_reasons(details: &HashMap<String, xtask_llm_benchmark::eval::ScoreDetails>) -> Vec<String> {
+    details
+        .iter()
+        .filter_map(|(scorer_name, score)| {
+            score
+                .failure_reason()
+                .map(|reason| format!("{}: {}", scorer_name, reason))
+        })
+        .collect()
+}
+
+/// Categorize a failure by its type based on scorer details.
+fn categorize_failure(f: &FailureInfo) -> &'static str {
+    let reasons = f
+        .scorer_details
+        .as_ref()
+        .map(extract_failure_reasons)
+        .unwrap_or_default();
+
+    let reasons_str = reasons.join(" ");
+    if reasons_str.contains("tables differ") {
+        "table_naming"
+    } else if reasons_str.contains("timed out") {
+        "timeout"
+    } else if reasons_str.contains("publish failed") || reasons_str.contains("compile") {
+        "compile"
+    } else {
+        "other"
+    }
+}
+
+/// Build the analysis section for failures of a specific language.
+fn build_language_section(lang: &str, failures: &[&FailureInfo], prompt: &mut String) {
+    let lang_display = match lang {
+        "rust" => "Rust",
+        "csharp" => "C#",
+        _ => lang,
+    };
+
+    prompt.push_str(&format!("# {} Failures ({} total)\n\n", lang_display, failures.len()));
+
+    // Group by failure type
+    let table_naming: Vec<_> = failures
+        .iter()
+        .filter(|f| categorize_failure(f) == "table_naming")
+        .collect();
+    let compile: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "compile").collect();
+    let timeout: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "timeout").collect();
+    let other: Vec<_> = failures.iter().filter(|f| categorize_failure(f) == "other").collect();
+
+    // Table naming issues
+    if !table_naming.is_empty() {
+        prompt.push_str(&format!("## Table Naming Issues ({} failures)\n\n", table_naming.len()));
+        prompt.push_str("The LLM is using incorrect table names:\n\n");
+
+        for f in table_naming.iter().take(5) {
+            let reasons = f
+                .scorer_details
+                .as_ref()
+                .map(extract_failure_reasons)
+                .unwrap_or_default();
+            prompt.push_str(&format!("- **{}**: {}\n", f.task, reasons.join(", ")));
+        }
+        if table_naming.len() > 5 {
+            prompt.push_str(&format!("- ...and {} more similar failures\n", table_naming.len() - 5));
+        }
+        prompt.push('\n');
+    }
+
+    // Compile/publish errors
+    if !compile.is_empty() {
+        prompt.push_str(&format!("## Compile/Publish Errors ({} failures)\n\n", compile.len()));
+
+        for f in compile.iter().take(3) {
+            let reasons = f
+                .scorer_details
+                .as_ref()
+                .map(extract_failure_reasons)
+                .unwrap_or_default();
+            prompt.push_str(&format!("### {}\n", f.task));
+            prompt.push_str(&format!("**Error**: {}\n\n", reasons.join(", ")));
+
+            if let Some(llm_out) = &f.llm_output {
+                let truncated = if llm_out.len() > 600 {
+                    format!("{}...", &llm_out[..600])
+                } else {
+                    llm_out.clone()
+                };
+                prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
+            }
+        }
+    }
+
+    // Timeout issues
+    if !timeout.is_empty() {
+        prompt.push_str(&format!("## Timeout Issues ({} failures)\n\n", timeout.len()));
+        for f in &timeout {
+            prompt.push_str(&format!("- {}\n", f.task));
+        }
+        prompt.push('\n');
+    }
+
+    // Other failures
+    if !other.is_empty() {
+        prompt.push_str(&format!("## Other Failures ({} failures)\n\n", other.len()));
+
+        for f in &other {
+            let reasons = f
+                .scorer_details
+                .as_ref()
+                .map(extract_failure_reasons)
+                .unwrap_or_default();
+            prompt.push_str(&format!("### {} - {}/{} passed\n", f.task, f.passed, f.total));
+            prompt.push_str(&format!("**Issues**: {}\n\n", reasons.join(", ")));
+
+            if let Some(llm_out) = &f.llm_output {
+                let truncated = if llm_out.len() > 600 {
+                    format!("{}...", &llm_out[..600])
+                } else {
+                    llm_out.clone()
+                };
+                prompt.push_str(&format!("**LLM Output**:\n```\n{}\n```\n\n", truncated));
+            }
+
+            if let Some(golden) = &f.golden_answer {
+                let truncated = if golden.len() > 600 {
+                    format!("{}...", &golden[..600])
+                } else {
+                    golden.clone()
+                };
+                prompt.push_str(&format!("**Expected**:\n```\n{}\n```\n\n", truncated));
+            }
+        }
+    }
+}
+
+fn build_analysis_prompt(failures: &[FailureInfo]) -> String {
+    let mut prompt = String::from(
+        "Analyze the following SpacetimeDB benchmark test failures, organized by language. \
+        For each language, identify the root causes and suggest specific documentation fixes.\n\n\
+        Focus on SPECIFIC, ACTIONABLE documentation changes.\n\n",
+    );
+
+    // Group failures by language
+    let rust_failures: Vec<_> = failures.iter().filter(|f| f.lang == "rust").collect();
+    let csharp_failures: Vec<_> = failures.iter().filter(|f| f.lang == "csharp").collect();
+
+    // Build sections for each language
+    if !rust_failures.is_empty() {
+        build_language_section("rust", &rust_failures, &mut prompt);
+    }
+
+    if !csharp_failures.is_empty() {
+        build_language_section("csharp", &csharp_failures, &mut prompt);
+    }
+
+    prompt.push_str(
+        "\n---\n\n## Provide your analysis:\n\n\
+        For EACH language (Rust and C#), provide:\n\
+        1. **Root Causes**: What specific documentation issues caused these failures?\n\
+        2. **Recommendations**: List specific documentation files/sections to update and exact changes to make\n\
+        3. **Priority**: Which fixes would have the highest impact for that language?\n",
+    );
+
+    prompt
 }
