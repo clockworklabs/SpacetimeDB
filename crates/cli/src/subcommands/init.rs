@@ -1592,58 +1592,6 @@ pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
         std::fs::write(path, data_file.0)?;
     }
 
-    // Copy the SpacetimeDB C++ SDK
-    let sdk_dest = project_path.join("spacetimedb-cpp-sdk");
-    create_directory(&sdk_dest)?;
-
-    // Try to find and copy the SDK from the development environment
-    let current_dir = std::env::current_dir().context("Failed to get current directory")?;
-    let mut found_sdk = false;
-
-    // Look for bindings-cpp in current directory and parent directories
-    let mut search_dir = current_dir.clone();
-    for _ in 0..10 {
-        let bindings_cpp_path = search_dir.join("crates").join("bindings-cpp");
-        if bindings_cpp_path.exists() {
-            // Copy include directory
-            let src_include = bindings_cpp_path.join("include");
-            let dest_include = sdk_dest.join("include");
-            if src_include.exists() {
-                copy_dir_recursive(&src_include, &dest_include).context("Failed to copy SDK include directory")?;
-                println!("✓ Copied SpacetimeDB C++ SDK include files");
-            }
-
-            // Copy src directory
-            let src_src = bindings_cpp_path.join("src");
-            let dest_src = sdk_dest.join("src");
-            if src_src.exists() {
-                copy_dir_recursive(&src_src, &dest_src).context("Failed to copy SDK src directory")?;
-                println!("✓ Copied SpacetimeDB C++ SDK source files");
-            }
-            found_sdk = true;
-            break;
-        }
-
-        if let Some(parent) = search_dir.parent() {
-            search_dir = parent.to_path_buf();
-        } else {
-            break;
-        }
-    }
-
-    if !found_sdk {
-        println!("{}", "Note: Could not automatically find SpacetimeDB C++ SDK.".yellow());
-        println!("To complete setup, copy the SDK files manually:");
-        println!(
-            "  cp -r <spacetimedb-repo>/crates/bindings-cpp/include {}/spacetimedb-cpp-sdk/",
-            project_path.display()
-        );
-        println!(
-            "  cp -r <spacetimedb-repo>/crates/bindings-cpp/src {}/spacetimedb-cpp-sdk/",
-            project_path.display()
-        );
-    }
-
     check_for_emscripten();
     check_for_git();
 
@@ -1840,35 +1788,49 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
     content
 }
 
+/// Check if Emscripten and CMake tooling are available in PATH.
+///
+/// On Windows, looks for emcc.bat and cmake.exe.
+/// On Unix-like systems, looks for emcc and cmake.
+///
+/// Returns true if both tools are found, false otherwise with helpful warnings.
 fn check_for_emscripten() -> bool {
-    if find_executable("emcc").is_some() && find_executable("cmake").is_some() {
+    // Check for emcc with platform-specific extension
+    #[cfg(windows)]
+    let emcc_ok = find_executable("emcc.bat").is_some();
+    #[cfg(not(windows))]
+    let emcc_ok = find_executable("emcc").is_some();
+
+    // Check for cmake with platform-specific extension
+    #[cfg(windows)]
+    let cmake_ok = find_executable("cmake.exe").is_some();
+    #[cfg(not(windows))]
+    let cmake_ok = find_executable("cmake").is_some();
+
+    if emcc_ok && cmake_ok {
         return true;
     }
+
+    // Print helpful warnings about missing tools
     println!(
         "{}",
         "Warning: You have created a C++ project, but you are missing emcc (Emscripten) or cmake.".yellow()
     );
-    println!(
-        "{}",
-        "Install Emscripten from: https://emscripten.org/docs/getting_started/downloads.html".yellow()
-    );
-    println!("{}", "Install CMake from: https://cmake.org/download/".yellow());
-    false
-}
 
-fn copy_dir_recursive(src: &Path, dest: &Path) -> Result<(), anyhow::Error> {
-    create_directory(dest)?;
-
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dest_path = dest.join(entry.file_name());
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dest_path)?;
-        } else {
-            std::fs::copy(&src_path, &dest_path)?;
-        }
+    if !emcc_ok {
+        println!(
+            "{}",
+            "Install Emscripten from: https://emscripten.org/docs/getting_started/downloads.html".yellow()
+        );
+        println!(
+            "{}",
+            "Note: After installing, activate the environment with: emsdk_env.bat (Windows) or source emsdk_env.sh (Unix)".yellow()
+        );
     }
-    Ok(())
+
+    if !cmake_ok {
+        println!("{}", "Install CMake from: https://cmake.org/download/".yellow());
+    }
+
+    false
 }

@@ -13,24 +13,28 @@ SPACETIMEDB_TABLE(Person, person, Public)
 SPACETIMEDB_INIT(init)
 {
     // Module initialization logic goes here
+    return Ok();
 }
 
 // Called every time a new client connects
 SPACETIMEDB_CLIENT_CONNECTED(identity_connected)
 {
     // Client connection logic goes here
+    return Ok();
 }
 
 // Called every time a client disconnects  
 SPACETIMEDB_CLIENT_DISCONNECTED(identity_disconnected)
 {
     // Client disconnection logic goes here
+    return Ok();
 }
 
 // Add a person to the table
 SPACETIMEDB_REDUCER(add, ReducerContext ctx, std::string name)
 {
     ctx.db[person].insert(Person{name});
+    return Ok();
 }
 
 // Say hello to everyone in the table
@@ -41,4 +45,5 @@ SPACETIMEDB_REDUCER(say_hello, ReducerContext ctx)
         LOG_INFO("Hello, " + person.name + "!");
     }
     LOG_INFO("Hello, World!");
+    return Ok();
 }

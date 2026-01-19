@@ -2,8 +2,15 @@ use anyhow::{anyhow, Context};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-/// Run a program cross-platform. On Windows, go via `cmd /C` so .bat/.cmd work.
-fn run_status<S: AsRef<str>>(prog: &str, args: &[S], cwd: &Path) -> anyhow::Result<()> {
+use crate::detect::find_executable;
+
+/// Execute a command in a working directory and verify it succeeds.
+///
+/// On Windows, commands are wrapped in `cmd /C` to support `.bat` and `.cmd` files
+/// (e.g., `emcc.bat`, `emcmake.cmd`), which don't work with direct execution.
+///
+/// Returns an error if the command fails (non-zero exit code).
+fn run_command<S: AsRef<str>>(prog: &str, args: &[S], cwd: &Path) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
         let mut pieces: Vec<String> = Vec::with_capacity(1 + args.len());
@@ -24,34 +31,33 @@ fn run_status<S: AsRef<str>>(prog: &str, args: &[S], cwd: &Path) -> anyhow::Resu
     Ok(())
 }
 
-fn run_read<S: AsRef<str>>(prog: &str, args: &[S]) -> std::io::Result<String> {
-    #[cfg(windows)]
-    {
-        let mut pieces: Vec<String> = Vec::with_capacity(1 + args.len());
-        pieces.push(prog.to_string());
-        pieces.extend(args.iter().map(|s| s.as_ref().to_string()));
-        duct::cmd("cmd", std::iter::once("/C").chain(pieces.iter().map(String::as_str)))
-            .stderr_capture()
-            .stdout_capture()
-            .read()
-    }
-    #[cfg(not(windows))]
-    {
-        duct::cmd(prog, args.iter().map(|s| s.as_ref()))
-            .stderr_capture()
-            .stdout_capture()
-            .read()
-    }
-}
-
 pub(crate) fn build_cpp(project_path: &Path, build_debug: bool) -> anyhow::Result<PathBuf> {
-    // Tool sanity checks (shell-wrapped so .bat shims work on Windows)
-    run_read("emcc", &["--version"])
-        .map_err(|_| anyhow!("`emcc` not found/runnable. Activate Emscripten (emsdk_env)."))?;
-    run_read("cmake", &["--version"]).map_err(|_| anyhow!("`cmake` not found in PATH."))?;
-    // Just ensure emcmake runs; some versions lack `--version`.
-    if run_read("emcmake", &["cmake", "--version"]).is_err() {
-        return Err(anyhow!("`emcmake` not found/runnable. Is Emscripten env active?"));
+    // Verify required tools are in PATH
+    #[cfg(windows)]
+    let emcc_found = find_executable("emcc.bat").is_some();
+    #[cfg(not(windows))]
+    let emcc_found = find_executable("emcc").is_some();
+
+    if !emcc_found {
+        return Err(anyhow!("`emcc` not found in PATH. Activate Emscripten (emsdk_env)."));
+    }
+
+    #[cfg(windows)]
+    let cmake_found = find_executable("cmake.exe").is_some();
+    #[cfg(not(windows))]
+    let cmake_found = find_executable("cmake").is_some();
+
+    if !cmake_found {
+        return Err(anyhow!("`cmake` not found in PATH."));
+    }
+
+    #[cfg(windows)]
+    let emcmake_found = find_executable("emcmake.bat").is_some();
+    #[cfg(not(windows))]
+    let emcmake_found = find_executable("emcmake").is_some();
+
+    if !emcmake_found {
+        return Err(anyhow!("`emcmake` not found in PATH. Is Emscripten env active?"));
     }
 
     let build_type = if build_debug { "Debug" } else { "Release" };
@@ -63,23 +69,17 @@ pub(crate) fn build_cpp(project_path: &Path, build_debug: bool) -> anyhow::Resul
     let cfg_args = [
         "cmake",
         "-S",
-        &project_path.to_string_lossy(),
+        ".",
         "-B",
-        &build_dir.to_string_lossy(),
+        "build",
         &format!("-DCMAKE_BUILD_TYPE={}", build_type),
     ];
-    run_status("emcmake", &cfg_args, project_path).context("Failed to configure C++ project with emcmake/cmake")?;
+    run_command("emcmake", &cfg_args, project_path).context("Failed to configure C++ project with emcmake/cmake")?;
 
     // === Build (matches: cmake --build build) ===
-    // Always pass --config; it’s required for multi-config and ignored for single-config.
-    let build_args = [
-        "--build",
-        &build_dir.to_string_lossy(),
-        "--config",
-        build_type,
-        "--parallel",
-    ];
-    run_status("cmake", &build_args, project_path).context("Failed to build C++ project")?;
+    // Always pass --config; it's required for multi-config and ignored for single-config.
+    let build_args = ["--build", "build", "--config", build_type, "--parallel"];
+    run_command("cmake", &build_args, project_path).context("Failed to build C++ project")?;
 
     // Find the first .wasm under build/ (covers Debug/Release or target subdirs)
     let wasm = WalkDir::new(&build_dir)

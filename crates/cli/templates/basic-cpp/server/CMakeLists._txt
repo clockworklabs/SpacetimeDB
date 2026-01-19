@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(spacetime_cpp_module)
+project(spacetime_cpp_module LANGUAGES C CXX)
 
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
@@ -8,55 +8,88 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Set the module source file
 set(MODULE_SOURCE "src/lib.cpp" CACHE STRING "Source file for the SpacetimeDB module")
 
+# Export compile commands for better IDE support
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Set optimization level for Release builds
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 endif()
 
-# Include the SpacetimeDB C++ SDK
-set(SPACETIMEDB_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/spacetimedb-cpp-sdk")
-include_directories(${SPACETIMEDB_SDK_DIR}/include)
+# ------------------------------------------------------------------------------
+# SpacetimeDB C++ SDK
+#
+# Default: Fetch a pinned hosted SDK release (reproducible builds).
+# Dev override: point at a local SDK clone:
+#
+# PowerShell:
+#   $env:SPACETIMEDB_CPP_SDK_DIR="E:\SpacetimeDB\crates\bindings-cpp"
+#   spacetime build -p .\spacetimedb 
+#
+# bash
+#   export SPACETIMEDB_CPP_SDK_DIR=/SpacetimeDB/crates/bindings-cpp
+#   spacetime build -p .\spacetimedb
+#
+# The directory should contain the SDK's CMakeLists.txt at its root.
+# ------------------------------------------------------------------------------
 
-# Collect all source files for the SpacetimeDB library
-file(GLOB_RECURSE SPACETIMEDB_SOURCES
-    "${SPACETIMEDB_SDK_DIR}/src/*.cpp"
-    "${SPACETIMEDB_SDK_DIR}/src/*.c"
-)
+set(SPACETIMEDB_CPP_SDK_DIR "" CACHE PATH "Path to a local clone of spacetime cpp sdk (overrides FetchContent)")
 
-# Create SpacetimeDB library
-add_library(spacetimedb_cpp_library STATIC ${SPACETIMEDB_SOURCES})
-target_include_directories(spacetimedb_cpp_library PUBLIC ${SPACETIMEDB_SDK_DIR}/include)
+if(NOT SPACETIMEDB_CPP_SDK_DIR AND DEFINED ENV{SPACETIMEDB_CPP_SDK_DIR})
+  set(SPACETIMEDB_CPP_SDK_DIR "$ENV{SPACETIMEDB_CPP_SDK_DIR}")
+endif()
+
+if(SPACETIMEDB_CPP_SDK_DIR)
+  message(STATUS "Using local SpacetimeDB C++ SDK: ${SPACETIMEDB_CPP_SDK_DIR}")
+  add_subdirectory("${SPACETIMEDB_CPP_SDK_DIR}" "${CMAKE_BINARY_DIR}/_deps/spacetime_cpp_sdk-build")
+else()
+  include(FetchContent)
+
+  FetchContent_Declare(
+    spacetime_cpp_sdk
+    #URL "https://www.spacetimedb.com/cpp/spacetimedb-cpp-sdk-1.11.2.zip"
+    URL "https://www.rodentgames.com/spacetimedb/spacetimedb-cpp-sdk-1.11.2.zip"
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    URL_HASH SHA256=E10503F57AA3ADB10ADD82ECF2E0F3C1107B5C141FA5E157D174C30B71071434
+  )
+
+  FetchContent_MakeAvailable(spacetime_cpp_sdk)
+endif()
 
 # Create the main module executable
 add_executable(lib ${MODULE_SOURCE})
-target_link_libraries(lib spacetimedb_cpp_library)
+
+# Link against the SDK target (preferred alias)
+target_link_libraries(lib PRIVATE spacetimedb_cpp_library)
 
 # Configure Emscripten-specific settings for WASM output
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  # Export list as a single variable (no extra quoting per-platform)
-  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__']")
+  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__','___call_view__','___call_view_anon__','___call_procedure__']")
 
-  # Produce a standalone .wasm (no JS harness) with no entry point
+  # Compile options/defines for WASM
+  # (apply to both the module and the SDK, so everything sees the same feature flags)
+  target_compile_options(lib PRIVATE -fno-exceptions)
+  target_compile_options(spacetimedb_cpp_library PRIVATE -fno-exceptions)
+
+  # Uncomment the following to allow unstable features of SpacetimeDB
+  #target_compile_definitions(lib PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
+  #target_compile_definitions(spacetimedb_cpp_library PUBLIC SPACETIMEDB_UNSTABLE_FEATURES)
+
   target_link_options(lib PRIVATE
     "SHELL:-sSTANDALONE_WASM=1"
     "SHELL:-sWASM=1"
     "SHELL:--no-entry"
-    # Exports
     "SHELL:-sEXPORTED_FUNCTIONS=${EXPORTED_FUNCS}"
-    # Keep this ON for correctness; you can flip to 0 temporarily to probe
     "SHELL:-sERROR_ON_UNDEFINED_SYMBOLS=1"
-    # Trim runtime
     "SHELL:-sFILESYSTEM=0"
     "SHELL:-sDISABLE_EXCEPTION_CATCHING=1"
     "SHELL:-sALLOW_MEMORY_GROWTH=0"
     "SHELL:-sINITIAL_MEMORY=16MB"
     "SHELL:-sSUPPORT_LONGJMP=0"
     "SHELL:-sSUPPORT_ERRNO=0"
-    # C++20 and O2 at link step (Emscripten accepts them here too)
     "SHELL:-std=c++20"
     "SHELL:-O2"
   )
 
-  # Name the output lib.wasm
   set_target_properties(lib PROPERTIES OUTPUT_NAME "lib" SUFFIX ".wasm")
 endif()
