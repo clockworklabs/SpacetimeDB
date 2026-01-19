@@ -242,7 +242,7 @@ const spacetimedb = schema(User, Message);
 In `spacetimedb/Lib.cs`, add the definition of the tables to the `Module` class:
 
 ```csharp server
-[Table(Name = "user", Public = true)]
+[Table(Name = "User", Public = true)]
 public partial class User
 {
     [PrimaryKey]
@@ -251,7 +251,7 @@ public partial class User
     public bool Online;
 }
 
-[Table(Name = "message", Public = true)]
+[Table(Name = "Message", Public = true)]
 public partial class Message
 {
     public Identity Sender;
@@ -322,10 +322,10 @@ public static void SetName(ReducerContext ctx, string name)
 {
     name = ValidateName(name);
 
-    if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
     {
         user.Name = name;
-        ctx.Db.user.Identity.Update(user);
+        ctx.Db.User.Identity.Update(user);
     }
 }
 
@@ -408,7 +408,7 @@ public static void SendMessage(ReducerContext ctx, string text)
 {
     text = ValidateMessage(text);
     Log.Info(text);
-    ctx.Db.message.Insert(
+    ctx.Db.Message.Insert(
         new Message
         {
             Sender = ctx.Sender,
@@ -506,14 +506,14 @@ public static void ClientConnected(ReducerContext ctx)
 {
     Log.Info($"Connect {ctx.Sender}");
 
-    if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
     {
         user.Online = true;
-        ctx.Db.user.Identity.Update(user);
+        ctx.Db.User.Identity.Update(user);
     }
     else
     {
-        ctx.Db.user.Insert(
+        ctx.Db.User.Insert(
             new User
             {
                 Name = null,
@@ -527,10 +527,10 @@ public static void ClientConnected(ReducerContext ctx)
 [Reducer(ReducerKind.ClientDisconnected)]
 public static void ClientDisconnected(ReducerContext ctx)
 {
-    if (ctx.Db.user.Identity.Find(ctx.Sender) is User user)
+    if (ctx.Db.User.Identity.Find(ctx.Sender) is User user)
     {
         user.Online = false;
-        ctx.Db.user.Identity.Update(user);
+        ctx.Db.User.Identity.Update(user);
     }
     else
     {

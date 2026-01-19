@@ -10,7 +10,7 @@ TABLES
     - active: bool
 
 - results
-  - Struct: Result
+  - Struct: ResultRow
   - Fields:
     - id: i32 (primary key)
     - name: String

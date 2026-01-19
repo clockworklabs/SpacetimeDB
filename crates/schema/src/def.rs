@@ -663,6 +663,16 @@ pub enum IndexAlgorithm {
     Direct(DirectAlgorithm),
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for IndexAlgorithm {
+    fn heap_usage(&self) -> usize {
+        match self {
+            Self::BTree(a) => a.heap_usage(),
+            Self::Direct(a) => a.heap_usage(),
+            Self::Hash(a) => a.heap_usage(),
+        }
+    }
+}
+
 impl IndexAlgorithm {
     /// Get the columns of the index.
     pub fn columns(&self) -> ColOrCols<'_> {
@@ -697,6 +707,12 @@ pub struct BTreeAlgorithm {
     pub columns: ColList,
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for BTreeAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
+}
+
 impl<CL: Into<ColList>> From<CL> for BTreeAlgorithm {
     fn from(columns: CL) -> Self {
         let columns = columns.into();
@@ -717,6 +733,12 @@ pub struct HashAlgorithm {
     pub columns: ColList,
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for HashAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
+}
+
 impl<CL: Into<ColList>> From<CL> for HashAlgorithm {
     fn from(columns: CL) -> Self {
         let columns = columns.into();
@@ -735,6 +757,12 @@ impl From<HashAlgorithm> for IndexAlgorithm {
 pub struct DirectAlgorithm {
     /// The column to index.
     pub column: ColId,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for DirectAlgorithm {
+    fn heap_usage(&self) -> usize {
+        self.column.heap_usage()
+    }
 }
 
 impl<C: Into<ColId>> From<C> for DirectAlgorithm {
@@ -890,6 +918,14 @@ pub enum ConstraintData {
     Unique(UniqueConstraintData),
 }
 
+impl spacetimedb_memory_usage::MemoryUsage for ConstraintData {
+    fn heap_usage(&self) -> usize {
+        match self {
+            ConstraintData::Unique(d) => d.heap_usage(),
+        }
+    }
+}
+
 impl ConstraintData {
     /// If this is a unique constraint, returns the columns that must be unique.
     /// Otherwise, returns `None`.
@@ -915,6 +951,12 @@ impl From<ConstraintData> for RawConstraintDataV9 {
 pub struct UniqueConstraintData {
     /// The columns on the containing `TableDef`
     pub columns: ColSet,
+}
+
+impl spacetimedb_memory_usage::MemoryUsage for UniqueConstraintData {
+    fn heap_usage(&self) -> usize {
+        self.columns.heap_usage()
+    }
 }
 
 impl From<UniqueConstraintData> for RawUniqueConstraintDataV9 {
