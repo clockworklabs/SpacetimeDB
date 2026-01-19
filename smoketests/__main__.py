@@ -185,9 +185,13 @@ def main():
         except FileNotFoundError:
             pass
         try:
-            os.symlink(update_bin_name, SPACETIME_BIN)
-        except OSError:
-            shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
+            try:
+                os.symlink(update_bin_name, SPACETIME_BIN)
+            except OSError:
+                shutil.copyfile(SPACETIME_BIN.with_name(update_bin_name), SPACETIME_BIN)
+        except FileExistsError:
+            # probably a race condition with a parallel smoketest
+            pass
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
