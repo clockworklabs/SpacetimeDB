@@ -284,6 +284,14 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     sleep(Duration::from_secs(1)).await;
 
     let db_identity = database_identity(&config, &database_name, Some(resolved_server)).await?;
+
+    // Call the schema endpoint. This will load the database in the host and allow logs to be streamed.
+    let client = reqwest::Client::new();
+    let host_url = config.get_host_url(Some(resolved_server))?;
+    let builder = client.get(format!("{}/v1/database/{}/schema?version=9", host_url, db_identity));
+    // We are not interested in the response, just triggering the load
+    let _ = builder.send().await?;
+
     let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
 
     let (tx, rx) = channel();
