@@ -2,6 +2,7 @@ packages:
   - 'crates/bindings-typescript'
   - 'crates/bindings-typescript/test-app'
   - 'templates/quickstart-chat-typescript'
+  - 'templates/svelte-ts'
   - 'templates/basic-react'
   - 'templates/basic-typescript'
   - 'modules/benchmarks-ts'

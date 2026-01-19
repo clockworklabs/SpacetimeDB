@@ -71,6 +71,12 @@
       "import": "./dist/server/index.mjs",
       "require": "./dist/server/index.cjs",
       "default": "./dist/server/index.mjs"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "import": "./dist/svelte/index.mjs",
+      "require": "./dist/svelte/index.cjs",
+      "default": "./dist/svelte/index.mjs"
     }
   },
   "size-limit": [
@@ -161,10 +167,14 @@
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0-0 || ^19.0.0",
+    "svelte": "^4.0.0 || ^5.0.0",
     "undici": "^6.19.2"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "svelte": {
       "optional": true
     },
     "undici": {
@@ -173,6 +183,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
+    "svelte": "^5.0.0",
     "@size-limit/file": "^11.2.0",
     "@types/fast-text-encoding": "^1.0.3",
     "@types/react": "^19.1.13",

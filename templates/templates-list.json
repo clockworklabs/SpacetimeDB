@@ -1,6 +1,7 @@
 {
   "highlights": [
-    { "name": "React", "template_id": "basic-react" }
+    { "name": "React", "template_id": "basic-react" },
+    { "name": "Svelte", "template_id": "svelte-ts" }
   ],
   "templates": [
     {
@@ -56,6 +57,14 @@
       "description": "TypeScript server/client implementing quickstart chat",
       "server_source": "quickstart-chat-ts/spacetimedb",
       "client_source": "quickstart-chat-ts",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "svelte-ts",
+      "description": "Svelte web app with TypeScript server",
+      "server_source": "svelte-ts/spacetimedb",
+      "client_source": "svelte-ts",
       "server_lang": "typescript",
       "client_lang": "typescript"
     }
