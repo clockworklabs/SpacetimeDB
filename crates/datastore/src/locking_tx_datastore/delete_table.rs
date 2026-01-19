@@ -5,6 +5,7 @@ use spacetimedb_table::{
 };
 
 /// A table recording which rows of a table in the [`CommittedState`] that have been deleted.
+#[derive(Debug)]
 pub struct DeleteTable {
     /// Keeps track of all the deleted row pointers.
     deleted: Vec<Option<FixedBitSet>>,
@@ -143,8 +144,13 @@ impl DeleteTable {
     pub fn clear(&mut self) {
         self.len = 0;
 
-        for set in self.deleted.iter_mut().filter_map(|set| set.as_mut()) {
-            set.clear();
+        for set in self.deleted.iter_mut() {
+            match set {
+                // Only keep the allocation around if the set was used.
+                // This will remove the set in `tx_{n + 1}` introduced by `tx_n`.
+                Some(set) if set.any_set() => set.clear(),
+                Some(_) | None => *set = None,
+            }
         }
     }
 }

@@ -1048,7 +1048,10 @@ impl CommittedState {
     /// Returns the saved tx state or creates a new one.
     /// The tx state is ready for use by a new mutable transaction.
     pub(super) fn take_tx_state(&mut self) -> TxState {
-        *self.saved_tx_state.take().unwrap_or_default()
+        let mut state = *self.saved_tx_state.take().unwrap_or_default();
+        //state.delete_tables = <_>::default();
+        //state.insert_tables = <_>::default();
+        state
     }
 
     pub(super) fn merge(&mut self, mut tx_state: TxState, read_sets: ViewReadSets, ctx: &ExecutionContext) -> TxData {
@@ -1129,7 +1132,9 @@ impl CommittedState {
             }
         }
 
-        for (&table_id, row_ptrs) in &mut tx_state.delete_tables {
+        tx_state.delete_tables.retain(|&table_id, row_ptrs| {
+            let had_deletions = !row_ptrs.is_empty();
+
             match self.get_table_and_blob_store_mut(table_id) {
                 Ok((table, blob_store, ..)) => delete_rows(
                     tx_data,
@@ -1140,12 +1145,19 @@ impl CommittedState {
                     row_ptrs.iter(),
                     truncates,
                 ),
-                Err(_) if !row_ptrs.is_empty() => panic!("Deletion for non-existent table {table_id:?}... huh?"),
+                Err(_) if had_deletions => panic!("Deletion for non-existent table {table_id:?}... huh?"),
                 Err(_) => {}
             }
 
-            row_ptrs.clear();
-        }
+            if had_deletions {
+                row_ptrs.clear();
+            }
+
+            // If there were no deletions,
+            // don't expect that access pattern in the next transaction,
+            // so remove the delete table.
+            had_deletions
+        });
 
         // Delete all tables marked for deletion.
         // The order here does not matter as once a `table_id` has been dropped
@@ -1176,7 +1188,7 @@ impl CommittedState {
         //             based on the available holes in the committed state
         //             and the fullness of the page.
 
-        for (&table_id, tx_table) in &mut tx_state.insert_tables {
+        tx_state.insert_tables.retain(|&table_id, tx_table| {
             // TODO(perf, centril): Optimize the case where there is no commit table.
             // In that case, all we need to do is transfer the tx table over
             // and construct `inserts`.
@@ -1207,16 +1219,15 @@ impl CommittedState {
             }
 
             // Cleanup `tx_table` and steals its pages.
-            let (schema, pages) = tx_table.drain_for_merge();
+            let (keep_table, schema) = tx_table.as_tx_table_during_merge(&page_pool);
 
             // The schema may have been modified in the transaction.
             // Update this last to placate borrowck and avoid a clone.
             // None of the above operations will inspect the schema.
             commit_table.schema = schema;
 
-            // Put all the pages in the table back into the pool.
-            self.page_pool.put_many(pages);
-        }
+            keep_table
+        });
 
         tx_state.blob_store.clear();
     }
