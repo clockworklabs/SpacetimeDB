@@ -1,5 +1,6 @@
 pub mod build;
 pub mod call;
+pub mod code;
 pub mod delete;
 pub mod describe;
 pub mod dev;

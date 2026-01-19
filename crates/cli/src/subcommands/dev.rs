@@ -103,7 +103,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     let project_path = args.get_one::<PathBuf>("project-path").unwrap();
     let spacetimedb_project_path = args.get_one::<PathBuf>("module-project-path").unwrap();
     let module_bindings_path = args.get_one::<PathBuf>("module-bindings-path").unwrap();
-    let client_language = args.get_one::<Language>("client-lang");
+    let client_language = args.get_one::<Language>("client-lang").cloned();
     let clear_database = args
         .get_one::<ClearMode>("clear-database")
         .copied()
@@ -274,7 +274,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         &spacetimedb_dir,
         &module_bindings_dir,
         &database_name,
-        client_language,
+        client_language.as_ref(),
         resolved_server,
         clear_database,
     )
@@ -283,6 +283,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Sleep for a second to allow the database to be published on Maincloud
     sleep(Duration::from_secs(1)).await;
 
+    // Start streaming logs from the database
     let db_identity = database_identity(&config, &database_name, Some(resolved_server)).await?;
     let _log_handle = start_log_stream(config.clone(), db_identity.to_hex().to_string(), Some(resolved_server)).await?;
 
@@ -323,7 +324,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 &spacetimedb_dir,
                 &module_bindings_dir,
                 &database_name,
-                client_language,
+                client_language.as_ref(),
                 resolved_server,
                 clear_database,
             )
@@ -469,7 +470,7 @@ async fn generate_build_and_publish(
     Ok(())
 }
 
-async fn select_database(config: &Config, server: &str, token: &str) -> Result<String, anyhow::Error> {
+pub async fn select_database(config: &Config, server: &str, token: &str) -> Result<String, anyhow::Error> {
     let identity = crate::util::decode_identity(&token.to_string())?;
 
     let spinner = ProgressBar::new_spinner();

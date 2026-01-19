@@ -24,6 +24,7 @@ pub fn get_subcommands() -> Vec<Command> {
         delete::cli(),
         logs::cli(),
         call::cli(),
+        code::cli(),
         describe::cli(),
         dev::cli(),
         energy::cli(),
@@ -51,6 +52,7 @@ pub async fn exec_subcommand(
 ) -> anyhow::Result<ExitCode> {
     match cmd {
         "call" => call::exec(config, args).await,
+        "code" => return code::exec(config, args).await,
         "describe" => describe::exec(config, args).await,
         "dev" => dev::exec(config, args).await,
         "energy" => energy::exec(config, args).await,

@@ -74,6 +74,7 @@ tracing = { workspace = true, features = ["release_max_level_off"] }
 walkdir.workspace = true
 wasmbin.workspace = true
 webbrowser.workspace = true
+which.workspace = true
 clap-markdown.workspace = true
 git2.workspace = true
 dialoguer = { workspace = true, features = ["fuzzy-select"] }
@@ -83,6 +84,11 @@ xmltree.workspace = true
 quick-xml.workspace = true
 names.workspace = true
 notify.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+tui-textarea.workspace = true
+similar.workspace = true
+async-stream.workspace = true
 
 [dev-dependencies]
 pretty_assertions.workspace = true

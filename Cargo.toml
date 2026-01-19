@@ -269,6 +269,9 @@ serial_test = "2.0.0"
 sha1 = "0.10.1"
 sha3 = "0.10.0"
 similar = "2.3"
+ratatui = { version = "0.29", features = ["crossterm"] }
+crossterm = { version = "0.28", features = ["event-stream"] }
+tui-textarea = "0.7"
 slab = "0.4.7"
 sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }
@@ -316,6 +319,7 @@ v8 = "140.2"
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
+which = "7"
 windows-sys = "0.59"
 xdg = "2.5"
 xmltree = "0.11"
