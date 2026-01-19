@@ -3,6 +3,7 @@ packages:
   - 'crates/bindings-typescript/test-app'
   - 'templates/quickstart-chat-typescript'
   - 'templates/basic-react'
+  - 'templates/vue-ts'
   - 'templates/basic-typescript'
   - 'modules/benchmarks-ts'
   - 'modules/module-test-ts'
