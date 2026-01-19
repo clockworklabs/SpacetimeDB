@@ -26,7 +26,7 @@ jobs:
         runner: [spacetimedb-new-runner, windows-latest]
         include:
           - runner: spacetimedb-new-runner
-            smoketest_args: --docker
+            smoketest_args: ''
             container:
               image: localhost:5000/spacetimedb-ci:latest
               options: --privileged
@@ -40,7 +40,7 @@ jobs:
       # TODO: un-comment this
       #CARGO_TARGET_DIR: ${{ github.workspace }}/target
       # Note: clear_database and replication only work in private
-      SMOKETEST_ARGS: ${{ matrix.smoketest_args }} -x clear_database replication teams
+      SMOKETEST_ARGS: ${{ matrix.smoketest_args }} -x clear_database -x replication -x teams
     steps:
       - name: Find Git ref
         env:
@@ -130,7 +130,7 @@ jobs:
           cargo build -p spacetimedb-cli -p spacetimedb-standalone -p spacetimedb-update
           # Our .dockerignore omits `target`, which our CI Dockerfile needs.
           rm .dockerignore
-          cargo ci smoketests --docker .github/docker-compose.yml --parallel -- ${SMOKETEST_ARGS}
+          cargo ci smoketests --docker .github/docker-compose.yml --parallel ${SMOKETEST_ARGS}
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
-        run: cargo ci smoketests --parallel -- ${SMOKETEST_ARGS}
+        run: cargo ci smoketests --parallel ${SMOKETEST_ARGS}
