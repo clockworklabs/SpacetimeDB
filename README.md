@@ -116,17 +116,17 @@ SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx, uint32_t id) {
 }
 
 // Lifecycle reducers (optional)
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     LOG_INFO("Module initialized");
     return Ok();
 }
 
-SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     LOG_INFO("Client connected: " + ctx.sender.to_hex());
     return Ok();
 }
 
-SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect) {
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
     LOG_INFO("Client disconnected: " + ctx.sender.to_hex());
     return Ok();
 }

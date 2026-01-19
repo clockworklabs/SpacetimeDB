@@ -65,6 +65,7 @@ SPACETIMEDB_REDUCER(reducer_with_unit_param, ReducerContext ctx, BasicUnit unit_
         unit_param,
         value * 2
     });
+    return Ok();
 }
 
 // Reducer with struct containing units
@@ -75,6 +76,7 @@ SPACETIMEDB_REDUCER(reducer_with_struct_param, ReducerContext ctx, StructWithUni
         struct_param,
         "From reducer"
     });
+    return Ok();
 }
 
 // Reducer with multiple unit parameters
@@ -86,6 +88,7 @@ SPACETIMEDB_REDUCER(reducer_multiple_units, ReducerContext ctx,
         unit2,
         id
     });
+    return Ok();
 }
 
 // Reducer returning unit type in struct
@@ -96,10 +99,11 @@ SPACETIMEDB_REDUCER(reducer_nested_units, ReducerContext ctx, NestedWithUnits ne
         nested.nested,
         "Nested units"
     });
+    return Ok();
 }
 
 // Init reducer
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     // Create some initial data with units
     BasicUnit basic{};
     AnotherUnit another{};
@@ -110,4 +114,5 @@ SPACETIMEDB_INIT(init) {
     ctx.db[complex_table].insert({1, s, "Initial entry"});
     
     ctx.db[simple_unit_table].insert({basic, another, 999});
+    return Ok();
 }

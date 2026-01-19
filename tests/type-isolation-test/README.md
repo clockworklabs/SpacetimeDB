@@ -131,8 +131,9 @@ struct TestTable { /* fields */ };
 SPACETIMEDB_STRUCT(TestTable, /* field list */)
 SPACETIMEDB_TABLE(TestTable, test_table, Public)
 
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     LOG_INFO("Test module initialized");
+    return Ok();
 }
 ```
 

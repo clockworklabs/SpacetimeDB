@@ -1016,14 +1016,14 @@ SPACETIMEDB_REDUCER(register_user, ReducerContext ctx, std::string username, std
     // Check if user already exists
     for (const auto& user : ctx.db[users_identity].filter(ctx.sender)) {
         if (user.active) {
-            LOG_ERROR("User already registered");
-            return;
+            return Err("User already registered");
         }
     }
     
     User new_user{0, ctx.sender, username, email, ctx.timestamp, true};
     ctx.db[users].insert(new_user);
     LOG_INFO("User registered: " + username);
+    return Ok();
 }
 
 // Update user profile
@@ -1033,10 +1033,10 @@ SPACETIMEDB_REDUCER(update_profile, ReducerContext ctx, std::string new_username
             user.username = new_username;
             ctx.db[users].update(user);
             LOG_INFO("Profile updated");
-            return;
+            return Ok();
         }
     }
-    LOG_ERROR("User not found or inactive");
+    return Err("User not found or inactive");
 }
 
 // Deactivate user
@@ -1046,9 +1046,10 @@ SPACETIMEDB_REDUCER(deactivate_user, ReducerContext ctx) {
             user.active = false;
             ctx.db[users].update(user);
             LOG_INFO("User deactivated");
-            return;
+            return Ok();
         }
     }
+    return Ok();
 }
 
 // Admin: List all active users
@@ -1056,15 +1057,18 @@ SPACETIMEDB_REDUCER(list_active_users, ReducerContext ctx) {
     for (const auto& user : ctx.db[users_active].filter(true)) {
         LOG_INFO("Active user: " + user.username + " (" + user.email + ")");
     }
+    return Ok();
 }
 
 // Lifecycle: Track connections
-SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     LOG_INFO("Client connected");
+    return Ok();
 }
 
-SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect) {
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
     LOG_INFO("Client disconnected");
+    return Ok();
 }
 ```
 
@@ -1103,6 +1107,7 @@ SPACETIMEDB_REDUCER(create_channel, ReducerContext ctx, std::string name, std::s
     Channel channel{0, name, description, ctx.sender, is_public};
     ctx.db[channels].insert(channel);
     LOG_INFO("Channel created: " + name);
+    return Ok();
 }
 
 // Send message to channel
@@ -1123,6 +1128,7 @@ SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, uint32_t channel_id, std::
     
     Message message{0, channel_id, ctx.sender, content, ctx.timestamp};
     ctx.db[messages].insert(message);
+    return Ok();
 }
 
 // Get channel history
@@ -1130,6 +1136,7 @@ SPACETIMEDB_REDUCER(get_channel_history, ReducerContext ctx, uint32_t channel_id
     for (const auto& message : ctx.db[messages_channel_id].filter(channel_id)) {
         LOG_INFO("Message: " + message.content);
     }
+    return Ok();
 }
 ```
 
@@ -1146,6 +1153,7 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string username) {
     
     // This line won't execute if the insert fails
     LOG_INFO("User created successfully");
+    return Ok();
 }
 ```
 
@@ -1159,6 +1167,7 @@ SPACETIMEDB_REDUCER(update_age, ReducerContext ctx, uint32_t new_age) {
     }
     
     // Find and update user...
+    return Ok();
 }
 ```
 

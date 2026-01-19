@@ -84,11 +84,11 @@
  * @brief Macro for defining an init reducer
  * 
  * Init reducers are called when the module is first initialized.
- * They take only a ReducerContext parameter and return ReducerResult.
+ * They require an explicit ReducerContext parameter and return ReducerResult.
  * 
  * @usage
  * ```cpp
- * SPACETIMEDB_INIT(my_init) {
+ * SPACETIMEDB_INIT(my_init, ReducerContext ctx) {
  *     ctx.db.table<MyTable>().insert({...});
  *     return Ok();
  * }
@@ -97,22 +97,22 @@
 #ifdef SPACETIMEDB_INIT
 #undef SPACETIMEDB_INIT
 #endif
-#define SPACETIMEDB_INIT(function_name) \
-    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx); \
+#define SPACETIMEDB_INIT(function_name, ctx_param) \
+    SpacetimeDb::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_init"))) \
     extern "C" void CONCAT(_preinit_register_init_reducer_, function_name)() { \
         ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::Init); \
     } \
-    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx)
+    SpacetimeDb::ReducerResult function_name(ctx_param)
 
 /**
  * @brief Macro for defining a client_connected reducer
  * 
- * Client connected ReducerContext and return ReducerResult.
+ * Client connected reducers require an explicit ReducerContext parameter and return ReducerResult.
  * 
  * @usage
  * ```cpp
- * SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
+ * SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
  *     LOG_INFO("Client connected: " + ctx.sender.to_hex());
  *     return Ok();
  * }
@@ -121,22 +121,22 @@
 #ifdef SPACETIMEDB_CLIENT_CONNECTED
 #undef SPACETIMEDB_CLIENT_CONNECTED
 #endif
-#define SPACETIMEDB_CLIENT_CONNECTED(function_name) \
-    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx); \
+#define SPACETIMEDB_CLIENT_CONNECTED(function_name, ctx_param) \
+    SpacetimeDb::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_client_connected"))) \
     extern "C" void CONCAT(_preinit_register_client_connected_, function_name)() { \
         ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::OnConnect); \
     } \
-    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx)
+    SpacetimeDb::ReducerResult function_name(ctx_param)
 
 /**
  * @brief Macro for defining a client_disconnected reducer
  * 
- * Client disconnectReducerContext and return ReducerResult.
+ * Client disconnected reducers require an explicit ReducerContext parameter and return ReducerResult.
  * 
  * @usage
  * ```cpp
- * SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect) {
+ * SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
  *     LOG_INFO("Client disconnected: " + ctx.sender.to_hex());
  *     return Ok();
  * }
@@ -145,10 +145,10 @@
 #ifdef SPACETIMEDB_CLIENT_DISCONNECTED
 #undef SPACETIMEDB_CLIENT_DISCONNECTED
 #endif
-#define SPACETIMEDB_CLIENT_DISCONNECTED(function_name) \
-    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx); \
+#define SPACETIMEDB_CLIENT_DISCONNECTED(function_name, ctx_param) \
+    SpacetimeDb::ReducerResult function_name(ctx_param); \
     __attribute__((export_name("__preinit__20_reducer_client_disconnected"))) \
     extern "C" void CONCAT(_preinit_register_client_disconnected_, function_name)() { \
         ::SpacetimeDb::Internal::getV9Builder().RegisterLifecycleReducer(#function_name, function_name, ::SpacetimeDb::Internal::Lifecycle::OnDisconnect); \
     } \
-    SpacetimeDb::ReducerResult function_name(SpacetimeDb::ReducerContext ctx)
+    SpacetimeDb::ReducerResult function_name(ctx_param)

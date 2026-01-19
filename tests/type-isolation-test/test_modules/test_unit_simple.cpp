@@ -17,7 +17,8 @@ SPACETIMEDB_STRUCT(SimpleTable, id, unit, value)
 SPACETIMEDB_TABLE(SimpleTable, simple_table, Public)
 
 // Init reducer
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     BasicUnit unit{};
     ctx.db[simple_table].insert({1, unit, 100});
+    return Ok();
 }

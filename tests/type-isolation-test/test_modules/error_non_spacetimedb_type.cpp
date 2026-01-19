@@ -55,12 +55,14 @@ SPACETIMEDB_TABLE(UnsupportedType, unsupported_table, SpacetimeDb::Public)
 SPACETIMEDB_REDUCER(test_unsupported_arg, SpacetimeDb::ReducerContext ctx, UnsupportedType arg)
 {
     LOG_INFO("This should never compile - UnsupportedType lacks BSATN traits");
+    return Ok();
 }
 
 // Valid reducer for comparison
 SPACETIMEDB_REDUCER(test_valid_arg, SpacetimeDb::ReducerContext ctx, ValidType arg)
 {
     LOG_INFO("Valid type works fine: " + arg.name);
+    return Ok();
 }
 
 // Try to use type with unsupported members in a struct
@@ -72,7 +74,8 @@ SPACETIMEDB_STRUCT(ComplexBadType, id, unsupported)  // Should fail - nested typ
 SPACETIMEDB_TABLE(ComplexBadType, complex_bad_table, SpacetimeDb::Public)
 
 // Init reducer
-SPACETIMEDB_INIT(init)
+SPACETIMEDB_INIT(init, ReducerContext ctx)
 {
     LOG_INFO("Non-SpacetimeDB type test - should fail compilation");
+    return Ok();
 }

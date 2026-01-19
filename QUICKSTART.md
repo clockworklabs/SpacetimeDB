@@ -130,7 +130,7 @@ Lifecycle reducers are special functions called automatically by SpacetimeDB:
 
 ```cpp
 // Called when a client connects
-SPACETIMEDB_CLIENT_CONNECTED(client_connected) {
+SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
     LOG_INFO("Connect " + ctx.sender.to_hex_string());
     
     // Try to find existing user
@@ -152,7 +152,7 @@ SPACETIMEDB_CLIENT_CONNECTED(client_connected) {
 }
 
 // Called when a client disconnects  
-SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected) {
+SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
     // Try to find user and mark as offline
     bool found = false;
     for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {

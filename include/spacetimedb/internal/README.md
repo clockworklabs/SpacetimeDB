@@ -49,9 +49,9 @@ Tables are implemented using the `SPACETIMEDB_TABLE` macro system:
 
 Reducers are implemented using unified macro system:
 1. `SPACETIMEDB_REDUCER(name, ReducerContext ctx, ...params)` - User-defined reducers
-2. `SPACETIMEDB_INIT(name)` - Module initialization
-3. `SPACETIMEDB_CLIENT_CONNECTED(name)` - Client connection handler
-4. `SPACETIMEDB_CLIENT_DISCONNECTED(name)` - Client disconnection handler
+2. `SPACETIMEDB_INIT(name, ReducerContext ctx)` - Module initialization
+3. `SPACETIMEDB_CLIENT_CONNECTED(name, ReducerContext ctx)` - Client connection handler
+4. `SPACETIMEDB_CLIENT_DISCONNECTED(name, ReducerContext ctx)` - Client disconnection handler
 5. The macros handle serialization, registration, and ABI integration automatically
 
 ## Usage Example
@@ -80,12 +80,14 @@ SPACETIMEDB_REDUCER(add_person, ReducerContext ctx, std::string name, uint8_t ag
 }
 
 // Lifecycle reducers
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     LOG_INFO("Module initialized!");
+    return Ok();
 }
 
-SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     LOG_INFO("Client connected!");
+    return Ok();
 }
 ```
 

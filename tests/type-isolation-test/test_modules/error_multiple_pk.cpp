@@ -88,11 +88,13 @@ SPACETIMEDB_REDUCER(test_multiple_pks, SpacetimeDb::ReducerContext ctx)
     
     SingleAutoInc single_auto{0, "Valid auto-inc"};
     ctx.db[single_autoinc_table].insert(single_auto);
+    return Ok();
 }
 
 // Init reducer
-SPACETIMEDB_INIT(init)
+SPACETIMEDB_INIT(init, ReducerContext ctx)
 {
     LOG_INFO("Multiple primary keys test - should fail validation");
     LOG_INFO("SpacetimeDB allows only ONE primary key per table");
+    return Ok();
 }

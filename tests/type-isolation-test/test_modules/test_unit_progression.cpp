@@ -54,21 +54,25 @@ SPACETIMEDB_TABLE(NestedUnit, nested_unit_table, Public)
 // Reducers to test each step
 SPACETIMEDB_REDUCER(test_single_unit, ReducerContext ctx, TestUnit unit) {
     ctx.db[table_with_unit].insert({unit, 1});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_multiple_units, ReducerContext ctx, Unit1 u1, Unit2 u2) {
     ctx.db[table_with_multiple_units].insert({u1, u2, 2});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_struct_with_unit, ReducerContext ctx, SimpleStructWithUnit s) {
     ctx.db[table_with_unit].insert({s.unit, s.data});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_nested_units, ReducerContext ctx, NestedUnit nested) {
     ctx.db[nested_unit_table].insert(nested);
+    return Ok();
 }
 
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     TestUnit test_unit{};
     Unit1 unit1{};
     Unit2 unit2{};
@@ -80,4 +84,5 @@ SPACETIMEDB_INIT(init) {
     SimpleStructWithUnit simple{test_unit, 300};
     NestedUnit nested{simple, test_unit};
     ctx.db[nested_unit_table].insert(nested);
+    return Ok();
 }

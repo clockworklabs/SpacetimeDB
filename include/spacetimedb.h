@@ -27,8 +27,9 @@
  *    )
  * 
  * Lifecycle Reducers:
- *    SPACETIMEDB_INIT(init_module) {
+ *    SPACETIMEDB_INIT(init_module, ReducerContext ctx) {
  *        LOG_INFO("Module initialized!");
+ *        return Ok();
  *    }
  * 
  * User Reducers:
@@ -189,9 +190,9 @@ namespace spacetimedb {
  * - IndexAutoInc(field) - Indexed field with auto-increment
  * 
  * LIFECYCLE REDUCERS:
- * - SPACETIMEDB_INIT(name) - Called when module is initialized
- * - SPACETIMEDB_CLIENT_CONNECTED(name) - Called when client connects
- * - SPACETIMEDB_CLIENT_DISCONNECTED(name) - Called when client disconnects
+ * - SPACETIMEDB_INIT(name, ReducerContext ctx) - Called when module is initialized
+ * - SPACETIMEDB_CLIENT_CONNECTED(name, ReducerContext ctx) - Called when client connects
+ * - SPACETIMEDB_CLIENT_DISCONNECTED(name, ReducerContext ctx) - Called when client disconnects
  * 
  * LOGGING LEVELS:
  * - LOG_DEBUG(msg) - Debug information
