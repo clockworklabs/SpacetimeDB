@@ -10,21 +10,21 @@ SPACETIMEDB_STRUCT(Person, name)
 SPACETIMEDB_TABLE(Person, person, Public)
 
 // Called when the module is initially published
-SPACETIMEDB_INIT(init)
+SPACETIMEDB_INIT(init, ReducerContext ctx)
 {
     // Module initialization logic goes here
     return Ok();
 }
 
 // Called every time a new client connects
-SPACETIMEDB_CLIENT_CONNECTED(identity_connected)
+SPACETIMEDB_CLIENT_CONNECTED(identity_connected, ReducerContext ctx)
 {
     // Client connection logic goes here
     return Ok();
 }
 
 // Called every time a client disconnects  
-SPACETIMEDB_CLIENT_DISCONNECTED(identity_disconnected)
+SPACETIMEDB_CLIENT_DISCONNECTED(identity_disconnected, ReducerContext ctx)
 {
     // Client disconnection logic goes here
     return Ok();

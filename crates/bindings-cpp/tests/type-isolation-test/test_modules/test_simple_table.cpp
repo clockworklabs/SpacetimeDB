@@ -3,8 +3,9 @@
 
 using namespace SpacetimeDb;
 
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     LOG_INFO("Test simple table initialized");
+    return Ok();
 }
 
 // Simplest possible table - no optional fields

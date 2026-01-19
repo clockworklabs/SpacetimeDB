@@ -134,11 +134,13 @@ SPACETIMEDB_REDUCER(test_autoinc_types, SpacetimeDb::ReducerContext ctx)
     
     ValidU64AutoInc valid_u64{0, "Valid U64"};
     ctx.db[valid_u64_autoinc].insert(valid_u64);
+    return Ok();
 }
 
 // Init reducer
-SPACETIMEDB_INIT(init)
+SPACETIMEDB_INIT(init, ReducerContext ctx)
 {
     LOG_INFO("Auto-increment on non-integer types test");
     LOG_INFO("AutoInc should only work on integer types");
+    return Ok();
 }

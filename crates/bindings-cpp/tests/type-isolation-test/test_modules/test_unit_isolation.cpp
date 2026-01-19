@@ -36,12 +36,14 @@ SPACETIMEDB_TABLE(NestedUnitTest, nested_unit_test, Public)
 SPACETIMEDB_REDUCER(test_step1_simple, ReducerContext ctx) {
     TestUnit unit{};
     ctx.db[unit_plus_int].insert({unit, 100});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_step2_two_units, ReducerContext ctx) {
     TestUnit unit1{};
     SecondUnit unit2{};
     ctx.db[two_units].insert({unit1, unit2, 200});
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(test_step3_nested_fail, ReducerContext ctx) {
@@ -50,9 +52,10 @@ SPACETIMEDB_REDUCER(test_step3_nested_fail, ReducerContext ctx) {
     NestedUnitTest nested{simple, unit};
     // This should fail with size mismatch
     ctx.db[nested_unit_test].insert(nested);
+    return Ok();
 }
 
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     // Start with simple cases that should work
     TestUnit unit{};
     ctx.db[unit_plus_int].insert({unit, 100});
@@ -64,4 +67,5 @@ SPACETIMEDB_INIT(init) {
     UnitPlusInt simple{unit, 300};
     NestedUnitTest nested{simple, unit};
     ctx.db[nested_unit_test].insert(nested);
+    return Ok();
 }

@@ -201,7 +201,7 @@ FIELD_Default(table_with_defaults, active, true)
 
 // Init reducer - called when module is first published
 // COMMENTED OUT FOR DEBUGGING
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     RepeatingTestArg arg{
         0, // scheduled_id  
         ScheduleAt(TimeDuration::from_millis(1000)),
@@ -392,7 +392,7 @@ SPACETIMEDB_REDUCER(delete_players_by_name, ReducerContext ctx, std::string name
 }
 
 // Client connected lifecycle reducer
-SPACETIMEDB_CLIENT_CONNECTED(client_connected) {
+SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
     // Called when a client connects
     return Ok();
 }

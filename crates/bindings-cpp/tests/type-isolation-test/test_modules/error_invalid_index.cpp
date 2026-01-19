@@ -167,10 +167,11 @@ SPACETIMEDB_REDUCER(test_field_macro_validation, SpacetimeDb::ReducerContext ctx
     
     ValidIndexString valid_string{1, "indexed", "Valid index string"};
     ctx.db[valid_index_string_table].insert(valid_string);
+    return Ok();
 }
 
 // Init reducer
-SPACETIMEDB_INIT(init)
+SPACETIMEDB_INIT(init, ReducerContext ctx)
 {
     LOG_INFO("FIELD_ macro validation test");
     LOG_INFO("This module should FAIL to compile if validation is working");
@@ -181,4 +182,5 @@ SPACETIMEDB_INIT(init)
     LOG_INFO("- FIELD_Unique on float");
     LOG_INFO("- FIELD_Index on double");
     LOG_INFO("- FIELD_Unique on ScheduleAt");
+    return Ok();
 }

@@ -52,21 +52,25 @@ SPACETIMEDB_SCHEDULE(good_scheduled, 1, process_good_schedule)
 SPACETIMEDB_REDUCER(process_bad_schedule, SpacetimeDb::ReducerContext ctx, BadScheduledTable arg)
 {
     LOG_INFO("Bad schedule executed: " + arg.message);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(process_wrong_pk_schedule, SpacetimeDb::ReducerContext ctx, WrongPkScheduledTable arg)
 {
     LOG_INFO("Wrong PK schedule executed: " + arg.message);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(process_unique_schedule, SpacetimeDb::ReducerContext ctx, UniqueScheduledTable arg)
 {
     LOG_INFO("Unique schedule executed: " + arg.message);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(process_good_schedule, SpacetimeDb::ReducerContext ctx, GoodScheduledTable arg)
 {
     LOG_INFO("Good schedule executed: " + arg.message);
+    return Ok();
 }
 
 // Test reducer to schedule tasks
@@ -89,12 +93,14 @@ SPACETIMEDB_REDUCER(test_schedule_tables, SpacetimeDb::ReducerContext ctx)
     // Insert into good scheduled table (should work)
     GoodScheduledTable good{0, ScheduleAt::time(ctx.timestamp + TimeDuration(1000000)), "Good schedule"};
     ctx.db[good_scheduled].insert(good);
+    return Ok();
 }
 
 // Init reducer
-SPACETIMEDB_INIT(init)
+SPACETIMEDB_INIT(init, ReducerContext ctx)
 {
     LOG_INFO("Scheduled table PK test module initialized");
     LOG_INFO("This tests that scheduled_id must be a primary key");
     LOG_INFO("Should fail if scheduled_id is not PrimaryKeyAutoInc");
+    return Ok();
 }

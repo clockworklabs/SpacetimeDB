@@ -123,7 +123,7 @@ SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy) {
     return Ok();
 }
 
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     Identity alice = Identity{std::array<uint8_t, 32>{1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
     Identity bob = Identity{std::array<uint8_t, 32>{2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
     Identity charlie = Identity{std::array<uint8_t, 32>{3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
