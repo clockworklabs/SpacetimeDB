@@ -99,20 +99,21 @@ Your database will be available at `https://maincloud.spacetimedb.com`.
 
 ### Client Development Server
 
-`spacetime dev` can automatically run your client's development server alongside the SpacetimeDB module. This is configured via the `spacetime.toml` file in your project root:
+`spacetime dev` can automatically run your client's development server alongside the SpacetimeDB module. This is configured via the `spacetime.json` file in your project root:
 
-```toml
-[dev]
-client_command = "npm run dev"
+```json
+{
+  "run": "npm run dev"
+}
 ```
 
 The client command can be:
 - Auto-detected from your project (package.json, Cargo.toml, .csproj)
-- Configured in `spacetime.toml`
+- Configured in `spacetime.json`
 - Overridden via CLI flag: `spacetime dev --client-command "yarn dev"`
 - Disabled with: `spacetime dev --server-only`
 
-When you run `spacetime init` with a client template, a default client command is automatically configured in `spacetime.toml` based on your project type.
+When you run `spacetime init` with a client template, a default client command is automatically configured in `spacetime.json` based on your project type.
 
 ### Project Structure
 
@@ -132,7 +133,7 @@ my-project/
 │   └── module_bindings/    # Generated client bindings
 ├── package.json
 ├── tsconfig.json
-├── spacetime.toml          # SpacetimeDB configuration
+├── spacetime.json          # SpacetimeDB configuration
 └── README.md
 ```
 
@@ -147,7 +148,7 @@ my-project/
 ├── module_bindings/        # Generated client bindings
 ├── client.csproj
 ├── Program.cs
-├── spacetime.toml          # SpacetimeDB configuration
+├── spacetime.json          # SpacetimeDB configuration
 └── README.md
 ```
 
@@ -163,7 +164,7 @@ my-project/
 ├── src/                    # Client code
 │   └── module_bindings/    # Generated client bindings
 ├── Cargo.toml
-├── spacetime.toml          # SpacetimeDB configuration
+├── spacetime.json          # SpacetimeDB configuration
 ├── .gitignore
 └── README.md
 ```
