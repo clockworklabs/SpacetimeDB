@@ -385,6 +385,7 @@ class Smoketest(unittest.TestCase):
         os.mkdir(cls.project_path / "src")
         cls.write_module_code(cls.MODULE_CODE)
         if TEMPLATE_TARGET_DIR.exists():
+            print('project_path: %s' % cls.project_path)
             shutil.copytree(TEMPLATE_TARGET_DIR, cls.project_path / "target")
 
         if cls.AUTOPUBLISH:
