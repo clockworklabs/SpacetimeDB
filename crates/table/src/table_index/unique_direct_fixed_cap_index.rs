@@ -40,32 +40,62 @@ impl<K: ToFromUsize> UniqueDirectFixedCapIndex<K> {
     }
 }
 
-impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
+// SAFETY: The implementations of all constructing
+// and mutating methods uphold the invariant,
+// assuming the caller requirements of the `unsafe` methods are upheld,
+// that every `key -> ptr` pair only ever occurs once.
+// In fact, given that this is a unique index,
+// this is statically guaranteed as one `key` only has one slot for one `ptr`.
+unsafe impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
     type Key = K;
+
+    // =========================================================================
+    // Construction
+    // =========================================================================
 
     /// Clones the structure of the index and returns one with the same capacity.
     fn clone_structure(&self) -> Self {
         Self::new(self.array.len())
     }
 
-    /// Inserts the relation `key -> val` to this index.
+    // =========================================================================
+    // Mutation
+    // =========================================================================
+
+    /// Inserts the relation `key -> ptr` to this map.
     ///
-    /// If `key` was already present in the index, does not add an association with `val`.
-    /// Returns the existing associated value instead.
+    /// If `key` was already present in the index,
+    /// and the index is unique,
+    /// does not add the relation `key -> ptr`
+    /// and returns the existing associated pointer instead.
     ///
     /// Panics if the key is beyond the fixed capacity of this index.
-    fn insert(&mut self, key: Self::Key, val: RowPointer) -> Result<(), RowPointer> {
+    unsafe fn insert(&mut self, key: Self::Key, ptr: RowPointer) -> Result<(), RowPointer> {
         // Fetch the slot.
         let slot = &mut self.array[key.to_usize()];
         let in_slot = *slot;
         if in_slot == NONE_PTR {
             // We have `NONE_PTR`, so not set yet.
-            *slot = injest(val);
+            *slot = injest(ptr);
             self.len += 1;
             Ok(())
         } else {
             Err(expose(in_slot))
         }
+    }
+
+    /// Merge `src`, mapped through `translate`, into `self`.
+    unsafe fn merge_from(&mut self, src: Self, translate: impl Fn(RowPointer) -> RowPointer) {
+        assert_eq!(self.array.len(), src.array.len());
+        self.len += src.len;
+
+        src.array
+            .into_vec()
+            .into_iter()
+            .enumerate()
+            // Ignore unset slots.
+            .filter(|(_, ptr)| *ptr != NONE_PTR)
+            .for_each(|(key, ptr)| self.array[key] = translate(ptr));
     }
 
     fn delete(&mut self, &key: &Self::Key, _: RowPointer) -> bool {
@@ -77,6 +107,15 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
         self.len -= deleted as usize;
         deleted
     }
+
+    fn clear(&mut self) {
+        self.array.fill(NONE_PTR);
+        self.len = 0;
+    }
+
+    // =========================================================================
+    // Querying
+    // =========================================================================
 
     type PointIter<'a>
         = UniqueDirectIndexPointIter
@@ -90,11 +129,6 @@ impl<K: ToFromUsize + KeySize> Index for UniqueDirectFixedCapIndex<K> {
 
     fn num_keys(&self) -> usize {
         self.len
-    }
-
-    fn clear(&mut self) {
-        self.array.fill(NONE_PTR);
-        self.len = 0;
     }
 
     fn can_merge(&self, other: &Self, ignore: impl Fn(&RowPointer) -> bool) -> Result<(), RowPointer> {
@@ -178,7 +212,7 @@ mod test {
 
         let mut index = UniqueDirectFixedCapIndex::new(u8::MAX as usize + 1);
         for (key, ptr) in keys.iter().zip(&ptrs) {
-            index.insert(*key, *ptr).unwrap();
+            index.insert_for_test(*key, *ptr).unwrap();
         }
         assert_eq!(index.num_rows(), (range.end - range.start) as usize);
         (index, range, ptrs)
@@ -196,7 +230,7 @@ mod test {
         fn inserting_again_errors(start: u8, end: u8) {
             let (mut index, keys, ptrs) = setup(start, end);
             for (key, ptr) in keys.zip(&ptrs) {
-                assert_eq!(index.insert(key, *ptr).unwrap_err(), *ptr)
+                assert_eq!(index.insert_for_test(key, *ptr).unwrap_err(), *ptr)
             }
         }
 
@@ -215,7 +249,7 @@ mod test {
             assert!(!index.delete(&key, ptr));
             assert_eq!(index.num_rows(), (range.end - range.start - 1) as usize);
 
-            index.insert(key, ptr).unwrap();
+            index.insert_for_test(key, ptr).unwrap();
             assert_eq!(index.num_rows(), (range.end - range.start) as usize);
         }
     }

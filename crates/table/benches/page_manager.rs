@@ -760,7 +760,9 @@ fn make_table_with_index<R: IndexedRow>(unique: bool) -> (Table, IndexId) {
     let index_id = IndexId::SENTINEL;
     let algo = BTreeAlgorithm { columns: cols }.into();
     let idx = tbl.new_index(&algo, unique).unwrap();
-    // SAFETY: index was derived from the table.
+    // SAFETY:
+    // 1. Index was derived from the table.
+    // 2. Index was empty before this call.
     unsafe { tbl.insert_index(&NullBlobStore, index_id, idx) };
 
     (tbl, index_id)
