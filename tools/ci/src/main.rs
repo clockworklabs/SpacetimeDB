@@ -647,21 +647,18 @@ fn run_smoketests_parallel(
             list_args.push(test.clone());
         }
 
+        println!(
+            "list args: {}",
+            list_args.iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" ")
+        );
         let output = cmd(
             python.clone(),
-            ["-m", "smoketests"]
-                .into_iter()
-                .map(|s| s.to_string())
-                .chain(list_args.clone()),
+            ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(list_args),
         )
         .stderr_to_stdout()
         .read()
         .expect("Failed to list smoketests");
 
-        println!(
-            "list args: {}",
-            list_args.iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" ")
-        );
         println!("list output: {}", output);
 
         let parsed: serde_json::Value = serde_json::from_str(&output)?;
