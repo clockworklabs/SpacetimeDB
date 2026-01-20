@@ -8,92 +8,49 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
 ## Analysis
 
-# Analysis of SpacetimeDB Benchmark Failures
+## Analysis of SpacetimeDB Benchmark Failures
 
-## Rust Failures
+### Rust Failures
 
-### 1. Root Causes
-1. **Missing Primary Keys and Public Modifiers**:
-   - Several tests (e.g., `t_005_update`, `t_006_delete`, `t_007_crud`, etc.) fail due to missing access modifiers on the struct fields. Notably, primary keys should have `pub` to be accessible.
+1. **Root Causes**:
+   - **Naming Convention**: Inconsistency in struct names between expected and actual implementations (e.g., `User` vs. `Users`).
+   - **Primary Key and Unique Annotations**: Missing or improperly formatted annotations in the structures.
+   - **Functions**
+     - Reducer naming disparities that lead to schema mismatches (e.g., `add_entity()` vs. expected function).
+   - **Table Creation Errors**: Missing or wrongly specified table names lead to "no such table" errors during runtime.
+
+2. **Recommendations**:
+   - **Documentation File**: Update the “Rust API Guidelines” section.
+     - **Change 1**: Enforce a strict naming convention for struct names and tables, ensuring they match in all uses.
+       - **From**: "`#[table(name = users)]`"
+       - **To**: "`#[table(name = User)]`"
+     - **Change 2**: Add comprehensive examples of using annotations for primary keys and unique constraints.
+     - **Change 3**: Ensure reducer naming conventions are consistent between examples and the API documentation.
+     - **Change 4**: Highlight the requirement for tables to be defined before being referenced.
    
-2. **Schedule At Usage**:
-   - In scheduled tests like `t_002_scheduled_table` and `t_017_scheduled_columns`, the documentation does not clearly explain how to properly set up scheduled reducers and columns.
-
-3. **Table Definitions**:
-   - Errors in identifying the tables may suggest that the documentation lacks details on how to ensure tables are created or seeded correctly before executing tests. 
-
-4. **General Error Handling**:
-   - Many errors include warnings about instability, indicating the documentation hasn’t adequately prepared users for expected limitations or how to work around them.
-
-### 2. Recommendations
-#### a. Update Documentation for Struct Fields
-- **Section**: Struct Field Modifiers 
-- **Change**: Reinforce that all fields in structs representing tables should be declared as `pub` (public).
-    ```rust
-    #[primary_key]
-    pub id: i32,
-    ```
-
-#### b. Clarify Schedules and Reducers
-- **Section**: Scheduling and Reducers
-- **Change**: Provide specific examples that detail correct usage of scheduled reducers and column definitions.
-    ```rust
-    #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
-    ```
-  
-#### c. Table Creation and Seeding
-- **Section**: Database Setup
-- **Change**: Include a walkthrough for initializing and seeding tables prior to executing tests.
-  
-#### d. Error Handling in Tests
-- **Section**: Error Messages
-- **Change**: Update the documentation to clarify the potential implications of unstable commands and how to handle them, including fallbacks or alternative methods.
-
-### 3. Priority
-- **High**: Improvements on struct field access modifiers and scheduling examples. 
-- **Medium**: Recommendations on table setup and seeding.
-- **Low**: Enhancements to error handling and stability notes.
+3. **Priority**:
+   - High-impact changes should focus on the naming conventions of struct and table names, as this seems to be a recurring source of errors. 
 
 ---
 
-## C# Failures
+### C# Failures
 
-### 1. Root Causes
-1. **Missing Public Modifiers**:
-   - Similar to Rust, many C# errors arise from the lack of `public` modifiers for struct fields, which can affect accessibility (e.g., `t_004_insert`, `t_006_delete`, etc.).
+1. **Root Causes**:
+   - **Errors with Table Definitions**: A significant number of failures stemmed from improperly defined or missing table names in the struct annotations. 
+   - **Inconsistent Method Signatures**: Reducer methods sometimes do not align with their expected signatures.
+   - **Use of Attributes**: Some attributes, like `Table`, lack accurate definitions or are inconsistently used (e.g., missing public access modifiers).
+   - **Data Class Definition**: Missing `public` access modifiers lead to problems during access in different scopes.
 
-2. **Table Name Consistency Issues**:
-   - Documented table names must match the expected names in the declarations to avoid runtime errors regarding nonexistent tables.
+2. **Recommendations**:
+   - **Documentation File**: Update “C# Usage Documentation”
+     - **Change 1**: Standardize usage of public modifiers for all data classes and methods. Ensure documentation states that omitted modifiers will lead to access errors.
+     - **Change 2**: Create a dedicated section for explaining the use of attributes, focusing on examples of `Table`, `PrimaryKey`, and uniqueness specifications.
+     - **Change 3**: Provide a clear framework for establishing the naming conventions for methods (e.g., `InsertUser` should be consistent and reflect expected behavior).
+     - **Change 4**: Enhance examples showing both the initial table declaration and usage in reducers to prevent "no such table" errors.
 
-3. **Redundant Modifiers**:
-   - There are inconsistencies where the `Public = true` attribute is unnecessary in certain contexts, leading to confusion.
+3. **Priority**:
+   - Prioritize correcting the attribute usage and naming conventions as they provide the basic structure for declarations that directly affect the benchmark's success.
 
-4. **Unstable Command Warnings**:
-   - Like Rust, frequent unstable command warnings highlight the need for better communication regarding command limitations.
+---
 
-### 2. Recommendations
-#### a. Overview of Struct Fields
-- **Section**: Struct Field Modifiers 
-- **Change**: Emphasize that all fields must be marked as `public` to ensure accessibility within the library.
-    ```csharp
-    [PrimaryKey] public int Id;
-    ```
-
-#### b. Consistent Table Naming
-- **Section**: Table Naming Conventions
-- **Change**: Outline naming conventions clearly to ensure consistency between struct definitions and database references.
-  
-#### c. Clean Up Redundant Modifiers
-- **Section**: Table Attribute Usage
-- **Change**: Simplify the examples that use `Public = true`, focusing on when it is truly necessary.
-  
-#### d. Addressing Unstable Command Handling
-- **Section**: Managing Instabilities
-- **Change**: Provide guidance on how to manage and respond to warnings during command execution.
-
-### 3. Priority
-- **High**: Adjustments on struct field access and consistent naming conventions.
-- **Medium**: Cleanup on redundant modifiers and reasserting proper access control.
-- **Low**: Instructions on managing unstable commands.
-
-With these changes, we expect a decrease in benchmark test failures and enhanced reliability in user implementations.
+The above recommendations aim to create a consistent and clear guidance in the documentation that can preemptively address the issues seen in both the Rust and C# benchmark failures. Updates should prioritize clarity and consistency in naming and structuring code, focusing on how these influence benchmark success.
