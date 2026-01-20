@@ -85,7 +85,10 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
     query_sql: Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule>;
   subscribe(
-    query_sql: string | RowTypedQuery<any, any> | Array<string | RowTypedQuery<any, any>>
+    query_sql:
+      | string
+      | RowTypedQuery<any, any>
+      | Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule> {
     const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
     if (queries.length === 0) {

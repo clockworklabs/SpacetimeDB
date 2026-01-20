@@ -12,9 +12,7 @@ describe('ClientQuery.toSql', () => {
 
   it('renders a WHERE clause for simple equality filters', () => {
     const sql = toSql(
-      query.player
-        .where(row => row.name.eq("O'Brian"))
-        .build()
+      query.player.where(row => row.name.eq("O'Brian")).build()
     );
 
     expect(sql).toBe(
@@ -23,11 +21,7 @@ describe('ClientQuery.toSql', () => {
   });
 
   it('renders numeric literals and column references', () => {
-    const sql = toSql(
-      query.player
-        .where(row => row.id.eq(42))
-        .build()
-    );
+    const sql = toSql(query.player.where(row => row.id.eq(42)).build());
 
     expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."id" = 42`);
   });
@@ -46,9 +40,7 @@ describe('ClientQuery.toSql', () => {
 
   it('renders NOT clauses around subpredicates', () => {
     const sql = toSql(
-      query.player
-        .where(row => not(row.name.eq('Bob')))
-        .build()
+      query.player.where(row => not(row.name.eq('Bob'))).build()
     );
 
     expect(sql).toBe(
@@ -86,9 +78,7 @@ describe('ClientQuery.toSql', () => {
       '0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     );
     const sql = toSql(
-      query.user
-        .where(row => row.identity.eq(identity))
-        .build()
+      query.user.where(row => row.identity.eq(identity)).build()
     );
 
     expect(sql).toBe(
@@ -157,20 +147,18 @@ describe('ClientQuery.toSql', () => {
 
   it('basic where', () => {
     const sql = toSql(query.player.where(row => row.name.eq('Gadget')).build());
-    expect(sql).toBe(
-      `SELECT * FROM "player" WHERE "player"."name" = 'Gadget'`
-    );
+    expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" = 'Gadget'`);
   });
 
   it('basic where lt', () => {
     const sql = toSql(query.player.where(row => row.name.lt('Gadget')).build());
-    expect(sql).toBe(
-      `SELECT * FROM "player" WHERE "player"."name" < 'Gadget'`
-    );
+    expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" < 'Gadget'`);
   });
 
   it('basic where lte', () => {
-    const sql = toSql(query.player.where(row => row.name.lte('Gadget')).build());
+    const sql = toSql(
+      query.player.where(row => row.name.lte('Gadget')).build()
+    );
     expect(sql).toBe(
       `SELECT * FROM "player" WHERE "player"."name" <= 'Gadget'`
     );
@@ -178,13 +166,13 @@ describe('ClientQuery.toSql', () => {
 
   it('basic where gt', () => {
     const sql = toSql(query.player.where(row => row.name.gt('Gadget')).build());
-    expect(sql).toBe(
-      `SELECT * FROM "player" WHERE "player"."name" > 'Gadget'`
-    );
+    expect(sql).toBe(`SELECT * FROM "player" WHERE "player"."name" > 'Gadget'`);
   });
 
   it('basic where gte', () => {
-    const sql = toSql(query.player.where(row => row.name.gte('Gadget')).build());
+    const sql = toSql(
+      query.player.where(row => row.name.gte('Gadget')).build()
+    );
     expect(sql).toBe(
       `SELECT * FROM "player" WHERE "player"."name" >= 'Gadget'`
     );
