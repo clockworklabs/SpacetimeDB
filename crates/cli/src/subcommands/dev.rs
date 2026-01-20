@@ -287,9 +287,9 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     {
         // Config file exists with run command
         Some(cmd)
-    } else if let Some((detected_cmd, detected_pm)) = detect_client_command(&project_dir) {
+    } else if let Some((detected_cmd, _detected_pm)) = detect_client_command(&project_dir) {
         // No config - detect and save for future runs
-        let config = SpacetimeConfig::with_dev_config(&detected_cmd, detected_pm);
+        let config = SpacetimeConfig::with_run_command(&detected_cmd);
         if let Ok(path) = config.save_to_dir(&project_dir) {
             println!(
                 "{} Detected client command and saved to {}",

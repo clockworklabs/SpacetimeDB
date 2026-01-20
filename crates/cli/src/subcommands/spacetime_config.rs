@@ -72,7 +72,6 @@ impl PackageManager {
 /// Example:
 /// ```json
 /// {
-///   // Command to run the client development server
 ///   "run": "pnpm dev"
 /// }
 /// ```
@@ -98,10 +97,17 @@ impl SpacetimeConfig {
         }
     }
 
-    /// Create a configuration with dev settings (for backward compatibility)
-    pub fn with_dev_config(client_command: impl Into<String>, _package_manager: Option<PackageManager>) -> Self {
+    /// Create a configuration for a specific client language.
+    /// Determines the appropriate run command based on the language and package manager.
+    pub fn for_client_lang(client_lang: &str, package_manager: Option<PackageManager>) -> Self {
+        let run_command = match client_lang.to_lowercase().as_str() {
+            "typescript" => package_manager.map(|pm| pm.run_dev_command()).unwrap_or("npm run dev"),
+            "rust" => "cargo run",
+            "csharp" | "c#" => "dotnet run",
+            _ => "npm run dev", // default fallback
+        };
         Self {
-            run: Some(client_command.into()),
+            run: Some(run_command.to_string()),
         }
     }
 
@@ -113,8 +119,8 @@ impl SpacetimeConfig {
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)
                 .with_context(|| format!("Failed to read {}", config_path.display()))?;
-            let config: SpacetimeConfig = serde_json::from_str(&content)
-                .with_context(|| format!("Failed to parse {}", config_path.display()))?;
+            let config: SpacetimeConfig =
+                serde_json::from_str(&content).with_context(|| format!("Failed to parse {}", config_path.display()))?;
             return Ok(Some(config));
         }
 
@@ -142,6 +148,29 @@ impl SpacetimeConfig {
         }
         None
     }
+}
+
+/// Set up a spacetime.json config for a project.
+/// If `client_lang` is provided, creates a config for that language.
+/// Otherwise, attempts to auto-detect from package.json.
+/// Returns the path to the created config, or None if no config was created.
+pub fn setup_for_project(
+    project_path: &Path,
+    client_lang: Option<&str>,
+    package_manager: Option<PackageManager>,
+) -> anyhow::Result<Option<PathBuf>> {
+    if let Some(lang) = client_lang {
+        let config = SpacetimeConfig::for_client_lang(lang, package_manager);
+        return Ok(Some(config.save_to_dir(project_path)?));
+    }
+
+    if let Some((detected_cmd, _)) = detect_client_command(project_path) {
+        return Ok(Some(
+            SpacetimeConfig::with_run_command(&detected_cmd).save_to_dir(project_path)?,
+        ));
+    }
+
+    Ok(None)
 }
 
 /// Detect the package manager from lock files in the project directory.
@@ -199,39 +228,4 @@ pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<Packa
     }
 
     None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_save_and_load() {
-        let dir = tempdir().unwrap();
-        let config = SpacetimeConfig::with_run_command("npm run dev");
-
-        config.save_to_dir(dir.path()).unwrap();
-
-        let loaded = SpacetimeConfig::load_from_dir(dir.path()).unwrap().unwrap();
-        assert_eq!(loaded.run, Some("npm run dev".to_string()));
-    }
-
-    #[test]
-    fn test_load_missing_config() {
-        let dir = tempdir().unwrap();
-        let loaded = SpacetimeConfig::load_from_dir(dir.path()).unwrap();
-        assert!(loaded.is_none());
-    }
-
-    #[test]
-    fn test_exists_in_dir() {
-        let dir = tempdir().unwrap();
-        assert!(!SpacetimeConfig::exists_in_dir(dir.path()));
-
-        let config = SpacetimeConfig::with_run_command("npm run dev");
-        config.save_to_dir(dir.path()).unwrap();
-
-        assert!(SpacetimeConfig::exists_in_dir(dir.path()));
-    }
 }

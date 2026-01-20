@@ -16,7 +16,7 @@ use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
-use crate::subcommands::spacetime_config::{detect_client_command, PackageManager, SpacetimeConfig};
+use crate::subcommands::spacetime_config::PackageManager;
 
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
@@ -503,25 +503,11 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
 
     // Configure client dev command if a client is present
     if !is_server_only {
-        if let Some(client_lang) = &template_config.client_lang {
-            println!(
-                "{} Creating spacetime.json for {:?} client...",
-                "✓".green(),
-                client_lang
-            );
-            setup_spacetime_config(&project_path, client_lang, package_manager)?;
-        } else if project_path.join("package.json").exists() {
-            // Even without a client_lang, if there's a package.json with a dev script,
-            // create the config so spacetime dev can run the client
-            if let Some((detected_cmd, detected_pm)) = detect_client_command(&project_path) {
-                println!(
-                    "{} Auto-detected client command, creating spacetime.json...",
-                    "✓".green()
-                );
-                let pm = package_manager.or(detected_pm);
-                let config = SpacetimeConfig::with_dev_config(&detected_cmd, pm);
-                config.save_to_dir(&project_path)?;
-            }
+        let client_lang_str = template_config.client_lang.as_ref().map(|l| l.as_str());
+        if let Some(path) =
+            crate::subcommands::spacetime_config::setup_for_project(&project_path, client_lang_str, package_manager)?
+        {
+            println!("{} Created {}", "✓".green(), path.display());
         }
     }
 
@@ -1721,24 +1707,4 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
         }
     }
     content
-}
-
-/// Set up the spacetime.json configuration file with the client dev command.
-fn setup_spacetime_config(
-    project_path: &Path,
-    client_lang: &ClientLanguage,
-    package_manager: Option<PackageManager>,
-) -> anyhow::Result<()> {
-    let client_command = match client_lang {
-        ClientLanguage::TypeScript => {
-            // Use the package manager's dev command if specified, otherwise default to npm
-            package_manager.map(|pm| pm.run_dev_command()).unwrap_or("npm run dev")
-        }
-        ClientLanguage::Rust => "cargo run",
-        ClientLanguage::Csharp => "dotnet run",
-    };
-
-    let config = SpacetimeConfig::with_dev_config(client_command, package_manager);
-    config.save_to_dir(project_path)?;
-    Ok(())
 }
