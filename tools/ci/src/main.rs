@@ -4,6 +4,7 @@ use duct::cmd;
 use log::{debug, warn};
 use serde_json;
 use std::collections::HashSet;
+use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
