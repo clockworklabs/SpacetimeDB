@@ -426,6 +426,45 @@ struct bsatn_traits<std::optional<T>> {
 };
 
 // ============================================================================
+// MONOSTATE (UNIT TYPE) TRAITS
+// ============================================================================
+
+/**
+ * @brief BSATN traits for std::monostate (Unit type)
+ * 
+ * std::monostate is used as a placeholder type for unit variants in enums.
+ * It serializes as nothing (0 bytes) and always deserializes to the same value.
+ * 
+ * Example usage:
+ * ```cpp
+ * SPACETIMEDB_ENUM(Result,
+ *     (Ok, uint32_t),
+ *     (Err, std::string),
+ *     (Empty, Unit)  // Unit is std::monostate
+ * )
+ * ```
+ */
+template<>
+struct bsatn_traits<std::monostate> {
+    static void serialize(Writer& writer, const std::monostate& value) {
+        // Unit type serializes as nothing (0 bytes)
+        (void)writer;
+        (void)value;
+    }
+    
+    static std::monostate deserialize(Reader& reader) {
+        // Unit type deserializes as default-constructed monostate
+        (void)reader;
+        return std::monostate{};
+    }
+    
+    static AlgebraicType algebraic_type() {
+        // Unit type in SpacetimeDB
+        return AlgebraicType::Unit();
+    }
+};
+
+// ============================================================================
 // VARIANT TYPE TRAITS
 // ============================================================================
 

@@ -257,7 +257,7 @@ protected:
     }
     
     // Common index-based update operation
-    [[nodiscard]] bool update_by_index(const TableType& new_row) const {
+    bool update_by_index(const TableType& new_row) const {
         IndexId index_id = get_index_id();
         auto result = this->get_table().update_by_index(index_id, new_row);
         return result.has_value();
@@ -339,7 +339,7 @@ public:
         // });
     }
 
-    [[nodiscard]] bool delete_by_key(const FieldType& key_value) const {
+    bool delete_by_key(const FieldType& key_value) const {
         uint32_t count = this->delete_by_index_scan(key_value, true);
         if (count > 0) return true;
 
@@ -350,7 +350,7 @@ public:
         // });
     }
     
-    [[nodiscard]] bool update(const TableType& new_row) const {
+    bool update(const TableType& new_row) const {
         if (this->update_by_index(new_row)) return true;
         
         // Fallback

@@ -563,8 +563,8 @@ int16_t Module::__call_view_anon__(
 int16_t Module::__call_procedure__(
     uint32_t id,
     uint64_t sender_0, uint64_t sender_1, uint64_t sender_2, uint64_t sender_3,
-    uint64_t timestamp_microseconds,
     uint64_t conn_id_0, uint64_t conn_id_1,
+    uint64_t timestamp_microseconds,
     BytesSource args_source,
     BytesSink result_sink
 ) {
@@ -584,10 +584,9 @@ int16_t Module::__call_procedure__(
     
     Identity sender_identity(sender_bytes);
     
-    // Create timestamp from microseconds (convert to seconds)
-    // TODO: Add from_microseconds_since_epoch support to Timestamp
-    Timestamp timestamp = Timestamp::from_seconds_since_epoch(
-        static_cast<int64_t>(timestamp_microseconds / 1000000));
+    // Create timestamp from microseconds
+    Timestamp timestamp = Timestamp::from_micros_since_epoch(
+        static_cast<int64_t>(timestamp_microseconds));
     
     // Create connection ID from the two 64-bit parts (full 128-bit value)
     ConnectionId connection_id;
