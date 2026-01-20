@@ -344,7 +344,10 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 anyhow::bail!(
                     "Client command '{}' failed immediately with exit code: {}",
                     cmd,
-                    status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string())
+                    status
+                        .code()
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "unknown".to_string())
                 );
             }
             Err(e) => {
@@ -832,10 +835,7 @@ fn start_client_process(
         anyhow::bail!("Empty client command");
     }
 
-    // Use the shell to execute the command, which handles:
-    // - Quoted arguments with spaces
-    // - PATH resolution for executables
-    // - Shell built-ins and scripts (.cmd/.bat on Windows)
+    // Use shell to handle PATH resolution and .cmd/.bat scripts on Windows
     #[cfg(windows)]
     let child = TokioCommand::new("cmd")
         .args(["/C", command])
