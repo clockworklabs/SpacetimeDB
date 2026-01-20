@@ -129,7 +129,7 @@ These optimizations apply across all supported languages.
 | Special | `Identity` | Unique identity for authentication |
 | Special | `ConnectionId` | Client connection identifier |
 | Special | `Timestamp` | Absolute point in time (microseconds since Unix epoch) |
-| Special | `Duration` | Relative duration |
+| Special | `TimeDuration` | Relative duration in microseconds |
 | Special | `ScheduleAt` | When a scheduled reducer should execute |
 
 </TabItem>
