@@ -5,6 +5,7 @@ import type {
 } from './event_context';
 import { EventEmitter } from './event_emitter';
 import type { UntypedRemoteModule } from './spacetime_module';
+import { isRowTypedQuery, toSql, type RowTypedQuery } from '../lib/query';
 
 export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
   #onApplied?: (ctx: SubscriptionEventContextInterface<RemoteModule>) => void =
@@ -78,15 +79,29 @@ export class SubscriptionBuilderImpl<RemoteModule extends UntypedRemoteModule> {
    * ```
    */
   subscribe(
-    query_sql: string | string[]
+    query_sql: string | RowTypedQuery<any, any>
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
+    query_sql: Array<string | RowTypedQuery<any, any>>
+  ): SubscriptionHandleImpl<RemoteModule>;
+  subscribe(
+    query_sql:
+      | string
+      | RowTypedQuery<any, any>
+      | Array<string | RowTypedQuery<any, any>>
   ): SubscriptionHandleImpl<RemoteModule> {
     const queries = Array.isArray(query_sql) ? query_sql : [query_sql];
     if (queries.length === 0) {
       throw new Error('Subscriptions must have at least one query');
     }
+    const queryStrings = queries.map(q => {
+      if (typeof q === 'string') return q;
+      if (isRowTypedQuery(q)) return toSql(q);
+      throw new Error('Subscriptions must be SQL strings or typed queries');
+    });
     return new SubscriptionHandleImpl(
       this.db,
-      queries,
+      queryStrings,
       this.#onApplied,
       this.#onError
     );
