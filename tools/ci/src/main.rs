@@ -655,6 +655,12 @@ fn run_smoketests_parallel(
         .read()
         .expect("Failed to list smoketests");
 
+        println!(
+            "list args: {}",
+            list_args.iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" ")
+        );
+        println!("list output: {}", output);
+
         let parsed: serde_json::Value = serde_json::from_str(&output)?;
         let tests = parsed.get("tests").and_then(|v| v.as_array()).cloned().unwrap();
         let errors = parsed
