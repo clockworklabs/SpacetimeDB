@@ -100,10 +100,14 @@ void __preinit__21_field_constraint_users_id() {
 ```cpp
 __preinit__01_ - Clear global state
 __preinit__10_ - Field registration  
-__preinit__20_ - Table registration
-__preinit__21_ - Constraints (must come after tables)
-__preinit__30_ - Reducers
-__preinit__99_ - Validation
+__preinit__19_ - Auto-increment integration and scheduled reducers
+__preinit__20_ - Table and lifecycle reducer registration
+__preinit__21_ - Field constraints (must come after tables)
+__preinit__25_ - Row level security filters
+__preinit__30_ - User reducers
+__preinit__40_ - Views
+__preinit__50_ - Procedures
+__preinit__99_ - Type validation and error detection
 ```
 
 **Why we need priority ordering:**
@@ -349,6 +353,8 @@ auto names = table_view[std::full_extent, name_column];
 - Compatible with parallel algorithms
 
 ## C++26 Transformative Features
+
+> **Note**: The C++26 examples below are based on current proposals (particularly P2996 for reflection). The final C++26 standard may differ as proposals evolve through the standardization process.
 
 ### 1. Static Reflection (P2996) - Complete Macro Elimination
 

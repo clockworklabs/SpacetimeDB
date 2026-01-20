@@ -175,21 +175,24 @@ Special reducers called automatically by SpacetimeDB:
 
 ```cpp
 // Called when module is first published
-SPACETIMEDB_INIT(init) {
+SPACETIMEDB_INIT(init, ReducerContext ctx) {
     // Initialize data, create default records
     LOG_INFO("Module initialized");
+    return Ok();
 }
 
 // Called when a client connects
-SPACETIMEDB_CLIENT_CONNECTED(on_connect) {
+SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
     LOG_INFO("Client connected");
     // ctx.sender contains the client's Identity
+    return Ok();
 }
 
 // Called when a client disconnects
-SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect) {
+SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
     LOG_INFO("Client disconnected");
     // Update user status, cleanup resources
+    return Ok();
 }
 ```
 
@@ -738,8 +741,6 @@ SPACETIMEDB_REDUCER(demonstrate_ranges, ReducerContext ctx) {
 Control what data clients can see using row-level security:
 
 ```cpp
-#include <spacetimedb/client_visibility_filter.h>
-
 // Only show users their own data
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(user_data_filter, 
     "SELECT * FROM user_data WHERE owner_identity = current_user_identity()"
@@ -849,8 +850,6 @@ auto five_minutes = TimeDuration::from_millis(5 * 60 * 1000);
 Schedule reducers to run automatically at specified times:
 
 ```cpp
-#include <spacetimedb/schedule_reducer.h>
-
 // Define a table to store scheduled tasks
 struct ScheduledTask {
     uint32_t id;
@@ -1163,7 +1162,7 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string username) {
 SPACETIMEDB_REDUCER(update_age, ReducerContext ctx, uint32_t new_age) {
     if (new_age > 150) {
         LOG_ERROR("Invalid age: " + std::to_string(new_age));
-        return; // Early return prevents any database changes
+        return Err("Invalid age value");
     }
     
     // Find and update user...

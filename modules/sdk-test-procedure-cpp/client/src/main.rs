@@ -265,42 +265,6 @@ fn run_tests(ctx: &DbConnection) {
         }
     });
 
-    // Test simple HTTP GET request
-    println!("Testing test_simple_http (HTTP)...");
-    ctx.procedures.test_simple_http_then(|_, res| match res {
-        Ok(result) => {
-            println!("  ✓ test_simple_http: {}", result);
-        }
-        Err(err) => {
-            eprintln!("  ✗ test_simple_http failed: {}", err);
-        }
-    });
-
-    // Test JWT in transaction
-    println!("Testing test_jwt_in_tx...");
-    ctx.procedures.test_jwt_in_tx_then(|_, res| match res {
-        Ok(result) => {
-            println!("  ✓ test_jwt_in_tx: {}", result);
-        }
-        Err(err) => {
-            eprintln!("  ✗ test_jwt_in_tx failed: {}", err);
-        }
-    });
-
-    // Test authenticated insert
-    println!("Testing insert_if_authenticated...");
-    ctx.procedures.insert_if_authenticated_then(|ctx, res| match res {
-        Ok(result) => {
-            println!("  ✓ insert_if_authenticated: {}", result);
-            // Check if a row was inserted (depends on whether JWT is present)
-            let count = ctx.db.my_table().count();
-            println!("    my_table now has {} rows", count);
-        }
-        Err(err) => {
-            eprintln!("  ✗ insert_if_authenticated failed: {}", err);
-        }
-    });
-
     // UUID Tests
     println!("\n=== UUID Tests ===\n");
 

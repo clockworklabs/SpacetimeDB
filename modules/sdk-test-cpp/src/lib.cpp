@@ -201,6 +201,10 @@ struct OneTimestamp { Timestamp t; };
 SPACETIMEDB_STRUCT(OneTimestamp, t)
 SPACETIMEDB_TABLE(OneTimestamp, one_timestamp, Public)
 
+struct OneUuid { Uuid u; };
+SPACETIMEDB_STRUCT(OneUuid, u)
+SPACETIMEDB_TABLE(OneUuid, one_uuid, Public)
+
 // Enum and struct tables
 struct OneSimpleEnum { SimpleEnum e; };
 SPACETIMEDB_STRUCT(OneSimpleEnum, e)
@@ -560,6 +564,11 @@ SPACETIMEDB_STRUCT(PkConnectionId, a, data)
 SPACETIMEDB_TABLE(PkConnectionId, pk_connection_id, Public)
 FIELD_PrimaryKey(pk_connection_id, a);
 
+struct PkUuid { Uuid u; int32_t data; };
+SPACETIMEDB_STRUCT(PkUuid, u, data)
+SPACETIMEDB_TABLE(PkUuid, pk_uuid, Public)
+FIELD_PrimaryKey(pk_uuid, u);
+
 struct PkSimpleEnum { SimpleEnum a; int32_t data; };
 SPACETIMEDB_STRUCT(PkSimpleEnum, a, data)
 SPACETIMEDB_TABLE(PkSimpleEnum, pk_simple_enum, Public)
@@ -776,6 +785,24 @@ SPACETIMEDB_REDUCER(insert_one_string, ReducerContext ctx, std::string s)
     ctx.db[one_timestamp].insert(OneTimestamp{.t = t});
     return Ok();
 } 
+
+SPACETIMEDB_REDUCER(insert_one_uuid, ReducerContext ctx, Uuid u)
+{
+    ctx.db[one_uuid].insert(OneUuid{.u = u});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_call_uuid_v4, ReducerContext ctx)
+{
+    ctx.db[one_uuid].insert(OneUuid{.u = ctx.new_uuid_v4()});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(insert_call_uuid_v7, ReducerContext ctx)
+{
+    ctx.db[one_uuid].insert(OneUuid{.u = ctx.new_uuid_v7()});
+    return Ok();
+}
 
 SPACETIMEDB_REDUCER(insert_one_simple_enum, ReducerContext ctx, SimpleEnum e)
 {
@@ -1255,6 +1282,12 @@ SPACETIMEDB_REDUCER(insert_pk_connection_id, ReducerContext ctx, ConnectionId a,
     return Ok();
 }
 
+SPACETIMEDB_REDUCER(insert_pk_uuid, ReducerContext ctx, Uuid u, int32_t data)
+{
+    ctx.db[pk_uuid].insert(PkUuid{u, data});
+    return Ok();
+}
+
 SPACETIMEDB_REDUCER(insert_pk_simple_enum, ReducerContext ctx, SimpleEnum a, int32_t data)
 {
     ctx.db[pk_simple_enum].insert(PkSimpleEnum{a, data});
@@ -1381,6 +1414,13 @@ SPACETIMEDB_REDUCER(delete_pk_connection_id, ReducerContext ctx, ConnectionId a)
 {
     // Use optimized field accessor for direct index-based delete
     (void)ctx.db[pk_connection_id_a].delete_by_key(a);
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(delete_pk_uuid, ReducerContext ctx, Uuid u)
+{
+    // Use optimized field accessor for direct index-based delete
+    (void)ctx.db[pk_uuid_u].delete_by_key(u);
     return Ok();
 }
 
@@ -1620,6 +1660,13 @@ SPACETIMEDB_REDUCER(update_pk_connection_id, ReducerContext ctx, ConnectionId a,
 {
     // Use optimized field accessor for direct index-based update
     (void)ctx.db[pk_connection_id_a].update(PkConnectionId{a, data});
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(update_pk_uuid, ReducerContext ctx, Uuid u, int32_t data)
+{
+    // Use optimized field accessor for direct index-based update
+    (void)ctx.db[pk_uuid_u].update(PkUuid{u, data});
     return Ok();
 }
 
@@ -1939,6 +1986,28 @@ SPACETIMEDB_REDUCER(update_indexed_simple_enum, ReducerContext ctx, SimpleEnum a
             break;  // Only update the first match
         }
     }
+    return Ok();
+}
+
+SPACETIMEDB_REDUCER(sorted_uuids_insert, ReducerContext ctx)
+{
+    // Generate 1000 UUIDs and insert them
+    for (int i = 0; i < 1000; i++) {
+        Uuid uuid = ctx.new_uuid_v7();
+        ctx.db[pk_uuid].insert(PkUuid{uuid, 0});
+    }
+    
+    // Verify UUIDs are sorted
+    std::optional<Uuid> last_uuid;
+    for (const auto& row : ctx.db[pk_uuid]) {
+        if (last_uuid.has_value()) {
+            if (last_uuid.value() >= row.u) {
+                return Err("UUIDs are not sorted correctly");
+            }
+        }
+        last_uuid = row.u;
+    }
+    
     return Ok();
 }
 

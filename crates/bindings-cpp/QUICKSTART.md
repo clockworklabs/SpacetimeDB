@@ -106,7 +106,7 @@ SPACETIMEDB_REDUCER(set_name, ReducerContext ctx, std::string name) {
     for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {
         // Update existing user's name
         user_row.name = name;
-        auto success = ctx.db[user_identity].update(user_row);
+        ctx.db[user_identity].update(user_row);
         return Ok();
     }
     return Ok();
@@ -138,7 +138,7 @@ SPACETIMEDB_CLIENT_CONNECTED(client_connected, ReducerContext ctx) {
     for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {
         // Update existing user to online
         user_row.online = true;
-        auto success = ctx.db[user_identity].update(user_row);
+        ctx.db[user_identity].update(user_row);
         found = true;
         break;
     }
@@ -157,7 +157,7 @@ SPACETIMEDB_CLIENT_DISCONNECTED(client_disconnected, ReducerContext ctx) {
     bool found = false;
     for (auto& user_row : ctx.db[user_identity].filter(ctx.sender)) {
         user_row.online = false;
-        auto success = ctx.db[user_identity].update(user_row);
+        ctx.db[user_identity].update(user_row);
         found = true;
         break;
     }

@@ -18,11 +18,13 @@ The SDK uses a numbered __preinit__ function system to ensure correct initializa
 ```
 __preinit__01_ - Clear global state (first)
 __preinit__10_ - Field registration
-__preinit__19_ - Auto-increment integration registration  
+__preinit__19_ - Auto-increment integration and scheduled reducers
 __preinit__20_ - Table and lifecycle reducer registration
 __preinit__21_ - Field constraints
 __preinit__25_ - Row level security filters
 __preinit__30_ - User reducers
+__preinit__40_ - Views
+__preinit__50_ - Procedures
 __preinit__99_ - Type validation and error detection (last)
 ```
 
@@ -76,8 +78,8 @@ __preinit__99_ - Type validation and error detection (last)
 ```cpp
 extern "C" __attribute__((export_name("__preinit__01_clear_global_state")))
 void __preinit__01_clear_global_state() {
-    ClearV9Module();  // Reset module definition
-    getV9TypeRegistration().clear();  // Reset type registry
+    ClearV9Module();  // Reset module definition and handler registries
+    getV9TypeRegistration().clear();  // Reset type registry and error state
 }
 ```
 
@@ -168,6 +170,8 @@ if (constraint == FieldConstraint::PrimaryKey) {
 **Component**: V9TypeRegistration system (`v9_type_registration.h`)
 
 **Core Principle**: Only user-defined structs and enums get registered in the typespace. Primitives, arrays, Options, and special types are always inlined.
+
+**Architecture Note**: V9Builder serves as the registration coordinator but delegates all type processing to the V9TypeRegistration system. This separation ensures a single, unified type registration pathway.
 
 **Registration Flow**:
 ```cpp

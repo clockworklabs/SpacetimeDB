@@ -131,9 +131,9 @@ SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
     return Ok();
 }
 
-// Define a view for querying data (requires indexed field)
-SPACETIMEDB_VIEW(std::optional<User>, find_user_by_id, Public, ViewContext ctx) {
-    // Use indexed field to find user
+// Define a view for querying data (finds the calling user)
+SPACETIMEDB_VIEW(std::optional<User>, find_my_user, Public, ViewContext ctx) {
+    // Use indexed field to find user by their identity
     return ctx.db[users_id].find(ctx.sender);
 }
 
@@ -189,6 +189,9 @@ cmake --build build
 
 #### Reducers
 - `SPACETIMEDB_REDUCER(name, ReducerContext ctx, ...)` - User-defined reducer
+  - Returns `ReducerResult` (alias for `Outcome<void>`)
+  - Use `return Ok();` for success or `return Err("message");` for errors
+  - Failed reducers (Err) trigger transaction rollback
 - `SPACETIMEDB_INIT(name)` - Module initialization reducer (optional)
 - `SPACETIMEDB_CLIENT_CONNECTED(name)` - Client connection reducer (optional)
 - `SPACETIMEDB_CLIENT_DISCONNECTED(name)` - Client disconnection reducer (optional)
@@ -196,6 +199,7 @@ cmake --build build
 #### Views
 - `SPACETIMEDB_VIEW(return_type, name, Public/Private, ViewContext ctx)` - Read-only query function
 - `SPACETIMEDB_VIEW(return_type, name, Public/Private, AnonymousViewContext ctx)` - Anonymous view (no sender identity)
+- Note: Views currently only support the context parameter (no additional parameters yet)
 
 #### Procedures
 - `SPACETIMEDB_PROCEDURE(return_type, name, ProcedureContext ctx, ...)` - Pure function that returns a value

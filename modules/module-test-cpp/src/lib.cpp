@@ -42,11 +42,17 @@ SPACETIMEDB_STRUCT(TestB, foo)
 SPACETIMEDB_ENUM(TestC, Foo, Bar)
 SPACETIMEDB_NAMESPACE(TestC, "Namespace")
 
-// TestF enum - simplified for now due to C++ SDK limitations (with Namespace scope)
-// Rust has: Foo, Bar, Baz(String) - mixed enum with payload
-// C++ SDK issue: std::variant can't have duplicate types (multiple unit/monostate)
-// and the Unit marker system doesn't fully resolve this yet
-SPACETIMEDB_ENUM(TestF, Foo, Bar, Baz)
+// Workaround: C++ std::variant can't have duplicate types, so we create unique empty types
+// for each unit variant instead of using Unit multiple times (like C# SDK does)
+SPACETIMEDB_UNIT_TYPE(TestFFoo)
+SPACETIMEDB_UNIT_TYPE(TestFBar)
+
+// TestF enum - variant enum matching Rust: Foo, Bar, Baz(String)
+SPACETIMEDB_ENUM(TestF,
+    (Foo, TestFFoo),
+    (Bar, TestFBar),
+    (Baz, std::string)
+)
 SPACETIMEDB_NAMESPACE(TestF, "Namespace")
 
 // Baz struct
@@ -55,9 +61,13 @@ struct Baz {
 };
 SPACETIMEDB_STRUCT(Baz, field)
 
-// Foobar enum - variant enum with payloads
+// Foobar enum helper type for unit variant
+SPACETIMEDB_UNIT_TYPE(FoobarBar)
+
+// Foobar enum - variant enum with payloads matching Rust: Baz(Baz), Bar, Har(u32)
 SPACETIMEDB_ENUM(Foobar,
-    (BazVariant, Baz),
+    (Baz, Baz),
+    (Bar, FoobarBar),
     (Har, uint32_t)
 )
 
@@ -76,6 +86,13 @@ SPACETIMEDB_STRUCT(Person, id, name, age)
 SPACETIMEDB_TABLE(Person, person, Public)
 FIELD_PrimaryKeyAutoInc(person, id)
 FIELD_Index(person, age)
+
+// RemoveTable - table for migration testing (can be removed)
+struct RemoveTable {
+    uint32_t id;
+};
+SPACETIMEDB_STRUCT(RemoveTable, id)
+SPACETIMEDB_TABLE(RemoveTable, table_to_remove, Private)
 
 // TestA table - private table with foo index on x column
 // Matches Rust: index(name = foo, btree(columns = [x]))
@@ -196,6 +213,15 @@ FIELD_Default(table_with_defaults, active, true)
 
 
 // =============================================================================
+// VIEWS
+// =============================================================================
+
+// View to find the player associated with the calling identity
+SPACETIMEDB_VIEW(std::optional<Player>, my_player, Public, ViewContext ctx) {
+    return ctx.db[player_identity].find(ctx.sender);
+}
+
+// =============================================================================
 // REDUCERS
 // =============================================================================
 
@@ -276,16 +302,16 @@ SPACETIMEDB_REDUCER(test, ReducerContext ctx, TestAlias arg, TestB arg2, TestC a
             break;
     }
     
-    // Match TestF enum
-    switch (arg4) {
-        case TestF::Foo:
+    // Match TestF variant enum
+    switch (arg4.index()) {
+        case 0: // Foo
             LOG_INFO("Foo");
             break;
-        case TestF::Bar:
+        case 1: // Bar
             LOG_INFO("Bar");
             break;
-        case TestF::Baz:
-            LOG_INFO("Baz");
+        case 2: // Baz
+            LOG_INFO(std::get<std::string>(arg4.value));
             break;
     }
 
@@ -534,32 +560,6 @@ SPACETIMEDB_REDUCER(assert_caller_identity_is_module_identity, ReducerContext ct
     return Ok();
 }
 
-// Test default values functionality
-// SPACETIMEDB_REDUCER(test_defaults, ReducerContext ctx) {
-//     LOG_INFO("=== Testing default values ===");
-    
-//     // Insert entries to test default value registration
-//     // Note: In C++, we still need to provide values in the struct constructor,
-//     // but the defaults are registered in the module metadata for use in migrations
-//     // and when columns are added to existing tables
-    
-//     TableWithDefaults entry1{0, "Alice"};  // Using default values
-//     auto inserted1 = ctx.db[table_with_defaults].insert(entry1);
-//     LOG_INFO("Inserted: id=" + std::to_string(inserted1.id) + 
-//              " name=" + inserted1.name);
-    
-//     TableWithDefaults entry2{0, "Bob"};  // Using custom values
-//     auto inserted2 = ctx.db[table_with_defaults].insert(entry2);
-//     LOG_INFO("Inserted: id=" + std::to_string(inserted2.id) + 
-//              " name=" + inserted2.name);
-    
-//     // Count total entries
-//     size_t count = ctx.db[table_with_defaults].count();
-//     LOG_INFO("Total entries with defaults: " + std::to_string(count));
-    
-//     LOG_INFO("Default values registered in module metadata");
-// }
-
 SPACETIMEDB_REDUCER(test_defaults, ReducerContext ctx) {
     LOG_INFO("=== Testing default values ===");
     
@@ -660,3 +660,52 @@ SPACETIMEDB_REDUCER(test_jwt_auth, ReducerContext ctx) {
     LOG_INFO("=== JWT Authentication Test Complete ===");
     return Ok();
 }
+
+// =============================================================================
+// PROCEDURES
+// =============================================================================
+
+#ifdef SPACETIMEDB_UNSTABLE_FEATURES
+
+// Sleep for one second and log the actual delta time
+SPACETIMEDB_PROCEDURE(Unit, sleep_one_second, ProcedureContext ctx) {
+    Timestamp prev_time = ctx.timestamp;
+    Timestamp target = prev_time + TimeDuration::from_seconds(1);
+    ctx.sleep_until(target);
+    Timestamp new_time = ctx.timestamp;
+    TimeDuration actual_delta = new_time.duration_since(prev_time);
+    LOG_INFO("Slept from " + prev_time.to_string() + " to " + new_time.to_string() + 
+             ", a total of " + actual_delta.to_string());
+    return Unit{};
+}
+
+// Return a Baz struct with the foo parameter as a string
+SPACETIMEDB_PROCEDURE(Baz, return_value, ProcedureContext ctx, uint64_t foo) {
+    return Baz{std::to_string(foo)};
+}
+
+// Execute say_hello reducer within a transaction context
+SPACETIMEDB_PROCEDURE(Unit, with_tx, ProcedureContext ctx) {
+    ctx.WithTx([](TxContext& tx) {
+        // Call say_hello logic within transaction
+        for (const auto& p : tx.db[person]) {
+            LOG_INFO("Hello, " + p.name + "!");
+        }
+        LOG_INFO("Hello, World!");
+    });
+    return Unit{};
+}
+
+// Hit SpacetimeDB's schema HTTP route and return its result as a string
+SPACETIMEDB_PROCEDURE(std::string, get_my_schema_via_http, ProcedureContext ctx) {
+    Identity module_identity = ctx.identity();
+    std::string url = "http://localhost:3000/v1/database/" + module_identity.to_string() + "/schema?version=9";
+    
+    auto result = ctx.http.get(url);
+    if (result.has_value()) {
+        return result->body_as_string();
+    } else {
+        return "HTTP request failed";
+    }
+}
+#endif

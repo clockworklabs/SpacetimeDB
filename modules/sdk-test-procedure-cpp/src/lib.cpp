@@ -33,6 +33,29 @@ struct PkUuid {
 SPACETIMEDB_STRUCT(PkUuid, u, data)
 SPACETIMEDB_TABLE(PkUuid, pk_uuid, Public)
 
+// Table for scheduled procedure tests
+struct ScheduledProcTable {
+    uint64_t scheduled_id;
+    ScheduleAt scheduled_at;
+    Timestamp reducer_ts;
+    uint8_t x;
+    uint8_t y;
+};
+SPACETIMEDB_STRUCT(ScheduledProcTable, scheduled_id, scheduled_at, reducer_ts, x, y)
+SPACETIMEDB_TABLE(ScheduledProcTable, scheduled_proc_table, Private)
+FIELD_PrimaryKeyAutoInc(scheduled_proc_table, scheduled_id);
+SPACETIMEDB_SCHEDULE(scheduled_proc_table, 1, scheduled_proc)  // Column 1 is scheduled_at
+
+// Table for storing procedure results
+struct ProcInsertsInto {
+    Timestamp reducer_ts;
+    Timestamp procedure_ts;
+    uint8_t x;
+    uint8_t y;
+};
+SPACETIMEDB_STRUCT(ProcInsertsInto, reducer_ts, procedure_ts, x, y)
+SPACETIMEDB_TABLE(ProcInsertsInto, proc_inserts_into, Public)
+
 // ============================================================================
 // Procedure Tests - Part 1: Return Values
 // ============================================================================
@@ -159,107 +182,6 @@ SPACETIMEDB_PROCEDURE(std::string, invalid_request, ProcedureContext ctx) {
     std::string error = result.error();
     LOG_INFO("invalid_request expected error: " + error);
     return error;
-}
-
-// Test HTTP GET request to a simple JSON endpoint
-SPACETIMEDB_PROCEDURE(std::string, test_simple_http, ProcedureContext ctx) {
-    // Use httpbin.org which returns simple JSON responses
-    auto result = ctx.http.Get("https://httpbin.org/get");
-    
-    if (!result.is_ok()) {
-        LOG_INFO("test_simple_http error: " + result.error());
-        return "Error: " + result.error();
-    }
-    
-    auto& response = result.value();
-    std::string body = response.body.ToStringUtf8Lossy();
-    
-    LOG_INFO("test_simple_http status: " + std::to_string(response.status_code));
-    LOG_INFO("test_simple_http headers count: " + std::to_string(response.headers.size()));
-    LOG_INFO("test_simple_http body preview (first 100 chars): " + body.substr(0, std::min(size_t(100), body.length())));
-    
-    // Return a summary
-    return "Status: " + std::to_string(response.status_code) + ", Body length: " + std::to_string(body.length()) + " bytes";
-}
-
-#endif // SPACETIMEDB_UNSTABLE_FEATURES
-
-// ============================================================================
-// Procedure Tests - Part 5: JWT Authentication in Transactions
-// ============================================================================
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
-
-// Test procedure that accesses JWT auth within a transaction
-SPACETIMEDB_PROCEDURE(std::string, test_jwt_in_tx, ProcedureContext ctx) {
-    LOG_INFO("=== Testing JWT in Transaction ===");
-    
-    std::string result;
-    
-    // Access JWT within a transaction using with_tx
-    ctx.with_tx([&result](TxContext& tx) {
-        // Access sender_auth via the method (matches Rust pattern)
-        const auto& auth = tx.sender_auth();
-        
-        if (auth.has_jwt()) {
-            auto jwt_opt = auth.get_jwt();
-            if (!jwt_opt.has_value()) {
-                result = "Error: has_jwt() true but get_jwt() empty";
-                return;
-            }
-            
-            auto& jwt = jwt_opt.value();
-            auto subject = jwt.subject();
-            auto issuer = jwt.issuer();
-            
-            LOG_INFO("JWT in transaction - Subject: " + subject);
-            LOG_INFO("JWT in transaction - Issuer: " + issuer);
-            
-            result = "JWT present - Subject: " + subject + ", Issuer: " + issuer;
-        } else {
-            LOG_INFO("No JWT in transaction");
-            result = "No JWT present";
-        }
-        
-        // Verify caller identity
-        auto caller_identity = auth.get_caller_identity();
-        LOG_INFO("Caller identity in tx: " + caller_identity.to_string());
-    });
-    
-    LOG_INFO("=== JWT Transaction Test Complete ===");
-    return result;
-}
-
-// Test procedure that uses JWT claims to conditionally insert data
-SPACETIMEDB_PROCEDURE(std::string, insert_if_authenticated, ProcedureContext ctx) {
-    std::string result;
-    
-    ctx.with_tx([&result](TxContext& tx) {
-        const auto& auth = tx.sender_auth();
-        
-        if (auth.has_jwt()) {
-            auto jwt_opt = auth.get_jwt();
-            if (!jwt_opt.has_value()) {
-                result = "Error: has_jwt() true but get_jwt() empty";
-                return;
-            }
-            
-            auto& jwt = jwt_opt.value();
-            auto subject = jwt.subject();
-            
-            // Insert data only if JWT is present
-            tx.db[my_table].insert(MyTable{
-                ReturnStruct{100, "Authenticated user: " + subject}
-            });
-            
-            result = "Inserted row for authenticated user: " + subject;
-            LOG_INFO(result);
-        } else {
-            result = "Rejected: No JWT authentication";
-            LOG_INFO(result);
-        }
-    });
-    
-    return result;
 }
 
 #endif // SPACETIMEDB_UNSTABLE_FEATURES
@@ -439,4 +361,45 @@ SPACETIMEDB_PROCEDURE(std::string, test_uuid_counter, ProcedureContext ctx) {
     
     LOG_INFO("Counter extraction test passed: " + result);
     return result;
+}
+
+// ============================================================================
+// Scheduled Procedure Tests
+// ============================================================================
+
+// Reducer that schedules the scheduled_proc procedure
+SPACETIMEDB_REDUCER(schedule_proc, ReducerContext ctx) {
+    LOG_INFO("schedule_proc called at timestamp: " + std::to_string(ctx.timestamp.micros_since_epoch()));
+    // Schedule the procedure to run in 1s (1000ms = 1,000,000 microseconds)
+    ctx.db[scheduled_proc_table].insert(ScheduledProcTable{
+        0,  // scheduled_id (auto-incremented)
+        ScheduleAt(TimeDuration::from_micros(1000000)),  // 1 second from now
+        ctx.timestamp,  // Store the timestamp at which this reducer was called
+        42,  // x
+        24   // y
+    });
+    
+    return Ok();
+}
+
+// Procedure that should be called 1s after schedule_proc
+SPACETIMEDB_PROCEDURE(Unit, scheduled_proc, ProcedureContext ctx, ScheduledProcTable data) {
+    Timestamp reducer_ts = data.reducer_ts;
+    uint8_t x = data.x;
+    uint8_t y = data.y;
+    Timestamp procedure_ts = ctx.timestamp;
+    
+    LOG_INFO("scheduled_proc called - procedure_ts: " + std::to_string(procedure_ts.micros_since_epoch()) + 
+             ", reducer_ts: " + std::to_string(reducer_ts.micros_since_epoch()));
+    
+    ctx.with_tx([reducer_ts, procedure_ts, x, y](TxContext& tx) {
+        tx.db[proc_inserts_into].insert(ProcInsertsInto{
+            reducer_ts,
+            procedure_ts,
+            x,
+            y
+        });
+    });
+    
+    return Unit{};
 }

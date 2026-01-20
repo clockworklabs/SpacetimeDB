@@ -63,9 +63,9 @@ SPACETIMEDB_STRUCT(PlayerAndLevel, entity_id, identity, level)
 // REDUCERS
 // =============================================================================
 
-SPACETIMEDB_REDUCER(insert_player, ReducerContext ctx, uint64_t level) {
+SPACETIMEDB_REDUCER(insert_player, ReducerContext ctx, Identity identity, uint64_t level) {
     // Insert player and get the entity_id
-    Player player_result = ctx.db[player].insert(Player{0, ctx.sender});
+    Player player_result = ctx.db[player].insert(Player{0, identity});
     
     // Insert player level
     ctx.db[player_level].insert(PlayerLevel{player_result.entity_id, level});
@@ -73,9 +73,9 @@ SPACETIMEDB_REDUCER(insert_player, ReducerContext ctx, uint64_t level) {
     return Ok();
 }
 
-SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx) {
+SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx, Identity identity) {
     // Find player by identity
-    auto player_opt = ctx.db[player_identity].find(ctx.sender);
+    auto player_opt = ctx.db[player_identity].find(identity);
     if (!player_opt.has_value()) {
         return Ok(); // Player doesn't exist, nothing to delete
     }
@@ -87,6 +87,12 @@ SPACETIMEDB_REDUCER(delete_player, ReducerContext ctx) {
     ctx.db[player_level_entity_id].delete_by_value(eid);
     
     return Ok();
+}
+
+// Test helper that calls insert_player with the caller's identity
+SPACETIMEDB_REDUCER(test_insert_player, ReducerContext ctx, uint64_t level) {
+    // Call insert_player using ctx.sender as the identity
+    return insert_player(ctx, ctx.sender, level);
 }
 
 SPACETIMEDB_REDUCER(move_player, ReducerContext ctx, int32_t dx, int32_t dy) {

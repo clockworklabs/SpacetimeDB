@@ -16,33 +16,36 @@ namespace Internal {
 /**
  * @brief Helper function to parse parameter names from stringified parameter list
  * 
- * This is used internally by SPACETIMEDB_REDUCER and SPACETIMEDB_VIEW macros to
- * extract parameter names from the stringified function signature.
+ * This is used internally by SPACETIMEDB_REDUCER and SPACETIMEDB_PROCEDURE macros to
+ * extract parameter names from the stringified __VA_ARGS__ (which excludes the context).
  * 
- * Works for any context type (ReducerContext, ViewContext, AnonymousViewContext)
- * by skipping the first parameter and extracting the rest.
+ * The macros separate ctx_param from __VA_ARGS__, so this function receives only
+ * the non-context parameters.
  * 
- * @param param_list The stringified parameter list (e.g., "ReducerContext ctx, uint32_t id, std::string name")
- * @return Vector of parameter names (excluding the first context parameter)
+ * @param param_list The stringified parameter list (e.g., "uint32_t id, std::string name")
+ * @return Vector of parameter names
  */
 inline std::vector<std::string> parseParameterNames(const std::string& param_list) {
     std::vector<std::string> param_names;
     
+    // Handle empty parameter list
+    if (param_list.empty()) {
+        return param_names;
+    }
+    
     // Split by comma
     std::istringstream stream(param_list);
     std::string param;
-    bool first = true;
     
     while (std::getline(stream, param, ',')) {
-        // Skip the first parameter (context: ReducerContext, ViewContext, or AnonymousViewContext)
-        if (first) {
-            first = false;
-            continue;
-        }
-        
         // Trim whitespace
         param.erase(0, param.find_first_not_of(" \t\n\r"));
         param.erase(param.find_last_not_of(" \t\n\r") + 1);
+        
+        // Skip empty parameters
+        if (param.empty()) {
+            continue;
+        }
         
         // Extract the parameter name (last word before end or default value)
         // Handle cases like:
@@ -689,6 +692,51 @@ inline std::vector<std::string> parseParameterNames(const std::string& param_lis
 
 #define SPACETIMEDB_REGISTER_FIELD_DESCRIPTORS(Type, ...) \
     SPACETIMEDB_FOR_EACH_ARG(SPACETIMEDB_REGISTER_FIELD_DESCRIPTOR, Type, dummy, __VA_ARGS__)
+
+/**
+ * @brief Define a unit type (empty struct) with BSATN serialization support
+ * 
+ * Creates an empty struct and generates the necessary BSATN traits for it.
+ * Useful for creating unique wrapper types for unit variants in enums,
+ * since std::variant requires all types to be unique.
+ * 
+ * This is the C++ equivalent of C#'s `[Type] public partial record UnitType { }`
+ * 
+ * @param TypeName The name of the unit type to create
+ * 
+ * @example Creating unit types for enum variants:
+ * @code
+ * // Define unique types for unit variants
+ * SPACETIMEDB_UNIT_TYPE(FooVariant)
+ * SPACETIMEDB_UNIT_TYPE(BarVariant)
+ * 
+ * // Use in variant enum
+ * SPACETIMEDB_ENUM(MyEnum,
+ *     (Foo, FooVariant),
+ *     (Bar, BarVariant),
+ *     (Baz, std::string)
+ * )
+ * @endcode
+ */
+#define SPACETIMEDB_UNIT_TYPE(TypeName) \
+    struct TypeName {}; \
+    \
+    namespace SpacetimeDb::bsatn { \
+    template<> \
+    struct bsatn_traits<TypeName> { \
+        static void serialize(Writer& writer, const TypeName&) { \
+            /* Unit type: serialize nothing */ \
+        } \
+        static TypeName deserialize(Reader& reader) { \
+            /* Unit type: deserialize nothing, return default */ \
+            return TypeName{}; \
+        } \
+        static AlgebraicType algebraic_type() { \
+            /* Unit type is a product type with no fields */ \
+            return AlgebraicType::Unit(); \
+        } \
+    }; \
+    }
 
 
 #endif // SPACETIMEDB_MACROS_H
