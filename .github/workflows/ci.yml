@@ -134,5 +134,5 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          echo pwsh -Command "cargo ci smoketests --parallel $SMOKETEST_ARGS"
-          pwsh -Command "\"cargo ci smoketests --parallel $SMOKETEST_ARGS\""
+          echo pwsh -Command "\"cargo ci smoketests --parallel $SMOKETEST_ARGS\""
+          pwsh -Command "cargo ci smoketests --parallel $SMOKETEST_ARGS"
