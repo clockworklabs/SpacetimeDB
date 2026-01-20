@@ -307,7 +307,12 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
 
     // 1) run per-task LLM builds + scoring
     let tasks = discover_tasks(cfg.bench_root)?;
-    let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher, TypeScriptPublisher);
+    let runner = TaskRunner::new(
+        PathBuf::from(cfg.bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
@@ -419,7 +424,12 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         bail!("no tasks matched {:?}", wanted);
     }
 
-    let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher, TypeScriptPublisher);
+    let runner = TaskRunner::new(
+        PathBuf::from(cfg.bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
@@ -548,7 +558,12 @@ pub async fn build_goldens_only_for_lang(
         discover_tasks(bench_root)?
     };
 
-    let runner = TaskRunner::new(PathBuf::from(bench_root), SpacetimeRustPublisher, DotnetPublisher, TypeScriptPublisher);
+    let runner = TaskRunner::new(
+        PathBuf::from(bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
     let lang_name = lang.as_str();
     let buf = match lang {
         Lang::CSharp => bench_csharp_concurrency(),

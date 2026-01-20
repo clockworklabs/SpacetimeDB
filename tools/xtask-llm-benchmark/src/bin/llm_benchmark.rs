@@ -1167,7 +1167,9 @@ fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt:
 
     prompt.push_str(&format!(
         "# {} / {} Failures ({} total)\n\n",
-        lang_display, mode, failures.len()
+        lang_display,
+        mode,
+        failures.len()
     ));
 
     // Group by failure type
@@ -1207,7 +1209,12 @@ fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt:
         if table_naming.len() > 3 {
             prompt.push_str(&format!(
                 "**Additional similar failures**: {}\n\n",
-                table_naming.iter().skip(3).map(|f| f.task.as_str()).collect::<Vec<_>>().join(", ")
+                table_naming
+                    .iter()
+                    .skip(3)
+                    .map(|f| f.task.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
@@ -1238,7 +1245,12 @@ fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt:
         if compile.len() > 3 {
             prompt.push_str(&format!(
                 "**Additional compile failures**: {}\n\n",
-                compile.iter().skip(3).map(|f| f.task.as_str()).collect::<Vec<_>>().join(", ")
+                compile
+                    .iter()
+                    .skip(3)
+                    .map(|f| f.task.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
@@ -1280,7 +1292,12 @@ fn build_mode_section(lang: &str, mode: &str, failures: &[&FailureInfo], prompt:
         if other.len() > 5 {
             prompt.push_str(&format!(
                 "**Additional failures**: {}\n\n",
-                other.iter().skip(5).map(|f| f.task.as_str()).collect::<Vec<_>>().join(", ")
+                other
+                    .iter()
+                    .skip(5)
+                    .map(|f| f.task.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
