@@ -521,7 +521,9 @@ fn common_args(
     }
     if !exclude.is_empty() {
         args.push("-x".to_string());
-        args.push(exclude.join(" "));
+        for exclude in exclude {
+            args.push(exclude);
+        }
     }
     if no_build_cli {
         args.push("--no-build-cli".to_string());
