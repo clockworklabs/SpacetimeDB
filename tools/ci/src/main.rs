@@ -649,7 +649,10 @@ fn run_smoketests_parallel(
 
         let output = cmd(
             python.clone(),
-            ["-m", "smoketests"].into_iter().map(|s| s.to_string()).chain(list_args),
+            ["-m", "smoketests"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .chain(list_args.clone()),
         )
         .stderr_to_stdout()
         .read()
