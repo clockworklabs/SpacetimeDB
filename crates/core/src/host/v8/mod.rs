@@ -94,6 +94,7 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
+        v8::V8::set_flags_from_string("--single-threaded");
         // Our current configuration:
         // - will pick a number of worker threads for background jobs based on the num CPUs.
         // - does not allow idle tasks
