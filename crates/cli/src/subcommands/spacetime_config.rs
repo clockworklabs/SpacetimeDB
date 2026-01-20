@@ -35,17 +35,6 @@ impl fmt::Display for PackageManager {
 }
 
 impl PackageManager {
-    /// Parse a package manager from a string
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "npm" => Some(PackageManager::Npm),
-            "pnpm" => Some(PackageManager::Pnpm),
-            "yarn" => Some(PackageManager::Yarn),
-            "bun" => Some(PackageManager::Bun),
-            _ => None,
-        }
-    }
-
     /// Get the command to run a dev script
     pub fn run_dev_command(&self) -> &'static str {
         match self {
@@ -53,16 +42,6 @@ impl PackageManager {
             PackageManager::Pnpm => "pnpm run dev",
             PackageManager::Yarn => "yarn dev",
             PackageManager::Bun => "bun run dev",
-        }
-    }
-
-    /// Get the install command
-    pub fn install_command(&self) -> &'static str {
-        match self {
-            PackageManager::Npm => "npm install",
-            PackageManager::Pnpm => "pnpm install",
-            PackageManager::Yarn => "yarn install",
-            PackageManager::Bun => "bun install",
         }
     }
 }
@@ -85,11 +64,6 @@ pub struct SpacetimeConfig {
 }
 
 impl SpacetimeConfig {
-    /// Create a new empty configuration
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Create a configuration with a run command
     pub fn with_run_command(run_command: impl Into<String>) -> Self {
         Self {
@@ -133,20 +107,6 @@ impl SpacetimeConfig {
         let content = serde_json::to_string_pretty(self).context("Failed to serialize configuration")?;
         fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
         Ok(path)
-    }
-
-    /// Check if a config file exists in the directory
-    pub fn exists_in_dir(dir: &Path) -> bool {
-        dir.join(CONFIG_FILENAME).exists()
-    }
-
-    /// Get the path to the config file if it exists
-    pub fn get_config_path(dir: &Path) -> Option<PathBuf> {
-        let path = dir.join(CONFIG_FILENAME);
-        if path.exists() {
-            return Some(path);
-        }
-        None
     }
 }
 
