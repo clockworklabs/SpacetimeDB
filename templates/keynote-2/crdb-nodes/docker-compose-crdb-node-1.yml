@@ -1,0 +1,27 @@
+﻿services:
+  crdb:
+    image: cockroachdb/cockroach:latest
+    command:
+      - start
+      - --insecure
+      - --max-sql-memory=.25
+      - --cache=.3
+      - --listen-addr=:26257
+      - --http-addr=:8080
+      - --join=10.128.0.14:26257,10.128.0.15:26257
+    volumes:
+      - ./crdb_data:/cockroach/cockroach-data
+    network_mode: host
+
+  crdb-init:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      crdb:
+        condition: service_started
+    network_mode: host
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      /cockroach/cockroach init --insecure --host=localhost:26257 || true
+      /cockroach/cockroach sql --insecure --host=localhost:26257 \
+        -e 'CREATE DATABASE IF NOT EXISTS bench;'

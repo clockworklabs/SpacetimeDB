@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>SpacetimeDB Benchmarks</title>
+    <style>
+        :root {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+            sans-serif;
+            color-scheme: dark;
+        }
+
+        body {
+            margin: 0;
+            padding: 32px 20px 40px;
+            min-height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            background:
+                    radial-gradient(circle at top, #1a0729 0, #05010d 40%, #020204 100%);
+            color: #e5ffe5;
+        }
+
+        .header {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-row img {
+            height: 26px;
+            filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.9));
+        }
+
+        .spacetime-tagline {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: rgba(190, 255, 210, 0.7);
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.6rem;
+            font-weight: 650;
+            color: #c4ffdd;
+            text-shadow: 0 0 12px rgba(0, 255, 170, 0.25);
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: rgba(214, 255, 222, 0.82);
+            max-width: 700px;
+        }
+
+        .subtitle strong {
+            color: #a5ffbf;
+        }
+
+        .drop-hint {
+            margin-top: 2px;
+            font-size: 0.82rem;
+            color: rgba(159, 255, 204, 0.85);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .drop-hint strong {
+            color: #d9ffe6;
+        }
+
+        .file-label {
+            cursor: pointer;
+            padding: 4px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(72, 255, 180, 0.8);
+            font-size: 0.78rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #bafee0;
+            background:
+                    radial-gradient(circle at top left,
+                    rgba(112, 255, 198, 0.15),
+                    transparent 55%);
+            box-shadow:
+                    0 0 0 1px rgba(5, 18, 10, 0.9),
+                    0 0 18px rgba(168, 85, 247, 0.35);
+            transition: background 150ms ease, transform 120ms ease,
+            box-shadow 120ms ease, border-color 120ms ease;
+        }
+
+        .file-label:hover {
+            background:
+                    radial-gradient(circle at top left,
+                    rgba(112, 255, 198, 0.25),
+                    rgba(10, 25, 18, 0.96));
+            transform: translateY(-0.5px);
+            border-color: rgba(168, 255, 215, 1);
+            box-shadow:
+                    0 0 24px rgba(168, 85, 247, 0.55),
+                    0 0 16px rgba(45, 212, 191, 0.4);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        body.drag-over {
+            outline: 1px dashed rgba(168, 85, 247, 0.7);
+            outline-offset: -14px;
+            background:
+                    radial-gradient(circle at top, #2a0a46 0, #05010d 40%, #020204 100%);
+            box-shadow: inset 0 0 70px rgba(0, 0, 0, 0.9);
+        }
+
+        .lanes {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .lane {
+            position: relative;
+            display: grid;
+            grid-template-columns: 230px minmax(0, 1fr) 230px;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background:
+                    radial-gradient(circle at top left,
+                    rgba(168, 85, 247, 0.2),
+                    transparent 55%),
+                    linear-gradient(135deg,
+                    rgba(4, 11, 8, 0.98),
+                    rgba(4, 6, 10, 0.96));
+            border: 1px solid rgba(94, 255, 188, 0.4);
+            box-shadow:
+                    0 18px 45px rgba(0, 0, 0, 0.9),
+                    0 0 0 1px rgba(2, 6, 8, 0.9);
+            overflow: hidden;
+        }
+
+        .lane:hover {
+            border-color: rgba(192, 255, 216, 0.9);
+            box-shadow:
+                    0 20px 55px rgba(0, 0, 0, 0.95),
+                    0 0 30px rgba(168, 85, 247, 0.55),
+                    0 0 22px rgba(72, 255, 180, 0.6);
+        }
+
+        .lane-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .lane-logo {
+            width: 32px;
+            height: 32px;
+            border-radius: 999px;
+            background:
+                    radial-gradient(circle at 30% 0,
+                    rgba(226, 255, 245, 0.18),
+                    transparent),
+                    linear-gradient(135deg,
+                    rgba(8, 16, 12, 0.95),
+                    rgba(15, 23, 42, 0.9));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 1px solid rgba(144, 255, 210, 0.7);
+            box-shadow:
+                    0 0 0 1px rgba(0, 0, 0, 0.9),
+                    0 10px 20px rgba(0, 0, 0, 0.95);
+        }
+
+        .lane-logo img {
+            width: 80%;
+            height: 80%;
+            object-fit: contain;
+            display: block;
+            filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.95));
+        }
+
+        .lane-name-block {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .lane-label-primary {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #e5ffe5;
+            text-shadow: 0 0 8px rgba(0, 255, 170, 0.4);
+        }
+
+        .stream {
+            position: relative;
+            height: 30px;
+            border-radius: 999px;
+            background:
+                    linear-gradient(to right,
+                    rgba(147, 51, 234, 0.9),
+                    rgba(24, 3, 45, 0.98));
+            overflow: hidden;
+            isolation: isolate;
+            box-shadow:
+                    inset 0 0 0 1px rgba(224, 231, 255, 0.16),
+                    0 0 24px rgba(88, 28, 135, 0.9);
+        }
+
+        .stream::before,
+        .stream::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 2px solid rgba(190, 242, 255, 0.95);
+            background:
+                    radial-gradient(circle,
+                    rgba(240, 253, 250, 0.98),
+                    rgba(59, 130, 246, 0.95));
+            box-shadow: 0 0 12px rgba(129, 140, 248, 0.9);
+        }
+
+        .stream::before {
+            left: -2px;
+        }
+
+        .stream::after {
+            right: -2px;
+        }
+
+        .dot {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            box-shadow:
+                    0 0 14px rgba(34, 197, 94, 1),
+                    0 0 30px rgba(45, 212, 191, 0.9);
+            pointer-events: none;
+        }
+
+        .lane:hover .dot {
+            box-shadow:
+                    0 0 14px rgba(240, 255, 255, 1),
+                    0 0 32px rgba(168, 85, 247, 0.95);
+        }
+
+        .lane-meta {
+            text-align: right;
+            font-size: 0.8rem;
+            color: rgba(200, 255, 220, 0.92);
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .meta-row-1 {
+            font-weight: 600;
+            color: #e5ffe5;
+            text-shadow: 0 0 10px rgba(0, 255, 170, 0.35);
+        }
+
+        .meta-row-2 {
+            color: rgba(173, 232, 208, 0.95);
+        }
+
+        @media (max-width: 840px) {
+            .lane {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
+            }
+
+            .lane-meta {
+                text-align: left;
+                margin-top: 4px;
+            }
+
+            .header {
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+<header class="header">
+    <div class="brand-row">
+        <img src="https://spacetimedb.com/images/brand.png" alt="SpacetimeDB logo" />
+        <span class="spacetime-tagline">Transactional, relational, multiplayer computing.</span>
+    </div>
+    <h1>Benchmark Streams</h1>
+    <p class="subtitle">
+        Drop in a JSON benchmark file and watch each connector stream transactions in real time.
+        <strong>Dot density</strong> reflects throughput (TPS) and
+        <strong>dot speed</strong> reflects median latency (p50). Right side shows TPS, p50, and sample count.
+    </p>
+    <div class="drop-hint" id="drop-hint">
+        <span><strong>Drag &amp; drop</strong> a JSON file or paste raw JSON anywhere in this window.</span>
+        <label class="file-label">
+            Browse JSON…
+            <input id="file-input" type="file" accept="application/json,.json" />
+        </label>
+    </div>
+</header>
+
+<div class="lanes" id="lanes"></div>
+
+<script>
+    const LOGOS = {
+        bun: "https://icon.icepanel.io/Technology/svg/Bun.svg",
+        cockroach:
+            "https://cdn.brandfetch.io/idl12nRGgq/w/400/h/400/theme/dark/icon.jpeg?c=1bxid64Mup7aczewSAYMX&t=1756485715978",
+        convex:
+            "https://cdn.brandfetch.io/id8SBm2SUH/w/400/h/400/theme/dark/icon.png?c=1bxid64Mup7aczewSAYMX&t=1760696691779",
+        spacetimedb:
+            "https://cdn.brandfetch.io/idil70gcmy/w/400/h/400/theme/dark/icon.jpeg?c=1bxid64Mup7aczewSAYMX&t=1757680904354",
+        sqlite: "https://icon.icepanel.io/Technology/png-shadow-512/SQLite.png",
+        supabase:
+            "https://cdn.brandfetch.io/idsSceG8fK/w/436/h/449/theme/dark/symbol.png?c=1bxid64Mup7aczewSAYMX&t=1668081497517",
+    };
+
+    const lanesEl = document.getElementById("lanes");
+    const dropHintEl = document.getElementById("drop-hint");
+    const fileInputEl = document.getElementById("file-input");
+    const activeIntervals = [];
+
+    function clearLanes() {
+        lanesEl.innerHTML = "";
+        while (activeIntervals.length) {
+            clearInterval(activeIntervals.pop());
+        }
+    }
+
+    function systemToDisplay(system, label) {
+        if (system === "postgres") {
+            // "postgres" in the JSON is really Bun + Postgres
+            return {
+                name: "bun",
+                logo: LOGOS.bun,
+            };
+        }
+        const key = (system || "").toLowerCase();
+        return {
+            name: system || label || "connector",
+            logo: LOGOS[key] || "",
+        };
+    }
+
+    // Absolute TPS-based scaling so 13k vs 19k is clearly different,
+    // without being crushed by a 200k+ lane.
+    function computeSpawnInterval(tps) {
+        const minInterval = 40;   // ms (fastest)
+        const maxInterval = 900;  // ms (slowest)
+
+        if (!tps || tps <= 0) return maxInterval;
+
+        const k = 2_000_000;      // tuning constant
+        const raw = k / tps;      // ms
+
+        if (raw < minInterval) return minInterval;
+        if (raw > maxInterval) return maxInterval;
+        return raw;
+    }
+
+    function computeTravelDuration(p50_ms) {
+        const minDuration = 400; // ms
+        const maxDuration = 2400;
+        const clamped = Math.min(Math.max(p50_ms ?? 0, 0.02), 120);
+        const ratio = (clamped - 0.02) / (120 - 0.02);
+        return minDuration + ratio * (maxDuration - minDuration);
+    }
+
+    function formatP50(p50_ms) {
+        if (p50_ms < 1) {
+            const us = p50_ms * 1000;
+            const text =
+                us >= 100 ? us.toFixed(0) : us.toFixed(1).replace(/\.0$/, "");
+            return `${text} µs`;
+        } else {
+            const msText = p50_ms >= 10 ? p50_ms.toFixed(1) : p50_ms.toFixed(2);
+            return `${msText.replace(/\.00$/, "")} ms`;
+        }
+    }
+
+    function buildLanes(connectors) {
+        clearLanes();
+        if (!connectors || !connectors.length) return;
+
+        connectors.forEach((c) => {
+            const lane = document.createElement("div");
+            lane.className = "lane";
+
+            // Label
+            const label = document.createElement("div");
+            label.className = "lane-label";
+
+            const logoWrap = document.createElement("div");
+            logoWrap.className = "lane-logo";
+
+            const logoImg = document.createElement("img");
+            logoImg.src = c.logo || "";
+            logoImg.alt = (c.name || "connector") + " logo";
+            logoWrap.appendChild(logoImg);
+
+            const nameBlock = document.createElement("div");
+            nameBlock.className = "lane-name-block";
+            nameBlock.innerHTML = `
+          <div class="lane-label-primary">${c.name}</div>
+        `;
+
+            label.appendChild(logoWrap);
+            label.appendChild(nameBlock);
+
+            // Stream
+            const stream = document.createElement("div");
+            stream.className = "stream";
+
+            // Meta
+            const meta = document.createElement("div");
+            meta.className = "lane-meta";
+            const p50Label = formatP50(c.p50_ms ?? 0);
+            meta.innerHTML = `
+          <span class="meta-row-1">${(c.tps ?? 0).toLocaleString()} TPS</span>
+          <span class="meta-row-2">${p50Label} • ${(c.samples ?? 0).toLocaleString()} samples</span>
+        `;
+
+            lane.appendChild(label);
+            lane.appendChild(stream);
+            lane.appendChild(meta);
+            lanesEl.appendChild(lane);
+
+            const spawnInterval = computeSpawnInterval(c.tps ?? 0);
+            const travelDuration = computeTravelDuration(c.p50_ms ?? 0);
+
+            function spawnDot() {
+                const dot = document.createElement("div");
+                dot.className = "dot";
+
+                const width = stream.clientWidth || stream.offsetWidth || 300;
+                const startX = -10;
+                const endX = width + 10;
+                const startTime = performance.now();
+
+                function step(now) {
+                    const t = (now - startTime) / travelDuration;
+                    if (t >= 1) {
+                        dot.remove();
+                        return;
+                    }
+                    const eased = t * (2 - t); // ease-out
+                    const x = startX + (endX - startX) * eased;
+                    dot.style.left = x + "px";
+                    requestAnimationFrame(step);
+                }
+
+                stream.appendChild(dot);
+                requestAnimationFrame(step);
+            }
+
+            setTimeout(() => {
+                spawnDot();
+                const id = setInterval(spawnDot, spawnInterval);
+                activeIntervals.push(id);
+            }, Math.random() * spawnInterval);
+        });
+    }
+
+    function parseJsonAndBuild(text) {
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (err) {
+            alert("Invalid JSON: " + err.message);
+            return;
+        }
+
+        if (!data || !Array.isArray(data.results)) {
+            alert("JSON must have a 'results' array.");
+            return;
+        }
+
+        // Map + sort by TPS (descending)
+        const connectors = data.results
+            .map((r) => {
+                const system = (r.system || "").toString();
+                const { name, logo } = systemToDisplay(system, r.label);
+                return {
+                    name,
+                    logo,
+                    tps: Number(r.tps ?? 0),
+                    samples: Number(r.samples ?? 0),
+                    p50_ms: Number(r.p50_ms ?? 0),
+                    p95_ms: Number(r.p95_ms ?? 0),
+                    p99_ms: Number(r.p99_ms ?? 0),
+                };
+            })
+            .sort((a, b) => (b.tps || 0) - (a.tps || 0));
+
+        dropHintEl.style.display = "none";
+        buildLanes(connectors);
+    }
+
+    // File input
+    fileInputEl.addEventListener("change", (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        file
+            .text()
+            .then(parseJsonAndBuild)
+            .catch((err) => {
+                alert("Failed to read file: " + err.message);
+            });
+    });
+
+    // Drag & drop
+    window.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        document.body.classList.add("drag-over");
+    });
+
+    window.addEventListener("dragleave", (e) => {
+        if (e.target === document.documentElement || e.target === document.body) {
+            document.body.classList.remove("drag-over");
+        }
+    });
+
+    window.addEventListener("drop", (e) => {
+        e.preventDefault();
+        document.body.classList.remove("drag-over");
+        const file =
+            e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!file) return;
+        file
+            .text()
+            .then(parseJsonAndBuild)
+            .catch((err) => {
+                alert("Failed to read file: " + err.message);
+            });
+    });
+
+    // Paste (file or text JSON)
+    window.addEventListener("paste", (e) => {
+        const cd = e.clipboardData;
+        if (!cd) return;
+
+        for (const item of cd.items) {
+            if (item.kind === "file") {
+                const f = item.getAsFile();
+                if (f) {
+                    f
+                        .text()
+                        .then(parseJsonAndBuild)
+                        .catch((err) => {
+                            alert("Failed to read pasted file: " + err.message);
+                        });
+                    e.preventDefault();
+                    return;
+                }
+            }
+        }
+
+        const text = cd.getData("text/plain");
+        if (text) {
+            parseJsonAndBuild(text);
+            e.preventDefault();
+        }
+    });
+</script>
+</body>
+</html>
