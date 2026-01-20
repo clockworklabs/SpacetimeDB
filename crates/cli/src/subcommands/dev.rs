@@ -92,7 +92,7 @@ pub fn cli() -> Command {
             Arg::new("client-command")
                 .long("client-command")
                 .value_name("COMMAND")
-                .help("Command to run the client development server (overrides spacetime.toml config)"),
+                .help("Command to run the client development server (overrides spacetime.json config)"),
         )
         .arg(
             Arg::new("server-only")
@@ -283,13 +283,13 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     } else if let Some(cmd) = SpacetimeConfig::load_from_dir(&project_dir)
         .ok()
         .flatten()
-        .and_then(|c| c.dev.client_command)
+        .and_then(|c| c.run)
     {
-        // Config file exists with client_command
+        // Config file exists with run command
         Some(cmd)
-    } else if let Some(detected) = detect_client_command(&project_dir) {
+    } else if let Some((detected_cmd, detected_pm)) = detect_client_command(&project_dir) {
         // No config - detect and save for future runs
-        let config = SpacetimeConfig::with_client_command(&detected);
+        let config = SpacetimeConfig::with_dev_config(&detected_cmd, detected_pm);
         if let Ok(path) = config.save_to_dir(&project_dir) {
             println!(
                 "{} Detected client command and saved to {}",
@@ -297,7 +297,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 path.display()
             );
         }
-        Some(detected)
+        Some(detected_cmd)
     } else {
         None
     };
