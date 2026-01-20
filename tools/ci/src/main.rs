@@ -680,6 +680,8 @@ fn run_smoketests_parallel(
         });
     }
 
+    std::io::stdout().flush()?;
+
     if !failed_batches.is_empty() {
         anyhow::bail!("Smoketest batch(es) failed: {}", failed_batches.join(", "));
     }
