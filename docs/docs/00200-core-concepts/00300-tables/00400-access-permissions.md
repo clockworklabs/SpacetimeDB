@@ -570,7 +570,7 @@ Clients can query `my_profile` to see their username and creation date, but neve
 
 ### Combining Both Techniques
 
-Views can combine row filtering and column projection. This example returns team members who report to the caller, with salary information hidden:
+Views can combine row filtering and column projection. This example returns colleagues in the same department as the caller, with salary information hidden:
 
 <Tabs groupId="server-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -580,42 +580,36 @@ import { table, t, schema } from 'spacetimedb/server';
 
 // Private table with all employee data
 const employee = table(
-  {
-    name: 'employee',
-    indexes: [
-      { name: 'idx_manager_id', algorithm: 'btree', columns: ['managerId'] },
-    ],
-  },
+  { name: 'employee' },
   {
     id: t.u64().primaryKey(),
     identity: t.identity().unique(),
     name: t.string(),
-    department: t.string(),
+    department: t.string().index('btree'),
     salary: t.u64(),           // Sensitive
-    managerId: t.option(t.u64()),
   }
 );
 
 const spacetimedb = schema(employee);
 
-// Public type for team members (no salary)
-const teamMember = t.row('TeamMember', {
+// Public type for colleagues (no salary)
+const colleague = t.row('Colleague', {
   id: t.u64(),
   name: t.string(),
   department: t.string(),
 });
 
-// View that returns only the caller's team members, without salary info
+// View that returns colleagues in the caller's department, without salary info
 spacetimedb.view(
-  { name: 'my_team', public: true },
-  t.array(teamMember),
+  { name: 'my_colleagues', public: true },
+  t.array(colleague),
   (ctx) => {
     // Find the caller's employee record by identity (unique index)
     const me = ctx.db.employee.identity.find(ctx.sender);
     if (!me) return [];
 
-    // Look up employees who report to the caller by manager_id index
-    return Array.from(ctx.db.employee.idx_manager_id.filter(me.id)).map(emp => ({
+    // Look up employees in the same department
+    return Array.from(ctx.db.employee.department.filter(me.department)).map(emp => ({
       id: emp.id,
       name: emp.name,
       department: emp.department,
@@ -642,34 +636,33 @@ public partial class Module
         [SpacetimeDB.Unique]
         public Identity Identity;
         public string Name;
+        [SpacetimeDB.Index.BTree]
         public string Department;
         public ulong Salary;           // Sensitive
-        [SpacetimeDB.Index.BTree]
-        public ulong? ManagerId;
     }
 
-    // Public type for team members (no salary)
+    // Public type for colleagues (no salary)
     [SpacetimeDB.Type]
-    public partial struct TeamMember
+    public partial struct Colleague
     {
         public ulong Id;
         public string Name;
         public string Department;
     }
 
-    // View that returns only the caller's team members, without salary info
-    [SpacetimeDB.View(Name = "MyTeam", Public = true)]
-    public static List<TeamMember> MyTeam(ViewContext ctx)
+    // View that returns colleagues in the caller's department, without salary info
+    [SpacetimeDB.View(Name = "MyColleagues", Public = true)]
+    public static List<Colleague> MyColleagues(ViewContext ctx)
     {
         // Find the caller's employee record by identity (unique index)
         if (ctx.Db.Employee.Identity.Find(ctx.Sender) is not Employee me)
         {
-            return new List<TeamMember>();
+            return new List<Colleague>();
         }
 
-        // Look up employees who report to the caller by ManagerId index
-        return ctx.Db.Employee.ManagerId.Filter(me.Id)
-            .Select(emp => new TeamMember
+        // Look up employees in the same department
+        return ctx.Db.Employee.Department.Filter(me.Department)
+            .Select(emp => new Colleague
             {
                 Id = emp.Id,
                 Name = emp.Name,
@@ -695,34 +688,33 @@ pub struct Employee {
     #[unique]
     identity: Identity,
     name: String,
+    #[index(btree)]
     department: String,
     salary: u64,           // Sensitive
-    #[index(btree)]
-    manager_id: Option<u64>,
 }
 
-// Public type for team members (no salary)
+// Public type for colleagues (no salary)
 #[derive(SpacetimeType)]
-pub struct TeamMember {
+pub struct Colleague {
     id: u64,
     name: String,
     department: String,
 }
 
-// View that returns only the caller's team members, without salary info
-#[spacetimedb::view(name = my_team, public)]
-fn my_team(ctx: &ViewContext) -> Vec<TeamMember> {
+// View that returns colleagues in the caller's department, without salary info
+#[spacetimedb::view(name = my_colleagues, public)]
+fn my_colleagues(ctx: &ViewContext) -> Vec<Colleague> {
     // Find the caller's employee record by identity (unique index)
     let Some(me) = ctx.db.employee().identity().find(&ctx.sender) else {
         return vec![];
     };
 
-    // Look up employees who report to the caller by manager_id index
-    ctx.db.employee().manager_id().filter(&Some(me.id))
-        .map(|emp| TeamMember {
+    // Look up employees in the same department
+    ctx.db.employee().department().filter(&me.department)
+        .map(|emp| Colleague {
             id: emp.id,
-            name: emp.name,
-            department: emp.department,
+            name: emp.name.clone(),
+            department: emp.department.clone(),
             // salary is not included
         })
         .collect()
