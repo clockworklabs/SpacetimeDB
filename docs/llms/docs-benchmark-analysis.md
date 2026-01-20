@@ -1,80 +1,99 @@
 # Benchmark Failure Analysis
 
-Generated from: `C:\Users\Tyler\Developer\SpacetimeDB\tools\xtask-llm-benchmark\../../docs/llms/docs-benchmark-details.json`
+Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../docs/llms/docs-benchmark-details.json`
 
 ## Summary
 
-- **Total failures analyzed**: 26
+- **Total failures analyzed**: 24
 
 ## Analysis
 
-# SpacetimeDB Benchmark Test Failures Analysis
+# Analysis of SpacetimeDB Benchmark Failures
 
 ## Rust Failures
 
 ### 1. Root Causes
-- **Compile/Publish Errors (3 failures)**:
-  - The primary issue across the failures is related to the use of `ScheduleAt::every_micros` versus `ScheduleAt::RepeatMicros`, which indicates a lack of clarity in the documentation about the correct method of using scheduled types.
-  - Another issue is the incorrect implementation of `pub` for some fields and missing `#[derive(SpacetimeType)]` for structs, which has led to schema mismatches.
+1. **Missing Primary Keys and Public Modifiers**:
+   - Several tests (e.g., `t_005_update`, `t_006_delete`, `t_007_crud`, etc.) fail due to missing access modifiers on the struct fields. Notably, primary keys should have `pub` to be accessible.
+   
+2. **Schedule At Usage**:
+   - In scheduled tests like `t_002_scheduled_table` and `t_017_scheduled_columns`, the documentation does not clearly explain how to properly set up scheduled reducers and columns.
 
-- **Other Failures (1 failure)**: 
-  - The test `t_003_struct_in_table` has a mismatch where the expected reducer setup differs from what's provided. This highlights insufficient documentation around initial setup requirements for reducers.
+3. **Table Definitions**:
+   - Errors in identifying the tables may suggest that the documentation lacks details on how to ensure tables are created or seeded correctly before executing tests. 
+
+4. **General Error Handling**:
+   - Many errors include warnings about instability, indicating the documentation hasn’t adequately prepared users for expected limitations or how to work around them.
 
 ### 2. Recommendations
-- **Documentation Updates**:
-  - **Scheduled Types Documentation**: Enhance the section on scheduled types in the documentation to clarify the use of `ScheduleAt::every_micros` and `ScheduleAt::RepeatMicros`. Example for addition:
-    ```markdown
-    ### Scheduled Types
-    - Use `ScheduleAt::every_micros(interval)` for non-repeating intervals.
-    - Use `ScheduleAt::RepeatMicros(interval)` for repeating intervals. Ensure proper usage to avoid publishing errors.
+#### a. Update Documentation for Struct Fields
+- **Section**: Struct Field Modifiers 
+- **Change**: Reinforce that all fields in structs representing tables should be declared as `pub` (public).
+    ```rust
+    #[primary_key]
+    pub id: i32,
+    ```
+
+#### b. Clarify Schedules and Reducers
+- **Section**: Scheduling and Reducers
+- **Change**: Provide specific examples that detail correct usage of scheduled reducers and column definitions.
+    ```rust
+    #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
     ```
   
-  - **Section on Structs and Reducers**: Update the section dealing with struct fields to illustrate the necessity of using `pub` where it applies and clarifying how reducers must align:
-    ```markdown
-    ### Struct Definitions
-    - Struct fields must be marked as `pub` to ensure they are accessible within the SpacetimeDB context.
-    - Reducers must be defined properly; ensure that each reducer matches expected configurations in your schemas.
-    ```
-
-- **Example Code Alignment**: Revise example code throughout documentation to align with the latest syntax and ensure that all required attributes are included.
+#### c. Table Creation and Seeding
+- **Section**: Database Setup
+- **Change**: Include a walkthrough for initializing and seeding tables prior to executing tests.
+  
+#### d. Error Handling in Tests
+- **Section**: Error Messages
+- **Change**: Update the documentation to clarify the potential implications of unstable commands and how to handle them, including fallbacks or alternative methods.
 
 ### 3. Priority
-- **High Impact Fixes**: 
-  1. Scheduled Types Documentation (to prevent compile errors).
-  2. Structs and Reducers Section (to ensure schema and function alignment).
+- **High**: Improvements on struct field access modifiers and scheduling examples. 
+- **Medium**: Recommendations on table setup and seeding.
+- **Low**: Enhancements to error handling and stability notes.
 
 ---
 
 ## C# Failures
 
 ### 1. Root Causes
-- **Table Naming Issues (19 failures)**: 
-  - The primary issue causing the failures is the inconsistency in the use of table names (e.g., `entities` vs. `Entity`). Lack of clear guidelines on naming conventions has led to widespread discrepancies.
+1. **Missing Public Modifiers**:
+   - Similar to Rust, many C# errors arise from the lack of `public` modifiers for struct fields, which can affect accessibility (e.g., `t_004_insert`, `t_006_delete`, etc.).
 
-- **Timeout Issues (3 failures)**: 
-  - Additionally, the timeout failures indicate that certain processes aren’t being documented well in terms of what expectations exist for execution time and potential pitfalls leading to these issues.
+2. **Table Name Consistency Issues**:
+   - Documented table names must match the expected names in the declarations to avoid runtime errors regarding nonexistent tables.
+
+3. **Redundant Modifiers**:
+   - There are inconsistencies where the `Public = true` attribute is unnecessary in certain contexts, leading to confusion.
+
+4. **Unstable Command Warnings**:
+   - Like Rust, frequent unstable command warnings highlight the need for better communication regarding command limitations.
 
 ### 2. Recommendations
-- **Documentation Updates**:
-  - **Table Naming Conventions**: Introduce a comprehensive section specifying the naming conventions for tables. Example for addition:
-    ```markdown
-    ### Table Naming Conventions
-    - Table names should be singular and PascalCase (e.g., `User` instead of `users`).
-    - Ensure that when creating and querying tables, the names are consistently used to avoid schema parity issues.
+#### a. Overview of Struct Fields
+- **Section**: Struct Field Modifiers 
+- **Change**: Emphasize that all fields must be marked as `public` to ensure accessibility within the library.
+    ```csharp
+    [PrimaryKey] public int Id;
     ```
+
+#### b. Consistent Table Naming
+- **Section**: Table Naming Conventions
+- **Change**: Outline naming conventions clearly to ensure consistency between struct definitions and database references.
   
-  - **Timeout Handling Guidance**: Provide clearer information on how to handle potential timeout issues within operations:
-    ```markdown
-    ### Handling Timeouts
-    - If encountering timeout errors during transactions, consider optimizing the initial data load or query processes.
-    - Implement logging to help identify which part of your transaction is leading to the timeout.
-    ```
+#### c. Clean Up Redundant Modifiers
+- **Section**: Table Attribute Usage
+- **Change**: Simplify the examples that use `Public = true`, focusing on when it is truly necessary.
+  
+#### d. Addressing Unstable Command Handling
+- **Section**: Managing Instabilities
+- **Change**: Provide guidance on how to manage and respond to warnings during command execution.
 
 ### 3. Priority
-- **High Impact Fixes**: 
-  1. Table Naming Conventions (most immediate to fix widespread errors).
-  2. Timeout Handling Guidance (to improve performance and reliability in operations).
+- **High**: Adjustments on struct field access and consistent naming conventions.
+- **Medium**: Cleanup on redundant modifiers and reasserting proper access control.
+- **Low**: Instructions on managing unstable commands.
 
---- 
-
-This structured approach will help improve the accessibility and clarity of the SpacetimeDB documentation, directly addressing the root causes of current benchmark test failures.
+With these changes, we expect a decrease in benchmark test failures and enhanced reliability in user implementations.
