@@ -72,7 +72,7 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
             label.hash(&mut hasher);
             attempt.hash(&mut hasher);
             std::process::id().hash(&mut hasher);
-            let jitter_ms = (hasher.finish() % 2000) as u64; // 0-2 seconds of jitter
+            let jitter_ms = hasher.finish() % 2000; // 0-2 seconds of jitter
             std::thread::sleep(std::time::Duration::from_millis(1000 + jitter_ms));
         }
 
