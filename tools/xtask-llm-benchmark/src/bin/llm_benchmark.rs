@@ -317,6 +317,9 @@ fn cmd_ci_check(args: CiCheckArgs) -> Result<()> {
             Lang::CSharp => {
                 checks.push((Lang::CSharp, "docs"));
             }
+            Lang::TypeScript => {
+                checks.push((Lang::TypeScript, "docs"));
+            }
         }
     }
 

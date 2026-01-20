@@ -209,3 +209,55 @@ impl Publisher for SpacetimeRustPublisher {
         Ok(())
     }
 }
+
+/* -------------------------------------------------------------------------- */
+/* TypeScript Publisher                                                       */
+/* -------------------------------------------------------------------------- */
+
+#[derive(Clone, Copy)]
+pub struct TypeScriptPublisher;
+
+impl TypeScriptPublisher {
+    fn ensure_package_json(root: &Path) -> Result<()> {
+        if !root.join("package.json").exists() {
+            bail!("no package.json in {}", root.display());
+        }
+        Ok(())
+    }
+}
+
+impl Publisher for TypeScriptPublisher {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+        if !source.exists() {
+            bail!("no source: {}", source.display());
+        }
+        println!("publish typescript module {}", module_name);
+
+        Self::ensure_package_json(source)?;
+        let db = sanitize_db_name(module_name);
+
+        // Install dependencies (--ignore-workspace to avoid parent workspace interference)
+        run(
+            Command::new("pnpm")
+                .arg("install")
+                .arg("--ignore-workspace")
+                .current_dir(source),
+            "pnpm install (typescript)",
+        )?;
+
+        // Publish (spacetime CLI handles TypeScript compilation internally)
+        run(
+            Command::new("spacetime")
+                .arg("publish")
+                .arg("-c")
+                .arg("-y")
+                .arg("--server")
+                .arg(host_url)
+                .arg(&db)
+                .current_dir(source),
+            "spacetime publish (typescript)",
+        )?;
+
+        Ok(())
+    }
+}
