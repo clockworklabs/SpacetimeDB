@@ -312,7 +312,7 @@ unicode-normalization = "0.1.23"
 url = "2.3.1"
 urlencoding = "2.1.2"
 uuid = { version = "1.18.1", default-features = false }
-v8 = "140.2"
+v8 = "145"
 walkdir = "2.2.5"
 wasmbin = "0.6"
 webbrowser = "1.0.2"
@@ -368,14 +368,6 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
 [workspace.lints.clippy]
 # FIXME: we should work on this lint incrementally
 result_large_err = "allow"
-
-[patch.crates-io]
-# Note(bfops): We require this override because temporal_rs (pulled via core->v8->ry_temporal_capi)
-# depends on timezone_provider using a `~` which allows a roll-forward to an incompatible version.
-# Maybe this will no longer be an issue if we bump v8 to a version that depends on a post-0.1
-# version of temporal_rs, but I'm not holding my breath.
-timezone_provider = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
-temporal_rs = { git = "https://github.com/boa-dev/temporal", tag = "v0.0.11" }
 
 [workspace.metadata]
 # This silences a warning in our Nix flake, which otherwise would be upset that our call to `crateNameFromCargoToml`
