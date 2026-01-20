@@ -7,14 +7,151 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-The subscription API allows a client to replicate a subset of a database.
-It does so by registering SQL queries, which we call subscriptions, through a database connection.
-A client will only receive updates for rows that match the subscriptions it has registered.
+Subscriptions replicate database rows to your client in real-time. When you subscribe to a query, SpacetimeDB sends you the matching rows immediately and then pushes updates whenever those rows change.
 
-For more information on syntax and requirements see the [SQL docs](/reference/sql#subscriptions).
+## Quick Start
 
-This guide describes the two main interfaces that comprise the API - `SubscriptionBuilder` and `SubscriptionHandle`.
-By using these interfaces, you can create efficient and responsive client applications that only receive the data they need.
+Here's a complete example showing how to subscribe to data and react to changes:
+
+<Tabs groupId="client-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+import { DbConnection, User, Message } from './module_bindings';
+
+// Connect to the database
+const conn = DbConnection.builder()
+  .withUri('wss://maincloud.spacetimedb.com')
+  .withModuleName('my_module')
+  .onConnect((ctx) => {
+    // Subscribe to users and messages
+    ctx.subscriptionBuilder()
+      .onApplied(() => {
+        console.log('Subscription ready!');
+        // Initial data is now in the client cache
+        for (const user of ctx.db.user.iter()) {
+          console.log(`User: ${user.name}`);
+        }
+      })
+      .subscribe(['SELECT * FROM user', 'SELECT * FROM message']);
+  })
+  .build();
+
+// React to new rows being inserted
+conn.db.user.onInsert((ctx, user) => {
+  console.log(`New user joined: ${user.name}`);
+});
+
+// React to rows being deleted
+conn.db.user.onDelete((ctx, user) => {
+  console.log(`User left: ${user.name}`);
+});
+
+// React to rows being updated
+conn.db.user.onUpdate((ctx, oldUser, newUser) => {
+  console.log(`${oldUser.name} changed name to ${newUser.name}`);
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+// Connect to the database
+var conn = DbConnection.Builder()
+    .WithUri("wss://maincloud.spacetimedb.com")
+    .WithModuleName("my_module")
+    .OnConnect((ctx) =>
+    {
+        // Subscribe to users and messages
+        ctx.SubscriptionBuilder()
+            .OnApplied(() =>
+            {
+                Console.WriteLine("Subscription ready!");
+                // Initial data is now in the client cache
+                foreach (var user in ctx.Db.User.Iter())
+                {
+                    Console.WriteLine($"User: {user.Name}");
+                }
+            })
+            .Subscribe(new[] { "SELECT * FROM user", "SELECT * FROM message" });
+    })
+    .Build();
+
+// React to new rows being inserted
+conn.Db.User.OnInsert += (ctx, user) =>
+{
+    Console.WriteLine($"New user joined: {user.Name}");
+};
+
+// React to rows being deleted
+conn.Db.User.OnDelete += (ctx, user) =>
+{
+    Console.WriteLine($"User left: {user.Name}");
+};
+
+// React to rows being updated
+conn.Db.User.OnUpdate += (ctx, oldUser, newUser) =>
+{
+    Console.WriteLine($"{oldUser.Name} changed name to {newUser.Name}");
+};
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+// Connect to the database
+let conn = DbConnection::builder()
+    .with_uri("wss://maincloud.spacetimedb.com")
+    .with_module_name("my_module")
+    .on_connect(|ctx| {
+        // Subscribe to users and messages
+        ctx.subscription_builder()
+            .on_applied(|ctx| {
+                println!("Subscription ready!");
+                // Initial data is now in the client cache
+                for user in ctx.db.user().iter() {
+                    println!("User: {}", user.name);
+                }
+            })
+            .subscribe(["SELECT * FROM user", "SELECT * FROM message"]);
+    })
+    .build();
+
+// React to new rows being inserted
+conn.db().user().on_insert(|ctx, user| {
+    println!("New user joined: {}", user.name);
+});
+
+// React to rows being deleted
+conn.db().user().on_delete(|ctx, user| {
+    println!("User left: {}", user.name);
+});
+
+// React to rows being updated
+conn.db().user().on_update(|ctx, old_user, new_user| {
+    println!("{} changed name to {}", old_user.name, new_user.name);
+});
+```
+
+</TabItem>
+</Tabs>
+
+## How Subscriptions Work
+
+1. **Subscribe**: Register SQL queries describing the data you need
+2. **Receive initial data**: SpacetimeDB sends all matching rows immediately
+3. **Receive updates**: When subscribed rows change, you get real-time updates
+4. **React to changes**: Use row callbacks (`onInsert`, `onDelete`, `onUpdate`) to handle changes
+
+The client maintains a local cache of subscribed data. Reading from the cache is instant since it's local memory.
+
+For more information on subscription SQL syntax see the [SQL docs](/reference/sql#subscriptions).
+
+## API Reference
+
+This section describes the two main interfaces: `SubscriptionBuilder` and `SubscriptionHandle`.
 
 ## SubscriptionBuilder
 
