@@ -45,13 +45,18 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         || combined.contains("EmitBundleObjectFiles")
         // Other transient resource errors
         || combined.contains("Unable to read data from the transport connection")
+        // WASI SDK tar extraction race condition - multiple parallel builds
+        // trying to extract the same tarball simultaneously
+        || (combined.contains("wasi-sdk") && combined.contains("tar"))
+        || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
-    run_with_retry(cmd, label, 2)
+    run_with_retry(cmd, label, 3)
 }
 
 fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()> {
+    use std::hash::{Hash, Hasher};
     let mut last_error = None;
 
     for attempt in 0..=max_retries {
@@ -61,7 +66,14 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
                 attempt + 1,
                 max_retries + 1
             );
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            // Add jitter to desynchronize parallel builds that fail simultaneously.
+            // Use a simple hash of the label + attempt to get pseudo-random delay.
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            label.hash(&mut hasher);
+            attempt.hash(&mut hasher);
+            std::process::id().hash(&mut hasher);
+            let jitter_ms = (hasher.finish() % 2000) as u64; // 0-2 seconds of jitter
+            std::thread::sleep(std::time::Duration::from_millis(1000 + jitter_ms));
         }
 
         eprintln!("==> {label}: {:?}", cmd);
