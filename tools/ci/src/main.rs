@@ -811,18 +811,20 @@ fn main() -> Result<()> {
                 StartServer::Yes { .. } => {
                     println!("Building SpacetimeDB..");
 
-                    // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
-                    cmd!(
-                        "cargo",
-                        "build",
-                        "-p",
-                        "spacetimedb-cli",
-                        "-p",
-                        "spacetimedb-standalone",
-                        "-p",
-                        "spacetimedb-update",
-                    )
-                    .run()?;
+                    if !no_build_cli {
+                        // Pre-build so that `cargo run -p spacetimedb-cli` will immediately start. Otherwise we risk timing out waiting for the server to come up.
+                        cmd!(
+                            "cargo",
+                            "build",
+                            "-p",
+                            "spacetimedb-cli",
+                            "-p",
+                            "spacetimedb-standalone",
+                            "-p",
+                            "spacetimedb-update",
+                        )
+                        .run()?;
+                    }
                     no_build_cli = true;
                 }
                 StartServer::Docker { compose_file } => {
