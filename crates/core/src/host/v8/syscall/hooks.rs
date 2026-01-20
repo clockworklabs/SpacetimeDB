@@ -30,8 +30,6 @@ pub(super) fn set_hook_slots(
     abi: AbiVersion,
     hooks: &[(ModuleHookKey, Local<'_, Function>)],
 ) -> ExcResult<()> {
-    // Make sure to call `set_slot` first, as it creates the annex
-    // and `set_embedder_data` is currently buggy.
     let ctx = scope.get_current_context();
     let hooks_info = HooksInfo::get_or_create(&ctx, abi)
         .map_err(|_| TypeError("cannot call `register_hooks` from different versions").throw(scope))?;
@@ -58,13 +56,11 @@ impl ModuleHookKey {
     /// The index is passed to `v8::Context::{get,set}_embedder_data`.
     fn to_slot_index(self) -> i32 {
         match self {
-            // high numbers to avoid overlapping with rusty_v8 - can be
-            // reverted to just 0, 1... once denoland/rusty_v8#1868 merges
-            ModuleHookKey::DescribeModule => 20,
-            ModuleHookKey::CallReducer => 21,
-            ModuleHookKey::CallView => 22,
-            ModuleHookKey::CallAnonymousView => 23,
-            ModuleHookKey::CallProcedure => 24,
+            ModuleHookKey::DescribeModule => 0,
+            ModuleHookKey::CallReducer => 1,
+            ModuleHookKey::CallView => 2,
+            ModuleHookKey::CallAnonymousView => 3,
+            ModuleHookKey::CallProcedure => 4,
         }
     }
 }
