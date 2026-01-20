@@ -132,6 +132,7 @@ jobs:
           cargo ci smoketests --docker .github/docker-compose.yml --parallel ${SMOKETEST_ARGS}
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
-          echo cargo ci smoketests --parallel $env:SMOKETEST_ARGS
-          cargo ci smoketests --parallel $env:SMOKETEST_ARGS
+          echo pwsh -Command "cargo ci smoketests --parallel $SMOKETEST_ARGS"
+          pwsh -Command "\"cargo ci smoketests --parallel $SMOKETEST_ARGS\""
