@@ -229,7 +229,7 @@ ctx.db.reminder().insert(Reminder {
 
 ## How It Works
 
-1. **Insert a row** with a `ScheduleAt` time
+1. **Insert a row** with a `ScheduleAt` value
 2. **SpacetimeDB monitors** the schedule table
 3. **When the time arrives**, the specified reducer/procedure is automatically called with the row as a parameter
 4. **The row is typically deleted** or updated by the reducer after processing
