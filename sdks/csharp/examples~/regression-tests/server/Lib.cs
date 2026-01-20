@@ -139,6 +139,16 @@ public static partial class Module
         public DbVector2? Pos;
     }
 
+    [SpacetimeDB.Table(Name = "nullable_indexed", Public = true)]
+    public partial struct NullableIndexed
+    {
+        [SpacetimeDB.PrimaryKey]
+        public uint Id;
+
+        [SpacetimeDB.Index.BTree]
+        public string? Name;
+    }
+
     [SpacetimeDB.Table(Name = "null_string_nonnullable", Public = true)]
     public partial struct NullStringNonNullable
     {

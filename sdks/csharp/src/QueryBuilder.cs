@@ -22,6 +22,8 @@ namespace SpacetimeDB
         public override string ToString() => Sql;
     }
 
+    public readonly struct JoinRow<TLeftRow, TRightRow> { }
+
     /// <summary>
     /// Factory methods for producing <see cref="SqlLiteral{T}"/> values.
     /// Centralizing literal formatting keeps the typed query builder safe and consistent
@@ -78,6 +80,18 @@ namespace SpacetimeDB
         public override string ToString() => Sql;
     }
 
+    public readonly struct IxJoinEq<TLeftRow, TRightRow>
+    {
+        internal string LeftRefSql { get; }
+        internal string RightRefSql { get; }
+
+        internal IxJoinEq(string leftRefSql, string rightRefSql)
+        {
+            LeftRefSql = leftRefSql;
+            RightRefSql = rightRefSql;
+        }
+    }
+
     public readonly struct Col<TRow, TValue>
         where TValue : notnull
     {
@@ -94,12 +108,26 @@ namespace SpacetimeDB
 
         public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
 
+        public BoolExpr<TRow> Eq(Col<TRow, TValue> other) => new($"{RefSql} = {other.RefSql}");
+
         public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
+
+        public BoolExpr<TRow> Neq(Col<TRow, TValue> other) => new($"{RefSql} <> {other.RefSql}");
 
         public BoolExpr<TRow> Lt(SqlLiteral<TValue> value) => new($"{RefSql} < {value.Sql}");
         public BoolExpr<TRow> Lte(SqlLiteral<TValue> value) => new($"{RefSql} <= {value.Sql}");
         public BoolExpr<TRow> Gt(SqlLiteral<TValue> value) => new($"{RefSql} > {value.Sql}");
         public BoolExpr<TRow> Gte(SqlLiteral<TValue> value) => new($"{RefSql} >= {value.Sql}");
+
+        public BoolExpr<TRow> Lt(NullableCol<TRow, TValue> other) => new($"{RefSql} < {other.RefSql}");
+        public BoolExpr<TRow> Lte(NullableCol<TRow, TValue> other) => new($"{RefSql} <= {other.RefSql}");
+        public BoolExpr<TRow> Gt(NullableCol<TRow, TValue> other) => new($"{RefSql} > {other.RefSql}");
+        public BoolExpr<TRow> Gte(NullableCol<TRow, TValue> other) => new($"{RefSql} >= {other.RefSql}");
+
+        public BoolExpr<TRow> Lt(Col<TRow, TValue> other) => new($"{RefSql} < {other.RefSql}");
+        public BoolExpr<TRow> Lte(Col<TRow, TValue> other) => new($"{RefSql} <= {other.RefSql}");
+        public BoolExpr<TRow> Gt(Col<TRow, TValue> other) => new($"{RefSql} > {other.RefSql}");
+        public BoolExpr<TRow> Gte(Col<TRow, TValue> other) => new($"{RefSql} >= {other.RefSql}");
 
         public override string ToString() => RefSql;
     }
@@ -120,12 +148,21 @@ namespace SpacetimeDB
 
         public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
 
+        public BoolExpr<TRow> Eq(NullableCol<TRow, TValue> other) => new($"{RefSql} = {other.RefSql}");
+
         public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
+
+        public BoolExpr<TRow> Neq(NullableCol<TRow, TValue> other) => new($"{RefSql} <> {other.RefSql}");
 
         public BoolExpr<TRow> Lt(SqlLiteral<TValue> value) => new($"{RefSql} < {value.Sql}");
         public BoolExpr<TRow> Lte(SqlLiteral<TValue> value) => new($"{RefSql} <= {value.Sql}");
         public BoolExpr<TRow> Gt(SqlLiteral<TValue> value) => new($"{RefSql} > {value.Sql}");
         public BoolExpr<TRow> Gte(SqlLiteral<TValue> value) => new($"{RefSql} >= {value.Sql}");
+
+        public BoolExpr<TRow> Lt(NullableCol<TRow, TValue> other) => new($"{RefSql} < {other.RefSql}");
+        public BoolExpr<TRow> Lte(NullableCol<TRow, TValue> other) => new($"{RefSql} <= {other.RefSql}");
+        public BoolExpr<TRow> Gt(NullableCol<TRow, TValue> other) => new($"{RefSql} > {other.RefSql}");
+        public BoolExpr<TRow> Gte(NullableCol<TRow, TValue> other) => new($"{RefSql} >= {other.RefSql}");
 
         public override string ToString() => RefSql;
     }
@@ -145,6 +182,9 @@ namespace SpacetimeDB
         internal string RefSql => $"{SqlFormat.QuoteIdent(tableName)}.{SqlFormat.QuoteIdent(columnName)}";
 
         public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
+
+        public IxJoinEq<TRow, TOtherRow> Eq<TOtherRow>(IxCol<TOtherRow, TValue> other) =>
+            new(RefSql, other.RefSql);
 
         public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
 
@@ -167,6 +207,9 @@ namespace SpacetimeDB
 
         public BoolExpr<TRow> Eq(SqlLiteral<TValue> value) => new($"{RefSql} = {value.Sql}");
 
+        public IxJoinEq<TRow, TOtherRow> Eq<TOtherRow>(NullableIxCol<TOtherRow, TValue> other) =>
+            new(RefSql, other.RefSql);
+
         public BoolExpr<TRow> Neq(SqlLiteral<TValue> value) => new($"{RefSql} <> {value.Sql}");
 
         public override string ToString() => RefSql;
@@ -176,23 +219,388 @@ namespace SpacetimeDB
     {
         private readonly string tableName;
 
-        public TCols Cols { get; }
-        public TIxCols IxCols { get; }
+        private readonly TCols cols;
+        private readonly TIxCols ixCols;
 
         public Table(string tableName, TCols cols, TIxCols ixCols)
         {
             this.tableName = tableName;
-            Cols = cols;
-            IxCols = ixCols;
+            this.cols = cols;
+            this.ixCols = ixCols;
         }
+
+        internal string TableRefSql => SqlFormat.QuoteIdent(tableName);
+
+        internal TCols Cols => cols;
+
+        internal TIxCols IxCols => ixCols;
 
         public string ToSql() => $"SELECT * FROM {SqlFormat.QuoteIdent(tableName)}";
 
         public Query<TRow> Build() => new(ToSql());
 
-        public Query<TRow> Where(Func<TCols, BoolExpr<TRow>> predicate) => Where(predicate(Cols));
+        public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, BoolExpr<TRow>> predicate) =>
+            new(this, predicate(cols));
 
-        public Query<TRow> Where(BoolExpr<TRow> predicate) => new($"{ToSql()} WHERE {predicate.Sql}");
+        public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
+            new(this, predicate(cols, ixCols));
+
+        public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, BoolExpr<TRow>> predicate) => Where(predicate);
+
+        public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) => Where(predicate);
+
+        public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
+            TRightRow,
+            TRightCols,
+            TRightIxCols
+        >(
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
+        )
+            => new(this, right, on(ixCols, right.ixCols), whereExpr: null);
+
+        public RightSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> RightSemijoin<
+            TRightRow,
+            TRightCols,
+            TRightIxCols
+        >(
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
+        )
+            => new(this, right, on(ixCols, right.ixCols), leftWhereExpr: null);
+
+        public Join<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> Join<TRightRow, TRightCols, TRightIxCols>(
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
+        )
+            => new(this, right, on(ixCols, right.ixCols), leftWhereExpr: null, rightWhereExpr: null);
+    }
+
+    public sealed class FromWhere<TRow, TCols, TIxCols>
+    {
+        private readonly Table<TRow, TCols, TIxCols> table;
+        private readonly BoolExpr<TRow> expr;
+
+        internal FromWhere(Table<TRow, TCols, TIxCols> table, BoolExpr<TRow> expr)
+        {
+            this.table = table;
+            this.expr = expr;
+        }
+
+        public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, BoolExpr<TRow>> predicate) =>
+            new(table, expr.And(predicate(table.Cols)));
+
+        public FromWhere<TRow, TCols, TIxCols> Where(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) =>
+            new(table, expr.And(predicate(table.Cols, table.IxCols)));
+
+        public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, BoolExpr<TRow>> predicate) => Where(predicate);
+
+        public FromWhere<TRow, TCols, TIxCols> Filter(Func<TCols, TIxCols, BoolExpr<TRow>> predicate) => Where(predicate);
+
+        public Query<TRow> Build() => new($"{table.ToSql()} WHERE {expr.Sql}");
+
+        public LeftSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> LeftSemijoin<
+            TRightRow,
+            TRightCols,
+            TRightIxCols
+        >(
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
+        )
+            => new(table, right, on(table.IxCols, right.IxCols), expr);
+
+        public RightSemiJoin<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> RightSemijoin<
+            TRightRow,
+            TRightCols,
+            TRightIxCols
+        >(
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
+        )
+            => new(table, right, on(table.IxCols, right.IxCols), expr);
+
+        public Join<TRow, TCols, TIxCols, TRightRow, TRightCols, TRightIxCols> Join<TRightRow, TRightCols, TRightIxCols>(
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            Func<TIxCols, TRightIxCols, IxJoinEq<TRow, TRightRow>> on
+        )
+            => new(table, right, on(table.IxCols, right.IxCols), leftWhereExpr: expr, rightWhereExpr: null);
+    }
+
+    public sealed class Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>
+    {
+        private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
+        private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
+        private readonly string leftJoinRefSql;
+        private readonly string rightJoinRefSql;
+        private readonly BoolExpr<TLeftRow>? leftWhereExpr;
+        private readonly BoolExpr<TRightRow>? rightWhereExpr;
+
+        internal Join(
+            Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            IxJoinEq<TLeftRow, TRightRow> join,
+            BoolExpr<TLeftRow>? leftWhereExpr,
+            BoolExpr<TRightRow>? rightWhereExpr
+        )
+        {
+            this.left = left;
+            this.right = right;
+            leftJoinRefSql = join.LeftRefSql;
+            rightJoinRefSql = join.RightRefSql;
+            this.leftWhereExpr = leftWhereExpr;
+            this.rightWhereExpr = rightWhereExpr;
+        }
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> WhereLeft(
+            Func<TLeftCols, BoolExpr<TLeftRow>> predicate
+        )
+        {
+            var extra = predicate(left.Cols);
+            BoolExpr<TLeftRow>? nextLeft = leftWhereExpr.HasValue ? leftWhereExpr.Value.And(extra) : extra;
+            return new(
+                left,
+                right,
+                new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql),
+                nextLeft,
+                rightWhereExpr
+            );
+        }
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> WhereLeft(
+            Func<TLeftCols, TLeftIxCols, BoolExpr<TLeftRow>> predicate
+        )
+        {
+            var extra = predicate(left.Cols, left.IxCols);
+            BoolExpr<TLeftRow>? nextLeft = leftWhereExpr.HasValue ? leftWhereExpr.Value.And(extra) : extra;
+            return new(
+                left,
+                right,
+                new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql),
+                nextLeft,
+                rightWhereExpr
+            );
+        }
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> FilterLeft(
+            Func<TLeftCols, BoolExpr<TLeftRow>> predicate
+        ) => WhereLeft(predicate);
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> FilterLeft(
+            Func<TLeftCols, TLeftIxCols, BoolExpr<TLeftRow>> predicate
+        ) => WhereLeft(predicate);
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> WhereRight(
+            Func<TRightCols, BoolExpr<TRightRow>> predicate
+        )
+        {
+            var extra = predicate(right.Cols);
+            BoolExpr<TRightRow>? nextRight = rightWhereExpr.HasValue ? rightWhereExpr.Value.And(extra) : extra;
+            return new(
+                left,
+                right,
+                new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql),
+                leftWhereExpr,
+                nextRight
+            );
+        }
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> WhereRight(
+            Func<TRightCols, TRightIxCols, BoolExpr<TRightRow>> predicate
+        )
+        {
+            var extra = predicate(right.Cols, right.IxCols);
+            BoolExpr<TRightRow>? nextRight = rightWhereExpr.HasValue ? rightWhereExpr.Value.And(extra) : extra;
+            return new(
+                left,
+                right,
+                new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql),
+                leftWhereExpr,
+                nextRight
+            );
+        }
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> FilterRight(
+            Func<TRightCols, BoolExpr<TRightRow>> predicate
+        ) => WhereRight(predicate);
+
+        public Join<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> FilterRight(
+            Func<TRightCols, TRightIxCols, BoolExpr<TRightRow>> predicate
+        ) => WhereRight(predicate);
+
+        public Query<JoinRow<TLeftRow, TRightRow>> Build()
+        {
+            var whereClause = string.Empty;
+
+            if (leftWhereExpr.HasValue && rightWhereExpr.HasValue)
+            {
+                whereClause = $" WHERE {leftWhereExpr.Value.Sql} AND {rightWhereExpr.Value.Sql}";
+            }
+            else if (leftWhereExpr.HasValue)
+            {
+                whereClause = $" WHERE {leftWhereExpr.Value.Sql}";
+            }
+            else if (rightWhereExpr.HasValue)
+            {
+                whereClause = $" WHERE {rightWhereExpr.Value.Sql}";
+            }
+
+            return new(
+                $"SELECT * FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}"
+            );
+        }
+    }
+
+    public sealed class LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>
+    {
+        private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
+        private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
+        private readonly string leftJoinRefSql;
+        private readonly string rightJoinRefSql;
+        private readonly BoolExpr<TLeftRow>? whereExpr;
+
+        internal LeftSemiJoin(
+            Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            IxJoinEq<TLeftRow, TRightRow> join,
+            BoolExpr<TLeftRow>? whereExpr
+        )
+        {
+            this.left = left;
+            this.right = right;
+            leftJoinRefSql = join.LeftRefSql;
+            rightJoinRefSql = join.RightRefSql;
+            this.whereExpr = whereExpr;
+        }
+
+        public LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Where(
+            Func<TLeftCols, BoolExpr<TLeftRow>> predicate
+        )
+        {
+            var extra = predicate(left.Cols);
+            BoolExpr<TLeftRow>? next = whereExpr.HasValue ? whereExpr.Value.And(extra) : extra;
+            return new(left, right, new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql), next);
+        }
+
+        public LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Where(
+            Func<TLeftCols, TLeftIxCols, BoolExpr<TLeftRow>> predicate
+        )
+        {
+            var extra = predicate(left.Cols, left.IxCols);
+            BoolExpr<TLeftRow>? next = whereExpr.HasValue ? whereExpr.Value.And(extra) : extra;
+            return new(left, right, new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql), next);
+        }
+
+        public LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Filter(
+            Func<TLeftCols, BoolExpr<TLeftRow>> predicate
+        ) => Where(predicate);
+
+        public LeftSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Filter(
+            Func<TLeftCols, TLeftIxCols, BoolExpr<TLeftRow>> predicate
+        ) => Where(predicate);
+
+        public Query<TLeftRow> Build()
+        {
+            var whereClause = whereExpr.HasValue ? $" WHERE {whereExpr.Value.Sql}" : string.Empty;
+            return new(
+                $"SELECT {left.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}"
+            );
+        }
+    }
+
+    public sealed class RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols>
+    {
+        private readonly Table<TLeftRow, TLeftCols, TLeftIxCols> left;
+        private readonly Table<TRightRow, TRightCols, TRightIxCols> right;
+        private readonly string leftJoinRefSql;
+        private readonly string rightJoinRefSql;
+        private readonly BoolExpr<TLeftRow>? leftWhereExpr;
+        private readonly BoolExpr<TRightRow>? rightWhereExpr;
+
+        internal RightSemiJoin(
+            Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            IxJoinEq<TLeftRow, TRightRow> join,
+            BoolExpr<TLeftRow>? leftWhereExpr,
+            BoolExpr<TRightRow>? rightWhereExpr
+        )
+        {
+            this.left = left;
+            this.right = right;
+            leftJoinRefSql = join.LeftRefSql;
+            rightJoinRefSql = join.RightRefSql;
+            this.leftWhereExpr = leftWhereExpr;
+            this.rightWhereExpr = rightWhereExpr;
+        }
+
+        internal RightSemiJoin(
+            Table<TLeftRow, TLeftCols, TLeftIxCols> left,
+            Table<TRightRow, TRightCols, TRightIxCols> right,
+            IxJoinEq<TLeftRow, TRightRow> join,
+            BoolExpr<TLeftRow>? leftWhereExpr
+        )
+            : this(left, right, join, leftWhereExpr, rightWhereExpr: null)
+        {
+        }
+
+        public RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Where(
+            Func<TRightCols, BoolExpr<TRightRow>> predicate
+        )
+        {
+            var extra = predicate(right.Cols);
+            BoolExpr<TRightRow>? nextRight = rightWhereExpr.HasValue ? rightWhereExpr.Value.And(extra) : extra;
+            return new(
+                left,
+                right,
+                new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql),
+                leftWhereExpr,
+                nextRight
+            );
+        }
+
+        public RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Where(
+            Func<TRightCols, TRightIxCols, BoolExpr<TRightRow>> predicate
+        )
+        {
+            var extra = predicate(right.Cols, right.IxCols);
+            BoolExpr<TRightRow>? nextRight = rightWhereExpr.HasValue ? rightWhereExpr.Value.And(extra) : extra;
+            return new(
+                left,
+                right,
+                new IxJoinEq<TLeftRow, TRightRow>(leftJoinRefSql, rightJoinRefSql),
+                leftWhereExpr,
+                nextRight
+            );
+        }
+
+        public RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Filter(
+            Func<TRightCols, BoolExpr<TRightRow>> predicate
+        ) => Where(predicate);
+
+        public RightSemiJoin<TLeftRow, TLeftCols, TLeftIxCols, TRightRow, TRightCols, TRightIxCols> Filter(
+            Func<TRightCols, TRightIxCols, BoolExpr<TRightRow>> predicate
+        ) => Where(predicate);
+
+        public Query<TRightRow> Build()
+        {
+            var whereClause = string.Empty;
+
+            if (leftWhereExpr.HasValue && rightWhereExpr.HasValue)
+            {
+                whereClause = $" WHERE {leftWhereExpr.Value.Sql} AND {rightWhereExpr.Value.Sql}";
+            }
+            else if (leftWhereExpr.HasValue)
+            {
+                whereClause = $" WHERE {leftWhereExpr.Value.Sql}";
+            }
+            else if (rightWhereExpr.HasValue)
+            {
+                whereClause = $" WHERE {rightWhereExpr.Value.Sql}";
+            }
+
+            return new(
+                $"SELECT {right.TableRefSql}.* FROM {left.TableRefSql} JOIN {right.TableRefSql} ON {leftJoinRefSql} = {rightJoinRefSql}{whereClause}"
+            );
+        }
     }
 
     /// <summary>

@@ -71,7 +71,7 @@ void OnConnected(DbConnection conn, Identity identity, string authToken)
         .AddQuery(qb => qb.From.MyLog().Build())
         .AddQuery(qb => qb.From.Admins().Build())
         .AddQuery(qb => qb.From.NullableVecView().Build())
-        .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)))
+        .AddQuery(qb => qb.From.WhereTest().Where(c => c.Value.Gt(10)).Build())
         .Subscribe();
 
     // If testing against Rust, the indexed parameter will need to be changed to: ulong indexed

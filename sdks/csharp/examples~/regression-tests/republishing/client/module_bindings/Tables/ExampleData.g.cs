@@ -56,7 +56,7 @@ namespace SpacetimeDB.Types
         public global::SpacetimeDB.Col<ExampleData, float> DefaultF32 { get; }
         public global::SpacetimeDB.Col<ExampleData, double> DefaultF64 { get; }
         public global::SpacetimeDB.Col<ExampleData, MyEnum> DefaultEnum { get; }
-        public global::SpacetimeDB.Col<ExampleData, MyStruct> DefaultNull { get; }
+        public global::SpacetimeDB.NullableCol<ExampleData, MyStruct> DefaultNull { get; }
 
         public ExampleDataCols(string tableName)
         {
@@ -77,7 +77,7 @@ namespace SpacetimeDB.Types
             DefaultF32 = new global::SpacetimeDB.Col<ExampleData, float>(tableName, "DefaultF32");
             DefaultF64 = new global::SpacetimeDB.Col<ExampleData, double>(tableName, "DefaultF64");
             DefaultEnum = new global::SpacetimeDB.Col<ExampleData, MyEnum>(tableName, "DefaultEnum");
-            DefaultNull = new global::SpacetimeDB.Col<ExampleData, MyStruct>(tableName, "DefaultNull");
+            DefaultNull = new global::SpacetimeDB.NullableCol<ExampleData, MyStruct>(tableName, "DefaultNull");
         }
     }
 

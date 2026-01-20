@@ -610,10 +610,35 @@ impl Lang for Csharp<'_> {
                         (csharp_field_name_pascal, csharp_field_type)
                     };
 
-                    let (row_to_key, key_type) = match columns.as_singleton() {
+                    enum NullableKeyKind {
+                        Ref,
+                        Value,
+                    }
+
+                    let is_csharp_ref_type = |ty: &AlgebraicTypeUse| match ty {
+                        AlgebraicTypeUse::String | AlgebraicTypeUse::Array(_) | AlgebraicTypeUse::Ref(_) => true,
+                        _ => false,
+                    };
+
+                    let (row_to_key, key_type, nullable_key_kind) = match columns.as_singleton() {
                         Some(col_pos) => {
-                            let (field_name, field_type) = get_csharp_field_name_and_type(col_pos);
-                            (format!("row.{field_name}"), field_type.to_string())
+                            let (field_name, field_type) = &product_type.elements[col_pos.idx()];
+                            let field_name_pascal = field_name.deref().to_case(Case::Pascal);
+                            match field_type {
+                                AlgebraicTypeUse::Option(inner) => {
+                                    let key_type = ty_fmt(module, inner).to_string();
+                                    let kind = if is_csharp_ref_type(inner) {
+                                        NullableKeyKind::Ref
+                                    } else {
+                                        NullableKeyKind::Value
+                                    };
+                                    (format!("row.{field_name_pascal}"), key_type, Some(kind))
+                                }
+                                _ => {
+                                    let key_type = ty_fmt(module, field_type).to_string();
+                                    (format!("row.{field_name_pascal}"), key_type, None)
+                                }
+                            }
                         }
                         None => {
                             let mut key_accessors = Vec::new();
@@ -622,22 +647,28 @@ impl Lang for Csharp<'_> {
                                 key_accessors.push(format!("row.{field_name}"));
                                 key_type_elems.push(format!("{field_type} {field_name}"));
                             }
-                            (
-                                format!("({})", key_accessors.join(", ")),
-                                format!("({})", key_type_elems.join(", ")),
-                            )
+                            let key_type = format!("({})", key_type_elems.join(", "));
+                            (format!("({})", key_accessors.join(", ")), key_type, None)
                         }
                     };
 
                     let csharp_index_name = accessor_name.deref().to_case(Case::Pascal);
 
                     let mut csharp_index_class_name = csharp_index_name.clone();
-                    let csharp_index_base_class_name = if schema.is_unique(&columns) {
+                    let (csharp_index_base_class_name, get_key_return_type) = if schema.is_unique(&columns) {
                         csharp_index_class_name += "UniqueIndex";
-                        "UniqueIndexBase"
+                        match nullable_key_kind {
+                            Some(NullableKeyKind::Ref) => ("NullableRefUniqueIndexBase", format!("{key_type}?")),
+                            Some(NullableKeyKind::Value) => ("NullableValueUniqueIndexBase", format!("{key_type}?")),
+                            None => ("UniqueIndexBase", key_type.clone()),
+                        }
                     } else {
                         csharp_index_class_name += "Index";
-                        "BTreeIndexBase"
+                        match nullable_key_kind {
+                            Some(NullableKeyKind::Ref) => ("NullableRefBTreeIndexBase", format!("{key_type}?")),
+                            Some(NullableKeyKind::Value) => ("NullableValueBTreeIndexBase", format!("{key_type}?")),
+                            None => ("BTreeIndexBase", key_type.clone()),
+                        }
                     };
 
                     writeln!(
@@ -647,7 +678,7 @@ impl Lang for Csharp<'_> {
                     indented_block(output, |output| {
                         writeln!(
                             output,
-                            "protected override {key_type} GetKey({table_type} row) => {row_to_key};"
+                            "protected override {get_key_return_type} GetKey({table_type} row) => {row_to_key};"
                         );
                         writeln!(output);
                         writeln!(
@@ -708,7 +739,7 @@ impl Lang for Csharp<'_> {
             for (field_name, field_type) in &product_type.elements {
                 let prop = field_name.deref().to_case(Case::Pascal);
                 let (col_ty, ty) = match field_type {
-                    AlgebraicTypeUse::Option(inner) => ("Col", ty_fmt(module, inner).to_string()),
+                    AlgebraicTypeUse::Option(inner) => ("NullableCol", ty_fmt(module, inner).to_string()),
                     _ => ("Col", ty_fmt(module, field_type).to_string()),
                 };
                 writeln!(
@@ -722,7 +753,7 @@ impl Lang for Csharp<'_> {
                 for (field_name, field_type) in &product_type.elements {
                     let prop = field_name.deref().to_case(Case::Pascal);
                     let (col_ty, ty) = match field_type {
-                        AlgebraicTypeUse::Option(inner) => ("Col", ty_fmt(module, inner).to_string()),
+                        AlgebraicTypeUse::Option(inner) => ("NullableCol", ty_fmt(module, inner).to_string()),
                         _ => ("Col", ty_fmt(module, field_type).to_string()),
                     };
                     let col_name = field_name.deref();
@@ -743,7 +774,7 @@ impl Lang for Csharp<'_> {
                 }
                 let prop = field_name.deref().to_case(Case::Pascal);
                 let (col_ty, ty) = match field_type {
-                    AlgebraicTypeUse::Option(inner) => ("IxCol", ty_fmt(module, inner).to_string()),
+                    AlgebraicTypeUse::Option(inner) => ("NullableIxCol", ty_fmt(module, inner).to_string()),
                     _ => ("IxCol", ty_fmt(module, field_type).to_string()),
                 };
                 writeln!(
@@ -760,7 +791,7 @@ impl Lang for Csharp<'_> {
                     }
                     let prop = field_name.deref().to_case(Case::Pascal);
                     let (col_ty, ty) = match field_type {
-                        AlgebraicTypeUse::Option(inner) => ("IxCol", ty_fmt(module, inner).to_string()),
+                        AlgebraicTypeUse::Option(inner) => ("NullableIxCol", ty_fmt(module, inner).to_string()),
                         _ => ("IxCol", ty_fmt(module, field_type).to_string()),
                     };
                     let col_name = field_name.deref();
