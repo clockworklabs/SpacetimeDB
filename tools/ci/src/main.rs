@@ -656,33 +656,28 @@ fn run_smoketests_parallel(
 
         handles.push((
             batch.clone(),
-            std::thread::spawn(move || {
-                let (captured, result) = run_smoketests_batch_captured(start_server_clone, &batch_args, &python);
-
-                with_print_lock(|| {
-                    println!("===== smoketests batch: {batch} =====");
-                    print!("{captured}");
-                    if let Err(e) = &result {
-                        println!("(batch failed) {e:?}");
-                    }
-                    println!("===== end smoketests batch: {batch} =====");
-                });
-
-                result
-            }),
+            std::thread::spawn(move || run_smoketests_batch_captured(start_server_clone, &batch_args, &python)),
         ));
     }
 
     let mut failed_batches = vec![];
     for (batch, handle) in handles {
         // If the thread panicked or the batch failed, treat it as a failure.
-        let result = handle
-            .join()
-            .unwrap_or_else(|_| Err(anyhow::anyhow!("smoketest batch thread panicked",)));
-        if let Err(e) = result {
-            println!("Smoketest batch {batch} failed: {e:?}");
-            failed_batches.push(batch);
-        }
+        let (captured, result) = match handle.join() {
+            Ok((captured, result)) => (Some(captured), result),
+            Err(e) => (None, Err(anyhow::anyhow!("{:?}", e))),
+        };
+        with_print_lock(|| {
+            println!("===== smoketests batch: {batch} =====");
+            if let Some(captured) = captured {
+                print!("{captured}");
+            }
+            if let Err(e) = result {
+                println!("Smoketest batch {batch} failed: {e:?}");
+                failed_batches.push(batch.clone());
+            }
+            println!("===== end smoketests batch: {batch} =====");
+        });
     }
 
     if !failed_batches.is_empty() {
