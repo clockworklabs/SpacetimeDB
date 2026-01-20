@@ -261,7 +261,7 @@ pub(super) struct JsStackTrace {
 
 impl JsStackTrace {
     /// Converts a V8 [`StackTrace`] into one independent of `'scope`.
-    pub(super) fn from_trace<'scope>(scope: &PinScope<'scope, '_>, trace: Local<'scope, StackTrace>) -> Self {
+    pub(super) fn from_trace<'scope>(scope: &mut PinScope<'scope, '_>, trace: Local<'scope, StackTrace>) -> Self {
         let frames = (0..trace.get_frame_count())
             .map(|index| {
                 let frame = trace.get_frame(scope, index).unwrap();
@@ -276,7 +276,7 @@ impl JsStackTrace {
     }
 
     /// Construct a backtrace from `scope`.
-    pub(super) fn from_current_stack_trace(scope: &PinScope<'_, '_>) -> ExcResult<Self> {
+    pub(super) fn from_current_stack_trace(scope: &mut PinScope<'_, '_>) -> ExcResult<Self> {
         let trace = StackTrace::current_stack_trace(scope, 1024).ok_or_else(exception_already_thrown)?;
         Ok(Self::from_trace(scope, trace))
     }
@@ -342,7 +342,7 @@ pub(super) struct JsStackTraceFrame {
 
 impl JsStackTraceFrame {
     /// Converts a V8 [`StackFrame`] into one independent of `'scope`.
-    fn from_frame<'scope>(scope: &PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
+    fn from_frame<'scope>(scope: &mut PinScope<'scope, '_>, frame: Local<'scope, StackFrame>) -> Self {
         let script_id = frame.get_script_id();
         let mut line = frame.get_line_number();
         let mut column = frame.get_column();
@@ -352,6 +352,21 @@ impl JsStackTraceFrame {
         let sourcemap = scope
             .get_slot()
             .and_then(|SourceMaps(maps)| maps.get(&(script_id as i32)));
+
+        let sourcemap = if let Some(sm) = sourcemap {
+            sm.as_ref()
+        } else {
+            let sourcemap = frame.get_script_source_mapping_url(scope).and_then(|source_map_url| {
+                let source_map_url = source_map_url.to_rust_string_lossy(scope);
+                if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+                    Some(sourcemap)
+                } else {
+                    None
+                }
+            });
+            let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
+            maps.entry(script_id as i32).insert(sourcemap).into_mut().as_ref()
+        };
 
         // sourcemap uses 0-based line/column numbers, while v8 uses 1-based
         if let Some(token) = sourcemap.and_then(|sm| sm.lookup_token(line as u32 - 1, column as u32 - 1)) {
@@ -437,28 +452,10 @@ impl fmt::Display for JsStackTraceFrame {
 }
 
 /// Mappings from a script id to its source map.
+///
+/// An entry with `None` indicates that there is no sourcemap for that script.
 #[derive(Default)]
-pub(super) struct SourceMaps(IntMap<i32, sourcemap::SourceMap>);
-
-pub(super) fn parse_and_insert_sourcemap(scope: &mut PinScope<'_, '_>, module: Local<'_, v8::Module>) {
-    let source_map_url = module.get_unbound_module_script(scope).get_source_mapping_url(scope);
-    let source_map_url = (!source_map_url.is_null_or_undefined()).then_some(source_map_url);
-
-    if let Some((script_id, source_map_url)) = Option::zip(module.script_id(), source_map_url) {
-        let mut source_map_url = source_map_url.to_rust_string_lossy(scope);
-        // Hacky workaround for `decode_data_url` expecting a specific string without `charset=utf-8`
-        // Can remove once <https://github.com/getsentry/rust-sourcemap/pull/137> gets into a release
-        if source_map_url.starts_with("data:application/json;charset=utf-8;base64,") {
-            let start = "data:application/json;".len();
-            let len = "charset=utf-8;".len();
-            source_map_url.replace_range(start..start + len, "");
-        }
-        if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
-            let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
-            maps.insert(script_id, sourcemap);
-        }
-    }
-}
+struct SourceMaps(IntMap<i32, Option<sourcemap::SourceMap>>);
 
 fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnce() -> T) -> &mut T {
     if isolate.get_slot::<T>().is_none() {
@@ -469,7 +466,7 @@ fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnc
 
 impl JsError {
     /// Turns a caught JS exception in `scope` into a [`JSError`].
-    fn from_caught(scope: &PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
+    fn from_caught(scope: &mut PinnedRef<'_, TryCatch<'_, '_, HandleScope<'_>>>) -> Self {
         match scope.message() {
             Some(message) => Self {
                 trace: message

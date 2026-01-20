@@ -273,7 +273,7 @@ slab = "0.4.7"
 sled = "0.34.7"
 smallvec = { version = "1.11", features = ["union", "const_generics"] }
 socket2 = "0.5"
-sourcemap = "9"
+sourcemap = "9.3.1"
 sqllogictest = "0.17"
 sqllogictest-engines = "0.17"
 sqlparser = "0.38.0"
