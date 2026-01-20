@@ -127,20 +127,20 @@ pub fn upload_avatar(
 
 Inline storage works well for:
 
-- **Small to medium files** (up to a few megabytes)
+- **Files up to ~100MB**
 - **Data that changes with other row fields** (e.g., user profile with avatar)
 - **Data requiring transactional consistency** (file updates atomic with metadata)
 - **Data clients need through subscriptions** (real-time avatar updates)
 
 ### Size Considerations
 
-Each row has practical size limits. Very large binary data affects:
+Very large binary data affects:
 
 - **Memory usage**: Rows are held in memory during reducer execution
 - **Network bandwidth**: Large rows increase subscription traffic
 - **Transaction size**: Large rows slow down transaction commits
 
-For files larger than a few megabytes, consider external storage.
+For very large files (over 100MB), consider external storage.
 
 ## External Storage with References
 
@@ -380,10 +380,13 @@ This approach provides:
 
 | Scenario | Recommended Approach |
 |----------|---------------------|
-| User avatars (< 100KB) | Inline storage |
-| Chat attachments (< 1MB) | Inline storage |
-| Document uploads (> 1MB) | External storage with reference |
+| User avatars (< 10MB) | Inline storage |
+| Chat attachments (< 50MB) | Inline storage |
+| Document uploads (< 100MB) | Inline storage |
+| Large files (> 100MB) | External storage with reference |
 | Video files | External storage with CDN |
 | Images with previews | Hybrid (inline thumbnail + external original) |
+
+SpacetimeDB storage costs approximately $1/GB compared to cheaper blob storage options like AWS S3. For large files that don't need atomic updates with other data, external storage may be more economical.
 
 The right choice depends on your file sizes, access patterns, and whether the data needs to participate in real-time subscriptions.
