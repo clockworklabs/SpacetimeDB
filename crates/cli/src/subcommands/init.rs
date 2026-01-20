@@ -10,13 +10,13 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::{fmt, fs};
 use toml_edit::{value, DocumentMut, Item};
 use xmltree::{Element, XMLNode};
 
 use crate::subcommands::login::{spacetimedb_login_force, DEFAULT_AUTH_HOST};
-use crate::subcommands::spacetime_config::SpacetimeConfig;
+use crate::subcommands::spacetime_config::{detect_client_command, PackageManager, SpacetimeConfig};
 
 mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_templates.rs"));
@@ -344,26 +344,6 @@ fn run_pm(pm: PackageManager, args: &[&str], cwd: &Path) -> std::io::Result<std:
         .status()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PackageManager {
-    Npm,
-    Pnpm,
-    Yarn,
-    Bun,
-}
-
-impl fmt::Display for PackageManager {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            PackageManager::Npm => "npm",
-            PackageManager::Pnpm => "pnpm",
-            PackageManager::Yarn => "yarn",
-            PackageManager::Bun => "bun",
-        };
-        write!(f, "{s}")
-    }
-}
-
 pub fn prompt_for_typescript_package_manager() -> anyhow::Result<Option<PackageManager>> {
     println!(
         "\n{}",
@@ -489,6 +469,16 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
     )?;
     init_from_template(&template_config, &template_config.project_path, is_server_only).await?;
 
+    // Determine package manager for TypeScript projects
+    let uses_typescript = template_config.server_lang == Some(ServerLanguage::TypeScript)
+        || template_config.client_lang == Some(ClientLanguage::TypeScript);
+
+    let package_manager = if uses_typescript && is_interactive {
+        prompt_for_typescript_package_manager()?
+    } else {
+        None
+    };
+
     if template_config.server_lang == Some(ServerLanguage::TypeScript)
         && template_config.client_lang == Some(ClientLanguage::TypeScript)
     {
@@ -496,40 +486,42 @@ pub async fn exec_init(config: &mut Config, args: &ArgMatches, is_interactive: b
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
-        let client_dir = template_config.project_path;
+        let client_dir = &template_config.project_path;
         let server_dir = client_dir.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, pm)?;
-        install_typescript_dependencies(&client_dir, pm)?;
+        install_typescript_dependencies(&server_dir, package_manager)?;
+        install_typescript_dependencies(client_dir, package_manager)?;
     } else if template_config.client_lang == Some(ClientLanguage::TypeScript) {
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
-        let client_dir = template_config.project_path;
-        install_typescript_dependencies(&client_dir, pm)?;
+        let client_dir = &template_config.project_path;
+        install_typescript_dependencies(client_dir, package_manager)?;
     } else if template_config.server_lang == Some(ServerLanguage::TypeScript) {
-        let pm = if is_interactive {
-            prompt_for_typescript_package_manager()?
-        } else {
-            None
-        };
         // NOTE: All server templates must have their server code in `spacetimedb/` directory
         // This is not a requirement in general, but is a requirement for all templates
         // i.e. `spacetime dev` is valid on non-templates.
         let server_dir = template_config.project_path.join("spacetimedb");
-        install_typescript_dependencies(&server_dir, pm)?;
+        install_typescript_dependencies(&server_dir, package_manager)?;
     }
 
     // Configure client dev command if a client is present
     if !is_server_only {
         if let Some(client_lang) = &template_config.client_lang {
-            setup_spacetime_config(&project_path, client_lang)?;
+            println!(
+                "{} Creating spacetime.json for {:?} client...",
+                "✓".green(),
+                client_lang
+            );
+            setup_spacetime_config(&project_path, client_lang, package_manager)?;
+        } else if project_path.join("package.json").exists() {
+            // Even without a client_lang, if there's a package.json with a dev script,
+            // create the config so spacetime dev can run the client
+            if let Some((detected_cmd, detected_pm)) = detect_client_command(&project_path) {
+                println!(
+                    "{} Auto-detected client command, creating spacetime.json...",
+                    "✓".green()
+                );
+                let pm = package_manager.or(detected_pm);
+                let config = SpacetimeConfig::with_dev_config(&detected_cmd, pm);
+                config.save_to_dir(&project_path)?;
+            }
         }
     }
 
@@ -1731,15 +1723,22 @@ fn strip_mdc_frontmatter(content: &str) -> &str {
     content
 }
 
-/// Set up the spacetime.toml configuration file with the client dev command.
-fn setup_spacetime_config(project_path: &Path, client_lang: &ClientLanguage) -> anyhow::Result<()> {
+/// Set up the spacetime.json configuration file with the client dev command.
+fn setup_spacetime_config(
+    project_path: &Path,
+    client_lang: &ClientLanguage,
+    package_manager: Option<PackageManager>,
+) -> anyhow::Result<()> {
     let client_command = match client_lang {
-        ClientLanguage::TypeScript => "npm run dev",
+        ClientLanguage::TypeScript => {
+            // Use the package manager's dev command if specified, otherwise default to npm
+            package_manager.map(|pm| pm.run_dev_command()).unwrap_or("npm run dev")
+        }
         ClientLanguage::Rust => "cargo run",
         ClientLanguage::Csharp => "dotnet run",
     };
 
-    let config = SpacetimeConfig::with_client_command(client_command);
+    let config = SpacetimeConfig::with_dev_config(client_command, package_manager);
     config.save_to_dir(project_path)?;
     Ok(())
 }

@@ -1,37 +1,88 @@
 //! SpacetimeDB project configuration file handling.
 //!
-//! This module handles loading and saving `spacetime.toml` configuration files.
+//! This module handles loading and saving `spacetime.json` configuration files.
 //! The config file is placed in the project root (same level as `spacetimedb/` directory).
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// The filename for configuration
-pub const CONFIG_FILENAME: &str = "spacetime.toml";
+pub const CONFIG_FILENAME: &str = "spacetime.json";
 
-/// Development mode configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DevConfig {
-    /// The command to run the client development server.
-    /// Example: "npm run dev", "pnpm dev", "cargo run"
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_command: Option<String>,
+/// Supported package managers for JavaScript/TypeScript projects
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageManager {
+    Npm,
+    Pnpm,
+    Yarn,
+    Bun,
 }
 
-/// Root configuration structure
+impl fmt::Display for PackageManager {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            PackageManager::Npm => "npm",
+            PackageManager::Pnpm => "pnpm",
+            PackageManager::Yarn => "yarn",
+            PackageManager::Bun => "bun",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl PackageManager {
+    /// Parse a package manager from a string
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "npm" => Some(PackageManager::Npm),
+            "pnpm" => Some(PackageManager::Pnpm),
+            "yarn" => Some(PackageManager::Yarn),
+            "bun" => Some(PackageManager::Bun),
+            _ => None,
+        }
+    }
+
+    /// Get the command to run a dev script
+    pub fn run_dev_command(&self) -> &'static str {
+        match self {
+            PackageManager::Npm => "npm run dev",
+            PackageManager::Pnpm => "pnpm run dev",
+            PackageManager::Yarn => "yarn dev",
+            PackageManager::Bun => "bun run dev",
+        }
+    }
+
+    /// Get the install command
+    pub fn install_command(&self) -> &'static str {
+        match self {
+            PackageManager::Npm => "npm install",
+            PackageManager::Pnpm => "pnpm install",
+            PackageManager::Yarn => "yarn install",
+            PackageManager::Bun => "bun install",
+        }
+    }
+}
+
+/// Root configuration structure for spacetime.json
+///
+/// Example:
+/// ```json
+/// {
+///   // Command to run the client development server
+///   "run": "pnpm dev"
+/// }
+/// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SpacetimeConfig {
-    /// Development mode configuration
-    #[serde(default, skip_serializing_if = "DevConfig::is_empty")]
-    pub dev: DevConfig,
-}
-
-impl DevConfig {
-    fn is_empty(&self) -> bool {
-        self.client_command.is_none()
-    }
+    /// The command to run the client development server.
+    /// This is used by `spacetime dev` to start the client after publishing.
+    /// Example: "npm run dev", "pnpm dev", "cargo run"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
 }
 
 impl SpacetimeConfig {
@@ -40,12 +91,17 @@ impl SpacetimeConfig {
         Self::default()
     }
 
-    /// Create a configuration with a client command
-    pub fn with_client_command(client_command: impl Into<String>) -> Self {
+    /// Create a configuration with a run command
+    pub fn with_run_command(run_command: impl Into<String>) -> Self {
         Self {
-            dev: DevConfig {
-                client_command: Some(client_command.into()),
-            },
+            run: Some(run_command.into()),
+        }
+    }
+
+    /// Create a configuration with dev settings (for backward compatibility)
+    pub fn with_dev_config(client_command: impl Into<String>, _package_manager: Option<PackageManager>) -> Self {
+        Self {
+            run: Some(client_command.into()),
         }
     }
 
@@ -57,18 +113,18 @@ impl SpacetimeConfig {
         if config_path.exists() {
             let content = fs::read_to_string(&config_path)
                 .with_context(|| format!("Failed to read {}", config_path.display()))?;
-            let config: SpacetimeConfig =
-                toml::from_str(&content).with_context(|| format!("Failed to parse {}", config_path.display()))?;
+            let config: SpacetimeConfig = serde_json::from_str(&content)
+                .with_context(|| format!("Failed to parse {}", config_path.display()))?;
             return Ok(Some(config));
         }
 
         Ok(None)
     }
 
-    /// Save configuration to `spacetime.toml` in the specified directory.
+    /// Save configuration to `spacetime.json` in the specified directory.
     pub fn save_to_dir(&self, dir: &Path) -> anyhow::Result<PathBuf> {
         let path = dir.join(CONFIG_FILENAME);
-        let content = toml::to_string_pretty(self).context("Failed to serialize configuration")?;
+        let content = serde_json::to_string_pretty(self).context("Failed to serialize configuration")?;
         fs::write(&path, content).with_context(|| format!("Failed to write {}", path.display()))?;
         Ok(path)
     }
@@ -88,15 +144,41 @@ impl SpacetimeConfig {
     }
 }
 
-/// Simple auto-detection for projects without `spacetime.toml`.
-pub fn detect_client_command(project_dir: &Path) -> Option<String> {
+/// Detect the package manager from lock files in the project directory.
+pub fn detect_package_manager(project_dir: &Path) -> Option<PackageManager> {
+    // Check for lock files in order of preference
+    if project_dir.join("pnpm-lock.yaml").exists() {
+        return Some(PackageManager::Pnpm);
+    }
+    if project_dir.join("yarn.lock").exists() {
+        return Some(PackageManager::Yarn);
+    }
+    if project_dir.join("bun.lockb").exists() || project_dir.join("bun.lock").exists() {
+        return Some(PackageManager::Bun);
+    }
+    if project_dir.join("package-lock.json").exists() {
+        return Some(PackageManager::Npm);
+    }
+    // Default to npm if package.json exists but no lock file
+    if project_dir.join("package.json").exists() {
+        return Some(PackageManager::Npm);
+    }
+    None
+}
+
+/// Simple auto-detection for projects without `spacetime.json`.
+/// Returns the client command and optionally the detected package manager.
+pub fn detect_client_command(project_dir: &Path) -> Option<(String, Option<PackageManager>)> {
     // JavaScript/TypeScript: package.json with "dev" script
     let package_json = project_dir.join("package.json");
     if package_json.exists() {
         if let Ok(content) = fs::read_to_string(&package_json) {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                if json.get("scripts").and_then(|s| s.get("dev")).is_some() {
-                    return Some("npm run dev".to_string());
+                let has_dev = json.get("scripts").and_then(|s| s.get("dev")).is_some();
+                if has_dev {
+                    let pm = detect_package_manager(project_dir);
+                    let cmd = pm.map(|p| p.run_dev_command()).unwrap_or("npm run dev");
+                    return Some((cmd.to_string(), pm));
                 }
             }
         }
@@ -104,14 +186,14 @@ pub fn detect_client_command(project_dir: &Path) -> Option<String> {
 
     // Rust: Cargo.toml
     if project_dir.join("Cargo.toml").exists() {
-        return Some("cargo run".to_string());
+        return Some(("cargo run".to_string(), None));
     }
 
     // C#: .csproj file
     if let Ok(entries) = fs::read_dir(project_dir) {
         for entry in entries.flatten() {
             if entry.path().extension().is_some_and(|e| e == "csproj") {
-                return Some("dotnet run".to_string());
+                return Some(("dotnet run".to_string(), None));
             }
         }
     }
@@ -127,12 +209,12 @@ mod tests {
     #[test]
     fn test_save_and_load() {
         let dir = tempdir().unwrap();
-        let config = SpacetimeConfig::with_client_command("npm run dev");
+        let config = SpacetimeConfig::with_run_command("npm run dev");
 
         config.save_to_dir(dir.path()).unwrap();
 
         let loaded = SpacetimeConfig::load_from_dir(dir.path()).unwrap().unwrap();
-        assert_eq!(loaded.dev.client_command, Some("npm run dev".to_string()));
+        assert_eq!(loaded.run, Some("npm run dev".to_string()));
     }
 
     #[test]
@@ -147,7 +229,7 @@ mod tests {
         let dir = tempdir().unwrap();
         assert!(!SpacetimeConfig::exists_in_dir(dir.path()));
 
-        let config = SpacetimeConfig::with_client_command("npm run dev");
+        let config = SpacetimeConfig::with_run_command("npm run dev");
         config.save_to_dir(dir.path()).unwrap();
 
         assert!(SpacetimeConfig::exists_in_dir(dir.path()));
