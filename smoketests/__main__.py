@@ -192,6 +192,9 @@ def main():
         except FileExistsError:
             # probably a race condition with a parallel smoketest
             pass
+        except shutil.SameFileError:
+            # probably a race condition with a parallel smoketest
+            pass
 
     os.environ["SPACETIME_SKIP_CLIPPY"] = "1"
 
