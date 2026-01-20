@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines one table and seeds two rows.
 
 TABLE
-- accounts
+- Account (public)
   - Struct: Account
   - Fields:
     - Id: int (primary key)
@@ -11,6 +11,6 @@ TABLE
     - by_name: btree(Name)
 
 REDUCERS
-- Seed: insert exactly these rows into accounts
+- Seed: insert exactly these rows into Account
   - (Id=1, Email="a@example.com", Name="Alice")
   - (Id=2, Email="b@example.com", Name="Bob")

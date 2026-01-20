@@ -17,7 +17,7 @@ struct TESTCLIENT_API FUpdateUniqueStringArgs
     FString S;
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
     FUpdateUniqueStringArgs() = default;
 
@@ -51,7 +51,7 @@ public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
     FString S;
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    int32 Data;
+    int32 Data = 0;
 
 };
 

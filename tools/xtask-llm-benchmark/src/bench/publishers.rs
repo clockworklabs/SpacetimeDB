@@ -1,8 +1,20 @@
 use crate::bench::utils::sanitize_db_name;
 use anyhow::{bail, Result};
+use regex::Regex;
+use std::borrow::Cow;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::sync::LazyLock;
+
+/// Strip ANSI escape codes (color codes) from a string
+fn strip_ansi_codes(s: &str) -> Cow<'_, str> {
+    static ANSI_RE: LazyLock<Regex> = LazyLock::new(|| {
+        // Matches ANSI escape sequences like \x1b[31m, \x1b[0m, etc.
+        Regex::new(r"\x1b\[[0-9;]*m").unwrap()
+    });
+    ANSI_RE.replace_all(s, "")
+}
 
 /* -------------------------------------------------------------------------- */
 /* Shared                                                                     */
@@ -66,8 +78,10 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
         }
 
         let code = out.status.code().unwrap_or(-1);
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr_raw = String::from_utf8_lossy(&out.stderr);
+        let stdout_raw = String::from_utf8_lossy(&out.stdout);
+        let stderr = strip_ansi_codes(&stderr_raw);
+        let stdout = strip_ansi_codes(&stdout_raw);
 
         // Retry on signal kills (like SIGSEGV) or transient build errors
         let should_retry = was_signal_killed(&out.status) || is_transient_build_error(&stderr, &stdout);
@@ -129,7 +143,11 @@ impl Publisher for DotnetPublisher {
         cmd.arg("build")
             .current_dir(source)
             .env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
-            .env("DOTNET_NOLOGO", "1");
+            .env("DOTNET_NOLOGO", "1")
+            // Prevent MSBuild node reuse issues that cause "Pipe is broken" errors
+            // when running multiple dotnet builds in parallel.
+            .env("MSBUILDDISABLENODEREUSE", "1")
+            .env("DOTNET_CLI_USE_MSBUILD_SERVER", "0");
         run(&mut cmd, "spacetime build (csharp)")?;
 
         let mut pubcmd = Command::new("spacetime");

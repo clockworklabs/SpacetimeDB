@@ -169,10 +169,7 @@ fn generate_sum_value(ty: SumType) -> impl Strategy<Value = SumValue> {
     (0..ty.variants.len()).prop_flat_map(move |tag: usize| {
         let variant_ty = ty.variants[tag].clone();
         let gen_variant = generate_algebraic_value(variant_ty.algebraic_type);
-        gen_variant.prop_map(move |value| SumValue {
-            tag: tag as u8,
-            value: Box::new(value),
-        })
+        gen_variant.prop_map(move |value| SumValue::new(tag as u8, value))
     })
 }
 

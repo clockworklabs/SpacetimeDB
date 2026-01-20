@@ -99,6 +99,9 @@
   --ifm-tabs-padding-vertical: 8px;
 
   --ifm-navbar-height: 57px;
+
+  --ifm-footer-padding-vertical: 0;
+  --ifm-footer-padding-horizontal: 0;
 }
 
 :root .alert--info {
@@ -538,44 +541,57 @@ ul.theme-doc-sidebar-menu {
 
 table {
   display: table;
-  border-collapse: collapse;
+  border-collapse: separate;
   border-spacing: 0;
   width: 100%;
-  color: var(--clockworklabs-color-white);
   letter-spacing: -0.01em;
   margin-top: 40px;
   margin-bottom: 40px;
   font-size: 16px;
-  line-height: 1.75;
+  line-height: var(--24px);
+  color: var(--clockworklabs-color-white);
+  border: 1px solid var(--clockworklabs-color-n6);
+  border-radius: 8px;
+  overflow: hidden;
+}
 
-  thead {
-    color: var(--clockworklabs-strong-color);
-    text-align: left;
+table th,
+table td {
+  border: none;
+  text-align: left;
+  padding: 12px 24px;
+}
 
-    tr {
-      border-bottom: none;
-    }
-  }
+table thead {
+  background-color: var(--clockworklabs-color-shade1);
+  color: var(--clockworklabs-color-n4);
+}
 
-  tr {
-    border-top: none;
-  }
+table thead tr {
+  border-bottom: none;
+}
 
-  td {
-    border: 1px solid var(--clockworklabs-color-n6);
-    padding: 0.5rem 0.75rem;
+table tbody tr {
+  border-top: 1px solid var(--clockworklabs-color-n6);
+}
 
-    code {
-      background-color: var(--clockworklabs-code-background-color);
-      color: var(--clockworklabs-code-color);
-      border: 1px solid var(--clockworklabs-code-border-color);
-    }
-  }
+table tbody tr td {
+  border-top: 1px solid var(--clockworklabs-color-n6);
+}
 
-  th {
-    border: 1px solid var(--clockworklabs-color-n6);
-    padding: 0.5rem 0.75rem;
-  }
+table tbody tr:nth-child(2n) {
+  background-color: var(--clockworklabs-color-shade2);
+}
+
+table tbody td code {
+  background-color: var(--clockworklabs-code-background-color);
+  color: var(--clockworklabs-code-color);
+  border: 1px solid var(--clockworklabs-code-border-color);
+}
+
+/* Green accent class for special text */
+table .table-accent {
+  color: var(--clockworklabs-color-green);
 }
 
 /* Make the page content left aligned */

@@ -2,7 +2,8 @@ use spacetimedb::{reducer, table, ReducerContext, Table};
 
 #[table(
     name = accounts,
-    index(name = by_name, btree(columns = [name]))
+    index(name = by_name, btree(columns = [name])), 
+    public
 )]
 pub struct Account {
     #[primary_key]

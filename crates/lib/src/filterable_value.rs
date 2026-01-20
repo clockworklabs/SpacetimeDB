@@ -8,6 +8,7 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 ///
 /// Types which can appear specifically as a terminating bound in a BTree index,
 /// which may be a range, instead use [`IndexScanRangeBoundsTerminator`].
+///
 /// Because SpacetimeDB supports a only restricted set of types as index keys,
 /// only a small set of `Column` types have corresponding `FilterableValue` implementations.
 /// Specifically, these types are:
@@ -20,14 +21,23 @@ use spacetimedb_sats::{hash::Hash, i256, u256, Serialize};
 /// - No-payload enums annotated with `#[derive(SpacetimeType)]`.
 ///   No-payload enums are sometimes called "plain," "simple" or "C-style."
 ///   They are enums where no variant has any payload data.
+///
+/// Because SpacetimeDB indexes are present both on the server
+/// and in clients which use our various SDKs,
+/// implementing `FilterableValue` for a new column type is a significant burden,
+/// and **is not as simple** as adding a new `impl FilterableValue` block to our Rust code.
+/// To implement `FilterableValue` for a new column type, you must also:
+/// - Ensure (with automated tests) that the `spacetimedb-codegen` crate
+///   and accompanying SpacetimeDB client SDK can equality-compare and ordering-compare values of the column type,
+///   and that the resulting ordering is the same as the canonical ordering
+///   implemented by `spacetimedb-sats` for [`spacetimedb_sats::AlgebraicValue`].
+///   This will nearly always require implementing bespoke comparison methods for the type in question,
+///   as most languages do not automatically make product types (structs or classes) sortable.
+/// - Extend our other supported module languages' bindings libraries.
+///   so that they can also define tables with indexes keyed by the new filterable type.
 //
 // General rules for implementors of this type:
-// - It should only be implemented for types that have
-//   simple-to-implement consistent total equality and ordering
-//   on all languages SpacetimeDB supports in both client and module SDKs.
-//   This means that user-defined compound types other than C-style enums,
-//   and arrays thereof,
-//   should not implement it, as C# and TypeScript use reference equality for those types.
+// - See above doc comment for requirements to add implementations for new column types.
 // - It should only be implemented for owned values if those values are `Copy`.
 //   Otherwise it should only be implemented for references.
 //   This is so that rustc and IDEs will recommend rewriting `x` to `&x` rather than `x.clone()`.
