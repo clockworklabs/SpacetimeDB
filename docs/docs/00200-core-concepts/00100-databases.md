@@ -216,7 +216,7 @@ Ready to level up? Dive into these advanced capabilities:
 
 - **[Procedures](/functions/procedures)** - Make HTTP requests and interact with external services
 - **[Views](/functions/views)** - Create computed, subscribable queries
-- **[Scheduled Tables](/tables/scheduled-tables)** - Schedule reducers to run at specific times
+- **[Schedule Tables](/tables/schedule-tables)** - Schedule reducers to run at specific times
 - **[Incremental Migrations](/databases/incremental-migrations)** - Handle complex schema changes
 - **[SQL Queries](/reference/sql)** - Query your database with SQL
 

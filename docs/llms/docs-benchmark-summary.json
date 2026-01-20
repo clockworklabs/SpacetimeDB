@@ -1,38 +1,38 @@
 {
   "version": 1,
-  "generated_at": "2026-01-16T01:11:54.962Z",
+  "generated_at": "2026-01-20T11:45:02.790Z",
   "by_language": {
     "csharp": {
       "modes": {
         "docs": {
-          "hash": "57aa5b6bb986daddf9d3a9f4992cdb0c6bab78257186c00ab1284c1b40281b46",
+          "hash": "bdf3ee21189f531e8de36a4dfe9a85d96b0d893667fb5bf61fe979ce8282d0ce",
           "models": {
             "GPT-5": {
               "categories": {
                 "basics": {
                   "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 27,
-                  "pass_pct": 100.0,
-                  "task_pass_equiv": 12.0,
-                  "task_pass_pct": 100.0
+                  "total_tests": 25,
+                  "passed_tests": 11,
+                  "pass_pct": 44.0,
+                  "task_pass_equiv": 7.0000005,
+                  "task_pass_pct": 58.333336
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 28,
-                  "pass_pct": 82.35294,
-                  "task_pass_equiv": 8.0,
-                  "task_pass_pct": 80.0
+                  "passed_tests": 10,
+                  "pass_pct": 29.411764,
+                  "task_pass_equiv": 3.15,
+                  "task_pass_pct": 31.5
                 }
               },
               "totals": {
                 "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 55,
-                "pass_pct": 90.16393,
-                "task_pass_equiv": 20.0,
-                "task_pass_pct": 90.909096
+                "total_tests": 59,
+                "passed_tests": 21,
+                "pass_pct": 35.59322,
+                "task_pass_equiv": 10.15,
+                "task_pass_pct": 46.13636
               }
             }
           }
@@ -48,28 +48,28 @@
               "categories": {
                 "basics": {
                   "tasks": 12,
-                  "total_tests": 27,
-                  "passed_tests": 26,
-                  "pass_pct": 96.296295,
-                  "task_pass_equiv": 11.0,
-                  "task_pass_pct": 91.66667
+                  "total_tests": 25,
+                  "passed_tests": 17,
+                  "pass_pct": 68.0,
+                  "task_pass_equiv": 8.083334,
+                  "task_pass_pct": 67.361115
                 },
                 "schema": {
                   "tasks": 10,
                   "total_tests": 34,
-                  "passed_tests": 29,
-                  "pass_pct": 85.29412,
-                  "task_pass_equiv": 8.0,
-                  "task_pass_pct": 80.0
+                  "passed_tests": 32,
+                  "pass_pct": 94.117645,
+                  "task_pass_equiv": 9.0,
+                  "task_pass_pct": 90.0
                 }
               },
               "totals": {
                 "tasks": 22,
-                "total_tests": 61,
-                "passed_tests": 55,
-                "pass_pct": 90.16393,
-                "task_pass_equiv": 19.0,
-                "task_pass_pct": 86.36364
+                "total_tests": 59,
+                "passed_tests": 49,
+                "pass_pct": 83.05085,
+                "task_pass_equiv": 17.083334,
+                "task_pass_pct": 77.65152
               }
             }
           }

@@ -9,12 +9,15 @@ This document explains how to configure the environment, run the LLM benchmark t
 1. [Quick Checks & Fixes](#quick-checks-fixes)
 2. [Environment Variables](#environment-variables)
 3. [Benchmark Suite](#benchmark-suite)
-4. [Troubleshooting](#troubleshooting)
+4. [Context Construction](#context-construction)
+5. [Troubleshooting](#troubleshooting)
 ---
 
 ## Quick Checks & Fixes
 
 Use this single command to quickly unblock CI by regenerating hashes and running only GPT-5 for the minimal Rust + C# passes. This is not the full benchmark suite.
+
+**Note: You will need OpenAI API keys to run this locally**. Alternatively, any SpacetimeDB member can comment `/update-llm-benchmark` on a PR to start a CI job to do this.
 
 `cargo llm ci-quickfix`
 What this does:
@@ -231,11 +234,72 @@ cargo llm run --force
 cargo llm ci-check --lang rust
 cargo llm ci-check --lang csharp
 
+# Generate PR comment markdown (compares against master baseline)
+cargo llm ci-comment
+# With custom baseline ref
+cargo llm ci-comment --baseline-ref origin/main
+
 ```
 
 Outputs:
 - Logs to stdout/stderr (respecting `LLM_DEBUG`/`LLM_DEBUG_VERBOSE`).
 - JSON results in a per‑run folder (timestamped), merged into aggregate reports.
+
+---
+
+## Context Construction
+
+The benchmark tool constructs a context (documentation) that is sent to the LLM along with each task prompt. The context varies by language and mode.
+
+### Modes
+
+| Mode | Language | Source | Description |
+|------|----------|--------|-------------|
+| `rustdoc_json` | Rust | `crates/bindings` | Generates rustdoc JSON and extracts documentation from the spacetimedb crate |
+| `docs` | C# | `docs/docs/**/*.md` | Concatenates all markdown files from the documentation |
+
+### Tab Filtering
+
+When building context for a specific language, the tool filters `<Tabs>` components to only include content relevant to the target language. This reduces noise and helps the LLM focus on the correct syntax.
+
+**Filtered tab groupIds:**
+
+| groupId | Purpose | Tab Values |
+|---------|---------|------------|
+| `server-language` | Server module code examples | `rust`, `csharp`, `typescript` |
+| `client-language` | Client SDK code examples | `rust`, `csharp`, `typescript`, `cpp`, `blueprint` |
+
+**Filtering behavior:**
+- For C# tests: Only `value="csharp"` tabs are kept
+- For Rust tests: Only `value="rust"` tabs are kept
+- If no matching tab exists (e.g., `client-language` with only `cpp`/`blueprint`), the entire tabs block is removed
+
+**Example transformation:**
+
+Before (in markdown):
+```html
+<Tabs groupId="server-language" queryString>
+<TabItem value="csharp" label="C#">
+C# code here
+</TabItem>
+<TabItem value="rust" label="Rust">
+Rust code here
+</TabItem>
+</Tabs>
+```
+
+After (for C# context):
+```
+C# code here
+```
+
+### Documentation Best Practices
+
+When writing documentation that will be used by the benchmark:
+
+1. **Use consistent tab groupIds**: Always use `server-language` for server module code and `client-language` for client SDK code
+2. **Include all supported languages**: Ensure each `<Tabs>` block has tabs for all languages you want to test
+3. **Use consistent naming conventions**: The benchmark compares LLM output against golden answers, so documentation should reflect the expected conventions (e.g., PascalCase table names for C#)
 
 ---
 

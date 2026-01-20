@@ -11010,6 +11010,7 @@ dependencies = [
  "fs2",
  "futures",
  "heck 0.5.0",
+ "regex",
  "reqwest 0.12.24",
  "serde",
  "serde_json",
