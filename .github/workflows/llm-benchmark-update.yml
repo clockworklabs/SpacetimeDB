@@ -39,7 +39,9 @@ jobs:
       # If we want to change that it is possible to have the benchmark compile
       # SpacetimeDB from source.
       - name: Install spacetime CLI
-        run: curl -sSf https://install.spacetimedb.com | sh -s -- -y
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Load PR info
         id: pr
