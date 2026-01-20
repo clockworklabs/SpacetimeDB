@@ -1,5 +1,19 @@
 import { fromByteArray } from 'base64-js';
 
+const ArrayBufferPrototypeTransfer =
+  ArrayBuffer.prototype.transfer ??
+  function (this: ArrayBuffer, newByteLength) {
+    if (newByteLength === undefined) {
+      return this.slice();
+    } else if (newByteLength <= this.byteLength) {
+      return this.slice(0, newByteLength);
+    } else {
+      const copy = new Uint8Array(newByteLength);
+      copy.set(new Uint8Array(this));
+      return copy.buffer;
+    }
+  };
+
 export default class BinaryWriter {
   #buffer: ArrayBuffer;
   view: DataView;
@@ -15,7 +29,7 @@ export default class BinaryWriter {
     if (minCapacity <= this.#buffer.byteLength) return;
     let newCapacity = this.#buffer.byteLength * 2;
     if (newCapacity < minCapacity) newCapacity = minCapacity;
-    this.#buffer = this.#buffer.transfer(newCapacity);
+    this.#buffer = ArrayBufferPrototypeTransfer.call(this.#buffer, newCapacity);
     this.view = new DataView(this.#buffer);
   }
 
