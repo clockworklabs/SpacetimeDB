@@ -123,11 +123,7 @@ jobs:
   test:
     needs: [lints, llm_ci_check]
     name: Test Suite
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
+    runs-on: ubuntu-latest
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
