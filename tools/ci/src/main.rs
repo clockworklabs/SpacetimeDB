@@ -7,7 +7,6 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -192,7 +191,7 @@ fn run_all_clap_subcommands(skips: &[String]) -> Result<()> {
 #[derive(Debug, Clone)]
 pub enum StartServer {
     No,
-    Yes,
+    Yes { random_port: bool },
     Docker { compose_file: PathBuf },
 }
 
@@ -332,17 +331,19 @@ impl ServerState {
                     project,
                 })
             }
-            StartServer::Yes => {
+            StartServer::Yes { random_port } => {
                 // TODO: Make sure that this isn't brittle / multiple parallel batches don't grab the same port
 
                 // Create a temporary data directory for this server instance.
                 let data_dir = TempDir::new()?;
 
-                let server_port = find_free_port()?;
-                let pg_port = find_free_port()?;
-                args.push("--remote-server".into());
+                let server_port = if random_port { find_free_port()? } else { 3000 };
+                let pg_port = if random_port { find_free_port()? } else { 5432 };
                 let server_url = format!("http://localhost:{server_port}");
-                args.push(server_url.clone());
+                if random_port {
+                    args.push("--remote-server".into());
+                    args.push(server_url.clone());
+                }
                 if let Some(buf) = output {
                     buf.push_str("Starting server..\n");
                 } else {
@@ -488,7 +489,7 @@ fn server_start_config(start_server: bool, docker: Option<String>) -> StartServe
                 compose_file: compose_file.into(),
             }
         }
-        (true, None) => StartServer::Yes,
+        (true, None) => StartServer::Yes { random_port: true },
         (false, None) => StartServer::No,
     }
 }
@@ -687,7 +688,7 @@ fn run_smoketests_parallel(
         tests
     };
 
-    let batches: HashSet<String> = tests
+    let mut batches: HashSet<String> = tests
         .into_iter()
         .map(|t| {
             let name = t.as_str().unwrap();
@@ -696,10 +697,46 @@ fn run_smoketests_parallel(
         })
         .collect();
 
+    let parallel_blacklist = vec!["quickstart", "servers", "delete_database", "csharp_module", "pg_wire"];
+
+    let mut blacklisted_batches: Vec<String> = Vec::new();
+    for &blacklisted in &parallel_blacklist {
+        if batches.remove(blacklisted) {
+            blacklisted_batches.push(blacklisted.to_string());
+        }
+    }
+
+    let mut failed_batches = vec![];
+
+    {
+        let mut batch_args: Vec<String> = Vec::new();
+        batch_args.extend(blacklisted_batches.iter().cloned());
+        batch_args.extend(args.iter().cloned());
+
+        let start_server = match start_server.clone() {
+            StartServer::Yes { random_port: _ } => StartServer::Yes { random_port: false },
+            s => s,
+        };
+
+        let (captured, result) = run_smoketests_batch_captured(&cli_path, start_server.clone(), &batch_args, &python);
+
+        let batch = blacklisted_batches.join(", ");
+        let batch = &batch;
+        with_print_lock(|| {
+            println!("===== smoketests batch: {batch} =====");
+            print!("{captured}");
+            if let Err(e) = &result {
+                println!("Smoketest batch {batch} failed: {e:?}");
+                failed_batches.push(batch.to_string());
+            }
+            println!("===== end smoketests batch: {batch} =====");
+        });
+    }
+
     // Run each batch in parallel threads.
     let mut handles = Vec::new();
     for batch in batches {
-        let start_server_clone = start_server.clone();
+        let start_server = start_server.clone();
         let cli_path = cli_path.clone();
         let python = python.clone();
         let mut batch_args: Vec<String> = Vec::new();
@@ -708,13 +745,10 @@ fn run_smoketests_parallel(
 
         handles.push((
             batch.clone(),
-            std::thread::spawn(move || {
-                run_smoketests_batch_captured(&cli_path, start_server_clone, &batch_args, &python)
-            }),
+            std::thread::spawn(move || run_smoketests_batch_captured(&cli_path, start_server, &batch_args, &python)),
         ));
     }
 
-    let mut failed_batches = vec![];
     for (batch, handle) in handles {
         // If the thread panicked or the batch failed, treat it as a failure.
         let (captured, result) = match handle.join() {
