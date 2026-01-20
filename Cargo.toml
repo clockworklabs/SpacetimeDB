@@ -139,6 +139,7 @@ spacetimedb-vm = { path = "crates/vm", version = "=1.11.3" }
 spacetimedb-fs-utils = { path = "crates/fs-utils", version = "=1.11.3" }
 spacetimedb-snapshot = { path = "crates/snapshot", version = "=1.11.3" }
 spacetimedb-subscription = { path = "crates/subscription", version = "=1.11.3" }
+spacetimedb-query-builder = { path = "crates/query-builder", version = "=1.11.3" }
 
 # Prevent `ahash` from pulling in `getrandom` by disabling default features.
 # Modules use `getrandom02` and we need to prevent an incompatible version
