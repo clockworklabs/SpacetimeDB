@@ -7,8 +7,18 @@ import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
 
-:::warning Consider Using Views Instead
-Before implementing Row Level Security, consider using [Views](/functions/views) for access control. Views provide a simpler, more flexible approach to controlling data visibility without the complexity and performance overhead of RLS. Views are first-class functions that allow you to define custom, subscribable queries with full control over what data clients can access. RLS is experimental and should only be used for advanced use cases where views are insufficient.
+:::danger Experimental Feature - Use Views Instead
+**Row Level Security is an experimental, unstable feature.** The API may change or be removed in future releases.
+
+For access control, **use [Views](/functions/views) instead**. Views provide:
+- A simpler, more flexible approach to controlling data visibility
+- Better performance characteristics
+- Full control over which rows and columns clients can access
+- The ability to filter by caller identity using `ViewContext`
+
+See [Using Views for Fine-Grained Access Control](/tables/access-permissions#using-views-for-fine-grained-access-control) for examples of implementing row and column filtering with views.
+
+Only use RLS if you have a specific use case that views cannot address.
 :::
 
 Row Level Security (RLS) allows module authors to restrict which rows of a public table each client can access.
@@ -16,7 +26,7 @@ These access rules are expressed in SQL and evaluated automatically for queries 
 
 ## Enabling RLS
 
-RLS is currently **experimental** and must be explicitly enabled in your module.
+RLS is **experimental and unstable**. It must be explicitly enabled in your module, and the API may change in future releases.
 
 <Tabs groupId="server-language" defaultValue="rust">
 <TabItem value="csharp" label="C#">

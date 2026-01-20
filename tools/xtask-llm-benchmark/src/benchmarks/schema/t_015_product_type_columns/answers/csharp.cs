@@ -16,7 +16,7 @@ public static partial class Module
         public int Y;
     }
 
-    [Table(Name = "profiles")]
+    [Table(Name = "Profile")]
     public partial struct Profile
     {
         [PrimaryKey] public int Id;
@@ -28,7 +28,7 @@ public static partial class Module
     [Reducer]
     public static void Seed(ReducerContext ctx)
     {
-        ctx.Db.profiles.Insert(new Profile {
+        ctx.Db.Profile.Insert(new Profile {
             Id = 1,
             Home = new Address { Street = "1 Main", Zip = 11111 },
             Work = new Address { Street = "2 Broad", Zip = 22222 },

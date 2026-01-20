@@ -40,9 +40,9 @@ public static void Init(ReducerContext ctx)
     Log.Info("Database initializing...");
     
     // Set up default data
-    if (ctx.Db.settings.Count == 0)
+    if (ctx.Db.Settings.Count == 0)
     {
-        ctx.Db.settings.Insert(new Settings
+        ctx.Db.Settings.Insert(new Settings
         {
             Key = "welcome_message",
             Value = "Hello, SpacetimeDB!"
@@ -116,7 +116,7 @@ public static void OnConnect(ReducerContext ctx)
     var connId = ctx.ConnectionId!.Value;
     
     // Initialize client session
-    ctx.Db.sessions.Insert(new Session
+    ctx.Db.Session.Insert(new Session
     {
         ConnectionId = connId,
         Identity = ctx.Sender,
@@ -188,7 +188,7 @@ public static void OnDisconnect(ReducerContext ctx)
     var connId = ctx.ConnectionId!.Value;
     
     // Clean up client session
-    ctx.Db.sessions.ConnectionId.Delete(connId);
+    ctx.Db.Session.ConnectionId.Delete(connId);
 }
 ```
 
@@ -221,9 +221,9 @@ The `client_disconnected` reducer:
 
 ## Scheduled Reducers
 
-Reducers can be triggered at specific times using scheduled tables. See [Scheduled Tables](/tables/scheduled-tables) for details on:
+Reducers can be triggered at specific times using schedule tables. See [Schedule Tables](/tables/schedule-tables) for details on:
 
-- Defining scheduled tables
+- Defining schedule tables
 - Triggering reducers at specific timestamps
 - Running reducers periodically
 - Canceling scheduled executions

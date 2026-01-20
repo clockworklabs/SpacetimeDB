@@ -67,6 +67,9 @@ const [items, isLoading] = useTable(tables.item);
 | `.unique()` + explicit index | Just use `.unique()` | "name is used for multiple entities" |
 | Import spacetimedb from index.ts | Import from schema.ts | "Cannot access before initialization" |
 | Multi-column index `.filter()` | **⚠️ BROKEN** — use single-column | PANIC or silent empty results |
+| `.iter()` in views | Use index lookups only | Views can't scan tables |
+| `ctx.db` in procedures | `ctx.withTx(tx => tx.db...)` | Procedures need explicit transactions |
+| `ctx.myTable` in procedure tx | `tx.db.myTable` | Wrong context variable |
 
 ### Client-side errors
 
@@ -303,20 +306,48 @@ if (scheduleAt.tag === 'Time') {
 | Users see only their data | Private table + public view |
 
 ### Private table + view pattern
+
+⚠️ **CRITICAL: Views can ONLY access data via index lookups, NOT `.iter()`**
+
 ```typescript
-// Private table (no public: true)
+// Private table with index on ownerId
 export const PrivateData = table(
-  { name: 'private_data' },
-  { id: t.u64().primaryKey().autoInc(), ownerId: t.identity(), secret: t.string() }
+  { name: 'private_data',
+    indexes: [{ name: 'by_owner', algorithm: 'btree', columns: ['ownerId'] }]
+  },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    ownerId: t.identity(),
+    secret: t.string()
+  }
 );
 
-// Public view filtered by sender
+// ❌ WRONG — views cannot use .iter()
+spacetimedb.view(
+  { name: 'my_data_wrong', public: true },
+  t.array(PrivateData.rowType),
+  (ctx) => [...ctx.db.privateData.iter()]  // ❌ NOT ALLOWED
+);
+
+// ✅ RIGHT — use index lookup
 spacetimedb.view(
   { name: 'my_data', public: true },
-  t.array(t.object('MyDataRow', { id: t.u64(), secret: t.string() })),
-  (ctx) => [...ctx.db.privateData.iter()]
-    .filter(row => row.ownerId.toHexString() === ctx.sender.toHexString())
+  t.array(PrivateData.rowType),
+  (ctx) => [...ctx.db.privateData.by_owner.filter(ctx.sender)]
 );
+```
+
+### ViewContext vs AnonymousViewContext
+```typescript
+// ViewContext — has ctx.sender, result varies per user (computed per-subscriber)
+spacetimedb.view({ name: 'my_items', public: true }, t.array(Item.rowType), (ctx) => {
+  return [...ctx.db.item.by_owner.filter(ctx.sender)];
+});
+
+// AnonymousViewContext — no ctx.sender, same result for everyone (shared, better perf)
+spacetimedb.anonymousView({ name: 'leaderboard', public: true }, t.array(LeaderboardRow), (ctx) => {
+  return [...ctx.db.player.by_score.filter(/* top scores */)];
+});
 ```
 
 **Views require explicit subscription:**
@@ -408,7 +439,63 @@ src/config.ts        → MODULE_NAME, SPACETIMEDB_URI
 
 ---
 
-## 10) Commands
+## 10) Procedures (Beta)
+
+**Procedures are for side effects (HTTP requests, etc.) that reducers can't do.**
+
+⚠️ Procedures are currently in beta. API may change.
+
+### Defining a procedure
+```typescript
+spacetimedb.procedure(
+  'fetch_external_data',
+  { url: t.string() },
+  t.string(),  // return type
+  (ctx, { url }) => {
+    const response = ctx.http.fetch(url);
+    return response.text();
+  }
+);
+```
+
+### Database access in procedures
+
+⚠️ **CRITICAL: Procedures don't have `ctx.db`. Use `ctx.withTx()` for database access.**
+
+```typescript
+spacetimedb.procedure('save_fetched_data', { url: t.string() }, t.unit(), (ctx, { url }) => {
+  // Fetch external data (outside transaction)
+  const response = ctx.http.fetch(url);
+  const data = response.text();
+
+  // ❌ WRONG — ctx.db doesn't exist in procedures
+  ctx.db.myTable.insert({ ... });
+
+  // ✅ RIGHT — use ctx.withTx() for database access
+  ctx.withTx(tx => {
+    tx.db.myTable.insert({
+      id: 0n,
+      content: data,
+      fetchedAt: tx.timestamp,
+      fetchedBy: tx.sender,
+    });
+  });
+
+  return {};
+});
+```
+
+### Key differences from reducers
+| Reducers | Procedures |
+|----------|------------|
+| `ctx.db` available directly | Must use `ctx.withTx(tx => tx.db...)` |
+| Automatic transaction | Manual transaction management |
+| No HTTP/network | `ctx.http.fetch()` available |
+| No return values to caller | Can return data to caller |
+
+---
+
+## 11) Commands
 
 ```bash
 # Start local server
@@ -429,7 +516,7 @@ spacetime logs <module-name>
 
 ---
 
-## 11) Hard Requirements
+## 12) Hard Requirements
 
 1. **DO NOT edit generated bindings** — regenerate with `spacetime generate`
 2. **Reducers are transactional** — they do not return data

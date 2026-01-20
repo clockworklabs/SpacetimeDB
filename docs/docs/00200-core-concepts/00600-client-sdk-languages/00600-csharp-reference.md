@@ -946,9 +946,9 @@ See the [module docs](/intro/key-architecture#connectionid) for more details.
 ### Type `Timestamp`
 
 A point in time, measured in microseconds since the Unix epoch.
-See the [module docs](/docs/tables/columns) for more details.
+See the [module docs](/docs/tables/column-types) for more details.
 
 ### Type `TaggedEnum`
 
 A [tagged union](https://en.wikipedia.org/wiki/Tagged_union) type.
-See the [module docs](/docs/tables/columns) for more details.
+See the [module docs](/docs/tables/column-types) for more details.
