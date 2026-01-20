@@ -335,12 +335,24 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     // Start the client development server if configured
     let server_host_url = config.get_host_url(Some(resolved_server))?;
     let _client_handle = if let Some(ref cmd) = client_command {
-        Some(start_client_process(
-            cmd,
-            &project_dir,
-            &database_name,
-            &server_host_url,
-        )?)
+        let mut child = start_client_process(cmd, &project_dir, &database_name, &server_host_url)?;
+
+        // Give the process a moment to fail fast (e.g., command not found, missing deps)
+        sleep(Duration::from_millis(200)).await;
+        match child.try_wait() {
+            Ok(Some(status)) if !status.success() => {
+                anyhow::bail!(
+                    "Client command '{}' failed immediately with exit code: {}",
+                    cmd,
+                    status.code().map(|c| c.to_string()).unwrap_or_else(|| "unknown".to_string())
+                );
+            }
+            Err(e) => {
+                anyhow::bail!("Failed to check client process status: {}", e);
+            }
+            _ => {} // Still running or exited successfully (unusual but ok)
+        }
+        Some(child)
     } else {
         None
     };
@@ -814,22 +826,19 @@ fn start_client_process(
     database_name: &str,
     host_url: &str,
 ) -> Result<Child, anyhow::Error> {
-    println!("{} {}", "Starting client:".cyan(), command.to_string().dimmed());
+    println!("{} {}", "Starting client:".cyan(), command.dimmed());
 
-    let parts: Vec<&str> = command.split_whitespace().collect();
-    if parts.is_empty() {
+    if command.trim().is_empty() {
         anyhow::bail!("Empty client command");
     }
 
-    let program = parts[0];
-    let args = &parts[1..];
-
-    // On Windows, use cmd /C to resolve .cmd/.bat scripts (like npm)
+    // Use the shell to execute the command, which handles:
+    // - Quoted arguments with spaces
+    // - PATH resolution for executables
+    // - Shell built-ins and scripts (.cmd/.bat on Windows)
     #[cfg(windows)]
     let child = TokioCommand::new("cmd")
-        .arg("/C")
-        .arg(program)
-        .args(args)
+        .args(["/C", command])
         .current_dir(working_dir)
         .env("SPACETIMEDB_DB_NAME", database_name)
         .env("SPACETIMEDB_HOST", host_url)
@@ -840,10 +849,9 @@ fn start_client_process(
         .spawn()
         .with_context(|| format!("Failed to start client command: {}", command))?;
 
-    // On Unix, run the program directly
     #[cfg(not(windows))]
-    let child = TokioCommand::new(program)
-        .args(args)
+    let child = TokioCommand::new("sh")
+        .args(["-c", command])
         .current_dir(working_dir)
         .env("SPACETIMEDB_DB_NAME", database_name)
         .env("SPACETIMEDB_HOST", host_url)
