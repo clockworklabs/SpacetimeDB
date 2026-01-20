@@ -8,8 +8,8 @@ public static partial class Module
         public int Left;
         public int Right;
     }
-
-    [Table(Name = "Result")]
+  
+    [Table(Name = "Result", Public = true)]
     public partial struct Result
     {
         [PrimaryKey] public int Id;
