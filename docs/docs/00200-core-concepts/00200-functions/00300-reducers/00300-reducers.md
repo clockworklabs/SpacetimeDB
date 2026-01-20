@@ -404,13 +404,22 @@ Reducers run in an isolated environment and **cannot** interact with the outside
 
 If you need to interact with external systems, use [Procedures](/functions/procedures) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
 
-:::warning Global and Static Variables Do Not Persist
-Global variables, static variables, and module-level state do **not** persist across reducer calls. Each reducer invocation runs in a fresh execution environment. Any data stored in global or static variables will be lost when the reducer completes.
+:::warning Global and Static Variables Are Undefined Behavior
+Relying on global variables, static variables, or module-level state to persist across reducer calls is **undefined behavior**. SpacetimeDB does not guarantee that values stored in these locations will be available in subsequent reducer invocations.
 
-Always store persistent state in tables. If you need to cache computed values or maintain state across invocations, use a table to store that data.
+This is undefined for several reasons:
+
+1. **Fresh execution environments.** SpacetimeDB may run each reducer in a fresh WASM or JS instance.
+2. **Module updates.** Publishing a new module creates a fresh execution environment. This is necessary for hot-swapping modules while transactions are in flight.
+3. **Concurrent execution.** SpacetimeDB reserves the right to execute multiple reducers concurrently in separate execution environments (e.g., with MVCC).
+4. **Crash recovery.** Instance memory is not persisted across restarts.
+5. **Non-transactional updates.** If you modify global state and then roll back the transaction, the modified value may remain for subsequent transactions.
+6. **Replay safety.** If a serializability anomaly is detected, SpacetimeDB may re-execute your reducer with the same arguments, causing modifications to global state to occur multiple times.
+
+Reducers are designed to be free of side effects. They should only modify tables. Always store state in tables to ensure correctness and durability.
 
 ```rust
-// ❌ This will NOT persist across reducer calls
+// ❌ Undefined behavior: may or may not persist or correctly update across reducer calls
 static mut COUNTER: u64 = 0;
 
 // ✅ Store state in a table instead
