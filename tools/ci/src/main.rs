@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -205,20 +206,50 @@ fn find_free_port() -> Result<u16> {
     Ok(port)
 }
 
-fn wait_until_http_ready(timeout: Duration, server_url: &str) -> Result<()> {
+fn cli_exe_suffix() -> &'static str {
+    if cfg!(windows) {
+        ".exe"
+    } else {
+        ""
+    }
+}
+
+fn compute_spacetimedb_cli_path() -> Result<PathBuf> {
+    let raw = cmd!("cargo", "metadata", "--format-version=1", "--no-deps",)
+        .read()
+        .context("failed to run `cargo metadata`")?;
+
+    let v: serde_json::Value = serde_json::from_str(&raw).context("failed to parse `cargo metadata` output")?;
+    let target_dir = v
+        .get("target_directory")
+        .and_then(|v| v.as_str())
+        .context("`cargo metadata` missing `target_directory`")?;
+
+    let path = Path::new(target_dir)
+        .join("debug")
+        .join(format!("spacetimedb-cli{}", cli_exe_suffix()));
+
+    if !path.exists() {
+        anyhow::bail!(
+            "Expected spacetimedb-cli binary at '{}' but it does not exist. Try running: cargo build -p spacetimedb-cli",
+            path.display()
+        );
+    }
+
+    Ok(path)
+}
+
+fn wait_until_http_ready(timeout: Duration, cli_path: &Path, server_url: &str) -> Result<()> {
     println!("Waiting for server to start: {server_url}..");
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
         // Use duct::cmd directly so we can suppress output from the ping command.
-        let status = cmd(
-            "cargo",
-            &["run", "-p", "spacetimedb-cli", "--", "server", "ping", server_url],
-        )
-        .stdout_null()
-        .stderr_null()
-        .unchecked()
-        .run();
+        let status = cmd(cli_path, ["server", "ping", server_url])
+            .stdout_null()
+            .stderr_null()
+            .unchecked()
+            .run();
 
         if let Ok(status) = status {
             if status.status.success() {
@@ -245,11 +276,16 @@ pub enum ServerState {
 }
 
 impl ServerState {
-    fn start(start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
-        Self::start_with_output(start_mode, args, None)
+    fn start(cli_path: &Path, start_mode: StartServer, args: &mut Vec<String>) -> Result<Self> {
+        Self::start_with_output(cli_path, start_mode, args, None)
     }
 
-    fn start_with_output(start_mode: StartServer, args: &mut Vec<String>, output: Option<&mut String>) -> Result<Self> {
+    fn start_with_output(
+        cli_path: &Path,
+        start_mode: StartServer,
+        args: &mut Vec<String>,
+        output: Option<&mut String>,
+    ) -> Result<Self> {
         // TODO: Currently the server output leaks. We should be capturing it and only printing if the test fails.
 
         match start_mode {
@@ -289,7 +325,7 @@ impl ServerState {
                         .run();
                     }
                 });
-                wait_until_http_ready(Duration::from_secs(900), &server_url)?;
+                wait_until_http_ready(Duration::from_secs(900), cli_path, &server_url)?;
                 Ok(ServerState::Docker {
                     handle,
                     compose_file,
@@ -313,24 +349,23 @@ impl ServerState {
                     println!("Starting server..");
                 }
                 let data_dir_str = data_dir.path().to_string_lossy().to_string();
-                let handle = thread::spawn(move || {
-                    let _ = cmd!(
-                        "cargo",
-                        "run",
-                        "-p",
-                        "spacetimedb-cli",
-                        "--",
-                        "start",
-                        "--listen-addr",
-                        &format!("0.0.0.0:{server_port}"),
-                        "--pg-port",
-                        pg_port.to_string(),
-                        "--data-dir",
-                        data_dir_str,
-                    )
-                    .read();
+                let handle = thread::spawn({
+                    let cli_path = cli_path.to_string_lossy().to_string();
+                    move || {
+                        let _ = cmd!(
+                            cli_path,
+                            "start",
+                            "--listen-addr",
+                            format!("0.0.0.0:{server_port}"),
+                            "--pg-port",
+                            pg_port.to_string(),
+                            "--data-dir",
+                            data_dir_str,
+                        )
+                        .read();
+                    }
                 });
-                wait_until_http_ready(Duration::from_secs(1200), &server_url)?;
+                wait_until_http_ready(Duration::from_secs(1200), cli_path, &server_url)?;
                 Ok(ServerState::Yes { handle, data_dir })
             }
         }
@@ -372,10 +407,10 @@ impl Drop for ServerState {
     }
 }
 
-fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
+fn run_smoketests_batch(cli_path: &Path, server_mode: StartServer, args: &[String], python: &str) -> Result<()> {
     let mut args: Vec<_> = args.iter().cloned().collect();
 
-    let _server = ServerState::start(server_mode, &mut args)?;
+    let _server = ServerState::start(cli_path, server_mode, &mut args)?;
 
     println!("Running smoketests: {}", args.join(" "));
     cmd(
@@ -387,11 +422,16 @@ fn run_smoketests_batch(server_mode: StartServer, args: &[String], python: &str)
 }
 
 // TODO: Fold this into `run_smoketests_batch`.
-fn run_smoketests_batch_captured(server_mode: StartServer, args: &[String], python: &str) -> (String, Result<()>) {
+fn run_smoketests_batch_captured(
+    cli_path: &Path,
+    server_mode: StartServer,
+    args: &[String],
+    python: &str,
+) -> (String, Result<()>) {
     let mut args: Vec<_> = args.iter().cloned().collect();
     let mut output = String::new();
 
-    let server = ServerState::start_with_output(server_mode, &mut args, Some(&mut output));
+    let server = ServerState::start_with_output(cli_path, server_mode, &mut args, Some(&mut output));
     let _server = match server {
         Ok(server) => server,
         Err(e) => return (output, Err(e)),
@@ -512,6 +552,7 @@ fn infer_python() -> String {
 }
 
 fn run_smoketests_serial(
+    cli_path: PathBuf,
     python: String,
     list: Option<String>,
     docker: Option<String>,
@@ -551,11 +592,12 @@ fn run_smoketests_serial(
         no_build_cli,
         no_docker_logs,
     ));
-    run_smoketests_batch(start_server, &args, &python)?;
+    run_smoketests_batch(&cli_path, start_server, &args, &python)?;
     Ok(())
 }
 
 fn run_smoketests_parallel(
+    cli_path: PathBuf,
     python: String,
     list: Option<String>,
     docker: Option<String>,
@@ -650,6 +692,7 @@ fn run_smoketests_parallel(
     let mut handles = Vec::new();
     for batch in batches {
         let start_server_clone = start_server.clone();
+        let cli_path = cli_path.clone();
         let python = python.clone();
         let mut batch_args: Vec<String> = Vec::new();
         batch_args.push(batch.clone());
@@ -657,7 +700,9 @@ fn run_smoketests_parallel(
 
         handles.push((
             batch.clone(),
-            std::thread::spawn(move || run_smoketests_batch_captured(start_server_clone, &batch_args, &python)),
+            std::thread::spawn(move || {
+                run_smoketests_batch_captured(&cli_path, start_server_clone, &batch_args, &python)
+            }),
         ));
     }
 
@@ -837,11 +882,14 @@ fn main() -> Result<()> {
                 }
             }
 
+            let cli_path = compute_spacetimedb_cli_path()?;
+
             let python = python.unwrap_or(infer_python());
 
             // These are split into two separate functions, so that we can ensure all the args are considered in both cases.
             if parallel {
                 run_smoketests_parallel(
+                    cli_path,
                     python,
                     list,
                     docker,
@@ -859,6 +907,7 @@ fn main() -> Result<()> {
                 )?;
             } else {
                 run_smoketests_serial(
+                    cli_path,
                     python,
                     list,
                     docker,
