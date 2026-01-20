@@ -16,6 +16,7 @@ import {
   type InferSpacetimeTypeOfTypeBuilder,
   type RowObj,
   type VariantsObj,
+  ResultBuilder,
 } from './type_builders';
 import type { UntypedTableDef } from './table';
 import {
@@ -76,7 +77,8 @@ type TablesToSchema<T extends readonly UntypedTableSchema[]> = {
   };
 };
 
-interface TableToSchema<T extends UntypedTableSchema> extends UntypedTableDef {
+export interface TableToSchema<T extends UntypedTableSchema>
+  extends UntypedTableDef {
   name: T['tableName'];
   accessorName: CamelCase<T['tableName']>;
   columns: T['rowType']['row'];
@@ -186,6 +188,11 @@ export function registerTypesRecursively<
   } else if (typeBuilder instanceof OptionBuilder) {
     return new OptionBuilder(
       registerTypesRecursively(typeBuilder.value)
+    ) as any;
+  } else if (typeBuilder instanceof ResultBuilder) {
+    return new ResultBuilder(
+      registerTypesRecursively(typeBuilder.ok),
+      registerTypesRecursively(typeBuilder.err)
     ) as any;
   } else if (typeBuilder instanceof ArrayBuilder) {
     return new ArrayBuilder(

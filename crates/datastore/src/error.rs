@@ -129,6 +129,8 @@ pub enum IndexError {
     NotUnique(IndexId),
     #[error("Key {1:?} was not found in index {0:?}")]
     KeyNotFound(IndexId, AlgebraicValue),
+    #[error("IndexId {0:?} does not support seeking for a range")]
+    IndexCannotSeekRange(IndexId),
 }
 
 #[derive(Error, Debug, PartialEq, Eq)]

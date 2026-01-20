@@ -809,6 +809,32 @@ public static partial class BSATNRuntimeTests
 #pragma warning restore CS8625 // Cannot convert null literal to non-nullable reference type.
     }
 
+    [Fact]
+    public static void NonNullableStringSerializationRejectsNull()
+    {
+        var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+
+        var serializer = new BSATN.String();
+        var ex = Assert.Throws<ArgumentNullException>(() => serializer.Write(writer, null!));
+        Assert.Contains("nullable string", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public static void NullableStringOptionRoundTripsNull()
+    {
+        var stream = new MemoryStream();
+        var writer = new BinaryWriter(stream);
+        var serializer = new BSATN.RefOption<string, BSATN.String>();
+
+        serializer.Write(writer, null);
+
+        stream.Seek(0, SeekOrigin.Begin);
+        var reader = new BinaryReader(stream);
+        var value = serializer.Read(reader);
+        Assert.Null(value);
+    }
+
     [Type]
     partial struct ContainsEnum
     {

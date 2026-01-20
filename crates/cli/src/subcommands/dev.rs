@@ -37,8 +37,14 @@ pub fn cli() -> Command {
         .about("Start development mode with auto-regenerate client module bindings, auto-rebuild, and auto-publish on file changes.")
         .arg(
             Arg::new("database")
-                .long("database")
                 .help("The database name/identity to publish to (optional, will prompt if not provided)"),
+        )
+        // Deprecated: --database flag for backwards compatibility
+        .arg(
+            Arg::new("database-flag")
+                .long("database")
+                .hide(true)
+                .help("DEPRECATED: Use positional argument instead"),
         )
         .arg(
             Arg::new("project-path")
@@ -73,6 +79,13 @@ pub fn cli() -> Command {
         .arg(common_args::server().help("The nickname, host name or URL of the server to publish to"))
         .arg(common_args::yes())
         .arg(common_args::clear_database())
+        .arg(
+            Arg::new("template")
+                .short('t')
+                .long("template")
+                .value_name("TEMPLATE")
+                .help("Template ID or GitHub repository (owner/repo or URL) for project initialization"),
+        )
 }
 
 #[derive(Deserialize)]
@@ -128,11 +141,16 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
             .interact()?;
 
         if should_init {
-            let init_args = init::cli().get_matches_from(if resolved_server == "local" {
-                vec!["init", "--local"]
-            } else {
-                vec!["init"]
-            });
+            let mut init_argv = vec!["init"];
+            if resolved_server == "local" {
+                init_argv.push("--local");
+            }
+            let template = args.get_one::<String>("template");
+            if let Some(template_str) = template {
+                init_argv.push("--template");
+                init_argv.push(template_str);
+            }
+            let init_args = init::cli().get_matches_from(init_argv);
             let created_project_path = init::exec(config.clone(), &init_args).await?;
 
             let canonical_created_path = created_project_path
@@ -148,6 +166,11 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         } else {
             anyhow::bail!("Not in a SpacetimeDB project directory");
         }
+    } else if args.get_one::<String>("template").is_some() {
+        println!(
+            "{}",
+            "Warning: --template option is ignored because a SpacetimeDB project already exists.".yellow()
+        );
     }
 
     if !module_bindings_dir.exists() {
@@ -190,7 +213,18 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
     }
     let use_local = resolved_server == "local";
 
-    let database_name = if let Some(name) = args.get_one::<String>("database") {
+    // Check positional argument first, then deprecated --database flag
+    let database_name = if let Some(name) = args
+        .get_one::<String>("database")
+        .or_else(|| args.get_one::<String>("database-flag"))
+    {
+        if args.get_one::<String>("database-flag").is_some() {
+            println!(
+                "{} {}",
+                "Warning:".yellow().bold(),
+                "--database flag is deprecated. Use positional argument instead: spacetime dev <database>".dimmed()
+            );
+        }
         name.clone()
     } else {
         println!("\n{}", "Found existing SpacetimeDB project.".green());
@@ -216,12 +250,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         }
     };
 
-    if !args.contains_id("database") {
+    if args.get_one::<String>("database").is_none() && args.get_one::<String>("database-flag").is_none() {
         println!("\n{} {}", "Selected database:".green().bold(), database_name.cyan());
         println!(
             "{} {}",
             "Tip:".yellow().bold(),
-            format!("Use `--database {}` to skip this question next time", database_name).dimmed()
+            format!("Use `spacetime dev {}` to skip this question next time", database_name).dimmed()
         );
     }
 

@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines one table and a reducer that updates a row.
 
 TABLE
-- users
+- User
   - Struct: User
   - Fields:
     - Id: int (primary key)
@@ -10,5 +10,5 @@ TABLE
     - Active: bool
 
 REDUCERS
-- UpdateUser: given id:int, name:string, age:int, active:bool, update the row in users with Id=id to exactly these values
+- UpdateUser: given id:int, name:string, age:int, active:bool, update the row in User with Id=id to exactly these values
   - (Id=id, Name=name, Age=age, Active=active)

@@ -342,10 +342,10 @@ impl_deserialize!([] CallProcedureFlags, de => match de.deserialize_u8()? {
 /// The tag recognized by the host and SDKs to mean no compression of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_NONE: u8 = 0;
 
-/// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
+/// The tag recognized by the host and SDKs to mean brotli compression of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_BROTLI: u8 = 1;
 
-/// The tag recognized by the host and SDKs to mean brotli compression  of a [`ServerMessage`].
+/// The tag recognized by the host and SDKs to mean gzip compression of a [`ServerMessage`].
 pub const SERVER_MSG_COMPRESSION_TAG_GZIP: u8 = 2;
 
 /// Messages sent from the server to the client.

@@ -2,7 +2,7 @@ using SpacetimeDB;
 
 public static partial class Module
 {
-    [Table(Name = "users")]
+    [Table(Name = "User")]
     public partial struct User
     {
         [PrimaryKey] public int Id;
@@ -14,6 +14,6 @@ public static partial class Module
     [Reducer]
     public static void DeleteUser(ReducerContext ctx, int id)
     {
-        ctx.Db.users.Id.Delete(id);
+        ctx.Db.User.Id.Delete(id);
     }
 }

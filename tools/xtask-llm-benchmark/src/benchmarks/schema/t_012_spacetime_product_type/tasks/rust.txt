@@ -7,8 +7,8 @@ TYPES
     - right: i32
 
 TABLE
-- results
-  - Struct: Result
+- results (public)
+  - Struct: ResultRow 
   - Fields:
     - id: i32 (primary key)
     - value: Score

@@ -14,7 +14,7 @@ struct TESTCLIENT_API FInsertOneF64Args
     GENERATED_BODY()
 
     UPROPERTY(BlueprintReadWrite, Category="SpacetimeDB")
-    double F;
+    double F = 0.0;
 
     FInsertOneF64Args() = default;
 
@@ -46,7 +46,7 @@ class TESTCLIENT_API UInsertOneF64Reducer : public UReducerBase
 
 public:
     UPROPERTY(BlueprintReadOnly, Category="SpacetimeDB")
-    double F;
+    double F = 0.0;
 
 };
 

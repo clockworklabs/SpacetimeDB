@@ -1139,10 +1139,8 @@ pub async fn init_from_template(
         TemplateType::Empty => init_empty(config, project_path)?,
     }
 
-    let cursorrules_content = embedded::get_cursorrules();
-    let cursorrules_path = project_path.join(".cursor/rules/spacetimedb.mdc");
-    fs::create_dir_all(cursorrules_path.parent().unwrap())?;
-    fs::write(cursorrules_path, cursorrules_content)?;
+    // Install AI assistant rules for multiple editors/tools
+    install_ai_rules(config, project_path)?;
 
     println!("{}", "Project initialized successfully!".green());
     print_next_steps(config, project_path)?;
@@ -1221,6 +1219,11 @@ fn init_builtin(config: &TemplateConfig, project_path: &Path, is_server_only: bo
 
 fn copy_embedded_files(files: &HashMap<&str, &str>, target_dir: &Path) -> anyhow::Result<()> {
     for (file_path, content) in files {
+        // Skip .template.json files - they're only for template metadata
+        if file_path.ends_with(".template.json") {
+            continue;
+        }
+
         let full_path = target_dir.join(file_path);
         if let Some(parent) = full_path.parent() {
             fs::create_dir_all(parent)?;
@@ -1481,20 +1484,12 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> anyhow::Result<PathB
 pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../templates/basic-rust/server/Cargo.toml"),
+            include_str!("../../../../templates/basic-rust/spacetimedb/Cargo.toml"),
             "Cargo.toml",
         ),
         (
-            include_str!("../../templates/basic-rust/server/src/lib.rs"),
+            include_str!("../../../../templates/basic-rust/spacetimedb/src/lib.rs"),
             "src/lib.rs",
-        ),
-        (
-            include_str!("../../templates/basic-rust/server/.gitignore"),
-            ".gitignore",
-        ),
-        (
-            include_str!("../../templates/basic-rust/server/.cargo/config.toml"),
-            ".cargo/config.toml",
         ),
     ];
 
@@ -1513,16 +1508,15 @@ pub fn init_rust_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../templates/basic-c-sharp/server/StdbModule.csproj"),
+            include_str!("../../../../templates/basic-c-sharp/spacetimedb/StdbModule.csproj"),
             "StdbModule.csproj",
         ),
-        (include_str!("../../templates/basic-c-sharp/server/Lib.cs"), "Lib.cs"),
         (
-            include_str!("../../templates/basic-c-sharp/server/.gitignore"),
-            ".gitignore",
+            include_str!("../../../../templates/basic-c-sharp/spacetimedb/Lib.cs"),
+            "Lib.cs",
         ),
         (
-            include_str!("../../templates/basic-c-sharp/server/global.json"),
+            include_str!("../../../../templates/basic-c-sharp/spacetimedb/global.json"),
             "global.json",
         ),
     ];
@@ -1542,20 +1536,16 @@ pub fn init_csharp_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../templates/basic-typescript/server/package.json"),
+            include_str!("../../../../templates/basic-typescript/spacetimedb/package.json"),
             "package.json",
         ),
         (
-            include_str!("../../templates/basic-typescript/server/tsconfig.json"),
+            include_str!("../../../../templates/basic-typescript/spacetimedb/tsconfig.json"),
             "tsconfig.json",
         ),
         (
-            include_str!("../../templates/basic-typescript/server/src/index.ts"),
+            include_str!("../../../../templates/basic-typescript/spacetimedb/src/index.ts"),
             "src/index.ts",
-        ),
-        (
-            include_str!("../../templates/basic-typescript/server/.gitignore"),
-            ".gitignore",
         ),
     ];
 
@@ -1671,4 +1661,91 @@ fn set_dependency_version(item: &mut Item, version: &str, remove_path: bool) {
     }
 
     *item = value(version.to_string());
+}
+
+/// Install AI assistant rules for multiple editors/tools.
+/// Writes rules to:
+/// - .cursor/rules/ (Cursor)
+/// - CLAUDE.md (Claude Code)
+/// - AGENTS.md (Opencode)
+/// - .windsurfrules (Windsurf)
+/// - .github/copilot-instructions.md (VS Code Copilot)
+fn install_ai_rules(config: &TemplateConfig, project_path: &Path) -> anyhow::Result<()> {
+    let base_rules = embedded::get_ai_rules_base();
+    let ts_rules = embedded::get_ai_rules_typescript();
+    let rust_rules = embedded::get_ai_rules_rust();
+    let csharp_rules = embedded::get_ai_rules_csharp();
+
+    // Check which languages are used in server or client
+    let uses_typescript = config.server_lang == Some(ServerLanguage::TypeScript)
+        || config.client_lang == Some(ClientLanguage::TypeScript);
+    let uses_rust =
+        config.server_lang == Some(ServerLanguage::Rust) || config.client_lang == Some(ClientLanguage::Rust);
+    let uses_csharp =
+        config.server_lang == Some(ServerLanguage::Csharp) || config.client_lang == Some(ClientLanguage::Csharp);
+
+    // 1. Cursor: .cursor/rules/ directory with separate files
+    let cursor_dir = project_path.join(".cursor/rules");
+    fs::create_dir_all(&cursor_dir)?;
+    fs::write(cursor_dir.join("spacetimedb.mdc"), base_rules)?;
+    if uses_typescript {
+        fs::write(cursor_dir.join("spacetimedb-typescript.mdc"), ts_rules)?;
+    }
+    if uses_rust {
+        fs::write(cursor_dir.join("spacetimedb-rust.mdc"), rust_rules)?;
+    }
+    if uses_csharp {
+        fs::write(cursor_dir.join("spacetimedb-csharp.mdc"), csharp_rules)?;
+    }
+
+    // Build combined content for single-file AI assistants
+    // Strip the YAML frontmatter from the .mdc files for non-Cursor tools
+    let base_content = strip_mdc_frontmatter(base_rules);
+    let mut combined_content = base_content.to_string();
+
+    if uses_typescript {
+        let ts_content = strip_mdc_frontmatter(ts_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(ts_content);
+    }
+    if uses_rust {
+        let rust_content = strip_mdc_frontmatter(rust_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(rust_content);
+    }
+    if uses_csharp {
+        let csharp_content = strip_mdc_frontmatter(csharp_rules);
+        combined_content.push_str("\n\n");
+        combined_content.push_str(csharp_content);
+    }
+
+    // 2. Claude Code: CLAUDE.md
+    fs::write(project_path.join("CLAUDE.md"), &combined_content)?;
+
+    // 3. Opencode: AGENTS.md
+    fs::write(project_path.join("AGENTS.md"), &combined_content)?;
+
+    // 4. Windsurf: .windsurfrules
+    fs::write(project_path.join(".windsurfrules"), &combined_content)?;
+
+    // 5. VS Code Copilot: .github/copilot-instructions.md
+    let github_dir = project_path.join(".github");
+    fs::create_dir_all(&github_dir)?;
+    fs::write(github_dir.join("copilot-instructions.md"), &combined_content)?;
+
+    Ok(())
+}
+
+/// Strip YAML frontmatter from .mdc files (the --- delimited section at the start)
+fn strip_mdc_frontmatter(content: &str) -> &str {
+    // Look for frontmatter: starts with --- and ends with ---
+    if let Some(after_opening) = content.strip_prefix("---") {
+        if let Some(end_idx) = after_opening.find("\n---") {
+            // Skip past the closing --- and the newline after it
+            let remaining = &after_opening[end_idx + 4..]; // 4 for \n---
+                                                           // Skip any leading newlines after frontmatter
+            return remaining.trim_start_matches('\n');
+        }
+    }
+    content
 }
