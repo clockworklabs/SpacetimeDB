@@ -12,8 +12,8 @@ alwaysApply: true
 | Language | Rule File |
 |----------|-----------|
 | **TypeScript/React** | `spacetimedb-typescript.mdc` (MANDATORY) |
-| **Rust** | Check existing Rust modules in repo |
-| **C#** | Check existing C# modules in repo |
+| **Rust** | `spacetimedb-rust.mdc` (MANDATORY) |
+| **C#** | `spacetimedb-csharp.mdc` (MANDATORY) |
 
 ---
 

@@ -58,6 +58,8 @@ fn get_manifest_dir() -> PathBuf {
 //                            templates list at templates/templates-list.json
 //   * `get_ai_rules_base` - returns base AI rules for all languages
 //   * `get_ai_rules_typescript` - returns TypeScript-specific AI rules
+//   * `get_ai_rules_rust` - returns Rust-specific AI rules
+//   * `get_ai_rules_csharp` - returns C#-specific AI rules
 fn generate_template_files() {
     let manifest_dir = get_manifest_dir();
     let repo_root = get_repo_root();
@@ -138,6 +140,34 @@ fn generate_template_files() {
         println!("cargo:rerun-if-changed={}", ts_rules_path.display());
     } else {
         panic!("Could not find \"docs/static/ai-rules/spacetimedb-typescript.mdc\" file.");
+    }
+
+    // Rust-specific rules
+    let rust_rules_path = ai_rules_dir.join("spacetimedb-rust.mdc");
+    if rust_rules_path.exists() {
+        generated_code.push_str("pub fn get_ai_rules_rust() -> &'static str {\n");
+        generated_code.push_str(&format!(
+            "    include_str!(\"{}\")\n",
+            rust_rules_path.to_str().unwrap().replace('\\', "\\\\")
+        ));
+        generated_code.push_str("}\n\n");
+        println!("cargo:rerun-if-changed={}", rust_rules_path.display());
+    } else {
+        panic!("Could not find \"docs/static/ai-rules/spacetimedb-rust.mdc\" file.");
+    }
+
+    // C#-specific rules
+    let csharp_rules_path = ai_rules_dir.join("spacetimedb-csharp.mdc");
+    if csharp_rules_path.exists() {
+        generated_code.push_str("pub fn get_ai_rules_csharp() -> &'static str {\n");
+        generated_code.push_str(&format!(
+            "    include_str!(\"{}\")\n",
+            csharp_rules_path.to_str().unwrap().replace('\\', "\\\\")
+        ));
+        generated_code.push_str("}\n\n");
+        println!("cargo:rerun-if-changed={}", csharp_rules_path.display());
+    } else {
+        panic!("Could not find \"docs/static/ai-rules/spacetimedb-csharp.mdc\" file.");
     }
 
     // Expose workspace metadata so `spacetime init` can rewrite template manifests without hardcoding versions.

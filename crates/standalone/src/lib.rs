@@ -8,6 +8,7 @@ use crate::subcommands::{extract_schema, start};
 use anyhow::Context as _;
 use async_trait::async_trait;
 use clap::{ArgMatches, Command};
+use http::StatusCode;
 use spacetimedb::client::ClientActorIndex;
 use spacetimedb::config::{CertificateAuthority, MetadataFile};
 use spacetimedb::db;
@@ -115,8 +116,42 @@ impl StandaloneEnv {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum GetLeaderHostError {
+    #[error("database does not exist")]
+    NoSuchDatabase,
+    #[error("replica does not exist")]
+    NoSuchReplica,
+    #[error("error starting database")]
+    LaunchError { source: anyhow::Error },
+    #[error("error accessing controldb")]
+    Control(#[from] control_db::Error),
+}
+
+impl spacetimedb_client_api::MaybeMisdirected for GetLeaderHostError {
+    fn is_misdirected(&self) -> bool {
+        matches!(self, Self::NoSuchDatabase | Self::NoSuchReplica)
+    }
+}
+
+impl From<GetLeaderHostError> for axum::response::ErrorResponse {
+    fn from(e: GetLeaderHostError) -> Self {
+        let status = match e {
+            GetLeaderHostError::NoSuchDatabase | GetLeaderHostError::NoSuchReplica => StatusCode::NOT_FOUND,
+            GetLeaderHostError::LaunchError { .. } | GetLeaderHostError::Control { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+        };
+
+        Self::from((status, e.to_string()))
+    }
+}
+
 #[async_trait]
 impl NodeDelegate for StandaloneEnv {
+    type JwtAuthProviderT = auth::DefaultJwtAuthProvider;
+    type GetLeaderHostError = GetLeaderHostError;
+
     fn gather_metrics(&self) -> Vec<prometheus::proto::MetricFamily> {
         self.metrics_registry.gather()
     }
@@ -125,30 +160,27 @@ impl NodeDelegate for StandaloneEnv {
         &self.client_actor_index
     }
 
-    type JwtAuthProviderT = auth::DefaultJwtAuthProvider;
-
     fn jwt_auth_provider(&self) -> &Self::JwtAuthProviderT {
         &self.auth_provider
     }
 
-    async fn leader(&self, database_id: u64) -> anyhow::Result<Option<Host>> {
-        let leader = match self.control_db.get_leader_replica_by_database(database_id) {
-            Some(leader) => leader,
-            None => return Ok(None),
+    async fn leader(&self, database_id: u64) -> Result<Host, Self::GetLeaderHostError> {
+        let Some(leader) = self.control_db.get_leader_replica_by_database(database_id) else {
+            return Err(GetLeaderHostError::NoSuchReplica);
         };
 
-        let database = self
-            .control_db
-            .get_database_by_id(database_id)?
-            .with_context(|| format!("Database {database_id} not found"))?;
+        let Some(database) = self.control_db.get_database_by_id(database_id)? else {
+            return Err(GetLeaderHostError::NoSuchDatabase);
+        };
 
         self.host_controller
             .get_or_launch_module_host(database, leader.id)
             .await
-            .context("failed to get or launch module host")?;
+            .map_err(|source| GetLeaderHostError::LaunchError { source })?;
 
-        Ok(Some(Host::new(leader.id, self.host_controller.clone())))
+        Ok(Host::new(leader.id, self.host_controller.clone()))
     }
+
     fn module_logs_dir(&self, replica_id: u64) -> ModuleLogsDir {
         self.data_dir().replica(replica_id).module_logs()
     }
@@ -268,10 +300,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
                 let database_id = database.id;
                 let database_identity = database.database_identity;
 
-                let leader = self
-                    .leader(database_id)
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                let leader = self.leader(database_id).await?;
                 let update_result = leader
                     .update(database, spec.host_type, spec.program_bytes.to_vec().into(), policy)
                     .await?;
@@ -332,10 +361,7 @@ impl spacetimedb_client_api::ControlStateWriteAccess for StandaloneEnv {
 
         match existing_db {
             Some(db) => {
-                let host = self
-                    .leader(db.id)
-                    .await?
-                    .ok_or_else(|| anyhow::anyhow!("No leader for database"))?;
+                let host = self.leader(db.id).await?;
                 self.host_controller
                     .migrate_plan(
                         db,
