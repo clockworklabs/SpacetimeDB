@@ -11,7 +11,7 @@ TYPES
     - Y: int
 
 TABLE
-- Profile
+- Profile (public)
   - Struct: Profile
   - Fields:
     - Id: int (primary key)
