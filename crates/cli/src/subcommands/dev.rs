@@ -109,7 +109,6 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         .copied()
         .unwrap_or(ClearMode::OnConflict);
     let force = args.get_flag("force");
-    let yes = args.get_flag("yes");
 
     // If you don't specify a server, we default to your default server
     // If you don't have one of those, we default to "maincloud"
@@ -278,7 +277,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
         client_language,
         resolved_server,
         clear_database,
-        yes,
+        force,
     )
     .await?;
 
@@ -328,7 +327,7 @@ pub async fn exec(mut config: Config, args: &ArgMatches) -> Result<(), anyhow::E
                 client_language,
                 resolved_server,
                 clear_database,
-                yes,
+                force,
             )
             .await
             {
