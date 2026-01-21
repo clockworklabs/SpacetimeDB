@@ -1589,15 +1589,34 @@ Found violation at pointer {ptr:?} to row {:?}.",
         self.pointer_map = Some(self.rebuild_pointer_map(blob_store));
     }
 
-    /// Consumes the table, returning some constituents needed for merge.
-    pub fn consume_for_merge(
-        self,
-    ) -> (
-        Arc<TableSchema>,
-        impl Iterator<Item = (IndexId, TableIndex)>,
-        impl Iterator<Item = Box<Page>>,
-    ) {
-        (self.schema, self.indexes.into_iter(), self.inner.pages.into_page_iter())
+    /// Steals the pages of the table for merging.
+    pub fn as_tx_table_during_merge(&mut self, page_pool: &PagePool) -> (bool, Arc<TableSchema>) {
+        // Only reset/clear the table if we want to keep it around.
+        // If it wasn't touched this transaction, remove it.
+        let keep_table = self.row_count == 0;
+        if keep_table {
+            // Reset statistics.
+            self.blob_store_bytes = BlobNumBytes::default();
+            self.row_count = 0;
+
+            // Clear indices.
+            for index in self.indexes.values_mut() {
+                index.clear();
+            }
+
+            // Clear pointer map.
+            if let Some(pm) = &mut self.pointer_map {
+                pm.clear();
+            }
+
+            // Clear every page.
+            self.inner.pages.clear();
+        } else {
+            // Put all the pages in the table back into the pool.
+            page_pool.put_many(self.inner.pages.drain());
+        }
+
+        (keep_table, self.schema.clone())
     }
 
     /// Returns the number of rows resident in this table.

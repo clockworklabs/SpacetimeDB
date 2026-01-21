@@ -1,6 +1,6 @@
 use super::{delete_table::DeleteTable, sequence::Sequence};
 use core::ops::RangeBounds;
-use spacetimedb_data_structures::map::IntMap;
+use spacetimedb_data_structures::map::{IntMap, hash_map::Entry};
 use spacetimedb_lib::db::auth::StAccess;
 use spacetimedb_primitives::{ColList, ConstraintId, IndexId, SequenceId, TableId};
 use spacetimedb_sats::{memory_usage::MemoryUsage, AlgebraicValue};
@@ -53,13 +53,13 @@ pub(super) struct TxState {
     /// a separate `Table` containing only the new insertions.
     ///
     /// `RowPointer`s into the `insert_tables` use `SquashedOffset::TX_STATE`.
-    pub(super) insert_tables: BTreeMap<TableId, Table>,
+    pub(super) insert_tables: IntMap<TableId, Table>,
 
     /// For any `TableId` that has had a previously-committed row deleted from it,
     /// a set of the deleted previously-committed rows.
     ///
     /// Any `RowPointer` in this set will have `SquashedOffset::COMMITTED_STATE`.
-    pub(super) delete_tables: BTreeMap<TableId, DeleteTable>,
+    pub(super) delete_tables: IntMap<TableId, DeleteTable>,
 
     /// A blob store for those blobs referred to by the `insert_tables`.
     ///
@@ -77,7 +77,7 @@ pub(super) struct TxState {
     pub(super) pending_schema_changes: ThinVec<PendingSchemaChange>,
 }
 
-static_assert_size!(TxState, 88);
+static_assert_size!(TxState, 104);
 
 impl MemoryUsage for TxState {
     fn heap_usage(&self) -> usize {
@@ -278,11 +278,11 @@ impl TxState {
         let insert_tables = &mut self.insert_tables;
         let blob_store = &mut self.blob_store;
         let table = match insert_tables.entry(table_id) {
-            btree_map::Entry::Vacant(e) => {
+            Entry::Vacant(e) => {
                 let new_table = template.clone_structure(SquashedOffset::TX_STATE);
                 e.insert(new_table)
             }
-            btree_map::Entry::Occupied(e) => e.into_mut(),
+            Entry::Occupied(e) => e.into_mut(),
         };
         let delete_table = get_delete_table_mut(&mut self.delete_tables, table_id, table);
         (table, blob_store, delete_table)
@@ -308,7 +308,7 @@ impl TxState {
 pub(super) type TxTableForInsertion<'a> = (&'a mut Table, &'a mut dyn BlobStore, &'a mut DeleteTable);
 
 fn get_delete_table_mut<'a>(
-    delete_tables: &'a mut BTreeMap<TableId, DeleteTable>,
+    delete_tables: &'a mut IntMap<TableId, DeleteTable>,
     table_id: TableId,
     table: &Table,
 ) -> &'a mut DeleteTable {

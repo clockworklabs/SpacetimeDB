@@ -234,6 +234,11 @@ impl<B: BitBlock> FixedBitSet<B> {
         self.blocks() * B::BITS as usize
     }
 
+    /// Is any bit set?
+    pub fn any_set(&self) -> bool {
+        self.iter_set().next().is_some()
+    }
+
     /// Returns all the set indices.
     pub fn iter_set(&self) -> IterSet<'_, B> {
         let mut inner = self.storage().iter();

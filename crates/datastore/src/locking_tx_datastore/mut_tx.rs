@@ -251,7 +251,7 @@ pub struct MutTxId {
     pub(crate) _not_send: PhantomData<std::rc::Rc<()>>,
 }
 
-static_assert_size!(MutTxId, 432);
+static_assert_size!(MutTxId, 448);
 
 impl MutTxId {
     /// Record that a view performs a table scan in this transaction's read set
@@ -339,7 +339,7 @@ impl MutTxId {
             .tx_state
             .insert_tables
             .keys()
-            .filter(|table_id| !self.tx_state.delete_tables.contains_key(table_id))
+            .filter(|table_id| !self.tx_state.delete_tables.contains_key(*table_id))
             .chain(self.tx_state.delete_tables.keys())
             .flat_map(|table_id| self.committed_state_write_lock.views_for_table_scan(table_id))
             .collect::<HashSet<_>>();

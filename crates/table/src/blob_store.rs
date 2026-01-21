@@ -94,6 +94,11 @@ pub trait BlobStore: Sync {
     /// but rather just decrement a reference count.
     fn free_blob(&mut self, hash: &BlobHash) -> Result<(), NoSuchBlobError>;
 
+    /// Clear the blob store, leaving it with no blobs.
+    ///
+    /// TODO(perf,centril): this will likely become a draining method in the future.
+    fn clear(&mut self);
+
     /// Iterate over all blobs present in the blob store.
     ///
     /// Each element is a tuple `(hash, uses, data)`,
@@ -151,6 +156,8 @@ impl BlobStore for NullBlobStore {
     fn free_blob(&mut self, _hash: &BlobHash) -> Result<(), NoSuchBlobError> {
         unimplemented!("NullBlobStore doesn't do anything")
     }
+
+    fn clear(&mut self) {}
 
     fn iter_blobs(&self) -> BlobsIter<'_> {
         unimplemented!("NullBlobStore doesn't do anything")
@@ -226,6 +233,10 @@ impl BlobStore for HashMapBlobStore {
             Entry::Occupied(mut entry) => entry.get_mut().uses -= 1,
         }
         Ok(())
+    }
+
+    fn clear(&mut self) {
+        self.map.clear();
     }
 
     fn iter_blobs(&self) -> BlobsIter<'_> {

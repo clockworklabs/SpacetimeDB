@@ -363,9 +363,10 @@ impl Pages {
         self.pages = pages;
     }
 
-    /// Consumes the page manager, returning all the pages it held.
-    pub fn into_page_iter(self) -> impl Iterator<Item = Box<Page>> {
-        self.pages.into_iter()
+    /// Drains the pages of the page manager, returning all the pages it held.
+    pub fn drain(&mut self) -> impl Iterator<Item = Box<Page>> + use<'_> {
+        self.non_full_pages.clear();
+        self.pages.drain(..)
     }
 }
 
