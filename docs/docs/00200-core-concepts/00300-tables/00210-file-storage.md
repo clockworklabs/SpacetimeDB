@@ -326,19 +326,24 @@ const image = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "Image", Public = true)]
-public partial struct Image
+using SpacetimeDB;
+
+public partial class Module
 {
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-    [SpacetimeDB.Index.BTree]
-    public Identity OwnerId;
-    public List<byte> Thumbnail;      // Small preview stored inline
-    public string OriginalUrl;        // Large original in external storage
-    public uint Width;
-    public uint Height;
-    public Timestamp UploadedAt;
+    [SpacetimeDB.Table(Name = "Image", Public = true)]
+    public partial struct Image
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        [SpacetimeDB.Index.BTree]
+        public Identity OwnerId;
+        public List<byte> Thumbnail;      // Small preview stored inline
+        public string OriginalUrl;        // Large original in external storage
+        public uint Width;
+        public uint Height;
+        public Timestamp UploadedAt;
+    }
 }
 ```
 
@@ -346,6 +351,8 @@ public partial struct Image
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{Identity, Timestamp};
+
 #[spacetimedb::table(name = image, public)]
 pub struct Image {
     #[primary_key]
