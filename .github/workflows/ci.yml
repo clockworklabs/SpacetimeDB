@@ -171,12 +171,25 @@ jobs:
         with:
           run_install: true
 
+      # Install cmake and emscripten for C++ module compilation tests.
+      - name: Install cmake and emscripten
+        run: |
+          apt-get update
+          apt-get install -y cmake
+          git clone https://github.com/emscripten-core/emsdk.git /opt/emsdk
+          cd /opt/emsdk
+          ./emsdk install latest
+          ./emsdk activate latest
+
       - name: Build typescript module sdk
         working-directory: crates/bindings-typescript
         run: pnpm build
 
+        # Source emsdk environment to make emcc (Emscripten compiler) available in PATH.
       - name: Run tests
-        run: cargo ci test
+        run: |
+          source /opt/emsdk/emsdk_env.sh
+          cargo ci test
 
   lints:
     name: Lints

@@ -30,9 +30,9 @@
     {
       "id": "basic-cpp",
       "description": "A basic C++ server template with only stubs for code",
-      "server_source": "templates/basic-rust/server",
+      "server_source": "templates/basic-cpp/server",
       "client_source": "",
-      "server_lang": "rust",
+      "server_lang": "cpp",
       "client_lang": ""
     },
     {
