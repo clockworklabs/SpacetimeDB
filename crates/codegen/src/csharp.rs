@@ -615,9 +615,11 @@ impl Lang for Csharp<'_> {
                         Value,
                     }
 
-                    let is_csharp_ref_type = |ty: &AlgebraicTypeUse| match ty {
-                        AlgebraicTypeUse::String | AlgebraicTypeUse::Array(_) | AlgebraicTypeUse::Ref(_) => true,
-                        _ => false,
+                    let is_csharp_ref_type = |ty: &AlgebraicTypeUse| {
+                        matches!(
+                            ty,
+                            AlgebraicTypeUse::String | AlgebraicTypeUse::Array(_) | AlgebraicTypeUse::Ref(_)
+                        )
                     };
 
                     let (row_to_key, key_type, nullable_key_kind) = match columns.as_singleton() {

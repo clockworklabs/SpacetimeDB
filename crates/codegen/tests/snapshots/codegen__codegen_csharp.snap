@@ -2729,11 +2729,11 @@ namespace SpacetimeDB
 
     public sealed class TestDCols
     {
-        public global::SpacetimeDB.Col<TestD, NamespaceTestC> TestC { get; }
+        public global::SpacetimeDB.NullableCol<TestD, NamespaceTestC> TestC { get; }
 
         public TestDCols(string tableName)
         {
-            TestC = new global::SpacetimeDB.Col<TestD, NamespaceTestC>(tableName, "test_c");
+            TestC = new global::SpacetimeDB.NullableCol<TestD, NamespaceTestC>(tableName, "test_c");
         }
     }
 
