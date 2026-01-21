@@ -12,7 +12,7 @@ pub struct Position {
     pub y: i32,
 }
 
-#[table(name = profiles)]
+#[table(name = profile)]
 pub struct Profile {
     #[primary_key]
     pub id: i32,
@@ -23,7 +23,7 @@ pub struct Profile {
 
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.profiles().insert(Profile {
+    ctx.db.profile().insert(Profile {
         id: 1,
         home: Address { street: "1 Main".into(),  zip: 11111 },
         work: Address { street: "2 Broad".into(), zip: 22222 },

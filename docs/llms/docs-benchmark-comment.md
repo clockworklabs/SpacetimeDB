@@ -2,13 +2,13 @@
 
 | Language | Mode | Category | Tests Passed | Task Pass % |
 |----------|------|----------|--------------|-------------|
-| Rust | rustdoc_json | basics | 25/27 | 83.3% ⬇️ -8.3% |
-| Rust | rustdoc_json | schema | 29/34 | 80.0% |
-| Rust | rustdoc_json | **total** | 54/61 | **81.8%** ⬇️ -4.5% |
-| C# | docs | basics | 7/27 | 16.0% ⬇️ -84.0% |
-| C# | docs | schema | 18/34 | 48.5% ⬇️ -31.5% |
-| C# | docs | **total** | 25/61 | **30.8%** ⬇️ -60.2% |
+| Rust | rustdoc_json | basics | 10/27 | 44.4% ⬇️ -29.9% |
+| Rust | rustdoc_json | schema | 9/34 | 26.5% ⬇️ -53.5% |
+| Rust | rustdoc_json | **total** | 19/61 | **36.3%** ⬇️ -40.6% |
+| C# | docs | basics | 12/27 | 61.1% |
+| C# | docs | schema | 10/34 | 31.5% |
+| C# | docs | **total** | 22/61 | **47.7%** |
 
 _Compared against master branch baseline_
 
-<sub>Generated at: 2026-01-16T19:34:55.608Z</sub>
+<sub>Generated at: 2026-01-21T03:05:32.938Z</sub>

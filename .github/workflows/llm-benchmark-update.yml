@@ -39,7 +39,9 @@ jobs:
       # If we want to change that it is possible to have the benchmark compile
       # SpacetimeDB from source.
       - name: Install spacetime CLI
-        run: curl -sSf https://install.spacetimedb.com | sh -s -- -y
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Load PR info
         id: pr
@@ -300,4 +302,11 @@ jobs:
           GH_TOKEN: ${{ secrets.CLOCKWORK_LABS_BOT_PAT }}
         run: |
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ steps.pr.outputs.head_repo_full_name }}.git"
+          # Fetch and rebase in case branch moved since workflow started (e.g., previous benchmark run)
+          git fetch origin "${{ steps.pr.outputs.head_ref }}"
+          if ! git rebase "origin/${{ steps.pr.outputs.head_ref }}"; then
+            git rebase --abort
+            echo "::error::Rebase failed due to conflicts. The PR branch may have been updated during the benchmark run. Please re-run /update-llm-benchmark."
+            exit 1
+          fi
           git push origin "HEAD:${{ steps.pr.outputs.head_ref }}"
