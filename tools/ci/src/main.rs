@@ -383,9 +383,6 @@ fn main() -> Result<()> {
                 bsatn_runtime_path,
                 runtime_path,
             );
-                bsatn_source.to_string_lossy(),
-                runtime_source.to_string_lossy(),
-            );
             fs::write(&nuget_config_path, nuget_config_contents)?;
 
             let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
