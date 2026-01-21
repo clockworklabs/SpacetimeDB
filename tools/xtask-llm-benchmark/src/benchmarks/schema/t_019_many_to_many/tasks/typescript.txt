@@ -1,0 +1,27 @@
+Write a SpacetimeDB backend module in TypeScript that models many-to-many relationships with a junction table.
+
+TABLES
+- user
+  - Fields:
+    - userId: number (i32, primary key)
+    - name: string
+
+- group
+  - Fields:
+    - groupId: number (i32, primary key)
+    - title: string
+
+- membership
+  - Fields:
+    - id: number (i32, primary key)
+    - userId: number (i32)
+    - groupId: number (i32)
+  - Indexes:
+    - byUser (btree on userId)
+    - byGroup (btree on groupId)
+
+REDUCERS
+- seed: insert users, groups, and memberships:
+  - user: (1, "Alice"), (2, "Bob")
+  - group: (10, "Admin"), (20, "Dev")
+  - membership: (1, userId=1, groupId=10), (2, userId=1, groupId=20), (3, userId=2, groupId=20)

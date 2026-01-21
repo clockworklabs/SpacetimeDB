@@ -1,7 +1,7 @@
 use spacetimedb::{reducer, table, ReducerContext, Table};
 
 #[table(
-    name = accounts,
+    name = account,
     index(name = by_name, btree(columns = [name]))
 )]
 pub struct Account {
@@ -14,12 +14,12 @@ pub struct Account {
 
 #[reducer]
 pub fn seed(ctx: &ReducerContext) {
-    ctx.db.accounts().insert(Account {
+    ctx.db.account().insert(Account {
         id: 1,
         email: "a@example.com".into(),
         name: "Alice".into(),
     });
-    ctx.db.accounts().insert(Account {
+    ctx.db.account().insert(Account {
         id: 2,
         email: "b@example.com".into(),
         name: "Bob".into(),

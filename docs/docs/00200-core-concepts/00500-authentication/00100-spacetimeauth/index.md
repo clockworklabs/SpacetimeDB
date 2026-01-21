@@ -1,6 +1,5 @@
 ---
 title: Overview
-slug: /spacetimeauth
 ---
 
 :::warning
@@ -107,5 +106,5 @@ actions they are allowed to perform.
 
 ## Getting Started
 
-Check out our [Creating a project guide](/spacetimeauth/creating-a-project) to
+Check out our [Creating a project guide](./00200-creating-a-project.md) to
 learn how to create and configure a SpacetimeAuth project.

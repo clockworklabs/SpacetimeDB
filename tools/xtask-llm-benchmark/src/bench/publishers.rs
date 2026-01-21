@@ -45,13 +45,18 @@ fn is_transient_build_error(stderr: &str, stdout: &str) -> bool {
         || combined.contains("EmitBundleObjectFiles")
         // Other transient resource errors
         || combined.contains("Unable to read data from the transport connection")
+        // WASI SDK tar extraction race condition - multiple parallel builds
+        // trying to extract the same tarball simultaneously
+        || (combined.contains("wasi-sdk") && combined.contains("tar"))
+        || (combined.contains("MSB3073") && combined.contains("exited with code 2"))
 }
 
 fn run(cmd: &mut Command, label: &str) -> Result<()> {
-    run_with_retry(cmd, label, 2)
+    run_with_retry(cmd, label, 3)
 }
 
 fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()> {
+    use std::hash::{Hash, Hasher};
     let mut last_error = None;
 
     for attempt in 0..=max_retries {
@@ -61,7 +66,14 @@ fn run_with_retry(cmd: &mut Command, label: &str, max_retries: u32) -> Result<()
                 attempt + 1,
                 max_retries + 1
             );
-            std::thread::sleep(std::time::Duration::from_secs(1));
+            // Add jitter to desynchronize parallel builds that fail simultaneously.
+            // Use a simple hash of the label + attempt to get pseudo-random delay.
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            label.hash(&mut hasher);
+            attempt.hash(&mut hasher);
+            std::process::id().hash(&mut hasher);
+            let jitter_ms = hasher.finish() % 2000; // 0-2 seconds of jitter
+            std::thread::sleep(std::time::Duration::from_millis(1000 + jitter_ms));
         }
 
         eprintln!("==> {label}: {:?}", cmd);
@@ -204,6 +216,58 @@ impl Publisher for SpacetimeRustPublisher {
                 .arg(&db)
                 .current_dir(source),
             "spacetime publish",
+        )?;
+
+        Ok(())
+    }
+}
+
+/* -------------------------------------------------------------------------- */
+/* TypeScript Publisher                                                       */
+/* -------------------------------------------------------------------------- */
+
+#[derive(Clone, Copy)]
+pub struct TypeScriptPublisher;
+
+impl TypeScriptPublisher {
+    fn ensure_package_json(root: &Path) -> Result<()> {
+        if !root.join("package.json").exists() {
+            bail!("no package.json in {}", root.display());
+        }
+        Ok(())
+    }
+}
+
+impl Publisher for TypeScriptPublisher {
+    fn publish(&self, host_url: &str, source: &Path, module_name: &str) -> Result<()> {
+        if !source.exists() {
+            bail!("no source: {}", source.display());
+        }
+        println!("publish typescript module {}", module_name);
+
+        Self::ensure_package_json(source)?;
+        let db = sanitize_db_name(module_name);
+
+        // Install dependencies (--ignore-workspace to avoid parent workspace interference)
+        run(
+            Command::new("pnpm")
+                .arg("install")
+                .arg("--ignore-workspace")
+                .current_dir(source),
+            "pnpm install (typescript)",
+        )?;
+
+        // Publish (spacetime CLI handles TypeScript compilation internally)
+        run(
+            Command::new("spacetime")
+                .arg("publish")
+                .arg("-c")
+                .arg("-y")
+                .arg("--server")
+                .arg(host_url)
+                .arg(&db)
+                .current_dir(source),
+            "spacetime publish (typescript)",
         )?;
 
         Ok(())
