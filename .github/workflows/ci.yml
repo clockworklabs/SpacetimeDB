@@ -508,13 +508,30 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Build the tool from master to ensure consistent hash computation
+      # with the llm-benchmark-update workflow (which also uses master's tool).
+      - name: Checkout master (build tool from trusted code)
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install llm-benchmark tool from master
+        run: |
+          cargo install --path tools/xtask-llm-benchmark --locked
+          command -v llm_benchmark
+
+      # Now checkout the PR branch to verify its benchmark files
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
       - name: Run hash check (both langs)
-        run: cargo llm ci-check
+        run: llm_benchmark ci-check
 
   unity-testsuite:
     needs: [lints, llm_ci_check]
