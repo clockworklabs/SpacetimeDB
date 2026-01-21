@@ -359,7 +359,30 @@ fn main() -> Result<()> {
             let nuget_config_dir = tempfile::tempdir()?;
             let nuget_config_path = nuget_config_dir.path().join("nuget.config");
             let nuget_config_contents = format!(
-                "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<configuration>\n  <packageSources>\n    <clear />\n    <add key=\"Local SpacetimeDB.BSATN.Runtime\" value=\"{}\" />\n    <add key=\"Local SpacetimeDB.Runtime\" value=\"{}\" />\n    <add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" />\n  </packageSources>\n  <packageSourceMapping>\n    <packageSource key=\"Local SpacetimeDB.BSATN.Runtime\">\n      <package pattern=\"SpacetimeDB.BSATN.Runtime\" />\n    </packageSource>\n    <packageSource key=\"Local SpacetimeDB.Runtime\">\n      <package pattern=\"SpacetimeDB.Runtime\" />\n    </packageSource>\n    <packageSource key=\"nuget.org\">\n      <package pattern=\"*\" />\n    </packageSource>\n  </packageSourceMapping>\n</configuration>\n",
+                r#"<?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
+                <add key="Local SpacetimeDB.Runtime" value="{}" />
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              </packageSources>
+              <packageSourceMapping>
+                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                  <package pattern="SpacetimeDB.BSATN.Runtime" />
+                </packageSource>
+                <packageSource key="Local SpacetimeDB.Runtime">
+                  <package pattern="SpacetimeDB.Runtime" />
+                </packageSource>
+                <packageSource key="nuget.org">
+                  <package pattern="*" />
+                </packageSource>
+              </packageSourceMapping>
+            </configuration>
+            "#,
+                bsatn_runtime_path,
+                runtime_path,
+            );
                 bsatn_source.to_string_lossy(),
                 runtime_source.to_string_lossy(),
             );
