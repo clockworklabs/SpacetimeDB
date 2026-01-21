@@ -50,7 +50,7 @@ else()
     #URL "https://www.spacetimedb.com/cpp/spacetimedb-cpp-sdk-1.11.2.zip"
     URL "https://www.rodentgames.com/spacetimedb/spacetimedb-cpp-sdk-1.11.2.zip"
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    URL_HASH SHA256=E10503F57AA3ADB10ADD82ECF2E0F3C1107B5C141FA5E157D174C30B71071434
+    #URL_HASH SHA256=E10503F57AA3ADB10ADD82ECF2E0F3C1107B5C141FA5E157D174C30B71071434
   )
 
   FetchContent_MakeAvailable(spacetime_cpp_sdk)
