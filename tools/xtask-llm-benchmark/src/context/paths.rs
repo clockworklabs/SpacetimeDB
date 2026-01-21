@@ -103,10 +103,12 @@ fn generate_rustdoc_json() -> Result<()> {
         .args([&toolchain_arg, "rustdoc", "-p", "spacetimedb", "--"])
         .args(["-Z", "unstable-options", "--output-format", "json"])
         .status()
-        .with_context(|| format!(
-            "running cargo {} rustdoc -p spacetimedb -- -Z unstable-options --output-format json",
-            toolchain_arg
-        ))?;
+        .with_context(|| {
+            format!(
+                "running cargo {} rustdoc -p spacetimedb -- -Z unstable-options --output-format json",
+                toolchain_arg
+            )
+        })?;
 
     if !status.success() {
         bail!("cargo rustdoc failed with status {:?}", status.code());
