@@ -241,6 +241,9 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
             .map(AlgebraicValue::from)
             .map_err(|err| anyhow!(err))
     };
+    let to_option = || {
+        Ok(AlgebraicValue::OptionSome(parse(value, ty.as_option().unwrap()).map_err(|_| InvalidLiteral::new(value.to_string(), ty))?))
+    };
     let to_i256 = |decimal: &BigDecimal| {
         i256::from_str_radix(
             // Convert to decimal notation
@@ -362,6 +365,7 @@ pub(crate) fn parse(value: &str, ty: &AlgebraicType) -> anyhow::Result<Algebraic
         t if t.is_identity() => to_identity(),
         t if t.is_connection_id() => to_connection_id(),
         t if t.is_uuid() => to_uuid(),
+        t if t.is_option() => to_option(),
         t => bail!("Literal values for type {} are not supported", fmt_algebraic_type(t)),
     }
 }
