@@ -28,14 +28,20 @@ jobs:
     if: |
       (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/update-llm-benchmark')) ||
       (github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    runs-on: spacetimedb-new-runner
+    container:
+      image: localhost:5000/spacetimedb-ci:latest
+      options: >-
+        --privileged
     steps:
       # Here we install the spacetime CLI for faster execution of the tests
       # SpacetimeDB itself is not under test here, rather it's the docs.
       # If we want to change that it is possible to have the benchmark compile
       # SpacetimeDB from source.
       - name: Install spacetime CLI
-        run: curl -sSf https://install.spacetimedb.com | sh -s -- -y
+        run: |
+          curl -sSf https://install.spacetimedb.com | sh -s -- -y
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Load PR info
         id: pr
@@ -201,6 +207,18 @@ jobs:
           llm_benchmark ci-quickfix
           llm_benchmark ci-check
 
+      # Generate failure analysis if there are any failures
+      - name: Generate failure analysis
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          llm_benchmark analyze -o docs/llms/docs-benchmark-analysis.md || true
+
+      # Generate PR comment markdown (compares against master baseline)
+      - name: Generate PR comment markdown
+        run: |
+          llm_benchmark ci-comment
+
       - name: Ensure only docs/llms changed
         run: |
           set -euo pipefail
@@ -226,77 +244,41 @@ jobs:
           github-token: ${{ secrets.CLOCKWORK_LABS_BOT_PAT }}
           script: |
             const fs = require('fs');
-            // docs-benchmark files are used for CI (testing documentation quality)
-            const summaryPath = 'docs/llms/docs-benchmark-summary.json';
-            const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
 
-            // Extract results for the modes checked by ci-check
-            // Rust: rustdoc_json, C#: docs
-            const rustResults = summary.by_language?.rust?.modes?.rustdoc_json?.models?.['GPT-5'];
-            const csharpResults = summary.by_language?.csharp?.modes?.docs?.models?.['GPT-5'];
-
-            const formatPct = (val) => val !== undefined ? `${val.toFixed(1)}%` : 'N/A';
-
-            let table = `## LLM Benchmark Results (ci-quickfix)\n\n`;
-            table += `| Language | Mode | Category | Tests Passed | Pass % | Task Pass % |\n`;
-            table += `|----------|------|----------|--------------|--------|-------------|\n`;
-
-            if (rustResults) {
-              const cats = rustResults.categories || {};
-              if (cats.basics) {
-                const c = cats.basics;
-                table += `| Rust | rustdoc_json | basics | ${c.passed_tests}/${c.total_tests} | ${formatPct(c.pass_pct)} | ${formatPct(c.task_pass_pct)} |\n`;
-              }
-              if (cats.schema) {
-                const c = cats.schema;
-                table += `| Rust | rustdoc_json | schema | ${c.passed_tests}/${c.total_tests} | ${formatPct(c.pass_pct)} | ${formatPct(c.task_pass_pct)} |\n`;
-              }
-              const t = rustResults.totals;
-              table += `| Rust | rustdoc_json | **total** | ${t.passed_tests}/${t.total_tests} | ${formatPct(t.pass_pct)} | ${formatPct(t.task_pass_pct)} |\n`;
+            // Read the pre-generated comment markdown
+            const commentPath = 'docs/llms/docs-benchmark-comment.md';
+            if (!fs.existsSync(commentPath)) {
+              core.setFailed(`Comment file not found: ${commentPath}`);
+              return;
             }
+            let body = fs.readFileSync(commentPath, 'utf8');
 
-            if (csharpResults) {
-              const cats = csharpResults.categories || {};
-              if (cats.basics) {
-                const c = cats.basics;
-                table += `| C# | docs | basics | ${c.passed_tests}/${c.total_tests} | ${formatPct(c.pass_pct)} | ${formatPct(c.task_pass_pct)} |\n`;
+            // Check if failure analysis exists and append it
+            const analysisPath = 'docs/llms/docs-benchmark-analysis.md';
+            if (fs.existsSync(analysisPath)) {
+              const analysis = fs.readFileSync(analysisPath, 'utf8');
+              // Only include if there's meaningful content (not just "no failures")
+              if (!analysis.includes('No failures found')) {
+                body += `\n<details>\n<summary>Failure Analysis (click to expand)</summary>\n\n${analysis}\n</details>`;
               }
-              if (cats.schema) {
-                const c = cats.schema;
-                table += `| C# | docs | schema | ${c.passed_tests}/${c.total_tests} | ${formatPct(c.pass_pct)} | ${formatPct(c.task_pass_pct)} |\n`;
-              }
-              const t = csharpResults.totals;
-              table += `| C# | docs | **total** | ${t.passed_tests}/${t.total_tests} | ${formatPct(t.pass_pct)} | ${formatPct(t.task_pass_pct)} |\n`;
             }
-
-            table += `\n<sub>Generated at: ${summary.generated_at}</sub>`;
 
             const issue_number = Number(process.env.PR_NUMBER);
 
-            // Find and update existing comment or create new one
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number,
-            });
-
-            const marker = '## LLM Benchmark Results (ci-quickfix)';
-            const existingComment = comments.data.find(c => c.body.startsWith(marker));
-
-            if (existingComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existingComment.id,
-                body: table,
-              });
-            } else {
+            // Always post a new comment
+            console.log(`Posting new comment on PR #${issue_number}...`);
+            try {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number,
-                body: table,
+                body,
               });
+              console.log('Comment created successfully');
+            } catch (err) {
+              console.error('Failed to post comment:', err.message);
+              console.error('Full error:', JSON.stringify(err, null, 2));
+              throw err;
             }
 
       # The benchmarks only modify the docs/llms directory.
@@ -320,4 +302,11 @@ jobs:
           GH_TOKEN: ${{ secrets.CLOCKWORK_LABS_BOT_PAT }}
         run: |
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ steps.pr.outputs.head_repo_full_name }}.git"
+          # Fetch and rebase in case branch moved since workflow started (e.g., previous benchmark run)
+          git fetch origin "${{ steps.pr.outputs.head_ref }}"
+          if ! git rebase "origin/${{ steps.pr.outputs.head_ref }}"; then
+            git rebase --abort
+            echo "::error::Rebase failed due to conflicts. The PR branch may have been updated during the benchmark run. Please re-run /update-llm-benchmark."
+            exit 1
+          fi
           git push origin "HEAD:${{ steps.pr.outputs.head_ref }}"

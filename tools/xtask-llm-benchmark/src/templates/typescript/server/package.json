@@ -1,0 +1,12 @@
+{
+  "name": "spacetime-module",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/lib.ts",
+  "dependencies": {
+    "spacetimedb": "^1.11.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

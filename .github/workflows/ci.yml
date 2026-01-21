@@ -508,13 +508,30 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Build the tool from master to ensure consistent hash computation
+      # with the llm-benchmark-update workflow (which also uses master's tool).
+      - name: Checkout master (build tool from trusted code)
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install llm-benchmark tool from master
+        run: |
+          cargo install --path tools/xtask-llm-benchmark --locked
+          command -v llm_benchmark
+
+      # Now checkout the PR branch to verify its benchmark files
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          clean: false
+
       - name: Run hash check (both langs)
-        run: cargo llm ci-check
+        run: llm_benchmark ci-check
 
   unity-testsuite:
     needs: [lints, llm_ci_check]
@@ -524,12 +541,7 @@ jobs:
     permissions:
       contents: read
       checks: write
-    runs-on: spacetimedb-new-runner
-    container:
-      image: localhost:5000/spacetimedb-ci:latest
-      options: >-
-        --privileged
-        --cgroupns=host
+    runs-on: spacetimedb-unity-runner
     timeout-minutes: 30
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
@@ -630,9 +642,6 @@ jobs:
           key: Unity-${{ github.head_ref }}
           restore-keys: Unity-
 
-        # We need this to support "Docker in Docker"
-      - name: Start Docker daemon
-        run: /usr/local/bin/start-docker.sh
       - name: Run Unity tests
         uses: game-ci/unity-test-runner@v4
         with:

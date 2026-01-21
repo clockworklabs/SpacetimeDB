@@ -10,7 +10,7 @@ use std::time::Instant;
 use tokio::sync::Mutex;
 use tokio::task;
 
-use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher};
+use crate::bench::publishers::{DotnetPublisher, SpacetimeRustPublisher, TypeScriptPublisher};
 use crate::bench::results_merge::merge_task_runs;
 use crate::bench::templates::materialize_project;
 use crate::bench::types::{BenchRunContext, PublishParams, RunContext, RunOneError};
@@ -28,6 +28,7 @@ pub struct TaskRunner {
     pub bench_root: PathBuf,
     pub rust_publisher: SpacetimeRustPublisher,
     pub cs_publisher: DotnetPublisher,
+    pub ts_publisher: TypeScriptPublisher,
 }
 
 static BUILT_KEYS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -90,13 +91,23 @@ async fn publish_cs_async(publisher: DotnetPublisher, host_url: String, wdir: Pa
     task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
     Ok(())
 }
+async fn publish_ts_async(publisher: TypeScriptPublisher, host_url: String, wdir: PathBuf, db: String) -> Result<()> {
+    task::spawn_blocking(move || publisher.publish(&host_url, &wdir, &db)).await??;
+    Ok(())
+}
 
 impl TaskRunner {
-    pub fn new(bench_root: PathBuf, rust_publisher: SpacetimeRustPublisher, cs_publisher: DotnetPublisher) -> Self {
+    pub fn new(
+        bench_root: PathBuf,
+        rust_publisher: SpacetimeRustPublisher,
+        cs_publisher: DotnetPublisher,
+        ts_publisher: TypeScriptPublisher,
+    ) -> Self {
         Self {
             bench_root,
             rust_publisher,
             cs_publisher,
+            ts_publisher,
         }
     }
 
@@ -132,6 +143,7 @@ impl TaskRunner {
         let lang_name = match params.lang {
             Lang::Rust => "rust",
             Lang::CSharp => "csharp",
+            Lang::TypeScript => "typescript",
         };
 
         let wdir = work_server_dir_scoped(params.category, params.task_id, lang_name, phase, params.route_tag);
@@ -151,6 +163,7 @@ impl TaskRunner {
         match params.lang {
             Lang::Rust => publish_rust_async(self.rust_publisher, host_url, wdir, params.db_name).await?,
             Lang::CSharp => publish_cs_async(self.cs_publisher, host_url, wdir, params.db_name).await?,
+            Lang::TypeScript => publish_ts_async(self.ts_publisher, host_url, wdir, params.db_name).await?,
         }
 
         Ok(())
@@ -177,13 +190,10 @@ impl TaskRunner {
         let prompt = prompt_builder.build_segmented(cfg.context);
 
         println!("→ [{}] {}: calling provider", cfg.lang_name, cfg.route.display_name);
-        let llm_output = tokio::time::timeout(
-            std::time::Duration::from_secs(200),
-            cfg.llm.generate(cfg.route, &prompt),
-        )
-        .await
-        .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
-        .map_err(RunOneError::Other)?;
+        let llm_output = tokio::time::timeout(std::time::Duration::from_secs(90), cfg.llm.generate(cfg.route, &prompt))
+            .await
+            .map_err(|_| RunOneError::Other(anyhow!("LLM call timed out")))?
+            .map_err(RunOneError::Other)?;
 
         if debug_llm() {
             print_llm_output(cfg.route.display_name, &task_id, &llm_output);
@@ -297,7 +307,12 @@ pub async fn run_all_for_model_async_for_lang(cfg: &BenchRunContext<'_>) -> Resu
 
     // 1) run per-task LLM builds + scoring
     let tasks = discover_tasks(cfg.bench_root)?;
-    let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher);
+    let runner = TaskRunner::new(
+        PathBuf::from(cfg.bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
@@ -409,7 +424,12 @@ pub async fn run_selected_for_model_async_for_lang(cfg: &BenchRunContext<'_>) ->
         bail!("no tasks matched {:?}", wanted);
     }
 
-    let runner = TaskRunner::new(PathBuf::from(cfg.bench_root), SpacetimeRustPublisher, DotnetPublisher);
+    let runner = TaskRunner::new(
+        PathBuf::from(cfg.bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
     let lang_name = cfg.lang.as_str();
     let buf = match cfg.lang {
         Lang::CSharp => bench_csharp_concurrency(),
@@ -538,7 +558,12 @@ pub async fn build_goldens_only_for_lang(
         discover_tasks(bench_root)?
     };
 
-    let runner = TaskRunner::new(PathBuf::from(bench_root), SpacetimeRustPublisher, DotnetPublisher);
+    let runner = TaskRunner::new(
+        PathBuf::from(bench_root),
+        SpacetimeRustPublisher,
+        DotnetPublisher,
+        TypeScriptPublisher,
+    );
     let lang_name = lang.as_str();
     let buf = match lang {
         Lang::CSharp => bench_csharp_concurrency(),
@@ -577,6 +602,7 @@ fn discover_tasks(benchmarks_root: &Path) -> Result<Vec<TaskPaths>> {
                 root: task.clone(),
                 answers_rust: task.join("answers/rust/server"),
                 answers_csharp: task.join("answers/csharp/server"),
+                answers_typescript: task.join("answers/typescript/server"),
             });
         }
     }
@@ -645,7 +671,7 @@ fn read_dirs(p: &Path) -> Result<Vec<PathBuf>> {
     Ok(v)
 }
 
-// TEST_CASE/answers/csharp.cs and TEST_CASE/rust.rs
+// TEST_CASE/answers/csharp.cs, TEST_CASE/rust.rs, and TEST_CASE/answers/typescript.ts
 fn load_golden_source(task: &TaskPaths, lang: Lang) -> Result<String> {
     match lang {
         Lang::Rust => {
@@ -654,6 +680,10 @@ fn load_golden_source(task: &TaskPaths, lang: Lang) -> Result<String> {
         }
         Lang::CSharp => {
             let p = task.root.join("answers").join("csharp.cs");
+            fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))
+        }
+        Lang::TypeScript => {
+            let p = task.root.join("answers").join("typescript.ts");
             fs::read_to_string(&p).with_context(|| format!("read {}", p.display()))
         }
     }

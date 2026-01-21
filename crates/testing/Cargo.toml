@@ -28,6 +28,7 @@ lazy_static.workspace = true
 rand.workspace = true
 tempfile.workspace = true
 serde.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true

@@ -3,7 +3,7 @@ use crate::eval::defaults::{
     make_reducer_data_parity_scorer,
     make_sql_exec_both_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerDataParityConfig, SqlBuilder};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -14,10 +14,12 @@ pub fn spec() -> BenchmarkSpec {
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
         let reducer_name = ident("LookupUserName", casing);
+        let user_table = table_name("user", lang);
+        let result_table = table_name("result", lang);
 
         // Seed a user row in both DBs so the lookup has something to find
         let seed_users = sb.insert_values(
-            "users",
+            &user_table,
             &["id","name","age","active"],
             &["1","'Alice'","30","true"],
         );
@@ -33,7 +35,7 @@ pub fn spec() -> BenchmarkSpec {
 
         // After calling the reducer, the projection should be present in results
         let select_result = sb.select_by_id(
-            "results",
+            &result_table,
             &["id","name"],
             "id",
             1,

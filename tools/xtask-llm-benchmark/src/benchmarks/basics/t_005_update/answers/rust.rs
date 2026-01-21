@@ -1,6 +1,6 @@
 use spacetimedb::{reducer, table, ReducerContext};
 
-#[table(name = users)]
+#[table(name = user)]
 pub struct User {
     #[primary_key]
     pub id: i32,
@@ -11,5 +11,5 @@ pub struct User {
 
 #[reducer]
 pub fn update_user(ctx: &ReducerContext, id: i32, name: String, age: i32, active: bool) {
-    ctx.db.users().id().update(User { id, name, age, active });
+    ctx.db.user().id().update(User { id, name, age, active });
 }
