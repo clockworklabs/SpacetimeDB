@@ -4,91 +4,239 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
 ## Summary
 
-- **Total failures analyzed**: 58
-
-## Analysis
-
-# Analysis of SpacetimeDB Benchmark Test Failures
-
-## Rust Failures
-
-### Root Causes
-1. **Incomplete Visibility of Struct Fields**
-   - Many struct fields for tables (e.g., `User`) are not marked as `pub`, causing accessibility issues.
-
-2. **Inconsistent Usage of Table Names**
-   - There are discrepancies in the naming conventions between the code and the expected database tables. For example, using `users` instead of `user`, and `results` instead of `result`.
-
-3. **Missing Result Types on Reducer Functions**
-   - A significant number of reducer functions lack return types or proper error handling, leading to compilation and runtime errors.
-
-4. **Incorrect Scheduling Parameters in Scheduled Tables**
-   - The scheduling system is not consistently defined in the tests (e.g., `ScheduleAt` parameter management), leading to inconsistencies in functional expectations.
-
-### Recommendations
-1. **Make Struct Fields Public**
-   - Update all structs associated with SpacetimeDB tables to ensure fields are public (e.g., change `id: i32` to `pub id: i32`).
-   - **Documentation Change**: Update the sample code documentation sections that define table structures.
-
-2. **Standardize Naming Conventions**
-   - Ensure naming conventions for structs and database tables are aligned.
-   - **Documentation Change**: Revise naming conventions section to specify standard naming practices clearly.
-
-3. **Include Result Types in Reducers**
-   - Add recommended return types for all reducer functions (e.g., return `Result<(), String>` instead of `()`).
-   - **Documentation Change**: Update reducer function examples in documentation to include this information.
-
-4. **Clarify Scheduling Table Configuration**
-   - Provide explicit instructions for scheduling parameters using accurate examples.
-   - **Documentation Change**: Include a dedicated section on Scheduling with working code examples.
-
-### Priority
-1. **Make Struct Fields Public** – This is the most critical fix as it directly impacts accessibility and usability.
-2. **Include Result Types in Reducers** – This ensures proper error handling, which would eliminate many runtime issues.
-3. **Standardize Naming Conventions** – Clear naming helps maintain consistency across multiple codebases.
-4. **Clarify Scheduling Table Configuration** – Enhances clarity on functionality, but lesser impact compared to the first two.
+- **Total failures analyzed**: 34
 
 ---
 
-## C# Failures
+# SpacetimeDB Benchmark Test Failures Analysis
 
-### Root Causes
-1. **Inconsistent Field Access Modifiers**
-   - Fields in structs for database tables are often not marked as `public`, leading to access issues.
+This report organizes SpacetimeDB benchmark test failures by language and mode, providing actionable insights on required documentation changes based on the discrepancies found between the generated code and the expected (golden) code.
 
-2. **Misalignment in Table Definitions**
-   - There are discrepancies between the expected structure of tables and provided definitions (e.g., different table names).
+## Rust / rustdoc_json Failures
 
-3. **Reducer Function Formatting**
-   - Incomplete or incorrect formatting of reducer functions that may lead to improper execution.
+### Compile/Publish Errors (2 Failures)
 
-4. **Lack of Error Handling in Functions**
-   - Similar to Rust, many functions do not have meaningful return types or exceptions coded in for errors, which can lead to failures.
+#### t_002_scheduled_table & t_017_scheduled_columns
 
-### Recommendations
-1. **Ensure Fields are Public**
-   - Change all fields in database table structs to have public access.
-   - **Documentation Change**: Update the database table definition examples to reflect this.
+1. **The Generated Code**:
+   ```rust
+   use spacetimedb::{table, reducer, ReducerContext, Table, ScheduleAt};
 
-2. **Standardize Naming in Table Definitions**
-   - Review and fix discrepancies in table definitions, specifying clear rules for naming and structuring.
-   - **Documentation Change**: Provide clearer guidelines for naming conventions in structs.
+   #[table(name = tick_timer, scheduled(reducer = tick, column = scheduled_at))]
+   pub struct TickTimer {
+       #[primary_key]
+       #[auto_inc]
+       scheduled_id: u64,
+       scheduled_at: ScheduleAt,
+   }
 
-3. **Include Proper Formatting and Return Types for Reducers**
-   - Add return types to all reducer functions, following the expected pattern.
-   - **Documentation Change**: Revise reducer function examples with complete signatures and return types.
+   #[reducer(init)]
+   pub fn init(ctx: &ReducerContext) {
+       if ctx.db.tick_timer().count() == 0 {
+           ctx.db.tick_timer().insert(TickTimer {
+               scheduled_id: 0,
+               scheduled_at: ScheduleAt::repeat_micros(50_000),
+           });
+       }
+   }
 
-4. **Implement Exception Handling**
-   - Ensure all database interactions in reducers incorporate exception handling.
-   - **Documentation Change**: Include a section on error handling in the reducers’ documentation.
+   #[reducer]
+   pub fn tick(_ctx: &ReducerContext, _row: TickTimer) {
+   }
+   ```
 
-### Priority
-1. **Ensure Fields are Public** – Ensuring accessibility across all struct fields is critical to prevent many failures.
-2. **Include Proper Formatting and Return Types for Reducers** – Providing clear function signatures can greatly enhance functional reliability.
-3. **Standardize Naming in Table Definitions** – Important for avoiding confusion and ensuring correctness.
-4. **Implement Exception Handling** – Should be detailed but is less critical than the above issues since core access issues need to be prioritized.
+2. **The Golden Example**:
+   ```rust
+   use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+   use std::time::Duration;
+
+   #[table(name = tick_timer, scheduled(tick))]
+   pub struct TickTimer {
+       #[primary_key]
+       #[auto_inc]
+       pub scheduled_id: u64,
+       pub scheduled_at: ScheduleAt,
+   }
+
+   #[reducer]
+   pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {
+   }
+
+   #[reducer(init)]
+   pub fn init(ctx: &ReducerContext) {
+       let every_50ms: ScheduleAt = Duration::from_millis(50).into();
+       ctx.db.tick_timer().insert(TickTimer {
+           scheduled_id: 0,
+           scheduled_at: every_50ms,
+       });
+   }
+   ```
+
+3. **The Error**: 
+   ```
+   publish_error: spacetime publish failed (exit=1)
+   ```
+
+4. **Explanation**: 
+   - The `scheduled(reducer = tick, column = scheduled_at)` syntax was incorrect.
+   - The `scheduled_at` field should be directly associated with the `tick` reducer without the extra parameters.
+   - The lack of `pub` access modifier on struct fields is also critical and leads to encapsulation failures.
+
+5. **Root Cause**: Missing clarity in documentation regarding the correct syntax for using the `scheduled` attribute and struct field visibility requirements.
+
+6. **Recommendation**: Update the documentation to clarify usage of the `scheduled` keyword and to emphasize the need for `pub` access modifiers in public use cases for struct fields.
+
+### Other Failures (6 Failures)
+
+#### t_003_struct_in_table & t_004_insert & t_006_delete & t_007_crud
+
+1. **The Generated Code**:
+   ```rust
+   use spacetimedb::{table, reducer, ReducerContext, Table};
+
+   #[derive(SpacetimeType)]
+   pub struct Position {
+       x: i32,
+       y: i32,
+   }
+
+   #[table(name = entity)]
+   pub struct Entity {
+       #[primary_key]
+       id: i32,
+       pos: Position,
+   }
+
+   #[reducer]
+   pub fn set_position(ctx: &ReducerContext, id: i32, x: i32, y: i32) {
+       let pos = Position { x, y };
+       if let Some(mut e) = ctx.db.entity().id().find(id) {
+           e.pos = pos;
+           ctx.db.entity().id().update(e);
+       } else {
+           ctx.db.entity().insert(Entity { id, pos });
+       }
+   }
+   ```
+
+2. **The Golden Example**:
+   ```rust
+   use spacetimedb::{table, SpacetimeType};
+
+   #[derive(SpacetimeType, Clone, Debug)]
+   pub struct Position {
+       pub x: i32,
+       pub y: i32,
+   }
+
+   #[table(name = entity)]
+   pub struct Entity {
+       #[primary_key]
+       pub id: i32,
+       pub pos: Position,
+   }
+   ```
+
+3. **The Error**:
+   ```
+   schema_parity: reducers differ - expected [], got ["set_position()"]
+   ```
+
+4. **Explanation**:
+   - The `Position` struct fields need to be publicly accessible with the `pub` modifier.
+   - Missing the `reducer` specification on functions leading to incorrect or missing structure in the codebase.
+
+5. **Root Cause**: Incomplete guidance on access modifiers and the necessity of marking fields as `pub` for structures used in database operations.
+
+6. **Recommendation**: Augment documentation to explicitly state the need for public access modifiers on struct fields and reducers for the items being stored in the database.
+
+### C# / docs Failures (4 total)
+
+#### t_014_elementary_columns & t_016_sum_type_columns
+
+1. **The Generated Code**:
+   ```csharp
+   using SpacetimeDB;
+
+   public static partial class Module
+   {
+       [SpacetimeDB.Table(Name = "Primitive", Public = true)]
+       public partial struct Primitive
+       {
+           [SpacetimeDB.PrimaryKey]
+           public int Id;
+           public int Count;
+           public long Total;
+           public float Price;
+           public double Ratio;
+           public bool Active;
+           public string Name;
+       }
+
+       [SpacetimeDB.Reducer]
+       public static void Seed(ReducerContext ctx)
+       {
+           ctx.Db.Primitive.Insert(new Primitive
+           {
+               Id = 1,
+               Count = 2,
+               Total = 3000000000L,
+               Price = 1.5f,
+               Ratio = 2.25,
+               Active = true,
+               Name = "Alice",
+           });
+       }
+   }
+   ```
+
+2. **The Golden Example**:
+   ```csharp
+   using SpacetimeDB;
+
+   public static partial class Module
+   {
+       [Table(Name = "Primitive")]
+       public partial struct Primitive
+       {
+           [PrimaryKey] public int Id;
+           public int Count;
+           public long Total;
+           public float Price;
+           public double Ratio;
+           public bool Active;
+           public string Name;
+       }
+
+       [Reducer]
+       public static void Seed(ReducerContext ctx)
+       {
+           ctx.Db.Primitive.Insert(new Primitive {
+               Id = 1,
+               Count = 2,
+               Total = 3000000000,
+               Price = 1.5f,
+               Ratio = 2.25,
+               Active = true,
+               Name = "Alice"
+           });
+       }
+   }
+   ```
+
+3. **The Error**:
+   ```
+   no such table: `primitive`.
+   ```
+
+4. **Explanation**:
+   - The `Public = true` parameter in the `Table` attribute is unnecessary and potentially incorrect, while the structure should be accessible via the `partial` keyword.
+   - The database was not recognizing the table due to the improper declaration of visibility.
+
+5. **Root Cause**: Lack of detailed instruction on the appropriate visibility modifiers in the `Table` and `Reducer` attributes.
+
+6. **Recommendation**: Clarify the usage of visibility on the `Table` attributes in the documentation, removing unnecessary parameters and ensuring C# code aligns with Rust guidelines.
 
 ---
 
-# Conclusion
-Both languages suffer from structural and accessibility issues in their respective code samples, leading to a myriad of runtime and compilation problems. Prioritizing documentation fixes based on accessibility and naming conventions will significantly improve usability and reduce failures in benchmarks.
+This analysis identifies commonalities in failures and provides actionable documentation improvements that can enhance the clarity and usability of the SpacetimeDB API across different languages.
