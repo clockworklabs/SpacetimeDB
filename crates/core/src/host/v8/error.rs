@@ -349,23 +349,12 @@ impl JsStackTraceFrame {
         let mut script_name = None;
         let fn_name = frame.get_function_name(scope).map(|s| s.to_rust_string_lossy(scope));
 
-        let sourcemap = scope
-            .get_slot()
-            .and_then(|SourceMaps(maps)| maps.get(&(script_id as i32)));
+        let sourcemap = scope.get_slot().and_then(|SourceMaps(maps)| maps.get(&script_id));
 
         let sourcemap = if let Some(sm) = sourcemap {
             sm.as_ref()
         } else {
-            let sourcemap = frame.get_script_source_mapping_url(scope).and_then(|source_map_url| {
-                let source_map_url = source_map_url.to_rust_string_lossy(scope);
-                if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
-                    Some(sourcemap)
-                } else {
-                    None
-                }
-            });
-            let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
-            maps.entry(script_id as i32).insert(sourcemap).into_mut().as_ref()
+            SourceMaps::parse_and_insert(scope, frame)
         };
 
         // sourcemap uses 0-based line/column numbers, while v8 uses 1-based
@@ -455,7 +444,25 @@ impl fmt::Display for JsStackTraceFrame {
 ///
 /// An entry with `None` indicates that there is no sourcemap for that script.
 #[derive(Default)]
-struct SourceMaps(IntMap<i32, Option<sourcemap::SourceMap>>);
+struct SourceMaps(IntMap<usize, Option<sourcemap::SourceMap>>);
+
+impl SourceMaps {
+    fn parse_and_insert<'a>(
+        scope: &'a mut PinScope<'_, '_>,
+        frame: Local<'_, StackFrame>,
+    ) -> Option<&'a sourcemap::SourceMap> {
+        let sourcemap = frame.get_script_source_mapping_url(scope).and_then(|source_map_url| {
+            let source_map_url = source_map_url.to_rust_string_lossy(scope);
+            if let Ok(sourcemap::DecodedMap::Regular(sourcemap)) = sourcemap::decode_data_url(&source_map_url) {
+                Some(sourcemap)
+            } else {
+                None
+            }
+        });
+        let SourceMaps(maps) = get_or_insert_slot(scope, SourceMaps::default);
+        maps.entry(frame.get_script_id()).insert(sourcemap).into_mut().as_ref()
+    }
+}
 
 fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnce() -> T) -> &mut T {
     if isolate.get_slot::<T>().is_none() {

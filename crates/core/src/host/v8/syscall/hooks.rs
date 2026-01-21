@@ -55,13 +55,7 @@ impl ModuleHookKey {
     /// Returns the index for the slot that holds the module function hook.
     /// The index is passed to `v8::Context::{get,set}_embedder_data`.
     fn to_slot_index(self) -> i32 {
-        match self {
-            ModuleHookKey::DescribeModule => 0,
-            ModuleHookKey::CallReducer => 1,
-            ModuleHookKey::CallView => 2,
-            ModuleHookKey::CallAnonymousView => 3,
-            ModuleHookKey::CallProcedure => 4,
-        }
+        self as i32
     }
 }
 
