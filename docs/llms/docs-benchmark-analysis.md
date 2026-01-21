@@ -4,53 +4,91 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
 ## Summary
 
-- **Total failures analyzed**: 24
+- **Total failures analyzed**: 58
 
 ## Analysis
 
-## Analysis of SpacetimeDB Benchmark Failures
+# Analysis of SpacetimeDB Benchmark Test Failures
 
-### Rust Failures
+## Rust Failures
 
-1. **Root Causes**:
-   - **Naming Convention**: Inconsistency in struct names between expected and actual implementations (e.g., `User` vs. `Users`).
-   - **Primary Key and Unique Annotations**: Missing or improperly formatted annotations in the structures.
-   - **Functions**
-     - Reducer naming disparities that lead to schema mismatches (e.g., `add_entity()` vs. expected function).
-   - **Table Creation Errors**: Missing or wrongly specified table names lead to "no such table" errors during runtime.
+### Root Causes
+1. **Incomplete Visibility of Struct Fields**
+   - Many struct fields for tables (e.g., `User`) are not marked as `pub`, causing accessibility issues.
 
-2. **Recommendations**:
-   - **Documentation File**: Update the “Rust API Guidelines” section.
-     - **Change 1**: Enforce a strict naming convention for struct names and tables, ensuring they match in all uses.
-       - **From**: "`#[table(name = users)]`"
-       - **To**: "`#[table(name = User)]`"
-     - **Change 2**: Add comprehensive examples of using annotations for primary keys and unique constraints.
-     - **Change 3**: Ensure reducer naming conventions are consistent between examples and the API documentation.
-     - **Change 4**: Highlight the requirement for tables to be defined before being referenced.
-   
-3. **Priority**:
-   - High-impact changes should focus on the naming conventions of struct and table names, as this seems to be a recurring source of errors. 
+2. **Inconsistent Usage of Table Names**
+   - There are discrepancies in the naming conventions between the code and the expected database tables. For example, using `users` instead of `user`, and `results` instead of `result`.
 
----
+3. **Missing Result Types on Reducer Functions**
+   - A significant number of reducer functions lack return types or proper error handling, leading to compilation and runtime errors.
 
-### C# Failures
+4. **Incorrect Scheduling Parameters in Scheduled Tables**
+   - The scheduling system is not consistently defined in the tests (e.g., `ScheduleAt` parameter management), leading to inconsistencies in functional expectations.
 
-1. **Root Causes**:
-   - **Errors with Table Definitions**: A significant number of failures stemmed from improperly defined or missing table names in the struct annotations. 
-   - **Inconsistent Method Signatures**: Reducer methods sometimes do not align with their expected signatures.
-   - **Use of Attributes**: Some attributes, like `Table`, lack accurate definitions or are inconsistently used (e.g., missing public access modifiers).
-   - **Data Class Definition**: Missing `public` access modifiers lead to problems during access in different scopes.
+### Recommendations
+1. **Make Struct Fields Public**
+   - Update all structs associated with SpacetimeDB tables to ensure fields are public (e.g., change `id: i32` to `pub id: i32`).
+   - **Documentation Change**: Update the sample code documentation sections that define table structures.
 
-2. **Recommendations**:
-   - **Documentation File**: Update “C# Usage Documentation”
-     - **Change 1**: Standardize usage of public modifiers for all data classes and methods. Ensure documentation states that omitted modifiers will lead to access errors.
-     - **Change 2**: Create a dedicated section for explaining the use of attributes, focusing on examples of `Table`, `PrimaryKey`, and uniqueness specifications.
-     - **Change 3**: Provide a clear framework for establishing the naming conventions for methods (e.g., `InsertUser` should be consistent and reflect expected behavior).
-     - **Change 4**: Enhance examples showing both the initial table declaration and usage in reducers to prevent "no such table" errors.
+2. **Standardize Naming Conventions**
+   - Ensure naming conventions for structs and database tables are aligned.
+   - **Documentation Change**: Revise naming conventions section to specify standard naming practices clearly.
 
-3. **Priority**:
-   - Prioritize correcting the attribute usage and naming conventions as they provide the basic structure for declarations that directly affect the benchmark's success.
+3. **Include Result Types in Reducers**
+   - Add recommended return types for all reducer functions (e.g., return `Result<(), String>` instead of `()`).
+   - **Documentation Change**: Update reducer function examples in documentation to include this information.
+
+4. **Clarify Scheduling Table Configuration**
+   - Provide explicit instructions for scheduling parameters using accurate examples.
+   - **Documentation Change**: Include a dedicated section on Scheduling with working code examples.
+
+### Priority
+1. **Make Struct Fields Public** – This is the most critical fix as it directly impacts accessibility and usability.
+2. **Include Result Types in Reducers** – This ensures proper error handling, which would eliminate many runtime issues.
+3. **Standardize Naming Conventions** – Clear naming helps maintain consistency across multiple codebases.
+4. **Clarify Scheduling Table Configuration** – Enhances clarity on functionality, but lesser impact compared to the first two.
 
 ---
 
-The above recommendations aim to create a consistent and clear guidance in the documentation that can preemptively address the issues seen in both the Rust and C# benchmark failures. Updates should prioritize clarity and consistency in naming and structuring code, focusing on how these influence benchmark success.
+## C# Failures
+
+### Root Causes
+1. **Inconsistent Field Access Modifiers**
+   - Fields in structs for database tables are often not marked as `public`, leading to access issues.
+
+2. **Misalignment in Table Definitions**
+   - There are discrepancies between the expected structure of tables and provided definitions (e.g., different table names).
+
+3. **Reducer Function Formatting**
+   - Incomplete or incorrect formatting of reducer functions that may lead to improper execution.
+
+4. **Lack of Error Handling in Functions**
+   - Similar to Rust, many functions do not have meaningful return types or exceptions coded in for errors, which can lead to failures.
+
+### Recommendations
+1. **Ensure Fields are Public**
+   - Change all fields in database table structs to have public access.
+   - **Documentation Change**: Update the database table definition examples to reflect this.
+
+2. **Standardize Naming in Table Definitions**
+   - Review and fix discrepancies in table definitions, specifying clear rules for naming and structuring.
+   - **Documentation Change**: Provide clearer guidelines for naming conventions in structs.
+
+3. **Include Proper Formatting and Return Types for Reducers**
+   - Add return types to all reducer functions, following the expected pattern.
+   - **Documentation Change**: Revise reducer function examples with complete signatures and return types.
+
+4. **Implement Exception Handling**
+   - Ensure all database interactions in reducers incorporate exception handling.
+   - **Documentation Change**: Include a section on error handling in the reducers’ documentation.
+
+### Priority
+1. **Ensure Fields are Public** – Ensuring accessibility across all struct fields is critical to prevent many failures.
+2. **Include Proper Formatting and Return Types for Reducers** – Providing clear function signatures can greatly enhance functional reliability.
+3. **Standardize Naming in Table Definitions** – Important for avoiding confusion and ensuring correctness.
+4. **Implement Exception Handling** – Should be detailed but is less critical than the above issues since core access issues need to be prioritized.
+
+---
+
+# Conclusion
+Both languages suffer from structural and accessibility issues in their respective code samples, leading to a myriad of runtime and compilation problems. Prioritizing documentation fixes based on accessibility and naming conventions will significantly improve usability and reduce failures in benchmarks.
