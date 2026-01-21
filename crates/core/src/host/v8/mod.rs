@@ -94,10 +94,11 @@ impl V8RuntimeInner {
     ///
     /// Should only be called once but it isn't unsound to call it more times.
     fn init() -> Self {
+        // We don't want idle tasks nor background worker tasks,
+        // as we intend to run on a single core.
+        // Per the docs, `new_single_threaded_default_platform` requires
+        // that we pass `--single-threaded`.
         v8::V8::set_flags_from_string("--single-threaded");
-        // Our current configuration:
-        // - will pick a number of worker threads for background jobs based on the num CPUs.
-        // - does not allow idle tasks
         let platform = v8::new_single_threaded_default_platform(false).make_shared();
         // Initialize V8. Internally, this uses a global lock so it's safe that we don't.
         v8::V8::initialize_platform(platform);
