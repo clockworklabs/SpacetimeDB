@@ -25,6 +25,15 @@ target_include_directories(${OUTPUT_NAME} PRIVATE
     ${SPACETIMEDB_CPP_LIBRARY_PATH}/include
 )
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
+    target_compile_options(${OUTPUT_NAME} PRIVATE -fno-exceptions)
+    # Enable unstable features for transaction support
+    target_compile_definitions(${OUTPUT_NAME} PRIVATE SPACETIMEDB_UNSTABLE_FEATURES)
+    # Also define for the library so it includes unstable features
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPACETIMEDB_UNSTABLE_FEATURES")
+endif()
+
+
 # Link the SpacetimeDB library
 add_subdirectory(${SPACETIMEDB_CPP_LIBRARY_PATH} ${CMAKE_CURRENT_BINARY_DIR}/spacetimedb_cpp_library)
 target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
@@ -32,7 +41,7 @@ target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
 # Emscripten specific settings
 if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
   # Export list as a single variable (no extra quoting per-platform)
-  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__']")
+  set(EXPORTED_FUNCS "['_malloc','_free','___describe_module__','___call_reducer__','___call_procedure__','___call_view__','___call_view_anon__']")
 
   # Produce a standalone .wasm (no JS harness) with no entry point
   target_link_options(lib PRIVATE

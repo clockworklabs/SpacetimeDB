@@ -143,6 +143,7 @@ SPACETIMEDB_REDUCER(insert_bulk_position, ReducerContext& ctx, uint32_t count) {
         ctx.db[position].insert(new_position);
     }
     LOG_INFO("INSERT POSITION: " + std::to_string(count));
+    return Ok();
 }
 
 // Bulk insert velocity entries
@@ -157,6 +158,7 @@ SPACETIMEDB_REDUCER(insert_bulk_velocity, ReducerContext& ctx, uint32_t count) {
         ctx.db[velocity].insert(new_velocity);
     }
     LOG_INFO("INSERT VELOCITY: " + std::to_string(count));
+    return Ok();
 }
 
 // Update all positions using their internal velocity
@@ -171,6 +173,7 @@ SPACETIMEDB_REDUCER(update_position_all, ReducerContext& ctx, uint32_t expected)
         ++count;
     }
     LOG_INFO("UPDATE POSITION ALL: " + std::to_string(expected) + ", processed: " + std::to_string(count));
+    return Ok();
 }
 
 // Update positions using separate velocity table
@@ -191,6 +194,7 @@ SPACETIMEDB_REDUCER(update_position_with_velocity, ReducerContext& ctx, uint32_t
         ++count;
     }
     LOG_INFO("UPDATE POSITION BY VELOCITY: " + std::to_string(expected) + ", processed: " + std::to_string(count));
+    return Ok();
 }
 
 // =============================================================================
@@ -252,6 +256,7 @@ SPACETIMEDB_REDUCER(insert_world, ReducerContext& ctx, uint64_t players) {
         ctx.db[game_herd_cache].insert(herd);
     }
     LOG_INFO("INSERT WORLD PLAYERS: " + std::to_string(players));
+    return Ok();
 }
 
 // =============================================================================
@@ -378,8 +383,7 @@ SPACETIMEDB_REDUCER(game_loop_enemy_ia, ReducerContext& ctx, uint64_t players) {
     for (auto agent : ctx.db[game_enemy_ai_agent_state]) {
         auto agent_targetable_opt = ctx.db[game_targetable_state_entity_id].find(agent.entity_id);
         if (!agent_targetable_opt) {
-            LOG_PANIC("No TargetableState for AgentState entity");
-            return;
+            return Err("No TargetableState for AgentState entity");
         }
         const auto& agent_targetable = *agent_targetable_opt;
         
@@ -393,6 +397,7 @@ SPACETIMEDB_REDUCER(game_loop_enemy_ia, ReducerContext& ctx, uint64_t players) {
     }
     
     LOG_INFO("ENEMY IA LOOP PLAYERS: " + std::to_string(players) + ", processed: " + std::to_string(count));
+    return Ok();
 }
 
 // =============================================================================
@@ -403,17 +408,37 @@ SPACETIMEDB_REDUCER(game_loop_enemy_ia, ReducerContext& ctx, uint64_t players) {
 SPACETIMEDB_REDUCER(init_game_ia_loop, ReducerContext& ctx, uint32_t initial_load) {
     Load load(initial_load);
     
-    insert_bulk_position(ctx, load.biggest_table);
-    insert_bulk_velocity(ctx, load.big_table);
-    update_position_all(ctx, load.biggest_table);
-    update_position_with_velocity(ctx, load.big_table);
+    auto bulk_position_res = insert_bulk_position(ctx, load.biggest_table);
+    if (bulk_position_res.is_err()) {
+        return bulk_position_res;
+    }
+    auto bulk_velocity_res = insert_bulk_velocity(ctx, load.big_table);
+    if (bulk_velocity_res.is_err()) {
+        return bulk_velocity_res;
+    }
+    auto update_position_all_res = update_position_all(ctx, load.biggest_table);
+    if (update_position_all_res.is_err()) {
+        return update_position_all_res;
+    }
+    auto update_position_with_velocity_res = update_position_with_velocity(ctx, load.big_table);
+    if (update_position_with_velocity_res.is_err()) {
+        return update_position_with_velocity_res;
+    }
     
-    insert_world(ctx, static_cast<uint64_t>(load.num_players));
+    auto insert_world_res = insert_world(ctx, static_cast<uint64_t>(load.num_players));
+    if (insert_world_res.is_err()) {
+        return insert_world_res;
+    }
+    return Ok();
 }
 
 // Run the IA loop game simulation benchmark
 SPACETIMEDB_REDUCER(run_game_ia_loop, ReducerContext& ctx, uint32_t initial_load) {
     Load load(initial_load);
     
-    game_loop_enemy_ia(ctx, static_cast<uint64_t>(load.num_players));
+    auto game_loop_enemy_ia_res = game_loop_enemy_ia(ctx, static_cast<uint64_t>(load.num_players));
+    if (game_loop_enemy_ia_res.is_err()) {
+        return game_loop_enemy_ia_res;
+    }
+    return Ok();
 }

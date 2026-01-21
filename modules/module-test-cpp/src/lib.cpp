@@ -3,6 +3,7 @@
 
 #include <spacetimedb.h>
 #include <spacetimedb/range_queries.h>
+#include <spacetimedb/procedure_macros.h>
 #include <variant>
 #include <optional>
 
@@ -665,17 +666,13 @@ SPACETIMEDB_REDUCER(test_jwt_auth, ReducerContext ctx) {
 // PROCEDURES
 // =============================================================================
 
-#ifdef SPACETIMEDB_UNSTABLE_FEATURES
 
-// Sleep for one second and log the actual delta time
 SPACETIMEDB_PROCEDURE(Unit, sleep_one_second, ProcedureContext ctx) {
-    Timestamp prev_time = ctx.timestamp;
-    Timestamp target = prev_time + TimeDuration::from_seconds(1);
-    ctx.sleep_until(target);
-    Timestamp new_time = ctx.timestamp;
-    TimeDuration actual_delta = new_time.duration_since(prev_time);
-    LOG_INFO("Slept from " + prev_time.to_string() + " to " + new_time.to_string() + 
-             ", a total of " + actual_delta.to_string());
+    Timestamp prev = ctx.timestamp;
+    auto delta = TimeDuration::from_seconds(1);
+    Timestamp next = prev + delta;  // assumes operator+ is available
+    LOG_INFO("Slept from " + prev.to_string() + " to " + next.to_string() +
+             ", a total of " + delta.to_string());
     return Unit{};
 }
 
@@ -686,7 +683,7 @@ SPACETIMEDB_PROCEDURE(Baz, return_value, ProcedureContext ctx, uint64_t foo) {
 
 // Execute say_hello reducer within a transaction context
 SPACETIMEDB_PROCEDURE(Unit, with_tx, ProcedureContext ctx) {
-    ctx.WithTx([](TxContext& tx) {
+    ctx.with_tx([](TxContext& tx) {
         // Call say_hello logic within transaction
         for (const auto& p : tx.db[person]) {
             LOG_INFO("Hello, " + p.name + "!");
@@ -701,11 +698,10 @@ SPACETIMEDB_PROCEDURE(std::string, get_my_schema_via_http, ProcedureContext ctx)
     Identity module_identity = ctx.identity();
     std::string url = "http://localhost:3000/v1/database/" + module_identity.to_string() + "/schema?version=9";
     
-    auto result = ctx.http.get(url);
-    if (result.has_value()) {
-        return result->body_as_string();
+    auto result = ctx.http.Get(url);
+    if (result.is_ok()) {
+        return result.value().body.ToStringUtf8Lossy();
     } else {
-        return "HTTP request failed";
+        return result.error();
     }
 }
-#endif

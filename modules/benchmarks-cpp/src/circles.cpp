@@ -81,6 +81,7 @@ SPACETIMEDB_REDUCER(insert_bulk_entity, ReducerContext& ctx, uint32_t count) {
         ctx.db[entity].insert(new_entity);
     }
     LOG_INFO("INSERT ENTITY: " + std::to_string(count));
+    return Ok();
 }
 
 // Bulk insert circles with specified entity and player IDs
@@ -96,6 +97,7 @@ SPACETIMEDB_REDUCER(insert_bulk_circle, ReducerContext& ctx, uint32_t count) {
         ctx.db[circle].insert(new_circle);
     }
     LOG_INFO("INSERT CIRCLE: " + std::to_string(count));
+    return Ok();
 }
 
 // Bulk insert food entities
@@ -105,6 +107,7 @@ SPACETIMEDB_REDUCER(insert_bulk_food, ReducerContext& ctx, uint32_t count) {
         ctx.db[food].insert(new_food);
     }
     LOG_INFO("INSERT FOOD: " + std::to_string(count));
+    return Ok();
 }
 
 // =============================================================================
@@ -123,6 +126,7 @@ SPACETIMEDB_REDUCER(cross_join_all, ReducerContext& ctx, uint32_t expected) {
         }
     }
     LOG_INFO("CROSS JOIN ALL: " + std::to_string(expected) + ", processed: " + std::to_string(count));
+    return Ok();
 }
 
 // Simulate: SELECT * FROM Circle JOIN Entity USING(entity_id), Food JOIN Entity USING(entity_id)
@@ -143,8 +147,7 @@ SPACETIMEDB_REDUCER(cross_join_circle_food, ReducerContext& ctx, uint32_t expect
             // Find the entity for this food
             auto food_entity_opt = ctx.db[entity_id].find(food_elem.entity_id);
             if (!food_entity_opt) {
-                LOG_PANIC("Entity not found: " + std::to_string(food_elem.entity_id));
-                return;
+                return Err("Entity not found: " + std::to_string(food_elem.entity_id));
             }
             const auto& food_entity = *food_entity_opt;
             
@@ -153,6 +156,7 @@ SPACETIMEDB_REDUCER(cross_join_circle_food, ReducerContext& ctx, uint32_t expect
         }
     }
     LOG_INFO("CROSS JOIN CIRCLE FOOD: " + std::to_string(expected) + ", processed: " + std::to_string(count));
+    return Ok();
 }
 
 // =============================================================================
@@ -164,9 +168,19 @@ SPACETIMEDB_REDUCER(init_game_circles, ReducerContext& ctx, uint32_t initial_loa
     Load load(initial_load);
     
     // Set up the game world with food, entities, and circles
-    insert_bulk_food(ctx, load.initial_load);
-    insert_bulk_entity(ctx, load.initial_load);
-    insert_bulk_circle(ctx, load.small_table);
+    auto bulk_food_res = insert_bulk_food(ctx, load.initial_load);
+    if (bulk_food_res.is_err()) {
+        return bulk_food_res;
+    }
+    auto bulk_entity_res = insert_bulk_entity(ctx, load.initial_load);
+    if (bulk_entity_res.is_err()) {
+        return bulk_entity_res;
+    }
+    auto bulk_circle_res = insert_bulk_circle(ctx, load.small_table);
+    if (bulk_circle_res.is_err()) {
+        return bulk_circle_res;
+    }
+    return Ok();
 }
 
 // Run the circles game simulation benchmark
@@ -174,7 +188,14 @@ SPACETIMEDB_REDUCER(run_game_circles, ReducerContext& ctx, uint32_t initial_load
     Load load(initial_load);
     
     // Perform the main benchmark operations
-    cross_join_circle_food(ctx, initial_load * load.small_table);
-    cross_join_all(ctx, initial_load * initial_load * load.small_table);
+    auto cross_join_circle_food_res = cross_join_circle_food(ctx, initial_load * load.small_table);
+    if (cross_join_circle_food_res.is_err()) {
+        return cross_join_circle_food_res;
+    }
+    auto cross_join_all_res = cross_join_all(ctx, initial_load * initial_load * load.small_table);
+    if (cross_join_all_res.is_err()) {
+        return cross_join_all_res;
+    }
+    return Ok();
 }
 
