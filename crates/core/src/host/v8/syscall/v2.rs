@@ -30,8 +30,8 @@ use spacetimedb_lib::{bsatn, ConnectionId, Identity, RawModuleDef, Timestamp};
 use spacetimedb_primitives::{errno, ColId, IndexId, ProcedureId, ReducerId, TableId, ViewFnPtr};
 use spacetimedb_sats::u256;
 use v8::{
-    callback_scope, ArrayBuffer, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module,
-    Object, PinCallbackScope, PinScope, Value,
+    callback_scope, ConstructorBehavior, Function, FunctionCallbackArguments, Isolate, Local, Module, Object,
+    PinCallbackScope, PinScope, Value,
 };
 
 macro_rules! create_synthetic_module {
@@ -389,7 +389,7 @@ pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
-    reducer_args_array_buffer: &Local<'scope, ArrayBuffer>,
+    reducer_args_data_view: Local<'scope, v8::DataView>,
 ) -> ExcResult<ReducerResult> {
     let ReducerOp {
         id: ReducerId(reducer_id),
@@ -404,7 +404,7 @@ pub(super) fn call_call_reducer<'scope>(
     let sender = serialize_to_js(scope, &sender.to_u256())?;
     let conn_id: v8::Local<'_, v8::Value> = serialize_to_js(scope, &conn_id.to_u128())?;
     let timestamp = serialize_to_js(scope, &timestamp.to_micros_since_unix_epoch())?;
-    let reducer_args = reducer_args_to_value(scope, reducer_args, reducer_args_array_buffer);
+    let reducer_args = reducer_args_to_value(scope, reducer_args, reducer_args_data_view);
 
     let args = &[reducer_id, sender, conn_id, timestamp, reducer_args];
 
@@ -425,15 +425,14 @@ pub(super) fn call_call_reducer<'scope>(
 fn reducer_args_to_value<'scope>(
     scope: &mut PinScope<'scope, '_>,
     args: &ArgsTuple,
-    buffer: &Local<'scope, ArrayBuffer>,
+    buffer: Local<'scope, v8::DataView>,
 ) -> Local<'scope, Value> {
     let reducer_args = &**args.get_bsatn();
 
     let len = reducer_args.len();
     let dv = if len <= buffer.byte_length() {
         // We can use the buffer.
-        let dst_ptr = buffer
-            .data()
+        let dst_ptr = NonNull::new(buffer.data())
             .expect("backing store byte length should be > 0")
             .cast::<u8>();
 
@@ -450,8 +449,7 @@ fn reducer_args_to_value<'scope>(
         let dst = unsafe { dst_ptr.as_mut() };
         dst.copy_from_slice(reducer_args);
 
-        // Convert into `DataView`.
-        v8::DataView::new(scope, *buffer, 0, len)
+        buffer
     } else {
         // Fall back to allocating new buffers.
         make_dataview(scope, <Box<[u8]>>::from(reducer_args))
