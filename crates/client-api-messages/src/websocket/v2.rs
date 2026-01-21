@@ -305,6 +305,15 @@ pub struct TableUpdate {
     pub rows: TableUpdateRows,
 }
 
+/// The rows of a [`TableUpdate`], separated based on the kind of table.
+///
+/// Regular "persistent" tables will include a list of inserted rows and a list of deleted rows.
+/// Event tables, whose rows are not persistent, will instead include a single list of event rows.
+///
+/// In the future, we may add additional variants to this enum.
+/// In particular, we may add a variant for in-place updates of rows for tables with primary keys.
+/// Note that clients will need to opt in to using this new variant,
+/// to preserve compatibility of clients which predate the new variant.
 #[derive(SpacetimeType)]
 #[sats(crate = spacetimedb_lib)]
 pub enum TableUpdateRows {
