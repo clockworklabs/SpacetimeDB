@@ -3,7 +3,7 @@ use crate::eval::defaults::{
     make_reducer_sql_count_scorer,
     make_sql_exec_both_scorer,
 };
-use crate::eval::{casing_for_lang, ident, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
+use crate::eval::{casing_for_lang, ident, table_name, BenchmarkSpec, ReducerSqlCountConfig, SqlBuilder};
 use serde_json::Value;
 use std::time;
 
@@ -13,8 +13,9 @@ pub fn spec() -> BenchmarkSpec {
 
         let casing = casing_for_lang(lang);
         let sb = SqlBuilder::new(casing);
-        let seed = sb.insert_values("users", &["id","name","age","active"], &["1","'Alice'","30","true"]);
-        let count = sb.count_by_id("users", "id", 1);
+        let user_table = table_name("user", lang);
+        let seed = sb.insert_values(&user_table, &["id","name","age","active"], &["1","'Alice'","30","true"]);
+        let count = sb.count_by_id(&user_table, "id", 1);
         let reducer_name = ident("DeleteUser", casing);
 
         v.push(make_sql_exec_both_scorer(

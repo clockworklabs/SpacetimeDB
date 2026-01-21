@@ -1,0 +1,12 @@
+Write a SpacetimeDB backend module in TypeScript that defines a scheduled table and associated reducers.
+
+TABLE
+- tickTimer
+  - Fields:
+    - scheduledId: bigint (u64, primary key, auto-increment)
+    - scheduledAt: ScheduleAt
+  - Scheduled: tick reducer, interval of 50ms
+
+REDUCERS
+- tick: scheduled reducer that receives the tickTimer row
+- init: insert initial scheduled row with 50ms interval

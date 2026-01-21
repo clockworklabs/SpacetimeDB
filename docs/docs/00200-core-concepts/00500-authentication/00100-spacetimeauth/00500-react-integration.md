@@ -1,8 +1,6 @@
 ---
 title: React Integration
-slug: /spacetimeauth/react-integration
 ---
-
 
 :::warning
 
@@ -19,8 +17,8 @@ in React.
 ## Prerequisites
 
 1. Create a SpacetimeAuth project and configure a client as described in the
-   [Getting Started](/spacetimeauth/creating-a-project) and
-   [Configuration](/spacetimeauth/configuring-a-project) guides.
+   [Getting Started](./00200-creating-a-project.md) and
+   [Configuration](./00300-configuring-a-project.md) guides.
 2. Have a React application set up. You can use Create React App or any other
    React framework.
 3. Install the `react-oidc-context` package in your React application:
