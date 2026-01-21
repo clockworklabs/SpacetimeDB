@@ -73,6 +73,14 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Fix Windows SDK manifests
+        run: |
+          cd modules
+          # the sdk-manifests on windows-latest are messed up, so we need to update them
+          dotnet workload config --update-mode manifests
+          dotnet workload update
+        if: runner.os == 'Windows'
+
       # nodejs and pnpm are required for the typescript quickstart smoketest
       - name: Set up Node.js
         uses: actions/setup-node@v4
