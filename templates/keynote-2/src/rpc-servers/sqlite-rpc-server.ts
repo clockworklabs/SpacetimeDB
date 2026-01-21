@@ -227,7 +227,9 @@ async function handleRpc(body: RpcRequest): Promise<RpcResponse> {
         return { ok: false, error: `unknown method: ${name}` };
     }
   } catch (err: any) {
-    return { ok: false, error: String(err?.message ?? err) };
+    // Log full error details on the server, but return a generic message to the client.
+    console.error('Unhandled error in handleRpc:', err);
+    return { ok: false, error: 'internal error' };
   }
 }
 
