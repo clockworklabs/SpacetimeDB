@@ -220,7 +220,28 @@ spacetimedb.procedure('updateUserProcedure', { userId: t.u64(), newName: t.strin
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Support for procedures in C# modules is coming soon!
+```csharp
+#pragma warning disable STDB_UNSTABLE
+
+[SpacetimeDB.Procedure]
+public static void UpdateUserProcedure(ProcedureContext ctx, ulong userId, string newName)
+{
+    // Must explicitly open a transaction
+    ctx.WithTx(txCtx =>
+    {
+        // Full read-write access within the transaction
+        var user = txCtx.Db.User.Id.Find(userId);
+        if (user != null)
+        {
+            var updated = user.Value;
+            updated.Name = newName;
+            txCtx.Db.User.Id.Update(updated);
+        }
+        return 0;
+    });
+    // Transaction is committed when the lambda returns
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">

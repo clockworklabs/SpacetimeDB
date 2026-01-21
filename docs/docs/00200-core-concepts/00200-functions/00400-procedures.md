@@ -45,9 +45,25 @@ a value corresponding to its return type. This return value will be sent to the 
 not be broadcast to any other clients.
 
 </TabItem>
-<TabItem value="csharp"label="C#">
+<TabItem value="csharp" label="C#">
 
-Support for procedures in C# modules is coming soon!
+:::warning Unstable Feature
+Procedures in C# are currently unstable. To use them, add `#pragma warning disable STDB_UNSTABLE` at the top of your file.
+:::
+
+Define a procedure by annotating a static method with `[SpacetimeDB.Procedure]`.
+
+The method's first argument must be of type `ProcedureContext`. A procedure may accept any number of additional arguments and may return a value.
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+
+[SpacetimeDB.Procedure]
+public static ulong AddTwoNumbers(ProcedureContext ctx, uint lhs, uint rhs)
+{
+    return (ulong)lhs + (ulong)rhs;
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">

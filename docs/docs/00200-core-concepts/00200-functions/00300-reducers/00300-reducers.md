@@ -475,7 +475,41 @@ const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx,
 </TabItem>
 <TabItem value="csharp" label="C#">
 
-Support for procedures in C# modules is coming soon!
+```csharp
+#pragma warning disable STDB_UNSTABLE
+
+[SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
+public partial struct FetchSchedule
+{
+    [SpacetimeDB.PrimaryKey]
+    [SpacetimeDB.AutoInc]
+    public ulong ScheduledId;
+    public ScheduleAt ScheduledAt;
+    public string Url;
+}
+
+[SpacetimeDB.Procedure]
+public static void FetchExternalData(ProcedureContext ctx, FetchSchedule schedule)
+{
+    var result = ctx.Http.Get(schedule.Url);
+    if (result is Result<HttpResponse, HttpError>.OkR(var response))
+    {
+        // Process response...
+    }
+}
+
+// From a reducer, schedule the procedure
+[SpacetimeDB.Reducer]
+public static void QueueFetch(ReducerContext ctx, string url)
+{
+    ctx.Db.FetchSchedule.Insert(new FetchSchedule
+    {
+        ScheduledId = 0,
+        ScheduledAt = new ScheduleAt.Interval(TimeSpan.Zero),
+        Url = url,
+    });
+}
+```
 
 </TabItem>
 <TabItem value="rust" label="Rust">
