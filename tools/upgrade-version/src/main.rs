@@ -192,8 +192,11 @@ fn main() -> anyhow::Result<()> {
             .run()
             .expect("pnpm generate failed!");
 
+        // This gives an error because the snapshot has been updated
         println!("$> cargo test -p spacetimedb-codegen");
-        cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+        let _ = cmd!("cargo", "test", "-p", "spacetimedb-codegen").run();
+
+        // Let the user approve the snapshot change
         println!("$> cargo insta review");
         cmd!("cargo", "insta", "review").run()?;
     }
