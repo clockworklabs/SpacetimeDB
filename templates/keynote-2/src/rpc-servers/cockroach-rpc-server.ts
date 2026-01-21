@@ -210,7 +210,7 @@ async function handleRpc(body: RpcRequest): Promise<RpcResponse> {
     }
   } catch (err: any) {
     console.error('[crdb-rpc] rpc error:', name, err);
-    return { ok: false, error: String(err?.message ?? err) };
+    return { ok: false, error: 'internal server error' };
   }
 }
 
