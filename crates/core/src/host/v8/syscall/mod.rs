@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use spacetimedb_lib::{RawModuleDef, VersionTuple};
-use v8::{callback_scope, ArrayBuffer, Context, FixedArray, Local, Module, PinScope};
+use v8::{callback_scope, Context, FixedArray, Local, Module, PinScope};
 
 use crate::host::v8::de::scratch_buf;
 use crate::host::v8::error::{ErrorOrException, ExcResult, ExceptionThrown, Throwable, TypeError};
@@ -78,11 +78,11 @@ pub(super) fn call_call_reducer<'scope>(
     scope: &mut PinScope<'scope, '_>,
     hooks: &HookFunctions<'scope>,
     op: ReducerOp<'_>,
-    reducer_args_array_buffer: &Local<'scope, ArrayBuffer>,
+    reducer_args_data_view: Local<'scope, v8::DataView>,
 ) -> ExcResult<ReducerResult> {
     match hooks.abi {
         AbiVersion::V1 => v1::call_call_reducer(scope, hooks, op),
-        AbiVersion::V2 => v2::call_call_reducer(scope, hooks, op, reducer_args_array_buffer),
+        AbiVersion::V2 => v2::call_call_reducer(scope, hooks, op, reducer_args_data_view),
     }
 }
 

@@ -559,13 +559,14 @@ fn spawn_instance_worker(
         // Create a zero-initialized buffer for holding reducer args.
         // Arguments needing more space will not use this.
         const REDUCER_ARGS_BUFFER_SIZE: usize = 4_096; // 1 page.
-        let reducer_args_array_buffer = &ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+        let buf = ArrayBuffer::new(scope, REDUCER_ARGS_BUFFER_SIZE);
+        let reducer_args_data_view = v8::DataView::new(scope, buf, 0, buf.byte_length());
 
         let mut inst = V8Instance {
             scope,
             replica_ctx,
             hooks: &hooks,
-            reducer_args_array_buffer,
+            reducer_args_data_view,
         };
 
         // Process requests to the worker.
@@ -757,7 +758,7 @@ struct V8Instance<'a, 'scope, 'isolate> {
     scope: &'a mut PinScope<'scope, 'isolate>,
     replica_ctx: &'a Arc<ReplicaContext>,
     hooks: &'a HookFunctions<'scope>,
-    reducer_args_array_buffer: &'a Local<'scope, ArrayBuffer>,
+    reducer_args_data_view: Local<'scope, v8::DataView>,
 }
 
 impl WasmInstance for V8Instance<'_, '_, '_> {
@@ -775,12 +776,7 @@ impl WasmInstance for V8Instance<'_, '_, '_> {
 
     fn call_reducer(&mut self, op: ReducerOp<'_>, budget: FunctionBudget) -> ReducerExecuteResult {
         common_call(self.scope, budget, op, |scope, op| {
-            Ok(call_call_reducer(
-                scope,
-                self.hooks,
-                op,
-                self.reducer_args_array_buffer,
-            )?)
+            Ok(call_call_reducer(scope, self.hooks, op, self.reducer_args_data_view)?)
         })
         .map_result(|call_result| call_result.and_then(|res| res.map_err(ExecutionError::User)))
     }
@@ -928,7 +924,9 @@ mod test {
                     timestamp: Timestamp::from_micros_since_unix_epoch(24),
                     args: &ArgsTuple::nullary(),
                 };
-                Ok(call_call_reducer(scope, &hooks, op)?)
+                let buffer = v8::ArrayBuffer::new(scope, 4096);
+                let data_view = v8::DataView::new(scope, buffer, 0, 4096);
+                Ok(call_call_reducer(scope, &hooks, op, data_view)?)
             })
         };
 
