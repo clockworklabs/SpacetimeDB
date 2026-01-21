@@ -432,9 +432,11 @@
 
             const nameBlock = document.createElement("div");
             nameBlock.className = "lane-name-block";
-            nameBlock.innerHTML = `
-          <div class="lane-label-primary">${c.name}</div>
-        `;
+
+            const primaryLabel = document.createElement("div");
+            primaryLabel.className = "lane-label-primary";
+            primaryLabel.textContent = c.name || "";
+            nameBlock.appendChild(primaryLabel);
 
             label.appendChild(logoWrap);
             label.appendChild(nameBlock);
