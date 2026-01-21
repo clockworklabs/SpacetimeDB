@@ -51,7 +51,8 @@ async function handleRpc(body: RpcRequest): Promise<RpcResponse> {
     }
   } catch (err: any) {
     console.error('[bun] rpc error:', err);
-    return { ok: false, error: String(err?.message ?? err) };
+    // Return a generic error message to avoid exposing internal details or stack traces.
+    return { ok: false, error: 'internal error' };
   }
 }
 
