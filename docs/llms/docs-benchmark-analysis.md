@@ -4,91 +4,186 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
 ## Summary
 
-- **Total failures analyzed**: 58
-
-## Analysis
-
-# Analysis of SpacetimeDB Benchmark Test Failures
-
-## Rust Failures
-
-### Root Causes
-1. **Incomplete Visibility of Struct Fields**
-   - Many struct fields for tables (e.g., `User`) are not marked as `pub`, causing accessibility issues.
-
-2. **Inconsistent Usage of Table Names**
-   - There are discrepancies in the naming conventions between the code and the expected database tables. For example, using `users` instead of `user`, and `results` instead of `result`.
-
-3. **Missing Result Types on Reducer Functions**
-   - A significant number of reducer functions lack return types or proper error handling, leading to compilation and runtime errors.
-
-4. **Incorrect Scheduling Parameters in Scheduled Tables**
-   - The scheduling system is not consistently defined in the tests (e.g., `ScheduleAt` parameter management), leading to inconsistencies in functional expectations.
-
-### Recommendations
-1. **Make Struct Fields Public**
-   - Update all structs associated with SpacetimeDB tables to ensure fields are public (e.g., change `id: i32` to `pub id: i32`).
-   - **Documentation Change**: Update the sample code documentation sections that define table structures.
-
-2. **Standardize Naming Conventions**
-   - Ensure naming conventions for structs and database tables are aligned.
-   - **Documentation Change**: Revise naming conventions section to specify standard naming practices clearly.
-
-3. **Include Result Types in Reducers**
-   - Add recommended return types for all reducer functions (e.g., return `Result<(), String>` instead of `()`).
-   - **Documentation Change**: Update reducer function examples in documentation to include this information.
-
-4. **Clarify Scheduling Table Configuration**
-   - Provide explicit instructions for scheduling parameters using accurate examples.
-   - **Documentation Change**: Include a dedicated section on Scheduling with working code examples.
-
-### Priority
-1. **Make Struct Fields Public** – This is the most critical fix as it directly impacts accessibility and usability.
-2. **Include Result Types in Reducers** – This ensures proper error handling, which would eliminate many runtime issues.
-3. **Standardize Naming Conventions** – Clear naming helps maintain consistency across multiple codebases.
-4. **Clarify Scheduling Table Configuration** – Enhances clarity on functionality, but lesser impact compared to the first two.
+- **Total failures analyzed**: 34
 
 ---
 
-## C# Failures
+# Analysis of SpacetimeDB Benchmark Failures
 
-### Root Causes
-1. **Inconsistent Field Access Modifiers**
-   - Fields in structs for database tables are often not marked as `public`, leading to access issues.
-
-2. **Misalignment in Table Definitions**
-   - There are discrepancies between the expected structure of tables and provided definitions (e.g., different table names).
-
-3. **Reducer Function Formatting**
-   - Incomplete or incorrect formatting of reducer functions that may lead to improper execution.
-
-4. **Lack of Error Handling in Functions**
-   - Similar to Rust, many functions do not have meaningful return types or exceptions coded in for errors, which can lead to failures.
-
-### Recommendations
-1. **Ensure Fields are Public**
-   - Change all fields in database table structs to have public access.
-   - **Documentation Change**: Update the database table definition examples to reflect this.
-
-2. **Standardize Naming in Table Definitions**
-   - Review and fix discrepancies in table definitions, specifying clear rules for naming and structuring.
-   - **Documentation Change**: Provide clearer guidelines for naming conventions in structs.
-
-3. **Include Proper Formatting and Return Types for Reducers**
-   - Add return types to all reducer functions, following the expected pattern.
-   - **Documentation Change**: Revise reducer function examples with complete signatures and return types.
-
-4. **Implement Exception Handling**
-   - Ensure all database interactions in reducers incorporate exception handling.
-   - **Documentation Change**: Include a section on error handling in the reducers’ documentation.
-
-### Priority
-1. **Ensure Fields are Public** – Ensuring accessibility across all struct fields is critical to prevent many failures.
-2. **Include Proper Formatting and Return Types for Reducers** – Providing clear function signatures can greatly enhance functional reliability.
-3. **Standardize Naming in Table Definitions** – Important for avoiding confusion and ensuring correctness.
-4. **Implement Exception Handling** – Should be detailed but is less critical than the above issues since core access issues need to be prioritized.
+This document provides an analysis of the failures in SpacetimeDB benchmark tests, organized by language and failure type. Each entry includes the generated code, the expected golden example, the error message, an explanation of the differences, the root cause of the issue, and specific recommendations for documentation changes.
 
 ---
 
-# Conclusion
-Both languages suffer from structural and accessibility issues in their respective code samples, leading to a myriad of runtime and compilation problems. Prioritizing documentation fixes based on accessibility and naming conventions will significantly improve usability and reduce failures in benchmarks.
+## Rust / rustdoc_json Failures
+
+### 1. Compile/Publish Errors
+
+#### t_002_scheduled_table
+**Generated Code**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+
+#[table(name = tick_timer, scheduled(reducer = tick, column = scheduled_at))]
+pub struct TickTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+}
+
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    let tbl = ctx.db.tick_timer();
+    match tbl.count() {
+        0 => {
+            tbl.insert(TickTimer {
+                scheduled_id: 0,
+                scheduled_at: ScheduleAt::repeat_micros(50_000),
+            });
+        }
+        n if n > 1 => {
+            let mut keep_one = true;
+            for row in tbl.iter() {
+                if keep_one {
+                    keep_one = false;
+                } else {
+                    tbl.scheduled_id().delete(&row.scheduled_id);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+```
+
+**Expected (golden)**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+use std::time::Duration;
+
+#[table(name = tick_timer, scheduled(tick))]
+pub struct TickTimer {
+    #[primary_key]
+    #[auto_inc]
+    pub scheduled_id: u64,
+    pub scheduled_at: ScheduleAt,
+}
+
+#[reducer]
+pub fn tick(_ctx: &ReducerContext, _row: TickTimer) -> Result<(), String> {
+    Ok(())
+}
+
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    ctx.db.tick_timer().insert(TickTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
+    });
+    Ok(())
+}
+```
+
+**Error**: `publish_error: spacetime publish failed (exit=1)`
+
+**Explanation of Difference**:
+- The generated code incorrectly uses `ScheduleAt::repeat_micros(50_000)` instead of `ScheduleAt::Interval(Duration::from_millis(50).into())`.
+- The function signatures for reducers in the generated code do not include returning a `Result`.
+
+**Root Cause**:
+- The documentation may not clearly delineate the expected syntax for the `scheduled` attribute or the return type for reducers.
+
+**Recommendation**:
+- Update documentation to provide clear examples for `scheduled` attributes using different time formats and specify that reducers should return `Result` types.
+
+
+---
+
+#### t_008_index_lookup
+**Generated Code**:
+```rust
+use spacetimedb::{ReducerContext, Table};
+
+#[spacetimedb::table(name = user)]
+pub struct User {
+    #[primary_key]
+    id: i32,
+    name: String,
+    age: i32,
+    active: bool,
+}
+
+#[spacetimedb::table(name = result)]
+pub struct ResultRow {
+    #[primary_key]
+    id: i32,
+    name: String,
+}
+
+#[spacetimedb::reducer]
+pub fn lookup_user_name(ctx: &ReducerContext, id: i32) {
+    if let Some(u) = ctx.db.user().id().find(id) {
+        let row = ResultRow { id: u.id, name: u.name.clone() };
+        if ctx.db.result().try_insert(row.clone()).is_err() {
+            ctx.db.result().id().update(row);
+        }
+    }
+}
+```
+
+**Expected (golden)**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, Table};
+
+#[table(name = user)]
+pub struct User {
+    #[primary_key]
+    pub id: i32,
+    pub name: String,
+    pub age: i32,
+    pub active: bool,
+}
+
+#[table(name = result)]
+pub struct ResultRow {
+    #[primary_key]
+    pub id: i32,
+    pub name: String,
+}
+
+#[reducer]
+pub fn lookup_user_name(ctx: &ReducerContext, id: i32) {
+    if let Some(u) = ctx.db.user().id().find(id) {
+        ctx.db.result().insert(ResultRow { id: u.id, name: u.name });
+    }
+}
+```
+
+**Error**: `publish_error: spacetime publish failed (exit=1)`
+
+**Explanation of Difference**:
+- The generated code does not publicize the fields in the `User` and `ResultRow` structs.
+- Incorrectly attempts to use the `.try_insert` method instead of the `.insert` method.
+
+**Root Cause**:
+- Documentation may lack emphasis on the necessity of field visibility (using `pub`) and the correct methods for database insertion.
+
+**Recommendation**:
+- Update the code examples in the documentation to show public fields in structs and specify the correct methods for inserting records.
+
+
+---
+
+### Additional Recommendations for All Failures
+
+1. **Common Structure**: All failure analysis should present the structure in a consistent manner for easy scanning and understanding by developers.
+
+2. **Version Tags**: Each example should indicate the version of SpacetimeDB the examples pertain to, as APIs may evolve over time.
+
+3. **Error Handling**: Documentation should emphasize the importance of error handling in all reducer functions to ensure robustness.
+
+4. **Clear API Guides**: Include clear guidelines on key usage patterns for attribute macros such as `#[table]` and `#[reducer]`, including common pitfalls.
+
+5. **Time Handling Guidelines**: Provide explicit examples related to the different ways to manage time intervals (like `Duration` vs. microseconds). 
+
+This structured approach will assist developers in quickly diagnosing and resolving their issues when working with SpacetimeDB.
