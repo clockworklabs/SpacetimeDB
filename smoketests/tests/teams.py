@@ -1,7 +1,16 @@
 import json
 import toml
 
-from .. import Smoketest, parse_sql_result, random_string
+from .. import COMPOSE_FILE, Smoketest, parse_sql_result, random_string, spacetime
+from ..docker import DockerManager
+from ..tests.replication import Cluster
+
+OWNER = "Owner"
+ADMIN = "Admin"
+DEVELOPER = "Developer"
+VIEWER = "Viewer"
+
+ROLES = [OWNER, ADMIN, DEVELOPER, VIEWER]
 
 class CreateChildDatabase(Smoketest):
     AUTOPUBLISH = False
@@ -70,6 +79,18 @@ class ChangeDatabaseHierarchy(Smoketest):
 class PermissionsTest(Smoketest):
     AUTOPUBLISH = False
 
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.root_config = cls.project_path / "root_config"
+        spacetime("--config-path", cls.root_config, "server", "set-default", "local")
+
+    def setUp(self):
+        self.docker = DockerManager(COMPOSE_FILE)
+        self.root_token = self.docker.generate_root_token()
+
+        self.cluster = Cluster(self.docker, self)
+
     def create_identity(self):
         """
         Obtain a fresh identity and token from the server.
@@ -83,8 +104,7 @@ class PermissionsTest(Smoketest):
         Create collaborators for the current database, one for each role.
         """
         collaborators = {}
-        roles = ["Owner", "Admin", "Developer", "Viewer"]
-        for role in roles:
+        for role in ROLES:
             identity_and_token = self.create_identity()
             self.call_controldb_reducer(
                 "upsert_collaborator",
@@ -95,6 +115,37 @@ class PermissionsTest(Smoketest):
             collaborators[role] = identity_and_token
         return collaborators
 
+    def create_organization(self):
+        """
+        Create an organization with one member per role.
+        """
+        members = {}
+        organization_identity = self.create_identity()['identity']
+        for role in ROLES:
+            member = self.create_identity()
+            self.call_controldb_reducer(
+                "upsert_organization_member",
+                [f"0x{organization_identity}"],
+                [f"0x{member['identity']}"],
+                {role: {}}
+            )
+            members[role] = member
+        organization =  {
+            "organization": organization_identity,
+            "members": members
+        }
+        self.organization = organization
+
+        return organization
+
+    def make_admin(self):
+        """
+        Create an admin account for the currently logged-in identity.
+        """
+        identity = str(self.spacetime("login", "show")).split()[-1]
+        spacetime("--config-path", self.root_config, "login", "--token", self.root_token)
+        spacetime("--config-path", self.root_config, "call",
+                  "spacetime-control", "create_admin_account", f"0x{identity}")
 
     def call_controldb_reducer(self, reducer, *args):
         """
@@ -134,6 +185,23 @@ class PermissionsTest(Smoketest):
         self.login_with(role_and_token[1])
         return self.subscribe(*queries, n = n)
 
+    def tearDown(self):
+        if "organization" in self.__dict__:
+            # Log in as owner
+            self.login_with(self.organization['members'][OWNER])
+            # Delete database (requires org to still exist)
+            super().tearDown()
+            # Delete org
+            try:
+                self.call_controldb_reducer(
+                    "delete_organization",
+                    [f"0x{self.organization['organization']}"]
+                )
+            except Exception:
+                pass
+        else:
+            super().tearDown()
+
 
 class MutableSql(PermissionsTest):
     MODULE_CODE = """
@@ -154,7 +222,7 @@ struct Person {
         for role, token in team.items():
             self.login_with(token)
             dml = f"insert into person (name) values ('bob-the-{role}')"
-            if role == "Owner" or role == "Admin":
+            if role == OWNER or role == ADMIN:
                 self.spacetime("sql", name, dml)
             else:
                 with self.assertRaises(Exception):
@@ -334,7 +402,7 @@ class PrivateTables(PermissionsTest):
         self.publish_module(parent)
 
         team = self.create_collaborators(parent)
-        owner = ("Owner", team['Owner'])
+        owner = (OWNER, team[OWNER])
 
         self.sql_as(owner, parent, "insert into person (name) values ('horsti')")
 
@@ -346,6 +414,165 @@ class PrivateTables(PermissionsTest):
             sub = self.subscribe_as(role_and_token, "select * from person", n = 2)
             self.sql_as(owner, parent, "insert into person (name) values ('hansmans')")
             self.sql_as(owner, parent, "delete from person where name = 'hansmans'")
+            res = sub()
+            self.assertEqual(
+                res,
+                [
+                    {
+                        'person': {
+                            'deletes': [],
+                            'inserts': [{'name': 'hansmans'}]
+                        }
+                    },
+                    {
+                        'person': {
+                            'deletes': [{'name': 'hansmans'}],
+                            'inserts': []
+                        }
+                    }
+                ],
+            )
+
+
+class OrgMutableSql(MutableSql):
+    MODULE_CODE = """
+#[spacetimedb::table(name = person, public)]
+struct Person {
+    name: String,
+}
+"""
+
+    def test_org_permissions_for_mutable_sql_transactions(self):
+        """
+        Tests that only organization owners and admins can perform mutable SQL
+        transactions.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        database_name = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(database_name, organization = f"0x{org['organization']}")
+
+        for role, auth in org['members'].items():
+            self.login_with(auth)
+            dml = f"insert into person (name) values ('bob-the-{role}')"
+            if role == OWNER or role == ADMIN:
+                self.spacetime("sql", database_name, dml)
+            else:
+                with self.assertRaises(Exception):
+                    self.spacetime("sql", database_name, dml)
+
+
+class OrgPublishDatabase(PublishDatabase):
+    def test_org_permissions_publish(self):
+        """
+        Tests that only organization owner, admin and developer roles can
+        publish a database.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        database_name = random_string()
+
+        self.spacetime("sql", "spacetime-control", "select * from organization_member")
+        self.login_with(org['members'][OWNER])
+        self.publish_module(database_name, organization = f"0x{org['organization']}")
+
+        succeed_with = [
+            (OWNER, self.MODULE_CODE_OWNER),
+            (ADMIN, self.MODULE_CODE_ADMIN),
+            (DEVELOPER, self.MODULE_CODE_DEVELOPER),
+        ]
+
+        def role_and_auth(org, role):
+            return [role, org['members'][role]]
+
+        for role, code in succeed_with:
+            self.publish_as(role_and_auth(org, role), database_name, code)
+
+        with self.assertRaises(Exception):
+            self.publish_as(role_and_auth(org, VIEWER), database_name, self.MODULE_CODE_VIEWER)
+
+
+class OrgClearDatabase(ClearDatabase):
+    def test_org_permissions_clear(self):
+        """
+        Test that only organization owners or admins can clear a database.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        database_name = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(database_name, organization = f"0x{org['organization']}")
+
+        def role_and_auth(org, role):
+            return [role, org['members'][role]]
+
+        # Owner and admin can clear.
+        for role in [OWNER, ADMIN]:
+            self.publish_as(role_and_auth(org, role), database_name, self.MODULE_CODE, clear = True)
+
+        # Others can't.
+        for role in [DEVELOPER, VIEWER]:
+            with self.assertRaises(Exception):
+                self.publish_as(role_and_auth(org, role), database_name, self.MODULE_CODE, clear = True)
+
+
+class OrgDeleteDatabase(DeleteDatabase):
+    def test_org_permissions_delete(self):
+        """
+        Tests that only organization owners can delete databases.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        database_name = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(database_name, organization = f"0x{org['organization']}")
+
+        def role_and_auth(org, role):
+            return [role, org['members'][role]]
+
+        for role in ROLES:
+            if role == OWNER:
+                continue
+
+            with self.assertRaises(Exception):
+                self.delete_as(role_and_auth(org, role), database_name)
+
+        self.delete_as(role_and_auth(org, OWNER), database_name)
+
+
+class OrgPrivateTables(PrivateTables):
+    def test_org_permissions_private_tables(self):
+        """
+        Test that all organization members can read private tables.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        database_name = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(database_name, organization = f"0x{org['organization']}")
+
+        owner = [OWNER, org['members'][OWNER]]
+
+        self.sql_as(owner, database_name, "insert into person (name) values ('horsti')")
+
+        for auth in org['members'].items():
+            rows = self.sql_as(auth, database_name, "select * from person")
+            self.assertEqual(rows, [{ "name": '"horsti"' }])
+
+        for auth in org['members'].items():
+            sub = self.subscribe_as(auth, "select * from person", n = 2)
+            self.sql_as(owner, database_name, "insert into person (name) values ('hansmans')")
+            self.sql_as(owner, database_name, "delete from person where name = 'hansmans'")
             res = sub()
             self.assertEqual(
                 res,
