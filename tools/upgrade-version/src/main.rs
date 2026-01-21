@@ -184,7 +184,18 @@ fn main() -> anyhow::Result<()> {
 
         process_license_file("LICENSE.txt", &full_version);
         process_license_file("licenses/BSL.txt", &full_version);
+        println!("$> cargo check");
         cmd!("cargo", "check").run().expect("Cargo check failed!");
+
+        println!("$> pnpm --dir templates/quickstart-chat-typescript generate");
+        cmd!("pnpm", "--dir", "templates/quickstart-chat-typescript", "generate")
+            .run()
+            .expect("pnpm generate failed!");
+
+        println!("$> cargo test -p spacetimedb-codegen");
+        cmd!("cargo", "test", "-p", "spacetimedb-codegen").run()?;
+        println!("$> cargo insta review");
+        cmd!("cargo", "insta", "review").run()?;
     }
 
     if matches.get_flag("typescript") || matches.get_flag("all") {
