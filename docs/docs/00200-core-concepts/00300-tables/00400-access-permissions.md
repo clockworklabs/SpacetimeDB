@@ -580,14 +580,19 @@ import { table, t, schema } from 'spacetimedb/server';
 
 // Private table with all employee data
 const employee = table(
-  { name: 'employee' },
+  {
+    name: 'employee',
+    indexes: [
+      { name: 'idx_manager_id', algorithm: 'btree', columns: ['managerId'] },
+    ],
+  },
   {
     id: t.u64().primaryKey(),
     identity: t.identity().unique(),
     name: t.string(),
     department: t.string(),
     salary: t.u64(),           // Sensitive
-    managerId: t.option(t.u64()).index('btree'),
+    managerId: t.option(t.u64()),
   }
 );
 
@@ -609,8 +614,8 @@ spacetimedb.view(
     const me = ctx.db.employee.identity.find(ctx.sender);
     if (!me) return [];
 
-    // Look up employees who report to the caller by managerId index
-    return Array.from(ctx.db.employee.managerId.filter(me.id)).map(emp => ({
+    // Look up employees who report to the caller by manager_id index
+    return Array.from(ctx.db.employee.idx_manager_id.filter(me.id)).map(emp => ({
       id: emp.id,
       name: emp.name,
       department: emp.department,
