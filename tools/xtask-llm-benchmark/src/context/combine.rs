@@ -41,6 +41,7 @@ fn filter_tabs_for_lang(content: &str, lang: Lang) -> String {
     let tab_value = match lang {
         Lang::CSharp => "csharp",
         Lang::Rust => "rust",
+        Lang::TypeScript => "typescript",
     };
 
     // Regex to match <Tabs groupId="server-language" or "client-language">...</Tabs> blocks

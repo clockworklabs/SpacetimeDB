@@ -99,6 +99,9 @@
   --ifm-tabs-padding-vertical: 8px;
 
   --ifm-navbar-height: 57px;
+
+  --ifm-footer-padding-vertical: 0;
+  --ifm-footer-padding-horizontal: 0;
 }
 
 :root .alert--info {
