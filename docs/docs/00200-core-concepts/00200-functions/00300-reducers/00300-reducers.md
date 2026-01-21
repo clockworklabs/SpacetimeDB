@@ -432,6 +432,87 @@ pub struct Counter {
 ```
 :::
 
+## Scheduling Procedures
+
+Reducers cannot call procedures directly (procedures may have side effects incompatible with transactional execution). Instead, schedule a procedure to run by inserting into a [schedule table](/tables/schedule-tables):
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Define a schedule table for the procedure
+const fetchSchedule = table(
+  { name: 'fetch_schedule', scheduled: 'fetch_external_data' },
+  {
+    scheduled_id: t.u64().primaryKey().autoInc(),
+    scheduled_at: t.scheduleAt(),
+    url: t.string(),
+  }
+);
+
+// The procedure to be scheduled
+const fetchExternalData = spacetimedb.procedure(
+  'fetch_external_data',
+  { arg: fetchSchedule.rowType },
+  t.unit(),
+  (ctx, { arg }) => {
+    const response = ctx.http.fetch(arg.url);
+    // Process response...
+    return {};
+  }
+);
+
+// From a reducer, schedule the procedure by inserting into the schedule table
+const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx, { url }) => {
+  ctx.db.fetchSchedule.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(0n), // Run immediately
+    url,
+  });
+});
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Support for procedures in C# modules is coming soon!
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::table(name = fetch_schedule, scheduled(fetch_external_data))]
+pub struct FetchSchedule {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+    url: String,
+}
+
+#[spacetimedb::procedure]
+fn fetch_external_data(ctx: &mut ProcedureContext, schedule: FetchSchedule) {
+    if let Ok(response) = ctx.http.get(&schedule.url) {
+        // Process response...
+    }
+}
+
+// From a reducer, schedule the procedure
+#[spacetimedb::reducer]
+fn queue_fetch(ctx: &ReducerContext, url: String) {
+    ctx.db.fetch_schedule().insert(FetchSchedule {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::ZERO.into()),
+        url,
+    });
+}
+```
+
+</TabItem>
+</Tabs>
+
+See [Schedule Tables](/tables/schedule-tables) for more scheduling options.
+
 ## Next Steps
 
 - Learn about [Tables](/tables) to understand data storage

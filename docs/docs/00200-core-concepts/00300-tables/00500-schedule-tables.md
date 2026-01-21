@@ -9,6 +9,10 @@ import TabItem from '@theme/TabItem';
 
 Tables can trigger [reducers](/functions/reducers) or [procedures](/functions/procedures) at specific times by including a special scheduling column. This allows you to schedule future actions like sending reminders, expiring items, or running periodic maintenance tasks.
 
+:::tip Scheduling Procedures
+Procedures use the same scheduling pattern as reducers. Simply reference the procedure name in the `scheduled` attribute. This is particularly useful when you need scheduled tasks that make HTTP requests or perform other side effects. See [Scheduling Procedures](/functions/reducers#scheduling-procedures) for an example.
+:::
+
 ## Defining a Schedule Table
 
 :::note Why "scheduled" in the code?

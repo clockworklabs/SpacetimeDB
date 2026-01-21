@@ -428,6 +428,71 @@ Procedures can't send requests at the same time as holding open a [transaction](
 </TabItem>
 </Tabs>
 
+## Calling Reducers from Procedures
+
+Procedures can call reducers by invoking them within a transaction block. The reducer function runs within the transaction context:
+
+<Tabs groupId="server-language" queryString>
+<TabItem value="typescript" label="TypeScript">
+
+```typescript
+// Define a reducer and save the reference
+const processItem = spacetimedb.reducer('process_item', { itemId: t.u64() }, (ctx, { itemId }) => {
+  // ... reducer logic
+});
+
+// Call it from a procedure using the saved reference
+spacetimedb.procedure('fetch_and_process', { url: t.string() }, t.unit(), (ctx, { url }) => {
+  // Fetch external data
+  const response = ctx.http.fetch(url);
+  const data = response.json();
+
+  // Call the reducer within a transaction
+  ctx.withTx(txCtx => {
+    processItem(txCtx, { itemId: data.id });
+  });
+
+  return {};
+});
+```
+
+</TabItem>
+<TabItem value="rust" label="Rust">
+
+```rust
+#[spacetimedb::reducer]
+fn process_item(ctx: &ReducerContext, item_id: u64) {
+    // ... reducer logic
+}
+
+#[spacetimedb::procedure]
+fn fetch_and_process(ctx: &mut ProcedureContext, url: String) -> Result<(), String> {
+    // Fetch external data
+    let response = ctx.http.get(&url).map_err(|e| format!("{e:?}"))?;
+    let (_, body) = response.into_parts();
+    let item_id: u64 = parse_id(&body.into_string_lossy());
+
+    // Call the reducer within a transaction
+    ctx.with_tx(|tx_ctx| {
+        process_item(tx_ctx, item_id);
+    });
+
+    Ok(())
+}
+```
+
+</TabItem>
+</Tabs>
+
+:::note
+When you call a reducer function inside `withTx`, it executes as part of the same transaction, not as a subtransaction. The reducer's logic runs inline within your anonymous transaction block, just like calling any other helper function.
+:::
+
+This pattern is useful when you need to:
+- Fetch external data and then process it transactionally
+- Reuse existing reducer logic from a procedure
+- Combine side effects (HTTP) with database operations
+
 ## Calling procedures
 
 <Tabs groupId="client-language" queryString>
