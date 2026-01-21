@@ -447,6 +447,8 @@ impl fmt::Display for JsStackTraceFrame {
 struct SourceMaps(IntMap<usize, Option<sourcemap::SourceMap>>);
 
 impl SourceMaps {
+    /// Extract the sourcemap from the given frame, if it exists, and insert
+    /// it into the `SourceMaps` in the isolate.
     fn parse_and_insert<'a>(
         scope: &'a mut PinScope<'_, '_>,
         frame: Local<'_, StackFrame>,
@@ -464,6 +466,7 @@ impl SourceMaps {
     }
 }
 
+/// Get the slot `T` from `isolate`, or create it with the value `default()` if it doesn't exist.
 fn get_or_insert_slot<T: 'static>(isolate: &mut v8::Isolate, default: impl FnOnce() -> T) -> &mut T {
     if isolate.get_slot::<T>().is_none() {
         isolate.set_slot(default());
