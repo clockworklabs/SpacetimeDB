@@ -63,8 +63,8 @@ pub enum SqlUnsupported {
     MultiPartName(ObjectName),
     #[error("Unsupported: {0}")]
     Feature(String),
-    #[error("Non-inner joins are not supported")]
-    JoinType,
+    #[error("Non-column join constraints are not supported")]
+    JoinConstraintType,
     #[error("Implicit joins are not supported")]
     ImplicitJoins,
     #[error("Mixed wildcard projections are not supported")]
