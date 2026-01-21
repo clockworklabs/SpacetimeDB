@@ -78,6 +78,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[sqlite-seed] failed:', err);
+  console.error(
+    '[sqlite-seed] failed: an error occurred during sqlite seeding (see secure logs for details)',
+  );
   process.exit(1);
 });
