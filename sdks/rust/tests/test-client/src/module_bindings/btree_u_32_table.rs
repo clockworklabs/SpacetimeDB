@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `BTreeU32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait btree_u32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `BTreeU32`.
+    fn btree_u32(&self) -> __sdk::__query_builder::Table<BTreeU32>;
+}
+
+impl btree_u32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn btree_u32(&self) -> __sdk::__query_builder::Table<BTreeU32> {
+        __sdk::__query_builder::Table::new("btree_u32")
+    }
+}

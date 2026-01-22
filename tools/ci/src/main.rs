@@ -1,7 +1,9 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
+use std::ffi::OsStr;
 use std::path::Path;
+use std::path::PathBuf;
 use std::{env, fs};
 
 const README_PATH: &str = "tools/ci/README.md";
@@ -30,6 +32,108 @@ struct Cli {
     skip: Vec<String>,
 }
 
+fn ensure_repo_root() -> Result<()> {
+    if !Path::new("Cargo.toml").exists() {
+        bail!("You must execute this command from the SpacetimeDB repository root (where Cargo.toml is located)");
+    }
+    Ok(())
+}
+
+fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
+    let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
+    if !skeleton_root.exists() {
+        return Ok(());
+    }
+
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    let versioned_dir = match find_only_subdir(&pkg_root) {
+        Ok(dir) => dir,
+        Err(err) => {
+            log::info!("Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}");
+            return Ok(());
+        }
+    };
+
+    copy_overlay_dir(&skeleton_root, &versioned_dir)
+}
+
+fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    fs::remove_dir_all(&pkg_root)?;
+
+    Ok(())
+}
+
+fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
+    let mut subdirs: Vec<PathBuf> = vec![];
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            subdirs.push(entry.path());
+        }
+    }
+
+    match subdirs.as_slice() {
+        [] => Err(anyhow::anyhow!(
+            "Could not find a restored versioned directory under {}",
+            dir.display()
+        )),
+        [only] => Ok(only.clone()),
+        _ => Err(anyhow::anyhow!(
+            "Expected exactly one restored versioned directory under {}, found {}",
+            dir.display(),
+            subdirs.len()
+        )),
+    }
+}
+
+fn copy_overlay_dir(src: &Path, dst: &Path) -> Result<()> {
+    if !src.exists() {
+        bail!("Skeleton directory does not exist: {}", src.display());
+    }
+    if !dst.exists() {
+        bail!("Destination directory does not exist: {}", dst.display());
+    }
+
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            if dst_path.exists() {
+                copy_overlay_dir(&src_path, &dst_path)?;
+            }
+        } else {
+            if src_path.extension() == Some(OsStr::new("meta")) {
+                let asset_path = dst_path
+                    .parent()
+                    .expect("dst_path should have a parent")
+                    .join(dst_path.file_stem().expect(".meta file should have a file stem"));
+
+                if asset_path.exists() {
+                    fs::copy(&src_path, &dst_path)?;
+                } else if dst_path.exists() {
+                    fs::remove_file(&dst_path)?;
+                }
+                continue;
+            }
+
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Subcommand)]
 enum CiCmd {
     /// Runs tests
@@ -46,6 +150,12 @@ enum CiCmd {
     ///
     /// Runs tests for the codegen crate and builds a test module with the wasm bindings.
     WasmBindings,
+    /// Builds and packs C# DLLs and NuGet packages for local Unity workflows
+    ///
+    /// Packs the in-repo C# NuGet packages and restores the C# SDK to populate `sdks/csharp/packages/**`.
+    /// Then overlays Unity `.meta` skeleton files from `sdks/csharp/unity-meta-skeleton~/**` onto the restored
+    /// versioned package directory, so Unity can associate stable meta files with the most recently built package.
+    Dlls,
     /// Runs smoketests
     ///
     /// Executes the smoketests suite with some default exclusions.
@@ -208,6 +318,82 @@ fn main() -> Result<()> {
                 "--project-path",
                 "modules/module-test",
             )
+            .run()?;
+        }
+
+        Some(CiCmd::Dlls) => {
+            ensure_repo_root()?;
+
+            cmd!(
+                "dotnet",
+                "pack",
+                "crates/bindings-csharp/BSATN.Runtime",
+                "-c",
+                "Release"
+            )
+            .run()?;
+            cmd!("dotnet", "pack", "crates/bindings-csharp/Runtime", "-c", "Release").run()?;
+
+            let repo_root = env::current_dir()?;
+            let bsatn_source = repo_root.join("crates/bindings-csharp/BSATN.Runtime/bin/Release");
+            let runtime_source = repo_root.join("crates/bindings-csharp/Runtime/bin/Release");
+
+            let nuget_config_dir = tempfile::tempdir()?;
+            let nuget_config_path = nuget_config_dir.path().join("nuget.config");
+            let nuget_config_contents = format!(
+                r#"<?xml version="1.0" encoding="utf-8"?>
+            <configuration>
+              <packageSources>
+                <clear />
+                <add key="Local SpacetimeDB.BSATN.Runtime" value="{}" />
+                <add key="Local SpacetimeDB.Runtime" value="{}" />
+                <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+              </packageSources>
+              <packageSourceMapping>
+                <packageSource key="Local SpacetimeDB.BSATN.Runtime">
+                  <package pattern="SpacetimeDB.BSATN.Runtime" />
+                </packageSource>
+                <packageSource key="Local SpacetimeDB.Runtime">
+                  <package pattern="SpacetimeDB.Runtime" />
+                </packageSource>
+                <packageSource key="nuget.org">
+                  <package pattern="*" />
+                </packageSource>
+              </packageSourceMapping>
+            </configuration>
+            "#,
+                bsatn_source.display(),
+                runtime_source.display(),
+            );
+            fs::write(&nuget_config_path, nuget_config_contents)?;
+
+            let nuget_config_path_str = nuget_config_path.to_string_lossy().to_string();
+
+            clear_restored_package_dirs("spacetimedb.bsatn.runtime")?;
+            clear_restored_package_dirs("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "restore",
+                "SpacetimeDB.ClientSDK.csproj",
+                "--configfile",
+                &nuget_config_path_str,
+            )
+            .dir("sdks/csharp")
+            .run()?;
+
+            overlay_unity_meta_skeleton("spacetimedb.bsatn.runtime")?;
+            overlay_unity_meta_skeleton("spacetimedb.runtime")?;
+
+            cmd!(
+                "dotnet",
+                "pack",
+                "SpacetimeDB.ClientSDK.csproj",
+                "-c",
+                "Release",
+                "--no-restore"
+            )
+            .dir("sdks/csharp")
             .run()?;
         }
 
