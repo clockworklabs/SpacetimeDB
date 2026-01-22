@@ -5,8 +5,8 @@ import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection, ErrorContext } from '../src/module_bindings';
 import { Identity } from 'spacetimedb';
 
-const URI = process.env.NEXT_PUBLIC_SPACETIMEDB_URI ?? 'ws://localhost:3000';
-const MODULE = process.env.NEXT_PUBLIC_SPACETIMEDB_MODULE ?? 'nextjs-ts';
+const HOST = process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_DB_NAME ?? 'nextjs-ts';
 
 const onConnect = (_conn: DbConnection, identity: Identity, token: string) => {
   if (typeof window !== 'undefined') {
@@ -30,8 +30,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const connectionBuilder = useMemo(
     () =>
       DbConnection.builder()
-        .withUri(URI)
-        .withModuleName(MODULE)
+        .withUri(HOST)
+        .withModuleName(DB_NAME)
         .withToken(
           typeof window !== 'undefined'
             ? localStorage.getItem('auth_token') || undefined
