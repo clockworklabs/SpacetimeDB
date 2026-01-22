@@ -150,6 +150,7 @@ pub struct ModuleDef {
 pub enum RawModuleDefVersion {
     /// Represents [`RawModuleDefV9`] and earlier.
     V9OrEarlier,
+    /// Represents [`RawModuleDefV10`].
     V10,
 }
 
