@@ -894,7 +894,7 @@ impl Default for AnonymousViewContext {
 /// The other is [`AnonymousViewContext`].
 /// Use this type if the view depends on the caller's identity.
 pub struct ViewContext {
-    pub sender: Identity,
+    sender: Identity,
     pub db: LocalReadOnly,
     pub from: QueryBuilder,
 }
@@ -906,6 +906,11 @@ impl ViewContext {
             db: LocalReadOnly {},
             from: QueryBuilder {},
         }
+    }
+
+    /// The `Identity` of the client that invoked the view.
+    pub fn sender(&self) -> Identity {
+        self.sender
     }
 }
 
@@ -924,7 +929,7 @@ impl ViewContext {
 #[non_exhaustive]
 pub struct ReducerContext {
     /// The `Identity` of the client that invoked the reducer.
-    pub sender: Identity,
+    sender: Identity,
 
     /// The time at which the reducer was started.
     pub timestamp: Timestamp,
@@ -1012,6 +1017,11 @@ impl ReducerContext {
             #[cfg(feature = "rand")]
             counter_uuid: Cell::new(0),
         }
+    }
+
+    /// The `Identity` of the client that invoked the reducer.
+    pub fn sender(&self) -> Identity {
+        self.sender
     }
 
     /// Returns the authorization information for the caller of this reducer.
@@ -1124,7 +1134,7 @@ impl Deref for TxContext {
 #[cfg(feature = "unstable")]
 pub struct ProcedureContext {
     /// The `Identity` of the client that invoked the procedure.
-    pub sender: Identity,
+    sender: Identity,
 
     /// The time at which the procedure was started.
     pub timestamp: Timestamp,
@@ -1162,6 +1172,12 @@ impl ProcedureContext {
             counter_uuid: Cell::new(0),
         }
     }
+
+    /// The `Identity` of the client that invoked the procedure.
+    pub fn sender(&self) -> Identity {
+        self.sender
+    }
+
     /// Read the current module's [`Identity`].
     pub fn identity(&self) -> Identity {
         // Hypothetically, we *could* read the module identity out of the system tables.
