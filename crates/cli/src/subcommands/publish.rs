@@ -93,7 +93,7 @@ A parent can only be set when a database is created, not when it is updated."
 "The name or identity of an existing organization this database should be created under.
 
 If an organization is given, the organization member's permissions apply to the new database.
-An organization can only be set when a database is created, not when its is updated."
+An organization can only be set when a database is created, not when it is updated."
             )
         )
         .arg(
