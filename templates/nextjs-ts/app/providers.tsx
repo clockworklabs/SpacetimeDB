@@ -27,7 +27,6 @@ const onConnectError = (_ctx: ErrorContext, err: Error) => {
 };
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // CRITICAL: Memoize connectionBuilder to prevent reconnects on re-render
   const connectionBuilder = useMemo(
     () =>
       DbConnection.builder()
