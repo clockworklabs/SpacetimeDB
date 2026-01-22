@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   docker_smoketests:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     name: Smoketests
     strategy:
       matrix:
@@ -121,7 +121,7 @@ jobs:
         run: docker compose -f .github/docker-compose.yml down
 
   test:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     name: Test Suite
     runs-on: spacetimedb-new-runner
     container:
@@ -534,7 +534,7 @@ jobs:
         run: llm_benchmark ci-check
 
   unity-testsuite:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     # Skip if this is an external contribution.
     # The license secrets will be empty, so the step would fail anyway.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
@@ -657,7 +657,7 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
 
   csharp-testsuite:
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     runs-on: spacetimedb-new-runner
     container:
       image: localhost:5000/spacetimedb-ci:latest
@@ -767,7 +767,7 @@ jobs:
 
   internal-tests:
     name: Internal Tests
-    needs: [lints, llm_ci_check]
+    needs: [lints]
     # Skip if not a PR or a push to master
     # Skip if this is an external contribution. GitHub secrets will be empty, so the step would fail anyway.
     if: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/master'))

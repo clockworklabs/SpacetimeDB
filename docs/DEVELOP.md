@@ -238,7 +238,6 @@ cargo llm ci-check --lang csharp
 cargo llm ci-comment
 # With custom baseline ref
 cargo llm ci-comment --baseline-ref origin/main
-
 ```
 
 Outputs:
