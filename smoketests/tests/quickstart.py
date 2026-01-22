@@ -376,3 +376,48 @@ class TypeScript(Rust):
     def test_quickstart(self):
         """Run the TypeScript quickstart guides for server."""
         self._test_quickstart()
+
+
+class Cpp(Rust):
+    """C++ server with Rust client quickstart test."""
+    lang = "cpp"
+    client_lang = "rust"
+    server_doc = STDB_DIR / "docs/docs/00100-intro/00300-tutorials/00100-chat-app.md"
+    server_file = "src/lib.cpp"
+    # Inherit client_file, module_bindings, run_cmd, build_cmd from Rust
+    
+    # Inherit Rust client behavior
+    replacements = Rust.replacements
+    extra_code = Rust.extra_code
+    connected_str = Rust.connected_str
+    
+    def generate_server(self, server_path: Path):
+        """Generate the C++ server code from documentation.
+        Override to use correct project path and skip Rust-specific setup."""
+        logging.info(f"Generating server code {self.lang}: {server_path}...")
+        self.spacetime(
+            "init",
+            "--non-interactive",
+            "--lang",
+            self.lang,
+            "--project-path",
+            server_path,
+            "spacetimedb-project",
+            capture_stderr=True,
+        )
+        # C++ init creates server_path/spacetimedb structure
+        self.project_path = server_path / "spacetimedb"
+        # Don't copy rust-toolchain.toml for C++
+        _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name, server=True))
+        self.server_postprocess(self.project_path)
+        self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
+
+    def server_postprocess(self, server_path: Path):
+        """C++ doesn't need Cargo.toml - override parent's Rust implementation."""
+        pass
+
+    def test_quickstart(self):
+        """Run the C++ server + Rust client quickstart."""
+        if not smoketests.HAVE_EMSCRIPTEN:
+            self.skipTest("C++ SDK requires Emscripten to be installed.")
+        self._test_quickstart()
