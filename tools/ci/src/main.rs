@@ -366,7 +366,7 @@ impl ServerState {
                         .read();
                     }
                 });
-                wait_until_http_ready(Duration::from_secs(1200), cli_path, &server_url)?;
+                wait_until_http_ready(Duration::from_secs(60), cli_path, &server_url)?;
                 Ok(ServerState::Yes { handle, data_dir })
             }
         }

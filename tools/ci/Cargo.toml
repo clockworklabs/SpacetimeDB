@@ -13,3 +13,4 @@ duct.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 env_logger.workspace = true
+nix.workspace = true
