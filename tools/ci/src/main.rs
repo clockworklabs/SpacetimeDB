@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use duct::cmd;
-use semver::Version;
 use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
@@ -41,27 +40,21 @@ fn ensure_repo_root() -> Result<()> {
 }
 
 fn overlay_unity_meta_skeleton(pkg_id: &str) -> Result<()> {
-    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
-    if !pkg_root.exists() {
-        log::info!("Skipping skeleton overlay for {pkg_id}: {pkg_root:?} does not exist");
-        return Ok(());
-    }
-
     let skeleton_root = Path::new("sdks/csharp/unity-meta-skeleton~").join(pkg_id);
     if !skeleton_root.exists() {
-        log::info!(
-            "Skipping skeleton overlay for {pkg_id}: {} does not exist",
-            skeleton_root.display()
-        );
         return Ok(());
     }
 
-    let versioned_dir = match find_latest_semver_subdir(&pkg_root) {
+    let pkg_root = Path::new("sdks/csharp/packages").join(pkg_id);
+    if !pkg_root.exists() {
+        return Ok(());
+    }
+
+    let versioned_dir = match find_only_subdir(&pkg_root) {
         Ok(dir) => dir,
         Err(err) => {
             log::info!(
-                "Skipping skeleton overlay for {pkg_id}: could not find a versioned directory under {} ({err})",
-                pkg_root.display()
+                "Skipping Unity meta overlay for {pkg_id}: could not locate restored version dir: {err}"
             );
             return Ok(());
         }
@@ -81,35 +74,26 @@ fn clear_restored_package_dirs(pkg_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn find_latest_semver_subdir(dir: &Path) -> Result<PathBuf> {
-    let mut versioned_dirs: Vec<(Version, PathBuf)> = vec![];
+fn find_only_subdir(dir: &Path) -> Result<PathBuf> {
+    let mut subdirs: Vec<PathBuf> = vec![];
 
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
-        if !entry.file_type()?.is_dir() {
-            continue;
+        if entry.file_type()?.is_dir() {
+            subdirs.push(entry.path());
         }
-
-        let name = entry.file_name().to_string_lossy().to_string();
-        let Ok(version) = Version::parse(&name) else {
-            continue;
-        };
-
-        versioned_dirs.push((version, entry.path()));
     }
 
-    versioned_dirs.sort_by(|(a, _), (b, _)| a.cmp(b));
-
-    match versioned_dirs.as_slice() {
+    match subdirs.as_slice() {
         [] => Err(anyhow::anyhow!(
-            "Could not find any versioned directories under {}",
+            "Could not find a restored versioned directory under {}",
             dir.display()
         )),
-        [(_, only)] => Ok(only.clone()),
+        [only] => Ok(only.clone()),
         _ => Err(anyhow::anyhow!(
-            "Expected at most one restored versioned directory under {}, found {}",
+            "Expected exactly one restored versioned directory under {}, found {}",
             dir.display(),
-            versioned_dirs.len()
+            subdirs.len()
         )),
     }
 }
@@ -380,8 +364,8 @@ fn main() -> Result<()> {
               </packageSourceMapping>
             </configuration>
             "#,
-                bsatn_runtime_path,
-                runtime_path,
+                bsatn_source.display(),
+                runtime_source.display(),
             );
             fs::write(&nuget_config_path, nuget_config_contents)?;
 
