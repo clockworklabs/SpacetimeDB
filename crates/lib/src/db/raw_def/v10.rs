@@ -704,7 +704,7 @@ impl RawModuleDefV10Builder {
     /// Finish building, consuming the builder and returning the module.
     /// The module should be validated before use.
     ///
-    /// This method automatically marks functions used in lifecycle or schedule definitions
+    /// This method automatically marks functions used in lifecycle or schedule functions
     /// as `Internal` visibility.
     pub fn finish(mut self) -> RawModuleDefV10 {
         let internal_functions = self

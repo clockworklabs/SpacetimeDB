@@ -364,7 +364,11 @@ impl<'a> ModuleValidatorV10<'a> {
     }
 
     fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV10) -> Result<ReducerDef> {
-        let RawReducerDefV10 { name, params, .. } = reducer_def;
+        let RawReducerDefV10 {
+            name,
+            params,
+            visibility,
+        } = reducer_def;
 
         let params_for_generate =
             self.core
@@ -386,6 +390,7 @@ impl<'a> ModuleValidatorV10<'a> {
                 recursive: false, // A ProductTypeDef not stored in a Typespace cannot be recursive.
             },
             lifecycle: None, // V10 handles lifecycle separately
+            visibility: visibility.into(),
         })
     }
 
@@ -450,7 +455,7 @@ impl<'a> ModuleValidatorV10<'a> {
             name,
             params,
             return_type,
-            ..
+            visibility,
         } = procedure_def;
 
         let params_for_generate =
@@ -482,6 +487,7 @@ impl<'a> ModuleValidatorV10<'a> {
             },
             return_type,
             return_type_for_generate,
+            visibility: visibility.into(),
         })
     }
 
@@ -640,8 +646,8 @@ mod tests {
     };
     use crate::def::{validate::Result, ModuleDef};
     use crate::def::{
-        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, IndexAlgorithm, IndexDef,
-        SequenceDef, UniqueConstraintData,
+        BTreeAlgorithm, ConstraintData, ConstraintDef, DirectAlgorithm, FunctionKind, FunctionVisibility,
+        IndexAlgorithm, IndexDef, SequenceDef, UniqueConstraintData,
     };
     use crate::error::*;
     use crate::type_for_generate::ClientCodegenError;
@@ -915,6 +921,16 @@ mod tests {
         assert_eq!(
             def.reducers[&check_deliveries_name].params,
             ProductType::from([("a", deliveries_product_type.into())])
+        );
+
+        assert_eq!(
+            def.reducers[&check_deliveries_name].visibility,
+            FunctionVisibility::Internal,
+        );
+        assert_eq!(def.reducers[&init_name].visibility, FunctionVisibility::Internal);
+        assert_eq!(
+            def.reducers[&extra_reducer_name].visibility,
+            FunctionVisibility::ClientCallable
         );
     }
 
