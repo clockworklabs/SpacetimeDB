@@ -163,19 +163,21 @@ spacetimedb.reducer('insert_user', { name: t.string() }, (ctx, { name }) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "user", Public = true)]
-public partial struct User
+public partial class Module
 {
-    [SpacetimeDB.AutoInc]
-    public ulong UserId;
-    public string Name;
-}
+    [SpacetimeDB.Table(Name = "user", Public = true)]
+    public partial struct User
+    {
+        [SpacetimeDB.AutoInc]
+        public ulong UserId;
+        public string Name;
+    }
 
-[SpacetimeDB.Reducer]
-public static void InsertUser(ReducerContext ctx, string name)
-{
-    ctx.Db.User.Insert(new User { UserId = 0, Name = name });
-}
+    [SpacetimeDB.Reducer]
+    public static void InsertUser(ReducerContext ctx, string name)
+    {
+        ctx.Db.User.Insert(new User { UserId = 0, Name = name });
+    }
 ```
 
 </TabItem>

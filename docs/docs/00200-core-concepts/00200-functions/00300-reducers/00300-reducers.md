@@ -440,6 +440,8 @@ Reducers cannot call procedures directly (procedures may have side effects incom
 <TabItem value="typescript" label="TypeScript">
 
 ```typescript
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+
 // Define a schedule table for the procedure
 const fetchSchedule = table(
   { name: 'fetch_schedule', scheduled: 'fetch_external_data' },
@@ -449,6 +451,8 @@ const fetchSchedule = table(
     url: t.string(),
   }
 );
+
+const spacetimedb = schema(fetchSchedule);
 
 // The procedure to be scheduled
 const fetchExternalData = spacetimedb.procedure(
@@ -477,37 +481,41 @@ const queueFetch = spacetimedb.reducer('queue_fetch', { url: t.string() }, (ctx,
 
 ```csharp
 #pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
 
-[SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
-public partial struct FetchSchedule
+public partial class Module
 {
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong ScheduledId;
-    public ScheduleAt ScheduledAt;
-    public string Url;
-}
-
-[SpacetimeDB.Procedure]
-public static void FetchExternalData(ProcedureContext ctx, FetchSchedule schedule)
-{
-    var result = ctx.Http.Get(schedule.Url);
-    if (result is Result<HttpResponse, HttpError>.OkR(var response))
+    [SpacetimeDB.Table(Name = "FetchSchedule", Scheduled = "FetchExternalData", ScheduledAt = "ScheduledAt")]
+    public partial struct FetchSchedule
     {
-        // Process response...
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong ScheduledId;
+        public ScheduleAt ScheduledAt;
+        public string Url;
     }
-}
 
-// From a reducer, schedule the procedure
-[SpacetimeDB.Reducer]
-public static void QueueFetch(ReducerContext ctx, string url)
-{
-    ctx.Db.FetchSchedule.Insert(new FetchSchedule
+    [SpacetimeDB.Procedure]
+    public static void FetchExternalData(ProcedureContext ctx, FetchSchedule schedule)
     {
-        ScheduledId = 0,
-        ScheduledAt = new ScheduleAt.Interval(TimeSpan.Zero),
-        Url = url,
-    });
+        var result = ctx.Http.Get(schedule.Url);
+        if (result is Result<HttpResponse, HttpError>.OkR(var response))
+        {
+            // Process response...
+        }
+    }
+
+    // From a reducer, schedule the procedure
+    [SpacetimeDB.Reducer]
+    public static void QueueFetch(ReducerContext ctx, string url)
+    {
+        ctx.Db.FetchSchedule.Insert(new FetchSchedule
+        {
+            ScheduledId = 0,
+            ScheduledAt = new ScheduleAt.Interval(TimeSpan.Zero),
+            Url = url,
+        });
+    }
 }
 ```
 
@@ -515,6 +523,9 @@ public static void QueueFetch(ReducerContext ctx, string url)
 <TabItem value="rust" label="Rust">
 
 ```rust
+use spacetimedb::{ScheduleAt, ReducerContext, ProcedureContext, Table};
+use std::time::Duration;
+
 #[spacetimedb::table(name = fetch_schedule, scheduled(fetch_external_data))]
 pub struct FetchSchedule {
     #[primary_key]

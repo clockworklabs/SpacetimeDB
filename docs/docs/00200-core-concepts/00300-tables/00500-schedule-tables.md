@@ -100,6 +100,8 @@ Use intervals for periodic tasks like game ticks, heartbeats, or recurring maint
 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+const spacetimedb = schema();
 
 spacetimedb.reducer('schedule_periodic_tasks', (ctx) => {
   // Schedule to run every 5 seconds (5,000,000 microseconds)
@@ -122,22 +124,25 @@ spacetimedb.reducer('schedule_periodic_tasks', (ctx) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Reducer]
-public static void SchedulePeriodicTasks(ReducerContext ctx)
+public partial class Module
 {
-    // Schedule to run every 5 seconds
-    ctx.Db.Reminder.Insert(new Reminder
+    [SpacetimeDB.Reducer]
+    public static void SchedulePeriodicTasks(ReducerContext ctx)
     {
-        Message = "Check for updates",
-        ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
-    });
+        // Schedule to run every 5 seconds
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Check for updates",
+            ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromSeconds(5))
+        });
 
-    // Schedule to run every 100 milliseconds
-    ctx.Db.Reminder.Insert(new Reminder
-    {
-        Message = "Game tick",
-        ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
-    });
+        // Schedule to run every 100 milliseconds
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Game tick",
+            ScheduleAt = new ScheduleAt.Interval(TimeSpan.FromMilliseconds(100))
+        });
+    }
 }
 ```
 
@@ -145,7 +150,7 @@ public static void SchedulePeriodicTasks(ReducerContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::ScheduleAt;
+use spacetimedb::{ScheduleAt, ReducerContext};
 use std::time::Duration;
 
 #[spacetimedb::reducer]
@@ -178,6 +183,8 @@ Use specific times for one-shot actions like sending a reminder at a particular 
 
 ```typescript
 import { ScheduleAt } from 'spacetimedb';
+import { schema, t, table, SenderError } from 'spacetimedb/server';
+const spacetimedb = schema();
 
 spacetimedb.reducer('schedule_timed_tasks', (ctx) => {
   // Schedule for 10 seconds from now
@@ -226,7 +233,7 @@ public static void ScheduleTimedTasks(ReducerContext ctx)
 <TabItem value="rust" label="Rust">
 
 ```rust
-use spacetimedb::ScheduleAt;
+use spacetimedb::{ScheduleAt, ReducerContext};
 use std::time::Duration;
 
 #[spacetimedb::reducer]
