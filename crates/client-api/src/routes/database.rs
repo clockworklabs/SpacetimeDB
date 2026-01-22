@@ -728,22 +728,18 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
         .await
         .map_err(log_and_500)?;
     match existing.as_ref() {
-        // If not, check that the caller is sufficiently authenticated.
         None => {
             allow_creation(&auth)?;
-            if maybe_parent_database_identity.is_some() || maybe_org_identity.is_some() {
-                ctx.authorize_action(
-                    auth.claims.identity,
-                    database_identity,
-                    Action::CreateDatabase {
-                        parent: maybe_parent_database_identity,
-                        organization: maybe_org_identity,
-                    },
-                )
-                .await?;
-            }
+            ctx.authorize_action(
+                auth.claims.identity,
+                database_identity,
+                Action::CreateDatabase {
+                    parent: maybe_parent_database_identity,
+                    organization: maybe_org_identity,
+                },
+            )
+            .await?;
         }
-        // If yes, authorize via ctx.
         Some(database) => {
             ctx.authorize_action(auth.claims.identity, database.database_identity, Action::UpdateDatabase)
                 .await?;
@@ -770,13 +766,14 @@ pub async fn publish<S: NodeDelegate + ControlStateDelegate + Authorization>(
     let schema_migration_policy = schema_migration_policy(policy, token)?;
     let maybe_updated = ctx
         .publish_database(
-            maybe_org_identity.as_ref().unwrap_or(&auth.claims.identity),
+            &auth.claims.identity,
             DatabaseDef {
                 database_identity,
                 program_bytes,
                 num_replicas,
                 host_type,
                 parent,
+                organization: maybe_org_identity,
             },
             schema_migration_policy,
         )
@@ -931,6 +928,7 @@ pub async fn pre_publish<S: NodeDelegate + ControlStateDelegate + Authorization>
                 num_replicas: None,
                 host_type,
                 parent: None,
+                organization: None,
             },
             style,
         )
