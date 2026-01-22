@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `OptionI32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait option_i32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `OptionI32`.
+    fn option_i32(&self) -> __sdk::__query_builder::Table<OptionI32>;
+}
+
+impl option_i32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn option_i32(&self) -> __sdk::__query_builder::Table<OptionI32> {
+        __sdk::__query_builder::Table::new("option_i32")
+    }
+}

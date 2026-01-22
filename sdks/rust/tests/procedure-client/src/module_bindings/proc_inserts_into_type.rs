@@ -16,3 +16,37 @@ pub struct ProcInsertsInto {
 impl __sdk::InModule for ProcInsertsInto {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `ProcInsertsInto`.
+///
+/// Provides typed access to columns for query building.
+pub struct ProcInsertsIntoCols {
+    pub reducer_ts: __sdk::__query_builder::Col<ProcInsertsInto, __sdk::Timestamp>,
+    pub procedure_ts: __sdk::__query_builder::Col<ProcInsertsInto, __sdk::Timestamp>,
+    pub x: __sdk::__query_builder::Col<ProcInsertsInto, u8>,
+    pub y: __sdk::__query_builder::Col<ProcInsertsInto, u8>,
+}
+
+impl __sdk::__query_builder::HasCols for ProcInsertsInto {
+    type Cols = ProcInsertsIntoCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ProcInsertsIntoCols {
+            reducer_ts: __sdk::__query_builder::Col::new(table_name, "reducer_ts"),
+            procedure_ts: __sdk::__query_builder::Col::new(table_name, "procedure_ts"),
+            x: __sdk::__query_builder::Col::new(table_name, "x"),
+            y: __sdk::__query_builder::Col::new(table_name, "y"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `ProcInsertsInto`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ProcInsertsIntoIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for ProcInsertsInto {
+    type IxCols = ProcInsertsIntoIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ProcInsertsIntoIxCols {}
+    }
+}
