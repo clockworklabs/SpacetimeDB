@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -264,7 +265,8 @@ fn wait_until_http_ready(timeout: Duration, cli_path: &Path, server_url: &str) -
 pub enum ServerState {
     None,
     Yes {
-        handle: thread::JoinHandle<()>,
+        child: Child,
+        _stdin: ChildStdin,
         data_dir: TempDir,
     },
     Docker {
@@ -350,24 +352,32 @@ impl ServerState {
                     println!("Starting server..");
                 }
                 let data_dir_str = data_dir.path().to_string_lossy().to_string();
-                let handle = thread::spawn({
-                    let cli_path = cli_path.to_string_lossy().to_string();
-                    move || {
-                        let _ = cmd!(
-                            cli_path,
-                            "start",
-                            "--listen-addr",
-                            format!("0.0.0.0:{server_port}"),
-                            "--pg-port",
-                            pg_port.to_string(),
-                            "--data-dir",
-                            data_dir_str,
-                        )
-                        .read();
-                    }
-                });
-                wait_until_http_ready(Duration::from_secs(60), cli_path, &server_url)?;
-                Ok(ServerState::Yes { handle, data_dir })
+                let mut child = Command::new(cli_path)
+                    .args([
+                        "start",
+                        "--listen-addr",
+                        &format!("0.0.0.0:{server_port}"),
+                        "--pg-port",
+                        &pg_port.to_string(),
+                        "--data-dir",
+                        &data_dir_str,
+                        "--shutdown-on-stdin-close",
+                    ])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .context("failed to spawn local SpacetimeDB server")?;
+                let stdin = child
+                    .stdin
+                    .take()
+                    .context("failed to open stdin pipe for local SpacetimeDB server")?;
+                wait_until_http_ready(Duration::from_secs(1200), cli_path, &server_url)?;
+                Ok(ServerState::Yes {
+                    child,
+                    _stdin: stdin,
+                    data_dir,
+                })
             }
         }
     }
@@ -398,10 +408,33 @@ impl Drop for ServerState {
                 )
                 .run();
             }
-            ServerState::Yes { handle: _, data_dir } => {
+            ServerState::Yes {
+                child,
+                _stdin: _,
+                data_dir,
+            } => {
                 with_print_lock(|| {
                     println!("Shutting down server (temp data-dir will be dropped)..");
                 });
+
+                #[cfg(unix)]
+                {
+                    use nix::sys::signal::{kill, Signal};
+                    use nix::unistd::Pid;
+
+                    let _ = kill(Pid::from_raw(child.id() as i32), Signal::SIGTERM);
+                    let deadline = Instant::now() + Duration::from_secs(2);
+                    while Instant::now() < deadline {
+                        match child.try_wait() {
+                            Ok(Some(_)) => break,
+                            Ok(None) => thread::sleep(Duration::from_millis(50)),
+                            Err(_) => break,
+                        }
+                    }
+                }
+
+                let _ = child.kill();
+                let _ = child.wait();
                 let _ = data_dir;
             }
         }

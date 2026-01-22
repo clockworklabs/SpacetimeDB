@@ -881,6 +881,7 @@ dependencies = [
  "duct",
  "env_logger 0.10.2",
  "log",
+ "nix 0.30.1",
  "regex",
  "serde_json",
  "tempfile",
