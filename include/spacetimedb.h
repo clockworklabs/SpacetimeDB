@@ -105,6 +105,9 @@
 #include "spacetimedb/database.h"
 #include "spacetimedb/table_with_constraints.h"
 
+// Range queries
+#include "spacetimedb/range_queries.h"
+
 // =============================================================================
 // REDUCER SYSTEM
 // =============================================================================
@@ -116,6 +119,13 @@
 
 // Client visibility filters
 #include "spacetimedb/client_visibility_filter.h"
+
+// =============================================================================
+// PROCEDURE SYSTEM
+// =============================================================================
+
+// Procedure context and macros
+#include "spacetimedb/procedure_macros.h"
 
 // =============================================================================
 // VIEW SYSTEM

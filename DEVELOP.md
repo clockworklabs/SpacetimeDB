@@ -185,6 +185,7 @@ The current C++20 SDK relies on:
 - **Runtime error detection** in `__preinit__99_validate_types` (because incomplete compile-time info)
 - **Manual serialization** through SPACETIMEDB_STRUCT macros (because no field enumeration)
 - **String-based type identification** requiring explicit registration (because no compile-time type identity)
+- **Outcome<void> error handling** for reducer transactions (workaround for lack of first-class error types)
 
 ## C++23 Improvements
 
@@ -354,7 +355,7 @@ auto names = table_view[std::full_extent, name_column];
 
 ## C++26 Transformative Features
 
-> **Note**: The C++26 examples below are based on current proposals (particularly P2996 for reflection). The final C++26 standard may differ as proposals evolve through the standardization process.
+> **Note**: The C++26 examples below are based on current proposals (particularly P2996 for reflection, which uses the `^` reification operator). The final C++26 standard may differ significantly as proposals evolve through the standardization process. These examples are illustrative of the *capabilities* that reflection would enable, not necessarily the exact syntax that will be standardized.
 
 ### 1. Static Reflection (P2996) - Complete Macro Elimination
 
@@ -367,8 +368,9 @@ SPACETIMEDB_ENUM(UserRole, Admin, Moderator, Member)
 SPACETIMEDB_NAMESPACE(UserRole, "Auth")  // Separate macro for namespace
 ```
 
-**C++26 approach:**
+**Illustrative C++26 approach** (exact syntax TBD in standardization):
 ```cpp
+// Natural C++ attributes replace macros
 struct [[spacetimedb::table("users", public)]] User {
     [[spacetimedb::primary_key]] uint32_t id;
     [[spacetimedb::unique]] std::string email;
@@ -379,11 +381,10 @@ enum class [[spacetimedb::namespace("Auth")]] UserRole {
     Admin, Moderator, Member
 };
 
-// Automatic registration via reflection
+// Automatic registration via reflection (pseudocode - actual API TBD)
 template<typename T> requires has_spacetimedb_table_attr<T>
 consteval void register_table() {
-    constexpr auto members = ^T::members();
-    for (constexpr auto member : members) {
+    for (constexpr auto member : reflect_members_of<T>()) {
         if constexpr (has_attribute<member, spacetimedb::primary_key>) {
             register_primary_key<T>(member.name(), member.type());
         }
@@ -393,10 +394,10 @@ consteval void register_table() {
 // Automatic namespace detection via reflection
 template<typename T>
 consteval std::string get_qualified_name() {
-    if constexpr (has_attribute<^T, spacetimedb::namespace>) {
-        return get_attribute<^T, spacetimedb::namespace>() + "." + name_of(^T);
+    if constexpr (has_attribute<T, spacetimedb::namespace>) {
+        return get_namespace_attribute<T>() + "." + get_type_name<T>();
     }
-    return name_of(^T);
+    return get_type_name<T>();
 }
 ```
 
@@ -521,6 +522,40 @@ constexpr auto typespace = build_typespace();
 - No runtime allocation or registration
 - Enables full compile-time validation
 
+### 5b. First-Class Error Type Support
+
+**Current approach** (workaround using Outcome<void>):
+```cpp
+SPACETIMEDB_REDUCER(process, ReducerContext ctx, uint32_t id) {
+    if (id == 0) {
+        return Err("Invalid ID");  // Error represented as string
+    }
+    ctx.db[users].insert({id});
+    return Ok();  // No value, just success
+}
+```
+
+**C++26 potential approach** (with better Result types):
+```cpp
+// Could use std::expected with richer error information
+template<typename T, typename E = std::string>
+using Result = std::expected<T, E>;
+
+SPACETIMEDB_REDUCER(process, ReducerContext ctx, uint32_t id) {
+    if (id == 0) {
+        return std::unexpected(ProcessError::InvalidId);  // Type-safe errors
+    }
+    ctx.db[users].insert({id});
+    return {};  // Clear success value
+}
+```
+
+**Benefits:**
+- Richer error types beyond string messages
+- Better IDE support for error handling
+- Cleaner syntax for success/error distinction
+- Compile-time error case exhaustiveness checking
+
 ### 6. Reflection-Based Serialization
 
 **Current approach:**
@@ -579,25 +614,47 @@ constexpr void serialize(Writer& w, const T& obj) {
 
 ## Performance Implications
 
+> **Disclaimer**: The following performance projections are educated estimates based on similar language features and SDK patterns. Actual performance gains will depend on:
+> - Compiler optimization capabilities
+> - Final C++26 feature specifications
+> - WASM code generation characteristics
+> - Specific module structure (table count, field count, etc.)
+
 ### Compile-Time Performance
-- **C++23**: Slightly increased due to more `constexpr` evaluation
-- **C++26**: Significantly increased initially, but:
-  - Module structure computed once and cached
-  - No runtime registration overhead
-  - Smaller WASM binaries (no registration code)
+- **C++23**: Slightly increased due to more `constexpr` evaluation (estimated +5-15%)
+- **C++26**: Significantly increased initially due to reflection-based analysis, but:
+  - Module structure computed once during build and cached
+  - No runtime registration code to compile
+  - Potential for better code generation optimization
+  - Long-term: compiler improvements may negate initial increases
 
 ### Runtime Performance
-- **C++23**: ~10% improvement from reduced indirection
-- **C++26**: ~50% improvement from eliminating registration entirely
+- **C++23**: ~5-15% improvement from reduced indirection and better inlining
+- **C++26**: ~20-40% improvement from eliminating registration entirely
+  - Actual gains depend on whether compiler can optimize registration code away
+  - May be limited by WASM constraints
 
 ### WASM Binary Size
 - **C++23**: ~5-10% reduction (less template instantiation)
-- **C++26**: ~20-30% reduction (no registration code, no macros)
+- **C++26**: ~15-25% reduction (no registration code)
+  - Note: Reflection metadata may add some size overhead if not stripped
+  - Net reduction depends on compile-time constant optimization
 
 ## Conclusion
 
-C++26's static reflection will enable a complete paradigm shift from runtime registration to compile-time module generation. The SpacetimeDB C++ SDK could become the first database SDK to offer **zero-overhead abstractions** with no macros and no runtime registration - just pure, standard C++.
+C++26's static reflection will enable a significant paradigm shift from runtime registration to compile-time module generation. The SpacetimeDB C++ SDK could achieve **zero-overhead abstractions** with no macros and no runtime registration - just pure, standard C++.
 
-The journey through C++23 provides valuable incremental improvements, but C++26's reflection capabilities will allow us to achieve what no other database SDK has: **complete compile-time type safety and module generation with natural C++ syntax**.
+The journey through C++23 provides valuable incremental improvements:
+- Cleaner APIs with `deducing this`
+- Better error handling with `std::expected`  
+- Hybrid validation with `if consteval`
+- More efficient code generation
 
-This would position the C++ SDK as the most advanced and performant SpacetimeDB SDK, surpassing even Rust in terms of compile-time guarantees and zero-overhead abstractions.
+C++26's reflection capabilities will allow us to achieve compile-time type safety and module generation with natural C++ syntax, making the C++ SDK substantially more ergonomic and performant than currently possible.
+
+**Important caveats:**
+- C++26 reflection is still in proposal stage; final syntax and capabilities may differ
+- Compiler support for these features will take time after standardization
+- WASM toolchain support (Emscripten) will need updates
+- Migration from C++20 code will require careful planning
+- Not all performance gains may materialize depending on compiler optimizations and WASM constraints
