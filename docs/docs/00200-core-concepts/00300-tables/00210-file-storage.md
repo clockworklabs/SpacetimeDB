@@ -562,6 +562,60 @@ spacetimedb.reducer('confirm_upload', { filename: t.string(), s3Key: t.string() 
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Type]
+    public partial struct UploadInfo
+    {
+        public string UploadUrl;
+        public string S3Key;
+    }
+
+    // Procedure returns a pre-signed URL for client-side upload
+    [SpacetimeDB.Procedure]
+    public static UploadInfo GetUploadUrl(
+        ProcedureContext ctx,
+        string filename,
+        string contentType)
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var s3Key = $"uploads/{timestamp}-{filename}";
+
+        // Generate pre-signed URL (requires AWS credentials and signing logic)
+        var uploadUrl = GeneratePresignedUrl(s3Key, contentType);
+
+        return new UploadInfo { UploadUrl = uploadUrl, S3Key = s3Key };
+    }
+
+    // Client uploads directly to S3 using the pre-signed URL, then calls:
+    [SpacetimeDB.Reducer]
+    public static void ConfirmUpload(ReducerContext ctx, string filename, string s3Key)
+    {
+        ctx.Db.Document.Insert(new Document
+        {
+            Id = 0,
+            OwnerId = ctx.Sender,
+            Filename = filename,
+            S3Key = s3Key,
+            UploadedAt = ctx.Timestamp,
+        });
+    }
+
+    private static string GeneratePresignedUrl(string s3Key, string contentType)
+    {
+        // Implement AWS S3 pre-signed URL generation
+        throw new NotImplementedException();
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
