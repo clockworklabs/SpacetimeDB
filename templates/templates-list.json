@@ -1,6 +1,7 @@
 {
   "highlights": [
-    { "name": "React", "template_id": "basic-react" }
+    { "name": "React", "template_id": "basic-react" },
+    { "name": "Next.js", "template_id": "nextjs-ts" }
   ],
   "templates": [
     {
@@ -32,6 +33,14 @@
       "description": "React web app with TypeScript server",
       "server_source": "basic-react/spacetimedb",
       "client_source": "basic-react",
+      "server_lang": "typescript",
+      "client_lang": "typescript"
+    },
+    {
+      "id": "nextjs-ts",
+      "description": "Next.js App Router with TypeScript server",
+      "server_source": "nextjs-ts/spacetimedb",
+      "client_source": "nextjs-ts",
       "server_lang": "typescript",
       "client_lang": "typescript"
     },
