@@ -801,7 +801,7 @@ impl RawTableDefBuilderV10<'_> {
         self
     }
 
-    /// Generates a [RawConstraintDefV9] using the supplied `columns`.
+    /// Generates a `RawConstraintDefV10` using the supplied `columns`.
     pub fn with_unique_constraint(mut self, columns: impl Into<ColList>) -> Self {
         let columns = columns.into();
         self.table.constraints.push(RawConstraintDefV10 {
