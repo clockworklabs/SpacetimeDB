@@ -391,7 +391,7 @@ public static partial class Module
 
     // Upload file to S3 and register in database
     [SpacetimeDB.Procedure]
-    public static Result<string, string> UploadToS3(
+    public static string UploadToS3(
         ProcedureContext ctx,
         string filename,
         string contentType,
@@ -409,7 +409,7 @@ public static partial class Module
         {
             Uri = url,
             Method = SpacetimeDB.HttpMethod.Put,
-            Headers = new()
+            Headers = new List<HttpHeader>
             {
                 new HttpHeader("Content-Type", contentType),
                 new HttpHeader("x-amz-content-sha256", "UNSIGNED-PAYLOAD"),
@@ -419,16 +419,11 @@ public static partial class Module
         };
 
         // Upload to S3
-        var result = ctx.Http.Send(request);
-        if (result is Result<HttpResponse, HttpError>.ErrR(var error))
-        {
-            return Result<string, string>.Err($"S3 upload failed: {error}");
-        }
+        var response = ctx.Http.Send(request).UnwrapOrThrow();
 
-        var response = result.UnwrapOrThrow();
         if (response.StatusCode != 200)
         {
-            return Result<string, string>.Err($"S3 upload failed with status: {response.StatusCode}");
+            throw new Exception($"S3 upload failed with status: {response.StatusCode}");
         }
 
         // Store metadata in database
@@ -445,7 +440,7 @@ public static partial class Module
             return 0;
         });
 
-        return Result<string, string>.Ok(s3Key);
+        return s3Key;
     }
 }
 ```

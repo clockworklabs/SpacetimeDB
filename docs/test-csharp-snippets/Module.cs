@@ -225,4 +225,71 @@ public static partial class Module
             .GetProperty("content")
             .GetString();
     }
+
+    // === Snippet 9: File Storage - S3 Upload ===
+    [SpacetimeDB.Table(Name = "Document", Public = true)]
+    public partial struct Document
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        public Identity OwnerId;
+        public string Filename;
+        public string S3Key;
+        public Timestamp UploadedAt;
+    }
+
+    // Upload file to S3 and register in database
+    [SpacetimeDB.Procedure]
+    public static string UploadToS3(
+        ProcedureContext ctx,
+        string filename,
+        string contentType,
+        List<byte> data,
+        string s3Bucket,
+        string s3Region)
+    {
+        // Generate a unique S3 key
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var s3Key = $"uploads/{timestamp}-{filename}";
+        var url = $"https://{s3Bucket}.s3.{s3Region}.amazonaws.com/{s3Key}";
+
+        // Build the S3 PUT request (simplified - add AWS4 signature in production)
+        var request = new HttpRequest
+        {
+            Uri = url,
+            Method = SpacetimeDB.HttpMethod.Put,
+            Headers = new List<HttpHeader>
+            {
+                new HttpHeader("Content-Type", contentType),
+                new HttpHeader("x-amz-content-sha256", "UNSIGNED-PAYLOAD"),
+                // Add Authorization header with AWS4 signature
+            },
+            Body = new HttpBody(data.ToArray()),
+        };
+
+        // Upload to S3
+        var response = ctx.Http.Send(request).UnwrapOrThrow();
+
+        if (response.StatusCode != 200)
+        {
+            throw new Exception($"S3 upload failed with status: {response.StatusCode}");
+        }
+
+        // Store metadata in database
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.Document.Insert(new Document
+            {
+                Id = 0,
+                OwnerId = txCtx.Sender,
+                Filename = filename,
+                S3Key = s3Key,
+                UploadedAt = txCtx.Timestamp,
+            });
+            return 0;
+        });
+
+        return s3Key;
+    }
 }
