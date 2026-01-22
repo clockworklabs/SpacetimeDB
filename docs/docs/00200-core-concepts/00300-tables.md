@@ -378,7 +378,7 @@ ctx.db.player().insert(Player { /* ... */ });
 ctx.db.logged_out_player().insert(Player { /* ... */ });
 
 // Move a row between tables
-if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender) {
+if let Some(player) = ctx.db.logged_out_player().identity().find(&ctx.sender()) {
     ctx.db.player().insert(player.clone());
     ctx.db.logged_out_player().identity().delete(&player.identity);
 }

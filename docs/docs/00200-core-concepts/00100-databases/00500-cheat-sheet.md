@@ -460,7 +460,7 @@ use spacetimedb::{view, ViewContext};
 // Return single row
 #[view(name = my_player, public)]
 fn my_player(ctx: &ViewContext) -> Option<Player> {
-    ctx.db.player().identity().find(ctx.sender)
+    ctx.db.player().identity().find(ctx.sender())
 }
 
 // Return multiple rows
@@ -505,7 +505,7 @@ ctx.Rng                 // Random number generator
 
 ```rust
 ctx.db                  // Database access
-ctx.sender              // Identity of caller
+ctx.sender()            // Identity of caller
 ctx.connection_id       // Option<ConnectionId>
 ctx.timestamp           // Timestamp
 ctx.identity()          // Module's identity

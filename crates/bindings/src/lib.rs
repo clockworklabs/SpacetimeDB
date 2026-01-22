@@ -662,7 +662,7 @@ pub use spacetimedb_bindings_macro::table;
 ///
 /// #[reducer]
 /// fn scheduled(ctx: &ReducerContext, args: ScheduledArgs) -> Result<(), String> {
-///     if ctx.sender != ctx.identity() {
+///     if ctx.sender() != ctx.identity() {
 ///         return Err("Reducer `scheduled` may not be invoked by clients, only via scheduling.".into());
 ///     }
 ///     // Reducer body...
@@ -707,7 +707,7 @@ pub use spacetimedb_bindings_macro::reducer;
 /// #[procedure]
 /// fn return_value(ctx: &mut ProcedureContext, arg: MyArgument) -> MyReturnValue {
 ///     MyReturnValue {
-///         a: format!("Hello, {}", ctx.sender),
+///         a: format!("Hello, {}", ctx.sender()),
 ///         b: ctx.timestamp,
 ///     }
 /// }
@@ -816,13 +816,13 @@ pub use spacetimedb_bindings_macro::procedure;
 /// // A view that selects at most one row from a table
 /// #[view(name = my_player, public)]
 /// fn my_player(ctx: &ViewContext) -> Option<Player> {
-///     ctx.db.player().identity().find(ctx.sender)
+///     ctx.db.player().identity().find(ctx.sender())
 /// }
 ///
 /// // An example of column projection
 /// #[view(name = my_player_id, public)]
 /// fn my_player_id(ctx: &ViewContext) -> Option<PlayerId> {
-///     ctx.db.player().identity().find(ctx.sender).map(|Player { id, .. }| PlayerId { id })
+///     ctx.db.player().identity().find(ctx.sender()).map(|Player { id, .. }| PlayerId { id })
 /// }
 ///
 /// // An example that is analogous to a semijoin in sql
