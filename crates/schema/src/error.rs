@@ -136,6 +136,10 @@ pub enum ValidationError {
     TableNotFound { table: RawIdentifier },
     #[error("Name {name} is used for multiple reducers, procedures and/or views")]
     DuplicateFunctionName { name: Identifier },
+    #[error("lifecycle event {lifecycle:?} without reducer")]
+    LifecycleWithoutReducer { lifecycle: Lifecycle },
+    #[error("table {table} is assigned in multiple schedules")]
+    DuplicateSchedule { table: Identifier },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

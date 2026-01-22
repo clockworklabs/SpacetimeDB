@@ -25,12 +25,14 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
 
     let known_type_definitions = types.iter().map(|def| def.ty);
 
-    let mut validator = ModuleValidator {
-        typespace: &typespace,
-        stored_in_table_def: Default::default(),
-        type_namespace: Default::default(),
-        lifecycle_reducers: Default::default(),
-        typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
+    let mut validator = ModuleValidatorV9 {
+        core: CoreValidator {
+            typespace: &typespace,
+            stored_in_table_def: Default::default(),
+            type_namespace: Default::default(),
+            lifecycle_reducers: Default::default(),
+            typespace_for_generate: TypespaceForGenerate::builder(&typespace, known_type_definitions),
+        },
     };
 
     // Important general note:
@@ -118,7 +120,7 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
     let types = types
         .into_iter()
         .map(|ty| {
-            validator.validate_type_def(ty).map(|type_def| {
+            validator.core.validate_type_def(ty).map(|type_def| {
                 refmap.insert(type_def.ty, type_def.name.clone());
                 (type_def.name.clone(), type_def)
             })
@@ -137,12 +139,12 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
             Ok((tables, types, reducers, procedures, views))
         });
 
-    let ModuleValidator {
+    let CoreValidator {
         stored_in_table_def,
         typespace_for_generate,
         lifecycle_reducers,
         ..
-    } = validator;
+    } = validator.core;
 
     let (tables, types, reducers, procedures, views) =
         (tables_types_reducers_procedures_views).map_err(|errors| errors.sort_deduplicate())?;
@@ -161,34 +163,15 @@ pub fn validate(def: RawModuleDefV9) -> Result<ModuleDef> {
         row_level_security_raw,
         lifecycle_reducers,
         procedures,
+        raw_module_def_version: RawModuleDefVersion::V9OrEarlier,
     })
 }
 
-/// Collects state used during validation.
-struct ModuleValidator<'a> {
-    /// The typespace of the module.
-    ///
-    /// Behind a reference to ensure we don't accidentally mutate it.
-    typespace: &'a Typespace,
-
-    /// The in-progress typespace used to generate client types.
-    typespace_for_generate: TypespaceForGenerateBuilder<'a>,
-
-    /// Names we have seen so far.
-    ///
-    /// It would be nice if we could have span information here, but currently it isn't passed
-    /// through the ABI boundary.
-    /// We could add it as a `MiscModuleExport` later without breaking the ABI.
-    stored_in_table_def: StrMap<Identifier>,
-
-    /// Module-scoped type names we have seen so far.
-    type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
-
-    /// Reducers that play special lifecycle roles.
-    lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
+struct ModuleValidatorV9<'a> {
+    core: CoreValidator<'a>,
 }
 
-impl ModuleValidator<'_> {
+impl ModuleValidatorV9<'_> {
     fn validate_table_def(&mut self, table: RawTableDefV9) -> Result<TableDef> {
         let RawTableDefV9 {
             name: raw_table_name,
@@ -205,6 +188,7 @@ impl ModuleValidator<'_> {
         // We exit early if we don't find the product type ref,
         // since this breaks all the other checks.
         let product_type: &ProductType = self
+            .core
             .typespace
             .get(product_type_ref)
             .and_then(AlgebraicType::as_product)
@@ -219,7 +203,7 @@ impl ModuleValidator<'_> {
             raw_name: raw_table_name.clone(),
             product_type_ref,
             product_type,
-            module_validator: self,
+            module_validator: &mut self.core,
             has_sequence: Default::default(),
         };
 
@@ -340,35 +324,6 @@ impl ModuleValidator<'_> {
         })
     }
 
-    fn params_for_generate<'a>(
-        &mut self,
-        params: &'a ProductType,
-        make_type_location: impl Fn(usize, Option<Cow<'a, str>>) -> TypeLocation<'a>,
-    ) -> Result<Box<[(Identifier, AlgebraicTypeUse)]>> {
-        params
-            .elements
-            .iter()
-            .enumerate()
-            .map(|(position, param)| {
-                // Note: this does not allocate, since `TypeLocation` is defined using `Cow`.
-                // We only allocate if an error is returned.
-                let location = make_type_location(position, param.name().map(Into::into));
-                let param_name = param
-                    .name()
-                    .ok_or_else(|| {
-                        ValidationError::ClientCodegenError {
-                            location: location.clone().make_static(),
-                            error: ClientCodegenError::NamelessReducerParam,
-                        }
-                        .into()
-                    })
-                    .and_then(|s| identifier(s.into()));
-                let ty_use = self.validate_for_type_use(&location, &param.algebraic_type);
-                (param_name, ty_use).combine_errors()
-            })
-            .collect_all_errors()
-    }
-
     /// Validate a reducer definition.
     fn validate_reducer_def(&mut self, reducer_def: RawReducerDefV9, reducer_id: ReducerId) -> Result<ReducerDef> {
         let RawReducerDefV9 {
@@ -378,18 +333,19 @@ impl ModuleValidator<'_> {
         } = reducer_def;
 
         let params_for_generate: Result<_> =
-            self.params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
-                reducer_name: (&*name).into(),
-                position,
-                arg_name,
-            });
+            self.core
+                .params_for_generate(&params, |position, arg_name| TypeLocation::ReducerArg {
+                    reducer_name: (&*name).into(),
+                    position,
+                    arg_name,
+                });
 
         // Reducers share the "function namespace" with procedures.
         // Uniqueness is validated in a later pass, in `check_function_names_are_unique`.
         let name = identifier(name.clone());
 
         let lifecycle = lifecycle
-            .map(|lifecycle| match &mut self.lifecycle_reducers[lifecycle] {
+            .map(|lifecycle| match &mut self.core.lifecycle_reducers[lifecycle] {
                 x @ None => {
                     *x = Some(reducer_id);
                     Ok(lifecycle)
@@ -416,13 +372,15 @@ impl ModuleValidator<'_> {
             return_type,
         } = procedure_def;
 
-        let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
-            procedure_name: Cow::Borrowed(&name),
-            position,
-            arg_name,
-        });
+        let params_for_generate =
+            self.core
+                .params_for_generate(&params, |position, arg_name| TypeLocation::ProcedureArg {
+                    procedure_name: Cow::Borrowed(&name),
+                    position,
+                    arg_name,
+                });
 
-        let return_type_for_generate = self.validate_for_type_use(
+        let return_type_for_generate = self.core.validate_for_type_use(
             &TypeLocation::ProcedureReturn {
                 procedure_name: Cow::Borrowed(&name),
             },
@@ -483,6 +441,7 @@ impl ModuleValidator<'_> {
             .ok_or_else(invalid_return_type)?;
 
         let product_type = self
+            .core
             .typespace
             .get(product_type_ref)
             .and_then(AlgebraicType::as_product)
@@ -493,13 +452,15 @@ impl ModuleValidator<'_> {
                 })
             })?;
 
-        let params_for_generate = self.params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
-            view_name: Cow::Borrowed(&name),
-            position,
-            arg_name,
-        })?;
+        let params_for_generate =
+            self.core
+                .params_for_generate(&params, |position, arg_name| TypeLocation::ViewArg {
+                    view_name: Cow::Borrowed(&name),
+                    position,
+                    arg_name,
+                })?;
 
-        let return_type_for_generate = self.validate_for_type_use(
+        let return_type_for_generate = self.core.validate_for_type_use(
             &TypeLocation::ViewReturn {
                 view_name: Cow::Borrowed(&name),
             },
@@ -512,7 +473,7 @@ impl ModuleValidator<'_> {
             product_type,
             &params,
             &params_for_generate,
-            self,
+            &mut self.core,
         );
 
         // Views have the same interface as tables and therefore must be registered in the global namespace.
@@ -579,7 +540,7 @@ impl ModuleValidator<'_> {
 
         // First time the type of the default value is known, so decode it.
         let mut reader = &cdv.value[..];
-        let ty = WithTypespace::new(self.typespace, &col.ty);
+        let ty = WithTypespace::new(self.core.typespace, &col.ty);
         let field_value: Result<AlgebraicValue> =
             ty.deserialize(Deserializer::new(&mut reader)).map_err(|decode_error| {
                 ValidationError::ColumnDefaultValueMalformed {
@@ -592,9 +553,80 @@ impl ModuleValidator<'_> {
 
         field_value
     }
+}
+
+/// Collects state used during validation.
+pub(crate) struct CoreValidator<'a> {
+    /// The typespace of the module.
+    ///
+    /// Behind a reference to ensure we don't accidentally mutate it.
+    pub(crate) typespace: &'a Typespace,
+
+    /// The in-progress typespace used to generate client types.
+    pub(crate) typespace_for_generate: TypespaceForGenerateBuilder<'a>,
+
+    /// Names we have seen so far.
+    ///
+    /// It would be nice if we could have span information here, but currently it isn't passed
+    /// through the ABI boundary.
+    /// We could add it as a `MiscModuleExport` later without breaking the ABI.
+    pub(crate) stored_in_table_def: StrMap<Identifier>,
+
+    /// Module-scoped type names we have seen so far.
+    pub(crate) type_namespace: HashMap<ScopedTypeName, AlgebraicTypeRef>,
+
+    /// Reducers that play special lifecycle roles.
+    pub(crate) lifecycle_reducers: EnumMap<Lifecycle, Option<ReducerId>>,
+}
+
+impl CoreValidator<'_> {
+    pub(crate) fn params_for_generate<'a>(
+        &mut self,
+        params: &'a ProductType,
+        make_type_location: impl Fn(usize, Option<Cow<'a, str>>) -> TypeLocation<'a>,
+    ) -> Result<Box<[(Identifier, AlgebraicTypeUse)]>> {
+        params
+            .elements
+            .iter()
+            .enumerate()
+            .map(|(position, param)| {
+                // Note: this does not allocate, since `TypeLocation` is defined using `Cow`.
+                // We only allocate if an error is returned.
+                let location = make_type_location(position, param.name().map(Into::into));
+                let param_name = param
+                    .name()
+                    .ok_or_else(|| {
+                        ValidationError::ClientCodegenError {
+                            location: location.clone().make_static(),
+                            error: ClientCodegenError::NamelessReducerParam,
+                        }
+                        .into()
+                    })
+                    .and_then(|s| identifier(s.into()));
+                let ty_use = self.validate_for_type_use(&location, &param.algebraic_type);
+                (param_name, ty_use).combine_errors()
+            })
+            .collect_all_errors()
+    }
+
+    /// Add a name to the global namespace.
+    ///
+    /// If it has already been added, return an error.
+    ///
+    /// This is not used for all `Def` types.
+    pub(crate) fn add_to_global_namespace(&mut self, raw_name: Box<str>, ident: Identifier) -> Result<Box<str>> {
+        // This may report the table_name as invalid multiple times, but this will be removed
+        // when we sort and deduplicate the error stream.
+        if self.stored_in_table_def.contains_key(&raw_name) {
+            Err(ValidationError::DuplicateName { name: raw_name }.into())
+        } else {
+            self.stored_in_table_def.insert(raw_name.clone(), ident);
+            Ok(raw_name)
+        }
+    }
 
     /// Validate a type definition.
-    fn validate_type_def(&mut self, type_def: RawTypeDefV9) -> Result<TypeDef> {
+    pub(crate) fn validate_type_def(&mut self, type_def: RawTypeDefV9) -> Result<TypeDef> {
         let RawTypeDefV9 {
             name,
             ty,
@@ -672,7 +704,11 @@ impl ModuleValidator<'_> {
     }
 
     /// Validates that a type can be used to generate a client type use.
-    fn validate_for_type_use(&mut self, location: &TypeLocation, ty: &AlgebraicType) -> Result<AlgebraicTypeUse> {
+    pub(crate) fn validate_for_type_use(
+        &mut self,
+        location: &TypeLocation,
+        ty: &AlgebraicType,
+    ) -> Result<AlgebraicTypeUse> {
         self.typespace_for_generate.parse_use(ty).map_err(|err| {
             ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
                 location: location.clone().make_static(),
@@ -682,12 +718,71 @@ impl ModuleValidator<'_> {
     }
 
     /// Validates that a type can be used to generate a client type definition.
-    fn validate_for_type_definition(&mut self, ref_: AlgebraicTypeRef) -> Result<()> {
+    pub(crate) fn validate_for_type_definition(&mut self, ref_: AlgebraicTypeRef) -> Result<()> {
         self.typespace_for_generate.add_definition(ref_).map_err(|err| {
             ErrorStream::expect_nonempty(err.into_iter().map(|error| ValidationError::ClientCodegenError {
                 location: TypeLocation::InTypespace { ref_ },
                 error,
             }))
+        })
+    }
+
+    pub(crate) fn register_lifecycle(&mut self, lifecycle: Lifecycle, reducer_id: ReducerId) -> Result<()> {
+        match &mut self.lifecycle_reducers[lifecycle] {
+            x @ None => {
+                *x = Some(reducer_id);
+                Ok(())
+            }
+            Some(_) => Err(ValidationError::DuplicateLifecycle { lifecycle }.into()),
+        }
+    }
+
+    pub(crate) fn validate_schedule_def(
+        &mut self,
+        table_name: Box<str>,
+        name: Identifier,
+        function_name: Box<str>,
+        product_type: &ProductType,
+        schedule_at_col: ColId,
+        primary_key: Option<ColId>,
+    ) -> Result<ScheduleDef> {
+        let at_column = product_type
+            .elements
+            .get(schedule_at_col.idx())
+            .is_some_and(|ty| ty.algebraic_type.is_schedule_at())
+            .then_some(schedule_at_col);
+
+        let id_column = primary_key.filter(|pk| {
+            product_type
+                .elements
+                .get(pk.idx())
+                .is_some_and(|ty| ty.algebraic_type == AlgebraicType::U64)
+        });
+
+        // Error if either column is missing.
+        let at_id = at_column.zip(id_column).ok_or_else(|| {
+            ValidationError::ScheduledIncorrectColumns {
+                table: table_name.clone(),
+                columns: product_type.clone(),
+            }
+            .into()
+        });
+
+        let name = self.add_to_global_namespace(table_name, name);
+        let function_name = identifier(function_name);
+
+        let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
+
+        Ok(ScheduleDef {
+            name,
+            at_column,
+            id_column,
+            function_name,
+
+            // Fill this in as a placeholder now.
+            // It will be populated with the correct `FunctionKind` later,
+            // in `check_scheduled_functions_exist`.
+            function_kind: FunctionKind::Unknown,
         })
     }
 }
@@ -697,20 +792,20 @@ impl ModuleValidator<'_> {
 /// This is just a small wrapper around [`TableValidator`] so that we can:
 /// 1. Validate column defs
 /// 2. Insert view names into the global namespace.
-struct ViewValidator<'a, 'b> {
+pub(crate) struct ViewValidator<'a, 'b> {
     inner: TableValidator<'a, 'b>,
     params: &'a ProductType,
     params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
 }
 
 impl<'a, 'b> ViewValidator<'a, 'b> {
-    fn new(
+    pub(crate) fn new(
         raw_name: Box<str>,
         product_type_ref: AlgebraicTypeRef,
         product_type: &'a ProductType,
         params: &'a ProductType,
         params_for_generate: &'a [(Identifier, AlgebraicTypeUse)],
-        module_validator: &'a mut ModuleValidator<'b>,
+        module_validator: &'a mut CoreValidator<'b>,
     ) -> Self {
         Self {
             inner: TableValidator {
@@ -725,7 +820,7 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         }
     }
 
-    fn validate_param_column_def(&mut self, col_id: ColId) -> Result<ViewParamDef> {
+    pub(crate) fn validate_param_column_def(&mut self, col_id: ColId) -> Result<ViewParamDef> {
         let column = &self
             .params
             .elements
@@ -763,30 +858,44 @@ impl<'a, 'b> ViewValidator<'a, 'b> {
         })
     }
 
-    fn validate_view_column_def(&mut self, col_id: ColId) -> Result<ViewColumnDef> {
+    pub(crate) fn validate_view_column_def(&mut self, col_id: ColId) -> Result<ViewColumnDef> {
         self.inner.validate_column_def(col_id).map(ViewColumnDef::from)
     }
 
-    fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
+    pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
         self.inner.add_to_global_namespace(name)
     }
 }
 
 /// A partially validated table.
-struct TableValidator<'a, 'b> {
-    module_validator: &'a mut ModuleValidator<'b>,
+pub(crate) struct TableValidator<'a, 'b> {
+    module_validator: &'a mut CoreValidator<'b>,
     raw_name: Box<str>,
     product_type_ref: AlgebraicTypeRef,
     product_type: &'a ProductType,
     has_sequence: HashSet<ColId>,
 }
 
-impl TableValidator<'_, '_> {
+impl<'a, 'b> TableValidator<'a, 'b> {
+    pub(crate) fn new(
+        raw_name: Box<str>,
+        product_type_ref: AlgebraicTypeRef,
+        product_type: &'a ProductType,
+        module_validator: &'a mut CoreValidator<'b>,
+    ) -> Self {
+        Self {
+            raw_name,
+            product_type_ref,
+            product_type,
+            module_validator,
+            has_sequence: Default::default(),
+        }
+    }
     /// Validate a column.
     ///
     /// Note that this accepts a `ProductTypeElement` rather than a `ColumnDef`,
     /// because all information about columns is stored in the `Typespace` in ABI version 9.
-    fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
+    pub(crate) fn validate_column_def(&mut self, col_id: ColId) -> Result<ColumnDef> {
         let column = &self
             .product_type
             .elements
@@ -830,7 +939,7 @@ impl TableValidator<'_, '_> {
         })
     }
 
-    fn validate_primary_key(
+    pub(crate) fn validate_primary_key(
         &mut self,
         validated_constraints: StrMap<ConstraintDef>,
         primary_key: ColList,
@@ -862,7 +971,7 @@ impl TableValidator<'_, '_> {
         Ok((validated_constraints, pk))
     }
 
-    fn validate_sequence_def(&mut self, sequence: RawSequenceDefV9) -> Result<SequenceDef> {
+    pub(crate) fn validate_sequence_def(&mut self, sequence: RawSequenceDefV9) -> Result<SequenceDef> {
         let RawSequenceDefV9 {
             column,
             min_value,
@@ -897,7 +1006,7 @@ impl TableValidator<'_, '_> {
 
         /// Compare two `Option<i128>` values, returning `true` if `lo <= hi`,
         /// or if either is `None`.
-        fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
+        pub(crate) fn le(lo: Option<i128>, hi: Option<i128>) -> bool {
             match (lo, hi) {
                 (Some(lo), Some(hi)) => lo <= hi,
                 _ => true,
@@ -932,7 +1041,7 @@ impl TableValidator<'_, '_> {
     }
 
     /// Validate an index definition.
-    fn validate_index_def(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
+    pub(crate) fn validate_index_def(&mut self, index: RawIndexDefV9) -> Result<IndexDef> {
         let RawIndexDefV9 {
             name,
             algorithm,
@@ -984,7 +1093,7 @@ impl TableValidator<'_, '_> {
     }
 
     /// Validate a unique constraint definition.
-    fn validate_constraint_def(&mut self, constraint: RawConstraintDefV9) -> Result<ConstraintDef> {
+    pub(crate) fn validate_constraint_def(&mut self, constraint: RawConstraintDefV9) -> Result<ConstraintDef> {
         let RawConstraintDefV9 { name, data } = constraint;
 
         if let RawConstraintDataV9::Unique(RawUniqueConstraintDataV9 { columns }) = data {
@@ -1006,7 +1115,11 @@ impl TableValidator<'_, '_> {
     }
 
     /// Validate a schedule definition.
-    fn validate_schedule_def(&mut self, schedule: RawScheduleDefV9, primary_key: Option<ColId>) -> Result<ScheduleDef> {
+    pub(crate) fn validate_schedule_def(
+        &mut self,
+        schedule: RawScheduleDefV9,
+        primary_key: Option<ColId>,
+    ) -> Result<ScheduleDef> {
         let RawScheduleDefV9 {
             // Despite the field name, a `RawScheduleDefV9` may refer to either a reducer or a function.
             reducer_name: function_name,
@@ -1014,48 +1127,16 @@ impl TableValidator<'_, '_> {
             name,
         } = schedule;
 
-        let name = name.unwrap_or_else(|| generate_schedule_name(&self.raw_name));
+        let name = identifier(name.unwrap_or_else(|| generate_schedule_name(&self.raw_name.clone())))?;
 
-        // Find the appropriate columns.
-        let at_column = self
-            .product_type
-            .elements
-            .get(scheduled_at_column.idx())
-            .is_some_and(|ty| ty.algebraic_type.is_schedule_at())
-            .then_some(scheduled_at_column);
-
-        let id_column = primary_key.filter(|pk| {
-            self.product_type
-                .elements
-                .get(pk.idx())
-                .is_some_and(|ty| ty.algebraic_type == AlgebraicType::U64)
-        });
-
-        // Error if either column is missing.
-        let at_id = at_column.zip(id_column).ok_or_else(|| {
-            ValidationError::ScheduledIncorrectColumns {
-                table: self.raw_name.clone(),
-                columns: self.product_type.clone(),
-            }
-            .into()
-        });
-
-        let name = self.add_to_global_namespace(name);
-        let function_name = identifier(function_name);
-
-        let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
-
-        Ok(ScheduleDef {
+        self.module_validator.validate_schedule_def(
+            self.raw_name.clone(),
             name,
-            at_column,
-            id_column,
             function_name,
-
-            // Fill this in as a placeholder now.
-            // It will be populated with the correct `FunctionKind` later,
-            // in `check_scheduled_functions_exist`.
-            function_kind: FunctionKind::Unknown,
-        })
+            self.product_type,
+            scheduled_at_column,
+            primary_key,
+        )
     }
 
     /// Validate `name` as an `Identifier` and add it to the global namespace, registering the corresponding `Def` as being stored in a  particular `TableDef`.
@@ -1063,24 +1144,16 @@ impl TableValidator<'_, '_> {
     /// If it has already been added, return an error.
     ///
     /// This is not used for all `Def` types.
-    fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
-        let table_name = identifier(self.raw_name.clone())?;
-
+    pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
+        let ident = identifier(name.clone())?;
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
-        if self.module_validator.stored_in_table_def.contains_key(&name) {
-            Err(ValidationError::DuplicateName { name }.into())
-        } else {
-            self.module_validator
-                .stored_in_table_def
-                .insert(name.clone(), table_name);
-            Ok(name)
-        }
+        self.module_validator.add_to_global_namespace(name, ident)
     }
 
     /// Validate a `ColId` for this table, returning it unmodified if valid.
     /// `def_name` is the name of the definition being validated and is used in errors.
-    pub fn validate_col_id(&self, def_name: &str, col_id: ColId) -> Result<ColId> {
+    pub(crate) fn validate_col_id(&self, def_name: &str, col_id: ColId) -> Result<ColId> {
         if self.product_type.elements.get(col_id.idx()).is_some() {
             Ok(col_id)
         } else {
@@ -1095,7 +1168,7 @@ impl TableValidator<'_, '_> {
 
     /// Validate a `ColList` for this table, returning it unmodified if valid.
     /// `def_name` is the name of the definition being validated and is used in errors.
-    pub fn validate_col_ids(&self, def_name: &str, ids: ColList) -> Result<ColList> {
+    pub(crate) fn validate_col_ids(&self, def_name: &str, ids: ColList) -> Result<ColList> {
         let mut collected: Vec<ColId> = ids
             .iter()
             .map(|column| self.validate_col_id(def_name, column))
@@ -1120,7 +1193,7 @@ impl TableValidator<'_, '_> {
     ///
     /// (It's generally preferable to avoid integer names, since types using the default
     /// ordering are implicitly shuffled!)
-    pub fn raw_column_name(&self, col_id: ColId) -> RawColumnName {
+    pub(crate) fn raw_column_name(&self, col_id: ColId) -> RawColumnName {
         let column: Box<str> = self
             .product_type
             .elements
@@ -1190,7 +1263,7 @@ pub fn generate_unique_constraint_name(
 
 /// Helper to create an `Identifier` from a `str` with the appropriate error type.
 /// TODO: memoize this.
-fn identifier(name: Box<str>) -> Result<Identifier> {
+pub(crate) fn identifier(name: Box<str>) -> Result<Identifier> {
     Identifier::new(name).map_err(|error| ValidationError::IdentifierError { error }.into())
 }
 
@@ -1246,7 +1319,7 @@ fn check_scheduled_functions_exist(
 /// then re-organize the reducers and procedures into [`IndexMap`]s
 /// for storage in the [`ModuleDef`].
 #[allow(clippy::type_complexity)]
-fn check_function_names_are_unique(
+pub(crate) fn check_function_names_are_unique(
     reducers: Vec<(Identifier, ReducerDef)>,
     procedures: Vec<(Identifier, ProcedureDef)>,
     views: Vec<(Identifier, ViewDef)>,
@@ -1292,7 +1365,7 @@ fn check_function_names_are_unique(
 
 fn check_non_procedure_misc_exports(
     misc_exports: Vec<RawMiscModuleExportV9>,
-    validator: &ModuleValidator,
+    validator: &ModuleValidatorV9,
     tables: &mut IdentifierMap<TableDef>,
 ) -> Result<()> {
     misc_exports
@@ -1309,7 +1382,7 @@ fn check_non_procedure_misc_exports(
 
 fn process_column_default_value(
     cdv: &RawColumnDefaultValueV9,
-    validator: &ModuleValidator,
+    validator: &ModuleValidatorV9,
     tables: &mut IdentifierMap<TableDef>,
 ) -> Result<()> {
     // Validate the default value

@@ -139,6 +139,17 @@ pub struct ModuleDef {
     ///
     /// **Note**: Are only validated syntax-wise.
     row_level_security_raw: HashMap<RawSql, RawRowLevelSecurityDefV9>,
+
+    /// Indicates which raw module definition semantics this module
+    /// was authored under.
+    raw_module_def_version: RawModuleDefVersion,
+}
+
+#[derive(Debug, Clone)]
+pub enum RawModuleDefVersion {
+    /// Represents [`RawModuleDefV9`] and earlier.
+    V9OrEarlier,
+    V10,
 }
 
 impl ModuleDef {
@@ -405,6 +416,7 @@ impl From<ModuleDef> for RawModuleDefV9 {
             refmap: _,
             row_level_security_raw,
             procedures,
+            raw_module_def_version: _,
         } = val;
 
         RawModuleDefV9 {
@@ -420,6 +432,14 @@ impl From<ModuleDef> for RawModuleDefV9 {
             typespace,
             row_level_security: row_level_security_raw.into_iter().map(|(_, def)| def).collect(),
         }
+    }
+}
+
+impl TryFrom<raw_def::v10::RawModuleDefV10> for ModuleDef {
+    type Error = ValidationErrors;
+
+    fn try_from(v10_mod: raw_def::v10::RawModuleDefV10) -> Result<Self, Self::Error> {
+        validate::v10::validate(v10_mod)
     }
 }
 
