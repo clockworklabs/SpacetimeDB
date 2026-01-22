@@ -12,4 +12,3 @@ regex.workspace = true
 duct.workspace = true
 tempfile.workspace = true
 env_logger.workspace = true
-semver.workspace = true
