@@ -149,6 +149,57 @@ Avoid capturing mutable state within functions passed to `withTx`.
 :::
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+Unlike reducers, procedures don't automatically run in database transactions.
+This means there's no `ctx.Db` field to access the database.
+Instead, procedure code must manage transactions explicitly with `ProcedureContext.WithTx`.
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Name = "my_table")]
+    public partial struct MyTable
+    {
+        public uint A;
+        public string B;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void InsertAValue(ProcedureContext ctx, uint a, string b)
+    {
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.MyTable.Insert(new MyTable { A = a, B = b });
+        });
+    }
+}
+```
+
+`ProcedureContext.WithTx` takes a function of type `Action<TransactionContext>`.
+Within that function, the `TransactionContext` can be used to access the database
+[in all the same ways as a `ReducerContext`](/functions/reducers/reducer-context).
+When the function returns, the transaction will be committed,
+and its changes to the database state will become permanent and be broadcast to clients.
+If the function throws an exception, the transaction will be rolled back, and its changes will be discarded.
+
+:::warning
+The function passed to `ProcedureContext.WithTx` may be invoked multiple times,
+possibly seeing a different version of the database state each time.
+
+If invoked more than once with reference to the same database state,
+it must perform the same operations and return the same result each time.
+
+If invoked more than once with reference to different database states,
+values observed during prior runs must not influence the behavior of the function or the calling procedure.
+
+Avoid capturing mutable state within functions passed to `WithTx`.
+:::
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 Unlike reducers, procedures don't automatically run in database transactions.
@@ -214,6 +265,32 @@ spacetimedb.procedure("maybe_insert_a_value", { a: t.u32(), b: t.string() }, t.u
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+For fallible database operations, you can throw an exception inside the transaction function:
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Procedure]
+    public static void MaybeInsertAValue(ProcedureContext ctx, uint a, string b)
+    {
+        ctx.WithTx(txCtx =>
+        {
+            if (a < 10)
+            {
+                throw new Exception("a is less than 10!");
+            }
+            txCtx.Db.MyTable.Insert(new MyTable { A = a, B = b });
+        });
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 For fallible database operations, instead use `ProcedureContext::try_with_tx`:
@@ -275,6 +352,56 @@ spacetimedb.procedure("find_highest_level_player", t.unit(), ctx => {
     }
     return {};
 });
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Functions passed to
+[`ProcedureContext.WithTx`](#accessing-the-database)
+may return a value, and that value will be returned to the calling procedure.
+
+Transaction return values are never saved or broadcast to clients, and are used only by the calling procedure.
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Name = "player")]
+    public partial struct Player
+    {
+        public Identity Id;
+        public uint Level;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void FindHighestLevelPlayer(ProcedureContext ctx)
+    {
+        var highestLevelPlayer = ctx.WithTx(txCtx =>
+        {
+            Player? highest = null;
+            foreach (var player in txCtx.Db.Player.Iter())
+            {
+                if (highest == null || player.Level > highest.Value.Level)
+                {
+                    highest = player;
+                }
+            }
+            return highest;
+        });
+
+        if (highestLevelPlayer.HasValue)
+        {
+            Log.Info($"Congratulations to {highestLevelPlayer.Value.Id}");
+        }
+        else
+        {
+            Log.Warn("No players...");
+        }
+    }
+}
 ```
 
 </TabItem>
@@ -364,6 +491,70 @@ spacetimedb.procedure("get_request_with_short_timeout", t.unit(), ctx => {
     }
     return {};
 });
+```
+
+Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+Procedures can make HTTP requests to external services using methods on `ctx.Http`.
+
+`ctx.Http.Get` performs simple `GET` requests with no headers:
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Procedure]
+    public static void GetRequest(ProcedureContext ctx)
+    {
+        try
+        {
+            var response = ctx.Http.Get("https://example.invalid");
+            var body = response.Body.ToStringLossy();
+            Log.Info($"Got response with status {response.StatusCode} and body {body}");
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Request failed: {e.Message}");
+        }
+    }
+}
+```
+
+`ctx.Http.Send` sends an `HttpRequest` with custom method, headers, and body:
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Procedure]
+    public static void PostRequest(ProcedureContext ctx)
+    {
+        try
+        {
+            var request = new HttpRequest
+            {
+                Method = "POST",
+                Uri = "https://example.invalid/upload",
+                Headers = { { "Content-Type", "text/plain" } },
+                Body = System.Text.Encoding.UTF8.GetBytes("This is the body of the HTTP request")
+            };
+            var response = ctx.Http.Send(request);
+            var body = response.Body.ToStringLossy();
+            Log.Info($"Got response with status {response.StatusCode} and body {body}");
+        }
+        catch (Exception e)
+        {
+            Log.Error($"Request failed: {e.Message}");
+        }
+    }
+}
 ```
 
 Procedures can't send requests at the same time as holding open a [transaction](#accessing-the-database).
@@ -470,6 +661,44 @@ spacetimedb.procedure('fetch_and_process', { url: t.string() }, t.unit(), (ctx, 
 
   return {};
 });
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+
+public static partial class Module
+{
+    [SpacetimeDB.Reducer]
+    public static void ProcessItem(ReducerContext ctx, ulong itemId)
+    {
+        // ... reducer logic
+    }
+
+    [SpacetimeDB.Procedure]
+    public static void FetchAndProcess(ProcedureContext ctx, string url)
+    {
+        // Fetch external data
+        var response = ctx.Http.Get(url);
+        var body = response.Body.ToStringLossy();
+        var itemId = ParseId(body);
+
+        // Call the reducer within a transaction
+        ctx.WithTx(txCtx =>
+        {
+            ProcessItem(txCtx, itemId);
+        });
+    }
+
+    private static ulong ParseId(string body)
+    {
+        // Parse the ID from the response body
+        return ulong.Parse(body);
+    }
+}
 ```
 
 </TabItem>
@@ -717,6 +946,89 @@ spacetimedb.procedure(
 ```
 
 </TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+#pragma warning disable STDB_UNSTABLE
+using SpacetimeDB;
+using System.Text.Json;
+
+public static partial class Module
+{
+    [SpacetimeDB.Table(Name = "ai_message", Public = true)]
+    public partial struct AiMessage
+    {
+        public Identity User;
+        public string Prompt;
+        public string Response;
+        public Timestamp CreatedAt;
+    }
+
+    [SpacetimeDB.Procedure]
+    public static string AskAi(ProcedureContext ctx, string prompt, string apiKey)
+    {
+        // Build the request to OpenAI's API
+        var requestBody = JsonSerializer.Serialize(new
+        {
+            model = "gpt-4",
+            messages = new[] { new { role = "user", content = prompt } }
+        });
+
+        var request = new HttpRequest
+        {
+            Method = "POST",
+            Uri = "https://api.openai.com/v1/chat/completions",
+            Headers =
+            {
+                { "Content-Type", "application/json" },
+                { "Authorization", $"Bearer {apiKey}" }
+            },
+            Body = System.Text.Encoding.UTF8.GetBytes(requestBody)
+        };
+
+        // Make the HTTP request
+        var response = ctx.Http.Send(request);
+
+        if (response.StatusCode != 200)
+        {
+            throw new Exception($"API returned status {response.StatusCode}");
+        }
+
+        var bodyStr = response.Body.ToStringLossy();
+
+        // Parse the response
+        var aiResponse = ExtractContent(bodyStr)
+            ?? throw new Exception("Failed to parse AI response");
+
+        // Store the conversation in the database
+        ctx.WithTx(txCtx =>
+        {
+            txCtx.Db.AiMessage.Insert(new AiMessage
+            {
+                User = txCtx.Sender,
+                Prompt = prompt,
+                Response = aiResponse,
+                CreatedAt = txCtx.Timestamp
+            });
+        });
+
+        return aiResponse;
+    }
+
+    private static string? ExtractContent(string json)
+    {
+        // Simple extraction - in production, use proper JSON parsing
+        var doc = JsonDocument.Parse(json);
+        return doc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+    }
+}
+```
+
+</TabItem>
 <TabItem value="rust" label="Rust">
 
 ```rust
@@ -799,6 +1111,23 @@ const response = await ctx.procedures.askAi({
 });
 
 console.log("AI says:", response);
+```
+
+</TabItem>
+<TabItem value="csharp" label="C#">
+
+```csharp
+ctx.Procedures.AskAi("What is SpacetimeDB?", apiKey, (ctx, result) =>
+{
+    if (result.IsSuccess)
+    {
+        Console.WriteLine($"AI says: {result.Value}");
+    }
+    else
+    {
+        Console.WriteLine($"Error: {result.Error}");
+    }
+});
 ```
 
 </TabItem>
