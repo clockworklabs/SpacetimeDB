@@ -35,7 +35,7 @@ use crate::{
 };
 use anyhow::anyhow;
 use core::{convert::Infallible, ops::RangeBounds};
-use spacetimedb_data_structures::map::{HashMap, HashSet, IntMap, IntSet};
+use spacetimedb_data_structures::map::{HashCollectionExt as _, HashMap, HashSet, IntMap, IntSet};
 use spacetimedb_durability::TxOffset;
 use spacetimedb_lib::{db::auth::StTableType, Identity};
 use spacetimedb_primitives::{ColId, ColList, ColSet, IndexId, SequenceId, TableId, ViewId};
@@ -1172,53 +1172,46 @@ impl CommittedState {
         &mut self,
         tx_data: &mut TxData,
         insert_tables: BTreeMap<TableId, Table>,
-        tx_blob_store: impl BlobStore,
+        tx_blob_store: HashMapBlobStore,
         truncates: &mut IntSet<TableId>,
     ) {
-        // TODO(perf): Consider moving whole pages from the `insert_tables` into the committed state,
-        //             rather than copying individual rows out of them.
-        //             This will require some magic to get the indexes right,
-        //             and may lead to a large number of mostly-empty pages in the committed state.
-        //             Likely we want to decide dynamically whether to move a page or copy its contents,
-        //             based on the available holes in the committed state
-        //             and the fullness of the page.
+        // Reuse the translation table for tx_state -> committed_state pointers
+        // for every table we merge rather than allocating one for every table.
+        let mut ptr_translations = HashMap::new();
 
         for (table_id, tx_table) in insert_tables {
-            let (commit_table, commit_blob_store, page_pool) =
-                self.get_table_and_blob_store_or_create(table_id, tx_table.get_schema());
-
-            // For each newly-inserted row, insert it into the committed state.
+            // Serialize the list of inserted rows
+            // so they can be used in `tx_data`.
             let mut inserts = Vec::with_capacity(tx_table.row_count as usize);
             for row_ref in tx_table.scan_rows(&tx_blob_store) {
-                let pv = row_ref.to_product_value();
-                commit_table
-                    .insert(page_pool, commit_blob_store, &pv)
-                    .expect("Failed to insert when merging commit");
-
-                inserts.push(pv);
+                // TODO(perf,centril): Remove the use of PVs by:
+                // 1. Collecting `(table_id, row_ptr)` pairs
+                //    via the translation table in `Table::merge_from`
+                //    and using the pairs in subscriptions.
+                // 2. Keeping around the delete tables.
+                // 3. Serialize to BSATN instead for durability.
+                //    This is better for durability
+                //    as it removes an intermediate step.
+                inserts.push(row_ref.to_product_value());
             }
-
             // Add the table to `TxData` if there were insertions.
+            let schema = tx_table.get_schema();
             if !inserts.is_empty() {
-                let table_name = &*commit_table.get_schema().table_name;
-                tx_data.set_inserts_for_table(table_id, table_name, inserts.into());
+                tx_data.set_inserts_for_table(table_id, &schema.table_name, inserts.into());
 
-                // if table has inserted rows, it cannot be truncated
-                if truncates.contains(&table_id) {
-                    truncates.remove(&table_id);
-                }
+                // The table had inserted rows so it cannot be truncated.
+                truncates.remove(&table_id);
             }
 
-            let (schema, _indexes, pages) = tx_table.consume_for_merge();
-
-            // The schema may have been modified in the transaction.
-            // Update this last to placate borrowck and avoid a clone.
-            // None of the above operations will inspect the schema.
-            commit_table.schema = schema;
-
-            // Put all the pages in the table back into the pool.
-            self.page_pool.put_many(pages);
+            // Merge the tables,
+            // moving over all rows and indices to the committed state.
+            let (commit_table, _, page_pool) = self.get_table_and_blob_store_or_create(table_id, schema);
+            // SAFETY: `tx_table` is derived from `commit_table`.
+            unsafe { commit_table.merge_from(tx_table, &mut ptr_translations, page_pool) };
         }
+
+        // Merge `tx_blob_store` into committed state's blob store.
+        self.blob_store.merge_from(tx_blob_store);
     }
 
     /// Rolls back the changes immediately made to the committed state during a transaction.

@@ -1,12 +1,7 @@
-use crate::{
-    blob_store::NullBlobStore,
-    table_index::{IndexCannotSeekRange, IndexKind},
-};
-
 use super::{
     bflatn_from::serialize_row_from_page,
     bflatn_to::{write_row_to_pages, write_row_to_pages_bsatn, Error},
-    blob_store::BlobStore,
+    blob_store::{BlobStore, NullBlobStore},
     eq::eq_row_in_page,
     eq_to_pv::eq_row_in_page_to_pv,
     indexes::{Bytes, PageIndex, PageOffset, RowHash, RowPointer, SquashedOffset, PAGE_DATA_SIZE},
@@ -20,34 +15,34 @@ use super::{
     static_assert_size,
     static_bsatn_validator::{static_bsatn_validator, validate_bsatn, StaticBsatnValidator},
     static_layout::StaticLayout,
-    table_index::{TableIndex, TableIndexPointIter, TableIndexRangeIter},
+    table_index::{IndexCannotSeekRange, IndexKind, TableIndex, TableIndexPointIter, TableIndexRangeIter},
     var_len::VarLenMembers,
 };
-use core::{fmt, ptr};
 use core::{
+    fmt,
     hash::{Hash, Hasher},
     hint::unreachable_unchecked,
+    mem,
+    ops::RangeBounds,
+    ptr,
 };
-use core::{mem, ops::RangeBounds};
 use derive_more::{Add, AddAssign, From, Sub, SubAssign};
 use enum_as_inner::EnumAsInner;
 use smallvec::SmallVec;
+use spacetimedb_data_structures::map::HashMap;
+use spacetimedb_memory_usage::MemoryUsage;
 use spacetimedb_primitives::{ColId, ColList, IndexId, SequenceId, TableId};
-use spacetimedb_sats::memory_usage::MemoryUsage;
 use spacetimedb_sats::{
     algebraic_value::ser::ValueSerializer,
     bsatn::{self, ser::BsatnError, BufReservedFill, DecodeError, ToBsatn},
     buffer::BufWriter,
     de::DeserializeOwned,
     i256,
+    layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
     product_value::InvalidFieldError,
     satn::Satn,
     ser::{Serialize, Serializer},
-    u256, AlgebraicValue, ProductType, ProductValue,
-};
-use spacetimedb_sats::{
-    layout::{AlgebraicTypeLayout, IncompatibleTypeLayoutError, PrimitiveType, RowTypeLayout, Size},
-    Typespace,
+    u256, AlgebraicValue, ProductType, ProductValue, Typespace,
 };
 use spacetimedb_schema::{
     def::{BTreeAlgorithm, IndexAlgorithm},
@@ -1610,15 +1605,93 @@ Found violation at pointer {ptr:?} to row {:?}.",
         self.pointer_map = Some(self.rebuild_pointer_map(blob_store));
     }
 
-    /// Consumes the table, returning some constituents needed for merge.
-    pub fn consume_for_merge(
-        self,
-    ) -> (
-        Arc<TableSchema>,
-        impl Iterator<Item = (IndexId, TableIndex)>,
-        impl Iterator<Item = Box<Page>>,
+    /// Merge `src` into `self`.
+    ///
+    /// The `ptr_translations` parameter
+    /// is translation table of source -> destination row pointer mappings,
+    /// and is used to fixup the row pointers of `src`'s indices.
+    /// This method will clear the table at the start.
+    ///
+    /// # Safety
+    ///
+    /// The tables `self` and `src` must share the same schema/layout.
+    /// This is the case when `src` is derived from `self`.
+    pub unsafe fn merge_from(
+        &mut self,
+        src: Table,
+        // TODO(perf, centrl): consider a `SmallHashMap` or some such.
+        ptr_translations: &mut HashMap<RowPointer, RowPointer>,
+        pool: &PagePool,
     ) {
-        (self.schema, self.indexes.into_iter(), self.inner.pages.into_page_iter())
+        let dst = self;
+
+        // The schema may have been modified in the transaction,
+        // but these changes were applied immediately.
+
+        // Clear and reserve exactly the needed space.
+        ptr_translations.clear();
+        ptr_translations.reserve(src.row_count as usize);
+        let notify_copy = |src, dst| {
+            ptr_translations.insert(src, dst);
+        };
+
+        // Merge the pages of `src` into `dst.pages`.
+        let vlv_program = &dst.inner.visitor_prog;
+        let fixed_row_size = dst.row_size();
+        // TODO(perf): Consider moving pages in some cases,
+        // deciding dynamically based on the available holes in the committed state
+        // and the fullness of the page.
+        //
+        // SAFETY:
+        // - `vlv_program` is the same as for `src` and is used for everything in both tables.
+        // - `fixed_row_size` and `vlv_program` are consistent as they were both derived
+        //   from the same schema/layout.
+        let res = unsafe {
+            dst.inner.pages.take_pages_of(
+                src.inner.pages,
+                src.squashed_offset,
+                dst.squashed_offset,
+                pool,
+                vlv_program,
+                fixed_row_size,
+                notify_copy,
+            )
+        };
+        // TODO(centril): this isn't strictly true,
+        // but before this happens we'll OOM as we don't have 32 PiB of RAM
+        // and neither does any other computer in the world as of 2026.
+        res.expect("should not, in practice, overflow the max page index");
+
+        // Merge the pointer map of `self` into `dst_table`.
+        let translate = |src_ptr| {
+            // SAFETY: any pointer in a `src_index` exists in `self`
+            // so it also exists in `ptr_translations`.
+            *unsafe { ptr_translations.get(&src_ptr).unwrap_unchecked() }
+        };
+        if let Some((dst_pm, src_pm)) = dst.pointer_map.as_mut().zip(src.pointer_map) {
+            dst_pm.merge_from(src_pm, translate);
+        }
+
+        // Merge the indices of `self` into `dst_table`.
+        for (index_id, src_index) in src.indexes.into_iter() {
+            let index = dst
+                .indexes
+                .get_mut(&index_id)
+                .expect("any index in `self` should exist in `dst_table`");
+
+            // SAFETY:
+            // 1, 2. the caller promised that `src_index`'s schema was derived from `src`,
+            //       so their `key_type`s and `indexed_columns` match also.
+            // 3. Every `ptr` in `index` comes from `src`.
+            //    When `translate`d, this now refers to a row pointer in `dst`.
+            //    A pointer that was just inserted by `take_pages_of`,
+            //    and thus hasn't been inserted into `index` yet.
+            unsafe { index.merge_from(src_index, translate) };
+        }
+
+        // Merge the statistics.
+        dst.row_count += src.row_count;
+        dst.blob_store_bytes += src.blob_store_bytes;
     }
 
     /// Returns the number of rows resident in this table.
