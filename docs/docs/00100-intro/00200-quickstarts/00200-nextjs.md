@@ -126,9 +126,9 @@ spacetime logs my-nextjs-app
 
   <Step title="Understand the provider pattern">
     <StepText>
-      SpacetimeDB requires a client-side connection. In Next.js App Router, this is handled by a client component wrapper.
+      SpacetimeDB is client-side only — it cannot run during server-side rendering. The `app/providers.tsx` file uses the `"use client"` directive and wraps your app with `SpacetimeDBProvider`.
 
-      The `app/providers.tsx` file uses the `"use client"` directive and wraps your app with `SpacetimeDBProvider`.
+      The template uses environment variables for configuration. Set `NEXT_PUBLIC_SPACETIMEDB_HOST` and `NEXT_PUBLIC_SPACETIMEDB_DB_NAME` to override defaults.
     </StepText>
     <StepCode>
 ```tsx
@@ -139,11 +139,14 @@ import { useMemo } from 'react';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from '../src/module_bindings';
 
+const HOST = process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
+const DB_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_DB_NAME ?? 'my-nextjs-app';
+
 export function Providers({ children }: { children: React.ReactNode }) {
   const connectionBuilder = useMemo(() =>
     DbConnection.builder()
-      .withUri('ws://localhost:3000')
-      .withModuleName('my-nextjs-app'),
+      .withUri(HOST)
+      .withModuleName(DB_NAME),
     []
   );
 
@@ -151,6 +154,40 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <SpacetimeDBProvider connectionBuilder={connectionBuilder}>
       {children}
     </SpacetimeDBProvider>
+  );
+}
+```
+    </StepCode>
+  </Step>
+
+  <Step title="Use React hooks for data">
+    <StepText>
+      In your page components, use `useTable` to subscribe to table data and `useReducer` to call reducers. All components using these hooks must have the `"use client"` directive.
+    </StepText>
+    <StepCode>
+```tsx
+// app/page.tsx
+'use client';
+
+import { tables, reducers } from '../src/module_bindings';
+import { useTable, useReducer } from 'spacetimedb/react';
+
+export default function Home() {
+  // Subscribe to table data - returns [rows, isLoading]
+  const [people] = useTable(tables.person);
+
+  // Get a function to call a reducer
+  const addPerson = useReducer(reducers.add);
+
+  const handleAdd = () => {
+    // Call reducer with object syntax
+    addPerson({ name: 'Alice' });
+  };
+
+  return (
+    <ul>
+      {people.map((person, i) => <li key={i}>{person.name}</li>)}
+    </ul>
   );
 }
 ```
