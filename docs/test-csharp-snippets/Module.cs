@@ -336,4 +336,22 @@ public static partial class Module
         // Implement AWS S3 pre-signed URL generation
         throw new NotImplementedException();
     }
+
+    // === Snippet 11: Schedule Tables ===
+    [SpacetimeDB.Table(Scheduled = "SendReminder", ScheduledAt = "ScheduleAt")]
+    public partial struct Reminder
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        public uint UserId;
+        public string Message;
+        public ScheduleAt ScheduleAt;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SendReminder(ReducerContext ctx, Reminder reminder)
+    {
+        // Process the scheduled reminder
+    }
 }

@@ -42,21 +42,26 @@ spacetimedb.reducer('send_reminder', { arg: reminder.rowType }, (_ctx, { arg }) 
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Scheduled = "SendReminder", ScheduledAt = "ScheduleAt")]
-public partial struct Reminder
-{
-    [SpacetimeDB.PrimaryKey]
-    [SpacetimeDB.AutoInc]
-    public ulong Id;
-    public uint UserId;
-    public string Message;
-    public ScheduleAt ScheduleAt;
-}
+using SpacetimeDB;
 
-[SpacetimeDB.Reducer()]
-public static void SendReminder(ReducerContext ctx, Reminder reminder)
+public static partial class Module
 {
-    // Process the scheduled reminder
+    [SpacetimeDB.Table(Scheduled = "SendReminder", ScheduledAt = "ScheduleAt")]
+    public partial struct Reminder
+    {
+        [SpacetimeDB.PrimaryKey]
+        [SpacetimeDB.AutoInc]
+        public ulong Id;
+        public uint UserId;
+        public string Message;
+        public ScheduleAt ScheduleAt;
+    }
+
+    [SpacetimeDB.Reducer]
+    public static void SendReminder(ReducerContext ctx, Reminder reminder)
+    {
+        // Process the scheduled reminder
+    }
 }
 ```
 
@@ -209,23 +214,28 @@ spacetimedb.reducer('schedule_timed_tasks', (ctx) => {
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Reducer]
-public static void ScheduleTimedTasks(ReducerContext ctx)
-{
-    // Schedule for 10 seconds from now
-    ctx.Db.Reminder.Insert(new Reminder
-    {
-        Message = "Your auction has ended",
-        ScheduleAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
-    });
+using SpacetimeDB;
 
-    // Schedule for a specific time
-    var targetTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
-    ctx.Db.Reminder.Insert(new Reminder
+public static partial class Module
+{
+    [SpacetimeDB.Reducer]
+    public static void ScheduleTimedTasks(ReducerContext ctx)
     {
-        Message = "Happy New Year!",
-        ScheduleAt = new ScheduleAt.Time(targetTime)
-    });
+        // Schedule for 10 seconds from now
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Your auction has ended",
+            ScheduleAt = new ScheduleAt.Time(DateTimeOffset.UtcNow.AddSeconds(10))
+        });
+
+        // Schedule for a specific time
+        var targetTime = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        ctx.Db.Reminder.Insert(new Reminder
+        {
+            Message = "Happy New Year!",
+            ScheduleAt = new ScheduleAt.Time(targetTime)
+        });
+    }
 }
 ```
 
@@ -287,14 +297,19 @@ spacetimedb.reducer('send_reminder', { arg: Reminder.rowType }, (ctx, { arg }) =
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Reducer()]
-public static void SendReminder(ReducerContext ctx, Reminder reminder)
+using SpacetimeDB;
+
+public static partial class Module
 {
-    if (!ctx.SenderAuth.IsInternal)
+    [SpacetimeDB.Reducer]
+    public static void SendReminder(ReducerContext ctx, Reminder reminder)
     {
-        throw new Exception("This reducer can only be called by the scheduler");
+        if (!ctx.SenderAuth.IsInternal)
+        {
+            throw new Exception("This reducer can only be called by the scheduler");
+        }
+        // Process the scheduled reminder
     }
-    // Process the scheduled reminder
 }
 ```
 
