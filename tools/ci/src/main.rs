@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -266,7 +266,6 @@ pub enum ServerState {
     None,
     Yes {
         child: Child,
-        _stdin: ChildStdin,
         data_dir: TempDir,
     },
     Docker {
@@ -361,23 +360,13 @@ impl ServerState {
                         &pg_port.to_string(),
                         "--data-dir",
                         &data_dir_str,
-                        "--shutdown-on-stdin-close",
                     ])
-                    .stdin(Stdio::piped())
                     .stdout(Stdio::inherit())
                     .stderr(Stdio::inherit())
                     .spawn()
                     .context("failed to spawn local SpacetimeDB server")?;
-                let stdin = child
-                    .stdin
-                    .take()
-                    .context("failed to open stdin pipe for local SpacetimeDB server")?;
                 wait_until_http_ready(Duration::from_secs(1200), cli_path, &server_url)?;
-                Ok(ServerState::Yes {
-                    child,
-                    _stdin: stdin,
-                    data_dir,
-                })
+                Ok(ServerState::Yes { child, data_dir })
             }
         }
     }
@@ -408,11 +397,7 @@ impl Drop for ServerState {
                 )
                 .run();
             }
-            ServerState::Yes {
-                child,
-                _stdin: _,
-                data_dir,
-            } => {
+            ServerState::Yes { child, data_dir } => {
                 with_print_lock(|| {
                     println!("Shutting down server (temp data-dir will be dropped)..");
                 });
