@@ -46,8 +46,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
         .cloned()
         .into_iter()
         .flatten()
-        .enumerate()
-        .map(|(_idx, reducer)| {
+        .map(|reducer| {
             validator
                 .validate_reducer_def(reducer)
                 .map(|reducer_def| (reducer_def.name.clone(), reducer_def))

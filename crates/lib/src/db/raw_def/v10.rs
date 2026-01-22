@@ -724,19 +724,13 @@ impl RawModuleDefV10Builder {
             );
 
         for internal_function in internal_functions {
-            self.reducers_mut()
-                .iter_mut()
-                .find(|r| r.name == internal_function)
-                .map(|r| {
-                    r.visibility = FunctionVisibility::Internal;
-                });
+            if let Some(r) = self.reducers_mut().iter_mut().find(|r| r.name == internal_function) {
+                r.visibility = FunctionVisibility::Internal;
+            }
 
-            self.procedures_mut()
-                .iter_mut()
-                .find(|p| p.name == internal_function)
-                .map(|p| {
-                    p.visibility = FunctionVisibility::Internal;
-                });
+            if let Some(p) = self.procedures_mut().iter_mut().find(|p| p.name == internal_function) {
+                p.visibility = FunctionVisibility::Internal;
+            }
         }
         self.module
     }
