@@ -138,8 +138,15 @@ pub enum ValidationError {
     DuplicateFunctionName { name: Identifier },
     #[error("lifecycle event {lifecycle:?} without reducer")]
     LifecycleWithoutReducer { lifecycle: Lifecycle },
+    #[error("lifecycle event {lifecycle:?} assigned multiple reducers")]
+    DuplicateLifeCycle { lifecycle: Lifecycle },
     #[error("table {table} is assigned in multiple schedules")]
     DuplicateSchedule { table: Identifier },
+    #[error("table {} corresponding to schedule {} not found", table_name, schedule_name)]
+    MissingScheduleTable {
+        table_name: Box<str>,
+        schedule_name: Box<str>,
+    },
 }
 
 /// A wrapper around an `AlgebraicType` that implements `fmt::Display`.

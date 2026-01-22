@@ -614,14 +614,14 @@ impl CoreValidator<'_> {
     /// If it has already been added, return an error.
     ///
     /// This is not used for all `Def` types.
-    pub(crate) fn add_to_global_namespace(&mut self, raw_name: Box<str>, ident: Identifier) -> Result<Box<str>> {
+    pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>, ident: Identifier) -> Result<Box<str>> {
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
-        if self.stored_in_table_def.contains_key(&raw_name) {
-            Err(ValidationError::DuplicateName { name: raw_name }.into())
+        if self.stored_in_table_def.contains_key(&name) {
+            Err(ValidationError::DuplicateName { name }.into())
         } else {
-            self.stored_in_table_def.insert(raw_name.clone(), ident);
-            Ok(raw_name)
+            self.stored_in_table_def.insert(name.clone(), ident);
+            Ok(name)
         }
     }
 
@@ -767,8 +767,8 @@ impl CoreValidator<'_> {
             }
             .into()
         });
-
-        let name = self.add_to_global_namespace(table_name, name);
+        let table_name = identifier(table_name)?;
+        let name = self.add_to_global_namespace(name.into(), table_name);
         let function_name = identifier(function_name);
 
         let (name, (at_column, id_column), function_name) = (name, at_id, function_name).combine_errors()?;
@@ -1145,10 +1145,10 @@ impl<'a, 'b> TableValidator<'a, 'b> {
     ///
     /// This is not used for all `Def` types.
     pub(crate) fn add_to_global_namespace(&mut self, name: Box<str>) -> Result<Box<str>> {
-        let ident = identifier(name.clone())?;
+        let table_name = identifier(self.raw_name.clone())?;
         // This may report the table_name as invalid multiple times, but this will be removed
         // when we sort and deduplicate the error stream.
-        self.module_validator.add_to_global_namespace(name, ident)
+        self.module_validator.add_to_global_namespace(name, table_name)
     }
 
     /// Validate a `ColId` for this table, returning it unmodified if valid.
@@ -1270,7 +1270,7 @@ pub(crate) fn identifier(name: Box<str>) -> Result<Identifier> {
 /// Check that every [`ScheduleDef`]'s `function_name` refers to a real reducer or procedure
 /// and that the function's arguments are appropriate for the table,
 /// then record the scheduled function's [`FunctionKind`] in the [`ScheduleDef`].
-fn check_scheduled_functions_exist(
+pub(crate) fn check_scheduled_functions_exist(
     tables: &mut IdentifierMap<TableDef>,
     reducers: &IndexMap<Identifier, ReducerDef>,
     procedures: &IndexMap<Identifier, ProcedureDef>,

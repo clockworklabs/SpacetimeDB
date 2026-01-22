@@ -142,6 +142,7 @@ pub struct ModuleDef {
 
     /// Indicates which raw module definition semantics this module
     /// was authored under.
+    #[allow(unused)]
     raw_module_def_version: RawModuleDefVersion,
 }
 

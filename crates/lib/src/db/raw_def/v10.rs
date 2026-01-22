@@ -92,6 +92,7 @@ pub enum RawModuleDefV10Section {
     /// Unlike V9 where lifecycle was a field on reducers,
     /// V10 stores lifecycle-to-reducer mappings separately.
     LifeCycleReducers(Vec<RawLifeCycleReducerDefV10>),
+    //TODO: Add section for Event tables, and Case conversion before exposing this from module
 }
 
 /// The definition of a database table.
@@ -308,6 +309,16 @@ impl RawModuleDefV10 {
             _ => None,
         })
     }
+
+    pub fn tables_mut_for_tests(&mut self) -> &mut Vec<RawTableDefV10> {
+        self.sections
+            .iter_mut()
+            .find_map(|s| match s {
+                RawModuleDefV10Section::Tables(tables) => Some(tables),
+                _ => None,
+            })
+            .expect("Tables section must exist for tests")
+    }
 }
 
 /// A builder for a [`RawModuleDefV10`].
@@ -343,24 +354,6 @@ impl RawModuleDefV10Builder {
         match &mut self.module.sections[idx] {
             RawModuleDefV10Section::Typespace(ts) => ts,
             _ => unreachable!("Just ensured Typespace section exists"),
-        }
-    }
-
-    /// Get mutable access to the tables section, creating it if missing.
-    fn tables_mut(&mut self) -> &mut Vec<RawTableDefV10> {
-        let idx = self
-            .module
-            .sections
-            .iter()
-            .position(|s| matches!(s, RawModuleDefV10Section::Tables(_)))
-            .unwrap_or_else(|| {
-                self.module.sections.push(RawModuleDefV10Section::Tables(Vec::new()));
-                self.module.sections.len() - 1
-            });
-
-        match &mut self.module.sections[idx] {
-            RawModuleDefV10Section::Tables(tables) => tables,
-            _ => unreachable!("Just ensured Tables section exists"),
         }
     }
 
@@ -747,11 +740,6 @@ impl RawModuleDefV10Builder {
         }
         self.module
     }
-
-    #[cfg(test)]
-    pub(crate) fn tables_mut_for_tests(&mut self) -> &mut Vec<RawTableDefV10> {
-        self.tables_mut()
-    }
 }
 
 /// Implement TypespaceBuilder for V10
@@ -907,7 +895,7 @@ impl RawTableDefBuilderV10<'_> {
             Some(RawModuleDefV10Section::Tables(t)) => t,
             _ => {
                 self.module.sections.push(RawModuleDefV10Section::Tables(Vec::new()));
-                match self.module.sections.last_mut().unwrap() {
+                match self.module.sections.last_mut().expect("Just pushed Tables section") {
                     RawModuleDefV10Section::Tables(t) => t,
                     _ => unreachable!(),
                 }
@@ -939,3 +927,4 @@ impl RawTableDefBuilderV10<'_> {
             .map(|i| ColId(i as u16))
     }
 }
+

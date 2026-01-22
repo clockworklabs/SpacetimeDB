@@ -7,7 +7,8 @@ use spacetimedb_lib::de::DeserializeSeed as _;
 use spacetimedb_sats::{Typespace, WithTypespace};
 
 use crate::def::validate::v9::{
-    check_function_names_are_unique, generate_schedule_name, identifier, CoreValidator, TableValidator, ViewValidator,
+    check_function_names_are_unique, check_scheduled_functions_exist, generate_schedule_name, identifier,
+    CoreValidator, TableValidator, ViewValidator,
 };
 use crate::def::*;
 use crate::error::ValidationError;
@@ -116,11 +117,7 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .cloned()
                 .into_iter()
                 .flatten()
-                .map(|schedule| {
-                    validator
-                        .validate_schedule_def(schedule, tables_map)
-                        .map(|schedule_def| (schedule_def.name.clone(), schedule_def))
-                })
+                .map(|schedule| validator.validate_schedule_def(schedule, tables_map))
                 .collect_all_errors::<Vec<_>>()
         })
         .unwrap_or_else(|| Ok(Vec::new()));
@@ -135,22 +132,25 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
                 .into_iter()
                 .flatten()
                 .map(|lifecycle_def| {
-                    // Find the reducer by name
                     let function_name = identifier(lifecycle_def.function_name.clone())?;
-                    let reducer_id = reducers_vec
+
+                    let (pos, _) = reducers_vec
                         .iter()
-                        .position(|(name, _)| name == &function_name)
-                        .map(|pos| ReducerId(pos as u32))
+                        .enumerate()
+                        .find(|(_, (_, r))| r.name == function_name)
                         .ok_or_else(|| ValidationError::LifecycleWithoutReducer {
-                            lifecycle: (lifecycle_def.lifecycle_spec),
+                            lifecycle: lifecycle_def.lifecycle_spec,
                         })?;
 
-                    validator.validate_lifecycle_reducer(lifecycle_def, reducer_id)
+                    let reducer_id = ReducerId(pos as u32);
+
+                    validator.validate_lifecycle_reducer(lifecycle_def.clone(), reducer_id)?;
+
+                    Ok((reducer_id, lifecycle_def.lifecycle_spec))
                 })
                 .collect_all_errors::<Vec<_>>()
         })
         .unwrap_or_else(|| Ok(Vec::new()));
-
     // Combine all validation results
     let tables_types_reducers_procedures_views = (
         tables,
@@ -163,26 +163,16 @@ pub fn validate(def: RawModuleDefV10) -> Result<ModuleDef> {
     )
         .combine_errors()
         .and_then(
-            |(mut tables, types, reducers, procedures, views, schedules, _lifecycles)| {
-                let (reducers, procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
+            |(mut tables, types, reducers, procedures, views, schedules, lifecycles)| {
+                let (mut reducers, procedures, views) = check_function_names_are_unique(reducers, procedures, views)?;
+
+                // Attach lifecycles to their respective reducers
+                attach_lifecycles_to_reducers(&mut reducers, lifecycles)?;
 
                 // Attach schedules to their respective tables
-                for (_, schedule_def) in schedules {
-                    // Find the table this schedule belongs to
-                    if let Some(table) = tables.values_mut().find(|t| {
-                        // Match by checking if any column matches the schedule's at_column
-                        t.columns.iter().any(|col| col.col_id == schedule_def.at_column)
-                    }) {
-                        // Only one schedule per table is allowed in current design
-                        if table.schedule.is_some() {
-                            return Err(ValidationError::DuplicateSchedule {
-                                table: table.name.clone(),
-                            }
-                            .into());
-                        }
-                        table.schedule = Some(schedule_def);
-                    }
-                }
+                attach_schedules_to_tables(&mut tables, schedules)?;
+
+                check_scheduled_functions_exist(&mut tables, &reducers, &procedures)?;
 
                 Ok((tables, types, reducers, procedures, views))
             },
@@ -404,7 +394,7 @@ impl<'a> ModuleValidatorV10<'a> {
         &mut self,
         schedule: RawScheduleDefV10,
         tables: &HashMap<Identifier, TableDef>,
-    ) -> Result<ScheduleDef> {
+    ) -> Result<(ScheduleDef, Box<str>)> {
         let RawScheduleDefV10 {
             name,
             table_name,
@@ -430,14 +420,16 @@ impl<'a> ModuleValidatorV10<'a> {
             })?;
 
         let name = name.unwrap_or_else(|| generate_schedule_name(&table_name));
-        self.core.validate_schedule_def(
-            table_name,
-            identifier(name)?,
-            function_name,
-            product_type,
-            schedule_at_col,
-            table.primary_key,
-        )
+        self.core
+            .validate_schedule_def(
+                table_name.clone(),
+                identifier(name)?,
+                function_name,
+                product_type,
+                schedule_at_col,
+                table.primary_key,
+            )
+            .map(|schedule_def| (schedule_def, table_name))
     }
 
     fn validate_lifecycle_reducer(
@@ -591,10 +583,55 @@ impl<'a> ModuleValidatorV10<'a> {
             param_columns,
         })
     }
+}
 
-    fn validate_type_def(&mut self, type_def: RawTypeDefV10) -> Result<TypeDef> {
-        self.core.validate_type_def(type_def)
+fn attach_lifecycles_to_reducers(
+    reducers: &mut IndexMap<Identifier, ReducerDef>,
+    lifecycles: Vec<(ReducerId, Lifecycle)>,
+) -> Result<()> {
+    for lifecycle in lifecycles {
+        let (reducer_id, lifecycle) = lifecycle;
+        let reducer = reducers
+            .values_mut()
+            .nth(reducer_id.idx())
+            .ok_or_else(|| ValidationError::LifecycleWithoutReducer { lifecycle })?;
+
+        // Enforce invariant: only one lifecycle per reducer
+        if reducer.lifecycle.is_some() {
+            return Err(ValidationError::DuplicateLifecycle { lifecycle }.into());
+        }
+
+        reducer.lifecycle = Some(lifecycle);
     }
+
+    Ok(())
+}
+
+fn attach_schedules_to_tables(
+    tables: &mut HashMap<Identifier, TableDef>,
+    schedules: Vec<(ScheduleDef, Box<str>)>,
+) -> Result<()> {
+    for schedule in schedules {
+        let (schedule, table_name) = schedule;
+        let table = tables.values_mut().find(|t| *t.name == *table_name).ok_or_else(|| {
+            ValidationError::MissingScheduleTable {
+                table_name: table_name.clone(),
+                schedule_name: schedule.name.clone(),
+            }
+        })?;
+
+        // Enforce invariant: only one schedule per table
+        if table.schedule.is_some() {
+            return Err(ValidationError::DuplicateSchedule {
+                table: table.name.clone(),
+            }
+            .into());
+        }
+
+        table.schedule = Some(schedule);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -694,17 +731,18 @@ mod tests {
             )
             .with_auto_inc_primary_key(2)
             .with_index(btree(2), "scheduled_id_index")
-            .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
 
-        builder.add_reducer("init", ProductType::unit());
-        builder.add_reducer("on_connect", ProductType::unit());
-        builder.add_reducer("on_disconnect", ProductType::unit());
+        builder.add_lifecycle_reducer(Lifecycle::Init, "init", ProductType::unit());
+        builder.add_lifecycle_reducer(Lifecycle::OnConnect, "on_connect", ProductType::unit());
+        builder.add_lifecycle_reducer(Lifecycle::OnDisconnect, "on_disconnect", ProductType::unit());
         builder.add_reducer("extra_reducer", ProductType::from([("a", AlgebraicType::U64)]));
         builder.add_reducer(
             "check_deliveries",
-            ProductType::from([("a", deliveries_product_type.into())]));
+            ProductType::from([("a", deliveries_product_type.into())]),
+        );
+        builder.add_schedule("Deliveries", 1, "check_deliveries");
 
         let def: ModuleDef = builder.finish().try_into().unwrap();
 
@@ -1066,7 +1104,7 @@ mod tests {
 
         let mut builder = RawModuleDefV10Builder::new();
         let ref_ = builder.add_algebraic_type([], "Recursive", recursive_type.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]));
         let result: ModuleDef = builder.finish().try_into().unwrap();
 
         assert!(result.typespace_for_generate[ref_].is_recursive());
@@ -1077,7 +1115,7 @@ mod tests {
         let invalid_type_1 = AlgebraicType::product([("a", AlgebraicTypeRef(31).into())]);
         let mut builder = RawModuleDefV10Builder::new();
         let ref_ = builder.add_algebraic_type([], "Invalid", invalid_type_1.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::ClientCodegenError { location, error: ClientCodegenError::TypeRefError(_)  } => {
@@ -1091,7 +1129,7 @@ mod tests {
         let invalid_type = AlgebraicType::product([("a", inner_type_invalid_for_use.clone())]);
         let mut builder = RawModuleDefV10Builder::new();
         let ref_ = builder.add_algebraic_type([], "Invalid", invalid_type.clone(), false);
-        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]), None);
+        builder.add_reducer("silly", ProductType::from([("a", ref_.into())]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(
@@ -1244,8 +1282,8 @@ mod tests {
     #[test]
     fn duplicate_lifecycle() {
         let mut builder = RawModuleDefV10Builder::new();
-        builder.add_reducer("init1", ProductType::unit(), Some(Lifecycle::Init));
-        builder.add_reducer("init1", ProductType::unit(), Some(Lifecycle::Init));
+        builder.add_lifecycle_reducer(Lifecycle::Init, "init1", ProductType::unit());
+        builder.add_lifecycle_reducer(Lifecycle::Init, "init1", ProductType::unit());
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::DuplicateLifecycle { lifecycle } => {
@@ -1269,9 +1307,10 @@ mod tests {
             )
             .with_auto_inc_primary_key(2)
             .with_index(btree(2), "scheduled_id_index")
-            .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
+
+        builder.add_schedule("Deliveries", 1, "check_deliveries");
         let result: Result<ModuleDef> = builder.finish().try_into();
 
         expect_error_matching!(result, ValidationError::MissingScheduledFunction { schedule, function } => {
@@ -1296,9 +1335,10 @@ mod tests {
             )
             .with_auto_inc_primary_key(2)
             .with_index(direct(2), "scheduled_id_idx")
-            .with_schedule("check_deliveries", 1)
             .with_type(TableType::System)
             .finish();
+
+        builder.add_schedule("Deliveries", 1, "check_deliveries");
         builder.add_reducer("check_deliveries", ProductType::from([("a", AlgebraicType::U64)]));
         let result: Result<ModuleDef> = builder.finish().try_into();
 
@@ -1338,14 +1378,14 @@ mod tests {
             ProductType::from([("a", deliveries_product_type.into())]),
         );
 
-        let tables = &mut builder.tables_mut_for_test();
         // Our builder methods ignore the possibility of setting names at the moment.
         // But, it could be done in the future for some reason.
         // Check if it works.
         let mut raw_def = builder.finish();
-        raw_def.tables[0].constraints[0].name = Some("wacky.constraint()".into());
-        raw_def.tables[0].indexes[0].name = Some("wacky.index()".into());
-        raw_def.tables[0].sequences[0].name = Some("wacky.sequence()".into());
+        let tables = raw_def.tables_mut_for_tests();
+        tables[0].constraints[0].name = Some("wacky.constraint()".into());
+        tables[0].indexes[0].name = Some("wacky.index()".into());
+        tables[0].sequences[0].name = Some("wacky.sequence()".into());
 
         let def: ModuleDef = raw_def.try_into().unwrap();
         assert!(def.lookup::<ConstraintDef>("wacky.constraint()").is_some());
