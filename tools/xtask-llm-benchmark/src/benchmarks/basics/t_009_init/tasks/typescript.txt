@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates the init reducer for seeding data.
+
+TABLE
+- user
+  - Fields:
+    - id: number (i32, primary key)
+    - name: string
+    - age: number (i32)
+    - active: boolean
+
+REDUCERS
+- init: insert exactly two rows on database initialization:
+  1. (id=1, name="Alice", age=30, active=true)
+  2. (id=2, name="Bob", age=22, active=false)
