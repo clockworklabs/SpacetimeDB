@@ -1,8 +1,6 @@
 ---
 title: Testing
-slug: /spacetimeauth/testing
 ---
-
 
 :::warning
 

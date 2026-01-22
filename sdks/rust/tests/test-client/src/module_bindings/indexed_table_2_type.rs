@@ -14,3 +14,33 @@ pub struct IndexedTable2 {
 impl __sdk::InModule for IndexedTable2 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `IndexedTable2`.
+///
+/// Provides typed access to columns for query building.
+pub struct IndexedTable2Cols {
+    pub player_id: __sdk::__query_builder::Col<IndexedTable2, u32>,
+    pub player_snazz: __sdk::__query_builder::Col<IndexedTable2, f32>,
+}
+
+impl __sdk::__query_builder::HasCols for IndexedTable2 {
+    type Cols = IndexedTable2Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        IndexedTable2Cols {
+            player_id: __sdk::__query_builder::Col::new(table_name, "player_id"),
+            player_snazz: __sdk::__query_builder::Col::new(table_name, "player_snazz"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `IndexedTable2`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct IndexedTable2IxCols {}
+
+impl __sdk::__query_builder::HasIxCols for IndexedTable2 {
+    type IxCols = IndexedTable2IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        IndexedTable2IxCols {}
+    }
+}

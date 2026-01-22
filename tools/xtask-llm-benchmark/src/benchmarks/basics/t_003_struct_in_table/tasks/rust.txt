@@ -7,7 +7,7 @@ TYPES
     - y: i32
 
 TABLE
-- entities
+- entity
   - Struct: Entity
   - Fields:
     - id: i32 (primary key)

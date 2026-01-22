@@ -1,0 +1,14 @@
+Write a SpacetimeDB backend module in TypeScript that demonstrates unique constraints and B-Tree indexes.
+
+TABLE
+- account
+  - Fields:
+    - id: number (i32, primary key)
+    - email: string (unique)
+    - name: string
+  - Index: byName (btree on name)
+
+REDUCERS
+- seed: insert two rows:
+  - (id=1, email="a@example.com", name="Alice")
+  - (id=2, email="b@example.com", name="Bob")

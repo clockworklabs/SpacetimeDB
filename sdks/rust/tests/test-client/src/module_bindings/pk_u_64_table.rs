@@ -140,3 +140,19 @@ impl<'ctx> PkU64NUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `PkU64`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait pk_u64QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `PkU64`.
+    fn pk_u64(&self) -> __sdk::__query_builder::Table<PkU64>;
+}
+
+impl pk_u64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn pk_u64(&self) -> __sdk::__query_builder::Table<PkU64> {
+        __sdk::__query_builder::Table::new("pk_u64")
+    }
+}

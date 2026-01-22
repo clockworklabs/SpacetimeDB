@@ -4,96 +4,302 @@ Generated from: `/__w/SpacetimeDB/SpacetimeDB/tools/xtask-llm-benchmark/../../do
 
 ## Summary
 
-- **Total failures analyzed**: 24
-
-## Analysis
-
-# Analysis of SpacetimeDB Benchmark Failures
-
-## Rust Failures
-
-### 1. Root Causes
-1. **Missing Primary Keys and Public Modifiers**:
-   - Several tests (e.g., `t_005_update`, `t_006_delete`, `t_007_crud`, etc.) fail due to missing access modifiers on the struct fields. Notably, primary keys should have `pub` to be accessible.
-   
-2. **Schedule At Usage**:
-   - In scheduled tests like `t_002_scheduled_table` and `t_017_scheduled_columns`, the documentation does not clearly explain how to properly set up scheduled reducers and columns.
-
-3. **Table Definitions**:
-   - Errors in identifying the tables may suggest that the documentation lacks details on how to ensure tables are created or seeded correctly before executing tests. 
-
-4. **General Error Handling**:
-   - Many errors include warnings about instability, indicating the documentation hasn’t adequately prepared users for expected limitations or how to work around them.
-
-### 2. Recommendations
-#### a. Update Documentation for Struct Fields
-- **Section**: Struct Field Modifiers 
-- **Change**: Reinforce that all fields in structs representing tables should be declared as `pub` (public).
-    ```rust
-    #[primary_key]
-    pub id: i32,
-    ```
-
-#### b. Clarify Schedules and Reducers
-- **Section**: Scheduling and Reducers
-- **Change**: Provide specific examples that detail correct usage of scheduled reducers and column definitions.
-    ```rust
-    #[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
-    ```
-  
-#### c. Table Creation and Seeding
-- **Section**: Database Setup
-- **Change**: Include a walkthrough for initializing and seeding tables prior to executing tests.
-  
-#### d. Error Handling in Tests
-- **Section**: Error Messages
-- **Change**: Update the documentation to clarify the potential implications of unstable commands and how to handle them, including fallbacks or alternative methods.
-
-### 3. Priority
-- **High**: Improvements on struct field access modifiers and scheduling examples. 
-- **Medium**: Recommendations on table setup and seeding.
-- **Low**: Enhancements to error handling and stability notes.
+- **Total failures analyzed**: 35
 
 ---
 
-## C# Failures
+# Analysis of SpacetimeDB Benchmark Test Failures
 
-### 1. Root Causes
-1. **Missing Public Modifiers**:
-   - Similar to Rust, many C# errors arise from the lack of `public` modifiers for struct fields, which can affect accessibility (e.g., `t_004_insert`, `t_006_delete`, etc.).
+## Rust / rustdoc_json Failures
 
-2. **Table Name Consistency Issues**:
-   - Documented table names must match the expected names in the declarations to avoid runtime errors regarding nonexistent tables.
+### Compile/Publish Errors
 
-3. **Redundant Modifiers**:
-   - There are inconsistencies where the `Public = true` attribute is unnecessary in certain contexts, leading to confusion.
+#### 1. Test: t_002_scheduled_table
 
-4. **Unstable Command Warnings**:
-   - Like Rust, frequent unstable command warnings highlight the need for better communication regarding command limitations.
+**The generated code**:
+```rust
+use spacetimedb::{table, reducer, ReducerContext, Table, ScheduleAt};
 
-### 2. Recommendations
-#### a. Overview of Struct Fields
-- **Section**: Struct Field Modifiers 
-- **Change**: Emphasize that all fields must be marked as `public` to ensure accessibility within the library.
-    ```csharp
-    [PrimaryKey] public int Id;
-    ```
+#[table(name = tick_timer, schedule(column = scheduled_at, reducer = tick))]
+pub struct TickTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+}
 
-#### b. Consistent Table Naming
-- **Section**: Table Naming Conventions
-- **Change**: Outline naming conventions clearly to ensure consistency between struct definitions and database references.
-  
-#### c. Clean Up Redundant Modifiers
-- **Section**: Table Attribute Usage
-- **Change**: Simplify the examples that use `Public = true`, focusing on when it is truly necessary.
-  
-#### d. Addressing Unstable Command Handling
-- **Section**: Managing Instabilities
-- **Change**: Provide guidance on how to manage and respond to warnings during command execution.
+#[reducer]
+pub fn tick(_ctx: &ReducerContext) {
+    // Scheduled reducer invoked by tick_timer
+}
 
-### 3. Priority
-- **High**: Adjustments on struct field access and consistent naming conventions.
-- **Medium**: Cleanup on redundant modifiers and reasserting proper access control.
-- **Low**: Instructions on managing unstable commands.
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    ctx.db.tick_timer().insert(TickTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::RepeatMicros(50_000),
+    });
+}
+```
 
-With these changes, we expect a decrease in benchmark test failures and enhanced reliability in user implementations.
+**The golden example**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+use std::time::Duration;
+
+#[table(name = tick_timer, scheduled(tick))]
+pub struct TickTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+}
+
+#[reducer]
+pub fn tick(_ctx: &ReducerContext, _row: TickTimer) -> Result<(), String> {
+    Ok(())
+}
+
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) -> Result<(), String> {
+    ctx.db.tick_timer().insert(TickTimer {
+        scheduled_id: 0,
+        scheduled_at: ScheduleAt::Interval(Duration::from_millis(50).into()),
+    });
+    Ok(())
+}
+```
+
+**Error**: `publish_error: spacetime publish failed (exit=1)`
+
+**Explain the difference**:
+- The incorrect `schedule` attribute used improper syntax (column and reducer mentioned separately).
+- The `tick` reducer should accept a `TickTimer` row parameter.
+- The `scheduled_at` assignment is incorrect (incorrect type used).
+
+**Root cause**:
+Documentation does not clarify the need to use the `scheduled` attribute correctly and specify function signatures for reducers expected by the API.
+
+**Recommendation**:
+Update documentation to “Must use attribute `scheduled(tick)` and ensure the reducer functions accept the required parameters as specified.” Example:
+
+```rust
+#[table(name = tick_timer, scheduled(tick))]
+// correct usage
+```
+
+---
+
+#### 2. Test: t_017_scheduled_columns
+
+**The generated code**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+
+#[table(name = tick_timer, schedule(reducer = tick, column = scheduled_at))]
+pub struct TickTimer {
+    #[primary_key]
+    #[auto_inc]
+    scheduled_id: u64,
+    scheduled_at: ScheduleAt,
+}
+
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    if ctx.db.tick_timer().count() == 0 {
+        ctx.db.tick_timer().insert(TickTimer {
+            scheduled_id: 0,
+            scheduled_at: ScheduleAt::repeat_us(50_000),
+        });
+    }
+}
+
+#[reducer(scheduled)]
+pub fn tick(_ctx: &ReducerContext, _row: TickTimer) {}
+```
+
+**The golden example**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, ScheduleAt, Table};
+use std::time::Duration;
+
+#[table(name = tick_timer, scheduled(tick))]
+pub struct TickTimer {
+    #[primary_key]
+    #[auto_inc]
+    pub scheduled_id: u64,
+    pub scheduled_at: ScheduleAt,
+}
+
+#[reducer]
+pub fn tick(_ctx: &ReducerContext, _schedule: TickTimer) {}
+
+#[reducer(init)]
+pub fn init(ctx: &ReducerContext) {
+    let every_50ms: ScheduleAt = Duration::from_millis(50).into();
+    ctx.db.tick_timer().insert(TickTimer {
+        scheduled_id: 0,
+        scheduled_at: every_50ms,
+    });
+}
+```
+
+**Error**: `publish_error: spacetime publish failed (exit=1)`
+
+**Explain the difference**:
+- Incorrect `schedule` attribute syntax causes failures in specifying a reducer.
+- The `scheduled_at` type is incorrectly set to `repeat_us`, not conforming to the Interval structure.
+
+**Root cause**:
+Lack of detailed guidelines in documentation for correctly annotating and defining reducer routes expected during schema description.
+
+**Recommendation**:
+Include a guide section in the documentation detailing all attributes for tables and reducers, specifically emphasizing parameter types and structure expectations. 
+
+---
+
+### Other Failures
+
+#### 3. Test: t_003_struct_in_table
+
+**The generated code**:
+```rust
+use spacetimedb::{table, reducer, ReducerContext, Table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+pub struct Position {
+    x: i32,
+    y: i32,
+}
+
+#[table(name = entity)]
+pub struct Entity {
+    #[primary_key]
+    id: i32,
+    pos: Position,
+}
+
+#[reducer]
+pub fn add(ctx: &ReducerContext, id: i32, x: i32, y: i32) {
+    ctx.db.entity().insert(Entity { id, pos: Position { x, y } });
+}
+```
+
+**The golden example**:
+```rust
+use spacetimedb::{table, SpacetimeType};
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct Position {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[table(name = entity)]
+pub struct Entity {
+    #[primary_key]
+    pub id: i32,
+    pub pos: Position,
+}
+```
+
+**Error**: `schema_parity: reducers differ - expected [], got ["add()"]`
+
+**Explain the difference**:
+- The reducer function should not be necessary if there is no reduction logic within the example.
+- The `Position` struct lacks appropriate visibility modifiers, leading to nil results in the API.
+
+**Root cause**:
+Documentation does not clarify when reducers are expected and how to define and declare public fields necessary for SpacetimeDB API to function correctly.
+
+**Recommendation**:
+Clarify in the documentation that reducers should only be included when necessary, along with showcasing fields with visibility for structs.
+
+---
+
+#### 4. Test: t_013_spacetime_sum_type
+
+**The generated code**:
+```rust
+use spacetimedb::{table, reducer, ReducerContext, Table, SpacetimeType};
+
+#[derive(SpacetimeType)]
+pub struct Rect {
+    width: i32,
+    height: i32,
+}
+
+#[derive(SpacetimeType)]
+pub enum Shape {
+    Circle(i32),
+    Rectangle(Rect),
+}
+
+#[table(name = result)]
+pub struct ResultRow {
+    #[primary_key]
+    id: i32,
+    value: Shape,
+}
+
+#[reducer]
+pub fn set_circle(ctx: &ReducerContext, id: i32, radius: i32) {
+    ctx.db.result().insert(ResultRow {
+        id,
+        value: Shape::Circle(radius),
+    });
+}
+```
+
+**The golden example**:
+```rust
+use spacetimedb::{reducer, table, ReducerContext, SpacetimeType, Table};
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub struct Rect {
+    pub width: i32,
+    pub height: i32,
+}
+
+#[derive(SpacetimeType, Clone, Debug)]
+pub enum Shape {
+    Circle(i32),
+    Rectangle(Rect),
+}
+
+#[table(name = result)]
+pub struct ResultRow {
+    #[primary_key]
+    pub id: i32,
+    pub value: Shape,
+}
+
+#[reducer]
+pub fn set_circle(ctx: &ReducerContext, id: i32, radius: i32) {
+    ctx.db.result().insert(ResultRow { id, value: Shape::Circle(radius) });
+}
+```
+
+**Error**: `sum_type_row_parity: spacetime sql failed: Error: no such table: result`
+
+**Explain the difference**:
+- Visibility modifiers are absent on the `Rect` and `Shape` structs.
+- The naming convention for the struct is inconsistent with usage.
+
+**Root cause**:
+Documentation does not specify the significance of visibility in structs and enums directly influencing the usage of their produced database entries.
+
+**Recommendation**:
+Amend documentation to highlight the importance of public fields and specifically demonstrate the effect of struct and enum visibility.
+
+---
+
+### Additional Recommendations
+
+1. **Documentation Structure**: Enhance the overall organization and clarity in the documentation relating to syntax rules. Providing clear examples of common pitfalls with API usages can prevent such issues.
+
+2. **Consistency**: Ensure that examples maintain consistent use of visibility and thorough descriptions of error types relevant to expected outcomes.
+
+3. **Error Handling**: Clarify the expected patterns and structures for error handling within API calls and data flows.
+
+By implementing these documentation changes and clarifications, debug routines should become more intuitive, resulting in fewer benchmark test failures.

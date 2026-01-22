@@ -398,11 +398,30 @@ For more details on querying with indexes, including range queries and multi-col
 Reducers run in an isolated environment and **cannot** interact with the outside world:
 
 - ❌ No network requests
-- ❌ No file system access  
+- ❌ No file system access
 - ❌ No system calls
 - ✅ Only database operations
 
 If you need to interact with external systems, use [Procedures](/functions/procedures) instead. Procedures can make network calls and perform other side effects, but they have different execution semantics and limitations.
+
+:::warning Global and Static Variables Do Not Persist
+Global variables, static variables, and module-level state do **not** persist across reducer calls. Each reducer invocation runs in a fresh execution environment. Any data stored in global or static variables will be lost when the reducer completes.
+
+Always store persistent state in tables. If you need to cache computed values or maintain state across invocations, use a table to store that data.
+
+```rust
+// ❌ This will NOT persist across reducer calls
+static mut COUNTER: u64 = 0;
+
+// ✅ Store state in a table instead
+#[spacetimedb::table(name = counter)]
+pub struct Counter {
+    #[primary_key]
+    id: u32,
+    value: u64,
+}
+```
+:::
 
 ## Next Steps
 

@@ -13,3 +13,31 @@ pub struct VecF32 {
 impl __sdk::InModule for VecF32 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `VecF32`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecF32Cols {
+    pub f: __sdk::__query_builder::Col<VecF32, Vec<f32>>,
+}
+
+impl __sdk::__query_builder::HasCols for VecF32 {
+    type Cols = VecF32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecF32Cols {
+            f: __sdk::__query_builder::Col::new(table_name, "f"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecF32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecF32IxCols {}
+
+impl __sdk::__query_builder::HasIxCols for VecF32 {
+    type IxCols = VecF32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecF32IxCols {}
+    }
+}
