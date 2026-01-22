@@ -14,3 +14,37 @@ pub struct PkString {
 impl __sdk::InModule for PkString {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `PkString`.
+///
+/// Provides typed access to columns for query building.
+pub struct PkStringCols {
+    pub s: __sdk::__query_builder::Col<PkString, String>,
+    pub data: __sdk::__query_builder::Col<PkString, i32>,
+}
+
+impl __sdk::__query_builder::HasCols for PkString {
+    type Cols = PkStringCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        PkStringCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+            data: __sdk::__query_builder::Col::new(table_name, "data"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `PkString`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct PkStringIxCols {
+    pub s: __sdk::__query_builder::IxCol<PkString, String>,
+}
+
+impl __sdk::__query_builder::HasIxCols for PkString {
+    type IxCols = PkStringIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        PkStringIxCols {
+            s: __sdk::__query_builder::IxCol::new(table_name, "s"),
+        }
+    }
+}

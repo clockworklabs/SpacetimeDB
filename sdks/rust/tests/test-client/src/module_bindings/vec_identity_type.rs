@@ -13,3 +13,31 @@ pub struct VecIdentity {
 impl __sdk::InModule for VecIdentity {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `VecIdentity`.
+///
+/// Provides typed access to columns for query building.
+pub struct VecIdentityCols {
+    pub i: __sdk::__query_builder::Col<VecIdentity, Vec<__sdk::Identity>>,
+}
+
+impl __sdk::__query_builder::HasCols for VecIdentity {
+    type Cols = VecIdentityCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        VecIdentityCols {
+            i: __sdk::__query_builder::Col::new(table_name, "i"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `VecIdentity`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct VecIdentityIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for VecIdentity {
+    type IxCols = VecIdentityIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        VecIdentityIxCols {}
+    }
+}

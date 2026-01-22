@@ -7343,6 +7343,7 @@ dependencies = [
  "spacetimedb-bindings-sys 1.11.3",
  "spacetimedb-lib 1.11.3",
  "spacetimedb-primitives 1.11.3",
+ "spacetimedb-query-builder",
  "trybuild",
 ]
 
@@ -8096,6 +8097,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "spacetimedb-query-builder"
+version = "1.11.3"
+dependencies = [
+ "spacetimedb-lib 1.11.3",
+]
+
+[[package]]
 name = "spacetimedb-sats"
 version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8209,6 +8217,7 @@ dependencies = [
  "spacetimedb-data-structures",
  "spacetimedb-lib 1.11.3",
  "spacetimedb-metrics",
+ "spacetimedb-query-builder",
  "spacetimedb-sats 1.11.3",
  "spacetimedb-testing",
  "thiserror 1.0.69",
