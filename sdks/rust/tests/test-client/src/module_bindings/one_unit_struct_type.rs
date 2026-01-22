@@ -15,3 +15,31 @@ pub struct OneUnitStruct {
 impl __sdk::InModule for OneUnitStruct {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneUnitStruct`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneUnitStructCols {
+    pub s: __sdk::__query_builder::Col<OneUnitStruct, UnitStruct>,
+}
+
+impl __sdk::__query_builder::HasCols for OneUnitStruct {
+    type Cols = OneUnitStructCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneUnitStructCols {
+            s: __sdk::__query_builder::Col::new(table_name, "s"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneUnitStruct`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneUnitStructIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneUnitStruct {
+    type IxCols = OneUnitStructIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneUnitStructIxCols {}
+    }
+}

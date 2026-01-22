@@ -124,3 +124,19 @@ impl<'ctx> UniqueU64NUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueU64`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_u64QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueU64`.
+    fn unique_u64(&self) -> __sdk::__query_builder::Table<UniqueU64>;
+}
+
+impl unique_u64QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_u64(&self) -> __sdk::__query_builder::Table<UniqueU64> {
+        __sdk::__query_builder::Table::new("unique_u64")
+    }
+}

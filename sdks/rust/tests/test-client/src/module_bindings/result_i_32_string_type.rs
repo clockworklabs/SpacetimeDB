@@ -13,3 +13,31 @@ pub struct ResultI32String {
 impl __sdk::InModule for ResultI32String {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `ResultI32String`.
+///
+/// Provides typed access to columns for query building.
+pub struct ResultI32StringCols {
+    pub r: __sdk::__query_builder::Col<ResultI32String, Result<i32, String>>,
+}
+
+impl __sdk::__query_builder::HasCols for ResultI32String {
+    type Cols = ResultI32StringCols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        ResultI32StringCols {
+            r: __sdk::__query_builder::Col::new(table_name, "r"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `ResultI32String`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct ResultI32StringIxCols {}
+
+impl __sdk::__query_builder::HasIxCols for ResultI32String {
+    type IxCols = ResultI32StringIxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        ResultI32StringIxCols {}
+    }
+}
