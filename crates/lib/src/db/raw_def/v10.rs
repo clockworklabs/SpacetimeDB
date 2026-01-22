@@ -921,4 +921,3 @@ impl RawTableDefBuilderV10<'_> {
             .map(|i| ColId(i as u16))
     }
 }
-
