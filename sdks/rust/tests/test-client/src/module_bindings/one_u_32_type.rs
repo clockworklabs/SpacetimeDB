@@ -13,3 +13,31 @@ pub struct OneU32 {
 impl __sdk::InModule for OneU32 {
     type Module = super::RemoteModule;
 }
+
+/// Column accessor struct for the table `OneU32`.
+///
+/// Provides typed access to columns for query building.
+pub struct OneU32Cols {
+    pub n: __sdk::__query_builder::Col<OneU32, u32>,
+}
+
+impl __sdk::__query_builder::HasCols for OneU32 {
+    type Cols = OneU32Cols;
+    fn cols(table_name: &'static str) -> Self::Cols {
+        OneU32Cols {
+            n: __sdk::__query_builder::Col::new(table_name, "n"),
+        }
+    }
+}
+
+/// Indexed column accessor struct for the table `OneU32`.
+///
+/// Provides typed access to indexed columns for query building.
+pub struct OneU32IxCols {}
+
+impl __sdk::__query_builder::HasIxCols for OneU32 {
+    type IxCols = OneU32IxCols;
+    fn ix_cols(table_name: &'static str) -> Self::IxCols {
+        OneU32IxCols {}
+    }
+}

@@ -24,6 +24,7 @@ spacetimedb-bindings-sys.workspace = true
 spacetimedb-lib.workspace = true
 spacetimedb-bindings-macro.workspace = true
 spacetimedb-primitives.workspace = true
+spacetimedb-query-builder.workspace = true
 
 anyhow.workspace = true
 bytemuck.workspace = true
