@@ -608,6 +608,9 @@ jobs:
               exit 1
           }
 
+      - name: Hydrate Unity SDK DLLs
+        run: cargo ci dlls
+
       - name: Check Unity meta files
         uses: DeNA/unity-meta-check@v3
         with:
@@ -633,7 +636,7 @@ jobs:
           # Replace the com.clockworklabs.spacetimedbsdk dependency with the current branch.
           # Note: Pointing to a local directory does not work, because our earlier steps nuke our meta files, which then causes Unity to not properly respect the DLLs (e.g.
           # codegen does not work properly).
-          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "https://github.com/clockworklabs/SpacetimeDB.git?path=sdks/csharp#${{ github.head_ref }}"' manifest.json
+          yq e -i '.dependencies["com.clockworklabs.spacetimedbsdk"] = "file:../../../../sdks/csharp"' manifest.json
           cat manifest.json
 
       - uses: actions/cache@v3
