@@ -215,7 +215,7 @@ def main():
 
         smoketests.STDB_CONFIG = Path(config_file.name).read_text()
 
-    #build_template_target()
+    build_template_target()
     buffer = not args.show_all_output
     verbosity = 2
 

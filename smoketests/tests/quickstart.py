@@ -154,6 +154,7 @@ class BaseQuickstart(Smoketest):
         )
         self.project_path = server_path / "spacetimedb"
         shutil.copy2(STDB_DIR / "rust-toolchain.toml", self.project_path)
+        print("write file: %s" % (self.project_path / self.server_file))
         _write_file(self.project_path / self.server_file, _parse_quickstart(self.server_doc, self.lang, self._module_name, server=True))
         self.server_postprocess(self.project_path)
         self.spacetime("build", "-d", "-p", self.project_path, capture_stderr=True)
