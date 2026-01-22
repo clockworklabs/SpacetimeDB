@@ -12,6 +12,14 @@ The SpacetimeDB C++ SDK provides a sophisticated compile-time/runtime hybrid sys
 - **Nominal type system**: Types identified by their declared names, not structural analysis
 - **Error detection**: Multi-layer validation system from compile-time through module publishing
 
+### 2. Outcome<T> - Rust-Like Error Handling
+The SDK provides `Outcome<T>`, a type-safe error handling mechanism matching Rust's `Result<T, E>` pattern:
+- **Outcome<void>** (type alias `ReducerResult`): Used by reducers, can return success (`Ok()`) or error (`Err(message)`)
+- **Outcome<T>**: Used by procedures and other operations, returns either a value or an error message
+- **No exceptions**: Errors are handled via return values, not C++ exceptions
+- **Graceful error handling**: Reducer errors are caught by the runtime, rolled back, and reported to the caller without crashing
+- **Serializable**: Error messages are automatically serialized and sent to clients
+
 ### 2. Priority-Ordered Initialization System
 The SDK uses a numbered __preinit__ function system to ensure correct initialization order:
 
@@ -27,6 +35,133 @@ __preinit__40_ - Views
 __preinit__50_ - Procedures
 __preinit__99_ - Type validation and error detection (last)
 ```
+
+## Error Handling: Outcome<T> System
+
+### Overview
+
+The C++ SDK uses `Outcome<T>` for type-safe, exception-free error handling that matches Rust's `Result<T, E>` pattern (where `E` is always `std::string`).
+
+### Type Aliases and Core Types
+
+```cpp
+// For reducers - cannot fail with a value, only with an error message
+using ReducerResult = Outcome<void>;
+
+// For procedures - return a value on success, error message on failure
+template<typename T> class Outcome<T>;
+```
+
+### Reducer Error Handling (ReducerResult / Outcome<void>)
+
+**Creating Results**:
+```cpp
+SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
+    // Validation with early error return
+    if (name.empty()) {
+        return Err("Name cannot be empty");
+    }
+    if (name.length() > 255) {
+        return Err("Name is too long");
+    }
+    
+    // Success path
+    ctx.db[users].insert(User{0, name});
+    return Ok();  // No value needed - just success
+}
+```
+
+**Checking Results**:
+```cpp
+SPACETIMEDB_REDUCER(call_other_logic, ReducerContext ctx) {
+    // Note: In practice, reducers don't call other reducers directly
+    // But if implementing error-handling helper functions:
+    auto result = validate_something();
+    
+    if (result.is_err()) {
+        return Err(result.error());  // Propagate error
+    }
+    
+    // Continue on success
+    return Ok();
+}
+```
+
+**Error Semantics**:
+- When `Err()` is returned:
+  - The reducer transaction is **rolled back** (not committed to the log)
+  - The error message is captured and returned to the caller
+  - No database changes are persisted
+  - No WASM crash or panic occurs
+- When `Ok()` is returned:
+  - All database mutations are committed
+  - The transaction is logged
+  - Success is reported to the caller
+
+### Procedure Error Handling (Outcome<T>)
+
+**Creating Results**:
+```cpp
+SPACETIMEDB_PROCEDURE(User, get_user_by_id, ProcedureContext ctx, uint32_t user_id) {
+    // Procedures can return values or errors
+    if (user_id == 0) {
+        throw std::runtime_error("User ID cannot be zero");  // Or return error
+    }
+    
+    // Return a value
+    User user = ctx.db[users].id.get(user_id);
+    return user;  // Return value directly (not wrapped in Outcome)
+}
+
+// For procedures that validate/check conditions
+SPACETIMEDB_PROCEDURE(bool, user_exists, ProcedureContext ctx, uint32_t user_id) {
+    // Procedures return raw T, not Outcome<T>
+    // Use exceptions for errors or return boolean false
+    return ctx.db[users].id.contains(user_id);
+}
+```
+
+**Key Difference from Reducers**:
+- Procedures return raw `T` (not `Outcome<T>`)
+- On error, procedures can use LOG_PANIC() or LOG_FATAL() to end the host call which uses std:abort() behind the scenes
+- Return values are sent directly to the caller
+
+### Outcome<T> API Reference
+
+```cpp
+// Creating success outcomes
+Outcome<T>::Ok(value)      // Outcome<T> - with a value
+Ok()                       // Outcome<void> - without a value  
+Ok(value)                  // Helper - type deduced from value
+
+// Creating error outcomes
+Outcome<T>::Err(message)   // Outcome<T> - with error message
+Err(message)               // Outcome<void> - with error message
+Err<T>(message)            // Helper - explicit type specification
+
+// Checking results
+outcome.is_ok()            // bool - true if success
+outcome.is_err()           // bool - true if error
+
+// Accessing values/errors
+outcome.value()            // T& or T&& - get success value (UB if error)
+outcome.error()            // const std::string& - get error message (UB if success)
+```
+
+### Design Rationale
+
+**Why not exceptions?**
+- WASM modules have limited error handling facilities, the latest WASM allows for them but requires GC
+- Exceptions add code size and complexity
+- Explicit error returns fit better with BSATN serialization
+- Matches Rust SDK's error handling pattern
+
+**Why separate ReducerResult and Outcome<T>?**
+- Reducers need rollback semantics (transactions)
+- ReducerResult provides clearer intent for reducer code
+- Outcome<T> is more flexible for general operations
+
+---
 
 ## Detailed Type Registration Flow
 
@@ -144,13 +279,21 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     User user{0, name, true};  // id=0 will be auto-generated
     User inserted_user = ctx.db[users].insert(user);  // Returns user with generated ID
     LOG_INFO("Created user with ID: " + std::to_string(inserted_user.id));
+    return Ok();  // Must return ReducerResult
 }
 ```
 
 **Reducer Registration** (__preinit__30_):
 ```cpp
-SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name)
-// Generates registration function that captures parameter types and creates dispatch handler
+SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name) {
+    if (name.empty()) {
+        return Err("Name cannot be empty");  // Return error - rolled back
+    }
+    ctx.db[users].insert(User{0, name});
+    return Ok();  // Success - transaction committed
+}
+// Generates registration function that captures parameter types, creates dispatch handler,
+// and wraps return value in ReducerResult (Outcome<void>)
 ```
 
 #### 2.3 Multiple Primary Key Detection
@@ -394,6 +537,7 @@ When an enum with namespace qualification is registered:
 ### 3. Error Handling Strategy
 
 **Rust SDK**:
+- Result<T, E> for operation errors with rich error types
 - Compile-time errors prevent building invalid modules
 - Type system prevents most runtime errors
 - Standard Rust error messages
@@ -403,12 +547,24 @@ When an enum with namespace qualification is registered:
 - Graceful error handling with exception propagation
 - .NET debugging tools integration
 
-**C++ SDK**:
-- **Error module replacement strategy**:
-  - Invalid modules replaced with special error modules
-  - Error type names embed descriptive information
-  - SpacetimeDB server provides clear error messages
-  - Comprehensive error categorization and reporting
+**C++ SDK** - Two-Tier System:
+1. **Reducer errors** (ReducerResult / Outcome<void>):
+   - Return `Ok()` on success (transaction committed)
+   - Return `Err(message)` on failure (transaction rolled back)
+   - Exceptions not used for normal error cases
+   - Matches Rust's Result<(), E> pattern
+   
+2. **Type registration errors**:
+   - Invalid modules replaced with special error modules
+   - Error type names embed descriptive information
+   - SpacetimeDB server provides clear error messages
+   - Comprehensive error categorization and reporting
+
+**Outcome<T> Type**:
+- Type-safe, exception-free error handling
+- Serializable to binary format for client transmission
+- Works in WASM environment without exception infrastructure
+- API matches Rust Result pattern: `is_ok()`, `is_err()`, `value()`, `error()`
 
 ### 4. Type System Philosophy
 

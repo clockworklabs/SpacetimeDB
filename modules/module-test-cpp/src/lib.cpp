@@ -2,8 +2,6 @@
 #define STDB_LOG_LEVEL ::SpacetimeDb::LogLevelValue::TRACE
 
 #include <spacetimedb.h>
-#include <spacetimedb/range_queries.h>
-#include <spacetimedb/procedure_macros.h>
 #include <variant>
 #include <optional>
 

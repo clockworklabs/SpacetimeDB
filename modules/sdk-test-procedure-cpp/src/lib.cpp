@@ -1,5 +1,4 @@
 #include "spacetimedb.h"
-#include "spacetimedb/procedure_macros.h"
 
 using namespace SpacetimeDb;
 

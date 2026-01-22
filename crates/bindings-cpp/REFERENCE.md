@@ -42,6 +42,7 @@ FIELD_PrimaryKey(my_table, id);
 // 4. Reducers (functions clients can call)
 SPACETIMEDB_REDUCER(my_function, ReducerContext ctx, /* parameters */) {
     // Your logic here
+    return Ok();
 }
 ```
 
@@ -111,6 +112,7 @@ Reducers are functions that modify data and can be called by clients:
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     User user{0, name, true};
     ctx.db[users].insert(user);
+    return Ok();
 }
 ```
 
@@ -161,6 +163,7 @@ SPACETIMEDB_TABLE(LogEntry, audit_logs, Public);
 ```cpp
 SPACETIMEDB_REDUCER(function_name, ReducerContext ctx, /* parameters */) {
     // Reducer logic
+    return Ok();
 }
 ```
 
@@ -168,6 +171,7 @@ SPACETIMEDB_REDUCER(function_name, ReducerContext ctx, /* parameters */) {
 - First parameter must always be `ReducerContext ctx`
 - Additional parameters are passed by clients
 - All parameter types must be registered with `SPACETIMEDB_STRUCT`
+- Reducer must return `ReducerResult` (Outcome<void>): either `Ok()` on success or `Err(message)` on error
 
 ### Lifecycle Reducers
 
@@ -265,11 +269,13 @@ FIELD_PrimaryKey(users, id);
 // Efficient operations using primary key
 SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx, uint32_t user_id) {
     ctx.db[users_id].delete_by_key(user_id);
+    return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_user, ReducerContext ctx, uint32_t user_id, std::string new_name) {
     User updated_user{user_id, new_name, true};
     ctx.db[users_id].update(updated_user);
+    return Ok();
 }
 ```
 
@@ -302,6 +308,7 @@ SPACETIMEDB_REDUCER(dice_game, ReducerContext ctx, std::string player, uint32_t 
     // Convenience method for single values
     int random_int = ctx.random<int>();
     double random_double = ctx.random<double>();
+    return Ok();
 }
 ```
 
@@ -404,6 +411,7 @@ SPACETIMEDB_REDUCER(play_slots, ReducerContext ctx, std::string player_name) {
     // Record the result
     GameResult game{0, player_name, "slots", result, payout, ctx.timestamp};
     ctx.db[game_results].insert(game);
+    return Ok();
 }
 ```
 
@@ -675,6 +683,7 @@ SPACETIMEDB_REDUCER(get_user, ReducerContext ctx, uint32_t user_id) {
     if (user_opt.has_value()) {
         LOG_INFO("Found user: " + user_opt->name);
     }
+    return Ok();
 }
 
 // Unique field access
@@ -683,6 +692,7 @@ SPACETIMEDB_REDUCER(find_by_email, ReducerContext ctx, std::string email) {
         LOG_INFO("User with email " + email + ": " + user.name);
         break; // Unique, so only one result
     }
+    return Ok();
 }
 
 // Non-unique index
@@ -690,6 +700,7 @@ SPACETIMEDB_REDUCER(users_by_age, ReducerContext ctx, uint32_t age) {
     for (const auto& user : ctx.db[users_age].filter(age)) {
         LOG_INFO("User age " + std::to_string(age) + ": " + user.name);
     }
+    return Ok();
 }
 ```
 
@@ -714,6 +725,7 @@ SPACETIMEDB_REDUCER(products_in_price_range, ReducerContext ctx, double min_pric
     for (const auto& product : ctx.db[products_price].filter(price_range)) {
         LOG_INFO("Product in range: " + product.name + " - $" + std::to_string(product.price));
     }
+    return Ok();
 }
 
 // All range construction patterns
@@ -733,6 +745,7 @@ SPACETIMEDB_REDUCER(demonstrate_ranges, ReducerContext ctx) {
     for (const auto& user : ctx.db[users_name].filter(name_range)) {
         LOG_INFO("User: " + user.name);
     }
+    return Ok();
 }
 ```
 
@@ -799,6 +812,7 @@ struct User {
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     User user{ctx.sender, name};  // ctx.sender is the calling client's identity
     ctx.db[users].insert(user);
+    return Ok();
 }
 ```
 
@@ -827,6 +841,7 @@ struct Event {
 SPACETIMEDB_REDUCER(log_event, ReducerContext ctx, std::string event_name) {
     Event event{event_name, ctx.timestamp};  // Current time
     ctx.db[events].insert(event);
+    return Ok();
 }
 ```
 
@@ -874,6 +889,7 @@ SPACETIMEDB_REDUCER(process_scheduled_task, ReducerContext ctx, ScheduledTask ta
     auto next_run = ScheduleAt(TimeDuration::from_hours(24)); // Run in 24 hours
     ScheduledTask next_task{0, next_run, "Daily cleanup", ctx.timestamp};
     ctx.db[scheduled_tasks].insert(next_task);
+    return Ok();
 }
 
 // Create scheduled tasks from other reducers
@@ -883,6 +899,7 @@ SPACETIMEDB_REDUCER(schedule_reminder, ReducerContext ctx, std::string message, 
     ctx.db[scheduled_tasks].insert(reminder);
     
     LOG_INFO("Reminder scheduled for " + std::to_string(delay_seconds) + " seconds");
+    return Ok();
 }
 
 // ScheduleAt can be created with TimeDuration (relative) or Timestamp (absolute)
@@ -897,6 +914,7 @@ SPACETIMEDB_REDUCER(schedule_examples, ReducerContext ctx) {
     // Schedule tasks
     ctx.db[scheduled_tasks].insert(ScheduledTask{0, in_one_hour, "Hourly task", ctx.timestamp});
     ctx.db[scheduled_tasks].insert(ScheduledTask{0, in_five_minutes, "Quick task", ctx.timestamp});
+    return Ok();
 }
 ```
 
@@ -924,6 +942,7 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
         LogStopwatch timer("Database operation");
         // ... time-consuming operation ...
     } // Automatically logs duration
+    return Ok();
 }
 ```
 
@@ -1122,7 +1141,7 @@ SPACETIMEDB_REDUCER(send_message, ReducerContext ctx, uint32_t channel_id, std::
     
     if (!channel_exists) {
         LOG_ERROR("Channel not found");
-        return;
+        return Err("Channel not found");
     }
     
     Message message{0, channel_id, ctx.sender, content, ctx.timestamp};
