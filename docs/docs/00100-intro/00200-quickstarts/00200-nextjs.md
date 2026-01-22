@@ -128,7 +128,7 @@ spacetime logs my-nextjs-app
     <StepText>
       SpacetimeDB is client-side only — it cannot run during server-side rendering. The `app/providers.tsx` file uses the `"use client"` directive and wraps your app with `SpacetimeDBProvider`.
 
-      The template uses environment variables for configuration. Set `NEXT_PUBLIC_SPACETIMEDB_HOST` and `NEXT_PUBLIC_SPACETIMEDB_DB_NAME` to override defaults.
+      The template uses environment variables for configuration. Set `NEXT_PUBLIC_SPACETIMEDB_URI` and `NEXT_PUBLIC_SPACETIMEDB_MODULE` to override defaults.
     </StepText>
     <StepCode>
 ```tsx
@@ -139,14 +139,14 @@ import { useMemo } from 'react';
 import { SpacetimeDBProvider } from 'spacetimedb/react';
 import { DbConnection } from '../src/module_bindings';
 
-const HOST = process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? 'ws://localhost:3000';
-const DB_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_DB_NAME ?? 'my-nextjs-app';
+const URI = process.env.NEXT_PUBLIC_SPACETIMEDB_URI ?? 'ws://localhost:3000';
+const MODULE = process.env.NEXT_PUBLIC_SPACETIMEDB_MODULE ?? 'my-nextjs-app';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const connectionBuilder = useMemo(() =>
     DbConnection.builder()
-      .withUri(HOST)
-      .withModuleName(DB_NAME),
+      .withUri(URI)
+      .withModuleName(MODULE),
     []
   );
 
