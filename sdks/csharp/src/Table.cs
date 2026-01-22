@@ -154,6 +154,164 @@ namespace SpacetimeDB
                 cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
         }
 
+        public abstract class NullableRefUniqueIndexBase<Column>
+            where Column : class, IEquatable<Column>
+        {
+            protected abstract Column? GetKey(Row row);
+
+            private readonly Dictionary<Column, Row> cache = new();
+
+            public NullableRefUniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row =>
+                {
+                    var key = GetKey(row);
+                    if (key == null)
+                    {
+                        return;
+                    }
+                    cache.Add(key, row);
+                };
+                table.OnInternalDelete += row =>
+                {
+                    var key = GetKey(row);
+                    if (key == null)
+                    {
+                        return;
+                    }
+                    cache.Remove(key);
+                };
+            }
+
+            public Row? Find(Column value) => cache.TryGetValue(value, out var row) ? row : null;
+        }
+
+        public abstract class NullableRefBTreeIndexBase<Column>
+            where Column : class, IEquatable<Column>, IComparable<Column>
+        {
+            protected abstract Column? GetKey(Row row);
+
+            private readonly Dictionary<Column, HashSet<Row>> cache = new();
+
+            public NullableRefBTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row =>
+                {
+                    var key = GetKey(row);
+                    if (key == null)
+                    {
+                        return;
+                    }
+                    if (!cache.TryGetValue(key, out var rows))
+                    {
+                        rows = new();
+                        cache.Add(key, rows);
+                    }
+                    rows.Add(row);
+                };
+
+                table.OnInternalDelete += row =>
+                {
+                    var key = GetKey(row);
+                    if (key == null)
+                    {
+                        return;
+                    }
+                    if (!cache.TryGetValue(key, out var keyCache))
+                    {
+                        return;
+                    }
+                    keyCache.Remove(row);
+                    if (keyCache.Count == 0)
+                    {
+                        cache.Remove(key);
+                    }
+                };
+            }
+
+            public IEnumerable<Row> Filter(Column value) =>
+                cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
+        }
+
+        public abstract class NullableValueUniqueIndexBase<Column>
+            where Column : struct, IEquatable<Column>
+        {
+            protected abstract Column? GetKey(Row row);
+
+            private readonly Dictionary<Column, Row> cache = new();
+
+            public NullableValueUniqueIndexBase(RemoteTableHandle<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row =>
+                {
+                    var key = GetKey(row);
+                    if (!key.HasValue)
+                    {
+                        return;
+                    }
+                    cache.Add(key.Value, row);
+                };
+                table.OnInternalDelete += row =>
+                {
+                    var key = GetKey(row);
+                    if (!key.HasValue)
+                    {
+                        return;
+                    }
+                    cache.Remove(key.Value);
+                };
+            }
+
+            public Row? Find(Column value) => cache.TryGetValue(value, out var row) ? row : null;
+        }
+
+        public abstract class NullableValueBTreeIndexBase<Column>
+            where Column : struct, IEquatable<Column>, IComparable<Column>
+        {
+            protected abstract Column? GetKey(Row row);
+
+            private readonly Dictionary<Column, HashSet<Row>> cache = new();
+
+            public NullableValueBTreeIndexBase(RemoteTableHandle<EventContext, Row> table)
+            {
+                table.OnInternalInsert += row =>
+                {
+                    var key = GetKey(row);
+                    if (!key.HasValue)
+                    {
+                        return;
+                    }
+                    if (!cache.TryGetValue(key.Value, out var rows))
+                    {
+                        rows = new();
+                        cache.Add(key.Value, rows);
+                    }
+                    rows.Add(row);
+                };
+
+                table.OnInternalDelete += row =>
+                {
+                    var key = GetKey(row);
+                    if (!key.HasValue)
+                    {
+                        return;
+                    }
+                    if (!cache.TryGetValue(key.Value, out var keyCache))
+                    {
+                        return;
+                    }
+                    keyCache.Remove(row);
+                    if (keyCache.Count == 0)
+                    {
+                        cache.Remove(key.Value);
+                    }
+                };
+            }
+
+            public IEnumerable<Row> Filter(Column value) =>
+                cache.TryGetValue(value, out var rows) ? rows : Enumerable.Empty<Row>();
+        }
+
         /// <summary>
         /// Represents a parsed update to a table, storing the changes as a multi-dictionary delta
         /// mapping primary keys to their corresponding row updates.
