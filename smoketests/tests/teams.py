@@ -12,6 +12,9 @@ VIEWER = "Viewer"
 
 ROLES = [OWNER, ADMIN, DEVELOPER, VIEWER]
 
+def get(d: dict, k):
+    return (k, d[k])
+
 class CreateChildDatabase(Smoketest):
     AUTOPUBLISH = False
 
@@ -76,7 +79,7 @@ class ChangeDatabaseHierarchy(Smoketest):
         self.publish_module(f"{parent_name}/{child_name}", clear = False)
 
 
-class PermissionsTest(Smoketest):
+class TeamsPermissionsTest(Smoketest):
     AUTOPUBLISH = False
 
     @classmethod
@@ -160,12 +163,13 @@ class PermissionsTest(Smoketest):
         with open(self.config_path, 'w') as f:
             toml.dump(config, f)
 
-    def publish_as(self, role_and_token, module, code, clear = False):
-        print(f"publishing {module} as {role_and_token[0]}:")
+    def publish_as(self, role_and_token, module, code = None, clear = False, org = None):
+        print(f"publishing {module} with org {org} as {role_and_token[0]}:")
+        code = self.MODULE_CODE if code is None else code
         print(f"{code}")
         self.login_with(role_and_token[1])
         self.write_module_code(code)
-        self.publish_module(module, clear = clear)
+        self.publish_module(module, clear = clear, organization = org)
         return self.database_identity
 
     def sql_as(self, role_and_token, database, sql):
@@ -203,33 +207,55 @@ class PermissionsTest(Smoketest):
             super().tearDown()
 
 
-class MutableSql(PermissionsTest):
+class TeamsMutableSql(TeamsPermissionsTest):
     MODULE_CODE = """
 #[spacetimedb::table(name = person, public)]
 struct Person {
     name: String,
 }
 """
-    def test_permissions_for_mutable_sql_transactions(self):
+
+    def run_test(self, database, team):
+        for role, token in team.items():
+            self.login_with(token)
+            dml = f"insert into person (name) values ('bob-the-{role}')"
+            if role == OWNER or role == ADMIN:
+                self.spacetime("sql", database, dml)
+            else:
+                with self.assertRaises(Exception):
+                    self.spacetime("sql", database, dml)
+
+class CollaboratorsMutableSql(TeamsMutableSql):
+    def test_permissions_mut_sql_collaborators(self):
         """
-        Tests that only owners and admins can perform mutable SQL transactions.
+        Tests that only owner and admin collaborators can perform mutable SQL
+        transactions.
         """
 
         name = random_string()
         self.publish_module(name)
         team = self.create_collaborators(name)
-
-        for role, token in team.items():
-            self.login_with(token)
-            dml = f"insert into person (name) values ('bob-the-{role}')"
-            if role == OWNER or role == ADMIN:
-                self.spacetime("sql", name, dml)
-            else:
-                with self.assertRaises(Exception):
-                    self.spacetime("sql", name, dml)
+        self.run_test(name, team)
 
 
-class PublishDatabase(PermissionsTest):
+class OrgMutableSql(TeamsMutableSql):
+    def test_org_permissions_mut_sql_org_members(self):
+        """
+        Tests that only owner and admin organization members can perform mutable
+        SQL transactions.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        name = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(name, organization = f"0x{org['organization']}")
+
+        self.run_test(name, org['members'])
+
+
+class TeamsPublishDatabase(TeamsPermissionsTest):
     MODULE_CODE = """
 #[spacetimedb::table(name = person, public)]
 struct Person {
@@ -265,50 +291,91 @@ struct Viewer {
 }
 """
 
-    def test_permissions_publish(self):
-        """
-        Tests that only owner, admin and developer roles can publish a database.
-        """
+    MODULES = {
+        OWNER: MODULE_CODE_OWNER,
+        ADMIN: MODULE_CODE_ADMIN,
+        DEVELOPER: MODULE_CODE_DEVELOPER,
+        VIEWER: MODULE_CODE_VIEWER
+    }
 
-        parent = random_string()
-        self.publish_module(parent)
-
-        (owner, admin, developer, viewer) = self.create_collaborators(parent).items()
-        succeed_with = [
-            (owner, self.MODULE_CODE_OWNER),
-            (admin, self.MODULE_CODE_ADMIN),
-            (developer, self.MODULE_CODE_DEVELOPER)
-        ]
-
-        for role_and_token, code in succeed_with:
-            self.publish_as(role_and_token, parent, code)
-
-        with self.assertRaises(Exception):
-            self.publish_as(viewer, parent, self.MODULE_CODE_VIEWER)
+    def run_test(self, parent, child, team, org):
+        self.assert_all_except_viewer_can_update(parent, team, org = org)
 
         # Create a child database.
-        child = random_string()
         child_path = f"{parent}/{child}"
 
         # Developer and viewer should not be able to create a child.
-        for role_and_token in [developer, viewer]:
+        for role in [DEVELOPER, VIEWER]:
             with self.assertRaises(Exception):
-                self.publish_as(role_and_token, child_path, self.MODULE_CODE)
+                self.publish_as(get(team, role), child_path, self.MODULE_CODE, org = org)
         # But admin should succeed.
-        self.publish_as(admin, child_path, self.MODULE_CODE)
+        self.publish_as(get(team, ADMIN), child_path, self.MODULE_CODE, org = org)
 
         # Once created, only viewer should be denied updating.
-        for role_and_token, code in succeed_with:
-            self.publish_as(role_and_token, child_path, code)
+        self.assert_all_except_viewer_can_update(child_path, team, org)
+
+    def assert_all_except_viewer_can_update(self, database, team, org):
+        for role in [OWNER, ADMIN, DEVELOPER]:
+            self.publish_as(get(team, role), database, self.MODULES[role], org = org)
 
         with self.assertRaises(Exception):
-            self.publish_as(viewer, child_path, self.MODULE_CODE_VIEWER)
+            self.publish_as(get(team, VIEWER), database, self.MODULES[VIEWER], org = org)
 
 
-class ClearDatabase(PermissionsTest):
-    def test_permissions_clear(self):
+class CollaboratorsPublishDatabase(TeamsPublishDatabase):
+    def test_permissions_publish_collaborators(self):
         """
-        Tests that only owners and admins can clear a database.
+        Tests that only owner, admin and developer collaborators can publish a
+        database.
+        """
+
+        parent = random_string()
+        child = random_string()
+        self.publish_module(parent)
+        team = self.create_collaborators(parent)
+
+        self.run_test(parent, child, team, org = None)
+
+
+class OrgPublishDatabase(TeamsPublishDatabase):
+    def test_permissions_publish_org_members(self):
+        """
+        Tests that only owner, admin and developer organization members  can
+        publish a database.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        parent = random_string()
+        child = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(parent, organization = f"0x{org['organization']}")
+
+        self.run_test(parent, child, org['members'],
+                      org = org['organization'])
+
+
+class TeamsClearDatabase(TeamsPermissionsTest):
+    def assert_can_clear(self, auth, database):
+        self.publish_as(auth, database, clear = True)
+
+    def assert_cannot_clear(self, auth, database):
+        with self.assertRaises(Exception):
+            self.publish_as(auth, database, clear = True)
+
+    def assert_clear_permissions(self, team, database):
+        for role in [OWNER, ADMIN]:
+            self.assert_can_clear(get(team, role), database)
+
+        for role in [DEVELOPER, VIEWER]:
+            self.assert_cannot_clear(get(team, role), database)
+
+
+class CollaboratorsClearDatabase(TeamsClearDatabase):
+    def test_permissions_clear_collaborators(self):
+        """
+        Tests that only owner and admin collaborators can clear a database.
         """
 
         parent = random_string()
@@ -316,104 +383,132 @@ class ClearDatabase(PermissionsTest):
         # First degree owner can clear.
         self.publish_module(parent, clear = True)
 
-        (owner, admin, developer, viewer) = self.create_collaborators(parent).items()
+        team = self.create_collaborators(parent)
+        self.assert_clear_permissions(team, parent)
 
-        # Owner and admin collaborators can clear.
-        for role_and_token in [owner, admin]:
-            self.publish_as(role_and_token, parent, self.MODULE_CODE, clear = True)
-
-        # Others can't.
-        for role_and_token in [developer, viewer]:
-            with self.assertRaises(Exception):
-                self.publish_as(role_and_token, parent, self.MODULE_CODE, clear = True)
-
-        # Same applies to child.
-        child = random_string()
-        child_path = f"{parent}/{child}"
-
-        self.publish_as(owner, child_path, self.MODULE_CODE)
-
-        for role_and_token in [owner, admin]:
-            self.publish_as(role_and_token, parent, self.MODULE_CODE, clear = True)
-
-        for role_and_token in [developer, viewer]:
-            with self.assertRaises(Exception):
-                self.publish_as(role_and_token, parent, self.MODULE_CODE, clear = True)
+        # Child databases cannot be cleared at all
+        child = f"{parent}/{random_string()}"
+        self.publish_as(get(team, OWNER), child)
+        for auth in team.items():
+            self.assert_cannot_clear(auth, child)
 
 
-class DeleteDatabase(PermissionsTest):
+class OrgClearDatabase(TeamsClearDatabase):
+    def test_permissions_clear_org(self):
+        """
+        Test that only owner or admin org members can clear a database.
+        """
+
+        self.make_admin()
+        org = self.create_organization()
+        team = org['members']
+
+        parent = random_string()
+
+        self.login_with(org['members'][OWNER])
+        self.publish_module(parent, organization = f"0x{org['organization']}")
+        self.assert_clear_permissions(team, parent)
+
+        # Child databases cannot be cleared at all
+        child = f"{parent}/{random_string()}"
+        self.publish_as(get(team, ADMIN), child)
+        for auth in team.items():
+            self.assert_cannot_clear(auth, child)
+
+
+class TeamsDeleteDatabase(TeamsPermissionsTest):
     def delete_as(self, role_and_token, database):
         print(f"delete {database} as {role_and_token[0]}")
         self.login_with(role_and_token[1])
         self.spacetime("delete", "--yes", database)
 
-    def test_permissions_delete(self):
+
+class CollaboratorsDeleteDatabase(TeamsDeleteDatabase):
+    def test_permissions_delete_collaborators(self):
         """
         Tests that only owners can delete databases.
         """
 
         parent = random_string()
+        child = random_string()
         self.publish_module(parent)
         self.spacetime("delete", "--yes", parent)
 
         self.publish_module(parent)
 
-        (owner, admin, developer, viewer) = self.create_collaborators(parent).items()
-
-        for role_and_token in [admin, developer, viewer]:
+        team = self.create_collaborators(parent)
+        for role in [ADMIN, DEVELOPER, VIEWER]:
             with self.assertRaises(Exception):
-                self.delete_as(role_and_token, parent)
+                self.delete_as(get(team, role), parent)
 
-        child = random_string()
         child_path = f"{parent}/{child}"
 
         # If admin creates a child, they should also be able to delete it,
         # because they are the owner of the child.
         print("publish and delete as admin")
-        self.publish_as(admin, child_path, self.MODULE_CODE)
-        self.delete_as(admin, child)
+        self.publish_as(get(team, ADMIN), child_path)
+        self.delete_as(get(team, ADMIN), child)
 
         # The owner role should be able to delete.
         print("publish as admin, delete as owner")
-        self.publish_as(admin, child_path, self.MODULE_CODE)
-        self.delete_as(owner, child)
+        self.publish_as(get(team, ADMIN), child_path)
+        self.delete_as(get(team, OWNER), child)
 
         # Anyone else should be denied if not direct owner.
         print("publish as owner, deny deletion by admin, developer, viewer")
-        self.publish_as(owner, child_path, self.MODULE_CODE)
-        for role_and_token in [admin, developer, viewer]:
+        self.publish_as(get(team, OWNER), child_path)
+        for role in [ADMIN, DEVELOPER, VIEWER]:
             with self.assertRaises(Exception):
-                self.delete_as(role_and_token, child)
+                self.delete_as(get(team, role), child)
 
         print("delete child as owner")
-        self.delete_as(owner, child)
+        self.delete_as(get(team, OWNER), child)
 
         print("delete parent as owner")
-        self.delete_as(owner, parent)
+        self.delete_as(get(team, OWNER), parent)
 
 
-class PrivateTables(PermissionsTest):
-    def test_permissions_private_tables(self):
+class OrgDeleteDatabase(TeamsDeleteDatabase):
+    def test_permissions_delete_org(self):
         """
-        Test that all collaborators can read private tables.
+        Tests that only organization owners can delete databases.
         """
 
+        self.make_admin()
+        org = self.create_organization()
+        team = org['members']
         parent = random_string()
-        self.publish_module(parent)
+        child = random_string()
 
-        team = self.create_collaborators(parent)
-        owner = (OWNER, team[OWNER])
+        self.login_with(org['members'][OWNER])
+        self.publish_module(parent, organization = f"0x{org['organization']}")
+        self.publish_module(f"{parent}/{child}")
 
-        self.sql_as(owner, parent, "insert into person (name) values ('horsti')")
+        # Org databases can only be deleted by owners
+        # because ownership is transferred to the org
+        # and publisher attribution is lost.
+        for database in [child, parent]:
+            for role in [ADMIN, DEVELOPER, VIEWER]:
+                with self.assertRaises(Exception):
+                    self.delete_as(get(team, role), database)
 
-        for role_and_token in team.items():
-            rows = self.sql_as(role_and_token, parent, "select * from person")
+        self.delete_as(get(team, OWNER), child)
+        self.delete_as(get(team, OWNER), parent)
+
+
+class TeamsPrivateTables(TeamsPermissionsTest):
+    def run_test(self, database, team):
+        owner = get(team, OWNER)
+        self.sql_as(owner, database, "insert into person (name) values ('horsti')")
+
+        for auth in team.items():
+            rows = self.sql_as(auth, database, "select * from person")
             self.assertEqual(rows, [{ "name": '"horsti"' }])
 
-        for role_and_token in team.items():
-            sub = self.subscribe_as(role_and_token, "select * from person", n = 2)
-            self.sql_as(owner, parent, "insert into person (name) values ('hansmans')")
-            self.sql_as(owner, parent, "delete from person where name = 'hansmans'")
+        for auth in team.items():
+            sub = self.subscribe_as(auth, "select * from person", n = 2)
+            self.sql_as(owner, database, "insert into person (name) values ('hansmans')")
+            self.sql_as(owner, database, "delete from person where name = 'hansmans'")
             res = sub()
             self.assertEqual(
                 res,
@@ -434,121 +529,20 @@ class PrivateTables(PermissionsTest):
             )
 
 
-class OrgMutableSql(MutableSql):
-    MODULE_CODE = """
-#[spacetimedb::table(name = person, public)]
-struct Person {
-    name: String,
-}
-"""
-
-    def test_org_permissions_for_mutable_sql_transactions(self):
+class CollaboratorsPrivateTables(TeamsPrivateTables):
+    def test_permissions_private_tables(self):
         """
-        Tests that only organization owners and admins can perform mutable SQL
-        transactions.
+        Test that all collaborators can read private tables.
         """
 
-        self.make_admin()
-        org = self.create_organization()
-        database_name = random_string()
+        database = random_string()
+        self.publish_module(database)
 
-        self.login_with(org['members'][OWNER])
-        self.publish_module(database_name, organization = f"0x{org['organization']}")
-
-        for role, auth in org['members'].items():
-            self.login_with(auth)
-            dml = f"insert into person (name) values ('bob-the-{role}')"
-            if role == OWNER or role == ADMIN:
-                self.spacetime("sql", database_name, dml)
-            else:
-                with self.assertRaises(Exception):
-                    self.spacetime("sql", database_name, dml)
+        team = self.create_collaborators(database)
+        self.run_test(database, team)
 
 
-class OrgPublishDatabase(PublishDatabase):
-    def test_org_permissions_publish(self):
-        """
-        Tests that only organization owner, admin and developer roles can
-        publish a database.
-        """
-
-        self.make_admin()
-        org = self.create_organization()
-        database_name = random_string()
-
-        self.spacetime("sql", "spacetime-control", "select * from organization_member")
-        self.login_with(org['members'][OWNER])
-        self.publish_module(database_name, organization = f"0x{org['organization']}")
-
-        succeed_with = [
-            (OWNER, self.MODULE_CODE_OWNER),
-            (ADMIN, self.MODULE_CODE_ADMIN),
-            (DEVELOPER, self.MODULE_CODE_DEVELOPER),
-        ]
-
-        def role_and_auth(org, role):
-            return [role, org['members'][role]]
-
-        for role, code in succeed_with:
-            self.publish_as(role_and_auth(org, role), database_name, code)
-
-        with self.assertRaises(Exception):
-            self.publish_as(role_and_auth(org, VIEWER), database_name, self.MODULE_CODE_VIEWER)
-
-
-class OrgClearDatabase(ClearDatabase):
-    def test_org_permissions_clear(self):
-        """
-        Test that only organization owners or admins can clear a database.
-        """
-
-        self.make_admin()
-        org = self.create_organization()
-        database_name = random_string()
-
-        self.login_with(org['members'][OWNER])
-        self.publish_module(database_name, organization = f"0x{org['organization']}")
-
-        def role_and_auth(org, role):
-            return [role, org['members'][role]]
-
-        # Owner and admin can clear.
-        for role in [OWNER, ADMIN]:
-            self.publish_as(role_and_auth(org, role), database_name, self.MODULE_CODE, clear = True)
-
-        # Others can't.
-        for role in [DEVELOPER, VIEWER]:
-            with self.assertRaises(Exception):
-                self.publish_as(role_and_auth(org, role), database_name, self.MODULE_CODE, clear = True)
-
-
-class OrgDeleteDatabase(DeleteDatabase):
-    def test_org_permissions_delete(self):
-        """
-        Tests that only organization owners can delete databases.
-        """
-
-        self.make_admin()
-        org = self.create_organization()
-        database_name = random_string()
-
-        self.login_with(org['members'][OWNER])
-        self.publish_module(database_name, organization = f"0x{org['organization']}")
-
-        def role_and_auth(org, role):
-            return [role, org['members'][role]]
-
-        for role in ROLES:
-            if role == OWNER:
-                continue
-
-            with self.assertRaises(Exception):
-                self.delete_as(role_and_auth(org, role), database_name)
-
-        self.delete_as(role_and_auth(org, OWNER), database_name)
-
-
-class OrgPrivateTables(PrivateTables):
+class OrgPrivateTables(TeamsPrivateTables):
     def test_org_permissions_private_tables(self):
         """
         Test that all organization members can read private tables.
@@ -556,38 +550,9 @@ class OrgPrivateTables(PrivateTables):
 
         self.make_admin()
         org = self.create_organization()
-        database_name = random_string()
+        database = random_string()
 
         self.login_with(org['members'][OWNER])
-        self.publish_module(database_name, organization = f"0x{org['organization']}")
+        self.publish_module(database, organization = f"0x{org['organization']}")
 
-        owner = [OWNER, org['members'][OWNER]]
-
-        self.sql_as(owner, database_name, "insert into person (name) values ('horsti')")
-
-        for auth in org['members'].items():
-            rows = self.sql_as(auth, database_name, "select * from person")
-            self.assertEqual(rows, [{ "name": '"horsti"' }])
-
-        for auth in org['members'].items():
-            sub = self.subscribe_as(auth, "select * from person", n = 2)
-            self.sql_as(owner, database_name, "insert into person (name) values ('hansmans')")
-            self.sql_as(owner, database_name, "delete from person where name = 'hansmans'")
-            res = sub()
-            self.assertEqual(
-                res,
-                [
-                    {
-                        'person': {
-                            'deletes': [],
-                            'inserts': [{'name': 'hansmans'}]
-                        }
-                    },
-                    {
-                        'person': {
-                            'deletes': [{'name': 'hansmans'}],
-                            'inserts': []
-                        }
-                    }
-                ],
-            )
+        self.run_test(database, org['members'])
