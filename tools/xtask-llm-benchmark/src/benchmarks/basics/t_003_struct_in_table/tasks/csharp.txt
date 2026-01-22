@@ -7,7 +7,7 @@ TYPES
     - Y: int
 
 TABLE
-- entities
+- Entity
   - Struct: Entity
   - Fields:
     - Id: int (primary key)

@@ -1500,9 +1500,9 @@ impl ModuleHost {
         Ok(self
             .call(
                 &reducer_def.name,
-                (None, call_reducer_params),
-                |(tx, p), inst| inst.call_reducer(tx, p),
-                |(_, p), inst| inst.call_reducer(p),
+                call_reducer_params,
+                |p, inst| inst.call_reducer(p),
+                |p, inst| inst.call_reducer(p),
             )
             .await?)
     }

@@ -6,7 +6,6 @@ slug: /intro/key-architecture
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-
 ## Host
 
 A SpacetimeDB **host** is a server that hosts [databases](#database). You can run your own host, or use the SpacetimeDB maincloud. Many databases can run on a single host.
@@ -47,7 +46,7 @@ const players = table(
 <TabItem value="csharp" label="C#">
 
 ```csharp
-[SpacetimeDB.Table(Name = "players", Public = true)]
+[SpacetimeDB.Table(Name = "Player", Public = true)]
 public partial struct Player
 {
     [SpacetimeDB.PrimaryKey]
@@ -193,7 +192,7 @@ spacetimedb.reducer('world', (ctx) => {
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -218,7 +217,7 @@ public static void World(ReducerContext ctx)
 ```
 
 While SpacetimeDB doesn't support nested transactions,
-a reducer can [schedule another reducer](/tables/scheduled-tables) to run at an interval,
+a reducer can [schedule another reducer](/tables/schedule-tables) to run at an interval,
 or at a specific time.
 
 </TabItem>
@@ -505,7 +504,7 @@ def identity_from_claims(issuer: str, subject: str) -> [u8; 32]:
    return identity_big_endian_bytes
 ```
 
-You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](/spacetimeauth), or you can get one from any OpenID Connect compliant identity provider.
+You can obtain a JWT from our turnkey identity provider [SpacetimeAuth](../../00200-core-concepts/00500-authentication/00100-spacetimeauth/index.md), or you can get one from any OpenID Connect compliant identity provider.
 
 ## ConnectionId
 
@@ -518,4 +517,3 @@ A user has a single [`Identity`](#identity), but may open multiple connections t
 **Energy** is the currency used to pay for data storage and compute operations in a SpacetimeDB host.
 
 <!-- TODO(1.0): Rewrite this section after finalizing energy SKUs. -->
-

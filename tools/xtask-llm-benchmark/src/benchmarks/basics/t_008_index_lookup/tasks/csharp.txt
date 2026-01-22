@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in C# that defines two tables and a reducer that looks up a row by primary-key index and writes a projection to another table.
 
 TABLES
-- users
+- User
   - Struct: User
   - Fields:
     - Id: int (primary key)
@@ -9,11 +9,11 @@ TABLES
     - Age: int
     - Active: bool
 
-- results
+- Result
   - Struct: Result
   - Fields:
     - Id: int (primary key)
     - Name: string
 
 REDUCERS
-- LookupUserName: given id:int, find the users row with that Id using the index and insert (Id, Name) into results.
+- LookupUserName: given id:int, find the User row with that Id using the index and insert (Id, Name) into Result.

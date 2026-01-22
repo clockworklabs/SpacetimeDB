@@ -1,12 +1,12 @@
 ﻿Write a SpacetimeDB backend module in C# that defines one table and two reducers for client lifecycle events.
 
 TABLE
-- events
+- Event
   - Struct: Event
   - Fields:
     - Id: int (primary key, auto-increment)
     - Kind: string
 
 REDUCERS
-- ClientConnected: when a client connects, insert exactly one row into events with Kind="connected"
-- ClientDisconnected: when a client disconnects, insert exactly one row into events with Kind="disconnected"
+- ClientConnected: when a client connects, insert exactly one row into Event with Kind="connected"
+- ClientDisconnected: when a client disconnects, insert exactly one row into Event with Kind="disconnected"

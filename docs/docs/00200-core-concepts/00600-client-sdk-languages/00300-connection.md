@@ -6,7 +6,6 @@ slug: /sdks/connection
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-
 After [generating client bindings](/sdks/codegen) for your module, you can establish a connection to your SpacetimeDB [database](/databases) from your client application. The `DbConnection` type provides a persistent WebSocket connection that enables real-time communication with the server.
 
 ## Prerequisites
@@ -28,7 +27,7 @@ Create a connection using the `DbConnection` builder pattern:
 import { DbConnection } from './module_bindings';
 
 const conn = new DbConnection.builder()
-    .withUri("http://localhost:3000")
+    .withUri("https://maincloud.spacetimedb.com")
     .withModuleName("my_database");
 ```
 
@@ -39,7 +38,7 @@ const conn = new DbConnection.builder()
 using SpacetimeDB;
 
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("http://localhost:3000"))
+    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
     .WithModuleName("my_database")
     .Build();
 ```
@@ -51,7 +50,7 @@ var conn = DbConnection.Builder()
 use module_bindings::DbConnection;
 
 let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
+    .with_uri("https://maincloud.spacetimedb.com")
     .with_module_name("my_database")
     .build();
 ```
@@ -63,7 +62,7 @@ let conn = DbConnection::builder()
 #include "ModuleBindings/DbConnection.h"
 
 UDbConnection* Conn = UDbConnection::Builder()
-    ->WithUri(TEXT("http://localhost:3000"))
+    ->WithUri(TEXT("https://maincloud.spacetimedb.com"))
     ->WithModuleName(TEXT("my_database"))
     ->Build();
 ```
@@ -71,7 +70,7 @@ UDbConnection* Conn = UDbConnection::Builder()
 </TabItem>
 </Tabs>
 
-Replace `"http://localhost:3000"` with your SpacetimeDB host URI, and `"my_database"` with your database's name or identity.
+Replace `"https://maincloud.spacetimedb.com"` with your SpacetimeDB host URI, and `"my_database"` with your database's name or identity.
 
 ### Connecting to MainCloud
 
@@ -121,7 +120,7 @@ UDbConnection* Conn = UDbConnection::Builder()
 
 ## Authentication with Tokens
 
-To authenticate with a token (for example, from [SpacetimeAuth](/spacetimeauth)), provide it when building the connection:
+To authenticate with a token (for example, from [SpacetimeAuth](../00500-authentication/00100-spacetimeauth/index.md)), provide it when building the connection:
 
 <Tabs groupId="client-language" queryString>
 <TabItem value="typescript" label="TypeScript">
@@ -169,7 +168,7 @@ UDbConnection* Conn = UDbConnection::Builder()
 </TabItem>
 </Tabs>
 
-The token is sent to the server during connection and validates your identity. See the [SpacetimeAuth documentation](/spacetimeauth) for details on obtaining and managing tokens.
+The token is sent to the server during connection and validates your identity. See the [SpacetimeAuth documentation](../00500-authentication/00100-spacetimeauth/index.md) for details on obtaining and managing tokens.
 
 ## Advancing the Connection
 
@@ -205,7 +204,7 @@ while (running)
 void AMyActor::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-    
+
     if (Conn)
     {
         Conn->FrameTick();
@@ -233,7 +232,7 @@ Register callbacks to observe connection state changes:
 
 ```typescript
 const conn = DbConnection.builder()
-    .withUri("http://localhost:3000")
+    .withUri("https://maincloud.spacetimedb.com")
     .withModuleName("my_database")
     .onConnect((conn, identity, token) => {
         console.log(`Connected! Identity: ${identity.toHexString()}`);
@@ -253,7 +252,7 @@ const conn = DbConnection.builder()
 
 ```csharp
 var conn = DbConnection.Builder()
-    .WithUri(new Uri("http://localhost:3000"))
+    .WithUri(new Uri("https://maincloud.spacetimedb.com"))
     .WithModuleName("my_database")
     .OnConnect((conn, identity, token) =>
     {
@@ -283,7 +282,7 @@ var conn = DbConnection.Builder()
 
 ```rust
 let conn = DbConnection::builder()
-    .with_uri("http://localhost:3000")
+    .with_uri("https://maincloud.spacetimedb.com")
     .with_module_name("my_database")
     .on_connect(|_ctx, _identity, token| {
         println!("Connected! Saving token...");
@@ -319,7 +318,7 @@ DisconnectDelegate.BindDynamic(this, &AMyActor::OnDisconnected);
 
 // Build connection with callbacks
 UDbConnection* Conn = UDbConnection::Builder()
-    ->WithUri(TEXT("http://localhost:3000"))
+    ->WithUri(TEXT("https://maincloud.spacetimedb.com"))
     ->WithModuleName(TEXT("my_database"))
     ->OnConnect(ConnectDelegate)
     ->OnConnectError(ErrorDelegate)
@@ -437,7 +436,7 @@ UFUNCTION()
 void OnConnected(UDbConnection* Connection, FSpacetimeDBIdentity Identity, const FString& Token)
 {
     FSpacetimeDBConnectionId ConnectionId = Connection->GetConnectionId();
-    UE_LOG(LogTemp, Log, TEXT("Identity: %s, ConnectionId: %s"), 
+    UE_LOG(LogTemp, Log, TEXT("Identity: %s, ConnectionId: %s"),
         *Identity.ToHexString(), *ConnectionId.ToHexString());
 }
 ```
@@ -456,6 +455,7 @@ Now that you have a connection established, you can:
 - Call reducers and procedures on the server
 
 For language-specific details, see:
+
 - [Rust SDK Reference](/sdks/rust)
 - [C# SDK Reference](/sdks/c-sharp)
 - [TypeScript SDK Reference](/sdks/typescript)

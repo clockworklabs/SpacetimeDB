@@ -11,7 +11,7 @@ pub fn spec() -> BenchmarkSpec {
         let reducer = ident("Seed", casing);
 
         let select = sb.select_by_id(
-            "primitives",
+            "primitive",
             &["id","count","total","price","ratio","active","name"],
             "id",
             1
@@ -28,7 +28,7 @@ pub fn spec() -> BenchmarkSpec {
             timeout: Duration::from_secs(10),
         }));
 
-        let count = sb.count_by_id("primitives", "id", 1);
+        let count = sb.count_by_id("primitive", "id", 1);
         v.push(make_sql_count_only_scorer(
             host_url,
             file!(),
