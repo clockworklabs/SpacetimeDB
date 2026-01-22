@@ -1,7 +1,7 @@
 ﻿Write a SpacetimeDB backend module in Rust that defines one table with a multi-column B-Tree index and seeds rows.
 
 TABLE
-- logs
+- log
   - Struct: Log
   - Fields:
     - id: i32 (primary key)
@@ -12,7 +12,7 @@ TABLE
     - by_user_day: btree(user_id, day)
 
 REDUCERS
-- seed: insert exactly these rows into logs
+- seed: insert exactly these rows into log
   - (id=1, user_id=7, day=1, message="a")
   - (id=2, user_id=7, day=2, message="b")
   - (id=3, user_id=9, day=1, message="c")

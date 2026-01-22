@@ -8,8 +8,8 @@ public static partial class Module
         public int Left;
         public int Right;
     }
-
-    [Table(Name = "results")]
+  
+    [Table(Name = "Result", Public = true)]
     public partial struct Result
     {
         [PrimaryKey] public int Id;
@@ -19,6 +19,6 @@ public static partial class Module
     [Reducer]
     public static void SetScore(ReducerContext ctx, int id, int left, int right)
     {
-        ctx.Db.results.Insert(new Result { Id = id, Value = new Score { Left = left, Right = right } });
+        ctx.Db.Result.Insert(new Result { Id = id, Value = new Score { Left = left, Right = right } });
     }
 }

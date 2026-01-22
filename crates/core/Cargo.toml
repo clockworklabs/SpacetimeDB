@@ -105,7 +105,7 @@ thiserror.workspace = true
 thin-vec.workspace = true
 tokio-util.workspace = true
 tokio.workspace = true
-tokio-stream = "0.1"
+tokio-stream = { workspace = true, features = ["sync"] }
 tokio-metrics = { version = "0.4.0", features = ["rt"] }
 toml.workspace = true
 tracing-appender.workspace = true
@@ -145,6 +145,7 @@ test = ["spacetimedb-commitlog/test", "spacetimedb-datastore/test"]
 perfmap = []
 # Disables core pinning
 no-core-pinning = []
+no-job-core-pinning = []
 
 [dev-dependencies]
 spacetimedb-lib = { path = "../lib", features = ["proptest", "test"] }

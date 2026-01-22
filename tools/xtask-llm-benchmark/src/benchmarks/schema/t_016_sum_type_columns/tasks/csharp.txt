@@ -11,7 +11,7 @@ TYPES
 - Sum: Shape = Circle | Rectangle
 
 TABLE
-- drawings
+- Drawing
   - Struct: Drawing
   - Fields:
     - Id: int (primary key)
@@ -19,5 +19,5 @@ TABLE
     - B: Shape
 
 REDUCERS
-- Seed: insert exactly one row into drawings
+- Seed: insert exactly one row into Drawing
   - (Id=1, A=Circle{Radius=10}, B=Rectangle{Width=4, Height=6})
