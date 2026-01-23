@@ -1576,15 +1576,15 @@ pub fn init_typescript_project(project_path: &Path) -> anyhow::Result<()> {
 pub fn init_cpp_project(project_path: &Path) -> anyhow::Result<()> {
     let export_files = vec![
         (
-            include_str!("../../../../templates/basic-cpp/server/CMakeLists._txt"),
+            include_str!("../../../../templates/basic-cpp/spacetimedb/CMakeLists._txt"),
             "CMakeLists.txt",
         ),
         (
-            include_str!("../../../../templates/basic-cpp/server/lib._cpp"),
+            include_str!("../../../../templates/basic-cpp/spacetimedb/lib._cpp"),
             "src/lib.cpp",
         ),
         (
-            include_str!("../../../../templates/basic-cpp/server/_gitignore"),
+            include_str!("../../../../templates/basic-cpp/spacetimedb/_gitignore"),
             ".gitignore",
         ),
     ];
