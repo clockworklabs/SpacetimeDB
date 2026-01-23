@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docker_smoketests:
+  smoketests:
     # TODO: before merging re-enable this
     # needs: [lints]
     name: Smoketests
@@ -36,7 +36,7 @@ jobs:
     container: ${{ matrix.container }}
     timeout-minutes: 120
     env:
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      #CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
