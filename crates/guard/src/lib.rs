@@ -4,11 +4,74 @@ use std::{
     env,
     io::{BufRead, BufReader},
     net::SocketAddr,
+    path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     thread::{self, sleep},
     time::{Duration, Instant},
 };
+
+/// Lazily-initialized path to the pre-built CLI binary.
+static CLI_BINARY_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// Ensures `spacetimedb-cli` and `spacetimedb-standalone` are built once,
+/// returning the path to the CLI binary.
+fn ensure_binaries_built() -> PathBuf {
+    CLI_BINARY_PATH
+        .get_or_init(|| {
+            // Navigate from crates/guard/ to workspace root
+            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let workspace_root = manifest_dir
+                .parent() // crates/
+                .and_then(|p| p.parent()) // workspace root
+                .expect("Failed to find workspace root");
+
+            // Determine target directory
+            let target_dir = env::var("CARGO_TARGET_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| workspace_root.join("target"));
+
+            // Determine profile
+            let profile = if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            };
+
+            // Build both binaries (standalone needed by CLI's start command)
+            for pkg in ["spacetimedb-standalone", "spacetimedb-cli"] {
+                let mut args = vec!["build", "-p", pkg];
+                if profile == "release" {
+                    args.push("--release");
+                }
+
+                let status = Command::new("cargo")
+                    .args(&args)
+                    .current_dir(workspace_root)
+                    .status()
+                    .unwrap_or_else(|e| panic!("Failed to build {}: {}", pkg, e));
+
+                assert!(status.success(), "Building {} failed", pkg);
+            }
+
+            // Return path to CLI binary
+            let cli_name = if cfg!(windows) {
+                "spacetimedb-cli.exe"
+            } else {
+                "spacetimedb-cli"
+            };
+            let cli_path = target_dir.join(profile).join(cli_name);
+
+            assert!(
+                cli_path.exists(),
+                "CLI binary not found at {}",
+                cli_path.display()
+            );
+
+            cli_path
+        })
+        .clone()
+}
 
 use reqwest::blocking::Client;
 
@@ -45,9 +108,6 @@ impl SpacetimeDbGuard {
         // Using loopback avoids needing to "connect to 0.0.0.0".
         let address = "127.0.0.1:0".to_string();
 
-        // Workspace root for `cargo run -p ...`
-        let workspace_dir = env!("CARGO_MANIFEST_DIR");
-
         let mut args = vec![];
 
         let (child, logs) = if use_installed_cli {
@@ -57,13 +117,20 @@ impl SpacetimeDbGuard {
             let cmd = Command::new("spacetime");
             Self::spawn_child(cmd, env!("CARGO_MANIFEST_DIR"), &args)
         } else {
-            Self::build_prereqs(workspace_dir);
-            args.extend(vec!["run", "-p", "spacetimedb-cli", "--"]);
+            let cli_path = ensure_binaries_built();
+
             args.extend(extra_args);
             args.extend(["--listen-addr", &address]);
 
-            let cmd = Command::new("cargo");
-            Self::spawn_child(cmd, workspace_dir, &args)
+            let cmd = Command::new(&cli_path);
+
+            let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let workspace_root = manifest_dir
+                .parent()
+                .and_then(|p| p.parent())
+                .expect("Failed to find workspace root");
+
+            Self::spawn_child(cmd, workspace_root.to_str().unwrap(), &args)
         };
 
         // Parse the actual bound address from logs.
@@ -73,23 +140,6 @@ impl SpacetimeDbGuard {
         let guard = SpacetimeDbGuard { child, host_url, logs };
         guard.wait_until_http_ready(Duration::from_secs(10));
         guard
-    }
-
-    // Ensure standalone is built before we start, if that’s needed.
-    // This is best-effort and usually a no-op when already built.
-    // Also build the CLI before running it to avoid that being included in the
-    // timeout for readiness.
-    fn build_prereqs(workspace_dir: &str) {
-        let targets = ["spacetimedb-standalone", "spacetimedb-cli"];
-
-        for pkg in targets {
-            let mut cmd = Command::new("cargo");
-            let _ = cmd
-                .args(["build", "-p", pkg])
-                .current_dir(workspace_dir)
-                .status()
-                .unwrap_or_else(|_| panic!("failed to build {}", pkg));
-        }
     }
 
     fn spawn_child(mut cmd: Command, workspace_dir: &str, args: &[&str]) -> (Child, Arc<Mutex<String>>) {
