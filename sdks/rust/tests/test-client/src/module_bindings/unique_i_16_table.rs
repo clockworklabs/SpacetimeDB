@@ -124,3 +124,19 @@ impl<'ctx> UniqueI16NUnique<'ctx> {
         self.imp.find(col_val)
     }
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `UniqueI16`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait unique_i16QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `UniqueI16`.
+    fn unique_i16(&self) -> __sdk::__query_builder::Table<UniqueI16>;
+}
+
+impl unique_i16QueryTableAccess for __sdk::QueryTableAccessor {
+    fn unique_i16(&self) -> __sdk::__query_builder::Table<UniqueI16> {
+        __sdk::__query_builder::Table::new("unique_i16")
+    }
+}

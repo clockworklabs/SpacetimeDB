@@ -93,3 +93,19 @@ pub(super) fn parse_table_update(
             .into()
     })
 }
+
+#[allow(non_camel_case_types)]
+/// Extension trait for query builder access to the table `VecF32`.
+///
+/// Implemented for [`__sdk::QueryTableAccessor`].
+pub trait vec_f32QueryTableAccess {
+    #[allow(non_snake_case)]
+    /// Get a query builder for the table `VecF32`.
+    fn vec_f32(&self) -> __sdk::__query_builder::Table<VecF32>;
+}
+
+impl vec_f32QueryTableAccess for __sdk::QueryTableAccessor {
+    fn vec_f32(&self) -> __sdk::__query_builder::Table<VecF32> {
+        __sdk::__query_builder::Table::new("vec_f32")
+    }
+}
