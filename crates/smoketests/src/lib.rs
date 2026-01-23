@@ -40,6 +40,18 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
+use std::time::Instant;
+
+/// Helper macro for timing operations and printing results
+macro_rules! timed {
+    ($label:expr, $expr:expr) => {{
+        let start = Instant::now();
+        let result = $expr;
+        let elapsed = start.elapsed();
+        eprintln!("[TIMING] {}: {:?}", $label, elapsed);
+        result
+    }};
+}
 
 /// Returns the workspace root directory.
 fn workspace_root() -> PathBuf {
@@ -118,8 +130,12 @@ impl SmoketestBuilder {
     /// This spawns a SpacetimeDB server, creates a temporary project directory,
     /// writes the module code, and optionally publishes the module.
     pub fn build(self) -> Smoketest {
-        let guard = SpacetimeDbGuard::spawn_in_temp_data_dir();
+        let build_start = Instant::now();
+
+        let guard = timed!("server spawn", SpacetimeDbGuard::spawn_in_temp_data_dir());
         let project_dir = tempfile::tempdir().expect("Failed to create temp project directory");
+
+        let project_setup_start = Instant::now();
 
         // Create project structure
         fs::create_dir_all(project_dir.path().join("src")).expect("Failed to create src directory");
@@ -167,6 +183,8 @@ pub fn noop(_ctx: &ReducerContext) {}
         });
         fs::write(project_dir.path().join("src/lib.rs"), &module_code).expect("Failed to write lib.rs");
 
+        eprintln!("[TIMING] project setup: {:?}", project_setup_start.elapsed());
+
         let server_url = guard.host_url.clone();
         let mut smoketest = Smoketest {
             guard,
@@ -179,6 +197,7 @@ pub fn noop(_ctx: &ReducerContext) {}
             smoketest.publish_module().expect("Failed to publish module");
         }
 
+        eprintln!("[TIMING] total build: {:?}", build_start.elapsed());
         smoketest
     }
 }
@@ -195,6 +214,7 @@ impl Smoketest {
     /// Returns the command output. The command is run but not yet asserted.
     /// The `--server` flag is automatically inserted after the first argument (the subcommand).
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
+        let start = Instant::now();
         let cli_path = ensure_binaries_built();
         let mut cmd = Command::new(&cli_path);
 
@@ -206,9 +226,13 @@ impl Smoketest {
                 .args(rest);
         }
 
-        cmd.current_dir(self.project_dir.path())
+        let output = cmd.current_dir(self.project_dir.path())
             .output()
-            .expect("Failed to execute spacetime command")
+            .expect("Failed to execute spacetime command");
+
+        let cmd_name = args.first().unwrap_or(&"unknown");
+        eprintln!("[TIMING] spacetime {}: {:?}", cmd_name, start.elapsed());
+        output
     }
 
     /// Runs a spacetime CLI command and returns stdout as a string.
@@ -216,6 +240,32 @@ impl Smoketest {
     /// Panics if the command fails.
     pub fn spacetime(&self, args: &[&str]) -> Result<String> {
         let output = self.spacetime_cmd(args);
+        if !output.status.success() {
+            bail!(
+                "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
+                args,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Runs a spacetime CLI command without adding the --server flag.
+    ///
+    /// Use this for local-only commands like `generate` that don't need a server connection.
+    pub fn spacetime_local(&self, args: &[&str]) -> Result<String> {
+        let start = Instant::now();
+        let cli_path = ensure_binaries_built();
+        let output = Command::new(&cli_path)
+            .args(args)
+            .current_dir(self.project_dir.path())
+            .output()
+            .expect("Failed to execute spacetime command");
+
+        let cmd_name = args.first().unwrap_or(&"unknown");
+        eprintln!("[TIMING] spacetime_local {}: {:?}", cmd_name, start.elapsed());
+
         if !output.status.success() {
             bail!(
                 "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
@@ -236,13 +286,35 @@ impl Smoketest {
 
     /// Publishes the module and stores the database identity.
     pub fn publish_module(&mut self) -> Result<String> {
+        self.publish_module_opts(None, false)
+    }
+
+    /// Publishes the module with a specific name and optional clear flag.
+    ///
+    /// If `name` is provided, the database will be published with that name.
+    /// If `clear` is true, the database will be cleared before publishing.
+    pub fn publish_module_named(&mut self, name: &str, clear: bool) -> Result<String> {
+        self.publish_module_opts(Some(name), clear)
+    }
+
+    /// Internal helper for publishing with options.
+    fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
+        let start = Instant::now();
         let project_path = self.project_dir.path().to_str().unwrap().to_string();
-        let output = self.spacetime(&[
-            "publish",
-            "--project-path",
-            &project_path,
-            "--yes",
-        ])?;
+        let mut args = vec!["publish", "--project-path", &project_path, "--yes"];
+
+        if clear {
+            args.push("--clear-database");
+        }
+
+        let name_owned;
+        if let Some(n) = name {
+            name_owned = n.to_string();
+            args.push(&name_owned);
+        }
+
+        let output = self.spacetime(&args)?;
+        eprintln!("[TIMING] publish_module: {:?}", start.elapsed());
 
         // Parse the identity from output like "identity: abc123..."
         let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
@@ -334,10 +406,12 @@ impl Smoketest {
             .collect()
     }
 
-    /// Starts a subscription and waits for N updates.
+    /// Starts a subscription and waits for N updates (synchronous).
     ///
     /// Returns the updates as JSON values.
+    /// For tests that need to perform actions while subscribed, use `subscribe_background` instead.
     pub fn subscribe(&self, queries: &[&str], n: usize) -> Result<Vec<serde_json::Value>> {
+        let start = Instant::now();
         let identity = self
             .database_identity
             .as_ref()
@@ -351,6 +425,64 @@ impl Smoketest {
             .stderr(Stdio::piped());
 
         let output = cmd.output().context("Failed to run subscribe command")?;
+        eprintln!("[TIMING] subscribe (n={}): {:?}", n, start.elapsed());
+
+        if !output.status.success() {
+            bail!(
+                "subscribe failed:\nstderr: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).context("Failed to parse subscription update"))
+            .collect()
+    }
+
+    /// Starts a subscription in the background and returns a handle.
+    ///
+    /// This matches Python's subscribe semantics - start subscription first,
+    /// perform actions, then call the handle to collect results.
+    pub fn subscribe_background(&self, queries: &[&str], n: usize) -> Result<SubscriptionHandle> {
+        let identity = self
+            .database_identity
+            .as_ref()
+            .context("No database published")?
+            .clone();
+
+        let cli_path = ensure_binaries_built();
+        let mut cmd = Command::new(&cli_path);
+        // Note: Don't use --print-initial-update here since we want to count only
+        // the actual updates triggered by subsequent operations
+        cmd.args(["subscribe", "--server", &self.server_url, &identity, "-t", "30", "-n", &n.to_string(), "--"])
+            .args(queries)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let child = cmd.spawn().context("Failed to spawn subscribe command")?;
+        Ok(SubscriptionHandle {
+            child,
+            n,
+            start: Instant::now(),
+        })
+    }
+}
+
+/// Handle for a background subscription.
+pub struct SubscriptionHandle {
+    child: std::process::Child,
+    n: usize,
+    start: Instant,
+}
+
+impl SubscriptionHandle {
+    /// Wait for the subscription to complete and return the updates.
+    pub fn collect(self) -> Result<Vec<serde_json::Value>> {
+        let output = self.child.wait_with_output().context("Failed to wait for subscribe command")?;
+        eprintln!("[TIMING] subscribe_background (n={}): {:?}", self.n, self.start.elapsed());
 
         if !output.status.success() {
             bail!(
