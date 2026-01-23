@@ -47,9 +47,19 @@ pub fn ensure_binaries_built() -> PathBuf {
                     args.push("--release");
                 }
 
-                let status = Command::new("cargo")
-                    .args(&args)
-                    .current_dir(workspace_root)
+                // Clear cargo-provided env vars to avoid unnecessary rebuilds.
+                // When running under `cargo test`, cargo sets env vars like
+                // CARGO_ENCODED_RUSTFLAGS that differ from a normal build,
+                // causing the child cargo to think it needs to recompile.
+                let mut cmd = Command::new("cargo");
+                cmd.args(&args).current_dir(&workspace_root);
+                for (key, _) in env::vars() {
+                    if key.starts_with("CARGO") && key != "CARGO_HOME" {
+                        cmd.env_remove(&key);
+                    }
+                }
+
+                let status = cmd
                     .status()
                     .unwrap_or_else(|e| panic!("Failed to build {}: {}", pkg, e));
 
