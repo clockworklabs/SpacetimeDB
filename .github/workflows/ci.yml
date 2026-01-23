@@ -34,8 +34,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
     timeout-minutes: 120
-    env:
-      #CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    #env:
+    #  CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - name: Find Git ref
         env:
