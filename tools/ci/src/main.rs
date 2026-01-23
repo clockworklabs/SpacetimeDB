@@ -398,13 +398,11 @@ fn main() -> Result<()> {
         }
 
         Some(CiCmd::Smoketests { args: smoketest_args }) => {
-            let python = infer_python();
             cmd(
-                python,
-                ["-m", "smoketests"]
+                "cargo",
+                ["test", "-p", "spacetimedb-smoketests"]
                     .into_iter()
-                    .map(|s| s.to_string())
-                    .chain(smoketest_args),
+                    .chain(smoketest_args.clone()),
             )
             .run()?;
         }
