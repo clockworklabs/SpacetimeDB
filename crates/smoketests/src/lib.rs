@@ -559,10 +559,7 @@ impl Smoketest {
         eprintln!("[TIMING] subscribe (n={}): {:?}", n, start.elapsed());
 
         if !output.status.success() {
-            bail!(
-                "subscribe failed:\nstderr: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("subscribe failed:\nstderr: {}", String::from_utf8_lossy(&output.stderr));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
