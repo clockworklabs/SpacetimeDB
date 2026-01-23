@@ -62,7 +62,7 @@ fn test_delete_database() {
     thread::sleep(Duration::from_secs(2));
 
     // Delete the database
-    test.spacetime(&["delete", &name]).unwrap();
+    test.spacetime(&["delete", "--server", &test.server_url, &name]).unwrap();
 
     // Collect whatever updates we got
     let updates = sub.collect().unwrap();

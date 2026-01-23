@@ -32,13 +32,14 @@ fn test_describe() {
     let identity = test.database_identity.as_ref().unwrap();
 
     // Describe the whole module
-    test.spacetime(&["describe", "--json", identity]).unwrap();
+    test.spacetime(&["describe", "--server", &test.server_url, "--json", identity])
+        .unwrap();
 
     // Describe a specific reducer
-    test.spacetime(&["describe", "--json", identity, "reducer", "say_hello"])
+    test.spacetime(&["describe", "--server", &test.server_url, "--json", identity, "reducer", "say_hello"])
         .unwrap();
 
     // Describe a specific table
-    test.spacetime(&["describe", "--json", identity, "table", "person"])
+    test.spacetime(&["describe", "--server", &test.server_url, "--json", identity, "table", "person"])
         .unwrap();
 }

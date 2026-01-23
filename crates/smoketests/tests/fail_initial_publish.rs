@@ -64,7 +64,9 @@ fn test_fail_initial_publish() {
     test.write_module_code(MODULE_CODE_FIXED).unwrap();
     test.publish_module_named(&name, false).unwrap();
 
-    let describe_output = test.spacetime(&["describe", "--json", &name]).unwrap();
+    let describe_output = test
+        .spacetime(&["describe", "--server", &test.server_url, "--json", &name])
+        .unwrap();
     assert!(
         describe_output.contains(FIXED_QUERY),
         "Expected describe output to contain fixed query.\nGot: {}",
@@ -78,7 +80,9 @@ fn test_fail_initial_publish() {
     assert!(result.is_err(), "Expected publish to fail with broken module");
 
     // Database should still exist with the fixed code
-    let describe_output = test.spacetime(&["describe", "--json", &name]).unwrap();
+    let describe_output = test
+        .spacetime(&["describe", "--server", &test.server_url, "--json", &name])
+        .unwrap();
     assert!(
         describe_output.contains(FIXED_QUERY),
         "Expected describe output to still contain fixed query after failed update.\nGot: {}",

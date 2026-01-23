@@ -358,7 +358,7 @@ impl QuickstartTest {
         eprintln!("Generating server code {}: {:?}...", self.config.lang, server_path);
 
         // Initialize the project (local operation, doesn't need server)
-        let output = self.test.spacetime_local(&[
+        let output = self.test.spacetime(&[
             "init",
             "--non-interactive",
             "--lang",
@@ -390,7 +390,7 @@ impl QuickstartTest {
 
         // Build the server (local operation)
         self.test
-            .spacetime_local(&["build", "-d", "-p", project_path.to_str().unwrap()])?;
+            .spacetime(&["build", "-d", "-p", project_path.to_str().unwrap()])?;
 
         Ok(project_path)
     }
@@ -561,6 +561,8 @@ log = "0.4"
         let project_path_str = self.project_path.to_str().unwrap().to_string();
         let publish_output = self.test.spacetime(&[
             "publish",
+            "--server",
+            &self.test.server_url,
             "--project-path",
             &project_path_str,
             "--yes",
@@ -596,7 +598,7 @@ log = "0.4"
         // Generate bindings (local operation)
         let bindings_path = client_path.join(self.config.module_bindings);
         let project_path_str = self.project_path.to_str().unwrap().to_string();
-        self.test.spacetime_local(&[
+        self.test.spacetime(&[
             "generate",
             "--lang",
             self.config.client_lang,

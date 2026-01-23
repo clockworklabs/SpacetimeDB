@@ -454,31 +454,18 @@ impl Smoketest {
         );
     }
 
-    /// Runs a spacetime CLI command with the configured server.
+    /// Runs a spacetime CLI command.
     ///
     /// Returns the command output. The command is run but not yet asserted.
-    /// The `--server` flag is automatically inserted before any `--` separator,
-    /// or at the end if no separator exists.
+    /// Uses --config-path to isolate test config from user config.
+    /// Callers should pass `--server` explicitly when the command needs it.
     pub fn spacetime_cmd(&self, args: &[&str]) -> Output {
         let start = Instant::now();
         let cli_path = ensure_binaries_built();
-        let mut cmd = Command::new(&cli_path);
-
-        // Use test-specific config path to avoid polluting user's config
-        cmd.arg("--config-path").arg(&self.config_path);
-
-        // Insert --server before any "--" separator, or at the end
-        // This ensures --server is processed as a flag, not a positional arg
-        if let Some(pos) = args.iter().position(|&a| a == "--") {
-            cmd.args(&args[..pos])
-                .arg("--server")
-                .arg(&self.server_url)
-                .args(&args[pos..]);
-        } else {
-            cmd.args(args).arg("--server").arg(&self.server_url);
-        }
-
-        let output = cmd
+        let output = Command::new(&cli_path)
+            .arg("--config-path")
+            .arg(&self.config_path)
+            .args(args)
             .current_dir(self.project_dir.path())
             .output()
             .expect("Failed to execute spacetime command");
@@ -491,38 +478,9 @@ impl Smoketest {
     /// Runs a spacetime CLI command and returns stdout as a string.
     ///
     /// Panics if the command fails.
+    /// Callers should pass `--server` explicitly when the command needs it.
     pub fn spacetime(&self, args: &[&str]) -> Result<String> {
         let output = self.spacetime_cmd(args);
-        if !output.status.success() {
-            bail!(
-                "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
-                args,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
-    /// Runs a spacetime CLI command without adding the --server flag.
-    ///
-    /// Use this for local-only commands like `generate` or `server` subcommands
-    /// that don't need a server connection.
-    /// Still uses --config-path to isolate test config from user config.
-    pub fn spacetime_local(&self, args: &[&str]) -> Result<String> {
-        let start = Instant::now();
-        let cli_path = ensure_binaries_built();
-        let output = Command::new(&cli_path)
-            .arg("--config-path")
-            .arg(&self.config_path)
-            .args(args)
-            .current_dir(self.project_dir.path())
-            .output()
-            .expect("Failed to execute spacetime command");
-
-        let cmd_name = args.first().unwrap_or(&"unknown");
-        eprintln!("[TIMING] spacetime_local {}: {:?}", cmd_name, start.elapsed());
-
         if !output.status.success() {
             bail!(
                 "spacetime {:?} failed:\nstdout: {}\nstderr: {}",
@@ -614,7 +572,14 @@ impl Smoketest {
 
         // Now publish with --bin-path to skip rebuild
         let publish_start = Instant::now();
-        let mut args = vec!["publish", "--bin-path", &wasm_path_str, "--yes"];
+        let mut args = vec![
+            "publish",
+            "--server",
+            &self.server_url,
+            "--bin-path",
+            &wasm_path_str,
+            "--yes",
+        ];
 
         if clear {
             args.push("--clear-database");
@@ -650,7 +615,7 @@ impl Smoketest {
     pub fn call(&self, name: &str, args: &[&str]) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
-        let mut cmd_args = vec!["call", "--", identity.as_str(), name];
+        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
         cmd_args.extend(args);
 
         self.spacetime(&cmd_args)
@@ -660,7 +625,7 @@ impl Smoketest {
     pub fn call_output(&self, name: &str, args: &[&str]) -> Output {
         let identity = self.database_identity.as_ref().expect("No database published");
 
-        let mut cmd_args = vec!["call", "--", identity.as_str(), name];
+        let mut cmd_args = vec!["call", "--server", &self.server_url, "--", identity.as_str(), name];
         cmd_args.extend(args);
 
         self.spacetime_cmd(&cmd_args)
@@ -670,14 +635,21 @@ impl Smoketest {
     pub fn sql(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
-        self.spacetime(&["sql", identity.as_str(), query])
+        self.spacetime(&["sql", "--server", &self.server_url, identity.as_str(), query])
     }
 
     /// Executes a SQL query with the --confirmed flag.
     pub fn sql_confirmed(&self, query: &str) -> Result<String> {
         let identity = self.database_identity.as_ref().context("No database published")?;
 
-        self.spacetime(&["sql", "--confirmed", identity.as_str(), query])
+        self.spacetime(&[
+            "sql",
+            "--server",
+            &self.server_url,
+            "--confirmed",
+            identity.as_str(),
+            query,
+        ])
     }
 
     /// Asserts that a SQL query produces the expected output.
@@ -708,8 +680,18 @@ impl Smoketest {
     /// Fetches the last N log records as JSON values.
     pub fn log_records(&self, n: usize) -> Result<Vec<serde_json::Value>> {
         let identity = self.database_identity.as_ref().context("No database published")?;
+        let n_str = n.to_string();
 
-        let output = self.spacetime(&["logs", "--format=json", "-n", &n.to_string(), "--", identity])?;
+        let output = self.spacetime(&[
+            "logs",
+            "--server",
+            &self.server_url,
+            "--format=json",
+            "-n",
+            &n_str,
+            "--",
+            identity,
+        ])?;
 
         output
             .lines()

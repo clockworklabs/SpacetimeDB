@@ -10,7 +10,7 @@ fn test_servers() {
 
     // Add a test server (local-only command, no --server flag needed)
     let output = test
-        .spacetime_local(&[
+        .spacetime(&[
             "server",
             "add",
             "--url",
@@ -27,7 +27,7 @@ fn test_servers() {
     );
 
     // List servers (local-only command)
-    let servers = test.spacetime_local(&["server", "list"]).unwrap();
+    let servers = test.spacetime(&["server", "list"]).unwrap();
 
     let testnet_re = Regex::new(r"(?m)^\s*testnet\.spacetimedb\.com\s+https\s+testnet\s*$").unwrap();
     assert!(
@@ -37,7 +37,7 @@ fn test_servers() {
     );
 
     // Add the local test server to the config so we can check its fingerprint
-    test.spacetime_local(&[
+    test.spacetime(&[
         "server",
         "add",
         "--url",
@@ -49,7 +49,7 @@ fn test_servers() {
 
     // Check fingerprint commands (local-only command)
     let output = test
-        .spacetime_local(&["server", "fingerprint", "test-local", "-y"])
+        .spacetime(&["server", "fingerprint", "test-local", "-y"])
         .unwrap();
     // The exact message may vary, just check it doesn't error
     assert!(
@@ -65,11 +65,11 @@ fn test_edit_server() {
     let test = Smoketest::builder().autopublish(false).build();
 
     // Add a server to edit (local-only command)
-    test.spacetime_local(&["server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint"])
+    test.spacetime(&["server", "add", "--url", "https://foo.com", "foo", "--no-fingerprint"])
         .unwrap();
 
     // Edit the server (local-only command)
-    test.spacetime_local(&[
+    test.spacetime(&[
         "server",
         "edit",
         "foo",
@@ -83,7 +83,7 @@ fn test_edit_server() {
     .unwrap();
 
     // Verify the edit (local-only command)
-    let servers = test.spacetime_local(&["server", "list"]).unwrap();
+    let servers = test.spacetime(&["server", "list"]).unwrap();
     let edited_re = Regex::new(r"(?m)^\s*edited-testnet\.spacetimedb\.com\s+https\s+edited-testnet\s*$").unwrap();
     assert!(
         edited_re.is_match(&servers),

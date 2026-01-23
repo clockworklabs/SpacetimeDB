@@ -71,8 +71,7 @@ fn test_spacetimedb_ns_csharp() {
     let tmpdir = tempfile::tempdir().expect("Failed to create temp dir");
     let project_path = test.project_dir.path().to_str().unwrap();
 
-    // Use spacetime_local since generate doesn't need a server connection
-    test.spacetime_local(&[
+    test.spacetime(&[
         "generate",
         "--out-dir",
         tmpdir.path().to_str().unwrap(),
@@ -110,8 +109,7 @@ fn test_custom_ns_csharp() {
     // Use a unique namespace name
     let namespace = "CustomTestNamespace";
 
-    // Use spacetime_local since generate doesn't need a server connection
-    test.spacetime_local(&[
+    test.spacetime(&[
         "generate",
         "--out-dir",
         tmpdir.path().to_str().unwrap(),

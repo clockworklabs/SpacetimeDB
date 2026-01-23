@@ -82,7 +82,7 @@ fn test_cannot_delete_others_database() {
     test.new_identity().unwrap();
 
     // Try to delete the database - should fail
-    let result = test.spacetime(&["delete", &identity, "--yes"]);
+    let result = test.spacetime(&["delete", "--server", &test.server_url, &identity, "--yes"]);
     assert!(result.is_err(), "Expected delete to fail for non-owner");
 }
 
