@@ -82,19 +82,19 @@ using namespace SpacetimeDb;
 
 // Define a table structure
 struct User {
-    uint32_t id;
+    Identity identity;
     std::string name;
     std::string email;
 };
 
 // Register BSATN serialization
-SPACETIMEDB_STRUCT(User, id, name, email)
+SPACETIMEDB_STRUCT(User, identity, name, email)
 
 // Register as a table
 SPACETIMEDB_TABLE(User, users, Public)
 
 // Add constraints using FIELD_ macros
-FIELD_PrimaryKeyAutoInc(users, id);
+FIELD_PrimaryKey(users, identity);
 FIELD_Unique(users, email);
 
 // Define an enum with namespace qualification
@@ -103,15 +103,15 @@ SPACETIMEDB_NAMESPACE(UserRole, "Auth")  // Will be "Auth.UserRole" in client co
 
 // User-defined reducer
 SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name, std::string email) {
-    User user{0, name, email}; // id will be auto-generated
+    User user{ctx.sender, name, email}; // id will be auto-generated
     ctx.db[users].insert(user);
     LOG_INFO("Added user: " + name);
     return Ok();
 }
 
 // Delete user by id (using primary key)
-SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx, uint32_t id) {
-    ctx.db[users_id].delete_by_key(id);
+SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx) {
+    ctx.db[users_identity].delete_by_key(ctx.sender);
     return Ok();
 }
 
@@ -122,19 +122,19 @@ SPACETIMEDB_INIT(init, ReducerContext ctx) {
 }
 
 SPACETIMEDB_CLIENT_CONNECTED(on_connect, ReducerContext ctx) {
-    LOG_INFO("Client connected: " + ctx.sender.to_hex());
+    LOG_INFO("Client connected: " + ctx.sender.to_hex_string());
     return Ok();
 }
 
 SPACETIMEDB_CLIENT_DISCONNECTED(on_disconnect, ReducerContext ctx) {
-    LOG_INFO("Client disconnected: " + ctx.sender.to_hex());
+    LOG_INFO("Client disconnected: " + ctx.sender.to_hex_string());
     return Ok();
 }
 
 // Define a view for querying data (finds the calling user)
 SPACETIMEDB_VIEW(std::optional<User>, find_my_user, Public, ViewContext ctx) {
     // Use indexed field to find user by their identity
-    return ctx.db[users_id].find(ctx.sender);
+    return ctx.db[users_identity].find(ctx.sender);
 }
 
 // Define a procedure (pure function with return value)
@@ -153,9 +153,10 @@ cd modules/your-module
 
 # Configure with CMake (uses src/lib.cpp by default)
 emcmake cmake -B build .
-
 # Build the module
 cmake --build build
+# Or use spacetime build
+spacetime build -p .
 
 # Publish to SpacetimeDB
 spacetime publish --bin-path build/lib.wasm your-database-name
@@ -192,9 +193,9 @@ cmake --build build
   - Returns `ReducerResult` (alias for `Outcome<void>`)
   - Use `return Ok();` for success or `return Err("message");` for errors
   - Failed reducers (Err) trigger transaction rollback
-- `SPACETIMEDB_INIT(name)` - Module initialization reducer (optional)
-- `SPACETIMEDB_CLIENT_CONNECTED(name)` - Client connection reducer (optional)
-- `SPACETIMEDB_CLIENT_DISCONNECTED(name)` - Client disconnection reducer (optional)
+- `SPACETIMEDB_INIT(name, ReducerContext ctx)` - Module initialization reducer (optional)
+- `SPACETIMEDB_CLIENT_CONNECTED(name, ReducerContext ctx)` - Client connection reducer (optional)
+- `SPACETIMEDB_CLIENT_DISCONNECTED(name, ReducerContext ctx)` - Client disconnection reducer (optional)
 
 #### Views
 - `SPACETIMEDB_VIEW(return_type, name, Public/Private, ViewContext ctx)` - Read-only query function

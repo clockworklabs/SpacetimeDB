@@ -30,8 +30,11 @@ A SpacetimeDB C++ module consists of:
 using namespace SpacetimeDb;
 
 // 1. Data structures (structs/enums)
-struct MyData { /* fields */ };
-SPACETIMEDB_STRUCT(MyData, /* field names */);
+struct MyData { 
+    uint64_t id;
+    /* other fields */ 
+};
+SPACETIMEDB_STRUCT(MyData, id /*, other field names */);
 
 // 2. Tables (persistent storage)
 SPACETIMEDB_TABLE(MyData, my_table, Public);
@@ -40,7 +43,7 @@ SPACETIMEDB_TABLE(MyData, my_table, Public);
 FIELD_PrimaryKey(my_table, id);
 
 // 4. Reducers (functions clients can call)
-SPACETIMEDB_REDUCER(my_function, ReducerContext ctx, /* parameters */) {
+SPACETIMEDB_REDUCER(my_function, ReducerContext ctx /*, parameters */) {
     // Your logic here
     return Ok();
 }
@@ -63,7 +66,7 @@ spacetime publish . my-database
 
 ### Manual Setup
 
-For existing projects, ensure your `CMakeLists.txt` includes:
+For existing projects, ensure your `CMakeLists.txt` includes, use `spacetime init` to generate one for you:
 
 ```cmake
 cmake_minimum_required(VERSION 3.16)
@@ -74,6 +77,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set path to SpacetimeDB C++ library
 set(SPACETIMEDB_CPP_LIBRARY_PATH "path/to/crates/bindings-cpp")
+# Or FetchContent from SpacetimeDB
 
 add_executable(lib src/lib.cpp)
 target_include_directories(lib PRIVATE ${SPACETIMEDB_CPP_LIBRARY_PATH}/include)
@@ -111,7 +115,7 @@ Reducers are functions that modify data and can be called by clients:
 ```cpp
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     User user{0, name, true};
-    ctx.db[users].insert(user);
+    ctx.db[user].insert(user);
     return Ok();
 }
 ```
@@ -218,6 +222,8 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx, /* params */) {
     // Random number generation
     uint64_t random = ctx.rng().next_u64();
     int dice_roll = ctx.random<int>();
+
+    return Ok();
 }
 ```
 
@@ -234,21 +240,21 @@ For basic operations and iteration:
 ```cpp
 // Insert (basic)
 User user{0, "Alice", true};
-ctx.db[users].insert(user);
+ctx.db[user].insert(user);
 
 // Insert with auto-increment callback
-// If users table has FIELD_PrimaryKeyAutoInc(users, id)
+// If user table has FIELD_PrimaryKeyAutoInc(user, id)
 User user_with_autoinc{0, "Bob", true};  // id=0 will be auto-generated
-User inserted_user = ctx.db[users].insert(user_with_autoinc);
+User inserted_user = ctx.db[user].insert(user_with_autoinc);
 LOG_INFO("Created user with auto-generated ID: " + std::to_string(inserted_user.id));
 
 // Iterate all rows
-for (const auto& user : ctx.db[users]) {
+for (const auto& user : ctx.db[user]) {
     LOG_INFO("User: " + user.name);
 }
 
 // Update (requires full row replacement)
-for (auto& user : ctx.db[users]) {
+for (auto& user : ctx.db[user]) {
     if (user.name == "Alice") {
         user.active = false;
         ctx.db[users].update(user);
@@ -263,18 +269,18 @@ For indexed operations (requires constraints):
 
 ```cpp
 // Table with primary key
-SPACETIMEDB_TABLE(User, users, Public);
-FIELD_PrimaryKey(users, id);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKey(user, id);
 
 // Efficient operations using primary key
 SPACETIMEDB_REDUCER(delete_user, ReducerContext ctx, uint32_t user_id) {
-    ctx.db[users_id].delete_by_key(user_id);
+    ctx.db[user_id].delete_by_key(user_id);
     return Ok();
 }
 
 SPACETIMEDB_REDUCER(update_user, ReducerContext ctx, uint32_t user_id, std::string new_name) {
     User updated_user{user_id, new_name, true};
-    ctx.db[users_id].update(updated_user);
+    ctx.db[user_id].update(updated_user);
     return Ok();
 }
 ```
@@ -305,9 +311,6 @@ SPACETIMEDB_REDUCER(dice_game, ReducerContext ctx, std::string player, uint32_t 
     float probability = rng.gen_float();  // [0, 1)
     bool coin_flip = rng.gen_bool();
     
-    // Convenience method for single values
-    int random_int = ctx.random<int>();
-    double random_double = ctx.random<double>();
     return Ok();
 }
 ```
@@ -316,9 +319,6 @@ SPACETIMEDB_REDUCER(dice_game, ReducerContext ctx, std::string player, uint32_t 
 
 #### `ctx.rng()`
 Returns the random number generator instance for this reducer call.
-
-#### `ctx.random<T>()`
-Convenience method to generate a single random value of type T.
 
 ### RNG Methods
 
@@ -376,8 +376,6 @@ The RNG is seeded with the reducer's timestamp in microseconds:
 ### Example: Casino Game
 
 ```cpp
-SPACETIMEDB_TABLE(GameResult, game_results, Public)
-SPACETIMEDB_STRUCT(GameResult, player, game_type, result, payout, timestamp)
 struct GameResult {
     uint32_t id;
     std::string player;
@@ -386,6 +384,9 @@ struct GameResult {
     uint32_t payout;
     Timestamp timestamp;
 };
+
+SPACETIMEDB_TABLE(GameResult, game_results, Public)
+SPACETIMEDB_STRUCT(GameResult, player, game_type, result, payout, timestamp)
 
 SPACETIMEDB_REDUCER(play_slots, ReducerContext ctx, std::string player_name) {
     auto& rng = ctx.rng();
@@ -476,7 +477,7 @@ SPACETIMEDB_STRUCT(WithContainers, numbers, names, description, optional_numbers
 
 ```cpp
 // Using SPACETIMEDB_ENUM macro (recommended)
-SPACETIMEDB_ENUM(Status, Pending, Active, Inactive)
+SPACETIMEDB_ENUM(StatusType, Pending, Active, Inactive)
 
 // Manual implementation for complex cases
 enum class Priority : uint8_t { Low = 0, Medium = 1, High = 2 };
@@ -485,7 +486,7 @@ namespace SpacetimeDb::bsatn {
 template<>
 struct bsatn_traits<Priority> {
     static AlgebraicType algebraic_type() {
-        return LazyTypeRegistrar<Priority>::getOrRegister([]() {
+        return Internal::LazyTypeRegistrar<Priority>::getOrRegister([]() {
             SumTypeBuilder builder;
             builder.with_unit_variant("Low");
             builder.with_unit_variant("Medium");
@@ -508,14 +509,30 @@ struct bsatn_traits<Priority> {
 #### Variant Enums (With Payloads)
 
 ```cpp
-struct ErrorInfo { std::string message; };
-SPACETIMEDB_STRUCT(ErrorInfo, message);
+struct ErrorDetail { std::string message; };
+SPACETIMEDB_STRUCT(ErrorDetail, message);
 
 // Enum with different payload types
-SPACETIMEDB_ENUM(Result,
+SPACETIMEDB_ENUM(ResultTypes,
     (Success, uint32_t),
-    (Error, ErrorInfo),
+    (Error, ErrorDetail),
     (Pending, std::monostate)  // Unit variant
+)
+```
+
+::: Note that underlying the variant enum is the std:variant which requires each type to be unique.
+
+```cpp
+// Workaround: C++ std::variant can't have duplicate types, so we create unique empty types
+// for each unit variant instead of using Unit multiple times (like C# SDK does)
+SPACETIMEDB_UNIT_TYPE(TestFFoo)
+SPACETIMEDB_UNIT_TYPE(TestFBar)
+
+// TestF enum - variant enum matching Rust: Foo, Bar, Baz(String)
+SPACETIMEDB_ENUM(TestF,
+    (Foo, TestFFoo),
+    (Bar, TestFBar),
+    (Baz, std::string)
 )
 ```
 
@@ -534,11 +551,15 @@ SPACETIMEDB_NAMESPACE(UserRole, "Auth")  // Will be "Auth.UserRole" in client co
 SPACETIMEDB_ENUM(Permission, Read, Write, Execute, Delete)
 SPACETIMEDB_NAMESPACE(Permission, "Auth")  // Will be "Auth.Permission"
 
+
+struct ConnectionInfo { std::string message; };
+SPACETIMEDB_STRUCT(ConnectionInfo, message);
+
 // Works with variant enums too
 SPACETIMEDB_ENUM(NetworkEvent,
     (Connected, ConnectionInfo),
     (Disconnected, std::string),
-    (Error, ErrorDetails)
+    (Error, ErrorDetail)
 )
 SPACETIMEDB_NAMESPACE(NetworkEvent, "Network")  // Will be "Network.NetworkEvent"
 ```
@@ -558,17 +579,17 @@ SPACETIMEDB_NAMESPACE(NetworkEvent, "Network")  // Will be "Network.NetworkEvent
 ### Custom Structs
 
 ```cpp
-struct Address {
+struct AddressDetail {
     std::string street;
     std::string city;
     std::string country;
 };
-SPACETIMEDB_STRUCT(Address, street, city, country);
+SPACETIMEDB_STRUCT(AddressDetail, street, city, country);
 
 struct Person {
     uint32_t id;
     std::string name;
-    Address address;  // Nested struct
+    AddressDetail address;  // Nested struct
     std::vector<std::string> hobbies;
 };
 SPACETIMEDB_STRUCT(Person, id, name, address, hobbies);
@@ -581,28 +602,37 @@ SPACETIMEDB_STRUCT(Person, id, name, address, hobbies);
 Constraints are applied **after** table registration using `FIELD_` macros:
 
 ```cpp
-SPACETIMEDB_TABLE(User, users, Public);
+struct User {
+    uint64_t id;
+    std::string email;
+    uint32_t age;
+    std::string city;
+    uint64_t sequence_num;
+    uint64_t order_id;
+};
+SPACETIMEDB_STRUCT(User, id, email, age, city, sequence_num, order_id);
+SPACETIMEDB_TABLE(User, user, Public);
 
 // Primary key (unique + clustered btree index)
-FIELD_PrimaryKey(users, id);
+FIELD_PrimaryKey(user, id);
 
 // Auto-incrementing primary key  
-FIELD_PrimaryKeyAutoInc(users, id);
+FIELD_PrimaryKeyAutoInc(user, id);
 
 // Unique constraint (creates btree index)
-FIELD_Unique(users, email);
+FIELD_Unique(user, email);
 
 // Auto-incrementing unique field
-FIELD_UniqueAutoInc(users, sequence_num);
+FIELD_UniqueAutoInc(user, sequence_num);
 
 // Btree index for fast queries and range operations
-FIELD_Index(users, age);
+FIELD_Index(user, age);
 
 // Auto-incrementing indexed field
-FIELD_IndexAutoInc(users, order_id);
+FIELD_IndexAutoInc(user, order_id);
 
 // Multi-column btree index
-FIELD_NamedMultiColumnIndex(users, age_city_idx, age, city);
+FIELD_NamedMultiColumnIndex(user, age_city_idx, age, city);
 ```
 
 ### Constraint Requirements
@@ -619,15 +649,21 @@ FIELD_NamedMultiColumnIndex(users, age_city_idx, age, city);
 When using auto-increment fields, the `insert()` method automatically returns the row with the generated ID populated. This enables immediate access to generated values without requiring additional lookups.
 
 ```cpp
+struct User {
+    uint64_t id;
+    std::string name;
+    bool is_active;
+};
+SPACETIMEDB_STRUCT(User, id, name, is_active);
 // Table with auto-increment ID
-SPACETIMEDB_TABLE(User, users, Public);
-FIELD_PrimaryKeyAutoInc(users, id);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
 
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     User user{0, name, true};  // id=0 is placeholder - will be auto-generated
     
     // insert() returns the user with the generated ID
-    User created_user = ctx.db[users].insert(user);
+    User created_user = ctx.db[user_id].insert(user);
     
     // Generated ID is immediately available
     LOG_INFO("Created user " + name + " with ID: " + std::to_string(created_user.id));
@@ -636,6 +672,7 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     if (created_user.id > 1000) {
         LOG_INFO("High-value user created");
     }
+    return Ok();
 }
 
 // Works with all auto-increment constraint types
@@ -659,27 +696,40 @@ struct LogEntry {
     uint64_t sequence;    // Auto-increment sequence number
     std::string message;
 };
-
-SPACETIMEDB_TABLE(LogEntry, logs, Private);
-FIELD_PrimaryKeyAutoInc(logs, id);
-FIELD_UniqueAutoInc(logs, sequence);
+SPACETIMEDB_STRUCT(LogEntry, id, sequence, message);
+SPACETIMEDB_TABLE(LogEntry, log_entry, Private);
+FIELD_PrimaryKeyAutoInc(log_entry, id);
+FIELD_UniqueAutoInc(log_entry, sequence);
 
 SPACETIMEDB_REDUCER(log_message, ReducerContext ctx, std::string msg) {
     LogEntry entry{0, 0, msg};  // Both id and sequence will be generated
-    LogEntry created = ctx.db[logs].insert(entry);
+    LogEntry created = ctx.db[log_entry_id].insert(entry);
     
     LOG_INFO("Log entry " + std::to_string(created.id) + 
              " with sequence " + std::to_string(created.sequence));
+    return Ok();
 }
 ```
 
 ### Using Indexed Fields
 
 ```cpp
+struct User {
+    uint64_t id;
+    std::string name;
+    std::string email;
+    uint32_t age;
+};
+SPACETIMEDB_STRUCT(User, id, name, email, age)
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
+FIELD_Unique(user, email);
+FIELD_Index(user, age);
+
 // Primary key access
-SPACETIMEDB_REDUCER(get_user, ReducerContext ctx, uint32_t user_id) {
+SPACETIMEDB_REDUCER(get_user, ReducerContext ctx, uint32_t in_user_id) {
     // Efficient O(log n) lookup
-    auto user_opt = ctx.db[users_id].find(user_id);
+    auto user_opt = ctx.db[user_id].find(in_user_id);
     if (user_opt.has_value()) {
         LOG_INFO("Found user: " + user_opt->name);
     }
@@ -688,16 +738,16 @@ SPACETIMEDB_REDUCER(get_user, ReducerContext ctx, uint32_t user_id) {
 
 // Unique field access
 SPACETIMEDB_REDUCER(find_by_email, ReducerContext ctx, std::string email) {
-    for (const auto& user : ctx.db[users_email].filter(email)) {
-        LOG_INFO("User with email " + email + ": " + user.name);
-        break; // Unique, so only one result
+    auto user_opt = ctx.db[user_email].find(email);
+    if (user_opt.has_value()) {
+        LOG_INFO("User with email " + email + ": " + user_opt->name);
     }
     return Ok();
 }
 
 // Non-unique index
 SPACETIMEDB_REDUCER(users_by_age, ReducerContext ctx, uint32_t age) {
-    for (const auto& user : ctx.db[users_age].filter(age)) {
+    for (const auto& user : ctx.db[user_age].filter(age)) {
         LOG_INFO("User age " + std::to_string(age) + ": " + user.name);
     }
     return Ok();
@@ -711,22 +761,42 @@ Btree indexes support efficient range queries using the C++ range query system:
 ```cpp
 #include <spacetimedb/range_queries.h>
 
-SPACETIMEDB_TABLE(Product, products, Public);
-FIELD_Index(products, price);
-FIELD_Index(products, category);
+struct ProductItem {
+    uint32_t id;
+    std::string name;
+    int64_t price;
+    std::string category;
+};
+SPACETIMEDB_STRUCT(ProductItem, id, name, price, category);
+SPACETIMEDB_TABLE(ProductItem, product_item, Public);
+FIELD_Index(product_item, price);
+FIELD_Index(product_item, category);
 
-SPACETIMEDB_REDUCER(products_in_price_range, ReducerContext ctx, double min_price, double max_price) {
+SPACETIMEDB_REDUCER(products_in_price_range, ReducerContext ctx, int64_t min_price, int64_t max_price) {
     // Create range objects
     auto price_range = range_inclusive(min_price, max_price);  // min_price..=max_price
-    auto expensive_items = range_from(100.0);                 // >= 100.0
-    auto cheap_items = range_to(50.0);                        // < 50.0
+    auto expensive_items = range_from(100);                 // >= 100
+    auto cheap_items = range_to(50);                        // < 50
     
     // Use indexed field accessor for efficient queries
-    for (const auto& product : ctx.db[products_price].filter(price_range)) {
+    for (const auto& product : ctx.db[product_item_price].filter(price_range)) {
         LOG_INFO("Product in range: " + product.name + " - $" + std::to_string(product.price));
     }
     return Ok();
 }
+
+struct User {
+    uint64_t id;
+    std::string name;
+    std::string email;
+    uint32_t age;
+};
+SPACETIMEDB_STRUCT(User, id, name, email, age)
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
+FIELD_Unique(user, email);
+FIELD_Index(user, age);
+FIELD_Index(user, name);
 
 // All range construction patterns
 SPACETIMEDB_REDUCER(demonstrate_ranges, ReducerContext ctx) {
@@ -754,6 +824,36 @@ SPACETIMEDB_REDUCER(demonstrate_ranges, ReducerContext ctx) {
 Control what data clients can see using row-level security:
 
 ```cpp
+// Define structs first
+struct UserData {
+    uint32_t id;
+    Identity owner_identity;
+    std::string private_info;
+    bool is_sensitive;
+};
+SPACETIMEDB_STRUCT(UserData, id, owner_identity, private_info, is_sensitive);
+SPACETIMEDB_TABLE(UserData, user_data, Public);
+
+struct Post {
+    uint32_t id;
+    Identity author_identity;
+    std::string content;
+    bool is_public;
+    Timestamp created_at;
+};
+SPACETIMEDB_STRUCT(Post, id, author_identity, content, is_public, created_at);
+SPACETIMEDB_TABLE(Post, posts, Public);
+
+struct Message {
+    uint32_t id;
+    Identity sender_identity;
+    std::string content;
+    Timestamp timestamp;
+};
+SPACETIMEDB_STRUCT(Message, id, sender_identity, content, timestamp);
+SPACETIMEDB_TABLE(Message, messages, Public);
+
+// Define visibility filters (must match table names)
 // Only show users their own data
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(user_data_filter, 
     "SELECT * FROM user_data WHERE owner_identity = current_user_identity()"
@@ -768,25 +868,6 @@ SPACETIMEDB_CLIENT_VISIBILITY_FILTER(posts_filter,
 SPACETIMEDB_CLIENT_VISIBILITY_FILTER(recent_messages,
     "SELECT * FROM messages WHERE timestamp > (current_timestamp() - INTERVAL '1 day')"
 );
-
-struct UserData {
-    uint32_t id;
-    Identity owner_identity;
-    std::string private_info;
-    bool is_sensitive;
-};
-SPACETIMEDB_STRUCT(UserData, id, owner_identity, private_info, is_sensitive);
-SPACETIMEDB_TABLE(UserData, user_data, Public);  // Public table with RLS
-
-struct Post {
-    uint32_t id;
-    Identity author_identity;
-    std::string content;
-    bool is_public;
-    Timestamp created_at;
-};
-SPACETIMEDB_STRUCT(Post, id, author_identity, content, is_public, created_at);
-SPACETIMEDB_TABLE(Post, posts, Public);  // Filtered by posts_filter
 ```
 
 **Available SQL functions for filters:**
@@ -808,10 +889,13 @@ struct User {
     Identity id;        // Unique across all users
     std::string name;
 };
+SPACETIMEDB_STRUCT(User, id, name);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKey(user, id);
 
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     User user{ctx.sender, name};  // ctx.sender is the calling client's identity
-    ctx.db[users].insert(user);
+    ctx.db[user_id].insert(user);
     return Ok();
 }
 ```
@@ -833,14 +917,19 @@ struct Session {
 Represents a point in time:
 
 ```cpp
-struct Event {
-    std::string name;
-    Timestamp when;
+struct SystemEvent {
+    uint32_t id;
+    std::string event_name;
+    Timestamp occurred_at;
 };
+SPACETIMEDB_STRUCT(SystemEvent, id, event_name, occurred_at);
+SPACETIMEDB_TABLE(SystemEvent, system_event, Public);
+FIELD_PrimaryKeyAutoInc(system_event, id);
 
 SPACETIMEDB_REDUCER(log_event, ReducerContext ctx, std::string event_name) {
-    Event event{event_name, ctx.timestamp};  // Current time
-    ctx.db[events].insert(event);
+    SystemEvent event{0, event_name, ctx.timestamp};  // Current time
+    ctx.db[system_event].insert(event);
+    LOG_INFO("Event logged: " + event_name);
     return Ok();
 }
 ```
@@ -851,13 +940,28 @@ Represents a duration of time:
 
 ```cpp
 struct Task {
+    uint32_t id;
     std::string name;
     TimeDuration estimated_duration;
+    Timestamp created_at;
 };
+SPACETIMEDB_STRUCT(Task, id, name, estimated_duration, created_at);
+SPACETIMEDB_TABLE(Task, task, Public);
+FIELD_PrimaryKeyAutoInc(task, id);
 
-// Create durations
-auto one_hour = TimeDuration::from_hours(1);
-auto five_minutes = TimeDuration::from_millis(5 * 60 * 1000);
+SPACETIMEDB_REDUCER(create_task, ReducerContext ctx, std::string name, uint64_t hours) {
+    // Create durations in different ways
+    auto duration = TimeDuration::from_hours(hours);
+    // Other duration constructors:
+    // auto one_hour = TimeDuration::from_hours(1);
+    // auto five_minutes = TimeDuration::from_secs(5 * 60);
+    // auto milliseconds = TimeDuration::from_millis(5000);
+    
+    Task new_task{0, name, duration, ctx.timestamp};
+    ctx.db[task].insert(new_task);
+    LOG_INFO("Task created: " + name);
+    return Ok();
+}
 ```
 
 ### Scheduled Reducers
@@ -873,11 +977,11 @@ struct ScheduledTask {
     Timestamp created_at;
 };
 SPACETIMEDB_STRUCT(ScheduledTask, id, run_at, task_data, created_at);
-SPACETIMEDB_TABLE(ScheduledTask, scheduled_tasks, Private);
-FIELD_PrimaryKeyAutoInc(scheduled_tasks, id);
+SPACETIMEDB_TABLE(ScheduledTask, scheduled_task, Private);
+FIELD_PrimaryKeyAutoInc(scheduled_task, id);
 
 // Register the table for scheduling (column 1 = run_at field, index 0-based)
-SPACETIMEDB_SCHEDULE(scheduled_tasks, 1, process_scheduled_task);
+SPACETIMEDB_SCHEDULE(scheduled_task, 1, process_scheduled_task);
 
 // The scheduled reducer - called automatically when tasks are due
 SPACETIMEDB_REDUCER(process_scheduled_task, ReducerContext ctx, ScheduledTask task) {
@@ -888,15 +992,15 @@ SPACETIMEDB_REDUCER(process_scheduled_task, ReducerContext ctx, ScheduledTask ta
     // Optionally schedule another task
     auto next_run = ScheduleAt(TimeDuration::from_hours(24)); // Run in 24 hours
     ScheduledTask next_task{0, next_run, "Daily cleanup", ctx.timestamp};
-    ctx.db[scheduled_tasks].insert(next_task);
+    ctx.db[scheduled_task].insert(next_task);
     return Ok();
 }
 
 // Create scheduled tasks from other reducers
 SPACETIMEDB_REDUCER(schedule_reminder, ReducerContext ctx, std::string message, uint64_t delay_seconds) {
-    auto run_time = ScheduleAt(TimeDuration::from_secs(delay_seconds));
+    auto run_time = ScheduleAt(TimeDuration::from_seconds(delay_seconds));
     ScheduledTask reminder{0, run_time, message, ctx.timestamp};
-    ctx.db[scheduled_tasks].insert(reminder);
+    ctx.db[scheduled_task].insert(reminder);
     
     LOG_INFO("Reminder scheduled for " + std::to_string(delay_seconds) + " seconds");
     return Ok();
@@ -906,14 +1010,19 @@ SPACETIMEDB_REDUCER(schedule_reminder, ReducerContext ctx, std::string message, 
 SPACETIMEDB_REDUCER(schedule_examples, ReducerContext ctx) {
     // Relative scheduling (from now)
     auto in_one_hour = ScheduleAt(TimeDuration::from_hours(1));
-    auto in_five_minutes = ScheduleAt(TimeDuration::from_millis(5 * 60 * 1000));
+    auto in_five_minutes = ScheduleAt(TimeDuration::from_seconds(5 * 60));
     
     // Absolute scheduling (specific time)
-    auto specific_time = ScheduleAt(Timestamp::from_millis(1640995200000)); // Specific Unix timestamp
+    auto specific_time_millis = Timestamp::from_millis_since_epoch(1640995200000);  // Jan 1, 2022
+    auto absolute_schedule = ScheduleAt(specific_time_millis);
     
     // Schedule tasks
-    ctx.db[scheduled_tasks].insert(ScheduledTask{0, in_one_hour, "Hourly task", ctx.timestamp});
-    ctx.db[scheduled_tasks].insert(ScheduledTask{0, in_five_minutes, "Quick task", ctx.timestamp});
+    ScheduledTask hourly{0, in_one_hour, "Hourly task", ctx.timestamp};
+    ScheduledTask quick{0, in_five_minutes, "Quick task", ctx.timestamp};
+    ScheduledTask absolute{0, absolute_schedule, "New Year task", ctx.timestamp};
+    ctx.db[scheduled_task].insert(hourly);
+    ctx.db[scheduled_task].insert(quick);
+    ctx.db[scheduled_task].insert(absolute);
     return Ok();
 }
 ```
@@ -939,7 +1048,7 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
     
     // With timing
     {
-        LogStopwatch timer("Database operation");
+        LogStopwatch timer(std::string_view("Database operation"));
         // ... time-consuming operation ...
     } // Automatically logs duration
     return Ok();
@@ -950,7 +1059,7 @@ SPACETIMEDB_REDUCER(example, ReducerContext ctx) {
 
 ### CMake Configuration
 
-The C++ SDK uses CMake with Emscripten for WebAssembly compilation:
+The C++ SDK uses CMake with Emscripten for WebAssembly compilation (`spacetime init` will generate one for you):
 
 ```cmake
 # Basic configuration
@@ -982,6 +1091,9 @@ target_link_libraries(${OUTPUT_NAME} PRIVATE spacetimedb_cpp_library)
 # Standard build
 emcmake cmake -B build .
 cmake --build build
+
+# Or spacetime
+spacetime build -p .
 
 # Custom module source
 emcmake cmake -B build -DMODULE_SOURCE=src/test.cpp -DOUTPUT_NAME=test .
@@ -1022,57 +1134,56 @@ struct User {
 SPACETIMEDB_STRUCT(User, id, identity, username, email, created_at, active);
 
 // User table with constraints
-SPACETIMEDB_TABLE(User, users, Public);
-FIELD_PrimaryKeyAutoInc(users, id);
-FIELD_Unique(users, identity);
-FIELD_Unique(users, username);
-FIELD_Unique(users, email);
-FIELD_Index(users, active);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
+FIELD_Unique(user, identity);
+FIELD_Unique(user, username);
+FIELD_Unique(user, email);
+FIELD_Index(user, active);
 
 // Register new user
 SPACETIMEDB_REDUCER(register_user, ReducerContext ctx, std::string username, std::string email) {
     // Check if user already exists
-    for (const auto& user : ctx.db[users_identity].filter(ctx.sender)) {
-        if (user.active) {
-            return Err("User already registered");
-        }
+    auto user_opt = ctx.db[user_identity].find(ctx.sender);
+    if (user_opt && user_opt->active) {
+        return Err("User already registered");
     }
     
     User new_user{0, ctx.sender, username, email, ctx.timestamp, true};
-    ctx.db[users].insert(new_user);
+    ctx.db[user].insert(new_user);
     LOG_INFO("User registered: " + username);
     return Ok();
 }
 
 // Update user profile
 SPACETIMEDB_REDUCER(update_profile, ReducerContext ctx, std::string new_username) {
-    for (auto& user : ctx.db[users]) {
-        if (user.identity == ctx.sender && user.active) {
-            user.username = new_username;
-            ctx.db[users].update(user);
-            LOG_INFO("Profile updated");
-            return Ok();
-        }
+    auto user_opt = ctx.db[user_identity].find(ctx.sender);
+    if (user_opt && user_opt->active) {
+        User updated_user = *user_opt;
+        updated_user.username = new_username;
+        ctx.db[user_id].update(updated_user);
+        LOG_INFO("Profile updated");
+        return Ok();
     }
     return Err("User not found or inactive");
 }
 
 // Deactivate user
 SPACETIMEDB_REDUCER(deactivate_user, ReducerContext ctx) {
-    for (auto& user : ctx.db[users]) {
-        if (user.identity == ctx.sender) {
-            user.active = false;
-            ctx.db[users].update(user);
-            LOG_INFO("User deactivated");
-            return Ok();
-        }
+    auto user_opt = ctx.db[user_identity].find(ctx.sender);
+    if (user_opt && user_opt->active) {
+        User updated_user = *user_opt;
+        updated_user.active = false;
+        ctx.db[user_id].update(updated_user);
+        LOG_INFO("User deactivated");
+        return Ok();
     }
     return Ok();
 }
 
-// Admin: List all active users
+// Admin: List all active user
 SPACETIMEDB_REDUCER(list_active_users, ReducerContext ctx) {
-    for (const auto& user : ctx.db[users_active].filter(true)) {
+    for (const auto& user : ctx.db[user_active].filter(true)) {
         LOG_INFO("Active user: " + user.username + " (" + user.email + ")");
     }
     return Ok();
@@ -1159,21 +1270,6 @@ SPACETIMEDB_REDUCER(get_channel_history, ReducerContext ctx, uint32_t channel_id
 ```
 
 ## Error Handling
-
-### Constraint Violations
-
-```cpp
-SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string username) {
-    User user{0, ctx.sender, username, ctx.timestamp};
-    
-    // If username is not unique, this will fail the entire transaction
-    ctx.db[users].insert(user);
-    
-    // This line won't execute if the insert fails
-    LOG_INFO("User created successfully");
-    return Ok();
-}
-```
 
 ### Validation Patterns
 
