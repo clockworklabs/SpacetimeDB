@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_macros)]
 //! Tests translated from smoketests/tests/pg_wire.py
 
 use spacetimedb_smoketests::{have_psql, Smoketest};
