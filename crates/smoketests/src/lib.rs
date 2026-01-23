@@ -301,7 +301,35 @@ impl Smoketest {
     fn publish_module_opts(&mut self, name: Option<&str>, clear: bool) -> Result<String> {
         let start = Instant::now();
         let project_path = self.project_dir.path().to_str().unwrap().to_string();
-        let mut args = vec!["publish", "--project-path", &project_path, "--yes"];
+
+        // First, run spacetime build to compile the WASM module (separate from publish)
+        let build_start = Instant::now();
+        let cli_path = ensure_binaries_built();
+        let build_output = Command::new(&cli_path)
+            .args(["build", "--project-path", &project_path])
+            .current_dir(self.project_dir.path())
+            .output()
+            .expect("Failed to execute spacetime build");
+        eprintln!("[TIMING] spacetime build: {:?}", build_start.elapsed());
+
+        if !build_output.status.success() {
+            bail!(
+                "spacetime build failed:\nstdout: {}\nstderr: {}",
+                String::from_utf8_lossy(&build_output.stdout),
+                String::from_utf8_lossy(&build_output.stderr)
+            );
+        }
+
+        // Construct the wasm path (module name is smoketest-module -> smoketest_module.wasm)
+        let wasm_path = self
+            .project_dir
+            .path()
+            .join("target/wasm32-unknown-unknown/release/smoketest_module.wasm");
+        let wasm_path_str = wasm_path.to_str().unwrap().to_string();
+
+        // Now publish with --bin-path to skip rebuild
+        let publish_start = Instant::now();
+        let mut args = vec!["publish", "--bin-path", &wasm_path_str, "--yes"];
 
         if clear {
             args.push("--clear-database");
@@ -314,7 +342,8 @@ impl Smoketest {
         }
 
         let output = self.spacetime(&args)?;
-        eprintln!("[TIMING] publish_module: {:?}", start.elapsed());
+        eprintln!("[TIMING] spacetime publish (after build): {:?}", publish_start.elapsed());
+        eprintln!("[TIMING] publish_module total: {:?}", start.elapsed());
 
         // Parse the identity from output like "identity: abc123..."
         let re = Regex::new(r"identity: ([0-9a-fA-F]+)").unwrap();
