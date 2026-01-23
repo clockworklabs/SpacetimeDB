@@ -146,7 +146,7 @@ pub struct ModuleDef {
     raw_module_def_version: RawModuleDefVersion,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum RawModuleDefVersion {
     /// Represents [`RawModuleDefV9`] and earlier.
     V9OrEarlier,
