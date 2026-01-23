@@ -141,11 +141,9 @@ jobs:
       - name: Run smoketests (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: |
-          echo pwsh -Command "\"cargo ci smoketests --parallel $SMOKETEST_ARGS\""
-          pwsh -Command "cargo ci smoketests --parallel $SMOKETEST_ARGS"
+        run: pwsh -Command "cargo ci smoketests --parallel $SMOKETEST_ARGS"
 
-test:
+  test:
     needs: [lints]
     name: Test Suite
     runs-on: spacetimedb-new-runner
