@@ -19,8 +19,7 @@ concurrency:
 
 jobs:
   smoketests:
-    # TODO: before merging re-enable this
-    # needs: [lints]
+    needs: [lints]
     name: Smoketests
     strategy:
       matrix:
