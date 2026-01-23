@@ -56,6 +56,20 @@ template<typename T> class Outcome<T>;
 
 **Creating Results**:
 ```cpp
+#include <spacetimedb.h>
+
+using namespace SpacetimeDb;
+
+struct User {
+    Identity identity;
+    std::optional<std::string> name;
+    bool online;
+};
+SPACETIMEDB_STRUCT(User, identity, name, online);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKey(user, identity);
+
+
 SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     // Validation with early error return
     if (name.empty()) {
@@ -66,7 +80,7 @@ SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
     }
     
     // Success path
-    ctx.db[users].insert(User{0, name});
+    ctx.db[user].insert(User{ctx.sender, name, false});
     return Ok();  // No value needed - just success
 }
 ```
@@ -99,27 +113,6 @@ SPACETIMEDB_REDUCER(call_other_logic, ReducerContext ctx) {
   - Success is reported to the caller
 
 ### Procedure Error Handling (Outcome<T>)
-
-**Creating Results**:
-```cpp
-SPACETIMEDB_PROCEDURE(User, get_user_by_id, ProcedureContext ctx, uint32_t user_id) {
-    // Procedures can return values or errors
-    if (user_id == 0) {
-        throw std::runtime_error("User ID cannot be zero");  // Or return error
-    }
-    
-    // Return a value
-    User user = ctx.db[users].id.get(user_id);
-    return user;  // Return value directly (not wrapped in Outcome)
-}
-
-// For procedures that validate/check conditions
-SPACETIMEDB_PROCEDURE(bool, user_exists, ProcedureContext ctx, uint32_t user_id) {
-    // Procedures return raw T, not Outcome<T>
-    // Use exceptions for errors or return boolean false
-    return ctx.db[users].id.contains(user_id);
-}
-```
 
 **Key Difference from Reducers**:
 - Procedures return raw `T` (not `Outcome<T>`)
@@ -275,9 +268,17 @@ When `insert()` is called on a table with auto-increment fields:
 
 This system enables users to immediately access generated IDs:
 ```cpp
-SPACETIMEDB_REDUCER(create_user, ReducerContext ctx, std::string name) {
-    User user{0, name, true};  // id=0 will be auto-generated
-    User inserted_user = ctx.db[users].insert(user);  // Returns user with generated ID
+struct User {
+    uint64_t id;
+    std::optional<std::string> name;
+};
+SPACETIMEDB_STRUCT(User, id, name);
+SPACETIMEDB_TABLE(User, user, Public);
+FIELD_PrimaryKeyAutoInc(user, id);
+
+SPACETIMEDB_REDUCER(create_user2, ReducerContext ctx, std::string name) {
+    User new_user{0, name};  // id=0 will be auto-generated
+    User inserted_user = ctx.db[user].insert(new_user);  // Returns user with generated ID
     LOG_INFO("Created user with ID: " + std::to_string(inserted_user.id));
     return Ok();  // Must return ReducerResult
 }
@@ -289,7 +290,7 @@ SPACETIMEDB_REDUCER(add_user, ReducerContext ctx, std::string name) {
     if (name.empty()) {
         return Err("Name cannot be empty");  // Return error - rolled back
     }
-    ctx.db[users].insert(User{0, name});
+    ctx.db[user].insert(User{0, name});
     return Ok();  // Success - transaction committed
 }
 // Generates registration function that captures parameter types, creates dispatch handler,
